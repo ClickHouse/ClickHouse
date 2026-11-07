@@ -1,0 +1,33 @@
+diff --git a/config/defs.bzl b/config/defs.bzl
+--- a/config/defs.bzl
++++ b/config/defs.bzl
+@@ -163,6 +163,18 @@
+             },
+         )
+
++    string_flag(
++        name = "linux_opt_optimization_mode",
++        values = ["O2", "O3"],
++        build_setting_default = "O2",
++        scope = "target",
++    )
++    native.config_setting(
++        name = "linux_opt_O3",
++        constraint_values = ["@platforms//os:linux"],
++        flag_values = {":linux_opt_optimization_mode": "O3"},
++    )
++
+     # This flag controls the optimization level used when compiling in fastbuild
+     # mode (-c fastbuild).
+     string_flag(
+diff --git a/toolchain/features/BUILD.bazel b/toolchain/features/BUILD.bazel
+--- a/toolchain/features/BUILD.bazel
++++ b/toolchain/features/BUILD.bazel
+@@ -256,6 +256,7 @@
+     name = "opt_optimization_level",
+     actions = _CONFIGURATION_COMPILE_ACTIONS,
+     args = select({
++        "//config:linux_opt_O3": ["-O3"],
+         "//constraints/windows/abi:msvc": ["/O2"],
+         "//conditions:default": [
+             # Conservative choice for -O

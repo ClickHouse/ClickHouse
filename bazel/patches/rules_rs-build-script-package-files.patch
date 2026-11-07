@@ -1,0 +1,100 @@
+diff --git a/rs/extensions.bzl b/rs/extensions.bzl
+--- a/rs/extensions.bzl
++++ b/rs/extensions.bzl
+@@ -416,4 +416,5 @@
+             build_script_deps = [],
+             build_script_deps_select = _select(feature_resolutions.build_deps),
++            build_script_package_files = annotation.build_script_package_files,
+             build_script_data = annotation.build_script_data,
+             build_script_data_select = annotation.build_script_data_select,
+@@ -1097,4 +1098,7 @@
+             doc = "A list of labels to set on a crate's `cargo_build_script::toolchains` attribute.",
+         ),
++        "build_script_package_files": attr.string_list(
++            doc = "Package-relative files needed when running the Cargo build script. Include Cargo.toml for CARGO_MANIFEST_PATH. An empty list retains all package compile data.",
++        ),
+         "build_script_use_cc_toolchain": attr.string(
+             doc = "Whether the build script uses the C toolchain. Auto preserves the cargo_build_script default.",
+diff --git a/rs/private/annotations.bzl b/rs/private/annotations.bzl
+--- a/rs/private/annotations.bzl
++++ b/rs/private/annotations.bzl
+@@ -5,4 +5,5 @@
+         additive_build_file_content = "",
+         gen_build_script = "auto",
++        build_script_package_files = [],
+         build_script_data = [],
+         build_script_data_select = {},
+@@ -41,4 +42,5 @@
+         additive_build_file_content = additive_build_file_content,
+         gen_build_script = gen_build_script,
++        build_script_package_files = build_script_package_files,
+         build_script_data = build_script_data,
+         build_script_data_select = build_script_data_select,
+diff --git a/rs/private/annotations_test.bzl b/rs/private/annotations_test.bzl
+--- a/rs/private/annotations_test.bzl
++++ b/rs/private/annotations_test.bzl
+@@ -21,4 +21,5 @@
+     "build_script_data": [],
+     "build_script_env": {},
++    "build_script_package_files": [],
+     "build_script_env_files": [],
+     "build_script_tags": [],
+@@ -82,4 +83,5 @@
+                     version = "1.0.0",
+                     link_deps = ["//:exact_link_dep"],
++                    build_script_package_files = ["Cargo.toml"],
+                     build_script_use_cc_toolchain = "off",
+                     patches = ["//:exact.patch"],
+@@ -102,4 +104,6 @@
+     annotation = annotation_for(annotations, "example", "1.0.0", "repo")
+     asserts.equals(env, "auto", annotation.gen_build_script)
++    asserts.equals(env, ["Cargo.toml"], annotation.build_script_package_files)
++    asserts.equals(env, [], annotation_for(annotations, "example", "2.0.0", "repo").build_script_package_files)
+     asserts.equals(env, "off", annotation.build_script_use_cc_toolchain)
+     asserts.equals(env, ["//:exact_link_dep"], annotation.link_deps)
+diff --git a/rs/private/repository_utils.bzl b/rs/private/repository_utils.bzl
+--- a/rs/private/repository_utils.bzl
++++ b/rs/private/repository_utils.bzl
+@@ -200,5 +200,5 @@
+ {indent}    links = {links},
+ {indent}    build_script = {build_script},
+-{indent}    build_script_data = {build_script_data}{conditional_build_script_data},
++{build_script_package_files_attr}{indent}    build_script_data = {build_script_data}{conditional_build_script_data},
+ {indent}    build_deps = [
+ {indent}        {build_deps}
+@@ -218,4 +218,5 @@
+
+ def render_rust_crate_call(attr, values, bazel_metadata = {}, extra_deps = "", indent = "", skip_deps_verification = False):
++    package_files = getattr(attr, "build_script_package_files", [])
+     use_cc = attr.build_script_use_cc_toolchain
+     build_script_cc_setting = "" if use_cc == "auto" else indent + "    build_script_use_cc_toolchain = %s,\n" % (use_cc == "on")
+@@ -284,4 +285,5 @@
+         links = values["links"],
+         build_script = values["build_script"],
++        build_script_package_files_attr = "%s    build_script_package_files = %s,\n" % (indent, repr(package_files)) if package_files else "",
+         build_script_data = repr(build_script_data),
+         conditional_build_script_data = " + " + conditional_build_script_data if conditional_build_script_data else "",
+@@ -327,4 +329,5 @@
+     "build_script_deps": attr.label_list(),
+     "build_script_deps_select": _label_list_dict(),
++    "build_script_package_files": attr.string_list(),
+     "build_script_data": attr.label_list(),
+     "build_script_data_select": _label_list_dict(),
+diff --git a/rs/private/rust_crate.bzl b/rs/private/rust_crate.bzl
+--- a/rs/private/rust_crate.bzl
++++ b/rs/private/rust_crate.bzl
+@@ -50,5 +50,6 @@
+         skip_deps_verification = False,
+         crate_visibility = ["//visibility:public"],
+-        build_script_use_cc_toolchain = None):
++        build_script_use_cc_toolchain = None,
++        build_script_package_files = []):
+     package_metadata(
+         name = name + "_package_metadata",
+@@ -97,5 +98,5 @@
+             crate_root = build_script,
+             links = links,
+-            data = compile_data + build_script_data,
++            data = (build_script_package_files or compile_data) + build_script_data,
+             link_deps = deps,
+             build_script_env = build_script_env,

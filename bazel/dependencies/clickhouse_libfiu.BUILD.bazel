@@ -1,0 +1,26 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_libfiu",
+    srcs = [
+        "libfiu/fiu.c",
+        "libfiu/fiu-rc.c",
+        "libfiu/backtrace.c",
+        "libfiu/wtable.c",
+        "libfiu/internal.h",
+        "libfiu/wtable.h",
+    ],
+    hdrs = glob(["libfiu/fiu*.h"]),
+    includes = ["libfiu"],
+    language = "C",
+    local_defines = [
+        "DUMMY_BACKTRACE",
+        "FIU_ENABLE",
+    ] + CXX_RUNTIME_DEFINES,
+)

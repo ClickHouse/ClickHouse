@@ -1,0 +1,7 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "pg_config.h",
+    "pg_config_os.h",
+    "pg_config_paths.h",
+])

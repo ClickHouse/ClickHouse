@@ -19,6 +19,11 @@ ci/local.env
 /build_*
 /build-*
 
+# Bazel output links and machine-local configuration.
+/bazel-*
+/.bazelrc.local
+/bazel/native_reference_inputs/
+
 # e2e test credentials (copy from .env.example and fill in)
 .env
 /tests/integration/.env

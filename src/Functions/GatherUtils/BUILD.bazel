@@ -1,0 +1,80 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "DBMS_CONSUMER_DEFINES")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "createArraySink.cpp",
+    "createArraySource.cpp",
+    "createValueSource.cpp",
+    "resizeConstantSize.cpp",
+    "resizeDynamicSize.cpp",
+])
+
+ch_cc_library(
+    name = "clickhouse_functions_gatherutils",
+    srcs = [
+        "GatherUtils.cpp",
+        "concat.cpp",
+        "ends_with.cpp",
+    ] + glob(["has_*.cpp"]) + [
+        "push.cpp",
+        "sliceDynamicOffsetBounded.cpp",
+        "sliceDynamicOffsetUnbounded.cpp",
+    ] + glob(["sliceFrom*.cpp"]) + [
+        "starts_with.cpp",
+    ],
+    clickhouse_code = True,
+    copts = ["-g1"],
+    implementation_deps = [
+        "//src/Common:Common",
+        "//src/Functions/GatherUtils:headers",
+        "//src:headers",
+    ],
+    link_runtime = True,
+    local_defines = DBMS_CONSUMER_DEFINES,
+    deps = [
+        "@clickhouse_arrow//:_arrow",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
+        "@clickhouse_llvm_project//:LLVMSupport",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_librdkafka//:_rdkafka",
+        "@clickhouse_silk//:_silk_fibers",
+        "//base/glibc-compatibility",
+        "//src:dbms__compile_0",
+        "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
+        "@clickhouse_grpc//:grpc",
+        "@clickhouse_vectorscan//:_vectorscan",
+        "@clickhouse_zstd//:_zstd",
+        "//base:common",
+        "//src:dbms__compile_1",
+    ],
+)
+
+_PRIVATE_HEADERS = glob([
+    "*Visitor.h",
+    "I*.h",
+    "slice*.h",
+])
+
+cc_library(
+    name = "headers",
+    srcs = _PRIVATE_HEADERS,
+    hdrs = glob(
+        ["**/*.h"],
+        exclude = _PRIVATE_HEADERS,
+    ),
+    deps = [
+        "//src:headers",
+        "//base:common",
+        "//src/Common:exception_api",
+        "//src/Common",
+        "//src/Functions:headers",
+        "//src/Common:memory_tracking_api",
+        "//src/Common:assert_cast",
+        "//src:column_types",
+    ],
+)

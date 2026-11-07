@@ -1,0 +1,75 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["clickhouse_grpc.proto"])
+
+ch_cc_library(
+    name = "clickhouse_grpc_protos",
+    srcs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.cc",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.cc",
+    ],
+    hdrs = [
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.grpc.pb.h",
+        "//bazel:gen/src/Server/grpc_protos/clickhouse_grpc.pb.h",
+    ],
+    clickhouse_code = True,
+    copts = ["-w"],
+    link_runtime = True,
+    local_defines = select({
+        "@platforms//cpu:x86_64": [
+            "ENABLE_MULTITARGET_CODE=1",
+        ],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+            "ENABLE_MULTITARGET_CODE=1",
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED_OK",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    strip_include_prefix = "/bazel/gen/src/Server/grpc_protos",
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "//base/glibc-compatibility",
+        "@clickhouse_grpc//:grpc",
+        "@clickhouse_grpc//:grpc++",
+    ],
+)

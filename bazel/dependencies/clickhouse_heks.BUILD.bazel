@@ -1,0 +1,15 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "heks",
+    hdrs = ["include/fast_hex/fast_hex_inline.hpp"],
+    includes = [
+        "include",
+    ],
+)

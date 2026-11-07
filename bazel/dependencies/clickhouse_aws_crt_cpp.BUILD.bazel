@@ -1,0 +1,76 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_include_aws_crt_Config_h",
+    out = "config/contrib/aws-cmake/include/aws/crt/Config.h",
+    substitutions = {
+        "@AWS_CRT_CPP_VERSION_MAJOR@": "0",
+        "@AWS_CRT_CPP_VERSION_MINOR@": "43",
+        "@AWS_CRT_CPP_VERSION_PATCH@": "8",
+        "@FULL_VERSION@": "0.43.8-clickhouse",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "@GIT_HASH@": "8b819009ee01311c3ec6767472a85b82a5f35b7c",
+        },
+        "@platforms//cpu:aarch64": {
+            "@GIT_HASH@": "6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da",
+        },
+    }),
+    template = "include/aws/crt/Config.h.in",
+)
+
+ch_cc_library(
+    name = "aws_crt_cpp",
+    srcs = glob(["source/*.cpp"]) + [
+        "source/auth/Credentials.cpp",
+        "source/auth/Sigv4Signing.cpp",
+        "source/cbor/Cbor.cpp",
+        "source/checksum/CRC.cpp",
+        "source/checksum/XXHash.cpp",
+    ] + glob(["source/crypto/*.cpp"]) + [
+        "source/endpoints/BddEngine.cpp",
+        "source/endpoints/RuleEngine.cpp",
+    ] + glob([
+        "source/http/*.cpp",
+        "source/io/*.cpp",
+        "include/aws/crt/io/private/*.h",
+    ]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ) + ["config/contrib/aws-cmake/include/aws/crt/Config.h"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+    ],
+    implementation_deps = [
+        "@clickhouse_aws_c_event_stream//:aws_c_event_stream",
+        "@clickhouse_aws_c_s3//:aws_c_s3",
+        "@clickhouse_aws_checksums//:aws_checksums",
+        "@clickhouse_aws_c_sdkutils//:aws_c_sdkutils",
+    ],
+    includes = [
+        "include",
+        "config/contrib/aws-cmake/include",
+    ],
+    local_defines = AWS_CRT_DEFINES,
+    source_header_directories = source_header_directories(["include/aws/crt/io"]),
+    deps = [
+        "@clickhouse_aws_c_auth//:aws_c_auth",
+        "@clickhouse_aws_c_cal//:aws_c_cal",
+        "@clickhouse_aws_c_mqtt//:aws_c_mqtt",
+        "@clickhouse_aws_c_common//:aws_c_common",
+        "@clickhouse_aws_c_http//:aws_c_http",
+        "@clickhouse_aws_c_io//:aws_c_io",
+    ],
+)

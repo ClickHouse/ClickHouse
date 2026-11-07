@@ -1,0 +1,42 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+genrule(
+    name = "payload",
+    outs = ["assets/payload.bin"],
+    cmd = "printf 'ABC' > $@",
+)
+
+cc_library(
+    name = "api",
+    hdrs = ["api/config.h"],
+    includes = ["api"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "direct",
+    srcs = ["read_payload.cc"],
+    additional_compiler_inputs = [":payload"],
+    copts = [
+        "--embed-dir=$(GENDIR)/bazel/initial_migration/dwyu_regressions/embedded",
+        "-Wno-error=c23-extensions",
+    ],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "negative_bridge",
+    srcs = ["read_payload.cc"],
+    additional_compiler_inputs = [":payload"],
+    copts = [
+        "--embed-dir=$(GENDIR)/bazel/initial_migration/dwyu_regressions/embedded",
+        "-Wno-error=c23-extensions",
+    ],
+    implementation_deps = [":bridge"],
+)

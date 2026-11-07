@@ -1,0 +1,24 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "mapbox_geometry",
+    hdrs = [
+        "include/mapbox/geometry/box.hpp",
+        "include/mapbox/geometry/empty.hpp",
+        "include/mapbox/geometry/line_string.hpp",
+        "include/mapbox/geometry/multi_line_string.hpp",
+        "include/mapbox/geometry/multi_point.hpp",
+        "include/mapbox/geometry/multi_polygon.hpp",
+        "include/mapbox/geometry/point.hpp",
+        "include/mapbox/geometry/polygon.hpp",
+    ],
+    includes = [
+        "include",
+    ],
+)

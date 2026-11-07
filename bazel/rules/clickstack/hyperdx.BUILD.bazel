@@ -1,0 +1,23 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "package_json",
+    srcs = ["package.json"],
+)
+
+filegroup(
+    name = "sources",
+    srcs = [
+        ".env",
+        ".gitignore",
+        ".nvmrc",
+        ".yarnrc.yml",
+        "yarn.lock",
+    ] + glob([
+        "*.json",
+        "*.yml",
+        ".yarn/releases/*.cjs",
+        "packages/**",
+        "scripts/**",
+    ]),
+)

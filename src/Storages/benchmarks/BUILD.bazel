@@ -1,0 +1,26 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "DBMS_CONSUMER_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "benchmark_statistics_objects",
+    srcs = ["benchmark_statistics.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:headers",
+        "//src:clickhouse_common_io__compile_0",
+        "//src:dbms__compile_0",
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//bazel:clickhouse_config_headers",
+        "//base:common",
+        "//src:dbms",
+        "//src/AggregateFunctions:headers",
+        "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
+        "//src:io_string_buffers",
+        "//src:column_types",
+    ],
+    link_runtime = True,
+    local_defines = DBMS_CONSUMER_DEFINES,
+    alwayslink = True,
+)

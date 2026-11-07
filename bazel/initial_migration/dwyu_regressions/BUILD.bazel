@@ -1,0 +1,453 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "api",
+    hdrs = ["api/ares.h"],
+    includes = ["api"],
+)
+
+cc_library(
+    name = "cpp_api",
+    hdrs = ["api/cpp_api.h"],
+    includes = ["api"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "direct",
+    srcs = ["direct.cc"],
+    implementation_deps = [":api"],
+)
+
+# Real compile succeeds via the bridge. DWYU must reject the missing direct
+# dependency on :api. It must not silently call <ares.h> a toolchain header.
+cc_library(
+    name = "via_bridge",
+    srcs = ["direct.cc"],
+    implementation_deps = [":bridge"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "c_guard",
+    srcs = ["guard.c"],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "cpp_guard",
+    srcs = ["guard.cc"],
+    implementation_deps = [":cpp_api"],
+)
+
+cc_library(
+    name = "local",
+    srcs = [
+        "local.cc",
+        "local/private.h",
+    ],
+    implementation_deps = [":api"],
+    local_includes = ["local"],
+)
+
+cc_library(
+    name = "bad_private_include",
+    srcs = ["local.cc"],
+    tags = ["manual"],
+    deps = [":local"],
+)
+
+cc_library(
+    name = "missing",
+    srcs = ["missing.cc"],
+    tags = ["manual"],
+)
+
+# Compiler-backed DWYU controls: textual/private files must be inspected in caller context.
+
+cc_library(
+    name = "textual_direct",
+    srcs = ["textual/owner.cc"],
+    textual_hdrs = ["textual/api.inc"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "negative_textual_bridge",
+    srcs = ["textual/owner.cc"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/api.inc"],
+    deps = [":bridge"],
+)
+
+cc_library(
+    name = "negative_textual_impl",
+    srcs = ["textual/owner.cc"],
+    implementation_deps = [":api"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/api.inc"],
+)
+
+cc_library(
+    name = "textual_private_reach",
+    srcs = [
+        "textual/private_owner.cc",
+        "textual/private/leaf.h",
+    ],
+    textual_hdrs = ["textual/public.inc"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "negative_textual_private_reach_impl",
+    srcs = [
+        "textual/private_owner.cc",
+        "textual/private/leaf.h",
+    ],
+    implementation_deps = [":api"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/public.inc"],
+)
+
+cc_library(
+    name = "negative_textual_private_reach_bridge",
+    srcs = [
+        "textual/private_owner.cc",
+        "textual/private/leaf.h",
+    ],
+    tags = ["manual"],
+    textual_hdrs = ["textual/public.inc"],
+    deps = [":bridge"],
+)
+
+cc_library(
+    name = "negative_textual_private_consumer",
+    srcs = ["textual/private_consumer.cc"],
+    implementation_deps = [":textual_private_reach"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "textual_empty",
+    srcs = ["textual/empty_owner.cc"],
+    textual_hdrs = ["textual/empty.inc"],
+)
+
+cc_library(
+    name = "private_empty",
+    srcs = [
+        "textual/empty_private_owner.cc",
+        "textual/private/empty.h",
+    ],
+)
+
+cc_library(
+    name = "negative_textual_unobserved",
+    srcs = ["textual/no_includes.cc"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/empty.inc"],
+)
+
+cc_library(
+    name = "negative_private_unobserved",
+    srcs = [
+        "textual/no_includes.cc",
+        "textual/private/empty.h",
+    ],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_textual_only",
+    tags = ["manual"],
+    textual_hdrs = ["textual/empty.inc"],
+)
+
+cc_library(
+    name = "negative_textual_missing_header",
+    srcs = ["textual/missing_owner.cc"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/missing.inc"],
+)
+
+cc_library(
+    name = "textual_prefix",
+    srcs = ["textual/prefix_owner.cc"],
+    include_prefix = "exported",
+    strip_include_prefix = "textual/prefix/include",
+    textual_hdrs = [
+        "textual/prefix/include/a/shared.inc",
+        "textual/prefix/include/b/shared.inc",
+        "textual/outside.inc",
+    ],
+    deps = [
+        ":api",
+        ":cpp_api",
+    ],
+)
+
+cc_library(
+    name = "negative_textual_prefix_unobserved",
+    srcs = ["textual/prefix_partial.cc"],
+    include_prefix = "exported",
+    strip_include_prefix = "textual/prefix/include",
+    tags = ["manual"],
+    textual_hdrs = [
+        "textual/prefix/include/a/shared.inc",
+        "textual/prefix/include/b/shared.inc",
+        "textual/outside.inc",
+    ],
+    deps = [
+        ":api",
+        ":cpp_api",
+    ],
+)
+
+cc_library(
+    name = "textual_srcs_tu",
+    srcs = ["textual/dual_role.cc"],
+    textual_hdrs = ["textual/dual_role.cc"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "textual_dependency_reader",
+    srcs = ["textual/foreign_reader.cc"],
+    implementation_deps = [":textual_direct"],
+)
+
+cc_library(
+    name = "textual_repeated",
+    srcs = ["textual/repeated_owner.cc"],
+    textual_hdrs = ["textual/repeated.inc"],
+    deps = [
+        ":api",
+        ":cpp_api",
+    ],
+)
+
+# Source line names must not change which file owns an include or prove that
+# a file was entered. Check both a logical filename and another owned header.
+cc_library(
+    name = "textual_line_srcs",
+    srcs = ["textual/line_srcs.cc"],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "negative_textual_line_srcs",
+    srcs = ["textual/line_srcs.cc"],
+    implementation_deps = [":bridge"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "textual_line_public",
+    srcs = [
+        "textual/line_reader.cc",
+        "textual/private/empty.h",
+    ],
+    hdrs = ["textual/line_public.h"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "negative_textual_line_public",
+    srcs = [
+        "textual/line_reader.cc",
+        "textual/private/empty.h",
+    ],
+    hdrs = ["textual/line_public.h"],
+    implementation_deps = [":api"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "negative_textual_line_coverage",
+    srcs = [
+        "textual/line_without_private.cc",
+        "textual/private/empty.h",
+    ],
+    hdrs = ["textual/line_public.h"],
+    tags = ["manual"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "textual_guarded_private_first",
+    srcs = [
+        "textual/guarded_first.cc",
+        "textual/private/guarded.h",
+    ],
+    textual_hdrs = ["textual/guarded_public.inc"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "negative_textual_guarded_private_impl",
+    srcs = [
+        "textual/guarded_first.cc",
+        "textual/private/guarded.h",
+    ],
+    implementation_deps = [":api"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/guarded_public.inc"],
+)
+
+cc_library(
+    name = "negative_textual_guarded_private_bridge",
+    srcs = [
+        "textual/guarded_first.cc",
+        "textual/private/guarded.h",
+    ],
+    tags = ["manual"],
+    textual_hdrs = ["textual/guarded_public.inc"],
+    deps = [":bridge"],
+)
+
+cc_library(
+    name = "next_api",
+    hdrs = ["textual/next/provider/detail.h"],
+    includes = ["textual/next/provider"],
+)
+
+cc_library(
+    name = "next_primer",
+    hdrs = ["textual/next/primer/prime_next.h"],
+    includes = ["textual/next/primer"],
+    deps = [":next_api"],
+)
+
+cc_library(
+    name = "textual_next_unprimed",
+    srcs = ["textual/next/unprimed.cc"],
+    includes = ["textual/next/shim"],
+    textual_hdrs = ["textual/next/shim/detail.h"],
+    deps = [":next_api"],
+)
+
+cc_library(
+    name = "negative_textual_next_bridge",
+    srcs = ["textual/next/primed.cc"],
+    includes = ["textual/next/shim"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/next/shim/detail.h"],
+    deps = [":next_primer"],
+)
+
+cc_library(
+    name = "negative_textual_next_impl",
+    srcs = ["textual/next/primed.cc"],
+    implementation_deps = [":next_api"],
+    includes = ["textual/next/shim"],
+    tags = ["manual"],
+    textual_hdrs = ["textual/next/shim/detail.h"],
+    deps = [":next_primer"],
+)
+
+# The assembler controls must compile on both native Linux targets.
+cc_library(
+    name = "assembly_api",
+    hdrs = ["assembly/api/asm_api.h"],
+    includes = ["assembly/api"],
+)
+
+cc_library(
+    name = "assembly_bridge",
+    deps = [":assembly_api"],
+)
+
+cc_library(
+    name = "assembly_direct",
+    srcs = ["assembly/owner.S"],
+    conlyopts = ["-DDWYU_CONLY_MUST_NOT_REACH_ASM"],
+    copts = ["-DDWYU_COMMON_ASM_VALUE=73"],
+    cxxopts = ["-DDWYU_CXX_MUST_NOT_REACH_ASM"],
+    implementation_deps = [":assembly_api"],
+)
+
+cc_library(
+    name = "negative_assembly_bridge",
+    srcs = ["assembly/owner.S"],
+    conlyopts = ["-DDWYU_CONLY_MUST_NOT_REACH_ASM"],
+    copts = ["-DDWYU_COMMON_ASM_VALUE=73"],
+    cxxopts = ["-DDWYU_CXX_MUST_NOT_REACH_ASM"],
+    implementation_deps = [":assembly_bridge"],
+    tags = ["manual"],
+)
+
+# The .S fragment is published for textual inclusion. It has no native compile
+# unless placed in srcs as well. Keep source and header ownership distinct.
+cc_library(
+    name = "assembly_textual",
+    srcs = ["assembly/textual_owner.S"],
+    textual_hdrs = ["assembly/fragment.S"],
+    deps = [":assembly_api"],
+)
+
+cc_library(
+    name = "negative_assembly_textual_impl",
+    srcs = ["assembly/textual_owner.S"],
+    implementation_deps = [":assembly_api"],
+    tags = ["manual"],
+    textual_hdrs = ["assembly/fragment.S"],
+)
+
+cc_library(
+    name = "assembly_real_and_textual",
+    srcs = ["assembly/dual.S"],
+    textual_hdrs = ["assembly/dual.S"],
+    deps = [":assembly_api"],
+)
+
+cc_library(
+    name = "negative_assembly_plain",
+    srcs = ["assembly/plain.s"],
+    copts = ["-Qunused-arguments"],
+    implementation_deps = [":assembly_api"],
+    tags = ["manual"],
+)
+
+# cc_library DefaultInfo supplies its archive here, as generated .asm.o files
+# in isa-l supply link inputs. No -E action may read the linked binary.
+cc_library(
+    name = "assembly_archive",
+    srcs = [":assembly_direct"],
+    hdrs = ["assembly/archive_public.h"],
+    deps = [
+        ":api",
+        ":assembly_api",
+    ],
+)
+
+cc_library(
+    name = "negative_assembly_archive_missing_direct",
+    srcs = [":assembly_direct"],
+    hdrs = ["assembly/archive_public.h"],
+    tags = ["manual"],
+    deps = [
+        ":bridge",
+        ":assembly_api",
+    ],
+)
+
+# These all compile; an unentered owned textual file still reserves all deps.
+cc_library(
+    name = "partial_public_otherwise_private",
+    srcs = ["direct.cc"],
+    textual_hdrs = ["textual/empty.inc"],
+    deps = [":api"],
+)
+
+cc_library(
+    name = "partial_public_missing_direct",
+    srcs = ["direct.cc"],
+    implementation_deps = [":bridge"],
+    textual_hdrs = ["textual/empty.inc"],
+)

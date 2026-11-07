@@ -1,0 +1,20 @@
+load("@clickhouse//bazel/link_runtime:arm.bzl", "arm_link_runtime")
+
+package(default_visibility = ["//visibility:public"])
+
+arm_link_runtime(
+    name = "cargo_link_files",
+    srcs = glob(["inputs/**"]),
+)
+
+[
+    filegroup(
+        name = name,
+        srcs = [":cargo_link_files"],
+        output_group = name,
+    )
+    for name in [
+        "gcc_pie_startup_objects",
+        "linux_link_files",
+    ]
+]

@@ -1,0 +1,14 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "_consistent_hashing",
+    srcs = [
+        "consistent_hashing.cpp",
+        "popcount.cpp",
+    ],
+    hdrs = glob(["*.h"]),
+    includes = ["."],
+    link_runtime = True,
+)

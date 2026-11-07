@@ -1,0 +1,274 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:codegen_actions.bzl", "cpp_proto_sources")
+load("@clickhouse//bazel/rules:codegen_rules.bzl", "HDFS3_PROTO_IMPORTS")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cpp_proto_sources(
+    imports = HDFS3_PROTO_IMPORTS,
+    out_dir = "config/contrib/libhdfs3-cmake",
+    src_dir = "src/proto",
+)
+
+cc_library(
+    name = "hdfs3_proto_headers",
+    hdrs = [
+        "config/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.h",
+        "config/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.h",
+        "config/contrib/libhdfs3-cmake/IpcConnectionContext.pb.h",
+        "config/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.h",
+        "config/contrib/libhdfs3-cmake/RpcHeader.pb.h",
+        "config/contrib/libhdfs3-cmake/Security.pb.h",
+        "config/contrib/libhdfs3-cmake/datatransfer.pb.h",
+        "config/contrib/libhdfs3-cmake/hdfs.pb.h",
+    ],
+    visibility = ["//visibility:private"],
+    deps = ["@clickhouse_google_protobuf//:_libprotobuf"],
+)
+
+exports_files([
+    "LICENSE.txt",
+    "src/common/crc_iscsi_v_pcl.asm",
+])
+
+_HDFS3_API_HDRS = [
+    "src/client/BlockLocation.h",
+    "src/client/DirectoryIterator.h",
+    "src/client/FileStatus.h",
+    "src/client/FileSystem.h",
+    "src/client/FileSystemStats.h",
+    "src/client/hdfs.h",
+    "src/client/InputStream.h",
+    "src/client/OutputStream.h",
+    "src/client/Permission.h",
+    "src/common/Exception.h",
+    "src/common/XmlConfig.h",
+]
+
+expand_template(
+    name = "configure_platform_h",
+    out = "config/contrib/libhdfs3-cmake/platform.h",
+    substitutions = {
+        "#cmakedefine HAVE_NESTED_EXCEPTION": "#define HAVE_NESTED_EXCEPTION",
+        "#cmakedefine STRERROR_R_RETURN_INT": "/* #undef STRERROR_R_RETURN_INT */",
+        "#cmakedefine ENABLE_FRAME_POINTER": "/* #undef ENABLE_FRAME_POINTER */",
+        "#cmakedefine HAVE_BOOST_ATOMIC": "/* #undef HAVE_BOOST_ATOMIC */",
+        "#cmakedefine HAVE_BOOST_CHRONO": "/* #undef HAVE_BOOST_CHRONO */",
+        "#cmakedefine HAVE_STEADY_CLOCK": "#define HAVE_STEADY_CLOCK",
+        "#cmakedefine HAVE_STD_ATOMIC": "#define HAVE_STD_ATOMIC",
+        "#cmakedefine HAVE_STD_CHRONO": "#define HAVE_STD_CHRONO",
+        "#cmakedefine LIBUNWIND_FOUND": "/* #undef LIBUNWIND_FOUND */",
+        "#cmakedefine01 WITH_KERBEROS": "#define WITH_KERBEROS 1",
+        "#cmakedefine HAVE_SYMBOLIZE": "/* #undef HAVE_SYMBOLIZE */",
+        "#cmakedefine HAVE_DLADDR": "/* #undef HAVE_DLADDR */",
+        "#cmakedefine NEED_BOOST": "/* #undef NEED_BOOST */",
+        "#cmakedefine OS_MACOSX": "/* #undef OS_MACOSX */",
+        "#cmakedefine OS_LINUX": "#define OS_LINUX",
+    },
+    template = ":src/platform.h.in",
+)
+
+ch_cc_library(
+    name = "_hdfs3",
+    srcs = glob(["src/network/*.cpp"]) + [
+        "src/client/ReadShortCircuitInfo.cpp",
+        "src/client/Pipeline.cpp",
+        "src/client/Hdfs.cpp",
+        "src/client/Packet.cpp",
+        "src/client/OutputStreamImpl.cpp",
+        "src/client/KerberosName.cpp",
+        "src/client/PacketHeader.cpp",
+        "src/client/LocalBlockReader.cpp",
+        "src/client/UserInfo.cpp",
+        "src/client/RemoteBlockReader.cpp",
+        "src/client/Permission.cpp",
+        "src/client/FileSystemImpl.cpp",
+        "src/client/DirectoryIterator.cpp",
+        "src/client/FileSystemKey.cpp",
+        "src/client/DataTransferProtocolSender.cpp",
+        "src/client/LeaseRenewer.cpp",
+        "src/client/PeerCache.cpp",
+        "src/client/InputStream.cpp",
+        "src/client/FileSystem.cpp",
+        "src/client/InputStreamImpl.cpp",
+        "src/client/Token.cpp",
+        "src/client/PacketPool.cpp",
+        "src/client/OutputStream.cpp",
+        "src/client/AbstractNativeRawDecoder.cpp",
+        "src/client/AbstractNativeRawEncoder.cpp",
+        "src/client/ByteBufferDecodingState.cpp",
+        "src/client/ByteBufferEncodingState.cpp",
+        "src/client/CoderUtil.cpp",
+        "src/client/ECChunk.cpp",
+        "src/client/ErasureCoderOptions.cpp",
+        "src/client/GF256.cpp",
+        "src/client/GaloisField.cpp",
+        "src/client/NativeRSRawDecoder.cpp",
+        "src/client/NativeRSRawEncoder.cpp",
+        "src/client/Preconditions.cpp",
+        "src/client/RSUtil.cpp",
+    ] + glob(["src/client/RawErasure*.cpp"]) + [
+        "src/client/StatefulStripeReader.cpp",
+        "src/client/PositionStripeReader.cpp",
+    ] + glob(["src/client/Stripe*.cpp"]) + [
+        "src/client/SystemECPolicies.cpp",
+        "src/client/dump.cpp",
+        "src/client/erasure_coder.cpp",
+        "src/rpc/RpcChannelKey.cpp",
+        "src/rpc/RpcProtocolInfo.cpp",
+        "src/rpc/RpcRemoteCall.cpp",
+        "src/rpc/RpcChannel.cpp",
+        "src/rpc/RpcAuth.cpp",
+        "src/rpc/RpcContentWrapper.cpp",
+        "src/rpc/RpcConfig.cpp",
+        "src/rpc/RpcServerInfo.cpp",
+        "src/rpc/SaslClient.cpp",
+    ] + glob(["src/server/*.cpp"]) + [
+        "src/common/WritableUtils.cpp",
+        "src/common/ExceptionInternal.cpp",
+        "src/common/SessionConfig.cpp",
+        "src/common/StackPrinter.cpp",
+        "src/common/Exception.cpp",
+        "src/common/Logger.cpp",
+        "src/common/CFileWrapper.cpp",
+        "src/common/XmlConfig.cpp",
+        "src/common/WriteBuffer.cpp",
+        "src/common/HWCrc32c.cpp",
+        "src/common/MappedFileWrapper.cpp",
+        "src/common/Hash.cpp",
+        "src/common/SWCrc32c.cpp",
+        "src/common/Thread.cpp",
+        "src/common/IntelAsmCrc32c.cpp",
+        "config/contrib/libhdfs3-cmake/ClientDatanodeProtocol.pb.cc",
+        "config/contrib/libhdfs3-cmake/hdfs.pb.cc",
+        "config/contrib/libhdfs3-cmake/Security.pb.cc",
+        "config/contrib/libhdfs3-cmake/ProtobufRpcEngine.pb.cc",
+        "config/contrib/libhdfs3-cmake/ClientNamenodeProtocol.pb.cc",
+        "config/contrib/libhdfs3-cmake/IpcConnectionContext.pb.cc",
+        "config/contrib/libhdfs3-cmake/RpcHeader.pb.cc",
+        "config/contrib/libhdfs3-cmake/datatransfer.pb.cc",
+        "src/rpc/RpcClient.cpp",
+    ] + glob(
+        ["src/**/*.h"],
+        exclude = _HDFS3_API_HDRS + [
+            "src/client/TokenInternal.h",
+            "src/common/sse2neon.h",
+        ],
+    ) + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": ["src/common/sse2neon.h"],
+    }) + [
+        "@clickhouse//contrib/libhdfs3-cmake:absl_log_undef.h",
+        ":config/contrib/libhdfs3-cmake/platform.h",
+    ],
+    hdrs = _HDFS3_API_HDRS + glob(["include/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-include",
+        "contrib/libhdfs3-cmake/absl_log_undef.h",
+        "-include",
+        "google/protobuf/stubs/port.h",
+    ],
+    implementation_deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+    ] + select({
+        "@platforms//cpu:x86_64": [":_hdfs3_crc32"],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "@clickhouse_libgsasl//:_gsasl",
+        "@clickhouse_libxml2//:_libxml2",
+        ":hdfs3_proto_headers",
+        "@clickhouse_krb5//:_krb5",
+    ] + select({
+        "@platforms//cpu:x86_64": ["@clickhouse_isa_l//:_isal"],
+        "@platforms//cpu:aarch64": [],
+    }),
+    includes = [
+        "include",
+        "include/hdfs",
+    ],
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+        ],
+    }) + [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "HADOOP_ISAL_LIBRARY",
+        ],
+        "@platforms//cpu:aarch64": [
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_NANOSLEEP",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "'TEST_HDFS_PREFIX=\"\"'",
+        "UNALIGNED_OK",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_GLIBCXX_USE_NANOSLEEP",
+        "_GNU_SOURCE",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "__STDC_FORMAT_MACROS",
+    ],
+    local_includes = [
+        "src",
+        "src/common",
+        "config/contrib/libhdfs3-cmake",
+    ],
+    deps = ["@clickhouse_abseil_cpp//:absl_die_if_null"],
+)
+
+cc_library(
+    name = "_hdfs3_crc32",
+    srcs = select({
+        "@platforms//cpu:x86_64": [
+            "@clickhouse//bazel:gen/x86_64/contrib/libhdfs3-cmake/crc_iscsi_v_pcl.o",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
+    features = [
+        "-fortify_source",
+        "-default_compile_flags",
+    ],
+)

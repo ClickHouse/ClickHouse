@@ -1,0 +1,74 @@
+"""CMake migration, parity checks and CMake comparison snapshots."""
+
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_test.bzl", "py_test")
+load(":normalized_clickhouse.bzl", "normalized_clickhouse")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "rust_import_evidence",
+    srcs = ["rust_import_evidence.py"],
+    interpreter_args = ["-B"],
+    python_version = "3.11",
+)
+
+py_test(
+    name = "rust_import_evidence_test",
+    srcs = [
+        "rust_import_evidence.py",
+        "rust_import_evidence_test.py",
+    ],
+    python_version = "3.11",
+)
+
+exports_files(
+    glob(["license_substitutions_*.json"]),
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "native_cmake_reference_driver",
+    srcs = ["native_cmake_reference.py"],
+    interpreter_args = ["-B"],
+    main = "native_cmake_reference.py",
+    python_version = "3.11",
+)
+
+py_binary(
+    name = "native_stripped_hash_driver",
+    srcs = [
+        "native_stripped_hash.py",
+        "verify_stripped_hash.py",
+    ],
+    imports = ["."],
+    interpreter_args = ["-B"],
+    main = "native_stripped_hash.py",
+    python_version = "3.11",
+)
+
+normalized_clickhouse(
+    name = "clickhouse.normalized",
+    elf_machine = select({
+        "//bazel:use_cmake_metadata_aarch64": 183,
+        "//bazel:use_cmake_metadata_x86_64": 62,
+        "//conditions:default": 0,
+    }),
+    features = [
+        "-static_link_cpp_runtimes",
+        "-fortify_source",
+    ],
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"] + select({
+        "//bazel:use_cmake_metadata_aarch64": [],
+        "//bazel:use_cmake_metadata_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_binary(
+    name = "dwyu_partition",
+    srcs = ["dwyu_partition.py"],
+    interpreter_args = ["-B"],
+    python_version = "3.11",
+)

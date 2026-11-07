@@ -1,0 +1,32 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE",
+])
+
+_DOUBLE_CONVERSION_API_HDRS = [
+    "double-conversion/double-conversion.h",
+    "double-conversion/double-to-string.h",
+    "double-conversion/string-to-double.h",
+    "double-conversion/utils.h",
+]
+
+ch_cc_library(
+    name = "_double-conversion",
+    srcs = glob(
+        [
+            "double-conversion/*.cc",
+            "double-conversion/*.h",
+        ],
+        exclude = _DOUBLE_CONVERSION_API_HDRS,
+    ),
+    hdrs = _DOUBLE_CONVERSION_API_HDRS,
+    includes = [
+        ".",
+    ],
+)

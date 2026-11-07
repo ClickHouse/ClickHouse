@@ -1,0 +1,44 @@
+load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+poco_cc_library(
+    name = "_poco_redis",
+    srcs = glob(["src/*.cpp"]),
+    hdrs = glob(["include/**/*.h"]),
+    copts = [
+        "-Wno-deprecated-dynamic-exception-spec",
+        "-Wno-shadow",
+        "-Wno-shorten-64-to-32",
+        "-Wno-sign-compare",
+        "-Wno-zero-as-null-pointer-constant",
+        "-Wno-implicit-int-conversion",
+    ],
+    includes = ["include"],
+    link_runtime = True,
+    local_defines = [
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+    ] + CXX_RUNTIME_DEFINES,
+    visibility = [
+        "//:__pkg__",
+        "//src:__pkg__",
+        "//src/Storages/System:__pkg__",
+    ],
+    deps = [
+        "//base/poco/Net:_poco_net",
+        "//base/poco/Foundation:_poco_foundation",
+    ],
+)
+
+# AsyncReader uses ThreadPool.cpp from CMake's Poco::Foundation, which links clickhouse_common_io.
+cc_library(
+    name = "Redis",
+    implementation_deps = [
+        "//base/poco/Foundation:thread_pool",
+        "//src:clickhouse_common_io",
+    ],
+    deps = [":_poco_redis"],
+)

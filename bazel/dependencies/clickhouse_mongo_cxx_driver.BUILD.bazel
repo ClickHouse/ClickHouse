@@ -1,0 +1,300 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_src_bsoncxx_lib_bsoncxx_private_config_config_hh",
+    out = "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/private/config/config.hh",
+    substitutions = {
+        "@BSON_REQUIRED_VERSION@": "",
+    },
+    template = ":src/bsoncxx/lib/bsoncxx/private/config/config.hh.in",
+)
+
+expand_template(
+    name = "configure_src_bsoncxx_lib_bsoncxx_v1_config_config_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
+    substitutions = {
+        "#cmakedefine BSONCXX_POLY_USE_IMPLS": "#define BSONCXX_POLY_USE_IMPLS",
+        "#cmakedefine BSONCXX_POLY_USE_STD": "/* #undef BSONCXX_POLY_USE_STD */",
+    },
+    template = ":src/bsoncxx/lib/bsoncxx/v1/config/config.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_bsoncxx_lib_bsoncxx_v1_config_version_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
+    substitutions = {
+        "@BSONCXX_VERSION_EXTRA@": "",
+        "@BSONCXX_VERSION_MAJOR@": "",
+        "@BSONCXX_VERSION_MINOR@": "",
+        "@BSONCXX_VERSION_PATCH@": "",
+        "@BSONCXX_VERSION@": "",
+    },
+    template = ":src/bsoncxx/lib/bsoncxx/v1/config/version.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_bsoncxx_lib_bsoncxx_v1_fwd_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp",
+    substitutions = {
+        "@BSONCXX_V1_FWD_INCLUDES@": "#include <bsoncxx/v1/array/value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/array/view-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/decimal128-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/document/value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/document/view-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/element/view-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/exception-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/oid-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/types/id-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/types/value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/v1/types/view-fwd.hpp> // IWYU pragma: export",
+    },
+    template = ":src/bsoncxx/lib/bsoncxx/v1/fwd.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_bsoncxx_lib_bsoncxx_v_noabi_bsoncxx_config_config_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp",
+    substitutions = {
+        "#cmakedefine01 BSONCXX_ENABLE_UNSTABLE_ABI": "#define BSONCXX_ENABLE_UNSTABLE_ABI 1",
+    },
+    template = ":src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_bsoncxx_lib_bsoncxx_v_noabi_bsoncxx_fwd_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp",
+    substitutions = {
+        "@BSONCXX_V_NOABI_FWD_INCLUDES@": "#include <bsoncxx/array/element-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/array/value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/array/view-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/basic/array-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/basic/document-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/basic/sub_array-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/basic/sub_binary-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/basic/sub_document-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/concatenate-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/core-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/list-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/array-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/array_context-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/closed_context-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/document-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/helpers-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/key_context-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/single_context-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/builder/stream/value_context-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/decimal128-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/document/element-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/document/value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/document/view-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/exception/error_code-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/exception/exception-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/json-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/oid-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/string/view_or_value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/types-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/types/bson_value/value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/types/bson_value/view-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/types/id-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/types/value-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/types/view-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/validate-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/vector/accessor-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/vector/detail-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/vector/elements-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/vector/formats-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/vector/iterators-fwd.hpp> // IWYU pragma: export\n#include <bsoncxx/view_or_value-fwd.hpp> // IWYU pragma: export",
+    },
+    template = ":src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_bsoncxx_lib_bsoncxx_v_noabi_bsoncxx_v1_config_export_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp",
+    substitutions = {
+        "@EXPORT_IMPORT_CONDITION@": "_bsoncxx_EXPORTS",
+        "@DEPRECATED_MACRO_NAME@": "BSONCXX_DEPRECATED",
+        "@NO_EXPORT_MACRO_NAME@": "BSONCXX_ABI_NO_EXPORT",
+        "@INCLUDE_GUARD_NAME@": "BSONCXX_ABI_EXPORT_H",
+        "@EXPORT_MACRO_NAME@": "BSONCXX_ABI_EXPORT",
+        "@DEFINE_NO_EXPORT@": "",
+        "@CUSTOM_CONTENT@": "\n#undef BSONCXX_DEPRECATED_EXPORT\n#undef BSONCXX_DEPRECATED_NO_EXPORT\n\n#if defined(_MSC_VER)\n#define BSONCXX_ABI_CDECL __cdecl\n#else\n#define BSONCXX_ABI_CDECL\n#endif\n\n#define BSONCXX_ABI_EXPORT_CDECL(...) BSONCXX_ABI_EXPORT __VA_ARGS__ BSONCXX_ABI_CDECL\n\n",
+        "@DEFINE_EXPORT@": "",
+        "@DEFINE_IMPORT@": "",
+        "@STATIC_DEFINE@": "BSONCXX_STATIC",
+    },
+    template = "@clickhouse//:cmake/generate_export_header.h.in",
+)
+
+expand_template(
+    name = "configure_src_mongocxx_lib_mongocxx_private_config_config_hh",
+    out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
+    substitutions = {
+        "#cmakedefine MONGOCXX_COMPILER_ID \"${MONGOCXX_COMPILER_ID}\"": "#define MONGOCXX_COMPILER_ID \"Clang\"",
+        "#cmakedefine MONGOCXX_ENABLE_SSL": "#define MONGOCXX_ENABLE_SSL",
+        "@MONGOC_REQUIRED_VERSION@": "",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "#cmakedefine MONGOCXX_COMPILER_VERSION \"${MONGOCXX_COMPILER_VERSION}\"": "#define MONGOCXX_COMPILER_VERSION \"" + cmake_cxx_compiler_version("x86_64") + "\"",
+        },
+        "@platforms//cpu:aarch64": {
+            "#cmakedefine MONGOCXX_COMPILER_VERSION \"${MONGOCXX_COMPILER_VERSION}\"": "#define MONGOCXX_COMPILER_VERSION \"" + cmake_cxx_compiler_version("aarch64") + "\"",
+        },
+    }),
+    template = ":src/mongocxx/lib/mongocxx/private/config/config.hh.in",
+)
+
+expand_template(
+    name = "configure_src_mongocxx_lib_mongocxx_v1_config_config_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
+    substitutions = {},
+    template = ":src/mongocxx/lib/mongocxx/v1/config/config.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_mongocxx_lib_mongocxx_v1_config_version_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
+    substitutions = {
+        "@MONGOCXX_VERSION_EXTRA@": "",
+        "@MONGOCXX_VERSION_MAJOR@": "",
+        "@MONGOCXX_VERSION_MINOR@": "",
+        "@MONGOCXX_VERSION_PATCH@": "",
+        "@MONGOCXX_VERSION@": "",
+    },
+    template = ":src/mongocxx/lib/mongocxx/v1/config/version.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_mongocxx_lib_mongocxx_v1_fwd_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp",
+    substitutions = {
+        "@MONGOCXX_V1_FWD_INCLUDES@": "#include <mongocxx/v1/aggregate_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/apm-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/auto_encryption_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/bulk_write-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/change_stream-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/client-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/client_bulk_write-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/client_encryption-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/client_session-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/collection-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/count_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/cursor-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/data_key_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/database-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/delete_many_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/delete_many_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/delete_one_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/delete_one_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/distinct_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/encrypt_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/estimated_document_count_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/command_failed-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/command_started-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/command_succeeded-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/server_closed-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/server_description-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/server_description_changed-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/server_heartbeat_failed-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/server_heartbeat_started-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/server_heartbeat_succeeded-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/server_opening-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/topology_closed-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/topology_description-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/topology_description_changed-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/events/topology_opening-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/find_one_and_delete_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/find_one_and_replace_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/find_one_and_update_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/find_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/gridfs/bucket-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/gridfs/downloader-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/gridfs/upload_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/gridfs/upload_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/gridfs/uploader-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/hint-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/indexes-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/insert_many_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/insert_many_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/insert_one_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/insert_one_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/instance-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/logger-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/oidc_callback_params-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/oidc_credential-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/pipeline-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/pool-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/range_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/read_concern-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/read_preference-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/replace_one_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/replace_one_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/return_document-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/rewrap_many_datakey_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/rewrap_many_datakey_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/search_indexes-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/server_api-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/server_error-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/string_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/text_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/tls-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/transaction_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/update_many_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/update_many_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/update_one_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/update_one_result-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/uri-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/v1/write_concern-fwd.hpp> // IWYU pragma: export",
+    },
+    template = ":src/mongocxx/lib/mongocxx/v1/fwd.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_mongocxx_lib_mongocxx_v_noabi_mongocxx_config_config_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp",
+    substitutions = {
+        "#cmakedefine01 MONGOCXX_ENABLE_UNSTABLE_ABI": "#define MONGOCXX_ENABLE_UNSTABLE_ABI 1",
+    },
+    template = ":src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_mongocxx_lib_mongocxx_v_noabi_mongocxx_fwd_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp",
+    substitutions = {
+        "@MONGOCXX_V_NOABI_FWD_INCLUDES@": "#include <mongocxx/bulk_write-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/change_stream-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/client-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/client_bulk_write-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/client_encryption-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/client_session-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/collection-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/cursor-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/database-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/command_failed_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/command_started_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/command_succeeded_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/heartbeat_failed_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/heartbeat_started_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/heartbeat_succeeded_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/server_changed_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/server_closed_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/server_description-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/server_opening_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/topology_changed_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/topology_closed_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/topology_description-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/events/topology_opening_event-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/authentication_exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/bulk_write_exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/error_code-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/gridfs_exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/logic_error-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/operation_exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/query_exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/server_error_code-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/exception/write_exception-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/gridfs/bucket-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/gridfs/downloader-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/gridfs/uploader-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/hint-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/index_model-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/index_view-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/instance-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/logger-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/model/delete_many-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/model/delete_one-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/model/insert_one-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/model/replace_one-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/model/update_many-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/model/update_one-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/model/write-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/oidc_callback_params-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/oidc_credential-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/aggregate-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/apm-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/auto_encryption-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/bulk_write-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/change_stream-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/client-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/client_encryption-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/client_session-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/count-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/data_key-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/delete-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/distinct-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/encrypt-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/estimated_document_count-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/find-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/find_one_and_delete-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/find_one_and_replace-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/find_one_and_update-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/find_one_common_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/gridfs/bucket-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/gridfs/upload-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/index-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/index_view-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/insert-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/pool-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/range-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/replace-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/rewrap_many_datakey-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/server_api-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/text-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/tls-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/transaction-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/options/update-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/pipeline-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/pool-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/read_concern-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/read_preference-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/bulk_write-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/delete-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/gridfs/upload-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/insert_many-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/insert_one-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/replace_one-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/rewrap_many_datakey-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/result/update-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/search_index_model-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/search_index_view-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/string_options-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/uri-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/validation_criteria-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/write_concern-fwd.hpp> // IWYU pragma: export\n#include <mongocxx/write_type-fwd.hpp> // IWYU pragma: export",
+    },
+    template = ":src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp.in",
+)
+
+expand_template(
+    name = "configure_src_mongocxx_lib_mongocxx_v_noabi_mongocxx_v1_config_export_hpp",
+    out = "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
+    substitutions = {
+        "@EXPORT_IMPORT_CONDITION@": "_mongocxx_EXPORTS",
+        "@DEPRECATED_MACRO_NAME@": "MONGOCXX_DEPRECATED",
+        "@NO_EXPORT_MACRO_NAME@": "MONGOCXX_ABI_NO_EXPORT",
+        "@INCLUDE_GUARD_NAME@": "MONGOCXX_ABI_EXPORT_H",
+        "@EXPORT_MACRO_NAME@": "MONGOCXX_ABI_EXPORT",
+        "@DEFINE_NO_EXPORT@": "",
+        "@CUSTOM_CONTENT@": "\n#undef MONGOCXX_DEPRECATED_EXPORT\n#undef MONGOCXX_DEPRECATED_NO_EXPORT\n\n#if defined(_MSC_VER)\n#define MONGOCXX_ABI_CDECL __cdecl\n#else\n#define MONGOCXX_ABI_CDECL\n#endif\n\n#define MONGOCXX_ABI_EXPORT_CDECL(...) MONGOCXX_ABI_EXPORT __VA_ARGS__ MONGOCXX_ABI_CDECL\n\n",
+        "@DEFINE_EXPORT@": "",
+        "@DEFINE_IMPORT@": "",
+        "@STATIC_DEFINE@": "MONGOCXX_STATIC",
+    },
+    template = "@clickhouse//:cmake/generate_export_header.h.in",
+)
+
+_BSONCXX_SHARED_HEADERS = [
+    "src/bsoncxx/lib/bsoncxx/private/bson.hh",
+    "src/bsoncxx/lib/bsoncxx/private/immortal.hh",
+    "src/bsoncxx/lib/bsoncxx/private/macros.hh",
+    "src/bsoncxx/lib/bsoncxx/private/make_unique.hh",
+    "src/bsoncxx/lib/bsoncxx/private/suppress_deprecation_warnings.hh",
+    "src/bsoncxx/lib/bsoncxx/private/type_traits.hh",
+    "src/bsoncxx/lib/bsoncxx/v1/types/value.hh",
+]
+
+_BSONCXX_TEXTUAL_HEADERS = [
+    "src/bsoncxx/include/bsoncxx/v1/detail/postlude.hpp",
+    "src/bsoncxx/include/bsoncxx/v1/detail/prelude.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/config/postlude.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/config/prelude.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/enums/binary_sub_type.hpp",
+    "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/enums/type.hpp",
+]
+
+_MONGOCXX_TEXTUAL_HEADERS = [
+    "src/mongocxx/include/mongocxx/v1/detail/postlude.hpp",
+    "src/mongocxx/include/mongocxx/v1/detail/prelude.hpp",
+    "src/mongocxx/include/mongocxx/v_noabi/mongocxx/config/postlude.hpp",
+    "src/mongocxx/include/mongocxx/v_noabi/mongocxx/config/prelude.hpp",
+]
+
+ch_cc_library(
+    name = "_bsoncxx",
+    srcs = glob([
+        "src/bsoncxx/lib/bsoncxx/private/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/array/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/config/*.cpp",
+    ]) + glob([
+        "src/bsoncxx/lib/bsoncxx/v1/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/detail/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/document/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v1/element/*.cpp",
+    ]) + glob([
+        "src/bsoncxx/lib/bsoncxx/v1/types/*.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/array/*.cpp",
+    ]) + [
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/builder/core.cpp",
+    ] + glob(["src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/*.cpp"]) + [
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/decimal128.cpp",
+    ] + glob(["src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/document/*.cpp"]) + [
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/exception/error_code.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/exception/exception.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/json.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/oid.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/string/view_or_value.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/value.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/types/bson_value/view.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/validate.cpp",
+        "src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/vector.cpp",
+    ] + glob(
+        ["src/bsoncxx/lib/**/*.hh"],
+        exclude = _BSONCXX_SHARED_HEADERS + ["src/bsoncxx/lib/bsoncxx/private/helpers.hh"],
+    ),
+    hdrs = [
+        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/config.hpp",
+        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/config/version.hpp",
+        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v1/fwd.hpp",
+        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/config/config.hpp",
+        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/fwd.hpp",
+        ":config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi/bsoncxx/v1/config/export.hpp",
+    ] + glob(
+        ["src/bsoncxx/include/**/*.hpp"],
+        exclude = _BSONCXX_TEXTUAL_HEADERS + ["src/bsoncxx/include/bsoncxx/docs/**"],
+    ) + _BSONCXX_SHARED_HEADERS,
+    implementation_deps = ["@clickhouse_mongo_c_driver//:_libbson"],
+    includes = [
+        "src/bsoncxx/include",
+        "src/bsoncxx/include/bsoncxx/v_noabi",
+        "src/bsoncxx/lib",
+        "src/bsoncxx/lib/bsoncxx/v_noabi",
+        "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
+        "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
+    ],
+    source_header_directories = source_header_directories([
+        "src/bsoncxx/include/bsoncxx/v1",
+        "src/bsoncxx/include/bsoncxx/v_noabi",
+    ]),
+    textual_hdrs = _BSONCXX_TEXTUAL_HEADERS,
+)
+
+ch_cc_library(
+    name = "_mongocxx",
+    srcs = [
+        "src/mongocxx/lib/mongocxx/private/mongoc.cpp",
+        "src/mongocxx/lib/mongocxx/private/scoped_bson.cpp",
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/private/config/config.hh",
+    ] + glob([
+        "src/mongocxx/lib/mongocxx/v1/**/*.cpp",
+        "src/mongocxx/lib/mongocxx/v_noabi/mongocxx/**/*.cpp",
+    ]) + glob(
+        ["src/mongocxx/lib/**/*.hh"],
+        exclude = ["src/mongocxx/lib/mongocxx/v_noabi/mongocxx/options/apm.hh"],
+    ),
+    hdrs = [
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/config.hpp",
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/config/version.hpp",
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v1/fwd.hpp",
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/config/config.hpp",
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/fwd.hpp",
+        ":config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi/mongocxx/v1/config/export.hpp",
+    ] + glob(
+        ["src/mongocxx/include/**/*.hpp"],
+        exclude = _MONGOCXX_TEXTUAL_HEADERS + ["src/mongocxx/include/mongocxx/docs/**"],
+    ),
+    implementation_deps = [
+        "@clickhouse_mongo_c_driver//:_libbson",
+        "@clickhouse_mongo_c_driver//:_libmongoc",
+    ],
+    includes = [
+        "src/mongocxx/include",
+        "src/mongocxx/include/mongocxx/v_noabi",
+        "src/mongocxx/lib",
+        "src/mongocxx/lib/mongocxx/v_noabi",
+        "config/contrib/mongo-cxx-driver/src/mongocxx/lib",
+        "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
+    ],
+    source_header_directories = source_header_directories([
+        "src/mongocxx/include/mongocxx/v1",
+        "src/mongocxx/include/mongocxx/v_noabi",
+    ]),
+    textual_hdrs = _MONGOCXX_TEXTUAL_HEADERS,
+    deps = [":_bsoncxx"],
+)

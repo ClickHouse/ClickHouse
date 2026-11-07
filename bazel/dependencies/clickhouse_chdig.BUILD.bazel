@@ -1,0 +1,19 @@
+load("@clickhouse//bazel/rules:cargo_sources.bzl", "cargo_repository_sources")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+cargo_repository_sources(
+    name = "cmake_cargo_sources",
+    exclude_top_level = ["target"],
+)
+
+filegroup(
+    name = "cargo_manifest",
+    srcs = [
+        "Cargo.toml",
+    ],
+)

@@ -1,0 +1,186 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+_ASM = ["-Qunused-arguments"]
+
+_REFER_SRC = select({
+    "@platforms//cpu:x86_64": ["refer.s"],
+    "@platforms//cpu:aarch64": ["refer_arm.s"],
+})
+
+cc_library(
+    name = "api",
+    hdrs = ["api.h"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "unused_header",
+    hdrs = ["unused.h"],
+)
+
+cc_library(
+    name = "plain",
+    srcs = ["plain.s"],
+    copts = _ASM,
+)
+
+cc_library(
+    name = "negative_unused_header",
+    srcs = ["plain.s"],
+    copts = _ASM,
+    deps = [":unused_header"],
+)
+
+cc_library(
+    name = "mixed",
+    srcs = [
+        "plain.s",
+        "private.cc",
+    ],
+    copts = _ASM,
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "public_mixed",
+    srcs = ["plain.s"],
+    hdrs = ["public.h"],
+    copts = _ASM,
+    deps = [":api"],
+)
+
+cc_library(
+    name = "negative_missing_private",
+    srcs = [
+        "plain.s",
+        "private.cc",
+    ],
+    copts = _ASM,
+    implementation_deps = [":bridge"],
+)
+
+cc_library(
+    name = "negative_missing_public",
+    srcs = ["plain.s"],
+    hdrs = ["public.h"],
+    copts = _ASM,
+    deps = [":bridge"],
+)
+
+cc_library(
+    name = "negative_mixed_unused",
+    srcs = [
+        "plain.s",
+        "private.cc",
+    ],
+    copts = _ASM,
+    implementation_deps = [
+        ":api",
+        ":unused_header",
+    ],
+)
+
+cc_library(
+    name = "negative_unentered",
+    srcs = [
+        "plain.s",
+        "dangling.h",
+    ],
+    copts = _ASM,
+)
+
+cc_library(
+    name = "needed_symbol",
+    srcs = ["symbol.cc"],
+    hdrs = ["needed.h"],
+)
+
+cc_library(
+    name = "reference",
+    srcs = _REFER_SRC,
+    copts = _ASM,
+    implementation_deps = [":needed_symbol"],
+)
+
+cc_library(
+    name = "reference_unresolved",
+    srcs = _REFER_SRC,
+    copts = _ASM,
+)
+
+cc_binary(
+    name = "symbol_with_dep",
+    srcs = ["main.cc"],
+    deps = [":reference"],
+)
+
+cc_binary(
+    name = "negative_symbol_without_dep",
+    srcs = ["main.cc"],
+    tags = ["manual"],
+    deps = [":reference_unresolved"],
+)
+
+cc_library(
+    name = "assembler_input",
+    textual_hdrs = ["fragment.inc"],
+)
+
+cc_library(
+    name = "assembler_bridge",
+    deps = [":assembler_input"],
+)
+
+cc_library(
+    name = "negative_direct_include",
+    srcs = ["include.s"],
+    copts = _ASM,
+    implementation_deps = [":assembler_input"],
+)
+
+cc_library(
+    name = "negative_indirect_include",
+    srcs = ["include.s"],
+    copts = _ASM,
+    implementation_deps = [":assembler_bridge"],
+)
+
+cc_library(
+    name = "negative_own_include",
+    srcs = [
+        "include.s",
+        "fragment.inc",
+    ],
+    copts = _ASM,
+)
+
+cc_library(
+    name = "negative_direct_incbin",
+    srcs = ["incbin.s"],
+    additional_compiler_inputs = ["payload.bin"],
+    copts = _ASM,
+)
+
+cc_library(
+    name = "negative_nested_include",
+    srcs = ["nested.s"],
+    additional_compiler_inputs = [
+        "nested.inc",
+        "fragment.inc",
+    ],
+    copts = _ASM,
+)
+
+cc_library(
+    name = "negative_macro_include",
+    srcs = ["macro.s"],
+    additional_compiler_inputs = ["fragment.inc"],
+    copts = _ASM,
+)

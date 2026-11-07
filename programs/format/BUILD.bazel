@@ -1,0 +1,34 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-format-lib",
+    srcs = ["Format.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
+        "@clickhouse_cctz//:tzdata",
+        "//src/Common",
+        "//src/Compression:clickhouse_compression",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/AggregateFunctions:headers",
+        "//src/Dictionaries:clickhouse_dictionaries__compile_0",
+        "//src/Functions:clickhouse_functions_obj__compile_0",
+        "//src/Parsers:clickhouse_parsers",
+        "//src/TableFunctions:headers",
+        "//src:dbms__compile_1",
+        "//src/Dictionaries:clickhouse_dictionaries",
+        "//src/TableFunctions:clickhouse_table_functions",
+        "//src:clickhouse_common_io__compile_0",
+        "//src:dbms__compile_0",
+        "//src:headers",
+        "//src/Common:string_utils",
+        "//src/Parsers:parser_api",
+        "//src/Functions:headers",
+        "//src/Parsers:headers",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
+)

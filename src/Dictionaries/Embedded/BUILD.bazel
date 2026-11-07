@@ -1,0 +1,39 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+_PRIVATE_DICTIONARIES_EMBEDDED_HEADERS = [
+    "GeodataProviders/HierarchiesProvider.h",
+    "GeodataProviders/HierarchyFormatReader.h",
+    "GeodataProviders/NamesFormatReader.h",
+    "GeodataProviders/NamesProvider.h",
+]
+
+ch_cc_library(
+    name = "clickhouse_dictionaries_embedded",
+    srcs = glob(["*.cpp"]) + glob(["GeodataProviders/*.cpp"]) + _PRIVATE_DICTIONARIES_EMBEDDED_HEADERS,
+    hdrs = glob(
+        [
+            "**/*.h",
+        ],
+        exclude = _PRIVATE_DICTIONARIES_EMBEDDED_HEADERS,
+    ),
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src/Common:parser_support_api",
+        "//src:io_string_buffers",
+        "//src/Common",
+        "//src:headers",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
+    deps = [
+        "//base:common",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/Common:memory_tracking_api",
+        "//src:core_defines",
+    ],
+)

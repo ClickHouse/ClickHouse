@@ -1,0 +1,53 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_roaring__compile_0",
+    srcs = [
+        "src/array_util.c",
+        "src/bitset.c",
+        "src/bitset_util.c",
+        "src/isadetection.c",
+        "src/memory.c",
+        "src/roaring64.c",
+        "src/roaring_array.c",
+        "src/roaring_priority_queue.c",
+        "src/art/art.c",
+    ] + glob(["src/containers/*.c"]),
+    hdrs = glob(["include/**/*.h"]),
+    includes = [
+        "include",
+    ],
+    language = "C",
+    source_header_directories = source_header_directories(["include"]),
+)
+
+ch_cc_library(
+    name = "_roaring",
+    srcs = [
+        "src/roaring.c",
+        "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
+    ],
+    hdrs = glob(["cpp/**/*.hh"]),
+    conlyopts = [
+        "-std=gnu11",
+        "-include",
+        "contrib/croaring-cmake/page_aligned_functions.h",
+    ],
+    copts = [
+        "-w",
+    ],
+    includes = [
+        "cpp",
+    ],
+    language = "C",
+    deps = [
+        ":_roaring__compile_0",
+    ],
+)

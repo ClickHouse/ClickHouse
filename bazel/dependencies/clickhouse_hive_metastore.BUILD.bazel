@@ -1,0 +1,25 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_hivemetastore",
+    srcs = glob(["*.cpp"]) + ["hive_metastore_constants.h"],
+    hdrs = [
+        "ThriftHiveMetastore.h",
+        "hive_metastore_types.h",
+    ],
+    local_defines = [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+    ] + CXX_RUNTIME_DEFINES,
+    deps = ["@clickhouse_thrift//:_thrift"],
+)

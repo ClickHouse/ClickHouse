@@ -1,0 +1,68 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_python//python:defs.bzl", "py_binary")
+load(":runtime_status.bzl", "runtime_status")
+
+package(default_testonly = True)
+
+cc_binary(
+    name = "public_zlib_binary",
+    srcs = ["zlib_roundtrip.cc"],
+    deps = ["@clickhouse_zlib_ng//:_zlib"],
+)
+
+cc_test(
+    name = "public_zlib_test",
+    srcs = ["zlib_roundtrip.cc"],
+    deps = ["@clickhouse_zlib_ng//:_zlib"],
+)
+
+# These two targets are analyzed by the link-action check. They are not
+# substituted for an executable with the supported ClickHouse runtime.
+cc_binary(
+    name = "public_zlib_shared",
+    srcs = ["zlib_shared.cc"],
+    linkshared = True,
+    deps = ["@clickhouse_zlib_ng//:_zlib"],
+)
+
+cc_binary(
+    name = "public_zlib_explicit_empty",
+    srcs = ["zlib_roundtrip.cc"],
+    link_extra_lib = "@bazel_tools//tools/cpp:empty_lib",
+    deps = ["@clickhouse_zlib_ng//:_zlib"],
+)
+
+py_binary(
+    name = "runtime_status_driver",
+    srcs = ["runtime_status.py"],
+    main = "runtime_status.py",
+)
+
+[
+    runtime_status(
+        name = "public_zlib_status_" + arch,
+        arch = arch,
+        binary = ":public_zlib_binary",
+        exec_compatible_with = [
+            "@platforms//cpu:" + arch,
+            "@platforms//os:linux",
+        ],
+        explicit_empty = ":public_zlib_explicit_empty",
+        shared = ":public_zlib_shared",
+        target_compatible_with = [
+            "@platforms//cpu:" + arch,
+            "@platforms//os:linux",
+        ],
+        test = ":public_zlib_test",
+    )
+    for arch in ("x86_64", "aarch64")
+]
+
+alias(
+    name = "public_zlib_status",
+    actual = select({
+        "@platforms//cpu:x86_64": ":public_zlib_status_x86_64",
+        "@platforms//cpu:aarch64": ":public_zlib_status_aarch64",
+    }),
+)

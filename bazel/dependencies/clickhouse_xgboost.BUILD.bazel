@@ -1,0 +1,56 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_xgboost",
+    srcs = glob(
+        [
+            "src/**/*.cc",
+            "src/**/*.h",
+        ],
+        exclude = [
+            "src/collective/in_memory_communicator.h",
+            "src/collective/nccl_stub.h",
+            "src/common/base64.h",
+            "src/common/cuda_dr_utils.h",
+            "src/common/cuda_pinned_allocator.h",
+            "src/common/cuda_stream_pool.h",
+        ],
+    ),
+    hdrs = glob(["include/**/*.h"]),
+    copts = [
+        "-w",
+        "-std=c++17",
+        "-include",
+        "exception",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = [
+        "DMLC_CORE_USE_CMAKE",
+        "DMLC_USE_CXX11=1",
+        "DMLC_USE_CXX14=1",
+    ] + CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "config/contrib/xgboost/dmlc-core",
+    ],
+    private_hdrs = [
+        "src/metric/elementwise_metric.cu",
+        "src/metric/multiclass_metric.cu",
+        "src/metric/survival_metric.cu",
+        "src/objective/aft_obj.cu",
+        "src/objective/hinge.cu",
+        "src/objective/multiclass_obj.cu",
+        "src/objective/quantile_obj.cu",
+        "src/objective/regression_obj.cu",
+    ],
+    source_header_directories = source_header_directories(["include"]),
+    deps = ["@clickhouse_dmlc_core//:_dmlc_core"],
+)

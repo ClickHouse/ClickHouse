@@ -1,0 +1,15 @@
+{
+  "/contrib/libxml2/Copyright": [
+    "MIT",
+    "/contrib/libxml2/test/html-tokenizer/NOTICE"
+  ],
+  "/contrib/pdqsort/license.txt": null,
+  "/contrib/rapidjson/license.txt": [
+    "MIT",
+    "/contrib/rapidjson/contrib/natvis/LICENSE"
+  ],
+  "/contrib/sz3/copyright-and-BSD-license.txt": [
+    "BSD",
+    "/contrib/sz3/tools/pysz/LICENSE"
+  ]
+}

@@ -1,0 +1,18 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE.md",
+])
+
+cc_library(
+    name = "pocketfft",
+    hdrs = glob(["**/*.h"]),
+    includes = [
+        ".",
+    ],
+)

@@ -1,0 +1,82 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+_S2_PRIVATE_HEADERS = [
+    "src/s2/s2random.h",
+    "src/s2/s2testing.h",
+    "src/s2/util/bitmap/bitmap.h",
+    "src/s2/util/bits/bit-interleave.h",
+    "src/s2/util/coding/nth-derivative.h",
+    "src/s2/util/coding/transforms.h",
+    "src/s2/util/task/status_macros.h",
+]
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_s2",
+    srcs = glob(
+        [
+            "src/s2/*.cc",
+            "src/s2/base/*.cc",
+            "src/s2/util/**/*.cc",
+        ],
+        exclude = [
+            "src/s2/**/*_test.cc",
+            "src/s2/*_testing.cc",
+            "src/s2/gmock_matchers.cc",
+        ],
+    ) + _S2_PRIVATE_HEADERS,
+    hdrs = glob(
+        ["src/**/*.h"],
+        # Exclude headers used only by upstream S2 tests.
+        exclude = [
+            "src/s2/*_testing.h",
+            "src/s2/base/timer.h",
+            "src/s2/gmock_matchers.h",
+            "src/s2/util/random/shared_bit_gen.h",
+        ] + _S2_PRIVATE_HEADERS,
+    ),
+    implementation_deps = [
+        "@clickhouse_abseil_cpp//:absl_cleanup_internal",
+        "@clickhouse_abseil_cpp//:absl_random_distributions",
+        "@clickhouse_abseil_cpp//:absl_memory",
+        "@clickhouse_abseil_cpp//:absl_vlog_config_internal",
+    ],
+    includes = [
+        "src",
+    ],
+    source_header_directories = source_header_directories(["src/s2/util/gtl"]),
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_flags_internal",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_die_if_null",
+        "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
+        "@clickhouse_abseil_cpp//:absl_random_random",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_algorithm",
+        "@clickhouse_abseil_cpp//:absl_base",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_bits",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_hash",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "@clickhouse_abseil_cpp//:absl_int128",
+        "@clickhouse_abseil_cpp//:absl_log_severity",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_random_mocking_access",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
+        "@clickhouse_abseil_cpp//:absl_throw_delegate",
+        "@clickhouse_abseil_cpp//:absl_type_traits",
+        "@clickhouse_abseil_cpp//:absl_utility",
+    ],
+)

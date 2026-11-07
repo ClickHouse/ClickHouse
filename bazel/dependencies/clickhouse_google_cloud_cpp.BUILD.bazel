@@ -1,0 +1,386 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_grpc_cc_library.bzl", "google_cloud_grpc_libraries")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load(":google/cloud/google_cloud_cpp_common.bzl", "google_cloud_cpp_common_hdrs", "google_cloud_cpp_common_srcs")
+load(":google/cloud/google_cloud_cpp_grpc_utils.bzl", "google_cloud_cpp_grpc_utils_srcs")
+load(":google/cloud/google_cloud_cpp_rest_internal.bzl", "google_cloud_cpp_rest_internal_srcs")
+load(":google/cloud/storage/google_cloud_cpp_storage.bzl", "google_cloud_cpp_storage_hdrs", "google_cloud_cpp_storage_srcs")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_internal_build_info_cc",
+    out = "config/contrib/google-cloud-cpp-cmake/internal/build_info.cc",
+    substitutions = {
+        "@GOOGLE_CLOUD_CPP_BUILD_METADATA@": "",
+        "@CMAKE_CXX_FLAGS@": "",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "${CMAKE_CXX_FLAGS_${GOOGLE_CLOUD_CPP_BUILD_TYPE_UPPER}}": "--gcc-toolchain=cmake/linux/../../contrib/sysroot/linux-x86_64 --no-default-config -fdiagnostics-color=always  -pipe -march=x86-64-v3 -mpclmul -fasynchronous-unwind-tables -fdebug-compilation-dir=. -ffile-prefix-map== -falign-functions=64 -falign-loops=32 -ffunction-sections -fdata-sections -faddrsig -mbranches-within-32B-boundaries -fstack-protector-strong -fstack-clash-protection -ffp-contract=off -fno-math-errno  -fdiagnostics-absolute-paths -fstrict-vtable-pointers -fPIE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST -w -ffunction-sections -fdata-sections -faddrsig -O3 -DNDEBUG",
+        },
+        "@platforms//cpu:aarch64": {
+            "${CMAKE_CXX_FLAGS_${GOOGLE_CLOUD_CPP_BUILD_TYPE_UPPER}}": "--gcc-toolchain=cmake/linux/../../contrib/sysroot/linux-aarch64 --no-default-config -fdiagnostics-color=always  -pipe -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16 -fasynchronous-unwind-tables -fdebug-compilation-dir=. -ffile-prefix-map== -falign-functions=64 -falign-loops=32 -ffunction-sections -fdata-sections -faddrsig -fstack-protector-strong -fstack-clash-protection -ffp-contract=off -fno-math-errno  -fdiagnostics-absolute-paths -fstrict-vtable-pointers -fPIE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST -w -ffunction-sections -fdata-sections -faddrsig -O3 -DNDEBUG",
+        },
+    }),
+    template = ":google/cloud/internal/build_info.cc.in",
+)
+
+_GRPC_LOCAL_DEFINES = select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": [
+        "ARM_ACLE",
+        "ARM_ASM_HWCAP",
+        "ARM_AUXV_HAS_CRC32",
+        "ARM_AUXV_HAS_NEON",
+        "ARM_FEATURES",
+        "ARM_NEON",
+        "ARM_NEON_HASLD4",
+        "HAVE_ARM_ACLE_H",
+    ],
+}) + [
+    "HAVE_ATTRIBUTE_ALIGNED",
+    "HAVE_BUILTIN_CTZ",
+    "HAVE_BUILTIN_CTZLL",
+    "HAVE_POSIX_MEMALIGN",
+] + select({
+    "@platforms//cpu:x86_64": [],
+    "@platforms//cpu:aarch64": [
+        "HAVE_SYS_AUXV_H",
+    ],
+}) + [
+    "HAVE_VISIBILITY_HIDDEN",
+    "HAVE_VISIBILITY_INTERNAL",
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "UNALIGNED_OK",
+    "WITH_GZFILEOP",
+    "X86_64",
+] + select({
+    "@platforms//cpu:x86_64": [
+        "X86_AVX2",
+        "X86_FEATURES",
+        "X86_PCLMULQDQ_CRC",
+        "X86_SSE2",
+        "X86_SSE42",
+        "X86_SSSE3",
+    ],
+    "@platforms//cpu:aarch64": [],
+}) + [
+    "ZLIB_COMPAT",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+]
+
+_DEBUG_COPTS = [
+    "-w",
+    "-std=c++23",
+    "-g1",
+]
+
+google_cloud_grpc_libraries(
+    local_defines = _GRPC_LOCAL_DEFINES,
+    storage_copts = _DEBUG_COPTS,
+)
+
+# ClickHouse and the other Google Cloud libraries include some upstream internal headers.
+# Keep the headers used only by google_cloud_cpp_common in its srcs.
+_COMMON_PRIVATE_HEADERS = [
+    "internal/build_info.h",
+    "internal/compiler_info.h",
+    "internal/detect_gcp.h",
+    "internal/detect_gcp_impl.h",
+    "internal/log_impl.h",
+    "internal/strerror.h",
+    "internal/timer_queue.h",
+    "internal/user_agent_prefix.h",
+]
+
+# disable_msvc_crt_secure_warnings.inc is only used on Windows.
+_COMMON_HEADER_EXCLUSIONS = _COMMON_PRIVATE_HEADERS + ["internal/disable_msvc_crt_secure_warnings.inc"]
+
+ch_cc_library(
+    name = "google_cloud_cpp_common",
+    srcs = [":config/contrib/google-cloud-cpp-cmake/internal/build_info.cc"] + [
+        "google/cloud/" + src
+        for src in google_cloud_cpp_common_srcs + _COMMON_PRIVATE_HEADERS
+    ],
+    hdrs = [
+        "google/cloud/" + hdr
+        for hdr in google_cloud_cpp_common_hdrs
+        if hdr not in _COMMON_HEADER_EXCLUSIONS
+    ],
+    copts = _DEBUG_COPTS,
+    implementation_deps = [
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_re2//:_re2",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+    ],
+    local_includes = [
+        ".",
+    ],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_abseil_cpp//:absl_type_traits",
+        "@clickhouse_abseil_cpp//:absl_variant",
+    ],
+)
+
+ch_cc_library(
+    name = "google_cloud_cpp_grpc_utils",
+    srcs = ["google/cloud/" + src for src in google_cloud_cpp_grpc_utils_srcs],
+    hdrs = [
+        "google/cloud/async_operation.h",
+        "google/cloud/async_streaming_read_write_rpc.h",
+        "google/cloud/background_threads.h",
+        "google/cloud/completion_queue.h",
+        "google/cloud/connection_options.h",
+        "google/cloud/grpc_error_delegate.h",
+        "google/cloud/grpc_options.h",
+        "google/cloud/iam_updater.h",
+        "google/cloud/internal/async_connection_ready.h",
+        "google/cloud/internal/async_long_running_operation.h",
+        "google/cloud/internal/async_polling_loop.h",
+        "google/cloud/internal/async_retry_loop.h",
+        "google/cloud/internal/async_retry_unary_rpc.h",
+        "google/cloud/internal/async_rpc_details.h",
+        "google/cloud/internal/background_threads_impl.h",
+        "google/cloud/internal/completion_queue_impl.h",
+        "google/cloud/internal/debug_string_protobuf.h",
+        "google/cloud/internal/debug_string_status.h",
+        "google/cloud/internal/default_completion_queue_impl.h",
+        "google/cloud/internal/extract_long_running_result.h",
+        "google/cloud/internal/grpc_access_token_authentication.h",
+        "google/cloud/internal/grpc_api_key_authentication.h",
+        "google/cloud/internal/grpc_async_access_token_cache.h",
+        "google/cloud/internal/grpc_channel_credentials_authentication.h",
+        "google/cloud/internal/grpc_impersonate_service_account.h",
+        "google/cloud/internal/grpc_metadata_view.h",
+        "google/cloud/internal/grpc_opentelemetry.h",
+        "google/cloud/internal/grpc_request_metadata.h",
+        "google/cloud/internal/grpc_service_account_authentication.h",
+        "google/cloud/internal/log_wrapper.h",
+        "google/cloud/internal/minimal_iam_credentials_stub.h",
+        "google/cloud/internal/populate_grpc_options.h",
+        "google/cloud/internal/resumable_streaming_read_rpc.h",
+        "google/cloud/internal/retry_loop.h",
+        "google/cloud/internal/routing_matcher.h",
+        "google/cloud/internal/setup_context.h",
+        "google/cloud/internal/streaming_write_rpc.h",
+        "google/cloud/internal/streaming_write_rpc_impl.h",
+        "google/cloud/internal/streaming_write_rpc_logging.h",
+        "google/cloud/internal/streaming_write_rpc_tracing.h",
+        "google/cloud/internal/time_utils.h",
+        "google/cloud/internal/unified_grpc_credentials.h",
+    ] + glob([
+        "google/cloud/internal/async_read_*.h",
+        "google/cloud/internal/async_streaming_*.h",
+        "google/cloud/internal/streaming_read_*.h",
+    ]),
+    implementation_deps = [
+        "@clickhouse//bazel:google_rpc_error_details_cc_proto",
+    ],
+    local_defines = _GRPC_LOCAL_DEFINES,
+    local_includes = [
+        ".",
+        "config/contrib/google-cloud-cpp-cmake",
+    ],
+    deps = [
+        ":google_cloud_cpp_common",
+        ":google_cloud_cpp_iam_credentials_v1_iamcredentials_protos",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "@clickhouse_grpc//:grpc++",
+        "@clickhouse//bazel:google_iam_v1_policy_cc_proto",
+        "@clickhouse//bazel:google_longrunning_operations_cc_proto",
+        "@clickhouse//bazel:google_rpc_status_cc_proto",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_variant",
+    ],
+)
+
+# //src:unit_tests_dbms inherits the grpc_utils link inputs through google_cloud_cpp_storage.
+cc_library(
+    name = "google_cloud_cpp_grpc_utils_link",
+    implementation_deps = [":google_cloud_cpp_grpc_utils"],
+    visibility = ["//visibility:private"],
+)
+
+ch_cc_library(
+    name = "google_cloud_cpp_rest_internal",
+    srcs = [
+        "google/cloud/" + src
+        for src in google_cloud_cpp_rest_internal_srcs
+        if not src.startswith(("internal/curl_", "internal/win32/"))
+    ] + [
+        "@clickhouse//contrib:google-cloud-cpp-cmake/poco_rest_client.cc",
+        "google/cloud/internal/external_account_source_format.h",
+        "google/cloud/internal/external_account_token_source_aws.h",
+        "google/cloud/internal/external_account_token_source_file.h",
+        "google/cloud/internal/external_account_token_source_url.h",
+        "google/cloud/internal/json_parsing.h",
+        "google/cloud/internal/make_jwt_assertion.h",
+        "google/cloud/internal/oauth2_access_token_credentials.h",
+        "google/cloud/internal/oauth2_anonymous_credentials.h",
+        "google/cloud/internal/oauth2_api_key_credentials.h",
+        "google/cloud/internal/oauth2_error_credentials.h",
+        "google/cloud/internal/oauth2_impersonate_service_account_credentials.h",
+        "google/cloud/internal/oauth2_logging_credentials.h",
+        "google/cloud/internal/oauth2_universe_domain.h",
+        "google/cloud/internal/rest_carrier.h",
+        "google/cloud/internal/rest_opentelemetry.h",
+        "google/cloud/internal/tracing_http_payload.h",
+        "google/cloud/internal/tracing_rest_response.h",
+    ],
+    hdrs = [
+        "google/cloud/internal/binary_data_as_debug_string.h",
+        "google/cloud/internal/curl_handle_factory.h",
+        "google/cloud/internal/curl_options.h",
+        "google/cloud/internal/curl_wrappers.h",
+        "google/cloud/internal/http_payload.h",
+        "google/cloud/internal/oauth2_authorized_user_credentials.h",
+        "google/cloud/internal/oauth2_cached_credentials.h",
+        "google/cloud/internal/oauth2_compute_engine_credentials.h",
+        "google/cloud/internal/oauth2_credential_constants.h",
+        "google/cloud/internal/oauth2_credentials.h",
+        "google/cloud/internal/oauth2_decorate_credentials.h",
+        "google/cloud/internal/oauth2_external_account_credentials.h",
+        "google/cloud/internal/oauth2_external_account_token_source.h",
+        "google/cloud/internal/oauth2_google_application_default_credentials_file.h",
+        "google/cloud/internal/oauth2_google_credentials.h",
+        "google/cloud/internal/oauth2_http_client_factory.h",
+        "google/cloud/internal/oauth2_minimal_iam_credentials_rest.h",
+        "google/cloud/internal/oauth2_refreshing_credentials_wrapper.h",
+        "google/cloud/internal/oauth2_service_account_credentials.h",
+        "google/cloud/internal/parse_service_account_p12_file.h",
+        "google/cloud/internal/percent_encode.h",
+        "google/cloud/internal/populate_rest_options.h",
+        "google/cloud/internal/rest_client.h",
+        "google/cloud/internal/rest_context.h",
+        "google/cloud/internal/rest_lro_helpers.h",
+        "google/cloud/internal/rest_options.h",
+        "google/cloud/internal/rest_parse_json_error.h",
+        "google/cloud/internal/rest_request.h",
+        "google/cloud/internal/rest_response.h",
+        "google/cloud/internal/rest_retry_loop.h",
+        "google/cloud/internal/rest_set_metadata.h",
+        "google/cloud/internal/sign_using_sha256.h",
+        "google/cloud/internal/unified_rest_credentials.h",
+        "google/cloud/rest_options.h",
+        "google/cloud/internal/tracing_rest_client.h",
+    ],
+    copts = _DEBUG_COPTS,
+    implementation_deps = [
+        "@clickhouse//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+        "@clickhouse//base/poco/Foundation:_poco_foundation",
+        "@clickhouse//base/poco/Net:_poco_net",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_openssl//:crypto",
+    ],
+    local_defines = [
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+    ] + CXX_RUNTIME_DEFINES,
+    local_includes = [
+        ".",
+    ],
+    deps = [
+        ":google_cloud_cpp_common",
+        "@clickhouse_nlohmann_json//:nlohmann_json",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_span",
+    ],
+)
+
+_STORAGE_PRIVATE_HEADERS = [
+    "internal/access_control_common.h",
+    "internal/access_control_common_parser.h",
+    "internal/access_token_credentials.h",
+    "internal/binary_data_as_debug_string.h",
+    "internal/bucket_access_control_parser.h",
+    "internal/bucket_metadata_parser.h",
+    "internal/connection_factory.h",
+    "internal/connection_impl.h",
+    "internal/crc32c.h",
+    "internal/error_credentials.h",
+    "internal/generate_message_boundary.h",
+    "internal/generic_stub.h",
+    "internal/generic_stub_adapter.h",
+    "internal/generic_stub_factory.h",
+    "internal/hash_function_impl.h",
+    "internal/hash_validator_impl.h",
+    "internal/hmac_key_metadata_parser.h",
+    "internal/impersonate_service_account_credentials.h",
+    "internal/lifecycle_rule_parser.h",
+    "internal/logging_stub.h",
+    "internal/make_jwt_assertion.h",
+    "internal/md5hash.h",
+    "internal/notification_metadata_parser.h",
+    "internal/object_access_control_parser.h",
+    "internal/object_metadata_parser.h",
+    "internal/patch_builder_details.h",
+    "internal/rest/object_read_source.h",
+    "internal/rest/request_builder.h",
+    "internal/rest/stub.h",
+    "internal/retry_object_read_source.h",
+    "internal/service_account_parser.h",
+    "internal/tracing_connection.h",
+    "internal/tracing_object_read_source.h",
+    "internal/unified_rest_credentials.h",
+]
+
+ch_cc_library(
+    name = "google_cloud_cpp_storage",
+    srcs = [
+        "google/cloud/storage/" + src
+        for src in google_cloud_cpp_storage_srcs + _STORAGE_PRIVATE_HEADERS
+        if not src.startswith("internal/win32/")
+    ],
+    hdrs = [
+        "google/cloud/storage/" + hdr
+        for hdr in google_cloud_cpp_storage_hdrs
+        if hdr not in _STORAGE_PRIVATE_HEADERS
+    ],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-g1",
+    ],
+    implementation_deps = [
+        ":google_cloud_cpp_grpc_utils_link",
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_crc32c//:_crc32c",
+        "@clickhouse_abseil_cpp//:absl_base_config",
+        "@clickhouse_abseil_cpp//:absl_crc32c",
+        "@clickhouse_abseil_cpp//:absl_str_format_internal",
+        "@clickhouse_openssl//:crypto",
+    ],
+    local_includes = [
+        ".",
+    ],
+    deps = [
+        ":google_cloud_cpp_rest_internal",
+        ":google_cloud_cpp_common",
+        "@clickhouse_abseil_cpp//:absl_cord",
+        "@clickhouse_abseil_cpp//:absl_optional",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_time",
+        "@clickhouse_abseil_cpp//:absl_type_traits",
+        "@clickhouse_abseil_cpp//:absl_variant",
+        "@clickhouse_nlohmann_json//:nlohmann_json",
+    ],
+)

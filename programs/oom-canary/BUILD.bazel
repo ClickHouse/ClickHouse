@@ -1,0 +1,23 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//programs:program_defines.bzl", "CLICKHOUSE_PROGRAM_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-oom-canary-lib",
+    srcs = [
+        "clickhouse-oom-canary.cpp",
+        "OomCanary.cpp",
+    ],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:clickhouse_common_io__compile_0",
+        "@clickhouse_fmtlib//:_fmt",
+        "//src/Common",
+        "//src:dbms",
+        "//src/Common:exception_api",
+        "//src:headers",
+    ],
+    link_runtime = True,
+    local_defines = CLICKHOUSE_PROGRAM_DEFINES,
+)

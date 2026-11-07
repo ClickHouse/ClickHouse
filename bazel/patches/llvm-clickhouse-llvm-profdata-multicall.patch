@@ -1,0 +1,1584 @@
+diff --git a/llvm/BUILD.bazel b/llvm/BUILD.bazel
+--- a/llvm/BUILD.bazel
++++ b/llvm/BUILD.bazel
+@@ -5757,12 +5757,23 @@
+         ":Core",
+         ":Debuginfod",
+         ":Object",
++        ":Option",
++        ":ProfdataOptsTableGen",
+         ":ProfileData",
+         ":Support",
+     ],
+ )
+ 
+-cc_binary(
++gentbl_cc_library(
++    name = "ProfdataOptsTableGen",
++    strip_include_prefix = "tools/llvm-profdata",
++    tbl_outs = {"tools/llvm-profdata/Opts.inc": ["-gen-opt-parser-defs"]},
++    tblgen = ":llvm-tblgen",
++    td_file = "tools/llvm-profdata/Opts.td",
++    deps = [":OptParserTdFiles"],
++)
++
++llvm_driver_cc_binary(
+     name = "llvm-profdata",
+     stamp = 0,
+     deps = [":llvm-profdata-lib"],
+diff --git a/llvm/driver.bzl b/llvm/driver.bzl
+--- a/llvm/driver.bzl
++++ b/llvm/driver.bzl
+@@ -29,6 +29,7 @@
+     "llvm-nm": "//llvm:llvm-nm-lib",
+     "llvm-objcopy": "//llvm:llvm-objcopy-lib",
+     "llvm-objdump": "//llvm:llvm-objdump-lib",
++    "llvm-profdata": "//llvm:llvm-profdata-lib",
+     "llvm-rc": "//llvm:llvm-rc-lib",
+     "llvm-readobj": "//llvm:llvm-readobj-lib",
+     "llvm-size": "//llvm:llvm-size-lib",
+diff --git a/llvm/tools/llvm-profdata/Opts.td b/llvm/tools/llvm-profdata/Opts.td
+--- /dev/null
++++ b/llvm/tools/llvm-profdata/Opts.td
+@@ -0,0 +1,314 @@
++include "llvm/Option/OptParser.td"
++
++def Show : SubCommand<"show",
++                      "Takes a profile data file and displays the profiles. "
++                      "See detailed documentation in "
++                      "https://llvm.org/docs/CommandGuide/llvm-profdata.html"
++                      "#profdata-show">;
++def Order : SubCommand<"order",
++                       "Reads temporal profiling traces from a profile and "
++                       "outputs a function order that reduces page faults. "
++                       "See detailed documentation in "
++                       "https://llvm.org/docs/CommandGuide/llvm-profdata.html"
++                       "#profdata-order">;
++def Overlap : SubCommand<"overlap",
++                         "Computes the overlap between two profiles. See "
++                         "detailed documentation in "
++                         "https://llvm.org/docs/CommandGuide/llvm-profdata.html"
++                         "#profdata-overlap">;
++def Merge : SubCommand<"merge",
++                       "Takes several profiles and merge them together. See "
++                       "detailed documentation in "
++                       "https://llvm.org/docs/CommandGuide/llvm-profdata.html"
++                       "#profdata-merge">;
++
++def help : Flag<["-","--"], "help", [Show, Order, Overlap, Merge]>,
++           HelpText<"Display this help">;
++def help_hidden : Flag<["--"], "help-hidden", [Show, Order, Overlap, Merge]>,
++                  HelpText<"Display all help, including hidden options">;
++def version : Flag<["--"], "version", [Show, Order, Overlap, Merge]>,
++              HelpText<"Display the version">;
++
++def output : JoinedOrSeparate<["-","--"], "output",
++                               [Show, Order, Overlap, Merge]>,
++             MetaVarName<"<output>">,
++             HelpText<"Output file">;
++def : JoinedOrSeparate<["-"], "o", [Show, Order, Overlap, Merge]>,
++     Alias<output>, HelpText<"Alias for --output">;
++
++def instr : Flag<["-","--"], "instr", [Show, Overlap, Merge]>,
++            HelpText<"Instrumentation profile (default)">;
++def sample : Flag<["-","--"], "sample", [Show, Overlap, Merge]>,
++             HelpText<"Sample profile">;
++def memory : Flag<["-","--"], "memory", [Show]>,
++             HelpText<"MemProf memory access profile">;
++
++def max_debug_info_correlation_warnings
++    : JoinedOrSeparate<["-","--"], "max-debug-info-correlation-warnings",
++                       [Show, Merge]>,
++      HelpText<"Maximum number of warnings to emit when correlating profile "
++               "from debug info (0 = no limit)">,
++      MetaVarName<"<n>">;
++def profiled_binary
++    : JoinedOrSeparate<["-","--"], "profiled-binary", [Show, Merge]>,
++      HelpText<"Path to binary from which the profile was collected.">,
++      MetaVarName<"<binary>">;
++def debug_info
++    : JoinedOrSeparate<["-","--"], "debug-info", [Show, Merge]>,
++      HelpText<"For show, read and extract profile metadata from debug info. "
++               "For merge, correlate the raw profile using the provided "
++               "debug info.">,
++      MetaVarName<"<file>">;
++def binary_file
++    : JoinedOrSeparate<["-","--"], "binary-file", [Merge]>,
++      HelpText<"Use the provided unstripped binary to correlate the raw "
++               "profile.">,
++      MetaVarName<"<file>">;
++def debug_file_directory
++    : JoinedOrSeparate<["-","--"], "debug-file-directory",
++                       [Show, Order, Overlap, Merge]>,
++      HelpText<"Directories to search for object files by build ID">,
++      MetaVarName<"<dir>">;
++def debuginfod : Flag<["-","--"], "debuginfod", [Merge]>,
++                 HelpText<"Enable debuginfod">, Flags<[HelpHidden]>;
++def correlate : JoinedOrSeparate<["-","--"], "correlate",
++                                  [Show, Order, Overlap, Merge]>,
++                HelpText<"Use debug-info or binary correlation to correlate "
++                         "profiles with build id fetcher">,
++                MetaVarName<"<mode>">;
++def function : JoinedOrSeparate<["-","--"], "function",
++                                [Show, Overlap, Merge]>,
++               HelpText<"Only functions matching the filter are shown or "
++                        "merged.">,
++               MetaVarName<"<regex>">;
++
++def weighted_input
++    : JoinedOrSeparate<["-","--"], "weighted-input", [Merge]>,
++      HelpText<"<weight>,<filename>">, MetaVarName<"<weight>,<file>">;
++def binary : Flag<["-","--"], "binary", [Merge]>,
++             HelpText<"Binary encoding">;
++def extbinary : Flag<["-","--"], "extbinary", [Merge]>,
++                HelpText<"Extensible binary encoding (default)">;
++def text : Flag<["-","--"], "text", [Show, Merge]>,
++           HelpText<"Text output format">;
++def gcc : Flag<["-","--"], "gcc", [Merge]>,
++          HelpText<"GCC encoding (only meaningful for -sample)">;
++def input_files
++    : JoinedOrSeparate<["-","--"], "input-files", [Merge]>,
++      HelpText<"Path to file containing newline-separated "
++               "[<weight>,]<filename> entries">,
++      MetaVarName<"<file>">;
++def : JoinedOrSeparate<["-"], "f", [Merge]>, Alias<input_files>,
++     HelpText<"Alias for --input-files">;
++def dump_input_file_list : Flag<["-","--"], "dump-input-file-list", [Merge]>,
++                           HelpText<"Dump the list of input files and their "
++                                    "weights, then exit">,
++                           Flags<[HelpHidden]>;
++def remapping_file
++    : JoinedOrSeparate<["-","--"], "remapping-file", [Merge]>,
++      HelpText<"Symbol remapping file">, MetaVarName<"<file>">;
++def : JoinedOrSeparate<["-"], "r", [Merge]>, Alias<remapping_file>,
++     HelpText<"Alias for --remapping-file">;
++def use_md5 : Flag<["-","--"], "use-md5", [Merge]>,
++              HelpText<"Use MD5 to represent strings in the name table "
++                       "(only meaningful for -extbinary)">,
++              Flags<[HelpHidden]>;
++def compress_all_sections
++    : Flag<["-","--"], "compress-all-sections", [Merge]>,
++      HelpText<"Compress all sections when writing the profile (only "
++               "meaningful for -extbinary)">,
++      Flags<[HelpHidden]>;
++def sample_merge_cold_context
++    : Flag<["-","--"], "sample-merge-cold-context", [Merge]>,
++      HelpText<"Merge context sample profiles whose count is below cold "
++               "threshold">,
++      Flags<[HelpHidden]>;
++def sample_trim_cold_context
++    : Flag<["-","--"], "sample-trim-cold-context", [Merge]>,
++      HelpText<"Trim context sample profiles whose count is below cold "
++               "threshold">,
++      Flags<[HelpHidden]>;
++def sample_frame_depth_for_cold_context
++    : JoinedOrSeparate<["-","--"], "sample-frame-depth-for-cold-context",
++                       [Merge]>,
++      HelpText<"Keep the last K frames while merging cold profile. 1 means "
++               "the context-less base profile">,
++      Flags<[HelpHidden]>, MetaVarName<"<depth>">;
++def output_size_limit
++    : JoinedOrSeparate<["-","--"], "output-size-limit", [Merge]>,
++      HelpText<"Trim cold functions until profile size is below specified "
++               "limit in bytes">,
++      Flags<[HelpHidden]>, MetaVarName<"<bytes>">;
++def gen_partial_profile
++    : Flag<["-","--"], "gen-partial-profile", [Merge]>,
++      HelpText<"Generate a partial profile (only meaningful for -extbinary)">,
++      Flags<[HelpHidden]>;
++def split_layout : Flag<["-","--"], "split-layout", [Merge]>,
++                   HelpText<"Split the profile into sections with and without "
++                            "inlined functions (only meaningful for "
++                            "-extbinary)">,
++                   Flags<[HelpHidden]>;
++def supplement_instr_with_sample
++    : JoinedOrSeparate<["-","--"], "supplement-instr-with-sample", [Merge]>,
++      HelpText<"Supplement an instr profile with a sample profile. Output "
++               "will be in instr format.">,
++      Flags<[HelpHidden]>, MetaVarName<"<sample-profile>">;
++def zero_counter_threshold
++    : JoinedOrSeparate<["-","--"], "zero-counter-threshold", [Merge]>,
++      HelpText<"Ratio of zero counters required to drop a function when "
++               "supplementing instr profiles">,
++      Flags<[HelpHidden]>, MetaVarName<"<ratio>">;
++def suppl_min_size_threshold
++    : JoinedOrSeparate<["-","--"], "suppl-min-size-threshold", [Merge]>,
++      HelpText<"Assume functions smaller than this threshold can be inlined "
++               "and will not be adjusted based on sample profile.">,
++      Flags<[HelpHidden]>, MetaVarName<"<n>">;
++def instr_prof_cold_threshold
++    : JoinedOrSeparate<["-","--"], "instr-prof-cold-threshold", [Merge]>,
++      HelpText<"User specified cold threshold for instr profile to override "
++               "the cold threshold from profile summary.">,
++      Flags<[HelpHidden]>, MetaVarName<"<n>">;
++def temporal_profile_trace_reservoir_size
++    : JoinedOrSeparate<["-","--"], "temporal-profile-trace-reservoir-size",
++                       [Merge]>,
++      HelpText<"Maximum number of stored temporal profile traces (default: "
++               "100)">,
++      MetaVarName<"<n>">;
++def temporal_profile_max_trace_length
++    : JoinedOrSeparate<["-","--"], "temporal-profile-max-trace-length",
++                       [Merge]>,
++      HelpText<"Maximum length of a single temporal profile trace "
++               "(default: 10000)">,
++      MetaVarName<"<n>">;
++def no_function : JoinedOrSeparate<["-","--"], "no-function", [Merge]>,
++                  HelpText<"Exclude functions matching the filter from the "
++                           "output.">,
++                  MetaVarName<"<regex>">;
++def failure_mode
++    : JoinedOrSeparate<["-","--"], "failure-mode", [Merge]>,
++      HelpText<"Failure mode: warn, any, or all">,
++      MetaVarName<"<mode>">;
++def sparse : Flag<["-","--"], "sparse", [Merge]>,
++             HelpText<"Generate a sparse profile (only meaningful for -instr)">;
++def num_threads : JoinedOrSeparate<["-","--"], "num-threads", [Merge]>,
++                  HelpText<"Number of merge threads to use (default: autodetect)">,
++                  MetaVarName<"<n>">;
++def : JoinedOrSeparate<["-"], "j", [Merge]>, Alias<num_threads>,
++     HelpText<"Alias for --num-threads">;
++def prof_sym_list
++    : JoinedOrSeparate<["-","--"], "prof-sym-list", [Merge]>,
++      HelpText<"Path to file containing the list of function symbols used to "
++               "populate profile symbol list">,
++      MetaVarName<"<file>">;
++def convert_sample_profile_layout
++    : JoinedOrSeparate<["-","--"], "convert-sample-profile-layout", [Merge]>,
++      HelpText<"Convert the generated profile to a new layout: nest or flat">,
++      MetaVarName<"<layout>">;
++def drop_profile_symbol_list
++    : Flag<["-","--"], "drop-profile-symbol-list", [Merge]>,
++      HelpText<"Drop the profile symbol list when merging AutoFDO profiles "
++               "(only meaningful for -sample)">,
++      Flags<[HelpHidden]>;
++def keep_vtable_symbols
++    : Flag<["-","--"], "keep-vtable-symbols", [Merge]>,
++      HelpText<"Keep the vtable symbols in indexed profiles">,
++      Flags<[HelpHidden]>;
++def write_prev_version
++    : Flag<["-","--"], "write-prev-version", [Merge]>,
++      HelpText<"Write the previous version of indexed format for forward "
++               "compatibility.">,
++      Flags<[HelpHidden]>;
++def memprof_version
++    : JoinedOrSeparate<["-","--"], "memprof-version", [Merge]>,
++      HelpText<"Specify the version of the memprof format to use (2, 3, or 4)">,
++      Flags<[HelpHidden]>, MetaVarName<"<n>">;
++def memprof_full_schema
++    : Flag<["-","--"], "memprof-full-schema", [Merge]>,
++      HelpText<"Use the full schema for serialization">,
++      Flags<[HelpHidden]>;
++def memprof_random_hotness
++    : Flag<["-","--"], "memprof-random-hotness", [Merge]>,
++      HelpText<"Generate random hotness values">,
++      Flags<[HelpHidden]>;
++def memprof_random_hotness_seed
++    : JoinedOrSeparate<["-","--"], "memprof-random-hotness-seed", [Merge]>,
++      HelpText<"Random hotness seed to use (0 to generate new seed)">,
++      Flags<[HelpHidden]>, MetaVarName<"<n>">;
++
++def similarity_cutoff
++    : JoinedOrSeparate<["-","--"], "similarity-cutoff", [Overlap]>,
++      HelpText<"List overlapped functions with similarities below the cutoff "
++               "(percentage times 10000).">,
++      MetaVarName<"<n>">;
++def cs : Flag<["-","--"], "cs", [Overlap]>,
++         HelpText<"For context sensitive PGO counts. Does not work with "
++                  "CSSPGO.">;
++def value_cutoff
++    : JoinedOrSeparate<["-","--"], "value-cutoff", [Show, Overlap]>,
++      HelpText<"Cutoff value used for filtering. Meaning depends on subcommand">,
++      MetaVarName<"<n>">;
++
++def counts : Flag<["-","--"], "counts", [Show]>,
++             HelpText<"Show counter values for shown functions">;
++def show_format
++    : JoinedOrSeparate<["-","--"], "show-format", [Show]>,
++      HelpText<"Emit output in the selected format: text, json, or yaml">,
++      MetaVarName<"<format>">;
++def json : Flag<["-","--"], "json", [Show]>,
++           HelpText<"Show sample profile data in JSON format "
++                    "(deprecated, use --show-format=json)">;
++def ic_targets : Flag<["-","--"], "ic-targets", [Show]>,
++                 HelpText<"Show indirect call site target values">;
++def show_vtables : Flag<["-","--"], "show-vtables", [Show]>,
++                   HelpText<"Show vtable names for shown functions">;
++def memop_sizes : Flag<["-","--"], "memop-sizes", [Show]>,
++                  HelpText<"Show profiled sizes of memory intrinsic calls">;
++def detailed_summary : Flag<["-","--"], "detailed-summary", [Show]>,
++                       HelpText<"Show detailed profile summary">;
++def detailed_summary_cutoffs
++    : CommaJoined<["-","--"], "detailed-summary-cutoffs", [Show]>,
++      HelpText<"Cutoff percentages (times 10000) for generating detailed "
++               "summary">,
++      MetaVarName<"<list>">;
++def hot_func_list : Flag<["-","--"], "hot-func-list", [Show]>,
++                    HelpText<"Show profile summary of a list of hot functions">;
++def all_functions : Flag<["-","--"], "all-functions", [Show]>,
++                    HelpText<"Details for each and every function">;
++def showcs : Flag<["-","--"], "showcs", [Show]>,
++             HelpText<"Show context sensitive counts">;
++def topn : JoinedOrSeparate<["-","--"], "topn", [Show]>,
++           HelpText<"Show the list of functions with the largest internal counts">,
++           MetaVarName<"<n>">;
++def list_below_cutoff
++    : Flag<["-","--"], "list-below-cutoff", [Show]>,
++      HelpText<"Only output names of functions whose max count values are "
++               "below the cutoff value">;
++def show_prof_sym_list
++    : Flag<["-","--"], "show-prof-sym-list", [Show]>,
++      HelpText<"Show profile symbol list if it exists in the profile.">;
++def show_sec_info_only
++    : Flag<["-","--"], "show-sec-info-only", [Show]>,
++      HelpText<"Show the information of each section in the sample profile "
++               "(extbinary sample profiles only)">;
++def binary_ids : Flag<["-","--"], "binary-ids", [Show]>,
++                 HelpText<"Show binary ids in the profile.">;
++def temporal_profile_traces
++    : Flag<["-","--"], "temporal-profile-traces", [Show]>,
++      HelpText<"Show temporal profile traces in the profile.">;
++def covered : Flag<["-","--"], "covered", [Show]>,
++              HelpText<"Show only the functions that have been executed.">;
++def profile_version : Flag<["-","--"], "profile-version", [Show]>,
++                      HelpText<"Show profile version.">;
++
++def num_test_traces
++    : JoinedOrSeparate<["-","--"], "num-test-traces", [Order]>,
++      HelpText<"Keep aside the last <num-test-traces> traces when computing "
++               "function order to evaluate that order">,
++      MetaVarName<"<n>">;
++
++def fs_discriminator_pass
++    : JoinedOrSeparate<["-","--"], "fs-discriminator-pass",
++                       [Show, Overlap, Merge]>,
++      HelpText<"Zero out the discriminator bits for the FS discriminator "
++               "pass beyond this value.">,
++      Flags<[HelpHidden]>, MetaVarName<"<pass>">;
+diff --git a/llvm/tools/llvm-profdata/llvm-profdata.cpp b/llvm/tools/llvm-profdata/llvm-profdata.cpp
+--- a/llvm/tools/llvm-profdata/llvm-profdata.cpp
++++ b/llvm/tools/llvm-profdata/llvm-profdata.cpp
+@@ -10,13 +10,20 @@
+ //
+ //===----------------------------------------------------------------------===//
+ 
++#include "llvm/ADT/ArrayRef.h"
+ #include "llvm/ADT/ScopeExit.h"
+ #include "llvm/ADT/SmallSet.h"
++#include "llvm/ADT/SmallString.h"
+ #include "llvm/ADT/SmallVector.h"
+ #include "llvm/ADT/StringRef.h"
++#include "llvm/ADT/StringSwitch.h"
+ #include "llvm/Debuginfod/HTTPClient.h"
+ #include "llvm/IR/LLVMContext.h"
+ #include "llvm/Object/Binary.h"
++#include "llvm/Option/Arg.h"
++#include "llvm/Option/ArgList.h"
++#include "llvm/Option/OptTable.h"
++#include "llvm/Option/Option.h"
+ #include "llvm/ProfileData/DataAccessProf.h"
+ #include "llvm/ProfileData/InstrProfCorrelator.h"
+ #include "llvm/ProfileData/InstrProfReader.h"
+@@ -35,11 +42,12 @@
+ #include "llvm/Support/FileSystem.h"
+ #include "llvm/Support/Format.h"
+ #include "llvm/Support/FormattedStream.h"
+-#include "llvm/Support/InitLLVM.h"
++#include "llvm/Support/LLVMDriver.h"
+ #include "llvm/Support/MD5.h"
+ #include "llvm/Support/MemoryBuffer.h"
+ #include "llvm/Support/Path.h"
+ #include "llvm/Support/Regex.h"
++#include "llvm/Support/StringSaver.h"
+ #include "llvm/Support/ThreadPool.h"
+ #include "llvm/Support/Threading.h"
+ #include "llvm/Support/VirtualFileSystem.h"
+@@ -47,34 +55,14 @@
+ #include "llvm/Support/raw_ostream.h"
+ #include <algorithm>
+ #include <cmath>
++#include <limits>
+ #include <optional>
+ 
++#include "Opts.inc"
++
+ using namespace llvm;
++using namespace llvm::opt;
+ using ProfCorrelatorKind = InstrProfCorrelator::ProfCorrelatorKind;
+-
+-// https://llvm.org/docs/CommandGuide/llvm-profdata.html has documentations
+-// on each subcommand.
+-cl::SubCommand ShowSubcommand(
+-    "show",
+-    "Takes a profile data file and displays the profiles. See detailed "
+-    "documentation in "
+-    "https://llvm.org/docs/CommandGuide/llvm-profdata.html#profdata-show");
+-cl::SubCommand OrderSubcommand(
+-    "order",
+-    "Reads temporal profiling traces from a profile and outputs a function "
+-    "order that reduces the number of page faults for those traces. See "
+-    "detailed documentation in "
+-    "https://llvm.org/docs/CommandGuide/llvm-profdata.html#profdata-order");
+-cl::SubCommand OverlapSubcommand(
+-    "overlap",
+-    "Computes and displays the overlap between two profiles. See detailed "
+-    "documentation in "
+-    "https://llvm.org/docs/CommandGuide/llvm-profdata.html#profdata-overlap");
+-cl::SubCommand MergeSubcommand(
+-    "merge",
+-    "Takes several profiles and merge them together. See detailed "
+-    "documentation in "
+-    "https://llvm.org/docs/CommandGuide/llvm-profdata.html#profdata-merge");
+ 
+ namespace {
+ enum ProfileKinds { instr, sample, memory };
+@@ -90,408 +78,133 @@
+ };
+ 
+ enum class ShowFormat { Text, Json, Yaml };
++
++enum ID {
++  OPT_INVALID = 0,
++#define OPTION(PREFIXES, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,       \
++               VISIBILITY, PARAM, HELPTEXT, HELPTEXTSFORVARIANTS, METAVAR,     \
++               VALUES, SUBCOMMANDIDS_OFFSET)                                   \
++  OPT_##ID,
++#include "Opts.inc"
++#undef OPTION
++};
++
++#define OPTTABLE_STR_TABLE_CODE
++#include "Opts.inc"
++#undef OPTTABLE_STR_TABLE_CODE
++
++#define OPTTABLE_PREFIXES_TABLE_CODE
++#include "Opts.inc"
++#undef OPTTABLE_PREFIXES_TABLE_CODE
++
++#define OPTTABLE_SUBCOMMAND_IDS_TABLE_CODE
++#include "Opts.inc"
++#undef OPTTABLE_SUBCOMMAND_IDS_TABLE_CODE
++
++#define OPTTABLE_SUBCOMMANDS_CODE
++#include "Opts.inc"
++#undef OPTTABLE_SUBCOMMANDS_CODE
++
++static constexpr opt::OptTable::Info InfoTable[] = {
++#define OPTION(...) LLVM_CONSTRUCT_OPT_INFO(__VA_ARGS__),
++#include "Opts.inc"
++#undef OPTION
++};
++
++class ProfdataOptTable : public opt::GenericOptTable {
++public:
++  ProfdataOptTable()
++      : opt::GenericOptTable(OptionStrTable, OptionPrefixesTable, InfoTable,
++                             /*IgnoreCase=*/false, OptionSubCommands,
++                             OptionSubCommandIDsTable) {
++    // llvm-profdata accepts single-dash long options like -output.
++    // Grouped short parsing would treat those as -o with a joined value.
++    setDashDashParsing(true);
++  }
++};
++
++static std::string ProgramName;
++
++static std::string OutputFilename = "-";
++static ProfileKinds ProfileKind = instr;
++static std::string Filename;
++static unsigned MaxDbgCorrelationWarnings = 5;
++static std::string ProfiledBinary;
++static std::string DebugInfoFilename;
++static std::string BinaryFilename;
++static std::vector<std::string> DebugFileDirectory;
++static bool DebugInfod = false;
++static ProfCorrelatorKind BIDFetcherProfileCorrelate =
++    InstrProfCorrelator::NONE;
++static std::string FuncNameFilter;
++
++static std::vector<std::string> InputFilenames;
++static std::vector<std::string> WeightedInputFilenames;
++static ProfileFormat OutputFormat = PF_Ext_Binary;
++static std::string InputFilenamesFile;
++static bool DumpInputFileList = false;
++static std::string RemappingFile;
++static bool UseMD5 = false;
++static bool CompressAllSections = false;
++static bool SampleMergeColdContext = false;
++static bool SampleTrimColdContext = false;
++static uint32_t SampleColdContextFrameDepth = 1;
++static size_t OutputSizeLimit = 0;
++static bool GenPartialProfile = false;
++static bool SplitLayout = false;
++static std::string SupplInstrWithSample;
++static float ZeroCounterThreshold = 0.7f;
++static unsigned SupplMinSizeThreshold = 10;
++static unsigned InstrProfColdThreshold = 0;
++static uint64_t TemporalProfTraceReservoirSize = 100;
++static uint64_t TemporalProfMaxTraceLength = 10000;
++static std::string FuncNameNegativeFilter;
++static FailureMode FailMode = failIfAnyAreInvalid;
++static bool OutputSparse = false;
++static unsigned NumThreads = 0;
++static std::string ProfileSymbolListFile;
++static SampleProfileLayout ProfileLayout = SPL_None;
++static bool DropProfileSymbolList = false;
++static bool KeepVTableSymbols = false;
++static bool DoWritePrevVersion = false;
++static memprof::IndexedVersion MemProfVersionRequested = memprof::Version3;
++static bool MemProfFullSchema = false;
++static bool MemprofGenerateRandomHotness = false;
++static unsigned MemprofGenerateRandomHotnessSeed = 0;
++
++static std::string BaseFilename;
++static std::string TestFilename;
++static unsigned long long SimilarityCutoff = 0;
++static bool IsCS = false;
++static unsigned long long OverlapValueCutoff =
++    std::numeric_limits<unsigned long long>::max();
++
++static bool ShowCounts = false;
++static ShowFormat SFormat = ShowFormat::Text;
++static bool TextFormat = false;
++static bool JsonFormat = false;
++static bool ShowIndirectCallTargets = false;
++static bool ShowVTables = false;
++static bool ShowMemOPSizes = false;
++static bool ShowDetailedSummary = false;
++static std::vector<uint32_t> DetailedSummaryCutoffs;
++static bool ShowHotFuncList = false;
++static bool ShowAllFunctions = false;
++static bool ShowCS = false;
++static ProfileKinds ShowProfileKind = instr;
++static uint32_t TopNFunctions = 0;
++static uint32_t ShowValueCutoff = 0;
++static bool OnlyListBelow = false;
++static bool ShowProfileSymbolList = false;
++static bool ShowSectionInfoOnly = false;
++static bool ShowBinaryIds = false;
++static bool ShowTemporalProfTraces = false;
++static bool ShowCovered = false;
++static bool ShowProfileVersion = false;
++
++static unsigned NumTestTraces = 0;
++static FSDiscriminatorPass FSDiscriminatorPassOption = PassLast;
+ } // namespace
+-
+-// Common options.
+-cl::opt<std::string> OutputFilename("output", cl::value_desc("output"),
+-                                    cl::init("-"), cl::desc("Output file"),
+-                                    cl::sub(ShowSubcommand),
+-                                    cl::sub(OrderSubcommand),
+-                                    cl::sub(OverlapSubcommand),
+-                                    cl::sub(MergeSubcommand));
+-// NOTE: cl::alias must not have cl::sub(), since aliased option's cl::sub()
+-// will be used. llvm::cl::alias::done() method asserts this condition.
+-static cl::alias OutputFilenameA("o", cl::desc("Alias for --output"),
+-                                 cl::aliasopt(OutputFilename));
+-
+-// Options common to at least two commands.
+-static cl::opt<ProfileKinds> ProfileKind(
+-    cl::desc("Profile kind:"), cl::sub(MergeSubcommand),
+-    cl::sub(OverlapSubcommand), cl::init(instr),
+-    cl::values(clEnumVal(instr, "Instrumentation profile (default)"),
+-               clEnumVal(sample, "Sample profile")));
+-static cl::opt<std::string> Filename(cl::Positional,
+-                                     cl::desc("<profdata-file>"),
+-                                     cl::sub(ShowSubcommand),
+-                                     cl::sub(OrderSubcommand));
+-static cl::opt<unsigned> MaxDbgCorrelationWarnings(
+-    "max-debug-info-correlation-warnings",
+-    cl::desc("The maximum number of warnings to emit when correlating "
+-             "profile from debug info (0 = no limit)"),
+-    cl::sub(MergeSubcommand), cl::sub(ShowSubcommand), cl::init(5));
+-static cl::opt<std::string> ProfiledBinary(
+-    "profiled-binary", cl::init(""),
+-    cl::desc("Path to binary from which the profile was collected."),
+-    cl::sub(ShowSubcommand), cl::sub(MergeSubcommand));
+-static cl::opt<std::string> DebugInfoFilename(
+-    "debug-info", cl::init(""),
+-    cl::desc(
+-        "For show, read and extract profile metadata from debug info and show "
+-        "the functions it found. For merge, use the provided debug info to "
+-        "correlate the raw profile."),
+-    cl::sub(ShowSubcommand), cl::sub(MergeSubcommand));
+-static cl::opt<std::string>
+-    BinaryFilename("binary-file", cl::init(""),
+-                   cl::desc("For merge, use the provided unstripped binary to "
+-                            "correlate the raw profile."),
+-                   cl::sub(MergeSubcommand));
+-static cl::list<std::string> DebugFileDirectory(
+-    "debug-file-directory",
+-    cl::desc("Directories to search for object files by build ID"));
+-static cl::opt<bool> DebugInfod("debuginfod", cl::init(false), cl::Hidden,
+-                                cl::sub(MergeSubcommand),
+-                                cl::desc("Enable debuginfod"));
+-static cl::opt<ProfCorrelatorKind> BIDFetcherProfileCorrelate(
+-    "correlate",
+-    cl::desc("Use debug-info or binary correlation to correlate profiles with "
+-             "build id fetcher"),
+-    cl::init(InstrProfCorrelator::NONE),
+-    cl::values(clEnumValN(InstrProfCorrelator::NONE, "",
+-                          "No profile correlation"),
+-               clEnumValN(InstrProfCorrelator::DEBUG_INFO, "debug-info",
+-                          "Use debug info to correlate"),
+-               clEnumValN(InstrProfCorrelator::BINARY, "binary",
+-                          "Use binary to correlate")));
+-static cl::opt<std::string> FuncNameFilter(
+-    "function",
+-    cl::desc("Only functions matching the filter are shown in the output. For "
+-             "overlapping CSSPGO, this takes a function name with calling "
+-             "context."),
+-    cl::sub(ShowSubcommand), cl::sub(OverlapSubcommand),
+-    cl::sub(MergeSubcommand));
+-
+-// TODO: Consider creating a template class (e.g., MergeOption, ShowOption) to
+-// factor out the common cl::sub in cl::opt constructor for subcommand-specific
+-// options.
+-
+-// Options specific to merge subcommand.
+-static cl::list<std::string> InputFilenames(cl::Positional,
+-                                            cl::sub(MergeSubcommand),
+-                                            cl::desc("<filename...>"));
+-static cl::list<std::string>
+-    WeightedInputFilenames("weighted-input", cl::sub(MergeSubcommand),
+-                           cl::desc("<weight>,<filename>"));
+-static cl::opt<ProfileFormat> OutputFormat(
+-    cl::desc("Format of output profile"), cl::sub(MergeSubcommand),
+-    cl::init(PF_Ext_Binary),
+-    cl::values(clEnumValN(PF_Binary, "binary", "Binary encoding"),
+-               clEnumValN(PF_Ext_Binary, "extbinary",
+-                          "Extensible binary encoding "
+-                          "(default)"),
+-               clEnumValN(PF_Text, "text", "Text encoding"),
+-               clEnumValN(PF_GCC, "gcc",
+-                          "GCC encoding (only meaningful for -sample)")));
+-static cl::opt<std::string>
+-    InputFilenamesFile("input-files", cl::init(""), cl::sub(MergeSubcommand),
+-                       cl::desc("Path to file containing newline-separated "
+-                                "[<weight>,]<filename> entries"));
+-static cl::alias InputFilenamesFileA("f", cl::desc("Alias for --input-files"),
+-                                     cl::aliasopt(InputFilenamesFile));
+-static cl::opt<bool> DumpInputFileList(
+-    "dump-input-file-list", cl::init(false), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("Dump the list of input files and their weights, then exit"));
+-static cl::opt<std::string> RemappingFile("remapping-file",
+-                                          cl::value_desc("file"),
+-                                          cl::sub(MergeSubcommand),
+-                                          cl::desc("Symbol remapping file"));
+-static cl::alias RemappingFileA("r", cl::desc("Alias for --remapping-file"),
+-                                cl::aliasopt(RemappingFile));
+-static cl::opt<bool>
+-    UseMD5("use-md5", cl::init(false), cl::Hidden,
+-           cl::desc("Choose to use MD5 to represent string in name table (only "
+-                    "meaningful for -extbinary)"),
+-           cl::sub(MergeSubcommand));
+-static cl::opt<bool> CompressAllSections(
+-    "compress-all-sections", cl::init(false), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("Compress all sections when writing the profile (only "
+-             "meaningful for -extbinary)"));
+-static cl::opt<bool> SampleMergeColdContext(
+-    "sample-merge-cold-context", cl::init(false), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc(
+-        "Merge context sample profiles whose count is below cold threshold"));
+-static cl::opt<bool> SampleTrimColdContext(
+-    "sample-trim-cold-context", cl::init(false), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc(
+-        "Trim context sample profiles whose count is below cold threshold"));
+-static cl::opt<uint32_t> SampleColdContextFrameDepth(
+-    "sample-frame-depth-for-cold-context", cl::init(1),
+-    cl::sub(MergeSubcommand),
+-    cl::desc("Keep the last K frames while merging cold profile. 1 means the "
+-             "context-less base profile"));
+-static cl::opt<size_t> OutputSizeLimit(
+-    "output-size-limit", cl::init(0), cl::Hidden, cl::sub(MergeSubcommand),
+-    cl::desc("Trim cold functions until profile size is below specified "
+-             "limit in bytes. This uses a heursitic and functions may be "
+-             "excessively trimmed"));
+-static cl::opt<bool> GenPartialProfile(
+-    "gen-partial-profile", cl::init(false), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("Generate a partial profile (only meaningful for -extbinary)"));
+-static cl::opt<bool> SplitLayout(
+-    "split-layout", cl::init(false), cl::Hidden, cl::sub(MergeSubcommand),
+-    cl::desc("Split the profile to two sections with one containing sample "
+-             "profiles with inlined functions and the other without (only "
+-             "meaningful for -extbinary)"));
+-static cl::opt<std::string> SupplInstrWithSample(
+-    "supplement-instr-with-sample", cl::init(""), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("Supplement an instr profile with sample profile, to correct "
+-             "the profile unrepresentativeness issue. The sample "
+-             "profile is the input of the flag. Output will be in instr "
+-             "format (The flag only works with -instr)"));
+-static cl::opt<float> ZeroCounterThreshold(
+-    "zero-counter-threshold", cl::init(0.7), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("For the function which is cold in instr profile but hot in "
+-             "sample profile, if the ratio of the number of zero counters "
+-             "divided by the total number of counters is above the "
+-             "threshold, the profile of the function will be regarded as "
+-             "being harmful for performance and will be dropped."));
+-static cl::opt<unsigned> SupplMinSizeThreshold(
+-    "suppl-min-size-threshold", cl::init(10), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("If the size of a function is smaller than the threshold, "
+-             "assume it can be inlined by PGO early inliner and it won't "
+-             "be adjusted based on sample profile."));
+-static cl::opt<unsigned> InstrProfColdThreshold(
+-    "instr-prof-cold-threshold", cl::init(0), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("User specified cold threshold for instr profile which will "
+-             "override the cold threshold got from profile summary. "));
+-// WARNING: This reservoir size value is propagated to any input indexed
+-// profiles for simplicity. Changing this value between invocations could
+-// result in sample bias.
+-static cl::opt<uint64_t> TemporalProfTraceReservoirSize(
+-    "temporal-profile-trace-reservoir-size", cl::init(100),
+-    cl::sub(MergeSubcommand),
+-    cl::desc("The maximum number of stored temporal profile traces (default: "
+-             "100)"));
+-static cl::opt<uint64_t> TemporalProfMaxTraceLength(
+-    "temporal-profile-max-trace-length", cl::init(10000),
+-    cl::sub(MergeSubcommand),
+-    cl::desc("The maximum length of a single temporal profile trace "
+-             "(default: 10000)"));
+-static cl::opt<std::string> FuncNameNegativeFilter(
+-    "no-function", cl::init(""), cl::sub(MergeSubcommand),
+-    cl::desc("Exclude functions matching the filter from the output."));
+-
+-static cl::opt<FailureMode>
+-    FailMode("failure-mode", cl::init(failIfAnyAreInvalid),
+-             cl::desc("Failure mode:"), cl::sub(MergeSubcommand),
+-             cl::values(clEnumValN(warnOnly, "warn",
+-                                   "Do not fail and just print warnings."),
+-                        clEnumValN(failIfAnyAreInvalid, "any",
+-                                   "Fail if any profile is invalid."),
+-                        clEnumValN(failIfAllAreInvalid, "all",
+-                                   "Fail only if all profiles are invalid.")));
+-
+-static cl::opt<bool> OutputSparse(
+-    "sparse", cl::init(false), cl::sub(MergeSubcommand),
+-    cl::desc("Generate a sparse profile (only meaningful for -instr)"));
+-static cl::opt<unsigned> NumThreads(
+-    "num-threads", cl::init(0), cl::sub(MergeSubcommand),
+-    cl::desc("Number of merge threads to use (default: autodetect)"));
+-static cl::alias NumThreadsA("j", cl::desc("Alias for --num-threads"),
+-                             cl::aliasopt(NumThreads));
+-
+-static cl::opt<std::string> ProfileSymbolListFile(
+-    "prof-sym-list", cl::init(""), cl::sub(MergeSubcommand),
+-    cl::desc("Path to file containing the list of function symbols "
+-             "used to populate profile symbol list"));
+-
+-static cl::opt<SampleProfileLayout> ProfileLayout(
+-    "convert-sample-profile-layout",
+-    cl::desc("Convert the generated profile to a profile with a new layout"),
+-    cl::sub(MergeSubcommand), cl::init(SPL_None),
+-    cl::values(
+-        clEnumValN(SPL_Nest, "nest",
+-                   "Nested profile, the input should be CS flat profile"),
+-        clEnumValN(SPL_Flat, "flat",
+-                   "Profile with nested inlinee flatten out")));
+-
+-static cl::opt<bool> DropProfileSymbolList(
+-    "drop-profile-symbol-list", cl::init(false), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("Drop the profile symbol list when merging AutoFDO profiles "
+-             "(only meaningful for -sample)"));
+-
+-static cl::opt<bool> KeepVTableSymbols(
+-    "keep-vtable-symbols", cl::init(false), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("If true, keep the vtable symbols in indexed profiles"));
+-
+-// Temporary support for writing the previous version of the format, to enable
+-// some forward compatibility.
+-// TODO: Consider enabling this with future version changes as well, to ease
+-// deployment of newer versions of llvm-profdata.
+-static cl::opt<bool> DoWritePrevVersion(
+-    "write-prev-version", cl::init(false), cl::Hidden,
+-    cl::desc("Write the previous version of indexed format, to enable "
+-             "some forward compatibility."));
+-
+-static cl::opt<memprof::IndexedVersion> MemProfVersionRequested(
+-    "memprof-version", cl::Hidden, cl::sub(MergeSubcommand),
+-    cl::desc("Specify the version of the memprof format to use"),
+-    cl::init(memprof::Version3),
+-    cl::values(clEnumValN(memprof::Version2, "2", "version 2"),
+-               clEnumValN(memprof::Version3, "3", "version 3"),
+-               clEnumValN(memprof::Version4, "4", "version 4")));
+-
+-static cl::opt<bool> MemProfFullSchema(
+-    "memprof-full-schema", cl::Hidden, cl::sub(MergeSubcommand),
+-    cl::desc("Use the full schema for serialization"), cl::init(false));
+-
+-static cl::opt<bool>
+-    MemprofGenerateRandomHotness("memprof-random-hotness", cl::init(false),
+-                                 cl::Hidden, cl::sub(MergeSubcommand),
+-                                 cl::desc("Generate random hotness values"));
+-static cl::opt<unsigned> MemprofGenerateRandomHotnessSeed(
+-    "memprof-random-hotness-seed", cl::init(0), cl::Hidden,
+-    cl::sub(MergeSubcommand),
+-    cl::desc("Random hotness seed to use (0 to generate new seed)"));
+-
+-// Options specific to overlap subcommand.
+-static cl::opt<std::string> BaseFilename(cl::Positional, cl::Required,
+-                                         cl::desc("<base profile file>"),
+-                                         cl::sub(OverlapSubcommand));
+-static cl::opt<std::string> TestFilename(cl::Positional, cl::Required,
+-                                         cl::desc("<test profile file>"),
+-                                         cl::sub(OverlapSubcommand));
+-
+-static cl::opt<unsigned long long> SimilarityCutoff(
+-    "similarity-cutoff", cl::init(0),
+-    cl::desc("For sample profiles, list function names (with calling context "
+-             "for csspgo) for overlapped functions "
+-             "with similarities below the cutoff (percentage times 10000)."),
+-    cl::sub(OverlapSubcommand));
+-
+-static cl::opt<bool> IsCS(
+-    "cs", cl::init(false),
+-    cl::desc("For context sensitive PGO counts. Does not work with CSSPGO."),
+-    cl::sub(OverlapSubcommand));
+-
+-static cl::opt<unsigned long long> OverlapValueCutoff(
+-    "value-cutoff", cl::init(-1),
+-    cl::desc(
+-        "Function level overlap information for every function (with calling "
+-        "context for csspgo) in test "
+-        "profile with max count value greater than the parameter value"),
+-    cl::sub(OverlapSubcommand));
+-
+-// Options specific to show subcommand.
+-static cl::opt<bool>
+-    ShowCounts("counts", cl::init(false),
+-               cl::desc("Show counter values for shown functions"),
+-               cl::sub(ShowSubcommand));
+-static cl::opt<ShowFormat>
+-    SFormat("show-format", cl::init(ShowFormat::Text),
+-            cl::desc("Emit output in the selected format if supported"),
+-            cl::sub(ShowSubcommand),
+-            cl::values(clEnumValN(ShowFormat::Text, "text",
+-                                  "emit normal text output (default)"),
+-                       clEnumValN(ShowFormat::Json, "json", "emit JSON"),
+-                       clEnumValN(ShowFormat::Yaml, "yaml", "emit YAML")));
+-// TODO: Consider replacing this with `--show-format=text-encoding`.
+-static cl::opt<bool>
+-    TextFormat("text", cl::init(false),
+-               cl::desc("Show instr profile data in text dump format"),
+-               cl::sub(ShowSubcommand));
+-static cl::opt<bool>
+-    JsonFormat("json",
+-               cl::desc("Show sample profile data in the JSON format "
+-                        "(deprecated, please use --show-format=json)"),
+-               cl::sub(ShowSubcommand));
+-static cl::opt<bool> ShowIndirectCallTargets(
+-    "ic-targets", cl::init(false),
+-    cl::desc("Show indirect call site target values for shown functions"),
+-    cl::sub(ShowSubcommand));
+-static cl::opt<bool>
+-    ShowVTables("show-vtables", cl::init(false),
+-                cl::desc("Show vtable names for shown functions"),
+-                cl::sub(ShowSubcommand));
+-static cl::opt<bool> ShowMemOPSizes(
+-    "memop-sizes", cl::init(false),
+-    cl::desc("Show the profiled sizes of the memory intrinsic calls "
+-             "for shown functions"),
+-    cl::sub(ShowSubcommand));
+-static cl::opt<bool>
+-    ShowDetailedSummary("detailed-summary", cl::init(false),
+-                        cl::desc("Show detailed profile summary"),
+-                        cl::sub(ShowSubcommand));
+-static cl::list<uint32_t> DetailedSummaryCutoffs(
+-    cl::CommaSeparated, "detailed-summary-cutoffs",
+-    cl::desc(
+-        "Cutoff percentages (times 10000) for generating detailed summary"),
+-    cl::value_desc("800000,901000,999999"), cl::sub(ShowSubcommand));
+-static cl::opt<bool>
+-    ShowHotFuncList("hot-func-list", cl::init(false),
+-                    cl::desc("Show profile summary of a list of hot functions"),
+-                    cl::sub(ShowSubcommand));
+-static cl::opt<bool>
+-    ShowAllFunctions("all-functions", cl::init(false),
+-                     cl::desc("Details for each and every function"),
+-                     cl::sub(ShowSubcommand));
+-static cl::opt<bool> ShowCS("showcs", cl::init(false),
+-                            cl::desc("Show context sensitive counts"),
+-                            cl::sub(ShowSubcommand));
+-static cl::opt<ProfileKinds> ShowProfileKind(
+-    cl::desc("Profile kind supported by show:"), cl::sub(ShowSubcommand),
+-    cl::init(instr),
+-    cl::values(clEnumVal(instr, "Instrumentation profile (default)"),
+-               clEnumVal(sample, "Sample profile"),
+-               clEnumVal(memory, "MemProf memory access profile")));
+-static cl::opt<uint32_t> TopNFunctions(
+-    "topn", cl::init(0),
+-    cl::desc("Show the list of functions with the largest internal counts"),
+-    cl::sub(ShowSubcommand));
+-static cl::opt<uint32_t> ShowValueCutoff(
+-    "value-cutoff", cl::init(0),
+-    cl::desc("Set the count value cutoff. Functions with the maximum count "
+-             "less than this value will not be printed out. (Default is 0)"),
+-    cl::sub(ShowSubcommand));
+-static cl::opt<bool> OnlyListBelow(
+-    "list-below-cutoff", cl::init(false),
+-    cl::desc("Only output names of functions whose max count values are "
+-             "below the cutoff value"),
+-    cl::sub(ShowSubcommand));
+-static cl::opt<bool> ShowProfileSymbolList(
+-    "show-prof-sym-list", cl::init(false),
+-    cl::desc("Show profile symbol list if it exists in the profile. "),
+-    cl::sub(ShowSubcommand));
+-static cl::opt<bool> ShowSectionInfoOnly(
+-    "show-sec-info-only", cl::init(false),
+-    cl::desc("Show the information of each section in the sample profile. "
+-             "The flag is only usable when the sample profile is in "
+-             "extbinary format"),
+-    cl::sub(ShowSubcommand));
+-static cl::opt<bool> ShowBinaryIds("binary-ids", cl::init(false),
+-                                   cl::desc("Show binary ids in the profile. "),
+-                                   cl::sub(ShowSubcommand));
+-static cl::opt<bool> ShowTemporalProfTraces(
+-    "temporal-profile-traces",
+-    cl::desc("Show temporal profile traces in the profile."),
+-    cl::sub(ShowSubcommand));
+-
+-static cl::opt<bool>
+-    ShowCovered("covered", cl::init(false),
+-                cl::desc("Show only the functions that have been executed."),
+-                cl::sub(ShowSubcommand));
+-
+-static cl::opt<bool> ShowProfileVersion("profile-version", cl::init(false),
+-                                        cl::desc("Show profile version. "),
+-                                        cl::sub(ShowSubcommand));
+-
+-// Options specific to order subcommand.
+-static cl::opt<unsigned>
+-    NumTestTraces("num-test-traces", cl::init(0),
+-                  cl::desc("Keep aside the last <num-test-traces> traces in "
+-                           "the profile when computing the function order and "
+-                           "instead use them to evaluate that order"),
+-                  cl::sub(OrderSubcommand));
+ 
+ // We use this string to indicate that there are
+ // multiple static functions map to the same name.
+@@ -637,7 +350,7 @@
+     return New.empty() ? Name : FunctionId(New);
+   }
+ };
+-}
++} // namespace
+ 
+ struct WeightedFile {
+   std::string Filename;
+@@ -897,13 +610,11 @@
+   return Val.first();
+ }
+ 
+-static std::string
+-getFuncName(const SampleProfileMap::value_type &Val) {
++static std::string getFuncName(const SampleProfileMap::value_type &Val) {
+   return Val.second.getContext().toString();
+ }
+ 
+-template <typename T>
+-static void filterFunctions(T &ProfileMap) {
++template <typename T> static void filterFunctions(T &ProfileMap) {
+   bool hasFilter = !FuncNameFilter.empty();
+   bool hasNegativeFilter = !FuncNameNegativeFilter.empty();
+   if (!hasFilter && !hasNegativeFilter)
+@@ -973,8 +684,8 @@
+                               SymbolRemapper *Remapper,
+                               int MaxDbgCorrelationWarnings,
+                               const StringRef ProfiledBinary) {
+-  const uint64_t TraceReservoirSize = TemporalProfTraceReservoirSize.getValue();
+-  const uint64_t MaxTraceLength = TemporalProfMaxTraceLength.getValue();
++  const uint64_t TraceReservoirSize = TemporalProfTraceReservoirSize;
++  const uint64_t MaxTraceLength = TemporalProfMaxTraceLength;
+   if (OutputFormat == PF_Compact_Binary)
+     exitWithError("Compact Binary is deprecated");
+   if (OutputFormat != PF_Binary && OutputFormat != PF_Ext_Binary &&
+@@ -1171,21 +882,8 @@
+ 
+ using sampleprof::FSDiscriminatorPass;
+ 
+-// Internal options to set FSDiscriminatorPass. Used in merge and show
+-// commands.
+-static cl::opt<FSDiscriminatorPass> FSDiscriminatorPassOption(
+-    "fs-discriminator-pass", cl::init(PassLast), cl::Hidden,
+-    cl::desc("Zero out the discriminator bits for the FS discrimiantor "
+-             "pass beyond this value. The enum values are defined in "
+-             "Support/Discriminator.h"),
+-    cl::values(clEnumVal(Base, "Use base discriminators only"),
+-               clEnumVal(Pass1, "Use base and pass 1 discriminators"),
+-               clEnumVal(Pass2, "Use base and pass 1-2 discriminators"),
+-               clEnumVal(Pass3, "Use base and pass 1-3 discriminators"),
+-               clEnumVal(PassLast, "Use all discriminator bits (default)")));
+-
+ static unsigned getDiscriminatorMask() {
+-  return getN1Bits(getFSPassBitEnd(FSDiscriminatorPassOption.getValue()));
++  return getN1Bits(getFSPassBitEnd(FSDiscriminatorPassOption));
+ }
+ 
+ /// Adjust the instr profile in \p WC based on the sample profile in
+@@ -1504,8 +1202,8 @@
+                           BodySample.second.getSamples());
+     for (const auto &Target : BodySample.second.getCallTargets()) {
+       Result.addCalledTargetSamples(BodySample.first.LineOffset,
+-                                    MaskedDiscriminator,
+-                                    Remapper(Target.first), Target.second);
++                                    MaskedDiscriminator, Remapper(Target.first),
++                                    Target.second);
+     }
+   }
+   for (const auto &CallsiteSamples : Samples.getCallsiteSamples()) {
+@@ -1522,12 +1220,8 @@
+ }
+ 
+ static sampleprof::SampleProfileFormat FormatMap[] = {
+-    sampleprof::SPF_None,
+-    sampleprof::SPF_Text,
+-    sampleprof::SPF_None,
+-    sampleprof::SPF_Ext_Binary,
+-    sampleprof::SPF_GCC,
+-    sampleprof::SPF_Binary};
++    sampleprof::SPF_None,       sampleprof::SPF_Text, sampleprof::SPF_None,
++    sampleprof::SPF_Ext_Binary, sampleprof::SPF_GCC,  sampleprof::SPF_Binary};
+ 
+ static std::unique_ptr<MemoryBuffer>
+ getInputFileBuf(const StringRef &InputFile) {
+@@ -3375,9 +3069,8 @@
+ 
+ static int show_main(StringRef ProgName) {
+   if (Filename.empty() && DebugInfoFilename.empty())
+-    exitWithError(
+-        "the positional argument '<profdata-file>' is required unless '--" +
+-        DebugInfoFilename.ArgStr + "' is provided");
++    exitWithError("the positional argument '<profdata-file>' is required "
++                  "unless '--debug-info' is provided");
+ 
+   if (Filename == OutputFilename) {
+     errs() << ProgName
+@@ -3394,7 +3087,8 @@
+     exitWithErrorCode(EC, OutputFilename);
+ 
+   if (ShowAllFunctions && !FuncNameFilter.empty())
+-    WithColor::warning() << "-function argument ignored: showing all functions\n";
++    WithColor::warning()
++        << "-function argument ignored: showing all functions\n";
+ 
+   if (!DebugInfoFilename.empty())
+     return showDebugInfoCorrelation(DebugInfoFilename, SFormat, OS);
+@@ -3424,7 +3118,7 @@
+   ArrayRef Traces = Reader->getTemporalProfTraces();
+   if (NumTestTraces && NumTestTraces >= Traces.size())
+     exitWithError(
+-        "--" + NumTestTraces.ArgStr +
++        "--num-test-traces"
+         " must be smaller than the total number of traces: expected: < " +
+         Twine(Traces.size()) + ", actual: " + Twine(NumTestTraces));
+   ArrayRef TestTraces = Traces.take_back(NumTestTraces);
+@@ -3471,32 +3165,477 @@
+   return 0;
+ }
+ 
+-int main(int argc, const char *argv[]) {
+-  InitLLVM X(argc, argv);
+-  StringRef ProgName(sys::path::filename(argv[0]));
++static void reportCmdLineError(const Twine &Message) {
++  WithColor::error(errs(), ProgramName) << Message << "\n";
++}
++
++template <typename T>
++static bool parseNumericOption(const opt::Arg *A, T &Value) {
++  if (!A)
++    return true;
++  StringRef V = A->getValue();
++  T Parsed{};
++  if (!llvm::to_integer(V, Parsed, 0)) {
++    if (!std::numeric_limits<T>::is_signed && V == "-1") {
++      Value = std::numeric_limits<T>::max();
++      return true;
++    }
++    reportCmdLineError(Twine("invalid argument '") + V + "' for option '" +
++                       A->getSpelling() + "'");
++    return false;
++  }
++  Value = Parsed;
++  return true;
++}
++
++static bool parseFloatOption(const opt::Arg *A, float &Value) {
++  if (!A)
++    return true;
++  StringRef V = A->getValue();
++  double Parsed;
++  if (V.getAsDouble(Parsed)) {
++    reportCmdLineError(Twine("invalid argument '") + V + "' for option '" +
++                       A->getSpelling() + "'");
++    return false;
++  }
++  Value = static_cast<float>(Parsed);
++  return true;
++}
++
++static bool parseCutoffValues(const opt::InputArgList &Args,
++                              std::vector<uint32_t> &Cutoffs) {
++  Cutoffs.clear();
++  for (const opt::Arg *A : Args.filtered(OPT_detailed_summary_cutoffs)) {
++    SmallVector<StringRef, 4> Parts;
++    StringRef(A->getValue())
++        .split(Parts, ',', /*MaxSplit=*/-1,
++               /*KeepEmpty=*/false);
++    for (StringRef Part : Parts) {
++      uint32_t Parsed;
++      if (!llvm::to_integer(Part, Parsed, 0)) {
++        reportCmdLineError(Twine("invalid argument '") + Part +
++                           "' for option '" + A->getSpelling() + "'");
++        return false;
++      }
++      Cutoffs.push_back(Parsed);
++    }
++  }
++  return true;
++}
++
++static bool parseFSDiscriminatorPassArg(const opt::InputArgList &Args) {
++  const opt::Arg *A = Args.getLastArg(OPT_fs_discriminator_pass);
++  if (!A)
++    return true;
++
++  StringRef Value = A->getValue();
++  auto Parsed = StringSwitch<std::optional<FSDiscriminatorPass>>(Value)
++                    .Case("Base", FSDiscriminatorPass::Base)
++                    .Case("base", FSDiscriminatorPass::Base)
++                    .Case("Pass1", FSDiscriminatorPass::Pass1)
++                    .Case("pass1", FSDiscriminatorPass::Pass1)
++                    .Case("Pass2", FSDiscriminatorPass::Pass2)
++                    .Case("pass2", FSDiscriminatorPass::Pass2)
++                    .Case("Pass3", FSDiscriminatorPass::Pass3)
++                    .Case("pass3", FSDiscriminatorPass::Pass3)
++                    .Case("PassLast", FSDiscriminatorPass::PassLast)
++                    .Case("pass-last", FSDiscriminatorPass::PassLast)
++                    .Case("passlast", FSDiscriminatorPass::PassLast)
++                    .Default(std::nullopt);
++  if (!Parsed) {
++    reportCmdLineError(Twine("invalid argument '") + Value + "' for option '" +
++                       A->getSpelling() + "'");
++    return false;
++  }
++  FSDiscriminatorPassOption = *Parsed;
++  return true;
++}
++
++static bool validateSubcommandOptions(const opt::InputArgList &Args,
++                                      StringRef Subcommand) {
++  bool Valid = true;
++  for (const opt::Arg *A : Args) {
++    if (A->getOption().matches(OPT_UNKNOWN) ||
++        A->getOption().matches(OPT_INPUT))
++      continue;
++    if (A->getOption().isRegisteredSC(Subcommand))
++      continue;
++    reportCmdLineError(Twine("unknown command line argument '") +
++                       A->getSpelling() + "' for subcommand '" + Subcommand +
++                       "'. Try: '" + ProgramName + " " + Subcommand +
++                       " --help'");
++    Valid = false;
++  }
++  return Valid;
++}
++
++static void printSubcommandHelp(const ProfdataOptTable &Tbl,
++                                StringRef Subcommand, bool ShowHidden) {
++  SmallString<64> Usage;
++  Usage += ProgramName;
++  Usage += " ";
++  Usage += Subcommand;
++  Usage += " [options]";
++  Tbl.printHelp(outs(), Usage.c_str(), "LLVM profile data", ShowHidden,
++                /*ShowAllAliases=*/false, Visibility(), Subcommand);
++  outs() << "\nPass @FILE as argument to read options from FILE.\n";
++}
++
++static void printTopLevelHelp() {
++  outs() << "OVERVIEW: LLVM profile data\n\n"
++         << "USAGE: " << ProgramName << " <subcommand> [options]\n\n"
++         << "SUBCOMMANDS:\n";
++  for (const auto &SC : OptionSubCommands)
++    outs() << "  " << SC.Name << " - " << SC.HelpText << "\n";
++  outs() << "\n  Type \"" << ProgramName
++         << " <subcommand> --help\" to get more help on a specific "
++            "subcommand\n\n"
++         << "OPTIONS:\n  --help        Display this message\n"
++         << "  --version     Display the version\n";
++}
++
++static bool parseMergeOptions(const opt::InputArgList &Args) {
++  OutputFilename = Args.getLastArgValue(OPT_output, "-").str();
++  if (const opt::Arg *A = Args.getLastArg(OPT_sample, OPT_instr))
++    ProfileKind = A->getOption().matches(OPT_sample) ? sample : instr;
++
++  if (!parseNumericOption(
++          Args.getLastArg(OPT_max_debug_info_correlation_warnings),
++          MaxDbgCorrelationWarnings))
++    return false;
++  ProfiledBinary = Args.getLastArgValue(OPT_profiled_binary).str();
++  DebugInfoFilename = Args.getLastArgValue(OPT_debug_info).str();
++  BinaryFilename = Args.getLastArgValue(OPT_binary_file).str();
++  DebugFileDirectory = Args.getAllArgValues(OPT_debug_file_directory);
++  DebugInfod = Args.hasArg(OPT_debuginfod);
++
++  if (const opt::Arg *A = Args.getLastArg(OPT_correlate)) {
++    StringRef V = A->getValue();
++    auto Parsed = StringSwitch<std::optional<ProfCorrelatorKind>>(V)
++                      .Case("", InstrProfCorrelator::NONE)
++                      .Case("debug-info", InstrProfCorrelator::DEBUG_INFO)
++                      .Case("binary", InstrProfCorrelator::BINARY)
++                      .Default(std::nullopt);
++    if (!Parsed) {
++      reportCmdLineError(Twine("invalid argument '") + V + "' for option '" +
++                         A->getSpelling() + "'");
++      return false;
++    }
++    BIDFetcherProfileCorrelate = *Parsed;
++  }
++
++  FuncNameFilter = Args.getLastArgValue(OPT_function).str();
++  InputFilenames = Args.getAllArgValues(OPT_INPUT);
++  WeightedInputFilenames = Args.getAllArgValues(OPT_weighted_input);
++
++  OutputFormat = PF_Ext_Binary;
++  if (const opt::Arg *Fmt =
++          Args.getLastArg(OPT_binary, OPT_extbinary, OPT_text, OPT_gcc)) {
++    if (Fmt->getOption().matches(OPT_binary))
++      OutputFormat = PF_Binary;
++    else if (Fmt->getOption().matches(OPT_gcc))
++      OutputFormat = PF_GCC;
++    else if (Fmt->getOption().matches(OPT_text))
++      OutputFormat = PF_Text;
++    else
++      OutputFormat = PF_Ext_Binary;
++  }
++
++  InputFilenamesFile = Args.getLastArgValue(OPT_input_files).str();
++  DumpInputFileList = Args.hasArg(OPT_dump_input_file_list);
++  RemappingFile = Args.getLastArgValue(OPT_remapping_file).str();
++  UseMD5 = Args.hasArg(OPT_use_md5);
++  CompressAllSections = Args.hasArg(OPT_compress_all_sections);
++  SampleMergeColdContext = Args.hasArg(OPT_sample_merge_cold_context);
++  SampleTrimColdContext = Args.hasArg(OPT_sample_trim_cold_context);
++  if (!parseNumericOption(
++          Args.getLastArg(OPT_sample_frame_depth_for_cold_context),
++          SampleColdContextFrameDepth))
++    return false;
++  if (!parseNumericOption(Args.getLastArg(OPT_output_size_limit),
++                          OutputSizeLimit))
++    return false;
++  GenPartialProfile = Args.hasArg(OPT_gen_partial_profile);
++  SplitLayout = Args.hasArg(OPT_split_layout);
++  SupplInstrWithSample =
++      Args.getLastArgValue(OPT_supplement_instr_with_sample).str();
++  if (!parseFloatOption(Args.getLastArg(OPT_zero_counter_threshold),
++                        ZeroCounterThreshold))
++    return false;
++  if (!parseNumericOption(Args.getLastArg(OPT_suppl_min_size_threshold),
++                          SupplMinSizeThreshold))
++    return false;
++  if (!parseNumericOption(Args.getLastArg(OPT_instr_prof_cold_threshold),
++                          InstrProfColdThreshold))
++    return false;
++  if (!parseNumericOption(
++          Args.getLastArg(OPT_temporal_profile_trace_reservoir_size),
++          TemporalProfTraceReservoirSize))
++    return false;
++  if (!parseNumericOption(
++          Args.getLastArg(OPT_temporal_profile_max_trace_length),
++          TemporalProfMaxTraceLength))
++    return false;
++  FuncNameNegativeFilter = Args.getLastArgValue(OPT_no_function).str();
++
++  StringRef FailureModeValue = Args.getLastArgValue(OPT_failure_mode, "any");
++  auto ParsedFailMode =
++      StringSwitch<std::optional<FailureMode>>(FailureModeValue)
++          .Case("warn", warnOnly)
++          .Case("any", failIfAnyAreInvalid)
++          .Case("all", failIfAllAreInvalid)
++          .Default(std::nullopt);
++  if (!ParsedFailMode) {
++    reportCmdLineError(Twine("invalid argument '") + FailureModeValue +
++                       "' for option '--failure-mode'");
++    return false;
++  }
++  FailMode = *ParsedFailMode;
++
++  OutputSparse = Args.hasArg(OPT_sparse);
++  if (!parseNumericOption(Args.getLastArg(OPT_num_threads), NumThreads))
++    return false;
++  ProfileSymbolListFile = Args.getLastArgValue(OPT_prof_sym_list).str();
++
++  if (const opt::Arg *A = Args.getLastArg(OPT_convert_sample_profile_layout)) {
++    StringRef Layout = A->getValue();
++    auto ParsedLayout = StringSwitch<std::optional<SampleProfileLayout>>(Layout)
++                            .Case("nest", SPL_Nest)
++                            .Case("flat", SPL_Flat)
++                            .Default(std::nullopt);
++    if (!ParsedLayout) {
++      reportCmdLineError(Twine("invalid argument '") + Layout +
++                         "' for option '" + A->getSpelling() + "'");
++      return false;
++    }
++    ProfileLayout = *ParsedLayout;
++  }
++
++  DropProfileSymbolList = Args.hasArg(OPT_drop_profile_symbol_list);
++  KeepVTableSymbols = Args.hasArg(OPT_keep_vtable_symbols);
++  DoWritePrevVersion = Args.hasArg(OPT_write_prev_version);
++
++  if (const opt::Arg *A = Args.getLastArg(OPT_memprof_version)) {
++    StringRef Version = A->getValue();
++    auto ParsedVersion =
++        StringSwitch<std::optional<memprof::IndexedVersion>>(Version)
++            .Case("2", memprof::Version2)
++            .Case("3", memprof::Version3)
++            .Case("4", memprof::Version4)
++            .Default(std::nullopt);
++    if (!ParsedVersion) {
++      reportCmdLineError(Twine("invalid argument '") + Version +
++                         "' for option '" + A->getSpelling() + "'");
++      return false;
++    }
++    MemProfVersionRequested = *ParsedVersion;
++  }
++
++  MemProfFullSchema = Args.hasArg(OPT_memprof_full_schema);
++  MemprofGenerateRandomHotness = Args.hasArg(OPT_memprof_random_hotness);
++  if (!parseNumericOption(Args.getLastArg(OPT_memprof_random_hotness_seed),
++                          MemprofGenerateRandomHotnessSeed))
++    return false;
++
++  if (!parseFSDiscriminatorPassArg(Args))
++    return false;
++
++  return true;
++}
++
++static bool parseShowOptions(const opt::InputArgList &Args) {
++  OutputFilename = Args.getLastArgValue(OPT_output, "-").str();
++  std::vector<std::string> Inputs = Args.getAllArgValues(OPT_INPUT);
++  if (!Inputs.empty()) {
++    Filename = Inputs.front();
++    if (Inputs.size() > 1) {
++      reportCmdLineError("too many positional arguments");
++      return false;
++    }
++  }
++
++  if (!parseNumericOption(
++          Args.getLastArg(OPT_max_debug_info_correlation_warnings),
++          MaxDbgCorrelationWarnings))
++    return false;
++  ProfiledBinary = Args.getLastArgValue(OPT_profiled_binary).str();
++  DebugInfoFilename = Args.getLastArgValue(OPT_debug_info).str();
++  FuncNameFilter = Args.getLastArgValue(OPT_function).str();
++
++  ShowCounts = Args.hasArg(OPT_counts);
++  if (const opt::Arg *A = Args.getLastArg(OPT_show_format)) {
++    StringRef Value = A->getValue();
++    auto Parsed = StringSwitch<std::optional<ShowFormat>>(Value)
++                      .Case("text", ShowFormat::Text)
++                      .Case("json", ShowFormat::Json)
++                      .Case("yaml", ShowFormat::Yaml)
++                      .Default(std::nullopt);
++    if (!Parsed) {
++      reportCmdLineError(Twine("invalid argument '") + Value +
++                         "' for option '" + A->getSpelling() + "'");
++      return false;
++    }
++    SFormat = *Parsed;
++  }
++  TextFormat = Args.hasArg(OPT_text);
++  JsonFormat = Args.hasArg(OPT_json);
++  ShowIndirectCallTargets = Args.hasArg(OPT_ic_targets);
++  ShowVTables = Args.hasArg(OPT_show_vtables);
++  ShowMemOPSizes = Args.hasArg(OPT_memop_sizes);
++  ShowDetailedSummary = Args.hasArg(OPT_detailed_summary);
++  if (!parseCutoffValues(Args, DetailedSummaryCutoffs))
++    return false;
++  ShowHotFuncList = Args.hasArg(OPT_hot_func_list);
++  ShowAllFunctions = Args.hasArg(OPT_all_functions);
++  ShowCS = Args.hasArg(OPT_showcs);
++  if (!parseNumericOption(Args.getLastArg(OPT_topn), TopNFunctions))
++    return false;
++  if (!parseNumericOption(Args.getLastArg(OPT_value_cutoff), ShowValueCutoff))
++    return false;
++  OnlyListBelow = Args.hasArg(OPT_list_below_cutoff);
++  ShowProfileSymbolList = Args.hasArg(OPT_show_prof_sym_list);
++  ShowSectionInfoOnly = Args.hasArg(OPT_show_sec_info_only);
++  ShowBinaryIds = Args.hasArg(OPT_binary_ids);
++  ShowTemporalProfTraces = Args.hasArg(OPT_temporal_profile_traces);
++  ShowCovered = Args.hasArg(OPT_covered);
++  ShowProfileVersion = Args.hasArg(OPT_profile_version);
++
++  if (const opt::Arg *A = Args.getLastArg(OPT_memory, OPT_sample, OPT_instr)) {
++    if (A->getOption().matches(OPT_memory))
++      ShowProfileKind = memory;
++    else if (A->getOption().matches(OPT_sample))
++      ShowProfileKind = sample;
++    else
++      ShowProfileKind = instr;
++  }
++
++  if (!parseFSDiscriminatorPassArg(Args))
++    return false;
++
++  return true;
++}
++
++static bool parseOverlapOptions(const opt::InputArgList &Args) {
++  OutputFilename = Args.getLastArgValue(OPT_output, "-").str();
++  std::vector<std::string> Inputs = Args.getAllArgValues(OPT_INPUT);
++  if (Inputs.size() != 2) {
++    reportCmdLineError("overlap requires two positional profile filenames");
++    return false;
++  }
++  BaseFilename = Inputs[0];
++  TestFilename = Inputs[1];
++
++  if (const opt::Arg *A = Args.getLastArg(OPT_sample, OPT_instr))
++    ProfileKind = A->getOption().matches(OPT_sample) ? sample : instr;
++
++  FuncNameFilter = Args.getLastArgValue(OPT_function).str();
++  if (!parseNumericOption(Args.getLastArg(OPT_similarity_cutoff),
++                          SimilarityCutoff))
++    return false;
++  IsCS = Args.hasArg(OPT_cs);
++  if (!parseNumericOption(Args.getLastArg(OPT_value_cutoff),
++                          OverlapValueCutoff))
++    return false;
++
++  if (!parseFSDiscriminatorPassArg(Args))
++    return false;
++
++  return true;
++}
++
++static bool parseOrderOptions(const opt::InputArgList &Args) {
++  OutputFilename = Args.getLastArgValue(OPT_output, "-").str();
++  std::vector<std::string> Inputs = Args.getAllArgValues(OPT_INPUT);
++  if (!Inputs.empty()) {
++    Filename = Inputs.front();
++    if (Inputs.size() > 1) {
++      reportCmdLineError("too many positional arguments");
++      return false;
++    }
++  }
++  if (!parseNumericOption(Args.getLastArg(OPT_num_test_traces), NumTestTraces))
++    return false;
++  return true;
++}
++
++int llvm_profdata_main(int argc, char **argv, const llvm::ToolContext &) {
++  BumpPtrAllocator Alloc;
++  StringSaver Saver(Alloc);
++
++  ProgramName = sys::path::filename(argv[0]).str();
+ 
+   if (argc < 2) {
+-    errs()
+-        << ProgName
+-        << ": No subcommand specified! Run llvm-profdata --help for usage.\n";
++    errs() << ProgramName << ": No subcommand specified! Run " << ProgramName
++           << " --help for usage.\n";
+     return 1;
+   }
+ 
+-  cl::ParseCommandLineOptions(argc, argv, "LLVM profile data\n");
+-
+-  if (ShowSubcommand)
+-    return show_main(ProgName);
+-
+-  if (OrderSubcommand)
++  StringRef Subcommand = argv[1];
++  if (Subcommand == "--help" || Subcommand == "-help" || Subcommand == "-h") {
++    printTopLevelHelp();
++    return 0;
++  }
++
++  if (Subcommand == "--version" || Subcommand == "-version") {
++    outs() << ProgramName << '\n';
++    cl::PrintVersionMessage();
++    return 0;
++  }
++
++  if (Subcommand != "show" && Subcommand != "order" &&
++      Subcommand != "overlap" && Subcommand != "merge") {
++    errs() << ProgramName << ": Unknown command. Run " << ProgramName
++           << " --help for usage.\n";
++    return 1;
++  }
++
++  ProfdataOptTable Tbl;
++  bool HadParseError = false;
++  opt::InputArgList Args =
++      Tbl.parseArgs(argc - 1, argv + 1, OPT_UNKNOWN, Saver, [&](StringRef Msg) {
++        WithColor::error(errs(), ProgramName) << Msg << "\n";
++        HadParseError = true;
++      });
++  if (HadParseError)
++    return 1;
++
++  bool ShowHidden = Args.hasArg(OPT_help_hidden);
++  if (Args.hasArg(OPT_help) || ShowHidden) {
++    printSubcommandHelp(Tbl, Subcommand, ShowHidden);
++    return 0;
++  }
++
++  if (!validateSubcommandOptions(Args, Subcommand))
++    return 1;
++
++  if (Args.hasArg(OPT_version)) {
++    outs() << ProgramName << '\n';
++    cl::PrintVersionMessage();
++    return 0;
++  }
++
++  if (Subcommand == "merge") {
++    if (!parseMergeOptions(Args))
++      return 1;
++    return merge_main(ProgramName);
++  }
++  if (Subcommand == "show") {
++    if (!parseShowOptions(Args))
++      return 1;
++    return show_main(ProgramName);
++  }
++  if (Subcommand == "overlap") {
++    if (!parseOverlapOptions(Args))
++      return 1;
++    return overlap_main();
++  }
++  if (Subcommand == "order") {
++    if (!parseOrderOptions(Args))
++      return 1;
+     return order_main();
+-
+-  if (OverlapSubcommand)
+-    return overlap_main();
+-
+-  if (MergeSubcommand)
+-    return merge_main(ProgName);
+-
+-  errs() << ProgName
+-         << ": Unknown command. Run llvm-profdata --help for usage.\n";
++  }
++
++  errs() << ProgramName << ": Unknown command. Run " << ProgramName
++         << " --help for usage.\n";
+   return 1;
+ }

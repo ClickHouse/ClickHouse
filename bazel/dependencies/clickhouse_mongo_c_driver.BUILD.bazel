@@ -1,0 +1,233 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "COPYING",
+])
+
+expand_template(
+    name = "configure_src_common_src_common_config_h",
+    out = "config/contrib/mongo-c-driver/src/common/src/common-config.h",
+    substitutions = {
+        "@MONGOC_ENABLE_DEBUG_ASSERTIONS@": "0",
+    },
+    template = ":src/common/src/common-config.h.in",
+)
+
+expand_template(
+    name = "configure_src_libbson_src_bson_config_h",
+    out = "config/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
+    substitutions = {
+        "@BSON_HAVE_ALIGNED_ALLOC@": "1",
+        "@BSON_HAVE_CLOCK_GETTIME@": "1",
+        "@BSON_HAVE_STDBOOL_H@": "1",
+        "@BSON_HAVE_STRINGS_H@": "1",
+        "@BSON_HAVE_GMTIME_R@": "1",
+        "@BSON_HAVE_SNPRINTF@": "1",
+        "@BSON_HAVE_TIMESPEC@": "1",
+        "@BSON_HAVE_STRLCPY@": "0",
+        "@BSON_HAVE_STRNLEN@": "1",
+        "@BSON_HAVE_RAND_R@": "1",
+        "@BSON_BYTE_ORDER@": "1234",
+        "@BSON_OS@": "1",
+    },
+    template = ":src/libbson/src/bson/config.h.in",
+)
+
+expand_template(
+    name = "configure_src_libbson_src_bson_version_h",
+    out = "config/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
+    substitutions = {
+        "@libbson_VERSION_PRERELEASE@": "",
+        "@libbson_VERSION_MAJOR@": "2",
+        "@libbson_VERSION_MINOR@": "5",
+        "@libbson_VERSION_PATCH@": "6",
+        "@libbson_VERSION_FULL@": "",
+    },
+    template = ":src/libbson/src/bson/version.h.in",
+)
+
+expand_template(
+    name = "configure_src_libmongoc_src_mongoc_mongoc_config_private_h",
+    out = "config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
+    substitutions = {
+        "@MONGOC_CXX_COMPILER_ID@": "Clang",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "@MONGOC_CXX_COMPILER_VERSION@": cmake_cxx_compiler_version("x86_64"),
+        },
+        "@platforms//cpu:aarch64": {
+            "@MONGOC_CXX_COMPILER_VERSION@": cmake_cxx_compiler_version("aarch64"),
+        },
+    }),
+    template = ":src/libmongoc/src/mongoc/mongoc-config-private.h.in",
+)
+
+expand_template(
+    name = "configure_src_libmongoc_src_mongoc_mongoc_config_h",
+    out = "config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
+    substitutions = {
+        "@MONGOC_ENABLE_CLIENT_SIDE_ENCRYPTION@": "0",
+        "@MONGOC_ENABLE_CRYPTO_SYSTEM_PROFILE@": "0",
+        "@MONGOC_ENABLE_CRYPTO_COMMON_CRYPTO@": "0",
+        "@MONGOC_ENABLE_SSL_SECURE_TRANSPORT@": "0",
+        "@MONGOC_HAVE_ASN1_STRING_GET0_DATA@": "1",
+        "@MONGOC_ENABLE_COMPRESSION_SNAPPY@": "0",
+        "@MONGOC_ENABLE_SSL_SECURE_CHANNEL@": "0",
+        "@MONGOC_ENABLE_COMPRESSION_ZLIB@": "0",
+        "@MONGOC_ENABLE_COMPRESSION_ZSTD@": "1",
+        "@MONGOC_ENABLE_CRYPTO_LIBCRYPTO@": "1",
+        "@MONGOC_ENABLE_MONGODB_AWS_AUTH@": "0",
+        "@MONGOC_HAVE_SASL_CLIENT_DONE@": "0",
+        "@MONGOC_ENABLE_SHM_COUNTERS@": "0",
+        "@MONGOC_ENABLE_COMPRESSION@": "1",
+        "@MONGOC_ENABLE_SSL_OPENSSL@": "1",
+        "@MONGOC_HAVE_BCRYPT_PBKDF2@": "1",
+        "@MONGOC_ENABLE_CRYPTO_CNG@": "0",
+        "@MONGOC_ENABLE_SASL_CYRUS@": "0",
+        "@MONGOC_HAVE_RES_NDESTROY@": "0",
+        "@MONGOC_HAVE_SCHED_GETCPU@": "0",
+        "@MONGOC_ENABLE_SASL_SSPI@": "0",
+        "@MONGOC_HAVE_RES_NSEARCH@": "0",
+        "@MONGOC_USER_SET_LDFLAGS@": "",
+        "@MONGOC_HAVE_RES_NCLOSE@": "0",
+        "@MONGOC_HAVE_RES_SEARCH@": "0",
+        "@MONGOC_USER_SET_CFLAGS@": "",
+        "@MONGOC_HAVE_SS_FAMILY@": "0",
+        "@MONGOC_ENABLE_CRYPTO@": "1",
+        "@MONGOC_ENABLE_RDTSCP@": "0",
+        "@MONGOC_HAVE_SOCKLEN@": "1",
+        "@MONGOC_ENABLE_SASL@": "0",
+        "@MONGOC_HAVE_DNSAPI@": "0",
+        "@MONGOC_SOCKET_ARG2@": "struct sockaddr",
+        "@MONGOC_SOCKET_ARG3@": "socklen_t",
+        "@MONGOC_ENABLE_SRV@": "0",
+        "@MONGOC_ENABLE_SSL@": "1",
+        "@MONGOC_TRACE@": "0",
+        "@MONGOC_CC@": "",
+    },
+    template = ":src/libmongoc/src/mongoc/mongoc-config.h.in",
+)
+
+expand_template(
+    name = "configure_src_libmongoc_src_mongoc_mongoc_version_h",
+    out = "config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
+    substitutions = {
+        "@libmongoc_VERSION_PRERELEASE@": "",
+        "@libmongoc_VERSION_MAJOR@": "2",
+        "@libmongoc_VERSION_MINOR@": "5",
+        "@libmongoc_VERSION_PATCH@": "6",
+        "@libmongoc_VERSION_FULL@": "",
+    },
+    template = ":src/libmongoc/src/mongoc/mongoc-version.h.in",
+)
+
+_MONGOC_ONLY_COMMON_HEADERS = [
+    "src/common/src/common-bson-dsl-private.h",
+    "src/common/src/mlib/timer.h",
+]
+
+_MONGO_COMMON_SRCS = [":config/contrib/mongo-c-driver/src/common/src/common-config.h"] + glob(
+    [
+        "src/common/src/*.c",
+        "src/common/src/**/*.h",
+    ],
+    exclude = _MONGOC_ONLY_COMMON_HEADERS + ["src/common/src/mlib/str_vec.h"],
+)
+
+ch_cc_library(
+    name = "_libbson",
+    srcs = glob(["src/libbson/src/bson/*.c"]) + ["src/libbson/src/jsonsl/jsonsl.c"] + _MONGO_COMMON_SRCS + glob([
+        "src/libbson/src/bson/*-private.h",
+        "src/libbson/src/jsonsl/*.h",
+    ]),
+    hdrs = [
+        ":config/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
+        ":config/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
+    ] + glob(
+        ["src/libbson/src/bson/*.h"],
+        exclude = ["src/libbson/src/bson/*-private.h"],
+    ) + _MONGOC_ONLY_COMMON_HEADERS,
+    includes = [
+        "src/common/src",
+        "src/libbson/src",
+        "config/contrib/mongo-c-driver/src/common/src",
+        "config/contrib/mongo-c-driver/src/libbson/src",
+    ],
+    language = "C",
+    local_defines = [
+        "BSON_COMPILATION",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_GNU_SOURCE",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+        "_POSIX_C_SOURCE=199309L",
+        "_XOPEN_SOURCE=600",
+    ],
+    local_includes = [
+        "src/common/src/src",
+    ],
+)
+
+_MONGOC_PUBLIC_HEADERS = glob(
+    ["src/libmongoc/src/mongoc/mongoc*.h"],
+    exclude = [
+        "src/libmongoc/src/mongoc/*-private.h",
+        "src/libmongoc/src/mongoc/mongoc-stream-tls-secure-*.h",
+    ],
+)
+
+ch_cc_library(
+    name = "_libmongoc",
+    srcs = glob(["src/libmongoc/src/mongoc/*.c"]) + _MONGO_COMMON_SRCS + [
+        "src/utf8proc-2.11.3/utf8proc.c",
+        ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
+    ] + glob(
+        [
+            "src/libmongoc/src/mongoc/*.h",
+            "src/utf8proc-2.11.3/*.h",
+            "src/uthash/**/*.h",
+        ],
+        exclude = _MONGOC_PUBLIC_HEADERS + [
+            "src/libmongoc/src/mongoc/mcd-integer.h",
+            "src/libmongoc/src/mongoc/mongoc-cyrus-private.h",
+            "src/libmongoc/src/mongoc/mongoc-secure-channel-private.h",
+            "src/libmongoc/src/mongoc/mongoc-secure-transport-private.h",
+            "src/libmongoc/src/mongoc/mongoc-sspi-private.h",
+            "src/libmongoc/src/mongoc/mongoc-stream-tls-secure-channel.h",
+            "src/libmongoc/src/mongoc/mongoc-stream-tls-secure-transport.h",
+        ],
+    ),
+    hdrs = [
+        ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config.h",
+        ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-version.h",
+    ] + _MONGOC_PUBLIC_HEADERS,
+    implementation_deps = [
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_zstd//:_zstd",
+    ],
+    includes = [
+        "src/libmongoc/src",
+        "src/libmongoc/src/mongoc",
+        "config/contrib/mongo-c-driver/src/libmongoc/src/mongoc",
+        "config/contrib/mongo-c-driver/src/libmongoc/src",
+    ],
+    language = "C",
+    local_defines = [
+        "MONGOC_COMPILATION",
+    ] + CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "src/utf8proc-2.11.3",
+        "src/uthash",
+    ],
+    private_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
+    private_textual_srcs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
+    deps = [
+        ":_libbson",
+        "@clickhouse_openssl//:ssl",
+    ],
+)

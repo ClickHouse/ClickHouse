@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+alias(
+    name = "_lz4",
+    actual = "@lz4//:lz4_frame",
+)

@@ -1,0 +1,52 @@
+def _files(files):
+    return [{"file": file.path, "tree": file.is_directory} for file in files]
+
+def _list(items):
+    return items.to_list() if type(items) == "depset" else items
+
+def _library(lib):
+    return {
+        "static_library": _files([lib.static_library]) if lib.static_library else [],
+        "pic_static_library": _files([lib.pic_static_library]) if lib.pic_static_library else [],
+        "dynamic_library": _files([lib.dynamic_library]) if lib.dynamic_library else [],
+        "interface_library": _files([lib.interface_library]) if lib.interface_library else [],
+        "objects": _files(_list(lib.objects)) if lib.objects else [],
+        "pic_objects": _files(_list(lib.pic_objects)) if lib.pic_objects else [],
+        "alwayslink": lib.alwayslink,
+    }
+
+def format(target):
+    p = providers(target)
+    if p == None:
+        return json.encode({"label": str(target.label), "error": "no providers"})
+    result = {
+        "label": str(target.label),
+        "incompatible": "IncompatiblePlatformProvider" in p,
+        "cc_info": None,
+    }
+    matches = [value for name, value in p.items() if name == "CcInfo" or name.endswith("%CcInfo")]
+    if len(matches) > 1:
+        result["error"] = "multiple CcInfo providers"
+    if len(matches) == 1:
+        cc = matches[0].compilation_context
+        result["cc_info"] = {
+            "public": _files(cc.direct_public_headers),
+            "private": _files(cc.direct_private_headers),
+            "textual": _files(cc.direct_textual_headers),
+            "available": _files(cc.headers.to_list()),
+            "includes": cc.includes.to_list(),
+            "quote_includes": cc.quote_includes.to_list(),
+            "system_includes": cc.system_includes.to_list(),
+            "external_includes": cc.external_includes.to_list(),
+            "owned_linker_inputs": [
+                {
+                    "owner": str(item.owner),
+                    "libraries": [_library(lib) for lib in _list(item.libraries)],
+                    "flags": _list(item.user_link_flags),
+                    "additional_inputs": _files(_list(item.additional_inputs)),
+                }
+                for item in matches[0].linking_context.linker_inputs.to_list()
+                if item.owner == target.label
+            ],
+        }
+    return json.encode(result)

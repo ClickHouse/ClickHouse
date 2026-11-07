@@ -1,0 +1,115 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "common_io_defines")
+
+package(default_visibility = ["//visibility:public"])
+
+_PRIVATE_COMPRESSION_HEADERS = [
+    "CompressionCodecNone.h",
+    "CompressionCodecZSTD.h",
+    "CompressionCodecZXC.h",
+    "PFor/bitpack.h",
+    "PFor/block.h",
+    "PFor/bulk.h",
+    "PFor/vertical.h",
+    "registerCompressionCodecs.h",
+]
+
+ch_cc_library(
+    name = "clickhouse_compression",
+    srcs = glob(["*.cpp"]) + _PRIVATE_COMPRESSION_HEADERS,
+    hdrs = glob(
+        [
+            "**/*.h",
+        ],
+        exclude = _PRIVATE_COMPRESSION_HEADERS + [
+            "CompressionInfo.h",
+            "ICompressionCodec.h",
+        ],
+    ),
+    clickhouse_code = True,
+    implementation_deps = [
+        "//bazel:clickhouse_config_headers",
+        "//bazel/rust:pco_cc",
+        "@clickhouse_openssl//:crypto",
+        "@clickhouse_libdivide//:libdivide",
+        "//contrib/cityhash102:_cityhash",
+        "@clickhouse_zxc//:_zxc",
+        "@clickhouse_sz3//:sz3",
+        "@clickhouse_zstd//:_zstd",
+        "@lz4//:lz4",
+        "@lz4//:lz4_hc",
+        "//base/poco/Foundation:_poco_foundation",
+        "//src/Common:current_metrics",
+        "//src/Common:stopwatch",
+        "//src/Common:string_utils",
+        "//src/Common:target_specific",
+        "//src:core_defines",
+        "//src/Parsers:headers",
+    ],
+    link_runtime = True,
+    local_defines = common_io_defines([
+        "ENABLE_MULTITARGET_CODE=1",
+        "USE_CLICKHOUSE_THREADS=1",
+        "ZXC_STATIC_DEFINE",
+    ]),
+    deps = [
+        "//src:core_types",
+        "@clickhouse_llvm_project//:LLVMBitReader",
+        "@clickhouse_llvm_project//:LLVMBitWriter",
+        "@clickhouse_llvm_project//:LLVMBitstreamReader",
+        "@clickhouse_llvm_project//:LLVMCodeGenTypes",
+        "@clickhouse_llvm_project//:LLVMHipStdPar",
+        "@clickhouse_llvm_project//:LLVMIRPrinter",
+        "@clickhouse_llvm_project//:LLVMIRReader",
+        "@clickhouse_llvm_project//:LLVMInstCombine",
+        "@clickhouse_llvm_project//:LLVMMCDisassembler",
+        "@clickhouse_llvm_project//:LLVMObjCARCOpts",
+        "@clickhouse_llvm_project//:LLVMSandboxIR",
+        "@clickhouse_llvm_project//:LLVMSupport",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "@clickhouse_llvm_project//:LLVMAsmPrinter",
+        "@clickhouse_llvm_project//:LLVMRuntimeDyld",
+        "@clickhouse_llvm_project//:LLVMSelectionDAG",
+        "@clickhouse_aws//:_aws",
+        "@clickhouse_boost//:_boost_context",
+        "//contrib/lz4-cmake:_lz4",
+        "@clickhouse_silk//:_silk_fibers",
+        "//src/Parsers:clickhouse_parsers",
+        "//base:common",
+        "//base/glibc-compatibility",
+        "//src:headers",
+        "//src/Common",
+        "//base/poco/Util:_poco_util",
+        "//base:pcg_random",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "//src/Common:exception_api",
+        "//src/Common:parser_support_api",
+        "//src/Common:memory_tracking_api",
+        "//src:io_string_buffers",
+        ":codec_api",
+        "//src/Parsers:parser_api",
+        "//src:column_types",
+    ],
+)
+
+ch_cc_library(
+    name = "codec_api",
+    hdrs = [
+        "CompressionInfo.h",
+        "ICompressionCodec.h",
+    ],
+    clickhouse_code = True,
+    deps = [
+        "//src/Parsers:parser_api",
+        "//src/Common:memory_tracking_api",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//base:common",
+    ],
+)
+
+filegroup(
+    name = "unit_test_sources",
+    testonly = True,
+    srcs = glob(["tests/gtest*.cpp"]),
+    visibility = ["//src:__pkg__"],
+)
