@@ -44,6 +44,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
@@ -2156,6 +2157,19 @@ static void applyQueryConstructionSettings(
             applyQueryConstructionSettings(wrapped, context, max_query_size, max_parser_depth, max_parser_backtracks);
             if (wrapped != explained)
                 explain_query->replaceExplainedQuery(wrapped);
+        }
+        return;
+    }
+
+    /// The query of `SHOW GRANTS ... FOR QUERY` is analyzed as the query of `EXPLAIN` is.
+    if (auto * show_grants_query = ast->as<ASTShowGrantsQuery>())
+    {
+        if (show_grants_query->for_query)
+        {
+            ASTPtr wrapped = show_grants_query->for_query;
+            applyQueryConstructionSettings(wrapped, context, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (wrapped != show_grants_query->for_query)
+                show_grants_query->replace(show_grants_query->for_query, wrapped);
         }
         return;
     }

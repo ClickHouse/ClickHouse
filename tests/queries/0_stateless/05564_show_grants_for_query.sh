@@ -31,12 +31,15 @@ function cleanup()
 {
     ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $all_users"
     ${CLICKHOUSE_CLIENT} -q "DROP ROLE IF EXISTS $r1"
+    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1}"
     rm -f "${USER_FILES_PATH:?}/${csv_file}"
 }
 
 cleanup
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine=1 -n -q "
+    CREATE DATABASE ${CLICKHOUSE_DATABASE_1};
+    CREATE TABLE ${CLICKHOUSE_DATABASE_1}.t2 (a UInt8) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE mytable1 (column1 UInt8, column2 UInt8) ENGINE = MergeTree ORDER BY tuple();
     CREATE TABLE t2 (a UInt8, b UInt8) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE t3 (x UInt8, y UInt8) ENGINE = MergeTree ORDER BY x;
@@ -95,6 +98,11 @@ client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT t2.a FROM t2 JOIN t3 ON t2.a = t
 
 echo "--- 5b: the pipeline of the query is not executed"
 client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT throwIf(a = 1) FROM t2"
+
+echo "--- 5c: the settings of the query and of the session apply as when the query runs"
+client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT a FROM t2 SETTINGS filter = 'a IN (SELECT x FROM t3)'"
+client -n -q "SET filter = 'a IN (SELECT x FROM t3)'; SHOW GRANTS FOR $u2 FOR QUERY SELECT a FROM t2"
+client -q "SHOW GRANTS FOR $u1 FOR QUERY SELECT a FROM t2 SETTINGS database = '${CLICKHOUSE_DATABASE_1}'"
 
 echo "--- 6: trivial count"
 client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT count() FROM t2"

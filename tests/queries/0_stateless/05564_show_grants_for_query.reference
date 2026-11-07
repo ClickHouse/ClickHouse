@@ -10,6 +10,12 @@ GRANT SELECT(a) ON default.t2 TO u2
 GRANT SELECT(x, y) ON default.t3 TO u2 WITH GRANT OPTION
 --- 5b: the pipeline of the query is not executed
 GRANT SELECT(a) ON default.t2 TO u2
+--- 5c: the settings of the query and of the session apply as when the query runs
+GRANT SELECT(a) ON default.t2 TO u2
+GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
+GRANT SELECT(a) ON default.t2 TO u2
+GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
+GRANT SELECT(a) ON default_1.t2 TO u1
 --- 6: trivial count
 GRANT SELECT(a) ON default.t2 TO u2
 --- 6b: Alias table
