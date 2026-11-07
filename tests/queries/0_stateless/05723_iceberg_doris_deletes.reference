@@ -1,0 +1,100 @@
+customer_flink_one
+1	b
+2	c
+2
+c
+customer_flink_one_orc
+1	b
+2	c
+2
+c
+customer_flink_three
+1	id2	1	b
+2	id2	1	c
+2
+c
+customer_flink_three_orc
+1	id2	1	b
+2	id2	1	c
+2
+c
+iceberg_position_parquet
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	512
+3	512
+4	512
+6	512
+7	512
+8	512
+9	512
+11	512
+12	512
+13	512
+14	512
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+7	12345xxx
+7	12345xxx
+7	12345xxx
+5632
+5632
+5120
+5632
+5632
+iceberg_position_orc
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	512
+3	512
+4	512
+6	512
+7	512
+8	512
+9	512
+11	512
+12	512
+13	512
+14	512
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+7	12345xxx
+7	12345xxx
+7	12345xxx
+5632
+5632
+5120
+5632
+5632
+iceberg_position_gen_data
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	512
+3	512
+4	512
+6	512
+7	512
+8	512
+9	512
+11	512
+12	512
+13	512
+14	512
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+2	select xxxxxxxxx
+7	12345xxx
+7	12345xxx
+7	12345xxx
+5632
+5632
+5120
+5632
+5632
+location_s3_table
+1	b

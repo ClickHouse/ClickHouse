@@ -1,0 +1,301 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "a0470121-71ae-4ee1-8206-cc39383d04c9",
+  "location" : "s3a://warehouse/wh/multi_catalog/complex_parquet_v1",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1720009118167,
+  "last-column-id" : 50,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 7,
+        "element" : {
+          "type" : "list",
+          "element-id" : 8,
+          "element" : {
+            "type" : "list",
+            "element-id" : 9,
+            "element" : {
+              "type" : "list",
+              "element-id" : 10,
+              "element" : {
+                "type" : "list",
+                "element-id" : 11,
+                "element" : "int",
+                "element-required" : false
+              },
+              "element-required" : false
+            },
+            "element-required" : false
+          },
+          "element-required" : false
+        },
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 12,
+        "key" : {
+          "type" : "list",
+          "element-id" : 14,
+          "element" : "float",
+          "element-required" : false
+        },
+        "value-id" : 13,
+        "value" : {
+          "type" : "map",
+          "key-id" : 15,
+          "key" : "int",
+          "value-id" : 16,
+          "value" : {
+            "type" : "map",
+            "key-id" : 17,
+            "key" : "int",
+            "value-id" : 18,
+            "value" : "float",
+            "value-required" : false
+          },
+          "value-required" : false
+        },
+        "value-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 19,
+          "name" : "x",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 22,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 20,
+          "name" : "y",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 23,
+            "element" : "double",
+            "element-required" : false
+          }
+        }, {
+          "id" : 21,
+          "name" : "z",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 24,
+            "key" : "boolean",
+            "value-id" : 25,
+            "value" : "string",
+            "value-required" : false
+          }
+        } ]
+      }
+    }, {
+      "id" : 5,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 26,
+        "key" : "int",
+        "value-id" : 27,
+        "value" : {
+          "type" : "map",
+          "key-id" : 28,
+          "key" : "int",
+          "value-id" : 29,
+          "value" : {
+            "type" : "map",
+            "key-id" : 30,
+            "key" : "int",
+            "value-id" : 31,
+            "value" : {
+              "type" : "map",
+              "key-id" : 32,
+              "key" : "int",
+              "value-id" : 33,
+              "value" : {
+                "type" : "map",
+                "key-id" : 34,
+                "key" : "float",
+                "value-id" : 35,
+                "value" : {
+                  "type" : "map",
+                  "key-id" : 36,
+                  "key" : "double",
+                  "value-id" : 37,
+                  "value" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 38,
+                      "name" : "x",
+                      "required" : false,
+                      "type" : "int"
+                    }, {
+                      "id" : 39,
+                      "name" : "y",
+                      "required" : false,
+                      "type" : {
+                        "type" : "list",
+                        "element-id" : 40,
+                        "element" : "double",
+                        "element-required" : false
+                      }
+                    } ]
+                  },
+                  "value-required" : false
+                },
+                "value-required" : false
+              },
+              "value-required" : false
+            },
+            "value-required" : false
+          },
+          "value-required" : false
+        },
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 41,
+          "name" : "xx",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 44,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 42,
+          "name" : "yy",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 45,
+            "element" : {
+              "type" : "map",
+              "key-id" : 46,
+              "key" : "double",
+              "value-id" : 47,
+              "value" : "float",
+              "value-required" : false
+            },
+            "element-required" : false
+          }
+        }, {
+          "id" : 43,
+          "name" : "zz",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 48,
+              "name" : "xxx",
+              "required" : false,
+              "type" : {
+                "type" : "struct",
+                "fields" : [ {
+                  "id" : 49,
+                  "name" : "xxxx",
+                  "required" : false,
+                  "type" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 50,
+                      "name" : "xxxxx",
+                      "required" : false,
+                      "type" : "decimal(13, 2)"
+                    } ]
+                  }
+                } ]
+              }
+            } ]
+          }
+        } ]
+      }
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 8054445082451156627,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 8054445082451156627,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 8054445082451156627,
+    "timestamp-ms" : 1720009118167,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1720009044068",
+      "added-data-files" : "2",
+      "added-records" : "6",
+      "added-files-size" : "19165",
+      "changed-partition-count" : "1",
+      "total-records" : "6",
+      "total-files-size" : "19165",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/complex_parquet_v1/metadata/snap-8054445082451156627-1-84a64482-6547-4814-bdf8-750bb17b2ed0.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720009118167,
+    "snapshot-id" : 8054445082451156627
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720009105455,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/complex_parquet_v1/metadata/00000-20ba3133-eb43-4041-ba4f-a44a5cbf6fcd.metadata.json"
+  } ]
+}

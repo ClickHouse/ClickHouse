@@ -1,0 +1,203 @@
+iceberg_partition_upper_case_orc
+1	k2_1	k3_1	Beijing
+2	k2_2	k3_2	Beijing
+3	k2_3	k3_3	Shanghai
+4	k2_4	k3_4	Shanghai
+1	Beijing
+2	Beijing
+3	Shanghai
+4	Shanghai
+Beijing
+Beijing
+Shanghai
+Shanghai
+2	k2_2	k3_2	Beijing
+iceberg_partition_upper_case_parquet
+1	k2_1	k3_1	Beijing
+2	k2_2	k3_2	Beijing
+3	k2_3	k3_3	Shanghai
+4	k2_4	k3_4	Shanghai
+1	Beijing
+2	Beijing
+3	Shanghai
+4	Shanghai
+Beijing
+Beijing
+Shanghai
+Shanghai
+2	k2_2	k3_2	Beijing
+iceberg_partition_lower_case_orc
+1	k2_1	k3_1	Beijing
+2	k2_2	k3_2	Beijing
+3	k2_3	k3_3	Shanghai
+4	k2_4	k3_4	Shanghai
+1	Beijing
+2	Beijing
+3	Shanghai
+4	Shanghai
+Beijing
+Beijing
+Shanghai
+Shanghai
+2	k2_2	k3_2	Beijing
+iceberg_partition_lower_case_parquet
+1	k2_1	k3_1	Beijing
+2	k2_2	k3_2	Beijing
+3	k2_3	k3_3	Shanghai
+4	k2_4	k3_4	Shanghai
+1	Beijing
+2	Beijing
+3	Shanghai
+4	Shanghai
+Beijing
+Beijing
+Shanghai
+Shanghai
+2	k2_2	k3_2	Beijing
+parquet_partitioned_one_column
+\N	0.1	test1	2023-01-01 00:00:00.000000
+\N	0.2	test2	2023-01-02 00:00:00.000000
+100	0.3	test3	2023-01-03 00:00:00.000000
+\N	0.1	test1
+\N	0.2	test2
+100	0.3	test3
+\N	0.2	test2
+\N	0.2	test2
+100	0.3	test3
+parquet_partitioned_columns
+\N	0.1	test1	2023-01-01 00:00:00.000000
+\N	0.2	test2	2023-01-02 00:00:00.000000
+100	0.3	test3	2023-01-03 00:00:00.000000
+\N	0.1	test1
+\N	0.2	test2
+100	0.3	test3
+\N	0.2	test2
+\N	0.2	test2
+100	0.3	test3
+parquet_partitioned_truncate_and_fields
+\N	0.1	test1	2023-01-01 00:00:00.000000
+\N	0.2	test2	2023-01-02 00:00:00.000000
+100	0.3	test3	2023-01-03 00:00:00.000000
+\N	0.1	test1
+\N	0.2	test2
+100	0.3	test3
+\N	0.2	test2
+\N	0.2	test2
+100	0.3	test3
+orc_partitioned_one_column
+\N	0.1	test1	2023-01-01 00:00:00.000000
+\N	0.2	test2	2023-01-02 00:00:00.000000
+100	0.3	test3	2023-01-03 00:00:00.000000
+\N	0.1	test1
+\N	0.2	test2
+100	0.3	test3
+\N	0.2	test2
+\N	0.2	test2
+100	0.3	test3
+orc_partitioned_columns
+\N	0.1	test1	2023-01-01 00:00:00.000000
+\N	0.2	test2	2023-01-02 00:00:00.000000
+100	0.3	test3	2023-01-03 00:00:00.000000
+\N	0.1	test1
+\N	0.2	test2
+100	0.3	test3
+\N	0.2	test2
+\N	0.2	test2
+100	0.3	test3
+orc_partitioned_truncate_and_fields
+\N	0.1	test1	2023-01-01 00:00:00.000000
+\N	0.2	test2	2023-01-02 00:00:00.000000
+100	0.3	test3	2023-01-03 00:00:00.000000
+\N	0.1	test1
+\N	0.2	test2
+100	0.3	test3
+\N	0.2	test2
+\N	0.2	test2
+100	0.3	test3
+user_case_date
+1	true	2020-01-02	2020-01-02 01:02:03.123456
+1	true	2020-01-02	2020-01-02 01:02:03.123456
+1	true	2020-01-02	2020-01-02 01:02:03.123456
+1	true	2020-01-02	2020-01-02 01:02:03.123456
+1	true	2020-01-02	2020-01-02 01:02:03.123456
+0
+1	2020-01-02
+1	2020-01-02
+1	2020-01-02
+0
+1	2020-01-02
+1	2020-01-02
+1	2020-01-02
+0
+format_v1/sample_orc
+('city',1000,0,'Beijing','Shanghai')
+('col_boolean',1000,0,'false','true')
+('col_byte',1000,0,'-128','127')
+('col_char',1000,0,'!','zy@notj#fkedb($')
+('col_date',1000,0,'1969-09-21','2969-02-03')
+('col_decimal',1000,0,'4.028284','9999.512216')
+('col_double',1000,0,'0.005217837593576302','9.996285421163707')
+('col_float',1000,0,'0.013126845','9.99709')
+('col_integer',1000,0,'-21468189','2108484')
+('col_long',1000,0,'-92193877774291102','92127291905311066')
+('col_short',1000,0,'-32554','32525')
+('col_string',1000,0,'0','zx70Jyeb6TfQ1YUaIGC')
+('col_timestamp',1000,0,'1970-01-01 08:00:01.000001','1970-01-04 08:00:01.000001')
+('col_timestamp_ntz',1000,0,'2017-12-01 10:12:55.038194','2017-12-04 10:12:55.038194')
+('col_varchar',1000,0,'0','zvnZ6bBxh')
+('id',1000,0,'-99567408','99854631')
+Beijing	1970-01-01	66	-340752132	-656748663
+Beijing	1970-01-02	54	-760044449	-528351882
+Beijing	1970-01-03	53	369207528	-459694401
+Beijing	1970-01-04	65	-497451201	-596885386
+Hangzhou	1970-01-01	64	-164436976	-657405817
+Hangzhou	1970-01-02	69	120073612	-682100120
+Hangzhou	1970-01-03	69	833521653	-727219514
+Hangzhou	1970-01-04	67	-622676530	-684485628
+Hefei	1970-01-01	62	-76234169	-628070467
+Hefei	1970-01-02	51	424569165	-509854965
+Hefei	1970-01-03	83	-297041068	-816285889
+Hefei	1970-01-04	67	651618902	-632906843
+Shanghai	1970-01-01	60	-970307589	-550242999
+Shanghai	1970-01-02	54	-904868223	-456985062
+Shanghai	1970-01-03	61	177140499	-584897108
+Shanghai	1970-01-04	55	-60636174	-563095468
+238	-1229040254
+404	437179284
+2	287223
+format_v2/sample_mor_parquet
+('city',1000,0,'Beijing','Shanghai')
+('col_boolean',1000,0,'false','true')
+('col_byte',1000,0,'-128','127')
+('col_char',1000,0,'!','zy@notj#fkedb($')
+('col_date',1000,0,'1969-09-21','2969-02-03')
+('col_decimal',1000,0,'4.028284','9999.512216')
+('col_double',1000,0,'0.005217837593576302','9.996285421163707')
+('col_float',1000,0,'0.013126845','9.99709')
+('col_integer',1000,0,'-21468189','2108484')
+('col_long',1000,0,'-92193877774291102','92127291905311066')
+('col_short',1000,0,'-32554','32525')
+('col_string',1000,0,'0','zx70Jyeb6TfQ1YUaIGC')
+('col_timestamp',1000,0,'1970-01-01 08:00:01.000001','1970-01-04 08:00:01.000001')
+('col_timestamp_ntz',1000,0,'2017-12-01 10:12:55.038194','2017-12-04 10:12:55.038194')
+('col_varchar',1000,0,'0','zvnZ6bBxh')
+('id',1000,0,'-99567408','99854631')
+Beijing	1970-01-01	66	-340752132	-656748663
+Beijing	1970-01-02	54	-760044449	-528351882
+Beijing	1970-01-03	53	369207528	-459694401
+Beijing	1970-01-04	65	-497451201	-596885386
+Hangzhou	1970-01-01	64	-164436976	-657405817
+Hangzhou	1970-01-02	69	120073612	-682100120
+Hangzhou	1970-01-03	69	833521653	-727219514
+Hangzhou	1970-01-04	67	-622676530	-684485628
+Hefei	1970-01-01	62	-76234169	-628070467
+Hefei	1970-01-02	51	424569165	-509854965
+Hefei	1970-01-03	83	-297041068	-816285889
+Hefei	1970-01-04	67	651618902	-632906843
+Shanghai	1970-01-01	60	-970307589	-550242999
+Shanghai	1970-01-02	54	-904868223	-456985062
+Shanghai	1970-01-03	61	177140499	-584897108
+Shanghai	1970-01-04	55	-60636174	-563095468
+238	-1229040254
+404	437179284
+2	287223
