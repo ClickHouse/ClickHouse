@@ -246,6 +246,25 @@ mkdir -p "$TEST_DIR_ABS/samepath/root/sub" "$TEST_DIR_ABS/dotdotwrite/root/a" "$
 printf "row1\n" > "$TEST_DIR_ABS/samepath/root/sub/f.txt"
 printf "row1\n" > "$TEST_DIR_ABS/dotdotwrite/root/f.txt"
 
+# Two aliases of one directory, `root/a` and `root/b`. The `..` folded after either returns `root/f.txt` (the existence
+# check finds `data/f.txt`), so `aliasdotdot` selects one path and stays WRITABLE. The writes stay refused where the two
+# spellings return different paths: a match below the alias (`root/a/f.txt` and `root/b/f.txt`), or aliases under
+# different parents (`root/x/f.txt` and `root/y/f.txt`, with `root/y` -> `x`).
+mkdir -p "$TEST_DIR_ABS/aliasdotdot/root" "$TEST_DIR_ABS/aliasdotdot/data/D"
+printf "row1\n" > "$TEST_DIR_ABS/aliasdotdot/root/f.txt"
+printf "probe\n" > "$TEST_DIR_ABS/aliasdotdot/data/f.txt"
+ln -s ../data/D "$TEST_DIR_ABS/aliasdotdot/root/a"
+ln -s ../data/D "$TEST_DIR_ABS/aliasdotdot/root/b"
+mkdir -p "$TEST_DIR_ABS/aliasdotdotbelow/root" "$TEST_DIR_ABS/aliasdotdotbelow/data/D/x"
+printf "row1\n" > "$TEST_DIR_ABS/aliasdotdotbelow/data/D/f.txt"
+ln -s ../data/D "$TEST_DIR_ABS/aliasdotdotbelow/root/a"
+ln -s ../data/D "$TEST_DIR_ABS/aliasdotdotbelow/root/b"
+mkdir -p "$TEST_DIR_ABS/aliasdotdotparents/root/x" "$TEST_DIR_ABS/aliasdotdotparents/data/D"
+printf "row1\n" > "$TEST_DIR_ABS/aliasdotdotparents/root/x/f.txt"
+printf "probe\n" > "$TEST_DIR_ABS/aliasdotdotparents/data/f.txt"
+ln -s ../../data/D "$TEST_DIR_ABS/aliasdotdotparents/root/x/a"
+ln -s x "$TEST_DIR_ABS/aliasdotdotparents/root/y"
+
 # The same two aliases, but the matching file sits one level BELOW the aliased directory:
 # `nestedalias/root/target/inner/f.txt`, with `aliasA` and `aliasB` both naming `target`.
 # The pruned frame is the one at `target`, while the match is emitted by its descendant, so
@@ -333,6 +352,24 @@ ln -s ../data/A "$TEST_DIR_ABS/budget2/root/z"
 cp -a "$TEST_DIR_ABS/budget2" "$TEST_DIR_ABS/budget3"
 ln -snf ../chains/s2/child "$TEST_DIR_ABS/budget3/root/a"
 ln -snf ../chains/s1 "$TEST_DIR_ABS/budget3/root/b"
+
+# The `budget2` names for `data/D`, with a `..` folded after each. The file the fold finds is a symlink, one link more
+# than `root/a` affords, so the walk is retried through `root/b` and `root/z` is pruned after that retry. In
+# `aliasdotdotretry` every fold returns `root/f.txt`; in `aliasdotdotretrybelow` it stays below the alias.
+for d in aliasdotdotretry aliasdotdotretrybelow; do
+    mkdir -p "$TEST_DIR_ABS/$d/root" "$TEST_DIR_ABS/$d/chains" "$TEST_DIR_ABS/$d/data/D/x"
+    for i in $(seq 1 $((SYMLINK_LIMIT - 2))); do
+        ln -s "s$((i + 1))" "$TEST_DIR_ABS/$d/chains/s$i"
+    done
+    ln -s ../data/D "$TEST_DIR_ABS/$d/chains/s$((SYMLINK_LIMIT - 1))"
+    ln -s ../chains/s1 "$TEST_DIR_ABS/$d/root/a"
+    ln -s ../chains/s2 "$TEST_DIR_ABS/$d/root/b"
+    ln -s ../data/D "$TEST_DIR_ABS/$d/root/z"
+done
+printf "row1\n" > "$TEST_DIR_ABS/aliasdotdotretry/root/f.txt"
+ln -s ../root/f.txt "$TEST_DIR_ABS/aliasdotdotretry/data/f.txt"
+printf "row1\n" > "$TEST_DIR_ABS/aliasdotdotretrybelow/root/g.txt"
+ln -s ../../root/g.txt "$TEST_DIR_ABS/aliasdotdotretrybelow/data/D/f.txt"
 
 # A file whose path through `longname/root/a` exceeds `PATH_MAX` while its directory's does not, so
 # only its size lookup fails. `root/z` names the same directory through a chain of short symlinks, relative
@@ -687,6 +724,26 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/dotd
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/dotdotwrite/root/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dotdotwrite/root/f.txt', 'TSV', 'val String')"
+
+echo "aliases-folded-to-one-path-insert-is-allowed"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdot/root/*/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdot/root/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdot/root/f.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotretry/root/*/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdotretry/root/f.txt', 'TSV', 'val String')"
+echo "aliases-folded-to-two-paths-insert-stays-readonly"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotretrybelow/root/*/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdotretrybelow/root/g.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotbelow/root/*/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliasdotdotparents/root/*/a/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdotbelow/data/D/f.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasdotdotparents/root/x/f.txt', 'TSV', 'val String')"
 
 # The refusal must also hold when the match is emitted below the aliased directory rather
 # than inside it, which is the case a per-frame count reaching only the innermost frame

@@ -96,6 +96,7 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <unordered_set>
 
@@ -238,6 +239,23 @@ size_t dotDotClimb(const std::string & pattern)
     return static_cast<size_t>(-lowest);
 }
 
+/// How many levels above two lexically normal directory spellings they first name the same directory.
+size_t levelsToCommonDirectory(const std::string & a, const std::string & b)
+{
+    if (a == b)
+        return 0;
+    fs::path x = fs::path(a).parent_path();
+    fs::path y = fs::path(b).parent_path();
+    for (size_t level = 1; x.has_relative_path() || y.has_relative_path(); ++level)
+    {
+        x = x.parent_path();
+        y = y.parent_path();
+        if (x == y)
+            return level;
+    }
+    return std::numeric_limits<size_t>::max();
+}
+
 /// Classifies a filesystem query that failed while a glob was being expanded, at a place that
 /// reacts by skipping the path. The codes below mean nothing listable is there; any other error
 /// means matching files may exist but could not be read, which must not become missing rows.
@@ -275,6 +293,11 @@ struct VisitedFrame
     size_t skipped_end = 0;
     /// `matches` at the start of each retry, in order.
     std::vector<size_t> matches_before_retries;
+    /// The fewest levels above `prefix` that the `..` of a match of the current walk reach. Another spelling
+    /// of the directory returns the same path for such a match only if both spellings are equal that far up.
+    size_t min_match_climb = std::numeric_limits<size_t>::max();
+    /// `lexical_dir` and `min_match_climb` of each walk before the current one, in order.
+    std::vector<std::pair<std::string, size_t>> earlier_walks;
 };
 
 /// State the traversal pruning carries across one expanded pattern.
@@ -293,8 +316,16 @@ struct PruningState
     /// comes from inside the claiming frame's own subtree, which is what an ancestor loop is: the
     /// loop can re-enter the root before the root has matched anything. A collision before one of
     /// the frame's retries counts only the matches from before that retry: the pruned name has more
-    /// symlinks than the retry's name. The second field is how many retries the frame had at the time.
-    std::vector<std::pair<const VisitedFrame *, size_t>> pending_collisions;
+    /// symlinks than the retry's name.
+    struct Collision
+    {
+        const VisitedFrame * frame = nullptr;
+        /// How many retries the frame had at the time.
+        size_t retries = 0;
+        /// The pruned spelling's `lexical_dir` when `..` are folded, else empty: every match is then another path.
+        std::string pruned_dir;
+    };
+    std::vector<Collision> pending_collisions;
 
     /// What a path skipped on `ELOOP` or `ENAMETOOLONG` would have added to the result. The walk fails at the end
     /// unless another name found it, or a later walk of `frame` superseded the skip.
@@ -522,7 +553,9 @@ void listFilesWithRegexpMatchingImpl(
     /// `fs::directory_iterator` preserves the spelling it is handed.
     /// `parent_canonical_hint` lets a caller that has already resolved this path's parent pass the
     /// result in, so the same directory is not resolved twice for one match.
-    auto add_matched_path = [&](const std::string & path, size_t bytes, const fs::path * parent_canonical_hint = nullptr)
+    /// `unfolded` is `path` as spelled before its `..` were folded.
+    auto add_matched_path = [&](const std::string & path, size_t bytes, const fs::path * parent_canonical_hint = nullptr,
+                                const std::string * unfolded = nullptr)
     {
         /// Resolve the PARENT but keep the final component as written: an ancestor-aliasing
         /// symlink gives one file several lexical paths, while a symlink TO a file is a distinct
@@ -555,7 +588,11 @@ void listFilesWithRegexpMatchingImpl(
             total_bytes_to_read += bytes;
             result.push_back(collapseRedundantSeparators(path));
             for (auto * frame : pruning.active_frames)
+            {
                 ++frame->matches;
+                frame->min_match_climb = std::min(frame->min_match_climb,
+                    unfolded && unfolded->starts_with(frame->prefix) ? dotDotClimb(unfolded->substr(frame->prefix.size())) : 0);
+            }
         }
         else if (fs::path(result[returned->second]).lexically_normal() != fs::path(path).lexically_normal())
         {
@@ -605,7 +642,7 @@ void listFilesWithRegexpMatchingImpl(
             notePathLimitSkip(size_ec, candidate, nullptr, pruning, SkippedYield::Match, SkippedYield::Match);
             return;
         }
-        add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
+        add_matched_path(absolute_path.string(), size_ec ? 0 : file_size, nullptr, pruning.folds_dot_dot ? &candidate : nullptr);
         return;
     }
 
@@ -720,7 +757,8 @@ void listFilesWithRegexpMatchingImpl(
             /// name. Whether the pruned frame would have matched anything is decided after the
             /// walk, because the claiming frame may still be finding matches right now.
             if (frame.lexical_dir != lexical_dir)
-                pruning.pending_collisions.emplace_back(&frame, frame.matches_before_retries.size());
+                pruning.pending_collisions.push_back(
+                    {&frame, frame.matches_before_retries.size(), pruning.folds_dot_dot ? lexical_dir : std::string{}});
             /// What the frame could not resolve is also unresolved under the frames reaching it now.
             if (!frame.walking && frame.unresolved)
                 notePathLimitSkip(std::make_error_code(std::errc::too_many_symbolic_link_levels),
@@ -728,7 +766,11 @@ void listFilesWithRegexpMatchingImpl(
             return; /// This directory has already been walked with this remaining pattern.
         }
         if (!is_new)
+        {
             frame.matches_before_retries.push_back(frame.matches);
+            frame.earlier_walks.emplace_back(std::move(frame.lexical_dir), frame.min_match_climb);
+            frame.min_match_climb = std::numeric_limits<size_t>::max();
+        }
         frame.lexical_dir = lexical_dir;
         frame.prefix = prefix_without_globs;
         frame.canonical = prefix_canonical;
@@ -921,17 +963,21 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
         /// Now that every frame's match count is final, decide whether pruning hid a real second
         /// name for a file: a pruned frame would have emitted exactly what its claiming frame did,
-        /// so it collapsed something only if that frame matched something. Deciding here rather
+        /// so it collapsed something only if a walk the collision counts matched something whose
+        /// folded `..` did not climb to where that walk's spelling and the pruned one meet. Deciding here rather
         /// than at the collision keeps the answer independent of the order the walk took.
-        for (const auto & [claimed, retries_at_collision] : pruning.pending_collisions)
+        for (const auto & collision : pruning.pending_collisions)
         {
-            const size_t matches = retries_at_collision < claimed->matches_before_retries.size()
-                ? claimed->matches_before_retries[retries_at_collision]
-                : claimed->matches;
-            if (matches > 0)
+            const VisitedFrame & claimed = *collision.frame;
+            for (size_t walk = 0; walk <= collision.retries && !collapsed_a_match; ++walk)
             {
-                collapsed_a_match = true;
-                break;
+                const bool earlier = walk < claimed.earlier_walks.size();
+                const std::string & dir = earlier ? claimed.earlier_walks[walk].first : claimed.lexical_dir;
+                const size_t climb = earlier ? claimed.earlier_walks[walk].second : claimed.min_match_climb;
+                if (climb == std::numeric_limits<size_t>::max())
+                    continue;
+                if (collision.pruned_dir.empty() || climb < levelsToCommonDirectory(dir, collision.pruned_dir))
+                    collapsed_a_match = true;
             }
         }
     }

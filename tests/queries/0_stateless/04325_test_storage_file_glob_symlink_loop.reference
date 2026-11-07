@@ -59,6 +59,16 @@ empty-alias-insert-is-allowed
 same-path-reached-twice-insert-is-allowed
 2
 3
+aliases-folded-to-one-path-insert-is-allowed
+3
+2
+aliases-folded-to-two-paths-insert-stays-readonly
+refused
+1
+refused
+refused
+1
+1
 nested-alias-insert-stays-readonly
 refused
 1
