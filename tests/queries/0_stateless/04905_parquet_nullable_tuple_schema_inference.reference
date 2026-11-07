@@ -23,10 +23,14 @@ p	Tuple(\n    `1` Nullable(Float64),\n    `2` Nullable(Float64))
 p	Tuple(\n    `1` Float64,\n    `2` Float64)					
 (0,0)
 (1,2)
---- nested optional group: plain Tuple
-p	Tuple(\n    a Nullable(UInt8),\n    b Tuple(\n        c Nullable(UInt8)))					
---- optional leaf under an optional group: plain Tuple
-p	Tuple(\n    a Nullable(UInt8))					
+--- nested optional group: Nullable(Tuple), inner group nullable too
+p	Nullable(Tuple(a Nullable(UInt8), b Nullable(Tuple(c Nullable(UInt8)))))					
+(1,(2))
+\N
+--- optional leaf under an optional group: Nullable(Tuple)
+p	Nullable(Tuple(a Nullable(UInt8)))					
+(1)
+\N
 --- required group: no struct-level NULL exists
 p	Tuple(\n    `1` Float64,\n    `2` Float64)					
 (1,2)

@@ -1,10 +1,10 @@
 id	Int64					
-file	Tuple(\n    uri Nullable(String),\n    offset Nullable(Int64),\n    size Nullable(Int64),\n    content_type Nullable(String),\n    checksum Nullable(String),\n    inline Nullable(String))					
+file	Nullable(Tuple(uri Nullable(String), offset Nullable(Int64), size Nullable(Int64), content_type Nullable(String), checksum Nullable(String), inline Nullable(String)))					
 inline_file	Tuple(\n    inline Nullable(String),\n    content_type Nullable(String))					
 files	Array(Tuple(\n    uri Nullable(String)))					
 1	('s3://bucket/archive.tar',1024,512,NULL,'CRC32:3610a686',NULL)	000102FF	application/octet-stream	[('a'),(NULL)]
 2	(NULL,NULL,5,'text/plain',NULL,'hello')	\N	\N	[]
-3	(NULL,NULL,NULL,NULL,NULL,NULL)	7B2261223A317D	application/json	[]
+3	\N	7B2261223A317D	application/json	[]
 4	('s3://bucket/image.png',NULL,NULL,'image/png','SHA-256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',NULL)	\N	\N	[('b')]
 1	s3://bucket/archive.tar	1024	512
 1	(NULL,'s3://bucket/archive.tar')
