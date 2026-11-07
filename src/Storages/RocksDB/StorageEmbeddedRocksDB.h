@@ -87,8 +87,6 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    bool supportsParallelInsert() const override { return true; }
-
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }
 

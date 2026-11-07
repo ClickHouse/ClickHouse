@@ -615,6 +615,8 @@ public:
 
     bool supportsFinal() const override;
 
+    bool supportsParallelInsert() const override;
+
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
 

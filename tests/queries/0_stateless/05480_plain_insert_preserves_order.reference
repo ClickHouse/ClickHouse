@@ -1,0 +1,20 @@
+order_rmt
+1
+order_coalescing
+1
+order_kv
+1
+order_cmt
+1
+order_versioned
+4
+order_mt
+4
+order_mv
+2
+1	1
+10	0
+10	0
+10	0
+10	0
+10	0
