@@ -299,7 +299,8 @@ static bool doesQueryFilterImplyProjectionWhere(
 
 /// Normal projection analysis result in case it can be applied.
 /// For now, it is empty.
-/// Normal projection can be used only if it contains all required source columns.
+/// Normal projection can fully replace the table read only if it contains all required source columns.
+/// Otherwise it may still be used for projection filtering (part/row pruning) when optimize_use_projection_filtering is on.
 /// It would not be hard to support pre-computed expressions and filtration.
 struct NormalProjectionCandidate : public ProjectionCandidate
 {
@@ -595,6 +596,25 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (ratio < 0 || ratio > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting optimize_projection_skip_index_ratio should be >= 0 and <= 1 ({})", ratio);
 
+    /// Filtering-only projections are recorded after the final plan shape is known: if a later full
+    /// projection replaces the parent read entirely, they never appear in the executed plan.
+    std::vector<String> filtering_projection_names;
+    auto commit_filtering_projections = [&]()
+    {
+        for (const auto & name : filtering_projection_names)
+        {
+            result.used_filtering_projections.insert(name);
+            if (!query_info.is_internal && context->hasQueryContext())
+            {
+                context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+                {
+                    .storage_id = reading->getMergeTreeData().getStorageID(),
+                    .projection_name = name,
+                });
+            }
+        }
+    };
+
     /// Phase 1: analyze every viable projection candidate. We do not yet compare any candidate
     /// against the base-table read cost; that comparison is deferred until after the best candidate
     /// is chosen so the (potentially expensive) skip-index refinement of the parent runs at most
@@ -625,15 +645,16 @@ UseProjectionsResult optimizeUseNormalProjections(
             if (query.filter_node && optimize_use_projection_filtering)
             {
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
-                filterPartsAndCollectProjectionCandidates(
-                    *reading,
-                    *projection,
-                    reader,
-                    empty_mutations_snapshot,
-                    *parent_reading_select_result,
-                    projection_query_info,
-                    query.filter_node,
-                    context);
+                if (filterPartsAndCollectProjectionCandidates(
+                        *reading,
+                        *projection,
+                        reader,
+                        empty_mutations_snapshot,
+                        *parent_reading_select_result,
+                        projection_query_info,
+                        query.filter_node,
+                        context))
+                    filtering_projection_names.push_back(projection->name);
             }
 
             continue;
@@ -747,6 +768,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         if (hypothetical)
             recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates, &hypothetical->projection), false);
+        commit_filtering_projections();
         return result;
     }
 
@@ -936,6 +958,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         if (hypothetical)
             recordHypotheticalOutcome(*hypothetical, result, findCandidate(candidates, &hypothetical->projection), false);
+        commit_filtering_projections();
         return result;
     }
 
@@ -955,7 +978,10 @@ UseProjectionsResult optimizeUseNormalProjections(
         recordHypotheticalOutcome(*hypothetical, result, own, own == best_candidate);
         /// never read a hypothetical projection
         if (best_candidate->projection == &hypothetical->projection)
+        {
+            commit_filtering_projections();
             return result;
+        }
     }
 
     auto storage_snapshot = reading->getStorageSnapshot();
@@ -1093,6 +1119,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
         {
             result.projection_reject_reasons.try_emplace(best_candidate->projection->name, "the projection stream and the table stream have different headers");
+            commit_filtering_projections();
             return result;
         }
 
@@ -1118,6 +1145,9 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// Here we remove last steps from stack to be able to optimize again.
     stack.resize(iter.base() - stack.begin());
     result.applied_projection = best_candidate->projection->name;
+    /// A full projection that replaces the parent branch discards filtering-only projections.
+    if (has_parent_parts)
+        commit_filtering_projections();
     return result;
 }
 
