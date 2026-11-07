@@ -147,8 +147,8 @@ $INITIAL_CLIENT -q "
 # The parallel replicas case names the query-based reading step, so it is pinned to that
 # implementation; `05238_pr_plan_based_blocks_marshalling` asserts the same counts for plan-based.
 #
-# The last one asserts that a plan which is serialized and shipped to a shard keeps marshalling:
-# the shard sends its blocks back over the network.
+# The last one asserts that a plan which is serialized and shipped to a shard carries no
+# marshalling step: the shard runs it as shipped, with the sender's steps on top of it.
 $CLIENT -q "
     SELECT '-- BlocksMarshalling steps for remote(): total, above ReadFromRemote, ReadFromRemote steps';
     $(marshalling_counts_query "
