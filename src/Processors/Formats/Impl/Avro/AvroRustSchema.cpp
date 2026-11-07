@@ -231,16 +231,10 @@ std::string nodeDescription(Node node, const AvroNodeInfo & info)
     return kindName(info.kind);
 }
 
-/// `depth` is the number of enclosing types of `node` that are being inferred. Named types are followed by reference,
-/// so the schema JSON being shallow (`max_depth` of `Schema`) does not bound it: the explicit limit does.
-DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_progress, bool allow_nullable_tuple_type, size_t depth)
+/// Named types are followed by reference, so the schema JSON being shallow (`max_depth` of `Schema`) does not bound the
+/// recursion: only `checkStackSize` does, as in the legacy `avroNodeToDataTypeImpl`.
+DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_progress, bool allow_nullable_tuple_type)
 {
-    if (depth > MAX_AVRO_SCHEMA_DEPTH)
-        throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION,
-            "Too deep recursion while inferring the Avro schema: the nesting depth exceeds the limit ({})",
-            MAX_AVRO_SCHEMA_DEPTH);
-
     checkStackSize();
 
     const AvroNodeInfo info = node.info();
@@ -311,14 +305,14 @@ DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_pro
             return std::make_shared<DataTypeFixedString>(info.fixed_size);
         }
         case AVRO_KIND_ARRAY:
-            return std::make_shared<DataTypeArray>(inferTypeImpl(node.child(0), records_in_progress, allow_nullable_tuple_type, depth + 1));
+            return std::make_shared<DataTypeArray>(inferTypeImpl(node.child(0), records_in_progress, allow_nullable_tuple_type));
         case AVRO_KIND_NULL:
             return std::make_shared<DataTypeNothing>();
         case AVRO_KIND_UNION:
         {
             /// Treat union[T] as just T.
             if (info.child_count == 1)
-                return inferTypeImpl(node.child(0), records_in_progress, allow_nullable_tuple_type, depth + 1);
+                return inferTypeImpl(node.child(0), records_in_progress, allow_nullable_tuple_type);
 
             /// Treat union[T, NULL] and union[NULL, T] as Nullable(T).
             if (info.child_count == 2)
@@ -328,7 +322,7 @@ DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_pro
                 const bool first_is_null = first.info().kind == AVRO_KIND_NULL;
                 if (first_is_null || second.info().kind == AVRO_KIND_NULL)
                 {
-                    auto nested_type = inferTypeImpl(first_is_null ? second : first, records_in_progress, allow_nullable_tuple_type, depth + 1);
+                    auto nested_type = inferTypeImpl(first_is_null ? second : first, records_in_progress, allow_nullable_tuple_type);
                     if (isTuple(nested_type) && !allow_nullable_tuple_type)
                         return nested_type;
                     return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
@@ -346,7 +340,7 @@ DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_pro
                 if (branch.info().kind == AVRO_KIND_NULL)
                     continue;
 
-                nested_types.push_back(inferTypeImpl(branch, records_in_progress, allow_nullable_tuple_type, depth + 1));
+                nested_types.push_back(inferTypeImpl(branch, records_in_progress, allow_nullable_tuple_type));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
@@ -366,7 +360,7 @@ DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_pro
             nested_names.reserve(info.child_count);
             for (UInt32 i = 0; i != info.child_count; ++i)
             {
-                nested_types.push_back(inferTypeImpl(node.child(i), records_in_progress, allow_nullable_tuple_type, depth + 1));
+                nested_types.push_back(inferTypeImpl(node.child(i), records_in_progress, allow_nullable_tuple_type));
                 nested_names.emplace_back(node.fieldName(i));
             }
 
@@ -376,7 +370,7 @@ DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_pro
         case AVRO_KIND_MAP:
             /// Avro map keys are always strings.
             return std::make_shared<DataTypeMap>(
-                std::make_shared<DataTypeString>(), inferTypeImpl(node.child(0), records_in_progress, allow_nullable_tuple_type, depth + 1));
+                std::make_shared<DataTypeString>(), inferTypeImpl(node.child(0), records_in_progress, allow_nullable_tuple_type));
     }
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeDescription(node, info));
@@ -387,7 +381,7 @@ DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_pro
 DataTypePtr inferType(Node node, bool allow_nullable_tuple_type)
 {
     std::unordered_set<UInt32> records_in_progress;
-    return inferTypeImpl(node, records_in_progress, allow_nullable_tuple_type, 0);
+    return inferTypeImpl(node, records_in_progress, allow_nullable_tuple_type);
 }
 
 }

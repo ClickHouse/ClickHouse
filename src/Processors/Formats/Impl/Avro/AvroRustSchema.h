@@ -119,8 +119,8 @@ private:
 /// `union[T]` is `T`, `union[T, null]` is `Nullable(T)` (`T` for a tuple if `!allow_nullable_tuple_type`),
 /// a wider union is `Variant` (the `null` branch is implicit), a record is a named `Tuple`, a map has `String` keys.
 /// Throws `BAD_ARGUMENTS` for a recursive record, `ILLEGAL_COLUMN` for a type with no ClickHouse counterpart and
-/// `TOO_DEEP_RECURSION` if the types nest deeper than `MAX_AVRO_SCHEMA_DEPTH` (named types are followed by
-/// reference, so a schema whose JSON is shallow can still nest arbitrarily deep).
+/// `TOO_DEEP_RECURSION` if the native stack runs out (named types are followed by reference, so a schema whose JSON
+/// is shallow can still nest arbitrarily deep).
 DataTypePtr inferType(Node node, bool allow_nullable_tuple_type = true);
 
 }

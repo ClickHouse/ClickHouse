@@ -44,11 +44,16 @@ open(sys.argv[1], 'wb').write(b'Obj\x01' + meta + sync + zz(1) + zz(len(payload)
 }
 
 gen "$DIR/chain_40.avro" 40
+gen "$DIR/chain_300.avro" 300
 gen "$DIR/chain_10000.avro" 10000
 
 $CLICKHOUSE_LOCAL -q "DESC file('$DIR/chain_40.avro', Avro)" | wc -l
 
-# Inference follows named references, so the explicit depth guard must reject this chain before native stack exhaustion.
-$CLICKHOUSE_LOCAL -q "DESC file('$DIR/chain_10000.avro', Avro)" 2>&1 | grep -q -F 'TOO_DEEP_RECURSION' && echo 'too deep'
+# A chain deeper than the schema JSON limit but within the stack is inferred, as by the legacy reader.
+$CLICKHOUSE_LOCAL -q "DESC file('$DIR/chain_300.avro', Avro)" | wc -l
+
+# Inference follows named references, so only the stack size guard stops this chain. Inference builds every field's type
+# before the deepest one overflows, so its cost grows with the stack size: a 1 MiB stack keeps this case small on every build.
+(ulimit -s 1024; $CLICKHOUSE_LOCAL -q "DESC file('$DIR/chain_10000.avro', Avro)" 2>&1) | grep -q -F 'TOO_DEEP_RECURSION' && echo 'too deep'
 
 rm -rf "$DIR"
