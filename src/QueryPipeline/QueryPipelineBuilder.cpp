@@ -738,9 +738,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     }
     else
     {
-        /// A serial layout selected by `parallel_hash_join_threshold` can still have a large probe side.
-        /// Widen it under the same ordering and totals restrictions as the parallel-build branch.
-        /// Remote reads can otherwise leave the probe and subsequent steps at 1 or 2 streams. See #127983.
+        /// A small right side says nothing about the probe side: a remote read leaves the join and the steps after it at 1 or 2 streams.
+        /// Widen it under the same left-order and totals restrictions as the parallel-build branch. See #127983.
         if (join->resizeProbeSideToMaxStreams() && !right->hasTotals() && !keep_left_pipeline_layout && num_streams < max_streams)
         {
             left->resize(max_streams);

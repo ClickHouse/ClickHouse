@@ -215,9 +215,8 @@ public:
     /// is true and the right side has no totals. Zero leaves the choice to the pipeline.
     virtual size_t getMaxBuildThreads() const { return 0; }
 
-    /// Request widening a narrow probe to `max_streams` after `parallel_hash_join_threshold`
-    /// selected the serial layout. Subject to the same ordering and right-side totals restrictions
-    /// as the parallel-build path. Only for joins whose `joinBlock` supports concurrent calls.
+    /// Asks the pipeline to widen a narrow probe side to `max_streams` when `parallel_hash_join_threshold` chose the serial layout.
+    /// The pipeline skips it for a kept left order and for right-side totals. `joinBlock` must allow concurrent calls.
     virtual bool resizeProbeSideToMaxStreams() const { return false; }
 
     /// Peek next stream of delayed joined blocks.
