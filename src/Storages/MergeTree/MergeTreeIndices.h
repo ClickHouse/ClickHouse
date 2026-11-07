@@ -451,6 +451,12 @@ void bloomFilterIndexTextCheckTotalSize(const IndexDescription & index, const In
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
+MergeTreeIndexPtr cuckooFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void cuckooFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+MergeTreeIndexPtr binaryFuseFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void binaryFuseFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
