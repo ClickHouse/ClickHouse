@@ -1,0 +1,22 @@
+--- ATTACH PARTITION FROM an unqualified source checks SELECT on the table actually read
+ACCESS_DENIED
+0
+--- UNDROP TABLE restores the table of the current database named as written
+db.ns.t	1
+db.ns	0
+--- a short ATTACH TABLE attaches the table of the current database named as written
+db.ns.t	1
+db.ns	0
+db.ns	2
+--- a table name of several parts does not take precedence over the alias of another source
+2
+2
+2
+2
+--- a table name of several parts does not take precedence over the exact database and table name of another source
+3
+3
+3
+--- the table operand of a mutation is bound before ON CLUSTER
+2
+0

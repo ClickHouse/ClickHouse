@@ -1,4 +1,5 @@
 #include <Interpreters/Access/InterpreterCheckGrantQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnsNumber.h>
@@ -19,6 +20,7 @@ BlockIO InterpreterCheckGrantQuery::execute()
     /// Collect access rights elements which will be checked.
     AccessRightsElements & elements_to_check_grant = query.access_rights_elements;
     elements_to_check_grant.throwIfFilterIsNotCompilable();
+    resolveHierarchicalNamesForAccess(elements_to_check_grant, getContext());
     String current_database = getContext()->getCurrentDatabase();
     elements_to_check_grant.replaceEmptyDatabase(current_database);
 

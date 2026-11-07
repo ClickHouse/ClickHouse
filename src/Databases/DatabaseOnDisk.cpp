@@ -106,6 +106,7 @@ void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const Str
         return;
 
     AddDefaultDatabaseVisitor visitor(context, database_name);
+    visitor.doNotBindQualifiedNames();
     if (ast_create_query.select && ast_create_query.isView())
         visitor.visitTableExpressions(*ast_create_query.select);
     if (ast_create_query.columns_list)

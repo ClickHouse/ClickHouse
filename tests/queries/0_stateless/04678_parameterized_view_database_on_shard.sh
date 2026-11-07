@@ -98,8 +98,8 @@ DOTTED_CLIENT="${CLICKHOUSE_CLIENT//--database=${CLICKHOUSE_DATABASE}/--database
 echo '-- a dotted database name still resolves locally'
 ${DOTTED_CLIENT} -q "SELECT count() FROM pvd(tenants = ['t1'])"
 
-echo '-- and is not qualified for the shard, so it keeps failing under its own name'
-${DOTTED_CLIENT} -q "SELECT count() FROM dist WHERE tenant_id IN (SELECT tenant_id FROM pvd(tenants = ['t1']))" 2>&1 \
-    | grep -oE 'Unknown table function [^ ]*' | head -n 1
+# Names are hierarchical (see 05077_hierarchical_names), so the shard resolves a dotted database name as well.
+echo '-- and is qualified for the shard as well'
+${DOTTED_CLIENT} -q "SELECT count() FROM dist WHERE tenant_id IN (SELECT tenant_id FROM pvd(tenants = ['t1']))"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE \`${dotted}\`"

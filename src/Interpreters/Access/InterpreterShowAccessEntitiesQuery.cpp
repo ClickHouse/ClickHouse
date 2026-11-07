@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
@@ -34,6 +35,9 @@ BlockIO InterpreterShowAccessEntitiesQuery::execute()
 String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 {
     auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
+    if (query.database_and_table_name)
+        resolveHierarchicalNameForAccess(
+            query.database_and_table_name->first, query.database_and_table_name->second, getContext());
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     String origin;

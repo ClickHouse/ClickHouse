@@ -48,10 +48,12 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -496,14 +498,8 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & identifier_node = table_expression_node->as<IdentifierNode &>();
         const auto & identifier = identifier_node.getIdentifier();
 
-        if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
-        else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
-                identifier.getFullName());
+        /// Any number of parts: `a.b.c` is a hierarchical name (see `ASTTableIdentifier`).
+        table_expression_node_ast = make_intrusive<ASTTableIdentifier>(std::vector<String>(identifier.getParts()));
 
         table_expression_node_ast->setAlias(identifier_node.getAlias());
     }
@@ -1414,21 +1410,47 @@ TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const Table
 
 std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context)
 {
-    String database_name = context->getCurrentDatabase();
-    String table_name;
+    return extractDatabaseAndTableNameForParameterizedView(table_function_name, context->getCurrentDatabase(), context);
+}
 
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(
+    const String & table_function_name, const String & current_database, const ContextPtr & context)
+{
     Identifier table_identifier{table_function_name};
-    if (table_identifier.getPartsSize() == 1)
-    {
-        table_name = table_identifier[0];
-    }
-    else if (table_identifier.getPartsSize() == 2)
-    {
-        database_name = table_identifier[0];
-        table_name = table_identifier[1];
-    }
+    if (table_identifier.getPartsSize() == 0)
+        return { current_database, "" };
 
-    return { database_name, table_name };
+    /// The name is hierarchical (see `DatabaseCatalog`), the same as the name of an ordinary view: `db.ns.v` may be the
+    /// view `ns.v` of the database `db`, and inside `USE db.ns` the same view is `v`.
+    String database_name;
+    for (size_t i = 0; i + 1 < table_identifier.getPartsSize(); ++i)
+    {
+        if (i > 0)
+            database_name += '.';
+        database_name += table_identifier[i];
+    }
+    StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+        StorageID(database_name, table_identifier[table_identifier.getPartsSize() - 1]), current_database, context);
+
+    return { resolved.database_name, resolved.table_name };
+}
+
+std::optional<String> tryBindQualifiedParameterizedViewName(
+    const String & table_function_name, const String & current_database, const ContextPtr & context)
+{
+    if (!table_function_name.contains('.') || TableFunctionFactory::instance().isTableFunctionName(table_function_name))
+        return {};
+
+    auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_database, context);
+    if (database_name.empty() || table_name.empty())
+        return {};
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(StorageID(database_name, table_name), context);
+    const auto * view = storage ? storage->as<StorageView>() : nullptr;
+    if (!view || !view->isParameterizedView())
+        return {};
+
+    return database_name + '.' + table_name;
 }
 
 bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expression)

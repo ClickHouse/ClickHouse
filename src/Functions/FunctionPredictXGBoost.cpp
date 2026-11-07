@@ -2,7 +2,8 @@
 
 #if USE_XGBOOST
 
-#include <atomic>
+#include <mutex>
+#include <optional>
 #include <limits>
 
 #include <Access/Common/AccessFlags.h>
@@ -142,11 +143,17 @@ public:
 
         checkAccess(dictionary_name);
 
-        validateDictionaryIsXGBoost(dictionary_name);
+        /// The layout and the structure are read from one resolution of the name, and the access is checked for the
+        /// dictionary they belong to before using them: a hierarchical name (see `DatabaseCatalog`) may denote another
+        /// dictionary than the one checked above after a rename, and even its layout must not be disclosed then.
+        const auto definition = context->getExternalDictionariesLoader().getDictionaryDefinition(dictionary_name, context);
+        checkAccess(definition.qualified_name);
+
+        validateDictionaryIsXGBoost(dictionary_name, definition.getLayoutType());
 
         /// Validated here, from the dictionary structure and without loading the dictionary, rather than only in
         /// `executeImpl`: a call over no rows never reaches the model, and must fail the same way as a call with rows.
-        const auto structure = context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        const auto structure = definition.getStructure();
         const size_t n_features = structure.key ? structure.key->size() : 0;
         const size_t num_feature_args = feature_end - 1;
         if (num_feature_args != n_features)
@@ -176,6 +183,10 @@ public:
             return result_type->createColumn();
 
         auto dictionary = loader.getDictionary(dictionary_name, context);
+
+        /// The name may load another dictionary than the one checked above: a hierarchical name (see `DatabaseCatalog`)
+        /// may denote another dictionary after a rename between two blocks.
+        checkAccess(QualifiedTableName{.database = dictionary->getDatabaseOrNoDatabaseTag(), .table = dictionary->getDictionaryID().getTableName()});
 
         const auto * xgb_dict = typeid_cast<const XGBoostDictionary *>(dictionary.get());
         if (!xgb_dict)
@@ -211,19 +222,44 @@ public:
 
 private:
     ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
+
+    /// The dictionary the access was checked for.
+    mutable std::mutex access_checked_mutex;
+    mutable std::optional<QualifiedTableName> access_checked_for TSA_GUARDED_BY(access_checked_mutex);
 
     void checkAccess(const String & dictionary_name) const
     {
-        if (access_checked.load(std::memory_order_relaxed))
-            return;
+        {
+            std::lock_guard lock(access_checked_mutex);
+            if (access_checked_for)
+                return;
+        }
 
-        auto qualified = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
-        context->checkAccess(
-            AccessType::dictGet,
-            qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
-            qualified.table);
-        access_checked.store(true, std::memory_order_relaxed);
+        /// The same identity as the loader resolves the name to: a qualified name is hierarchical (see `DatabaseCatalog`),
+        /// so inside `USE db` the name `ns.model` may be the dictionary `db`.`ns.model` rather than `ns`.`model`.
+        const auto & loader = context->getExternalDictionariesLoader();
+        QualifiedTableName qualified;
+        if (auto bound = loader.tryBindQualifiedDictionaryName(dictionary_name, context->getCurrentDatabase()))
+            qualified = std::move(*bound);
+        else
+            qualified = loader.qualifyDictionaryNameWithDatabase(dictionary_name, context);
+        if (qualified.database.empty())
+            qualified.database = IDictionary::NO_DATABASE_TAG;
+        checkAccess(qualified);
+    }
+
+    void checkAccess(const QualifiedTableName & dictionary_id) const
+    {
+        {
+            std::lock_guard lock(access_checked_mutex);
+            if (access_checked_for == dictionary_id)
+                return;
+        }
+
+        context->checkAccess(AccessType::dictGet, dictionary_id.database, dictionary_id.table);
+
+        std::lock_guard lock(access_checked_mutex);
+        access_checked_for = dictionary_id;
     }
 
     /// Index one past the last feature argument. The trailing `params` (a Map) is excluded; everything
@@ -274,9 +310,8 @@ private:
         return static_cast<Int64>(unsigned_value);
     }
 
-    void validateDictionaryIsXGBoost(const String & dictionary_name) const
+    void validateDictionaryIsXGBoost(const String & dictionary_name, const String & layout_type) const
     {
-        const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
         if (layout_type != "xgboost")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

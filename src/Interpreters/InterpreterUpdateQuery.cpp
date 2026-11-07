@@ -122,7 +122,13 @@ BlockIO InterpreterUpdateQuery::execute()
         /// from it: otherwise they are expanded to the configured default database of each host, so the
         /// rights that are checked and the table that is updated can name different databases.
         update_query.setDatabase(resolved_table_id.database_name);
+        update_query.setTable(resolved_table_id.table_name);
         table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
+
+        /// The tables of the expressions (`WHERE x IN db.ns.keys`) are bound before the query is dispatched `ON CLUSTER`
+        /// or enqueued to a `Replicated` database, see `InterpreterAlterQuery::bindTableNamesInMutationExpressions`.
+        InterpreterAlterQuery::bindTableNamesInMutationExpressions(
+            {update_query.predicate, update_query.assignments}, *query_ptr, table_for_access, resolved_table_id.database_name, getContext());
     }
     const auto row_exists_column_kind = InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext());
 
@@ -148,7 +154,7 @@ BlockIO InterpreterUpdateQuery::execute()
     {
         /// Substitute the database into table functions that use the current database implicitly, e.g.
         /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with the
-        /// database of the session. The table identifiers are qualified on each host instead.
+        /// database of the session. The table identifiers are qualified and bound above.
         if (resolved_table_id)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), resolved_table_id.getDatabaseName());
@@ -173,10 +179,12 @@ BlockIO InterpreterUpdateQuery::execute()
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
     getContext()->checkAccess(required_access);
-    /// Same database as `resolved_table_id` above, resolved again because the `ON CLUSTER` branch returns
-    /// before this point, and because this one must throw where that one returns empty. Do not collapse.
-    auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
+    /// The table the access was checked for: a hierarchical name must not be resolved again after the check, because
+    /// another split of it (`a`.`b.c` instead of `a.b`.`c`) may name another table by now. Resolved here only when that
+    /// resolution returned empty, so that it throws the proper exception.
+    auto table_id = resolved_table_id ? resolved_table_id : getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
+    update_query.setTable(table_id.table_name);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -216,12 +224,16 @@ BlockIO InterpreterUpdateQuery::execute()
     if (update_query.predicate)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        /// `x IN a.b` may be a subcolumn of the updated table, see `InterpreterAlterQuery::bindTableNamesInMutationExpressions`.
+        visitor.addExpressionSourceTable(table);
         ASTPtr predicate = update_query.predicate->ptr();
         visitor.visit(predicate);
     }
     if (update_query.assignments)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        /// `x IN a.b` may be a subcolumn of the updated table, see `InterpreterAlterQuery::bindTableNamesInMutationExpressions`.
+        visitor.addExpressionSourceTable(table);
         ASTPtr assignments = update_query.assignments->ptr();
         visitor.visit(assignments);
     }

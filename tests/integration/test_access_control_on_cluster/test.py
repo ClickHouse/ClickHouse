@@ -268,3 +268,33 @@ def test_valid_until_on_cluster_mixed_timezone():
     assert altered_ch1 == altered_ch4, (altered_ch1, altered_ch4)
 
     ch1.query("DROP USER valid_until_tz_user ON CLUSTER 'cluster_tz'")
+
+
+def test_hierarchical_name_bound_on_cluster():
+    # The initiator `ch1` binds the name `hn_a`.`b.c` to its own table and checks the access for it. `ch4` has no
+    # such table, but has `hn_a.b`.`c`, another split of the same hierarchical name, which the user has no access to:
+    # replaying the query, `ch4` must use the name as bound and not pick that table.
+    for node in (ch1, ch4):
+        node.query("CREATE DATABASE hn_a")
+        node.query("CREATE USER hn_user")
+        node.query("GRANT CLUSTER ON *.* TO hn_user")
+        node.query("GRANT TRUNCATE, DROP TABLE ON hn_a.* TO hn_user")
+    ch1.query("CREATE TABLE hn_a.`b.c` (x UInt8) ENGINE = Memory")
+    ch4.query("CREATE DATABASE `hn_a.b`")
+    ch4.query("CREATE TABLE `hn_a.b`.c (x UInt8) ENGINE = Memory")
+    ch4.query("INSERT INTO `hn_a.b`.c VALUES (1)")
+
+    assert "ACCESS_DENIED" in ch4.query_and_get_error(
+        "TRUNCATE TABLE `hn_a.b`.c", user="hn_user"
+    )
+    for query in ("TRUNCATE TABLE hn_a.`b.c`", "DROP TABLE hn_a.`b.c`"):
+        error = ch1.query_and_get_error(
+            f"{query} ON CLUSTER 'cluster_tz'", user="hn_user"
+        )
+        assert "UNKNOWN_TABLE" in error, error
+        assert ch4.query("SELECT count() FROM `hn_a.b`.c") == "1\n"
+
+    ch4.query("DROP DATABASE `hn_a.b`")
+    for node in (ch1, ch4):
+        node.query("DROP DATABASE hn_a")
+        node.query("DROP USER hn_user")

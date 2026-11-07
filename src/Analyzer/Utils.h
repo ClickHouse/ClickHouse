@@ -270,6 +270,19 @@ TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const Table
 
 std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context);
 
+/** The same, with the current database given explicitly instead of taken from the context.
+  */
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(
+    const String & table_function_name, const String & current_database, const ContextPtr & context);
+
+/** The name of the parameterized view that a qualified table function name (`ns.pv`, `db.ns.pv`) denotes now, qualified
+  * with its database (`db.ns.pv` for the view `db`.`ns.pv`), so that a stored definition does not depend on the current
+  * database of the query that reads it. Nothing if the name has no dots, is a registered table function, or does not
+  * denote an existing parameterized view.
+  */
+std::optional<String> tryBindQualifiedParameterizedViewName(
+    const String & table_function_name, const String & current_database, const ContextPtr & context);
+
 /** Does a node or its children have a dependency on column
   * NOT from a specific table expression.
   */

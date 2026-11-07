@@ -99,9 +99,45 @@ BlockIO InterpreterDropQuery::execute()
     return res;
 }
 
+/// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is bound to the existing table it denotes, rewriting the query,
+/// before the access is checked for a query dispatched `ON CLUSTER`: the hosts drop the table the access was checked
+/// for (see `DatabaseCatalog`). A table that does not exist here is left as written: it may exist on the other hosts only.
+static void bindHierarchicalTableName(ASTDropQuery & drop, const ContextPtr & context)
+{
+    if (drop.isTemporary())
+        return;
+
+    const String database_as_written = drop.getDatabase();
+    String database = database_as_written;
+    const String table = drop.getTable();
+    if (database.empty())
+    {
+        if (context->tryResolveStorageID(StorageID("", table), Context::ResolveExternal))
+            return;
+        database = context->getCurrentDatabase();
+        if (database.empty())
+            return;
+    }
+
+    /// An unqualified name is resolved as written, with the current database applied once: inside `USE a.b`, the name
+    /// `t` is not also the table `a.b.t` of the database `a.b`.
+    auto & catalog = DatabaseCatalog::instance();
+    StorageID resolved = catalog.resolveHierarchicalName(StorageID(database_as_written, table), context);
+    if (resolved.database_name == database && resolved.table_name == table)
+        return;
+    if (!catalog.isTableExist(resolved, context))
+        return;
+
+    drop.setDatabase(resolved.database_name);
+    drop.setTable(resolved.table_name);
+}
+
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
+    if (drop.table)
+        bindHierarchicalTableName(drop, getContext());
+
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
@@ -164,6 +200,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
+    /// The current database is filled in below, but the hierarchical resolution must apply it once only.
+    const String database_as_written = table_id.database_name;
     if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
@@ -176,6 +214,19 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         if (query.if_exists)
             return {};
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_id.table_name));
+    }
+
+    /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is resolved to the database and the table of the existing
+    /// table before the DDL guard is taken, so that the guard protects that table; see `DatabaseCatalog`.
+    {
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID(database_as_written, table_id.table_name), context_);
+        if (resolved.database_name != table_id.database_name || resolved.table_name != table_id.table_name)
+        {
+            table_id.database_name = resolved.database_name;
+            table_id.table_name = resolved.table_name;
+            query.setDatabase(table_id.database_name);
+            query.setTable(table_id.table_name);
+        }
     }
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr) : nullptr);

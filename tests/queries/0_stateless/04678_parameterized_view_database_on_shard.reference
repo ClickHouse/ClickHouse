@@ -28,5 +28,5 @@
 SELECT *\nFROM pv(x = 1)
 -- a dotted database name still resolves locally
 3
--- and is not qualified for the shard, so it keeps failing under its own name
-Unknown table function pvd.
+-- and is qualified for the shard as well
+6

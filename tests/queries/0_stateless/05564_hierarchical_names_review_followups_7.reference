@@ -1,0 +1,19 @@
+--- a lambda argument is not a table
+[1]
+[1]
+--- a column default that may be a subcolumn
+1
+1
+--- the table name of another source qualifies its columns
+2
+2
+2
+2
+--- a stored parameterized view call is bound
+2
+2
+11
+--- a rename destination uses a namespace created by an earlier element
+Code: 81
+rns.t
+rns.y

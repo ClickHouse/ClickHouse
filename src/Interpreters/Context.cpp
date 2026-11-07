@@ -9430,6 +9430,10 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
+    /// `resolveStorageIDImpl` fills an unqualified name with the current database, which the hierarchical resolution
+    /// below must not apply a second time: inside `USE a.b`, the name `t` is not also the table `a.b.t` of `a.b`.
+    const bool database_is_written = !storage_id.database_name.empty();
+
     StorageID resolved = StorageID::createEmpty();
     std::optional<Exception> exc;
     {
@@ -9439,7 +9443,15 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (exc)
         throw Exception(*exc);
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+    {
+        /// A hierarchical name (`a.b.c`, or a table inside `USE a.b`) is split into the database and the table
+        /// of the existing table it names; see `DatabaseCatalog::resolveHierarchicalName`.
+        resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+            database_is_written ? resolved : StorageID("", resolved.table_name), shared_from_this());
+        /// No table with such name exists: throws UNKNOWN_DATABASE (with a hint) if the database does not exist either.
+        if (!resolved.hasUUID())
+            resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+    }
     return resolved;
 }
 
@@ -9448,17 +9460,17 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
+    /// See `resolveStorageID`: the current database is applied once.
+    const bool database_is_written = !storage_id.database_name.empty();
+
     StorageID resolved = StorageID::createEmpty();
     {
         SharedLockGuard lock(mutex);
         resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
     }
     if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-    {
-        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
-        if (db)
-            resolved.uuid = db->tryGetTableUUID(resolved.table_name);
-    }
+        resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+            database_is_written ? resolved : StorageID("", resolved.table_name), shared_from_this());
     return resolved;
 }
 

@@ -49,7 +49,31 @@ public:
     /// owning the definition, e.g. when the metadata of a table is loaded.
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const;
 
+    /// A qualified dictionary name is hierarchical (see `DatabaseCatalog`): inside `USE db`, `ns.d` is the dictionary
+    /// `db`.`ns.d` when there is no database `ns`. Returns the name bound to the dictionary it denotes now, so that a
+    /// stored or shipped query is neither resolved against another current database nor retargeted when a database
+    /// `ns` is created later. Returns nothing for an unqualified name, for an XML dictionary, and when no such
+    /// dictionary exists here (the name may be meant for a dictionary that only exists on the shards).
+    std::optional<QualifiedTableName> tryBindQualifiedDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
+
     DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
+
+    /// The definition of a dictionary read with one resolution of its name, together with the dictionary it belongs to.
+    /// A hierarchical name (see `DatabaseCatalog`) may denote another dictionary than a moment ago, after a rename,
+    /// so a caller that authorizes the dictionary checks `qualified_name` before reading anything from the definition.
+    struct DictionaryDefinition
+    {
+        /// The name as the query wrote it, for error messages.
+        std::string dictionary_name;
+        /// The dictionary the definition belongs to. The database is `IDictionary::NO_DATABASE_TAG` for an XML dictionary.
+        QualifiedTableName qualified_name;
+        LoadResult load_result;
+
+        DictionaryStructure getStructure() const;
+        std::string getLayoutType() const;
+    };
+
+    DictionaryDefinition getDictionaryDefinition(const std::string & dictionary_name, ContextPtr context) const;
 
     /// The layout type of the dictionary as written in its definition, e.g. "hashed" or "naive_bayes".
     /// Read from the dictionary configuration, so it works without loading the dictionary. Throws for
@@ -96,12 +120,12 @@ protected:
     /// Resolution without a record.
     ResolvedDictionaryName resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
-    std::string resolveDictionaryName(const QualifiedTableName & dictionary_name) const;
+    ResolvedDictionaryName resolveDictionaryName(const QualifiedTableName & dictionary_name, const std::string & current_database_name) const;
 
     /// Try convert qualified dictionary name to persistent UUID
     ResolvedDictionaryName resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const;
 
-    std::string resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name) const;
+    ResolvedDictionaryName resolveDictionaryNameFromDatabaseCatalog(const QualifiedTableName & name, const std::string & current_database_name) const;
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;

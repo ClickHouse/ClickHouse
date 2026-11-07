@@ -1,0 +1,11 @@
+--- SHOW TABLES
+orders
+sub.items
+--- MySQL SHOW TABLE STATUS
+orders	MergeTree
+sub.items	MergeTree
+orders	MergeTree
+--- PostgreSQL pg_table_is_visible
+items|1
+ns.orders|1
+other|0

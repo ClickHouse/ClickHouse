@@ -1,0 +1,5 @@
+--- TO ns.t of a materialized view is db.`ns.t`
+db.`ns.t`
+a
+--- UNDROP TABLE ns.t restores db.`ns.t`
+a

@@ -1,0 +1,13 @@
+--- EXISTS DATABASE and SHOW CREATE DATABASE
+1
+0
+CREATE DATABASE `db.sub`\n
+--- RENAME DATABASE
+0
+1
+db.sub2
+--- SYSTEM RESTORE DATABASE REPLICA names the database as written
+Database db.sub2 is not Replicated
+--- ALTER DATABASE
+a hierarchical name
+0

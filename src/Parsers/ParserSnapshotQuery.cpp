@@ -60,7 +60,7 @@ bool parseExceptTables(
             {
                 DatabaseAndTableName table_name;
 
-                if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
+                if (!parseSimpleDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
                     return false;
 
                 if (database_name && table_name.first.empty())
@@ -93,7 +93,7 @@ bool parseElement(IParser::Pos & pos, Expected & expected, Element & element)
             if (ParserKeyword(Keyword::TABLE).ignore(pos, expected))
             {
                 element.type = ElementType::TABLE;
-                if (!parseDatabaseAndTableName(pos, expected, element.database_name, element.table_name))
+                if (!parseSimpleDatabaseAndTableName(pos, expected, element.database_name, element.table_name))
                     return false;
 
                 return true;

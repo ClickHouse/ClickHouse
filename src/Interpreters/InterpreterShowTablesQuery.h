@@ -24,6 +24,20 @@ public:
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 
+    struct HierarchicalDatabaseSource
+    {
+        String condition;
+        String name_expression;
+        /// The databases the source reads from.
+        Strings databases;
+    };
+    /// The sources of the tables listed for a hierarchical database name (see `DatabaseCatalog`), as conditions on
+    /// a table with the columns `database_column` and `name_column` (`system.tables`, `INFORMATION_SCHEMA.TABLES`)
+    /// and expressions of the listed name, relative to `database`. Empty for an ordinary database name, which is only itself.
+    /// Also used by the MySQL and PostgreSQL protocol handlers to scope their catalog queries to the current database.
+    static std::vector<HierarchicalDatabaseSource> getHierarchicalDatabaseSources(
+        const String & database, const String & database_column = "database", const String & name_column = "name");
+
 private:
     ASTPtr query_ptr;
 

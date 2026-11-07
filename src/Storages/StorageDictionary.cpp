@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
@@ -18,6 +19,7 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTLiteral.h>
 #if CLICKHOUSE_CLOUD
 #include <Dictionaries/SystemDictionaryUUIDs.h>
 #endif
@@ -421,6 +423,16 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (args.mode <= LoadingStrictnessLevel::CREATE)
         {
+            /// A qualified name is hierarchical (see `DatabaseCatalog`). It is bound to the dictionary it denotes now and
+            /// stored in the form that keeps the split (`db.`ns.d``), so that the table neither reads another dictionary
+            /// when a database `db.ns` is created later, nor is missed by the dependencies and the renaming of a backup.
+            if (auto bound_name = args.getContext()->getExternalDictionariesLoader().tryBindQualifiedDictionaryName(
+                    dictionary_name, local_context->getCurrentDatabase()))
+            {
+                dictionary_name = DatabaseCatalog::formatHierarchicalName(bound_name->database, bound_name->table);
+                args.engine_args[0] = make_intrusive<ASTLiteral>(dictionary_name);
+            }
+
             const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);

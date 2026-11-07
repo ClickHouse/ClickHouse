@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <base/scope_guard.h>
 #include <Core/QualifiedTableName.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -18,11 +20,16 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Functions/FunctionFactory.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/misc.h>
+#include <Storages/IStorage.h>
 #include <Poco/String.h>
 #include <set>
 #include <unordered_map>
@@ -56,6 +63,43 @@ public:
                 external_tables.insert(table_name);
             }
         }
+    }
+
+    /// Leave the qualified names (`ns.t`) as written instead of binding them to the tables they denote now (see
+    /// `visitCompound`). For the definitions loaded from the metadata: their names were bound when they were
+    /// created, and the tables they refer to may not be loaded yet, so they must not be looked up.
+    void doNotBindQualifiedNames()
+    {
+        bind_qualified_names = false;
+    }
+
+    /// Only bind the qualified names (`ns.t`, see `visitCompound`), and leave the unqualified ones (and the table functions
+    /// using the current database implicitly) as written. For the `SELECT` of `CREATE TABLE ... AS SELECT ... ON CLUSTER`:
+    /// each host resolves its unqualified names in its own default database, as before, but takes a qualified name
+    /// exactly as shipped (see `DatabaseCatalog::isBoundHierarchicalName`).
+    void onlyBindQualifiedNames()
+    {
+        only_bind_qualified_names = true;
+    }
+
+    /// The table whose columns the expressions outside of a select query refer to: the table of a mutation
+    /// (`DELETE FROM t WHERE x IN a.b`). See `mayBeExpression`.
+    void addExpressionSourceTable(const StoragePtr & table)
+    {
+        ExpressionScope scope;
+        addColumnNames(scope, table);
+        expression_scopes.push_back(std::move(scope));
+    }
+
+    /// More columns of the table given to `addExpressionSourceTable`: the columns that an `ALTER` adds or renames to,
+    /// which the expressions of its later commands may refer to.
+    void addExpressionSourceColumns(const std::vector<String> & column_names)
+    {
+        if (expression_scopes.empty())
+            expression_scopes.emplace_back();
+        auto & scope = expression_scopes.back();
+        for (const auto & column_name : column_names)
+            addColumnName(scope, column_name);
     }
 
     void visitDDL(ASTPtr & ast) const
@@ -126,6 +170,9 @@ public:
 
     void visit(ASTColumns & columns) const
     {
+        /// The expressions of the columns refer to the columns of the table, which are not known here.
+        expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = true});
+        SCOPE_EXIT({ expression_scopes.pop_back(); });
         for (auto & child : columns.children)
             visit(child);
     }
@@ -171,9 +218,34 @@ private:
     mutable std::unordered_set<String> with_expression_aliases;
     /// The aliases of the expressions of the current select query.
     mutable std::unordered_set<String> expression_aliases;
+    /// The arguments of the enclosing lambda functions, with repetitions: inside `a -> x IN a.b` the name `a.b` is the
+    /// field `b` of the argument `a`, and not a table.
+    mutable std::unordered_multiset<String> lambda_arguments;
+
+    /// The names that may begin an identifier resolved as an expression in a select query: the columns of its sources
+    /// (`a` of a column `a.b`, or of a tuple `a`), and the names and aliases of its sources that qualify the columns.
+    struct ExpressionScope
+    {
+        /// The columns of the sources (and the first parts of the dotted column names), and the aliases of the sources.
+        std::unordered_set<String> names;
+        /// The names of the table sources that may qualify a column, as parts: `t`, `db.t`, and with hierarchical names
+        /// `ns.t` and `db.ns.t` for the table `db`.`ns.t`. A compound identifier starting with a qualifier and continuing
+        /// with a column (`db.t.x`) may be an expression; one starting with only a part of a qualifier (`db.ns.keys` for
+        /// a source `db.src`) may not.
+        std::vector<std::vector<String>> qualifiers;
+        /// A source whose columns are not known here (a subquery, a table function): any name may be a column.
+        bool unknown = false;
+        /// The select query whose sources give the names, collected on the first use (see `mayBeExpression`), so
+        /// that the tables are only looked up for the rare compound names in the right argument of `IN`.
+        const ASTSelectQuery * select = nullptr;
+    };
+    /// The scopes of the enclosing select queries, the nearest last.
+    mutable std::vector<ExpressionScope> expression_scopes;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+    bool bind_qualified_names = true;
+    bool only_bind_qualified_names = false;
 
     void visitTableExpressionsImpl(IAST & ast) const
     {
@@ -201,6 +273,7 @@ private:
             for (const auto & child : select->children)
                 collectAliases(child);
 
+            expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = false, .select = select});
             for (auto & child : select->children)
             {
                 if (child.get() == select->with().get())
@@ -208,6 +281,7 @@ private:
                 else
                     visitTableExpressionsImpl(*child);
             }
+            expression_scopes.pop_back();
 
             expression_aliases = std::move(enclosing_query_aliases);
             with_aliases = std::move(enclosing_with_aliases);
@@ -218,6 +292,17 @@ private:
         if (auto * subquery = ast.as<ASTSubquery>(); subquery && isCopyOfWithElementBody(*subquery))
         {
             visitCopyOfWithElementBody(*subquery, [&](ASTPtr & node) { visitTableExpressionsImpl(*node); });
+            return;
+        }
+
+        /// The same scope of the column declarations as in `visit(ASTColumns &)`: `DEFAULT 1 IN a.b` may be the field `b`
+        /// of a column `a` of the table.
+        if (ast.as<ASTColumns>())
+        {
+            expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = true});
+            SCOPE_EXIT({ expression_scopes.pop_back(); });
+            for (auto & child : ast.children)
+                visitTableExpressionsImpl(*child);
             return;
         }
 
@@ -236,6 +321,12 @@ private:
                 visitTableFunction(*table_expression->table_function);
         }
 
+        if (auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        {
+            visitLambda(*function, [&](ASTPtr & node) { visitTableExpressionsImpl(*node); });
+            return;
+        }
+
         if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
             visitFunctionTableNameArguments(*function);
 
@@ -250,8 +341,8 @@ private:
     /// visitors know. The subqueries among the arguments are covered by the generic recursion of
     /// `visitTableExpressionsImpl`.
     ///
-    /// `joinGet` is qualified here although `visit(ASTFunction &)` of the full traversal leaves it
-    /// alone: the loading dependency graph resolves a bare name against the database owning the
+    /// An unqualified name of `joinGet` is qualified here although `visit(ASTFunction &)` of the full
+    /// traversal leaves it alone: the loading dependency graph resolves a bare name against the database owning the
     /// definition, while `joinGet` itself resolves it against the current database of the query
     /// reading the view or inserting into the table. Persisting the qualified name is what makes
     /// the two agree.
@@ -265,17 +356,24 @@ private:
 
         auto & arguments = function.arguments->children;
 
+        if ((is_join_get || is_dict_get) && !arguments.empty())
+            foldConstantNameArgument(arguments[0]);
+
         if (is_join_get && !arguments.empty())
         {
             if (auto * identifier = arguments[0]->as<ASTIdentifier>())
             {
-                /// A compound identifier is already qualified, a parameterized name is only known
-                /// when the view is called, a temporary table has no database, and an alias of an
-                /// expression is not a table name at all.
+                /// A parameterized name is only known when the view is called, a temporary table has no database,
+                /// and an alias of an expression is not a table name at all.
                 if (!identifier->compound() && !identifier->isParam()
                     && !external_tables.contains(identifier->name()) && !isExpressionAlias(identifier->name()))
                 {
-                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
+                    StorageID qualified = qualifyTableName(identifier->name());
+                    arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{qualified.database_name, qualified.table_name});
+                }
+                else if (!isNameArgumentExpression(arguments[0]))
+                {
+                    bindQualifiedJoinGetArgument(arguments[0]);
                 }
             }
             else if (auto * literal = arguments[0]->as<ASTLiteral>())
@@ -286,8 +384,12 @@ private:
                     auto qualified_table_name = QualifiedTableName::tryParseFromString(literal_value.safeGet<String>());
                     if (qualified_table_name && qualified_table_name->database.empty() && !external_tables.contains(qualified_table_name->table))
                     {
-                        qualified_table_name->database = database_name;
-                        literal_value = qualified_table_name->getFullName();
+                        StorageID qualified = qualifyTableName(qualified_table_name->table);
+                        literal_value = DatabaseCatalog::formatHierarchicalName(qualified.database_name, qualified.table_name);
+                    }
+                    else
+                    {
+                        bindQualifiedJoinGetArgument(arguments[0]);
                     }
                 }
             }
@@ -297,8 +399,7 @@ private:
         {
             if (auto * identifier = arguments[0]->as<ASTIdentifier>())
             {
-                /// A compound identifier is already qualified, and a parameterized name is only
-                /// known when the view is called, so there is nothing to qualify.
+                /// A parameterized name is only known when the view is called, so there is nothing to qualify.
                 /// The name is resolved against `database_name` and not against the current database
                 /// of `context`: on the metadata-load paths the context is the loading context, whose
                 /// current database is unrelated to the database owning the definition.
@@ -307,14 +408,19 @@ private:
                     auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
                     arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                 }
+                else if (!isNameArgumentExpression(arguments[0]))
+                {
+                    bindQualifiedDictGetArgument(arguments[0]);
+                }
             }
             else if (auto * literal = arguments[0]->as<ASTLiteral>())
             {
                 auto & literal_value = literal->value;
-                if (literal_value.getType() == Field::Types::String)
+                if (literal_value.getType() == Field::Types::String && !bindQualifiedDictGetArgument(arguments[0]))
                 {
                     auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
-                    literal_value = qualified_dictionary_name.getFullName();
+                    if (!qualified_dictionary_name.database.empty())
+                        literal_value = DatabaseCatalog::formatHierarchicalName(qualified_dictionary_name.database, qualified_dictionary_name.table);
                 }
             }
         }
@@ -328,6 +434,10 @@ private:
                 /// then it is not a table name and must not be qualified with the database,
                 /// like in `visit(ASTFunction &, ASTPtr &)` of the full traversal.
                 if (isExpressionAlias(identifier->name()))
+                    return;
+
+                /// A compound name that may be an expression (see `mayBeExpression`) is left as written.
+                if (bind_qualified_names && !database_name.empty() && identifier->compound() && mayBeExpression(*identifier))
                     return;
 
                 if (auto maybe_table_identifier = identifier->createTable())
@@ -370,6 +480,8 @@ private:
         for (const auto & child : select.children)
             collectAliases(child);
 
+        expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = false, .select = &select});
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
@@ -381,8 +493,141 @@ private:
                 visit(child);
         }
 
+        expression_scopes.pop_back();
         expression_aliases = std::move(enclosing_query_aliases);
         with_aliases = std::move(enclosing_with_aliases);
+    }
+
+    /// Collects the names of `ExpressionScope` from the sources of the select query.
+    void collectExpressionScopeNames(ExpressionScope & scope) const
+    {
+        const ASTSelectQuery & select = *scope.select;
+        scope.select = nullptr;
+
+        const auto * tables = select.tables() ? select.tables()->as<ASTTablesInSelectQuery>() : nullptr;
+        if (!tables || tables->children.empty())
+        {
+            /// A query without `FROM` reads `system.one`.
+            scope.names.insert("dummy");
+            return;
+        }
+
+        for (const auto & element_ast : tables->children)
+        {
+            const auto * element = element_ast->as<ASTTablesInSelectQueryElement>();
+            if (!element || !element->table_expression)
+                continue;
+            const auto & table_expression = element->table_expression->as<ASTTableExpression &>();
+
+            for (const auto * source : {table_expression.database_and_table_name.get(), table_expression.subquery.get(), table_expression.table_function.get()})
+                if (source && !source->tryGetAlias().empty())
+                    scope.names.insert(source->tryGetAlias());
+
+            const auto * table_identifier = table_expression.database_and_table_name
+                ? table_expression.database_and_table_name->as<ASTTableIdentifier>() : nullptr;
+            if (!table_identifier || table_identifier->isParam())
+            {
+                scope.unknown = true;
+                continue;
+            }
+
+            /// Any suffix of the name may qualify a column: `t.x`, `db.t.x`, and with hierarchical names `ns.t.x`. The name
+            /// may be bound already (`db`.`ns.t`), so the parts with dots are split as well.
+            addQualifiers(scope, table_identifier->name_parts);
+
+            StoragePtr table;
+            if (table_identifier->compound())
+            {
+                StorageID as_written = table_identifier->getTableId();
+                StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+                    StorageID(as_written.database_name, as_written.table_name), database_name, context);
+                addQualifiers(scope, {resolved.database_name, resolved.table_name});
+                table = DatabaseCatalog::instance().tryGetTable(resolved, context);
+            }
+            else if (!external_tables.contains(table_identifier->name()) && !isWithAlias(table_identifier->name()))
+            {
+                StorageID resolved = qualifyTableName(table_identifier->name());
+                addQualifiers(scope, {resolved.database_name, resolved.table_name});
+                table = DatabaseCatalog::instance().tryGetTable(resolved, context);
+            }
+
+            addColumnNames(scope, table);
+        }
+    }
+
+    static std::vector<String> splitNameParts(const std::vector<String> & name_parts)
+    {
+        std::vector<String> parts;
+        for (const auto & part : name_parts)
+        {
+            if (part.empty())
+                continue;
+            for (auto & subpart : DatabaseCatalog::splitHierarchicalName(part))
+                parts.push_back(std::move(subpart));
+        }
+        return parts;
+    }
+
+    static void addQualifiers(ExpressionScope & scope, const std::vector<String> & name_parts)
+    {
+        std::vector<String> parts = splitNameParts(name_parts);
+        for (size_t i = 0; i < parts.size(); ++i)
+            scope.qualifiers.emplace_back(parts.begin() + i, parts.end());
+    }
+
+    void addColumnNames(ExpressionScope & scope, const StoragePtr & table) const
+    {
+        if (!table)
+        {
+            scope.unknown = true;
+            return;
+        }
+        const auto metadata = table->getInMemoryMetadataPtr(context, false);
+        for (const auto & column : metadata->getColumns())
+            addColumnName(scope, column.name);
+    }
+
+    static void addColumnName(ExpressionScope & scope, const String & column_name)
+    {
+        scope.names.insert(column_name);
+        if (auto dot = column_name.find('.'); dot != std::string::npos)
+            scope.names.insert(column_name.substr(0, dot));
+    }
+
+    /// Whether a compound identifier in the right argument of `IN` (`x IN a.b`), or in the first argument of `joinGet` or
+    /// `dictGet`, may be an expression rather than a table: the analyzer resolves it as an expression first (the subcolumn
+    /// `b` of a tuple column `a`, or of an alias `a`), and only then as a table. Such an identifier is left as written,
+    /// not bound to a table of another split (`r`.`a.b` inside `USE r`).
+    /// With `unknown_sources_may_be_expression`, any name may be a column of a source whose columns are not known here
+    /// (a subquery or a table function). The name arguments of `joinGet` and `dictGet` do not take that into account: they
+    /// are bound when no known name makes them an expression, so that the queries reading a table function (sent to the
+    /// shards by `remote`) still name the objects they read.
+    bool mayBeExpression(const ASTIdentifier & identifier, bool unknown_sources_may_be_expression = true) const
+    {
+        const String & first_part = identifier.name_parts.front();
+        if (isExpressionAlias(first_part))
+            return true;
+
+        std::vector<String> parts;
+        for (auto & scope : expression_scopes)
+        {
+            if (scope.select)
+                collectExpressionScopeNames(scope);
+            if ((scope.unknown && unknown_sources_may_be_expression) || scope.names.contains(first_part))
+                return true;
+
+            if (scope.qualifiers.empty())
+                continue;
+            if (parts.empty())
+                parts = splitNameParts(identifier.name_parts);
+            for (const auto & qualifier : scope.qualifiers)
+            {
+                if (parts.size() > qualifier.size() && std::equal(qualifier.begin(), qualifier.end(), parts.begin())
+                    && scope.names.contains(parts[qualifier.size()]))
+                    return true;
+            }
+        }
+        return false;
     }
 
     /// Add the names declared by the `WITH` clause of the select query: the names of the common
@@ -431,7 +676,34 @@ private:
 
     bool isExpressionAlias(const String & name) const
     {
-        return expression_aliases.contains(name) || with_expression_aliases.contains(name);
+        return expression_aliases.contains(name) || with_expression_aliases.contains(name) || lambda_arguments.contains(name);
+    }
+
+    /// Visit a lambda function with `visit_child`, its arguments visible in its body (see `lambda_arguments`).
+    template <typename Visit>
+    void visitLambda(ASTFunction & lambda, Visit && visit_child) const
+    {
+        std::vector<String> names;
+        if (lambda.arguments && !lambda.arguments->children.empty())
+        {
+            if (const auto * arguments_tuple = lambda.arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
+            {
+                for (const auto & argument : arguments_tuple->arguments->children)
+                    if (const auto * identifier = argument->as<ASTIdentifier>())
+                        names.push_back(identifier->name());
+            }
+        }
+
+        for (const auto & name : names)
+            lambda_arguments.insert(name);
+        SCOPE_EXIT(
+        {
+            for (const auto & name : names)
+                lambda_arguments.erase(lambda_arguments.find(name));
+        });
+
+        for (auto & child : lambda.children)
+            visit_child(child);
     }
 
     bool isWithAlias(const String & name) const
@@ -584,6 +856,21 @@ private:
         if (!function || !function->arguments)
             return;
 
+        /// A qualified name of a parameterized view (`ns.pv(x = 1)`) is bound to the view it denotes now, like a table
+        /// reference (see `visitCompound`): `db.ns.pv` for the view `db`.`ns.pv`.
+        if (bind_qualified_names)
+        {
+            if (auto bound_name = tryBindQualifiedParameterizedViewName(function->name, database_name, context))
+            {
+                function->name = std::move(*bound_name);
+                function->setIsCompoundName(true);
+                return;
+            }
+        }
+
+        if (only_bind_qualified_names)
+            return;
+
         auto & arguments = function->arguments->children;
 
         if (function->name == "merge")
@@ -641,12 +928,16 @@ private:
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
-        /// Already has database.
-        if (identifier.compound())
-            return;
         /// A parameterized name is only known when the view is called, and it has no
         /// resolvable name to qualify here.
         if (identifier.isParam())
+            return;
+        if (identifier.compound())
+        {
+            visitCompound(identifier, ast);
+            return;
+        }
+        if (only_bind_qualified_names)
             return;
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
@@ -655,7 +946,192 @@ private:
         if (isWithAlias(identifier.name()))
             return;
 
-        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
+        StorageID qualified = qualifyTableName(identifier.name());
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(qualified.database_name, qualified.table_name);
+        if (!identifier.alias.empty())
+            qualified_identifier->setAlias(identifier.alias);
+        ast = qualified_identifier;
+    }
+
+    /// An unqualified table name qualified with the default database. A hierarchical default database (`USE a.b`,
+    /// which is not a database itself; see `DatabaseCatalog`): the name is bound to the table it denotes,
+    /// `a`.`b.name` or `name` of the database `a.b.c`.
+    StorageID qualifyTableName(const String & table_name) const
+    {
+        if (!database_name.empty() && !DatabaseCatalog::instance().isDatabaseExist(database_name))
+        {
+            StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(StorageID("", table_name), database_name, context);
+            return StorageID(resolved.database_name, resolved.table_name);
+        }
+        return StorageID(database_name, table_name);
+    }
+
+    /// The database and the table of a qualified name in the first argument of `joinGet` or `dictGet`, as written:
+    /// an identifier keeps the split of its parts (`db.`ns.t``), a string is split by `parseHierarchicalName`.
+    /// Returns nothing for an unqualified or a parameterized name, and for an argument of another kind.
+    static std::optional<StorageID> getQualifiedNameArgument(const ASTPtr & argument)
+    {
+        StorageID as_written = StorageID::createEmpty();
+        if (const auto * identifier = argument->as<ASTIdentifier>())
+        {
+            if (!identifier->compound() || identifier->isParam())
+                return {};
+            as_written = identifier->createTable()->getTableId();
+        }
+        else if (const auto * literal = argument->as<ASTLiteral>())
+        {
+            if (literal->value.getType() != Field::Types::String || literal->value.safeGet<String>().empty())
+                return {};
+            as_written = DatabaseCatalog::parseHierarchicalName(literal->value.safeGet<String>());
+        }
+        else
+        {
+            return {};
+        }
+
+        if (as_written.database_name.empty())
+            return {};
+        return StorageID(as_written.database_name, as_written.table_name);
+    }
+
+    /// Replaces the argument (an identifier or a string) with the bound database and table. A string keeps the split
+    /// by quoting the parts with dots (see `DatabaseCatalog::formatHierarchicalName`).
+    static void replaceQualifiedNameArgument(ASTPtr & argument, const String & bound_database, const String & bound_table)
+    {
+        if (auto * literal = argument->as<ASTLiteral>())
+            literal->value = DatabaseCatalog::formatHierarchicalName(bound_database, bound_table);
+        else
+            argument = make_intrusive<ASTIdentifier>(std::vector<String>{bound_database, bound_table});
+    }
+
+    /// Whether the subtree consists of deterministic functions and literals only: a constant expression that can be
+    /// evaluated now, with the same result as when the query is executed. An identifier (a column, an alias) or a query
+    /// parameter (of a parameterized view) is only known later, and a function that depends on the context of the call
+    /// (`getSetting`, `currentUser`, `hostName`) may give another result then. `currentDatabase` is the exception: it is
+    /// substituted with the database the names are qualified with.
+    bool isDeterministicFunctionOfLiterals(const IAST & ast) const
+    {
+        if (ast.as<ASTLiteral>())
+            return true;
+        if (const auto * function = ast.as<ASTFunction>())
+        {
+            if (!isCurrentDatabaseFunction(*function))
+            {
+                auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+                if (!resolver || !resolver->isDeterministic() || resolver->isServerConstant())
+                    return false;
+            }
+        }
+        else if (!ast.as<ASTExpressionList>())
+        {
+            return false;
+        }
+        for (const auto & child : ast.children)
+            if (!isDeterministicFunctionOfLiterals(*child))
+                return false;
+        return true;
+    }
+
+    /// The first argument of `joinGet` or `dictGet` given as a constant expression (`concat('ns', '.j')`) is replaced
+    /// with the string it evaluates to, so that the name is qualified and bound like a string literal: a stored or
+    /// shipped query must not be silently retargeted when a database `ns` or a table of the same name appears later.
+    /// `currentDatabase()` in the expression is the database the names are qualified with, like in `merge`.
+    void foldConstantNameArgument(ASTPtr & argument) const
+    {
+        if (!bind_qualified_names || database_name.empty())
+            return;
+
+        if (!argument->as<ASTFunction>() || !isDeterministicFunctionOfLiterals(*argument))
+            return;
+
+        ASTPtr expression = argument->clone();
+        if (const auto * function = expression->as<ASTFunction>(); function && isCurrentDatabaseFunction(*function))
+            expression = make_intrusive<ASTLiteral>(database_name);
+        else
+            for (auto & child : expression->children)
+                substituteCurrentDatabase(child, *expression);
+
+        Field value = evaluateConstantExpression(expression, context).first;
+        if (value.getType() != Field::Types::String)
+            return;
+
+        auto literal = make_intrusive<ASTLiteral>(value);
+        if (String alias = argument->tryGetAlias(); !alias.empty())
+            literal->setAlias(alias);
+        argument = literal;
+    }
+
+    /// Whether the first argument of `joinGet` or `dictGet` is a compound identifier that may be an expression (see
+    /// `mayBeExpression`): the analyzer resolves it as an expression first (`joinGet(a.b, ...)` with an alias or a tuple
+    /// column `a`), so it is left as written.
+    bool isNameArgumentExpression(const ASTPtr & argument) const
+    {
+        const auto * identifier = argument->as<ASTIdentifier>();
+        return identifier && !identifier->as<ASTTableIdentifier>() && identifier->compound()
+            && mayBeExpression(*identifier, /* unknown_sources_may_be_expression = */ false);
+    }
+
+    /// A qualified table name carried by the first argument of `joinGet` is bound like in `visitCompound`.
+    void bindQualifiedJoinGetArgument(ASTPtr & argument) const
+    {
+        if (!bind_qualified_names || database_name.empty())
+            return;
+
+        auto as_written = getQualifiedNameArgument(argument);
+        if (!as_written)
+            return;
+
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(*as_written, database_name, context);
+        if (resolved.database_name == as_written->database_name && resolved.table_name == as_written->table_name)
+        {
+            /// A string bound to an existing table is stored in the form of `formatHierarchicalName` even when the split
+            /// is the one written: `'r.ns.j'` of the database `r.ns` becomes ``'`r.ns`.j'``, which the readers of
+            /// stored definitions (`tryParseFormattedHierarchicalName`) understand, unlike the unquoted string.
+            if (!argument->as<ASTLiteral>() || !DatabaseCatalog::instance().isTableExist(resolved, context))
+                return;
+        }
+        replaceQualifiedNameArgument(argument, resolved.database_name, resolved.table_name);
+    }
+
+    /// A qualified dictionary name carried by the first argument of `dictGet` is bound to the dictionary it denotes now,
+    /// see `ExternalDictionariesLoader::tryBindQualifiedDictionaryName`. Returns whether the argument is bound.
+    bool bindQualifiedDictGetArgument(ASTPtr & argument) const
+    {
+        if (!bind_qualified_names || database_name.empty())
+            return false;
+
+        auto as_written = getQualifiedNameArgument(argument);
+        if (!as_written)
+            return false;
+
+        /// A string is passed as written, it may be the name of an XML dictionary.
+        const auto * literal = argument->as<ASTLiteral>();
+        String name = literal ? literal->value.safeGet<String>() : DatabaseCatalog::formatHierarchicalName(as_written->database_name, as_written->table_name);
+        auto bound = context->getExternalDictionariesLoader().tryBindQualifiedDictionaryName(name, database_name);
+        if (!bound)
+            return false;
+        /// A string is stored in the form of `formatHierarchicalName` even when the split is the one written, see
+        /// `bindQualifiedJoinGetArgument`.
+        if (literal || bound->database != as_written->database_name || bound->table != as_written->table_name)
+            replaceQualifiedNameArgument(argument, bound->database, bound->table);
+        return true;
+    }
+
+    /// A qualified name is hierarchical as well (see `DatabaseCatalog`): `ns.t` may be the table `ns.t` of the default
+    /// database when there is no database `ns`. It is bound to the table it denotes now, so that a stored or shipped
+    /// query (a view, `ON CLUSTER`) is not silently retargeted when a database `ns` is created later.
+    void visitCompound(const ASTTableIdentifier & identifier, ASTPtr & ast) const
+    {
+        if (!bind_qualified_names || database_name.empty())
+            return;
+
+        StorageID as_written = identifier.getTableId();
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+            StorageID(as_written.database_name, as_written.table_name), database_name, context);
+        if (resolved.database_name == as_written.database_name && resolved.table_name == as_written.table_name)
+            return;
+
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(resolved.database_name, resolved.table_name);
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
@@ -663,8 +1139,15 @@ private:
 
     void visit(ASTFunction & function, ASTPtr &) const
     {
+        if (function.name == "lambda")
+        {
+            visitLambda(function, [&](ASTPtr & node) { visit(node); });
+            return;
+        }
+
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
+        bool is_join_get = functionIsJoinGet(function.name);
 
         for (auto & child : function.children)
         {
@@ -672,17 +1155,37 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
-                    if (is_dict_get && i == 0)
+                    if ((is_join_get || is_dict_get) && i == 0)
+                        foldConstantNameArgument(child->children[i]);
+
+                    if (is_join_get && i == 0)
+                    {
+                        /// An unqualified name is left alone, but a qualified one is bound to the table it denotes now,
+                        /// like a table reference (see `visitCompound`): the expressions of a mutation are executed
+                        /// later, without a current database.
+                        if (child->children[i]->as<ASTLiteral>()
+                            || (child->children[i]->as<ASTIdentifier>() && !isNameArgumentExpression(child->children[i])))
+                            bindQualifiedJoinGetArgument(child->children[i]);
+                        else if (child->children[i]->as<ASTIdentifier>())
+                            continue;
+                        else
+                            visit(child->children[i]);
+                    }
+                    else if (is_dict_get && i == 0)
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
-                            /// Identifier already qualified
+                            /// A qualified name is bound to the dictionary it denotes now (see `bindQualifiedDictGetArgument`).
                             if (identifier->compound())
+                            {
+                                if (!isNameArgumentExpression(child->children[i]))
+                                    bindQualifiedDictGetArgument(child->children[i]);
                                 continue;
+                            }
 
                             /// A parameterized name is only known when the view is called, and it
                             /// has no resolvable name to qualify here.
-                            if (identifier->isParam())
+                            if (identifier->isParam() || only_bind_qualified_names)
                                 continue;
 
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
@@ -695,9 +1198,11 @@ private:
                             if (literal_value.getType() != Field::Types::String)
                                 continue;
 
-                            auto dictionary_name = literal_value.safeGet<String>();
-                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
-                            literal_value = qualified_dictionary_name.getFullName();
+                            if (bindQualifiedDictGetArgument(child->children[i]) || only_bind_qualified_names)
+                                continue;
+                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), context);
+                            if (!qualified_dictionary_name.database.empty())
+                                literal_value = DatabaseCatalog::formatHierarchicalName(qualified_dictionary_name.database, qualified_dictionary_name.table);
                         }
                     }
                     else if (is_operator_in && i == 1)
@@ -709,6 +1214,12 @@ private:
                             /// Then it is not a table name and must not be qualified with the database
                             /// (the similar code in `MarkTableIdentifiersVisitor` also checks the aliases).
                             if (!identifier->as<ASTTableIdentifier>() && isExpressionAlias(identifier->name()))
+                                continue;
+
+                            /// A compound name that may be an expression (see `mayBeExpression`) is left as written, and not
+                            /// marked as a table either, so that the later passes (`visitTableExpressions`) do not bind it.
+                            if (bind_qualified_names && !database_name.empty() && !identifier->as<ASTTableIdentifier>()
+                                && identifier->compound() && mayBeExpression(*identifier))
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception

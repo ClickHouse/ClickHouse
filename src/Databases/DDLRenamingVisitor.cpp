@@ -249,13 +249,14 @@ namespace
             if (literal->value.getType() != Field::Types::String)
                 return;
 
-            auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
+            auto maybe_qualified_name = DatabaseCatalog::tryParseFormattedHierarchicalName(literal->value.safeGet<String>());
             /// Just return if name if invalid
             if (!maybe_qualified_name || maybe_qualified_name->database.empty() || maybe_qualified_name->table.empty())
                 return;
 
             auto new_qualified_name = data.renaming_map.getNewTableName(*maybe_qualified_name);
-            literal->value = new_qualified_name.getFullName();
+            /// The parts with dots are quoted, so that the split into the database and the table is kept.
+            literal->value = DatabaseCatalog::formatHierarchicalName(new_qualified_name.database, new_qualified_name.table);
             return;
         }
 

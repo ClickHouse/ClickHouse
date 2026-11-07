@@ -1,0 +1,17 @@
+--- a later element of a multi-table RENAME sees the tables moved by the earlier ones
+z	1
+b.t	2
+1
+--- RENAME TABLE IF EXISTS of an absent table does nothing
+(UNKNOWN_DATABASE)
+--- an exact qualifier is preferred over a quoted one crossing the boundary in a qualified asterisk
+2
+1
+2
+--- the argument of the Dictionary engine is bound to the dictionary it denotes
+Dictionary(\'db.`ns.d`\')
+original
+Dictionary(\'db.`ns.d`\')
+(HAVE_DEPENDENT_OBJECTS)
+Dictionary(\'db_copy.`ns.d`\')
+restored

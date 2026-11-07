@@ -45,6 +45,14 @@ public:
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
 
+    /// Binds the qualified table names (`db.ns.t`) in the expressions of a mutation (`DELETE ... WHERE x IN db.ns.t`) to the
+    /// tables they denote now, and qualifies the unqualified ones with `database` (of the mutated `table`), as each host
+    /// would. Done before the query is dispatched `ON CLUSTER` or enqueued to a `Replicated` database: the hosts replaying
+    /// it take a qualified name exactly as shipped (see `DatabaseCatalog::isBoundHierarchicalName`). `query` is the whole
+    /// query, which `max_expanded_ast_elements` bounds when the common table expressions are expanded.
+    static void bindTableNamesInMutationExpressions(
+        const ASTs & expressions, const IAST & query, const StoragePtr & table, const String & database, ContextPtr local_context);
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
     bool supportsTransactions() const override { return true; }
@@ -62,6 +70,11 @@ private:
     /// Adds the grants `processSQLSecurityOption` demands for the view's stored SQL security, so replacing the
     /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.
     void addRequiredAccessForModifyQuerySQLSecurity(AccessRightsElements & required_access, const StoragePtr & storage) const;
+
+    /// Rewrites `database` and `table` of a table named in a command (not the altered table) to the split of
+    /// the hierarchical name that denotes an existing table, see `DatabaseCatalog::resolveHierarchicalName`.
+    /// A session temporary table keeps its name.
+    void bindHierarchicalNameOfOperand(String & database, String & table) const;
 
     BlockIO executeToTable(const ASTAlterQuery & alter);
 

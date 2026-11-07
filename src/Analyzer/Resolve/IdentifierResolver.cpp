@@ -289,23 +289,21 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
     size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1 || parts_size > 2)
+    if (parts_size < 1)
         throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-            "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
+            "Expected table identifier to contain at least 1 part. Actual '{}'",
             table_identifier.getFullName());
 
+    /// A hierarchical name `a.b.c` is the database `a.b` and the table `c` as written; `resolveStorageID` tries the
+    /// other splits of the name, `a` and `b.c` (see `DatabaseCatalog`).
     std::string database_name;
-    std::string table_name;
-
-    if (table_identifier.isCompound())
+    for (size_t i = 0; i + 1 < parts_size; ++i)
     {
-        database_name = table_identifier[0];
-        table_name = table_identifier[1];
+        if (i > 0)
+            database_name += '.';
+        database_name += table_identifier[i];
     }
-    else
-    {
-        table_name = table_identifier[0];
-    }
+    const std::string & table_name = table_identifier[parts_size - 1];
 
     StorageID storage_id(database_name, table_name);
 
@@ -485,25 +483,24 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
 std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifier & table_identifier, const ContextPtr & context)
 {
     size_t parts_size = table_identifier.getPartsSize();
-    if (parts_size < 1 || parts_size > 2)
+    if (parts_size < 1)
         return {};
 
     String database_name;
-    String table_name;
-    if (table_identifier.isCompound())
+    for (size_t i = 0; i + 1 < parts_size; ++i)
     {
-        database_name = table_identifier[0];
-        table_name = table_identifier[1];
+        if (i > 0)
+            database_name += '.';
+        database_name += table_identifier[i];
     }
-    else
-    {
-        table_name = table_identifier[0];
-    }
+    String table_name = table_identifier[parts_size - 1];
 
     /// Resolve the database the same way table resolution does, so the hint search starts from
     /// the right database (the current one for a bare name) and can fall back to other databases.
-    if (database_name.empty())
-        database_name = context->getCurrentDatabase();
+    /// A hierarchical name is searched from the database it would be placed into.
+    auto placement = DatabaseCatalog::instance().getHierarchicalNamePlacement({database_name, table_name}, context);
+    database_name = placement.database_name;
+    table_name = placement.table_name;
 
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     TableNameHints hints(database, context);
@@ -710,20 +707,13 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 
     if (identifier_lookup.isTableExpressionLookup())
     {
-        size_t parts_size = identifier_lookup.identifier.getPartsSize();
-        if (parts_size != 1 && parts_size != 2)
-            throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-                "Expected identifier '{}' to contain 1 or 2 parts to be resolved as table expression. In scope {}",
-                identifier_lookup.identifier.getFullName(),
-                table_expression_node->formatASTForErrorMessage());
-
-        if (parts_size == 1 && path_start == table_name)
-            return true;
+        size_t parts_size = identifier.getPartsSize();
         if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name)
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
-            return true;
-        return false;
+
+        /// The table name, or `database.table`, written in any number of parts: the names are hierarchical (see `DatabaseCatalog`).
+        return table_expression_data.matchTableName(identifier, scope.context) == parts_size
+            || table_expression_data.matchDatabaseAndTableName(identifier) == parts_size;
     }
 
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
@@ -942,6 +932,75 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     return { .resolved_identifier = result_expression, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 }
 
+/// Whether a table expression in scope other than `table_expression_data` matches the identifier with its database and
+/// table name on the exact boundary between them, covering the number of parts accepted by `matches_parts`.
+template <typename MatchesParts>
+static bool isMatchedOnExactBoundaryByOtherTableExpression(
+    const Identifier & identifier,
+    const AnalysisTableExpressionData & table_expression_data,
+    const IdentifierResolveScope & scope,
+    MatchesParts && matches_parts)
+{
+    for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
+        {
+            if (&other_table_expression_data == &table_expression_data)
+                continue;
+
+            bool other_crosses_boundary = false;
+            size_t other_parts = other_table_expression_data.matchDatabaseAndTableName(identifier, &other_crosses_boundary);
+            if (matches_parts(other_parts) && !other_crosses_boundary)
+                return true;
+        }
+    }
+    return false;
+}
+
+/// A table name of several parts (`a.b` for the table `a.b`), or relative to the current database (`t` for the table
+/// `db`.`ns.t` inside `USE db.ns`), is a qualifier only since table names are hierarchical (see
+/// `DatabaseCatalog`), so it must not take precedence over the qualifiers that already denoted another table expression
+/// before: the explicit alias of another table expression equal to the first part (`a` in `... CROSS JOIN t AS a`), the
+/// table name of another table expression equal to the first part (`a` in `... CROSS JOIN r.a`), or the database and the
+/// table name of another table expression matched exactly (the table `b` of the database `a`).
+/// Only the table expressions of the same scope (the sources of a join) compete: the nearest scope still wins.
+static bool isQualifiedByOtherTableExpression(
+    const Identifier & identifier,
+    size_t qualifier_parts,
+    bool check_alias,
+    const TableExpressionNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope)
+{
+    const auto & path_start = identifier.getParts().front();
+    for (const auto & [other_table_expression_node, other_table_expression_data] : scope.table_expression_node_to_data)
+    {
+        if (other_table_expression_node == table_expression_node)
+            continue;
+
+        if (check_alias && other_table_expression_node->hasAlias() && other_table_expression_node->getAlias() == path_start)
+            return true;
+
+        if (check_alias && !other_table_expression_data.table_name.empty() && other_table_expression_data.table_name == path_start)
+            return true;
+
+        bool other_crosses_boundary = false;
+        if (other_table_expression_data.matchDatabaseAndTableName(identifier, &other_crosses_boundary) == qualifier_parts
+            && !other_crosses_boundary)
+            return true;
+    }
+    return false;
+}
+
+/// Whether the table name of the table expression matched `table_name_parts` parts of the identifier in the way that only
+/// hierarchical names allow: with several parts (`a.b` for the table `a.b`), or relative to the current database (`t` for
+/// the table `db`.`ns.t` inside `USE db.ns`). Such a match gives way to the qualifiers of the other table expressions, see
+/// `isQualifiedByOtherTableExpression`. A single part equal to the table name is a qualifier as before.
+static bool isHierarchicalTableNameMatch(
+    const Identifier & identifier, size_t table_name_parts, const AnalysisTableExpressionData & table_expression_data)
+{
+    return table_name_parts > 1 || (table_name_parts == 1 && identifier.getParts().front() != table_expression_data.table_name);
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -965,18 +1024,22 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
-        if (parts_size != 1 && parts_size != 2)
-            throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-                "Expected identifier '{}' to contain 1 or 2 parts to be resolved as table expression. In scope {}",
-                identifier_lookup.identifier.getFullName(),
-                table_expression_node->formatASTForErrorMessage());
 
-        const auto & table_name = table_expression_data.table_name;
-        const auto & database_name = table_expression_data.database_name;
-
-        if (parts_size == 1 && path_start == table_name)
+        /// The whole identifier is the table name or the database and the table name. Both are hierarchical
+        /// (`db.ns.t`, see `DatabaseCatalog`), so they can cover any number of parts.
+        if (table_expression_data.matchTableName(identifier, scope.context) == parts_size
+            && !(isHierarchicalTableNameMatch(identifier, parts_size, table_expression_data)
+                 && isQualifiedByOtherTableExpression(
+                     identifier, parts_size, false /*check_alias*/, table_expression_node, scope)))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+
+        /// A name crossing the boundary between the database and the table (`"a.b".c.*` for the table `a`.`b.c`) is
+        /// only accepted when no other table expression matches it exactly (the table `a.b`.`c`), as for the columns.
+        bool crosses_boundary = false;
+        if (table_expression_data.matchDatabaseAndTableName(identifier, &crosses_boundary) == parts_size
+            && !(crosses_boundary
+                 && isMatchedOnExactBoundaryByOtherTableExpression(
+                     identifier, table_expression_data, scope, [&](size_t other_parts) { return other_parts == parts_size; })))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
         /** A materialized CTE is stored under an internal temporary table name, but it has to be addressable
@@ -1004,10 +1067,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]
         && identifier.getPartsSize() > 1)
     {
-        const auto & table_name_compat = table_expression_data.table_name;
-        const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
+        size_t table_name_parts_compat = table_expression_data.matchTableName(identifier, scope.context);
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+        /// A table name of several parts gives way to the qualifiers of the other table expressions, like below.
+        if (!prefix_matches_alias && isHierarchicalTableNameMatch(identifier, table_name_parts_compat, table_expression_data)
+            && isQualifiedByOtherTableExpression(
+                identifier, table_name_parts_compat, true /*check_alias*/, table_expression_node, scope))
+            table_name_parts_compat = 0;
+        const bool prefix_matches_table_name = table_name_parts_compat > 0 && table_name_parts_compat < identifier.getPartsSize();
         /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
           * matches the qualifier the user wrote. Its visible CTE name is a qualifier carrier just like a
           * table name or an alias, and it has to take part in this compatibility path as well, otherwise
@@ -1021,13 +1089,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             prefix_matches_cte_name
                 = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
         }
-        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
+        /// An explicit alias (or the CTE name) is tried before the table name, which may cover more parts (the table
+        /// `a.b` aliased `a`: `a.b.c` is the subcolumn `b.c` qualified with the alias first, as before hierarchical names).
+        if (prefix_matches_alias || prefix_matches_cte_name)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
                 1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
             if (alias_prefix_result.resolved_identifier)
                 return alias_prefix_result;
+        }
+        if (prefix_matches_table_name && !((prefix_matches_alias || prefix_matches_cte_name) && table_name_parts_compat == 1))
+        {
+            auto table_name_prefix_result = tryResolveIdentifierFromStorage(
+                identifier_lookup, table_expression_node, table_expression_data, scope,
+                table_name_parts_compat /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+            if (table_name_prefix_result.resolved_identifier)
+                return table_name_prefix_result;
         }
     }
 
@@ -1057,9 +1135,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (identifier.getPartsSize() == 1)
         return {};
 
-    const auto & table_name = table_expression_data.table_name;
-    const auto & database_name = table_expression_data.database_name;
-
     /** The identifier first part can match a table name or an alias of one table expression and at the same
       * time be the database name of some table expression in the scope. Then the identifier as a whole can be
       * qualified with the table name or the alias, with the database name and the table name, or refer to
@@ -1088,15 +1163,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
       */
     auto identifier_can_fall_through_to_database_and_table = [&]() -> bool
     {
-        if (identifier.getPartsSize() == 2 && !identifier_lookup.is_matcher_qualifier)
-            return false;
-
         for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
         {
             for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
             {
-                if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
-                    && identifier[1] == other_table_expression_data.table_name)
+                size_t qualifier_parts = other_table_expression_data.matchDatabaseAndTableName(identifier);
+                /// The whole identifier being a table is not a column expression (unless it qualifies a matcher).
+                if (qualifier_parts > 0 && (qualifier_parts < identifier.getPartsSize() || identifier_lookup.is_matcher_qualifier))
                     return true;
             }
         }
@@ -1104,18 +1177,47 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return false;
     };
 
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    /// The table name (hierarchical, possibly covering several parts) or the alias qualifies the column. An explicit alias
+    /// is tried first: for the table `a.b` aliased `a`, `a.b.c` is the subcolumn `b.c` qualified with the alias, as before
+    /// hierarchical names, rather than the column `c` qualified with the longer table name.
+    size_t table_name_parts = table_expression_data.matchTableName(identifier, scope.context);
+    const bool alias_matches = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+    if (!alias_matches && isHierarchicalTableNameMatch(identifier, table_name_parts, table_expression_data)
+        && isQualifiedByOtherTableExpression(
+            identifier, table_name_parts, true /*check_alias*/, table_expression_node, scope))
+        table_name_parts = 0;
+    if (table_name_parts > 0 || alias_matches)
     {
+        const size_t qualifier_parts = alias_matches ? 1 : table_name_parts;
         auto lookup_result = tryResolveIdentifierFromStorage(
             identifier_lookup,
             table_expression_node,
             table_expression_data,
             scope,
-            1 /*identifier_column_qualifier_parts*/,
+            qualifier_parts,
             true /*can_be_not_found*/);
 
         if (lookup_result.resolved_identifier)
             return lookup_result;
+
+        if (alias_matches && table_name_parts > 1)
+        {
+            lookup_result = tryResolveIdentifierFromStorage(
+                identifier_lookup,
+                table_expression_node,
+                table_expression_data,
+                scope,
+                table_name_parts,
+                true /*can_be_not_found*/);
+
+            if (lookup_result.resolved_identifier)
+                return lookup_result;
+        }
+
+        /// The whole identifier is the table name (`ns.t` for the table `ns.t`): not a column expression, but as the
+        /// qualifier of a matcher (`ns.t.*`) it is resolved as a table expression next.
+        if (table_name_parts == identifier.getPartsSize() && identifier_lookup.is_matcher_qualifier)
+            return {};
 
         /// No other interpretation is possible: repeat the lookup to throw the proper exception.
         if (!identifier_can_fall_through_to_database_and_table())
@@ -1124,7 +1226,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 table_expression_node,
                 table_expression_data,
                 scope,
-                1 /*identifier_column_qualifier_parts*/);
+                qualifier_parts);
     }
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
@@ -1153,13 +1255,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         }
     }
 
-    if (identifier.getPartsSize() == 2)
+    /// The database and the table name (hierarchical, possibly covering several parts) qualify the column.
+    bool crosses_boundary = false;
+    size_t database_and_table_name_parts = table_expression_data.matchDatabaseAndTableName(identifier, &crosses_boundary);
+    if (database_and_table_name_parts == 0 || database_and_table_name_parts >= identifier.getPartsSize())
         return {};
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
-        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
+    /// A qualifier crossing the boundary between the database and the table (`"a.b".c` for the table `a`.`b.c`) is only
+    /// accepted when no other table expression matches it exactly (the table `a.b`.`c`): these are distinct tables.
+    if (crosses_boundary
+        && isMatchedOnExactBoundaryByOtherTableExpression(
+            identifier, table_expression_data, scope,
+            [&](size_t other_parts) { return other_parts > 0 && other_parts < identifier.getPartsSize(); }))
+        return {};
 
-    return {};
+    return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, database_and_table_name_parts);
 }
 
 static QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_resolved_identifier,

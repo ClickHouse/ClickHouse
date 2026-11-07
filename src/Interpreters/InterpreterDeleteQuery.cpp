@@ -91,6 +91,7 @@ BlockIO InterpreterDeleteQuery::execute()
     const auto & settings = getContext()->getSettingsRef();
 
     query_ptr->as<ASTDeleteQuery &>().setDatabase(table_id.database_name);
+    query_ptr->as<ASTDeleteQuery &>().setTable(table_id.table_name);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -101,6 +102,10 @@ BlockIO InterpreterDeleteQuery::execute()
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
+
+    /// The tables of the predicate (`WHERE x IN db.ns.keys`) are bound before the query is dispatched `ON CLUSTER` or
+    /// enqueued to a `Replicated` database, see `InterpreterAlterQuery::bindTableNamesInMutationExpressions`.
+    InterpreterAlterQuery::bindTableNamesInMutationExpressions({delete_query.predicate}, *query_ptr, table, table_id.database_name, getContext());
 
     if (delete_query.cluster.empty())
         checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
@@ -188,7 +193,7 @@ BlockIO InterpreterDeleteQuery::execute()
         {
             /// Substitute the database into table functions that use the current database implicitly, e.g.
             /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
-            /// the database of the session. The table identifiers are qualified on each host instead.
+            /// the database of the session. The table identifiers are qualified and bound above.
             AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
             auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
             if (mutable_delete_query.predicate)

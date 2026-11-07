@@ -1,0 +1,22 @@
+--- grants on the nonexistent database db.ns only
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+2
+0
+--- and with grants on the database db
+x	UInt8					
+y	UInt8					
+1
+db	ns.t
+CREATE ROW POLICY p_unique ON db.`ns.t` FOR SELECT USING x = 1 TO ALL
+0

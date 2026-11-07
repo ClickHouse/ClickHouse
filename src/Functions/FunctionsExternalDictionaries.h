@@ -36,6 +36,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <base/range.h>
 #include <base/defines.h>
+#include <Core/QualifiedTableName.h>
+
+#include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -99,12 +103,19 @@ public:
     {
         auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
-        if (!access_checked)
+        /// The access is checked again whenever the name loads another dictionary: a hierarchical name (see
+        /// `DatabaseCatalog`) may denote another dictionary after a rename between two blocks.
+        QualifiedTableName dictionary_id{.database = dict->getDatabaseOrNoDatabaseTag(), .table = dict->getDictionaryID().getTableName()};
         {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
-            access_checked = true;
+            std::lock_guard lock(access_checked_mutex);
+            if (access_checked_for == dictionary_id)
+                return dict;
         }
 
+        context->checkAccess(AccessType::dictGet, dictionary_id.database, dictionary_id.table);
+
+        std::lock_guard lock(access_checked_mutex);
+        access_checked_for = std::move(dictionary_id);
         return dict;
     }
 
@@ -173,8 +184,10 @@ public:
     const ContextPtr context;
 
 private:
-    /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
-    std::atomic<bool> access_checked = false;
+    /// The dictionary the access was checked for. Access cannot be not granted, since in this case `checkAccess` will
+    /// throw and `access_checked_for` will not be updated.
+    std::mutex access_checked_mutex;
+    std::optional<QualifiedTableName> access_checked_for TSA_GUARDED_BY(access_checked_mutex);
 
     /// We must not cache dictionary or dictionary's structure here, because there are places
     /// where ExpressionActionsPtr is cached (StorageDistributed caching it for sharding_key_expr and

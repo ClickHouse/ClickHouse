@@ -26,6 +26,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterShowTablesQuery.h>
+#include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -192,7 +194,7 @@ static std::optional<String> tryParseSingleStringLiteral(const String & text)
 /// Replace "SHOW TABLE STATUS LIKE 'xx'" into a SELECT from INFORMATION_SCHEMA.TABLES.
 /// Both statements describe the same MySQL metadata family, so they must share one mapping:
 /// a client mixing the two introspection paths has to see identical values for one object.
-static String showTableStatusReplacementQuery(const String & query)
+static String showTableStatusReplacementQuery(const String & query, const String & current_database)
 {
     const String prefix = "SHOW TABLE STATUS LIKE ";
     String pattern;
@@ -208,27 +210,49 @@ static String showTableStatusReplacementQuery(const String & query)
         if (auto parsed = tryParseSingleStringLiteral(query.data() + prefix.length()))
             pattern = *parsed;
     }
-    return (
-        "SELECT"
-        " table_name AS Name,"
-        " engine AS Engine,"
-        " version AS Version,"
-        " row_format AS Row_format,"
-        " table_rows AS Rows,"
-        " avg_row_length AS Avg_row_length,"
-        " data_length AS Data_length,"
-        " max_data_length AS Max_data_length,"
-        " index_length AS Index_length,"
-        " data_free AS Data_free,"
-        " auto_increment AS Auto_increment,"
-        " create_time AS Create_time,"
-        " update_time AS Update_time,"
-        " check_time AS Check_time,"
-        " table_collation AS Collation,"
-        " checksum AS Checksum,"
-        " create_options AS Create_options,"
-        " table_comment AS Comment"
-        " FROM INFORMATION_SCHEMA.TABLES"
+
+    auto columns = [](const String & name_expression)
+    {
+        return "SELECT "
+            + name_expression + " AS Name,"
+            " engine AS Engine,"
+            " version AS Version,"
+            " row_format AS Row_format,"
+            " table_rows AS Rows,"
+            " avg_row_length AS Avg_row_length,"
+            " data_length AS Data_length,"
+            " max_data_length AS Max_data_length,"
+            " index_length AS Index_length,"
+            " data_free AS Data_free,"
+            " auto_increment AS Auto_increment,"
+            " create_time AS Create_time,"
+            " update_time AS Update_time,"
+            " check_time AS Check_time,"
+            " table_collation AS Collation,"
+            " checksum AS Checksum,"
+            " create_options AS Create_options,"
+            " table_comment AS Comment";
+    };
+
+    /// A hierarchical current database (`USE catalog.sales`, see `DatabaseCatalog`) may denote the tables `sales.*` of the
+    /// database `catalog` and the databases `catalog.sales.*`: list the same tables as `SHOW TABLES` does, with the names
+    /// relative to the current database, and match the pattern against those names.
+    auto sources = InterpreterShowTablesQuery::getHierarchicalDatabaseSources(current_database, "table_schema", "table_name");
+    if (!sources.empty())
+    {
+        String result = columns("hierarchical_name") + " FROM (SELECT *, multiIf(";
+        for (const auto & source : sources)
+            result += source.condition + ", " + source.name_expression + ", ";
+        result += "table_name) AS hierarchical_name FROM INFORMATION_SCHEMA.TABLES WHERE ";
+        for (size_t i = 0; i < sources.size(); ++i)
+            result += (i ? " OR " : "") + sources[i].condition;
+        result += " ORDER BY table_schema != " + quoteString(current_database) + ", length(table_schema) DESC"
+            " LIMIT 1 BY hierarchical_name) WHERE hierarchical_name LIKE " + quoteString(pattern);
+        return result;
+    }
+
+    return columns("table_name")
+        + " FROM INFORMATION_SCHEMA.TABLES"
         /// MySQL scopes SHOW TABLE STATUS to the session's default database, so the translation
         /// must constrain table_schema too, or a lookup would also return same-named tables from
         /// other databases. The replacement is executed with the session's query context, so
@@ -236,7 +260,7 @@ static String showTableStatusReplacementQuery(const String & query)
         /// statements). MySQL's "No database selected" state cannot arise here: a ClickHouse
         /// session always has a current database (the server default when the client sent none).
         " WHERE table_schema = currentDatabase() AND table_name LIKE "
-        + quoteString(pattern));
+        + quoteString(pattern);
 }
 
 static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & clickhouse_setting)
@@ -558,7 +582,10 @@ MySQLHandler::MySQLHandler(
     queries_replacements.emplace("SHOW WARNINGS", showWarningsReplacementQuery);
     queries_replacements.emplace("SHOW COUNT(*) WARNINGS", showCountWarningsReplacementQuery);
     queries_replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
-    queries_replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
+    queries_replacements.emplace("SHOW TABLE STATUS LIKE", [this](const String & query)
+    {
+        return showTableStatusReplacementQuery(query, session->sessionContext()->getCurrentDatabase());
+    });
     queries_replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
     queries_replacements.emplace("SHOW COLLATION", showCollationsReplacementQuery);
     settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
@@ -848,8 +875,10 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
-    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    /// Mirror the access check of the SQL `USE database` statement (`InterpreterUseQuery`), including a hierarchical
+    /// name (`db.ns` for the tables `ns.*` of the database `db`) checked for the database it denotes, before its
+    /// existence is reported.
+    InterpreterUseQuery::checkAccessAndExistence(database, session->sessionContext());
     /// ... and its settings-constraint check on the `database` setting.
     SettingsChanges database_change;
     database_change.setSetting("database", database);
@@ -864,10 +893,14 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
+    /// The current database may be hierarchical (`USE db.ns` for the tables `ns.*` of the database `db`): resolve the
+    /// name first, so that the access is checked for the table that is read below (the lookup is exact). The name is
+    /// unqualified, and the current database is applied once, by the resolution.
+    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({"", packet.table}, session_context);
     /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
     /// Check before getTable() so this command does not become a table-existence oracle.
-    session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
-    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
+    session_context->checkAccess(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {

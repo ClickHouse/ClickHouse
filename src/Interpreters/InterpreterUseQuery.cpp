@@ -1,5 +1,6 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Access/Common/AccessFlags.h>
@@ -11,10 +12,20 @@
 namespace DB
 {
 
+void InterpreterUseQuery::checkAccessAndExistence(const String & new_database, const ContextPtr & local_context)
+{
+    auto resolved = DatabaseCatalog::instance().tryResolveHierarchicalDatabase(new_database);
+    local_context->checkAccess(AccessType::SHOW_DATABASES, (resolved && !resolved->database_name.empty()) ? resolved->database_name : new_database);
+    if (!resolved)
+        DatabaseCatalog::instance().resolveHierarchicalDatabase(new_database); /// Throws UNKNOWN_DATABASE with a hint.
+}
+
 BlockIO InterpreterUseQuery::execute()
 {
     const String & new_database = query_ptr->as<ASTUseQuery &>().getDatabase();
-    getContext()->checkAccess(AccessType::SHOW_DATABASES, new_database);
+
+    checkAccessAndExistence(new_database, getContext());
+
     auto session_context = getContext()->getSessionContext();
 
     /// `database` is a real setting that `executeQuery` applies as the documented equivalent of
