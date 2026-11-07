@@ -51,6 +51,11 @@
         select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1
     </query>
 
+    <!-- 3.  a GLOBAL IN set that prunes nothing -->
+    <query>
+        select count(), sum(id) from distributed_table_1 where id global in (select number * 100 from numbers(1000000))
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS distributed_table_1</drop_query>
     <drop_query>DROP TABLE IF EXISTS distributed_table_2</drop_query>
     <drop_query>DROP TABLE IF EXISTS local_table_1</drop_query>
