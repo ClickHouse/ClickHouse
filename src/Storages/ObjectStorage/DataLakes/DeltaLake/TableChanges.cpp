@@ -118,7 +118,8 @@ TableChanges::KernelTableChangesScanIterator & TableChanges::getTableChangesScan
     std::exception_ptr engine_predicate_exception;
     if (filter.has_value())
     {
-        auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, getContext());
+        const auto table_schema = getSchemaUnlocked();
+        auto predicate = getEnginePredicate(filter.value(), table_schema, engine_predicate_exception, getContext());
         table_changes_scan = KernelUtils::unwrapResult(
             ffi::table_changes_scan(
                 getTableChanges().release(),
