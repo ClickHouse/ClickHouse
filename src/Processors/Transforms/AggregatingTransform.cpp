@@ -2084,24 +2084,24 @@ void AggregatingTransform::consume(Chunk chunk)
                 return;
             }
 
-            std::vector<size_t> shard_sizes(num_dictionary_shards);
+            VectorWithMemoryTracking<size_t> shard_sizes(num_dictionary_shards);
             for (const size_t shard : dictionary_shard_selector)
                 ++shard_sizes[shard];
 
-            std::vector<ColumnUInt64::MutablePtr> shard_row_indexes;
+            VectorWithMemoryTracking<ColumnUInt64::MutablePtr> shard_row_indexes;
             shard_row_indexes.resize(num_dictionary_shards);
             for (size_t shard = 0; shard < num_dictionary_shards; ++shard)
                 if (shard_sizes[shard] != 0)
                     shard_row_indexes[shard] = ColumnUInt64::create(shard_sizes[shard]);
 
-            std::vector<size_t> shard_offsets(num_dictionary_shards);
+            VectorWithMemoryTracking<size_t> shard_offsets(num_dictionary_shards);
             for (size_t row = 0; row < num_rows; ++row)
             {
                 const size_t shard = dictionary_shard_selector[row];
                 shard_row_indexes[shard]->getData()[shard_offsets[shard]++] = row;
             }
 
-            std::vector<Columns> shard_columns(num_dictionary_shards);
+            VectorWithMemoryTracking<Columns> shard_columns(num_dictionary_shards);
             for (auto & shard : shard_columns)
                 shard.reserve(columns.size());
             for (auto & column : columns)
@@ -2121,9 +2121,9 @@ void AggregatingTransform::consume(Chunk chunk)
             const size_t shard_mask = num_dictionary_shards - 1;
             const size_t first_shard = dictionary_shard_offset & shard_mask;
             dictionary_shard_offset = (first_shard + 1) & shard_mask;
-            std::vector<ManyAggregatedData::DictionaryAggregationLease> leases;
+            VectorWithMemoryTracking<ManyAggregatedData::DictionaryAggregationLease> leases;
             leases.reserve(num_dictionary_shards);
-            std::vector<size_t> shard_bytes(num_dictionary_shards);
+            VectorWithMemoryTracking<size_t> shard_bytes(num_dictionary_shards);
             size_t total_bytes = 0;
             for (size_t shard = 0; shard < num_dictionary_shards; ++shard)
             {

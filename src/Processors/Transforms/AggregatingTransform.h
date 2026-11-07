@@ -9,7 +9,7 @@
 #include <Common/ListWithMemoryTracking.h>
 #include <optional>
 #include <span>
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -121,7 +121,7 @@ struct ManyAggregatedData
             size_t references = 0;
             size_t bytes = 0;
         };
-        std::unordered_map<const IColumn *, DictionaryUsage> dictionary_usage;
+        UnorderedMapWithMemoryTracking<const IColumn *, DictionaryUsage> dictionary_usage;
 
         /// Upper bound; `wait` also accounts for the query memory limit and current headroom.
         size_t high_watermark = 256 << 20;
@@ -146,7 +146,7 @@ struct ManyAggregatedData
     {
         AggregatedDataVariantsPtr variants;
         DictionaryAggregationShard * shard = nullptr;
-        std::vector<DictionaryAggregationBlock> blocks;
+        VectorWithMemoryTracking<DictionaryAggregationBlock> blocks;
         size_t bytes = 0;
 
         explicit operator bool() const { return shard != nullptr; }
@@ -160,7 +160,7 @@ struct ManyAggregatedData
         /// The owner does not return from `consume` until the queue is empty, so the existing
         /// producer finish barrier also guarantees that no queued blocks remain.
         std::mutex mutex;
-        std::vector<DictionaryAggregationBlock> pending_blocks;
+        VectorWithMemoryTracking<DictionaryAggregationBlock> pending_blocks;
         size_t pending_bytes = 0;
         bool is_processing = false;
     };
@@ -174,7 +174,7 @@ struct ManyAggregatedData
         ColumnPtr dictionary;
         /// Keep the slots stable while producers own leases. New slots are initialized
         /// before publishing a larger `num_shards`; unused slots remain null.
-        std::vector<std::unique_ptr<DictionaryAggregationShard>> shards;
+        VectorWithMemoryTracking<std::unique_ptr<DictionaryAggregationShard>> shards;
         std::atomic<size_t> num_shards = 1;
         /// Number of producers retaining this as their current dictionary. Protected by
         /// `dictionary_shards_mutex`; an owner keeps its registration until it drains all leases.
@@ -290,7 +290,7 @@ private:
     const std::shared_ptr<std::atomic<size_t>> dictionary_shard_budget;
 
     std::mutex dictionary_shards_mutex;
-    std::unordered_map<const IColumn *, std::unique_ptr<DictionaryAggregationShards>> dictionary_shards;
+    UnorderedMapWithMemoryTracking<const IColumn *, std::unique_ptr<DictionaryAggregationShards>> dictionary_shards;
 };
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
