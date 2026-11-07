@@ -43,7 +43,7 @@ bool canBeReattached(const StoragePtr & table, const ContextPtr & context)
 
     const String engine = table->getName();
     /// `Buffer` keeps data in memory and flushes it on `DETACH`, which loses the data if there is no destination.
-    if (engine == "Memory" || engine == "Buffer" || engine == "LiveView" || engine == "WindowView")
+    if (engine == "Memory" || engine == "Buffer")
         return false;
 
     /// `Set` and `Join` with `persistent = 0` keep their data only in memory.
