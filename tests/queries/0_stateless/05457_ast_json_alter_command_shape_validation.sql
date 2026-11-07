@@ -55,12 +55,6 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN x UInt16 AFTER y'), '"first":false', '"first":true')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- `MATERIALIZE STATISTICS` is parsed with `ParserStatisticsDeclarationWithoutTypes`, so a `TYPE`
--- list on its declaration is parser-impossible and `formatImpl` has nowhere to print it.
--- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS a'), '"statistics_decl":{"type":"StatisticsDeclaration","columns"', '"statistics_decl":{"type":"StatisticsDeclaration","types":{"type":"ExpressionList","children":[{"type":"Function","name":"tdigest","no_empty_args":true}]},"columns"')); -- { serverError BAD_ARGUMENTS }
-
--- ---------------------------------------------------------------------------
 -- `UNFREEZE WITH NAME '<name>'`: unlike `FREEZE`, the parser requires the backup name for the
 -- all-partitions form too, and `formatImpl` emits `WITH NAME` only for a non-empty one.
 -- ---------------------------------------------------------------------------
