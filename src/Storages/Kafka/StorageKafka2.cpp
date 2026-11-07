@@ -630,8 +630,10 @@ void StorageKafka2::shutdown(bool)
     /// Wake up any threads blocked in acquireConsumer waiting for a free consumer.
     cv.notify_all();
     activating_task->deactivate();
-    drain_task->deactivate();
     partialShutdown();
+    /// Stop the drain task only after the streaming tasks: partialShutdown can block on a
+    /// stalled MV insert, and the drain task must keep serving events during that wait.
+    drain_task->deactivate();
     LOG_TRACE(log, "Closing consumers");
     cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
