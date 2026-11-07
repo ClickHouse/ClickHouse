@@ -253,6 +253,18 @@ const IDataType * getTypeOfSubstream(const IDataType * type, const Substream & s
     }
 }
 
+/// Whether a substream of @path is read from an object or from a type that `getTypeOfSubstream` does not track.
+bool mayPassObject(const IDataType * type, const ISerialization::SubstreamPath & path)
+{
+    for (const auto & substream : path)
+    {
+        if (!type || isObject(*type))
+            return true;
+        type = getTypeOfSubstream(type, substream);
+    }
+    return false;
+}
+
 bool hasTypedPathUnder(const DataTypeObject & type, const String & path)
 {
     String prefix = path + ".";
@@ -477,18 +489,24 @@ bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const Dat
 
     const auto & path_in_storage = info_in_storage->substreams_path;
     const auto & path_in_part = info_in_part->substreams_path;
-    if (path_in_storage.empty() || path_in_storage.size() != path_in_part.size())
+    if (path_in_storage.empty() || path_in_part.empty())
+        return true;
+
+    /// The conversion casts a value that no object holds or is in, as the read of the subcolumn does.
+    const auto & type_of_subcolumn_in_storage = *info_in_storage->data.type;
+    const auto & type_of_subcolumn_in_part = *info_in_part->data.type;
+    if (!mayPassObject(type_in_storage.get(), path_in_storage) && !mayPassObject(column_type_in_part.get(), path_in_part)
+        && !has_object(type_of_subcolumn_in_storage) && !has_object(type_of_subcolumn_in_part))
+        return false;
+
+    if (path_in_storage.size() != path_in_part.size())
         return true;
 
     const IDataType * type_of_substream_in_storage = type_in_storage.get();
     const IDataType * type_of_substream_in_part = column_type_in_part.get();
-    bool may_pass_object = false;
     size_t last = path_in_storage.size() - 1;
     for (size_t i = 0; i <= last; ++i)
     {
-        may_pass_object = may_pass_object || !type_of_substream_in_storage || !type_of_substream_in_part
-            || isObject(*type_of_substream_in_storage) || isObject(*type_of_substream_in_part);
-
         if (i == last
             && isTypeHintCastOfPath(type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i], path_in_part[i]))
             return false;
@@ -504,12 +522,8 @@ bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const Dat
         type_of_substream_in_part = getTypeOfSubstream(type_of_substream_in_part, path_in_part[i]);
     }
 
-    /// The same path in both: a cast of the value is not the conversion of the column unless the types are the same, or no
-    /// object holds the value or is in it, as the conversion casts such a value.
-    const auto & type_of_subcolumn_in_storage = *info_in_storage->data.type;
-    const auto & type_of_subcolumn_in_part = *info_in_part->data.type;
-    return (may_pass_object || has_object(type_of_subcolumn_in_storage) || has_object(type_of_subcolumn_in_part))
-        && !type_of_subcolumn_in_storage.equals(type_of_subcolumn_in_part);
+    /// The same path in both: a cast of the value is not the conversion of the column unless the types are the same.
+    return !type_of_subcolumn_in_storage.equals(type_of_subcolumn_in_part);
 }
 
 std::optional<String> getSourceOfSubcolumnForType(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)

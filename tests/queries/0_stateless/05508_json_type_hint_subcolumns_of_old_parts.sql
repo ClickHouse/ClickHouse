@@ -64,6 +64,8 @@ DROP TABLE IF EXISTS t_chained_mutations_old_patch_wide;
 DROP TABLE IF EXISTS t_chained_mutations_old_patch_compact;
 DROP TABLE IF EXISTS t_shadowed_path_wide;
 DROP TABLE IF EXISTS t_shadowed_path_compact;
+DROP TABLE IF EXISTS t_scalar_sibling_nullable_wide;
+DROP TABLE IF EXISTS t_scalar_sibling_nullable_compact;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -520,6 +522,18 @@ INSERT INTO t_scalar_sibling_map SELECT number, map('k', CAST(tuple(number * 7, 
 ALTER TABLE t_scalar_sibling_map MODIFY COLUMN m Map(String, Tuple(a String, b UInt64, j JSON)) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT id, m.values.a FROM t_scalar_sibling_map ORDER BY id SETTINGS log_comment = '05508_read_scalar_sibling_map';
 
+CREATE TABLE t_scalar_sibling_nullable_wide (id UInt64, tup Tuple(a String, b String, j JSON)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_scalar_sibling_nullable_wide;
+INSERT INTO t_scalar_sibling_nullable_wide VALUES (1, ('42', 'bad', '{}'));
+ALTER TABLE t_scalar_sibling_nullable_wide MODIFY COLUMN tup Tuple(a Nullable(String), b UInt64, j JSON) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT length(tup.a), tup.a.size FROM t_scalar_sibling_nullable_wide;
+
+CREATE TABLE t_scalar_sibling_nullable_compact (id UInt64, tup Tuple(a String, b String, j JSON)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
+SYSTEM STOP MERGES t_scalar_sibling_nullable_compact;
+INSERT INTO t_scalar_sibling_nullable_compact VALUES (1, ('42', 'bad', '{}'));
+ALTER TABLE t_scalar_sibling_nullable_compact MODIFY COLUMN tup Tuple(a Nullable(String), b UInt64, j JSON) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT length(tup.a), tup.a.size FROM t_scalar_sibling_nullable_compact;
+
 SELECT 'the source of a subcolumn a pending mutation reads stays readable';
 CREATE TABLE t_mutation_source_wide (id UInt64, j JSON(a UInt32), x UInt64) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_mutation_source_wide VALUES (1, '{"a" : 42}', 0), (2, '{"a" : 12345}', 0);
@@ -663,3 +677,5 @@ DROP TABLE t_chained_mutations_old_patch_wide;
 DROP TABLE t_chained_mutations_old_patch_compact;
 DROP TABLE t_shadowed_path_wide;
 DROP TABLE t_shadowed_path_compact;
+DROP TABLE t_scalar_sibling_nullable_wide;
+DROP TABLE t_scalar_sibling_nullable_compact;
