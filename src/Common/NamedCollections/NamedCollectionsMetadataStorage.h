@@ -79,7 +79,7 @@ public:
     /// returns. Loads the key if it is not loaded yet, failing if it cannot be loaded (e.g. the
     /// KMS wrapping it is unavailable), so ask only when the key is needed anyway. Nullopt for an
     /// unencrypted storage.
-    std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const;
+    [[nodiscard]]     std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const;
 #endif
 
     /// Appends a message authentication code to stored bytes exported into a backup, because the

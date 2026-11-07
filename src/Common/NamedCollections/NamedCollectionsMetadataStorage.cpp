@@ -93,7 +93,7 @@ public:
     [[nodiscard]] virtual bool isEncrypted() const { return false; }
 
 #if CLICKHOUSE_CLOUD && USE_SSL
-    virtual std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const { return {}; }
+    [[nodiscard]] virtual std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const { return {}; }
 #endif
 
     /// Only the encrypted storage types authenticate backup entries (see
@@ -454,7 +454,7 @@ public:
     [[nodiscard]] bool isEncrypted() const override { return true; }
 
 #if CLICKHOUSE_CLOUD
-    std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const override
+    [[nodiscard]] std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const override
     {
         loadIfNeeded();
         return NamedCollectionsEncryptionKeyInfo{
