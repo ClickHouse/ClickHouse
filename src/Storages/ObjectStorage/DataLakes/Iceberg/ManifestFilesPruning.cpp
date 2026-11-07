@@ -130,6 +130,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const DB::KeyDescription * partition_key_,
+    const PartitionSpecification & partition_specification,
     DB::ContextPtr context,
     bool require_ready_sets)
     : schema_processor(schema_processor_)
@@ -159,6 +160,7 @@ ManifestFilesPruner::ManifestFilesPruner(
             /* single_point_ */ true,
             /* skip_analysis_ */ false,
             require_ready_sets);
+        integer_truncate_fields = getIntegerTruncateFields(partition_specification, partition_key->data_types);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
@@ -242,6 +244,44 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
             std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context));
 
     return result;
+}
+
+std::optional<Int64> getIntegerTruncateWidth(const PartitionSpecsEntry & partition_field, const DB::DataTypePtr & key_type)
+{
+    const auto transform = parseTransformAndArgument(partition_field.transform_name);
+    if (!transform || transform->transform_name != "icebergTruncate" || !transform->argument.has_value())
+        return {};
+
+    const size_t width = *transform->argument;
+    if (width < 1 || width > static_cast<size_t>(std::numeric_limits<Int64>::max())
+        || !WhichDataType(removeNullable(key_type)).isNativeInteger())
+        return {};
+
+    return static_cast<Int64>(width);
+}
+
+std::vector<IntegerTruncateField> getIntegerTruncateFields(
+    const PartitionSpecification & partition_specification, const DB::DataTypes & partition_key_types)
+{
+    std::vector<IntegerTruncateField> result;
+    for (const auto & partition_field : partition_specification)
+    {
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_key_types.size())
+            return {};
+
+        if (const auto width = getIntegerTruncateWidth(partition_field, partition_key_types[partition_field.tuple_index]))
+            result.push_back({static_cast<size_t>(partition_field.tuple_index), *width});
+    }
+    return result;
+}
+
+bool isLegacyTruncateValue(const DB::Field & value, Int64 width)
+{
+    if (value.getType() != Field::Types::Int64)
+        return false;
+
+    const Int64 stored = value.safeGet<Int64>();
+    return stored < 0 && stored % width != 0;
 }
 
 namespace
@@ -426,7 +466,11 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
         /// A spec field whose source column or transform cannot be modelled is left out of the
         /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
         /// Only the partition key is unusable then; the min/max conditions below still apply.
-        if (partition_key->data_types.size() == partition_value.size())
+        /// The same holds for an entry with a legacy truncate value, which is not the key of its rows.
+        if (partition_key->data_types.size() == partition_value.size()
+            && std::ranges::none_of(
+                integer_truncate_fields,
+                [&](const auto & field) { return isLegacyTruncateValue(partition_value[field.tuple_index], field.width); }))
         {
             std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
             for (size_t i = 0; i < index_value.size(); ++i)
