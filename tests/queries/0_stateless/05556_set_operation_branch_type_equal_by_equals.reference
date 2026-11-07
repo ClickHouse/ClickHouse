@@ -1,0 +1,37 @@
+UNION ALL, Variant result
+2	Decimal(38, 7)
+3.5	Float64
+EXCEPT ALL, Variant result
+2	Decimal(38, 7)
+time zone
+0
+0
+time zone, DateTime64
+0
+0
+result type
+x
+Decimal(9, 2)
+1.5
+7
+nested in a tuple with a Variant
+t
+Tuple(Variant(String, UInt8), Decimal(38, 7))
+('a',2)
+(1,1)
+Geometry in a tuple
+t
+Tuple(Geometry, Decimal(38, 7))
+((0,0),1)
+((1,1),2)
+JSON typed path
+x	paths
+JSON(p Decimal(9, 2))	Map(String, String)
+{"p":1.5}	{'p':'Decimal(9, 2)'}
+{"p":7}	{'p':'Decimal(9, 2)'}
+JSON typed path, time zone
+{"t":"2026-01-01 00:00:00"}
+{"t":"2026-01-01 00:00:00"}
+same type name, different captured time zone
+0
+0
