@@ -145,15 +145,20 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
     {
         case VolumeLoadBalancing::ROUND_ROBIN:
         {
-            size_t disks_num = disks.size();
+            /// A reservation takes one turn and tries the disks in order from it, so it tries every disk once
+            /// even when other threads take turns meanwhile. When it passes over disks without room, the
+            /// turns move past them too, so the next reservations spread over the other disks instead of all
+            /// taking the disk after them.
+            const size_t disks_num = disks.size();
+            const size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
             for (size_t i = 0; i < disks_num; ++i)
             {
-                size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
-                size_t index = start_from % disks_num;
-
-                ReservationPtr reservation = try_reserve(disks[index]);
-                if (reservation)
+                if (ReservationPtr reservation = try_reserve(disks[(start_from + i) % disks_num]))
+                {
+                    if (i)
+                        last_used.fetch_add(i, std::memory_order_acq_rel);
                     return reservation;
+                }
             }
             return {};
         }
