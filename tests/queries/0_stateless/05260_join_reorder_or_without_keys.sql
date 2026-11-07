@@ -1,6 +1,6 @@
 -- An equality in JOIN ON next to ORs without equalities must stay a join condition that join
--- reordering can use (issue #122510): `x` is joined with `y` on `x.cid = y.c2` first, and with `p`
--- on the two-valued key `x.g = p.c3` last, and `coalesce(y.c4, 0) = 1` is read as PREWHERE of `t3`.
+-- reordering can use (issue #122510): `y` is joined with `p` first, and `x` with both last on
+-- `x.cid = y.c2` and the two-valued key `x.g = p.c3`, and `coalesce(y.c4, 0) = 1` is read as PREWHERE of `t3`.
 -- Unlike in the issue, `t3.c5` and `t3.c6` are not all NULL, so both branches of each OR decide the count.
 
 -- The chosen join order and the count depend on these settings, which the test runner randomizes.

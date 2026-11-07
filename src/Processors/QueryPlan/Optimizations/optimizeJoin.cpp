@@ -282,6 +282,8 @@ bool convertLogicalJoinToPhysical(
     return true;
 }
 
+using RelationEstimates = std::unordered_map<const QueryPlan::Node *, RelationStats>;
+
 struct QueryGraphBuilder
 {
     JoinExpressionActions expression_actions;
@@ -330,6 +332,8 @@ struct QueryGraphBuilder
         /// query in `optimizeJoinLogicalImpl`, which also counts the tables: only DPsub can plan such a
         /// group, and it turns down more tables than `DPSUB_MAX_RELATIONS`.
         bool allow_semi_anti_flattening = false;
+        /// Shared with the sub-joins `chooseJoinOrder` leaves to be reordered on their own.
+        std::shared_ptr<RelationEstimates> relation_estimates = std::make_shared<RelationEstimates>();
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -430,7 +434,9 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeJoinLogicalImpl(
+    JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings,
+    std::shared_ptr<RelationEstimates> relation_estimates = nullptr);
 
 constexpr bool isInnerOrCross(JoinKind kind)
 {
@@ -637,13 +643,18 @@ static size_t addChildQueryGraph(
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
+    auto [estimate, inserted] = graph.context->relation_estimates->try_emplace(node);
+    if (inserted)
+        estimate->second = estimateReadRowsCount(*node);
+    RelationStats stats = estimate->second;
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
+    /// A primary index count bounds the rows read, so a larger cached count is stale.
+    const bool replace_imprecise = stats.imprecise_estimate && stats.source != RowEstimateSource::PrimaryIndex;
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
-        && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
+        && (!stats.estimated_rows || replace_imprecise || num_rows_from_cache.value() < stats.estimated_rows.value()))
     {
-        /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
+        /// A measured row count replaces an imprecise estimate and beats the others (take the minimum); mark it a precise cache value.
         stats.estimated_rows = num_rows_from_cache;
         stats.imprecise_estimate = false;
         stats.source = RowEstimateSource::HashTableCache;
@@ -1149,7 +1160,8 @@ static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
     return prefixes;
 }
 
-static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
+static QueryPlan::Node chooseJoinOrder(
+    QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness, std::vector<QueryPlan::Node *> & sub_joins)
 {
     const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
 
@@ -1195,10 +1207,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     Strings relations_without_statistics;
     Strings relations_estimated_from_data_lake_metadata;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    BitSet relations_without_estimate;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         leaf_imprecise[i] = rel.imprecise_estimate;
+        if (!rel.estimated_rows)
+            relations_without_estimate.set(i);
 
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
@@ -1578,7 +1593,15 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            /// A graph with a relation without a row estimate keeps its written join tree (see `optimizeJoinOrder`). A sub-tree of it
+            /// whose relations all have one is not marked optimized and goes to `sub_joins`, to be reordered on its own.
+            if (!relations_without_estimate || areIntersecting(entry->relations, relations_without_estimate))
+            {
+                join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+                for (auto * child : {left_child_node, right_child_node})
+                    if (const auto * child_join = typeid_cast<const JoinStepLogical *>(child->step.get()); child_join && !child_join->isOptimized())
+                        sub_joins.push_back(child);
+            }
 
             auto & new_node = nodes.emplace_back();
 
@@ -1737,7 +1760,9 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
 }
 
-void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeJoinLogicalImpl(
+    JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings,
+    std::shared_ptr<RelationEstimates> relation_estimates)
 {
     for (auto * child : node.children)
     {
@@ -1800,9 +1825,15 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
     query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
+    if (relation_estimates)
+        query_graph_builder.context->relation_estimates = std::move(relation_estimates);
+    relation_estimates = query_graph_builder.context->relation_estimates;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
-    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
+    std::vector<QueryPlan::Node *> sub_joins;
+    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness, sub_joins);
+    for (auto * sub_join : sub_joins)
+        optimizeJoinLogicalImpl(typeid_cast<JoinStepLogical *>(sub_join->step.get()), *sub_join, nodes, optimization_settings, relation_estimates);
 }
 
 }

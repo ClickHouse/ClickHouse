@@ -1,0 +1,23 @@
+default_estimate	1
+floor_estimate	2
+merge_join_sub_tree	1
+05508 cache_aggregation_1	99000
+05508 cache_aggregation_2	50000
+05508 cache_grouped_join_1	109000
+05508 cache_grouped_join_2	60000
+05508 cache_primary_index_1	100000
+05508 cache_primary_index_2	1000
+05508 cache_read_1	99000
+05508 cache_read_2	50000
+05508 cache_sub_join_1	209910
+05508 cache_sub_join_2	60000
+05508 filtered_dim_join_fact	1000
+05508 filtered_sub_join	2100
+05508 left_deep	101
+05508 log_dimension	0
+05508 q6	9901
+05508 q9	0
+05508 q9_dpsize	0
+05508 q9_greedy	0
+05508 unselective_filter_fact	2000
+statistics_loaded_once	1

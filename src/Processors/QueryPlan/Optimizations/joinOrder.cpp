@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/CurrentThread.h>
 
@@ -432,6 +433,62 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     return best_plan;
 }
 
+/// The join tree as the query wrote it: `conflict_ops` lists its joins in post-order, and each join gets the predicates of its own
+/// ON clause (`edge_conflict_ops`).
+static DPJoinEntryPtr buildWrittenJoinOrder(QueryGraph & query_graph)
+{
+    if (query_graph.edge_conflict_ops.size() != query_graph.edges.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join graph has {} predicates but {} predicate joins",
+            query_graph.edges.size(), query_graph.edge_conflict_ops.size());
+
+    PlanMemo entries;
+    for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
+    {
+        const auto & rel = query_graph.relation_stats[i];
+        auto leaf = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        entries.emplace(leaf->relations, std::move(leaf));
+    }
+
+    SelectivityCache expression_selectivity;
+    DPJoinEntryPtr root;
+    for (size_t op_index = 0; op_index < query_graph.conflict_ops.size(); ++op_index)
+    {
+        const auto & op = query_graph.conflict_ops[op_index];
+        auto left_it = entries.find(op.left);
+        auto right_it = entries.find(op.right);
+        if (left_it == entries.end() || right_it == entries.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join {} of the written join tree has an input that is not built: {} x {}",
+                op_index, toString(op.left), toString(op.right));
+        auto left = left_it->second;
+        auto right = right_it->second;
+
+        std::vector<JoinActionRef *> edges;
+        for (size_t i = 0; i < query_graph.edges.size(); ++i)
+            if (query_graph.edge_conflict_ops[i] == op_index)
+                edges.push_back(&query_graph.edges[i]);
+
+        JoinKind kind = isCrossOrComma(op.kind) ? JoinKind::Cross : op.kind;
+        if (kind == JoinKind::Inner && edges.empty() && !query_graph.areTransitivelyConnected(op.left, op.right))
+            kind = JoinKind::Cross;
+
+        auto selectivity = computeSelectivity(query_graph, entries, expression_selectivity, edges, op.left, op.right);
+        auto rows = estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, kind, op.strictness);
+        double cost = left->cost + right->cost + (rows ? static_cast<double>(*rows) : 0.0);
+
+        JoinOperator join_operator(kind, op.strictness, JoinLocality::Unspecified);
+        for (const auto * edge : edges)
+            join_operator.expression.push_back(*edge);
+
+        root = std::make_shared<DPJoinEntry>(std::move(left), std::move(right), cost, selectivity.reported_value, rows, std::move(join_operator));
+        entries[root->relations] = root;
+    }
+
+    if (!root || root->relations.count() != query_graph.relation_stats.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The written join tree does not join all {} relations of the join graph: {}",
+            query_graph.relation_stats.size(), dumpJoinGraph(query_graph));
+    return root;
+}
+
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (query_graph.relation_stats.size() <= 1)
@@ -456,6 +513,18 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         && optimization_settings.enable_join_runtime_filters_index_analysis
         && optimization_settings.use_skip_indexes_on_data_read_at_execution;
     query_graph.shard_merge_by_pk_ranges = optimization_settings.query_plan_join_shard_by_pk_ranges;
+
+    /// Join orders are compared by the rows they produce, so a relation without a row estimate leaves nothing to compare.
+    if (auto unknown = std::ranges::find_if(query_graph.relation_stats, [](const auto & rel) { return !rel.estimated_rows; });
+        unknown != query_graph.relation_stats.end())
+    {
+        LOG_DEBUG(getJoinOrderOptimizerLogger(), "Keeping the written join order, relation {} has no row estimate",
+            unknown->table_name.empty() ? fmt::format("R{}", unknown - query_graph.relation_stats.begin()) : unknown->table_name);
+        auto written_plan = buildWrittenJoinOrder(query_graph);
+        if (optimization_settings.enable_join_transitive_predicates)
+            cleanupJoinPredicates(written_plan, column_equivalences, prepared_storage_relations);
+        return written_plan;
+    }
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),

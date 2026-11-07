@@ -17,7 +17,7 @@ enum class RowEstimateSource : UInt8
     Statistics,
     /// Estimated from the primary index because column statistics are missing.
     PrimaryIndex,
-    /// No estimate could be derived at all while column statistics are missing.
+    /// Column statistics are missing, so the estimate is absent or a default guess.
     NoStatistics,
     /// Synthetic estimate from the `_internal_join_table_stat_hints` query parameter (testing only).
     Hint,

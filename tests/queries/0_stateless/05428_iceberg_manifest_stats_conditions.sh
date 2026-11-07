@@ -16,6 +16,8 @@
 # - T7: a filter right above the read is also the read's own filter, and is counted once.
 # - T8: a string equality on a 12-row table is estimated at 1 row, not 0, also below an aggregation; a 5-row table
 #   without a filter keeps 1 value per column.
+# - T9: a filter that prunes no file, on a read whose columns have no statistics, keeps 20% of the rows.
+# - T10: a row count measured by the hash table statistics of a first run replaces that assumed 20% on the next run.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -119,7 +121,7 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
 "
 T4="SELECT count() FROM l JOIN o ON l.lo = o.id JOIN c ON o.oc = c.id JOIN g ON c.cg = g.id WHERE g.id = 2"
 echo '--- T4: plan, manifest statistics off'
-echo 'Expect no row estimates: without the manifest statistics the Iceberg reads have none, so neither have the joins above them.'
+echo 'Expect no row estimates: without the manifest statistics the Iceberg reads have none, so neither have the joins above them, and the written join order is kept.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query "
     SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1 ${T4}) WHERE explain LIKE '%Join: %'"
 echo '--- T4: plan, manifest statistics on'
@@ -132,7 +134,7 @@ ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query_id="${CLICKHOUSE_DATABASE}_t4_off" -
 ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query_id="${CLICKHOUSE_DATABASE}_t4_on" --query "${T4}"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 echo '--- T4: JoinBuildTableRowCount, manifest statistics off and on'
-echo 'Expect off: g (1) + o (10000) + l x o (30000) = 40001; on: g (1) + c x g (200) + o x c x g (2000) = 2201.'
+echo 'Expect off, in the written order: o (10000) + c (200) + g (1) = 10201; on: g (1) + c x g (200) + o x c x g (2000) = 2201.'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT replaceOne(query_id, currentDatabase() || '_t4_', ''), ProfileEvents['JoinBuildTableRowCount']
     FROM system.query_log
@@ -163,4 +165,25 @@ echo 'Expect 5: s has no counted NDV and 10% of 5 rows truncates to 0, so it is 
 labels "(SELECT v, s, count() AS c FROM tiny GROUP BY v, s)" v '1' ${ON}
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp"
+
+# T9 table: an array column has no bounds, so a read that requests only it has no column statistics.
+${CLICKHOUSE_CLIENT} ${PINS} --query "
+    CREATE TABLE arr (a Array(Int32)) ENGINE = IcebergLocal('${LAKE}/arr');
+    INSERT INTO arr SELECT [number % 5, number % 7] FROM numbers(10000);
+"
+echo '--- T9: has(a, 3), no requested column has statistics, every file overlaps'
+echo 'Expect ~2000: without column statistics, a filter that prunes no file keeps 20% of the 10000 rows.'
+labels arr 'a[1]' 'has(t.a, 3)' ${ON}
+
+${CLICKHOUSE_CLIENT} ${PINS} --query "
+    CREATE TABLE peer (v Int32) ENGINE = MergeTree ORDER BY v;
+    INSERT INTO peer SELECT number FROM numbers(2500);
+"
+CACHE="SETTINGS collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1"
+echo '--- T10: has(a, 3) keeps 3143 rows, assumed 2000: after a first run the join uses the measured rows'
+${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query "SELECT count() FROM peer JOIN arr AS t ON t.a[1] = peer.v WHERE has(t.a, 3) FORMAT Null ${CACHE}"
+${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query "
+    SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1
+        SELECT count() FROM peer JOIN arr AS t ON t.a[1] = peer.v WHERE has(t.a, 3) ${CACHE})
+    WHERE explain LIKE '%Join: %'"
 rm -rf "${LAKE}"
