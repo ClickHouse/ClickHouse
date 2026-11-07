@@ -15,6 +15,10 @@ With Scheduled Scaling, you configure a set of time-based rules directly in the 
 
 This is distinct from metric-based autoscaling, which responds dynamically to CPU and memory pressure. Scheduled Scaling is deterministic: you know exactly when the scaling will happen and to what size. The two approaches are complementary — a service can have a baseline scaling schedule and still benefit from autoscaling within that window if workloads fluctuate unexpectedly.
 
+<Note>
+[Gen 2 compute](/products/cloud/features/compute-generations) does not support autoscaling during Private Preview, but scheduled scaling settings are available.
+</Note>
+
 ## Setting up a scaling schedule {#setting-up-a-scaling-schedule}
 
 To configure a schedule, navigate to your service in the ClickHouse Cloud console and go to settings. From there, select **Schedule Override** and add a new rule.
