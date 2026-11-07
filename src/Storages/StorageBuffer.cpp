@@ -11,14 +11,17 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -34,6 +37,7 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
@@ -46,6 +50,7 @@
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <Columns/IColumn.h>
+#include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
@@ -305,6 +310,67 @@ bool StorageBuffer::readRequiresAnalyzedQuery() const
     return destination && destination->readRequiresAnalyzedQuery();
 }
 
+namespace
+{
+
+/// Collects what the default of `column_name`, a column the destination lacks, reads: the inputs the destination has
+/// are read and converted (`read_columns`, `fill_inputs`), the physical ones it lacks are filled too (`fill_closure`).
+void collectDefaultInputs(
+    const String & column_name,
+    const StorageSnapshotPtr & our_snapshot,
+    const StorageSnapshotPtr & destination_snapshot,
+    Names & read_columns,
+    NameSet & fill_inputs,
+    Names & fill_closure,
+    NameSet & visited)
+{
+    checkStackSize();
+    if (!visited.insert(column_name).second)
+        return;
+
+    const auto all_columns = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    const auto physical_columns = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+
+    /// A subcolumn is taken from the default of its column.
+    auto column = our_snapshot->tryGetColumn(all_columns, column_name);
+    auto column_default = our_snapshot->getDefault(column ? column->getNameInStorage() : column_name);
+    if (!column_default)
+        return;
+
+    RequiredSourceColumnsVisitor::Data required;
+    RequiredSourceColumnsVisitor(required).visit(column_default->expression);
+
+    auto is_physical_in_both = [&](const String & name)
+    {
+        return our_snapshot->tryGetColumn(physical_columns, name) && destination_snapshot->tryGetColumn(physical_columns, name);
+    };
+
+    for (const auto & input_name : required.requiredColumns())
+    {
+        /// Not a column, e.g. the dictionary name of `dictGet`.
+        auto input = our_snapshot->tryGetColumn(all_columns, input_name);
+        if (!input)
+            continue;
+
+        const String storage_name = input->getNameInStorage();
+        const String & read_name = is_physical_in_both(input_name) ? input_name : storage_name;
+        if (is_physical_in_both(read_name))
+        {
+            if (std::ranges::find(read_columns, read_name) == read_columns.end())
+                read_columns.push_back(read_name);
+            fill_inputs.insert(read_name);
+            continue;
+        }
+
+        /// An `ALIAS` or `EPHEMERAL` input is computed by the default expressions themselves.
+        if (!visited.contains(storage_name) && our_snapshot->tryGetColumn(GetColumnsOptions::AllPhysical, storage_name))
+            fill_closure.push_back(storage_name);
+        collectDefaultInputs(storage_name, our_snapshot, destination_snapshot, read_columns, fill_inputs, fill_closure, visited);
+    }
+}
+
+}
+
 void StorageBuffer::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -424,6 +490,80 @@ void StorageBuffer::read(
                 }
             }
 
+            /// A subcolumn of a column the destination lacks is taken from that column once it is filled.
+            auto get_column_to_fill = [&](const String & column_name)
+            {
+                auto our_column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_name);
+                if (our_column && our_column->isSubcolumn() && !get_destination_column(our_column->getNameInStorage())
+                    && isSubcolumnOfDefaultValue(*our_column))
+                    return NameAndTypePair(our_column->getNameInStorage(), our_column->getTypeInStorage());
+                return NameAndTypePair(column_name, header.getByName(column_name).type);
+            };
+
+            /// Filling a column the destination lacks reads the inputs of its default, the sizes of its `Nested` group or the row count.
+            NameSet fill_inputs;
+            NameSet fill_support;
+            Names fill_closure;
+            if (processed_stage <= QueryProcessingStage::FetchColumns && !destination->isRemote())
+            {
+                NameSet visited;
+                Names columns_to_fill;
+                for (const String & column_name : column_names)
+                {
+                    if (get_destination_column(column_name))
+                        continue;
+                    collectDefaultInputs(column_name, storage_snapshot, destination_snapshot, columns_intersection, fill_inputs, fill_closure, visited);
+                    columns_to_fill.push_back(get_column_to_fill(column_name).name);
+                }
+                columns_to_fill.insert(columns_to_fill.end(), fill_closure.begin(), fill_closure.end());
+                fill_support = fill_inputs;
+
+                /// A destination column read only for the row count or the sizes of a `Nested` group is the smallest
+                /// one the user may read, as for `count()`.
+                auto smallest_readable_column = [&](const NamesAndTypesList & columns)
+                {
+                    const auto readable = checkAccessRights(destination, destination->getStorageID(), destination_snapshot, Names{}, local_context);
+                    NamesAndTypesList readable_columns;
+                    for (const auto & column : columns)
+                        if (readable.contains(column.name))
+                            readable_columns.push_back(column);
+                    return ExpressionActions::getSmallestColumn(readable_columns.empty() ? columns : readable_columns).name;
+                };
+
+                /// A missing `Nested` member gets the sizes of an array of its group the destination has.
+                for (const String & name : columns_to_fill)
+                {
+                    const auto group = Nested::extractTableName(name);
+                    auto our_column = storage_snapshot->tryGetColumn(GetColumnsOptions::AllPhysical, name);
+                    if (group == name || !our_column || !isArray(our_column->type) || metadata_snapshot->getColumns().hasDefault(name))
+                        continue;
+
+                    NamesAndTypesList group_arrays;
+                    for (const auto & column : destination_metadata_snapshot->getColumns().getAllPhysical())
+                        if (Nested::extractTableName(column.name) == group && isArray(column.type))
+                            group_arrays.push_back(column);
+                    if (group_arrays.empty())
+                        continue;
+
+                    auto read_array = std::ranges::find_first_of(columns_intersection, group_arrays.getNames());
+                    String size_source = read_array != columns_intersection.end() ? *read_array : smallest_readable_column(group_arrays);
+                    if (read_array == columns_intersection.end())
+                        columns_intersection.push_back(size_source);
+                    fill_support.insert(std::move(size_source));
+                }
+
+                /// The fill reads these destination columns for their values, so they need the grant a selected column needs.
+                if (!fill_support.empty())
+                {
+                    Names fill_support_names(fill_support.begin(), fill_support.end());
+                    std::ranges::sort(fill_support_names);
+                    local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), fill_support_names);
+                }
+
+                if (columns_intersection.empty())
+                    columns_intersection.push_back(smallest_readable_column(destination_metadata_snapshot->getColumns().getAllPhysical()));
+            }
+
             if (columns_intersection.empty())
             {
                 LOG_WARNING(log, "Destination table {} has no common columns with block in buffer. Block of data is skipped.", destination_id.getNameForLogs());
@@ -493,7 +633,30 @@ void StorageBuffer::read(
                         filter_outputs.push_back(output->result_name);
                     }
 
+                    /// A column the filter consumes leaves the read unless it is also an output of the filter,
+                    /// so keep the ones the fill of the missing columns reads as pass-throughs.
+                    Names consumed_fill_support;
+                    for (const auto * input : filter_dag.getInputs())
+                        if (fill_support.contains(input->result_name))
+                            consumed_fill_support.push_back(input->result_name);
+
                     auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
+
+                    NameSet filter_output_names(filter_outputs.begin(), filter_outputs.end());
+                    for (const auto & name : consumed_fill_support)
+                    {
+                        if (!filter_output_names.insert(name).second)
+                            continue;
+
+                        if (!merged.tryRestoreColumn(name))
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot preserve column {} required to fill a column missing in the destination of Buffer table",
+                                backQuoteIfNeed(name));
+
+                        passthrough_positions.push_back(filter_outputs.size());
+                        filter_outputs.push_back(name);
+                    }
+
                     merged.removeUnusedActions(filter_outputs);
 
                     /// merge() maps the filter's inputs onto the prefix's outputs, so these inputs are
@@ -552,22 +715,20 @@ void StorageBuffer::read(
                       * This conversion is not applicable for processed_stage > FetchColumns.
                       * Instead, we rely on the converting actions at the end of this function.
                       */
-                    auto actions = addMissingDefaults(
-                            *query_plan.getCurrentHeader(),
-                            header_after_adding_defaults.getNamesAndTypesList(),
-                            metadata_snapshot->getColumns(),
-                            local_context);
-
-                    auto adding_missed = std::make_unique<ExpressionStep>(
-                            query_plan.getCurrentHeader(),
-                            std::move(actions));
-
-                    adding_missed->setStepDescription("Add columns missing in destination table");
-                    query_plan.addStep(std::move(adding_missed));
+                    /// The defaults of the missing columns are computed over the Buffer types, so convert first.
+                    ColumnsWithTypeAndName converted_columns;
+                    for (const auto & column : *query_plan.getCurrentHeader())
+                    {
+                        auto our_column = get_our_column(column.name);
+                        if (our_column && (fill_inputs.contains(column.name) || std::ranges::find(column_names, column.name) != column_names.end()))
+                            converted_columns.emplace_back(our_column->type, column.name);
+                        else
+                            converted_columns.push_back(column);
+                    }
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-                            header.getColumnsWithTypeAndName(),
+                            converted_columns,
                             ActionsDAG::MatchColumnsMode::Name,
                             local_context);
 
@@ -575,6 +736,48 @@ void StorageBuffer::read(
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
+
+                    const auto converted_header_ptr = query_plan.getCurrentHeader();
+                    const auto & converted_header = *converted_header_ptr;
+                    NamesAndTypesList columns_to_fill;
+                    NameSet columns_to_fill_names;
+                    auto add_column_to_fill = [&](NameAndTypePair column)
+                    {
+                        if (columns_to_fill_names.insert(column.name).second)
+                            columns_to_fill.push_back(std::move(column));
+                    };
+                    for (const String & column_name : column_names)
+                    {
+                        if (const auto * column = converted_header.findByName(column_name))
+                            add_column_to_fill(NameAndTypePair(column_name, column->type));
+                        else
+                            add_column_to_fill(get_column_to_fill(column_name));
+                    }
+                    for (const String & name : fill_closure)
+                        add_column_to_fill(storage_snapshot->getColumn(GetColumnsOptions::AllPhysical, name));
+
+                    auto actions = addMissingDefaults(
+                            converted_header,
+                            columns_to_fill,
+                            metadata_snapshot->getColumns(),
+                            local_context);
+
+                    /// A default may read a subcolumn of a converted column, and a selected subcolumn of a filled one.
+                    auto inputs_extraction = createSubcolumnsExtractionActions(converted_header, actions.getRequiredColumnsNames(), local_context);
+                    if (!inputs_extraction.getOutputs().empty())
+                        actions = ActionsDAG::merge(std::move(inputs_extraction), std::move(actions));
+
+                    auto outputs_extraction = createSubcolumnsExtractionActions(Block(actions.getResultColumns()), column_names, local_context);
+                    if (!outputs_extraction.getOutputs().empty())
+                        actions = ActionsDAG::merge(std::move(actions), std::move(outputs_extraction));
+                    actions.removeUnusedActions(column_names, /*allow_remove_inputs=*/ false);
+
+                    auto adding_missed = std::make_unique<ExpressionStep>(
+                            query_plan.getCurrentHeader(),
+                            std::move(actions));
+
+                    adding_missed->setStepDescription("Add columns missing in destination table");
+                    query_plan.addStep(std::move(adding_missed));
                 }
             }
         }
