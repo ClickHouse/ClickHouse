@@ -439,9 +439,14 @@ endif()
 # every `src/` library plus the libFuzzer and Address Sanitizer runtimes into one image already just
 # under the 2 GiB reach of `R_X86_64_PC32`, which the extra prologues push over; the fuzzers are never
 # shipped, and Address Sanitizer reports stack buffer overflows earlier and in more detail than an abort.
+# The Rust crates get the same canaries (see contrib/corrosion-cmake).
 if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+    list (APPEND RUSTFLAGS_ADD "-Zstack-protector=strong")
 endif()
+
+# Rust wraps integer overflow silently in release builds; panic instead, which the FFI boundaries catch.
+list (APPEND RUSTFLAGS_ADD "-C" "overflow-checks=yes")
 
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
@@ -536,6 +541,7 @@ if (DISABLE_OMIT_FRAME_POINTER)
     set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
     set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
+    list (APPEND RUSTFLAGS_ADD "-C" "force-frame-pointers=yes")
 endif()
 
 # Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
