@@ -179,3 +179,17 @@ SELECT o.id FROM outer_t AS o CROSS JOIN LATERAL (SELECT name FROM inner_t AS i 
 2	\N
 3	\N
 4	\N
+-- ON over the left side only, the lateral subquery reads the left side
+2	z
+4	x
+4	y
+2	z
+4	x
+4	y
+2	z
+4	x
+4	y
+4	0
+4	1
+4	2
+4	3

@@ -126,5 +126,17 @@ ORDER BY ALL SETTINGS join_use_nulls = 1, correlated_subqueries_substitute_equiv
 SELECT o.id, s.name FROM outer_t AS o LEFT JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id = o.owner) AS s ON false
 ORDER BY ALL SETTINGS join_use_nulls = 1, correlated_subqueries_substitute_equivalent_expressions = 0;
 
+SELECT '-- ON over the left side only, the lateral subquery reads the left side';
+SELECT o.id, s.name FROM outer_t AS o INNER JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id <=> o.owner) AS s ON o.id > 1
+ORDER BY ALL;
+SELECT o.id, s.name FROM outer_t AS o INNER JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id <=> o.owner) AS s ON o.id > 1
+ORDER BY ALL SETTINGS correlated_subqueries_default_join_kind = 'left';
+SELECT o.id, s.name FROM outer_t AS o INNER JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id <=> o.owner) AS s ON o.id > 1
+ORDER BY ALL SETTINGS correlated_subqueries_use_in_memory_buffer = 0;
+SELECT o.id, s.n FROM outer_t AS o INNER JOIN LATERAL (SELECT arrayJoin(range(o.id)) AS n) AS s ON o.id > 2 AND o.owner = 10
+ORDER BY ALL;
+SELECT o.id FROM outer_t AS o INNER JOIN LATERAL (SELECT sum(arrayJoin(range(o.id))) AS n) AS s ON throwIf(true)
+SETTINGS correlated_subqueries_default_join_kind = 'left'; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
 DROP TABLE outer_t;
 DROP TABLE inner_t;
