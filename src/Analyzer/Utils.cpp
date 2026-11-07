@@ -1,5 +1,6 @@
 #include <Analyzer/Utils.h>
 
+#include <Core/Joins.h>
 #include <Core/Settings.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -25,6 +26,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
@@ -46,10 +48,13 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/castColumn.h>
@@ -69,6 +74,7 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <functional>
 #include <Poco/String.h>
 
 #include <ranges>
@@ -789,6 +795,50 @@ TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join
     return result;
 }
 
+bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table)
+{
+    std::vector<QueryTreeNodePtr> stack = {join_tree};
+    while (!stack.empty())
+    {
+        auto node = std::move(stack.back());
+        stack.pop_back();
+        if (!node)
+            continue;
+
+        if (const auto * join = node->as<JoinNode>())
+        {
+            const auto contains_table = [&](const TableExpressionNodePtr & side)
+            {
+                return std::ranges::any_of(
+                    extractTableExpressions(side),
+                    [&](const auto & expression) { return expression.get() == table.get(); });
+            };
+
+            const bool table_on_left = contains_table(join->getLeftTableExpressionNodeTyped());
+            const bool table_on_right = contains_table(join->getRightTableExpressionNodeTyped());
+
+            if (isAnyInnerJoin(join->getKind(), join->getStrictness()) && (table_on_left || table_on_right))
+                return false;
+            if (table_on_left && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Left))
+                return false;
+            if (table_on_right && !canPrefilterJoinSide(join->getKind(), join->getStrictness(), JoinTableSide::Right))
+                return false;
+            stack.push_back(join->getLeftTableExpressionNode());
+            stack.push_back(join->getRightTableExpressionNode());
+        }
+        else if (const auto * array_join = node->as<ArrayJoinNode>())
+        {
+            stack.push_back(array_join->getTableExpressionNode());
+        }
+        else if (const auto * cross_join = node->as<CrossJoinNode>())
+        {
+            for (const auto & expression : cross_join->getTableExpressions())
+                stack.push_back(expression);
+        }
+    }
+    return true;
+}
+
 TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node)
 {
     TableExpressionNodePtr result;
@@ -1466,9 +1516,60 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
     return false;
 }
 
-void removeExpressionsThatDoNotDependOnTableIdentifiers(
+namespace
+{
+
+template <typename KeepFunction>
+bool walkOrdinaryFunctions(const QueryTreeNodePtr & node, KeepFunction && keep_function)
+{
+    QueryTreeNodes stack = {node};
+    while (!stack.empty())
+    {
+        auto current = std::move(stack.back());
+        stack.pop_back();
+        if (!current)
+            continue;
+
+        const auto type = current->getNodeType();
+        if (type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::UNION)
+            return false;
+
+        if (const auto * function = current->as<FunctionNode>())
+        {
+            if (function->isWindowFunction() || function->isAggregateFunction())
+                return false;
+            /// `IN local_table` is node-local: remotes may not have the table. Subquery `IN`
+            /// is already rejected via `QUERY` / `UNION` above. Tuple / literal `IN` stays.
+            if (functionIsInOrGlobalInOperator(function->getFunctionName()))
+            {
+                const auto & args = function->getArguments().getNodes();
+                if (args.size() == 2)
+                {
+                    const auto rhs_type = args[1]->getNodeType();
+                    if (rhs_type == QueryTreeNodeType::TABLE || rhs_type == QueryTreeNodeType::TABLE_FUNCTION)
+                        return false;
+                }
+            }
+            if (function->isOrdinaryFunction())
+            {
+                auto function_base = function->getFunction();
+                if (!function_base || !keep_function(function_base))
+                    return false;
+            }
+        }
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                stack.push_back(child);
+        }
+    }
+    return true;
+}
+
+void filterConjunctions(
     QueryTreeNodePtr & expression,
-    const QueryTreeNodePtr & table_expression,
+    const std::function<bool(const QueryTreeNodePtr &)> & keep,
     const ContextPtr & context)
 {
     auto * function = expression->as<FunctionNode>();
@@ -1478,8 +1579,8 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     /// would be left with a dangling source.
     if (!function || function->getFunctionName() != "and")
     {
-        if (hasUnknownColumn(expression, table_expression))
-            expression = nullptr;
+        if (!keep(expression))
+            expression = {};
         return;
     }
 
@@ -1494,10 +1595,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
         if (auto * function_node = node->as<FunctionNode>())
         {
             if (function_node->getFunctionName() == "and")
-                std::ranges::copy(
-                    function_node->getArguments(),
-                    std::back_inserter(processing)
-                );
+                std::ranges::copy(function_node->getArguments(), std::back_inserter(processing));
             else
                 conjunctions.push_back(node);
         }
@@ -1511,7 +1609,7 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     for (const auto & node : processing)
     {
-        if (!hasUnknownColumn(node, table_expression))
+        if (keep(node))
             conjunctions.push_back(node);
     }
 
@@ -1531,6 +1629,162 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 
     const auto function_impl = FunctionFactory::instance().get("and", context);
     function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
+}
+
+}
+
+namespace
+{
+
+/// Executable and WebAssembly UDFs are configured per server, so a remote node may not have them.
+/// SQL UDFs are already inlined into their bodies at this point.
+bool isNodeLocalUserDefinedFunction(const String & function_name)
+{
+    if (UserDefinedSQLFunctionFactory::instance().has(function_name))
+        return true;
+    return UserDefinedExecutableFunctionFactory::has(function_name, Context::getGlobalContextInstance());
+}
+
+/// A `DateTime` / `DateTime64` without an explicit time zone is interpreted in the default time zone
+/// of the server that evaluates the expression. The initiator and a remote node may have different
+/// default time zones, so a function that takes or returns such a value (`dt >= '2024-01-01 00:00:00'`)
+/// may give a different result on the remote node.
+/// `Dynamic` and `JSON` hide the types of their values until runtime, so a value of such a type may be a
+/// zone-less `DateTime` (`concat(dynamic_value, '')`), and they are treated as depending on the time zone too.
+bool dependsOnImplicitTimeZone(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested)
+    {
+        if (isDynamic(nested) || isObject(nested))
+            return true;
+        const auto * time_zone_mixin = dynamic_cast<const TimezoneMixin *>(&nested);
+        return time_zone_mixin && !time_zone_mixin->hasExplicitTimeZone();
+    });
+}
+
+/// Many functions use the default time zone of the server even when their types contain no `DateTime`:
+/// `toDate(UInt64)`, `toUnixTimestamp(String)`, `toRelativeSecondNum(Date)`, `fromUnixTimestamp(UInt64, String)`
+/// and so on. Listing them one by one is error-prone, so only functions of the categories that do not
+/// use the default time zone may be copied to a remote node. This excludes the date and time functions,
+/// the type conversions, and every function without a category.
+bool isFunctionCategoryIndependentOfTimeZone(const String & function_name)
+{
+    const auto & factory = FunctionFactory::instance();
+    const String canonical_name = factory.getAliasToOrName(factory.getCanonicalNameIfAny(function_name));
+    if (!factory.has(canonical_name))
+        return false;
+
+    using Category = FunctionDocumentation::Category;
+    switch (factory.getDocumentation(canonical_name).category)
+    {
+        case Category::Arithmetic:
+        case Category::Array:
+        case Category::Bit:
+        case Category::Comparison:
+        case Category::Conditional:
+        case Category::Logical:
+        case Category::Mathematical:
+        case Category::Null:
+        case Category::Rounding:
+        case Category::String:
+        case Category::StringReplacement:
+        case Category::StringSearch:
+        case Category::StringSplitting:
+        case Category::Tuple:
+        case Category::Map:
+        case Category::Hash:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool functionDependsOnImplicitTimeZone(const FunctionBasePtr & function_base)
+{
+    if (!isFunctionCategoryIndependentOfTimeZone(function_base->getName()))
+        return true;
+
+    if (dependsOnImplicitTimeZone(*function_base->getResultType()))
+        return true;
+    for (const auto & argument_type : function_base->getArgumentTypes())
+        if (argument_type && dependsOnImplicitTimeZone(*argument_type))
+            return true;
+    return false;
+}
+
+}
+
+bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
+{
+    return walkOrdinaryFunctions(
+        node,
+        [](const FunctionBasePtr & function_base)
+        {
+            return function_base->isDeterministic()
+                && function_base->isDeterministicInScopeOfQuery()
+                && !function_base->isStateful()
+                && !function_base->isServerConstant()
+                && !function_base->hasObservableSideEffects()
+                && !functionIsDictGet(function_base->getName())
+                && !functionIsJoinGet(function_base->getName())
+                && !isNodeLocalUserDefinedFunction(function_base->getName())
+                && !functionDependsOnImplicitTimeZone(function_base);
+        });
+}
+
+bool hasStatefulFunctionInExpression(const QueryTreeNodePtr & node)
+{
+    QueryTreeNodes stack = {node};
+    while (!stack.empty())
+    {
+        auto current = std::move(stack.back());
+        stack.pop_back();
+        if (!current)
+            continue;
+
+        /// A subquery reads its own stream, which filtering the outer table does not change.
+        const auto type = current->getNodeType();
+        if (type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (const auto * function = current->as<FunctionNode>())
+        {
+            if (function->isOrdinaryFunction())
+            {
+                const auto & function_base = function->getFunction();
+                if (function_base && function_base->isStateful())
+                    return true;
+            }
+        }
+
+        for (const auto & child : current->getChildren())
+        {
+            if (child)
+                stack.push_back(child);
+        }
+    }
+    return false;
+}
+
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    filterConjunctions(
+        expression,
+        [&](const QueryTreeNodePtr & node) { return !hasUnknownColumn(node, table_expression); },
+        context);
+}
+
+void removeExpressionsThatAreUnsafeToDuplicate(
+    QueryTreeNodePtr & expression,
+    const ContextPtr & context)
+{
+    if (!expression)
+        return;
+
+    filterConjunctions(expression, isSafeToDuplicateInQueryTree, context);
 }
 
 namespace
