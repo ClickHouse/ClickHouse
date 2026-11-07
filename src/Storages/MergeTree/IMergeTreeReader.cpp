@@ -361,10 +361,16 @@ void IMergeTreeReader::fillMissingColumns(
                             if (*leaf_length < subcolumn_name.size())
                                 leaf_subcolumn = subcolumn_name.substr(*leaf_length + 1);
 
-                            if (alter_conversions->isColumnRenamed(leaf_name))
-                                leaf_name = alter_conversions->getColumnOldName(leaf_name);
+                            String leaf_name_in_part = leaf_name;
+                            if (alter_conversions->isColumnRenamed(leaf_name_in_part))
+                                leaf_name_in_part = alter_conversions->getColumnOldName(leaf_name_in_part);
 
-                            marker_info = infos.getMissingColumnInfo(leaf_name);
+                            /// A pending `DROP COLUMN` or `CLEAR COLUMN` is recorded under the name of the flattened leaf
+                            /// (`n.x`), not under the name of the `Nested` column checked above. It invalidates the marker:
+                            /// the column is then filled with its current default, as after the mutation is applied.
+                            if (!alter_conversions->isColumnDropped(leaf_name_in_part, share_nested)
+                                && !alter_conversions->isColumnDropped(leaf_name, share_nested))
+                                marker_info = infos.getMissingColumnInfo(leaf_name_in_part);
                         }
 
                         if (marker_info)
