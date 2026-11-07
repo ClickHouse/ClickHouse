@@ -44,9 +44,15 @@ SELECT concat(
     user_files_path, '/', currentDatabase(), '/05565_iceberg_truncate_decimal/') AS path
 FROM system.server_settings WHERE name = 'user_files_path';
 
-CREATE TABLE t_iceberg (id Int32, d Decimal(9, 6)) ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet') PARTITION BY icebergTruncate(10, d);
-INSERT INTO t_iceberg VALUES (1, '1.234567'), (2, '-1.234567'), (3, '5.000004');
-SELECT id, d FROM t_iceberg ORDER BY id;
-SELECT count() FROM t_iceberg WHERE d < 0 SETTINGS use_iceberg_partition_pruning = 1;
-SELECT count() FROM t_iceberg WHERE d < 0 SETTINGS use_iceberg_partition_pruning = 0;
+CREATE TABLE t_iceberg (id Int32, d Decimal(9, 6), w Decimal(28, 28)) ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet') PARTITION BY (icebergTruncate(10, d), icebergTruncate(4, w));
+INSERT INTO t_iceberg VALUES (1, '1.234567', '0.1234567890123456789012345678'), (2, '-1.234567', '-0.4896176448678044706833281959'), (3, '5.000004', '0');
+SELECT id, d, w FROM t_iceberg ORDER BY id;
+SELECT id FROM t_iceberg WHERE d < 0 ORDER BY id SETTINGS use_iceberg_partition_pruning = 1, log_comment = '05565_prune_d';
+SELECT id FROM t_iceberg WHERE d < 0 ORDER BY id SETTINGS use_iceberg_partition_pruning = 0;
+SELECT id FROM t_iceberg WHERE w > 0 ORDER BY id SETTINGS use_iceberg_partition_pruning = 1, log_comment = '05565_prune_w';
+SELECT id FROM t_iceberg WHERE w > 0 ORDER BY id SETTINGS use_iceberg_partition_pruning = 0;
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['IcebergPartitionPrunedFiles'] > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05565_prune_d', '05565_prune_w')
+ORDER BY log_comment SETTINGS enable_parallel_replicas = 0;
 DROP TABLE t_iceberg;
