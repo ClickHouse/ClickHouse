@@ -405,7 +405,10 @@ endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-if (NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+if (NOT SANITIZE_COVERAGE AND (NOT WITH_COVERAGE OR FUZZER))
+    # Individual fuzzer targets intentionally link a minimal subset of ClickHouse. Keep
+    # section GC in coverage builds so unreachable code from an extracted object cannot
+    # retain references to unrelated server libraries.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
@@ -943,10 +946,13 @@ if (FUZZER)
         OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
         ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
     string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
-    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
-    # abort on an unmatched glob far from here.
+    # Fail here: consumers copy tests/fuzz/*.dict, a glob the committed
+    # per-target dictionaries satisfy even when all.dict is missing.
     if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
         message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
+    endif()
+    if (NOT EXISTS "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict")
+        message (FATAL_ERROR "tests/fuzz/all.dict is missing after generation")
     endif()
     message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
 
@@ -978,6 +984,12 @@ if (FUZZER)
                 get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
                 if (NOT target_compile_options MATCHES "-fno-sanitize=all")
                     target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link" "-fno-sanitize-coverage=pc-table")
+                    # Coverage-only fuzzer builds have no sanitizer runtime in their global
+                    # link flags. Link the no-main libFuzzer runtime into ordinary executables
+                    # so instrumented host tools resolve their SanitizerCoverage callbacks.
+                    if (WITH_COVERAGE AND NOT SANITIZE AND target_type STREQUAL "EXECUTABLE" AND NOT target MATCHES ".+_fuzzer")
+                        set_property(TARGET ${target} APPEND PROPERTY LINK_LIBRARIES ch_contrib::fuzzer_no_main)
+                    endif()
                 endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
