@@ -922,7 +922,7 @@ Possible values:
 - 0 — every file matched by the glob is read.
 - 1 — files with a hidden path segment below the non-glob prefix are skipped.
 )", 0, \
-        {"26.10", false, false, "New setting: skip files with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
+        {"26.11", false, false, "New setting: skip files with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0, \
         {"25.4", true, true, "New setting."}) \
