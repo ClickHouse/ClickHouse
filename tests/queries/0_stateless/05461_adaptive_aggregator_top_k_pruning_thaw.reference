@@ -1,0 +1,6 @@
+String key, count and min	0	1	1	1	1	1
+UInt64 key, count and sum	0	1	1	1	1	1
+String key, count and min	1	1	1	0	1	1
+String key, lone count	0	1	1	0	1	1
+Verdict not read by top-K	1	1	1
+Verdict not recorded by top-K	1	1
