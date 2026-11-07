@@ -21,8 +21,6 @@
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <Common/maskSensitiveQueryParameters.h>
-#include <Common/maskURIPassword.h>
 #include <Poco/Net/HTTPRequest.h>
 
 #include <IO/WriteHelpers.h>
@@ -50,13 +48,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// A copy of the URL with its password, presigned signature and credential-like parameters hidden, for errors.
-    String maskedURLForError(String url)
-    {
-        maskURICredentials(url);
-        return maskSensitiveQueryParametersInURI(url);
-    }
-
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
     {
         if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
@@ -231,8 +222,8 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (configuration.inline_http_method)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The url table function does not support http_method when dispatching to the {} engine (URL '{}')",
-                storageEngineNameForURLScheme(target), maskedURLForError(filename));
+                "The url table function does not support http_method when dispatching to the {} engine",
+                storageEngineNameForURLScheme(target));
 
         buildDelegate(target, context);
         return;
@@ -404,8 +395,7 @@ StoragePtr TableFunctionURL::getStorage(
         && IStorageURLBase::chooseReadMethod(configuration.storageHTTPMethod()) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
-            maskedURLForError(source));
+            "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages");
 
     const bool use_web_wildcard = !is_insert_query && canExpandIndexPages(configuration) && urlPathHasListableGlobs(source);
 
@@ -490,8 +480,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
             && IStorageURLBase::chooseReadMethod(configuration.storageHTTPMethod()) == Poco::Net::HTTPRequest::HTTP_POST)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
-                maskedURLForError(filename));
+                "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages");
 
         if (canExpandIndexPages(configuration) && urlPathHasListableGlobs(filename))
         {

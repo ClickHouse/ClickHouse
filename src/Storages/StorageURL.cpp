@@ -207,13 +207,6 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
-/// A copy of the URL with its password, presigned signature and credential-like parameters hidden, for errors.
-static String maskedURLForError(String url)
-{
-    maskURICredentials(url);
-    return maskSensitiveQueryParametersInURI(url);
-}
-
 /// `ENGINE = URL` picks the wildcard (read-only, always `GET`) or the plain URL backend once, when the
 /// table is defined, so it cannot honor an explicit `http_method` and index-page expansion at the same time.
 static void checkIndexPageWildcardsNotCombinedWithHTTPMethod(const String & url, const String & http_method)
@@ -222,10 +215,9 @@ static void checkIndexPageWildcardsNotCombinedWithHTTPMethod(const String & url,
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "`*`/`**` wildcards expanded from HTTP index pages cannot be combined with http_method='{}' in "
-            "`ENGINE = URL` (URL '{}'). Remove either the wildcards or `http_method`, or use the `url` table "
+            "`ENGINE = URL`. Remove either the wildcards or `http_method`, or use the `url` table "
             "function, which chooses the method per query",
-            http_method,
-            maskedURLForError(url));
+            http_method);
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -3421,8 +3413,8 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     if (configuration.inline_http_method)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The URL engine does not support http_method when dispatching to the {} engine (URL '{}')",
-            engine_name, maskedURLForError(configuration.url));
+            "The URL engine does not support http_method when dispatching to the {} engine",
+            engine_name);
 
     const String & format = configuration.format;
     const String & compression = configuration.compression_method;

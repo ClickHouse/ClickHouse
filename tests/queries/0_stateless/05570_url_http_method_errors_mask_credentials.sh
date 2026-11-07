@@ -27,6 +27,14 @@ check --url_base="http://alice:${PW}@localhost:1/" -q "SELECT * FROM url('files/
 check -q "SELECT * FROM url('s3://bucket/f.csv?X-Amz-Signature=${SIG}&access_token=${TOK}', CSV, 'x UInt8', http_method='POST')"
 check -q "CREATE TABLE url_mask_s3_${CLICKHOUSE_DATABASE} (x UInt8) ENGINE = URL('s3://bucket/f.csv?X-Amz-Signature=${SIG}&access_token=${TOK}', CSV, http_method='POST')"
 
+# Brace and failover patterns hold several authorities, each with its own password.
+BRACE="{http://alice:${PW}@localhost:1/a,http://bob:${PW}_b@localhost:1/b}/*.csv"
+FAILOVER="http://alice:${PW}@localhost:1/a/*.csv|http://bob:${PW}_b@localhost:1/b/*.csv"
+check -q "SELECT * FROM url('${BRACE}', CSV, 'x UInt8', http_method='POST')"
+check -q "SELECT * FROM url('${BRACE}', CSV, http_method='POST')"
+check -q "CREATE TABLE url_mask_brace_${CLICKHOUSE_DATABASE} (x UInt8) ENGINE = URL('${BRACE}', CSV, http_method='PUT')"
+check -q "SELECT * FROM url('${FAILOVER}', CSV, 'x UInt8', http_method='POST')"
+
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT count() > 0, countIf(position(exception, '${PW}') > 0 OR position(exception, '${SIG}') > 0
