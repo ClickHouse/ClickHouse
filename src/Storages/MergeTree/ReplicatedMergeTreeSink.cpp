@@ -37,6 +37,7 @@
 namespace ProfileEvents
 {
     extern const Event DuplicatedInsertedBlocks;
+    extern const Event RejectedInserts;
     extern const Event SelfDuplicatedAsyncInserts;
     extern const Event DuplicatedAsyncInserts;
     extern const Event DuplicationElapsedMicroseconds;
@@ -118,7 +119,8 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     ContextPtr context_,
     bool is_attach_,
     bool allow_attach_while_readonly_,
-    std::optional<ZooKeeperRetriesInfo> keeper_retries_info_)
+    std::optional<ZooKeeperRetriesInfo> keeper_retries_info_,
+    bool check_database_rows_limit_)
     : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -170,14 +172,29 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     /// deferred to onStart, so that the error still surfaces during execution, where the callers
     /// expect it (e.g. `materialized_views_ignore_errors` and async insert flushes handle errors
     /// thrown by an executing sink, not errors thrown while the insert chain is being built).
+    ///
+    /// With insert deduplication, the database `max_rows` check is evaluated here as well, but its
+    /// verdict is carried to `commitPart` and thrown only for a part that is not a duplicate, so that
+    /// retrying an INSERT which was already written stays a no-op even once the database is full.
+    /// `ATTACH` is checked for the whole batch in `StorageReplicatedMergeTree::attachPartitionImpl`,
+    /// which passes its verdict through `setDatabaseRowsLimitException`, and `RESTORE` before attaching,
+    /// so attach sinks are not checked here: replica metadata recovery can run in the table startup,
+    /// where counting the rows would wait for the database startup, which waits for this table.
+    /// Lightweight updates are not checked either: their patch parts add no rows.
+    const bool check_database_rows_limit = check_database_rows_limit_ && !is_attach;
     try
     {
-        storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+        storage.delayInsertOrThrowIfNeeded(
+            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false,
+            /*check_database_rows_limit=*/ check_database_rows_limit && !deduplicate);
     }
     catch (...)
     {
         too_many_parts_exception = std::current_exception();
     }
+
+    if (check_database_rows_limit && deduplicate && !too_many_parts_exception)
+        database_rows_limit_exception = storage.getDatabaseRowsLimitReachedException();
 }
 
 ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink()
@@ -948,6 +965,17 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
 
                 return CommitRetryContext::RESOLVE_CONFLICTS;
             }
+        }
+
+        /// For an INSERT into a database that had already reached `max_rows` when the insert
+        /// started (see the constructor), or an `ATTACH PARTITION` batch that would exceed it,
+        /// a duplicate part was accepted above as a no-op, while a part that would add rows is
+        /// rejected here. Throwing here is safe: only the ephemeral
+        /// block number node exists at this point, and it is released by the lock's destructor.
+        if (database_rows_limit_exception)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            std::rethrow_exception(database_rows_limit_exception);
         }
 
         auto block_number = block_number_lock.getNumber();

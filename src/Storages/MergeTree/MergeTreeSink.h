@@ -51,7 +51,8 @@ public:
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
         size_t max_parts_per_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool check_database_rows_limit_ = true);
 
     ~MergeTreeSink() override;
 
@@ -70,6 +71,9 @@ protected:
     /// The result of the "too many parts" check, evaluated on the query thread at sink
     /// construction and thrown from onStart, when the sink starts executing.
     std::exception_ptr too_many_parts_exception;
+    /// The database `max_rows` check of an INSERT with deduplication, evaluated at sink construction
+    /// and thrown at the commit only for a part that turns out not to be a duplicate.
+    std::exception_ptr database_rows_limit_exception;
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
     bool synchronously_commit_part_for_dependent_views = false;

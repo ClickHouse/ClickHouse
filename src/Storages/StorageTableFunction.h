@@ -105,6 +105,10 @@ public:
         return storage ? storage->totalRows(query_context) : std::nullopt;
     }
 
+    /// A table function owns no rows. Called under the database mutex, so it must not take `nested_mutex`:
+    /// resolving the function holds it while looking up tables of the database.
+    UInt64 rowsForDatabaseLimit() const override { return 0; }
+
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
         auto storage = nestedIfResolved();

@@ -109,11 +109,23 @@ public:
     void checkTablesLimit(size_t tables_to_add = 1) const;
     void checkTablesLimitUnlocked(size_t tables_to_add = 1) const TSA_REQUIRES(mutex);
 
+    /// Throw if adding `table` (via `ATTACH`, `UNDROP`, or as a rename destination) would push this database's
+    /// active-row total past `max_rows`. No-op when `max_rows` is 0 or the engine is not row-accounted.
+    void checkRowsLimit(const StoragePtr & table, const String & table_name) const;
+    void checkRowsLimit(UInt64 attaching_rows, const String & table_name) const;
+
     /// Supports `ALTER DATABASE ... MODIFY SETTING max_tables = ...` for Atomic and Ordinary
     /// databases. Other engines derived from this class reject the query.
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
 protected:
+    void createTableImpl(
+        ContextPtr context,
+        const String & table_name,
+        const StoragePtr & table,
+        const ASTPtr & query,
+        bool check_rows_limit);
+
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
     static constexpr const char * detached_suffix = ".detached";

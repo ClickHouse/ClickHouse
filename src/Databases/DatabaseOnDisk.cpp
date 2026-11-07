@@ -48,6 +48,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <base/scope_guard.h>
 
 
 namespace fs = std::filesystem;
@@ -85,6 +86,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_TABLES;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
@@ -274,6 +276,16 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    createTableImpl(local_context, table_name, table, query, true);
+}
+
+void DatabaseOnDisk::createTableImpl(
+    ContextPtr local_context,
+    const String & table_name,
+    const StoragePtr & table,
+    const ASTPtr & query,
+    bool check_rows_limit)
+{
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
     ensurePopulated();
     auto db_disk = getDisk();
@@ -299,6 +311,12 @@ void DatabaseOnDisk::createTable(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
     waitDatabaseStarted();
+
+    /// Enforce `max_rows` on ATTACH. After waitDatabaseStarted() so the count sees
+    /// background-loaded tables (async_load_databases); after the name-collision check but
+    /// before the `attach_short_syntax` early return, so a real `ATTACH TABLE t` is covered.
+    if (check_rows_limit)
+        checkRowsLimit(table, table_name);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
@@ -345,6 +363,36 @@ void DatabaseOnDisk::createTable(
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
+}
+
+void DatabaseOnDisk::checkRowsLimit(const StoragePtr & table, const String & table_name) const
+{
+    /// Without a limit, do not ask the storage for its rows: a lazy table proxy would load the table.
+    if (getMaxRows() == 0)
+        return;
+    checkRowsLimit(table->rowsForDatabaseLimit(), table_name);
+}
+
+void DatabaseOnDisk::checkRowsLimit(UInt64 attaching_rows, const String & table_name) const
+{
+    /// This is a best-effort snapshot check, not a reservation spanning the commit: concurrent
+    /// operations may each observe free headroom and transiently overshoot the limit together.
+    /// The setting is documented accordingly.
+    const UInt64 limit = getMaxRows();
+    if (limit == 0)
+        return;
+
+    /// An empty table is always allowed, even if the database is already over budget --
+    /// matching the precedent of allowing an empty CREATE.
+    if (attaching_rows == 0)
+        return;
+
+    const UInt64 current_rows = getCurrentRowCount().value_or(0);
+    if (attaching_rows > limit || current_rows > limit - attaching_rows)
+        throw Exception(
+            ErrorCodes::TOO_MANY_ROWS,
+            "Adding table {}.{} with {} rows would exceed the row limit (database setting `max_rows`) of {}",
+            backQuote(getDatabaseName()), backQuote(table_name), attaching_rows, limit);
 }
 
 /// If the table was detached permanently we will have a flag file with
@@ -515,6 +563,45 @@ static size_t getNumberOfTablesToMove(const StoragePtr & table, const ContextPtr
     return 1;
 }
 
+/// How many rows a cross-database `RENAME` moves, mirroring `getNumberOfTablesToMove`: the inner
+/// tables travel with the outer table, so their rows count against the destination's `max_rows`
+/// too, and accounting for all of them at once keeps a partially moved set from being rejected
+/// halfway through.
+static UInt64 getRowsToMove(const StoragePtr & table, const ContextPtr & local_context)
+{
+    UInt64 result = table->rowsForDatabaseLimit();
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get()))
+    {
+        if (materialized_view->hasInnerTable())
+            if (auto target_table = materialized_view->tryGetTargetTable())
+                result += target_table->rowsForDatabaseLimit();
+        return result;
+    }
+
+    if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(table.get()))
+    {
+        if (time_series->hasInnerTables())
+        {
+            for (auto target_kind : StorageTimeSeries::getTargetKinds())
+                if (time_series->isInnerTable(target_kind))
+                    if (auto target_table = time_series->tryGetTargetTable(target_kind, local_context))
+                        result += target_table->rowsForDatabaseLimit();
+        }
+        return result;
+    }
+
+    return result;
+}
+
+/// The destination database whose `max_tables` and `max_rows` quotas an outer cross-database
+/// `RENAME` has already checked for the whole bundle of tables it moves (see `getNumberOfTablesToMove`
+/// and `getRowsToMove`). `TimeSeries` and `MaterializedView` move their inner tables with nested
+/// `RENAME` queries from `renameInMemory`, executed synchronously in the same thread. Rechecking the
+/// quotas there could make a later inner rename fail after earlier ones have already moved (e.g. due
+/// to a concurrent `INSERT` or `CREATE TABLE`), leaving the outer table split across databases.
+static thread_local const IDatabase * destination_with_checked_quotas = nullptr;
+
 void DatabaseOnDisk::renameTable(
         ContextPtr local_context,
         const String & table_name,
@@ -543,6 +630,8 @@ void DatabaseOnDisk::renameTable(
 
     createDirectories();
     waitDatabaseStarted();
+    if (this != &to_database)
+        to_database.waitDatabaseStarted();
 
     ensurePopulated();
     if (auto * to_database_with_own_tables = dynamic_cast<DatabaseWithOwnTablesBase *>(&to_database))
@@ -561,7 +650,8 @@ void DatabaseOnDisk::renameTable(
     /// data, because from that point on the rename cannot be undone safely. Keep the check after
     /// the source table is resolved and validated, so that a full destination does not mask
     /// `UNKNOWN_TABLE` and other source-side errors.
-    if (this != &to_database)
+    const bool check_destination_quotas = this != &to_database && destination_with_checked_quotas != &to_database;
+    if (check_destination_quotas)
     {
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
         {
@@ -590,8 +680,19 @@ void DatabaseOnDisk::renameTable(
         if (from_atomic_to_ordinary)
             std::swap(create.uuid, prev_uuid);
 
-        if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
-            target_db->checkMetadataFilenameAvailability(to_table_name);
+        if (this != &to_database)
+        {
+            if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+            {
+                target_db->checkMetadataFilenameAvailability(to_table_name);
+                if (check_destination_quotas)
+                    target_db->checkRowsLimit(getRowsToMove(table, local_context), to_table_name);
+            }
+        }
+        else
+        {
+            checkMetadataFilenameAvailability(to_table_name);
+        }
 
         /// This place is actually quite dangerous. Since data directory is moved to store/
         /// DatabaseCatalog may try to clean it up as unused. We add UUID mapping to avoid this.
@@ -605,7 +706,12 @@ void DatabaseOnDisk::renameTable(
                 LOG_INFO(log, "Moving table from {} to {}", table_data_relative_path, to_database.getTableDataPath(create));
         }
 
-        /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
+        /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID.
+        /// Inner tables renamed from here were already accounted in the destination quota checks above.
+        const IDatabase * previous_destination_with_checked_quotas = destination_with_checked_quotas;
+        if (this != &to_database)
+            destination_with_checked_quotas = &to_database;
+        SCOPE_EXIT({ destination_with_checked_quotas = previous_destination_with_checked_quotas; });
         table->rename(to_database.getTableDataPath(create), StorageID(create));
     }
     catch (const Exception &)
@@ -630,7 +736,15 @@ void DatabaseOnDisk::renameTable(
     }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
-    to_database.createTable(local_context, to_table_name, table, attach_query);
+    if (this == &to_database)
+        createTableImpl(local_context, to_table_name, table, attach_query, false);
+    else if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+        /// The destination was checked before moving table data above. Do not repeat the
+        /// check here: a concurrent INSERT could otherwise turn a successful move into a
+        /// partial rename after the source table has already been detached.
+        target_db->createTableImpl(local_context, to_table_name, table, attach_query, false);
+    else
+        to_database.createTable(local_context, to_table_name, table, attach_query);
 
     db_disk->removeFileIfExists(table_metadata_path);
 

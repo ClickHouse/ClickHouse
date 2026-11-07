@@ -13,6 +13,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
@@ -53,6 +54,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -281,10 +283,24 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (!inside_database)
         other_db.ensurePopulated();
 
+    UInt64 table_rows = 0;
+    UInt64 other_table_rows = 0;
     if (!inside_database)
     {
         other_db.createDirectories();
+        /// Row-limit checks below use the exact table total of both databases.
+        /// Wait before taking either database mutex because startup itself takes it.
         other_db.waitDatabaseStarted();
+
+        /// The checks also count the rows of the moved tables, which loads a lazy table. Count them here, before taking
+        /// the database mutexes: loading a lazy table takes its proxy mutex and then the database mutex, so even asking
+        /// an already loaded proxy for its rows under the database mutex inverts the lock order.
+        /// The DDL guards keep both tables attached. A missing table is reported below.
+        if (auto table_to_move = tryGetTable(table_name, local_context))
+            table_rows = resolveStorageProxyLoading(table_to_move)->rowsForDatabaseLimit();
+        if (exchange)
+            if (auto other_table_to_move = other_db.tryGetTable(to_table_name, local_context))
+                other_table_rows = resolveStorageProxyLoading(other_table_to_move)->rowsForDatabaseLimit();
     }
 
     String old_metadata_path = getObjectMetadataPath(table_name);
@@ -328,6 +344,25 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (const auto * ts = dynamic_cast<const StorageTimeSeries *>(table_.get()))
             if (ts->hasInnerTables())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
+    };
+
+    /// RENAME/EXCHANGE bypasses createTable's checkRowsLimit, so enforce `max_rows` on the
+    /// destination here. Callers already hold `moved_into_db.mutex`.
+    auto check_rows_limit_after_move = [](DatabaseAtomic & moved_into_db, const String & moved_table_name, UInt64 outgoing_rows, UInt64 incoming_rows)
+        TSA_REQUIRES(moved_into_db.mutex)
+    {
+        if (incoming_rows <= outgoing_rows)
+            return;
+        const UInt64 limit = moved_into_db.getMaxRows();
+        if (limit == 0)
+            return;
+        const UInt64 current_rows = moved_into_db.getCurrentRowCountUnlocked();
+        const UInt64 remaining_rows = current_rows > outgoing_rows ? current_rows - outgoing_rows : 0;
+        if (incoming_rows > limit || remaining_rows > limit - incoming_rows)
+            throw Exception(
+                ErrorCodes::TOO_MANY_ROWS,
+                "Moving table {}.{} with {} rows would exceed the row limit (database setting `max_rows`) of {}",
+                backQuote(moved_into_db.database_name), backQuote(moved_table_name), incoming_rows, limit);
     };
 
     String table_data_path;
@@ -380,6 +415,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     /// source-side errors. An exchange does not change the number of tables.
     if (!inside_database && !exchange)
         other_db.checkTablesLimitUnlocked();
+
+    if (!inside_database)
+    {
+        check_rows_limit_after_move(*this, table_name, table_rows, other_table_rows);
+        check_rows_limit_after_move(other_db, to_table_name, other_table_rows, table_rows);
+    }
 
     /// Table renaming actually begins here
     auto txn = local_context->getZooKeeperMetadataTransaction();
