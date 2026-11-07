@@ -9,4 +9,15 @@
     <query>SELECT arr FROM (SELECT cast(range(number % 10) as Array(Decimal64(0))) AS arr FROM (SELECT * FROM system.numbers LIMIT 10000000) WHERE length(arr) &lt;= 5) format Null</query>
     <query>SELECT arr FROM (SELECT cast(range(number % 10) as Array(Decimal128(0))) AS arr FROM (SELECT * FROM system.numbers LIMIT 10000000) WHERE length(arr) &lt;= 5) format Null</query>
     <query>SELECT arr FROM (SELECT cast(range(number % 10) as Array(Decimal256(0))) AS arr FROM (SELECT * FROM system.numbers LIMIT 10000000) WHERE length(arr) &lt;= 5) format Null</query>
+
+    <create_query>CREATE TABLE column_string_filter (n UInt64, s String, t String, fixed String, arr Array(UInt64)) ENGINE = MergeTree ORDER BY n</create_query>
+    <fill_query>INSERT INTO column_string_filter SELECT number, if(number % 1000 = 0, '', repeat('a', 20 + intHash32(number) % 101)), repeat('b', intHash32(number) % 3), leftPad(toString(number % 100000000), 8, '0'), range(intHash32(number) % 10) FROM numbers_mt(40000000)</fill_query>
+    <query>SELECT s FROM column_string_filter WHERE s != '' FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+    <query>SELECT s FROM column_string_filter WHERE intHash64(n) % 1000 != 1 FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+    <query>SELECT s FROM column_string_filter WHERE intHash64(n) % 10 != 1 FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+    <query>SELECT t FROM column_string_filter WHERE intHash64(n) % 8 != 1 FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+    <query>SELECT s FROM column_string_filter WHERE length(s) > 50 FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+    <query>SELECT fixed FROM column_string_filter WHERE intHash64(n) % 1000 != 1 FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+    <query>SELECT arr FROM column_string_filter WHERE intHash64(n) % 100 != 1 FORMAT Null SETTINGS optimize_move_to_prewhere = 0</query>
+    <drop_query>DROP TABLE IF EXISTS column_string_filter</drop_query>
 </test>

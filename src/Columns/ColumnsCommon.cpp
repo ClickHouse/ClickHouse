@@ -275,8 +275,9 @@ namespace
         }
     };
 
+    /// Out of line, so that the dense path below does not change the code generated for this loop.
     template <typename T, typename ResultOffsetsBuilder>
-    void filterArraysImplGeneric(
+    NO_INLINE void filterArraysImplGeneric(
         const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
         PaddedPODArray<T> & res_elems, IColumn::Offsets * res_offsets,
         const IColumn::Filter & filt, ssize_t result_size_hint)
@@ -366,6 +367,100 @@ namespace
             ++offsets_pos;
         }
     }
+
+    /// The result offsets are built first, so `res_elems` is allocated once with its exact size. Then each run of
+    /// consecutive kept rows, merged across empty rows, is copied with one `memcpy`.
+    template <typename T>
+    NO_INLINE void filterArraysImplDense(
+        const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
+        PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
+        const IColumn::Filter & filt, size_t result_size_hint)
+    {
+        const size_t size = src_offsets.size();
+        if (size != filt.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+
+        static constexpr size_t SIMD_BYTES = 64;
+        const UInt8 * filt_data = filt.data();
+        const IColumn::Offset * offsets_data = src_offsets.data();
+        const size_t size_aligned = size / SIMD_BYTES * SIMD_BYTES;
+
+        ResultOffsetsBuilder result_offsets_builder(&res_offsets);
+        result_offsets_builder.reserve(result_size_hint, size);
+
+        for (size_t row = 0; row < size_aligned; row += SIMD_BYTES)
+        {
+            UInt64 mask = bytes64MaskToBits64Mask(filt_data + row);
+            const IColumn::Offset * offsets_pos = offsets_data + row;
+            if (mask == 0xffffffffffffffff)
+            {
+                const auto chunk_offset = offsets_pos[-1];
+                result_offsets_builder.template insertChunk<SIMD_BYTES>(
+                    offsets_pos, row == 0, chunk_offset, offsets_pos[SIMD_BYTES - 1] - chunk_offset);
+            }
+            else
+            {
+                for (; mask; mask &= mask - 1)
+                {
+                    const IColumn::Offset * offset_ptr = offsets_pos + std::countr_zero(mask);
+                    result_offsets_builder.insertOne(offset_ptr[0] - offset_ptr[-1]);
+                }
+            }
+        }
+        for (size_t row = size_aligned; row < size; ++row)
+        {
+            if (filt_data[row])
+            {
+                const IColumn::Offset * offset_ptr = offsets_data + row;
+                result_offsets_builder.insertOne(offset_ptr[0] - offset_ptr[-1]);
+            }
+        }
+
+        const size_t res_elems_old_size = res_elems.size();
+        res_elems.resize_exact(res_elems_old_size + result_offsets_builder.current_src_offset);
+        T * res_pos = res_elems.data() + res_elems_old_size;
+        const T * src_data = src_elems.data();
+
+        /// [run_begin, run_end) are the source elements not copied yet, contiguous in `src_elems`.
+        IColumn::Offset run_begin = 0;
+        IColumn::Offset run_end = 0;
+        const auto add_run = [&](IColumn::Offset begin, IColumn::Offset end)
+        {
+            if (begin != run_end)
+            {
+                memcpy(res_pos, src_data + run_begin, (run_end - run_begin) * sizeof(T));
+                res_pos += run_end - run_begin;
+                run_begin = begin;
+            }
+            run_end = end;
+        };
+
+        for (size_t row = 0; row < size_aligned; row += SIMD_BYTES)
+        {
+            UInt64 mask = bytes64MaskToBits64Mask(filt_data + row);
+            const IColumn::Offset * offsets_pos = offsets_data + row;
+            while (mask)
+            {
+                /// Rows [first, end) of these SIMD_BYTES rows pass.
+                const size_t first = std::countr_zero(mask);
+                const size_t end = first + std::countr_one(mask >> first);
+                add_run(offsets_pos[static_cast<ssize_t>(first) - 1], offsets_pos[end - 1]);
+                if (end == SIMD_BYTES)
+                    break;
+                mask &= ~UInt64(0) << end;
+            }
+        }
+        for (size_t row = size_aligned; row < size; ++row)
+        {
+            if (filt_data[row])
+            {
+                const IColumn::Offset * offset_ptr = offsets_data + row;
+                add_run(offset_ptr[-1], offset_ptr[0]);
+            }
+        }
+        memcpy(res_pos, src_data + run_begin, (run_end - run_begin) * sizeof(T));
+        chassert(res_pos + (run_end - run_begin) == res_elems.data() + res_elems.size());
+    }
 }
 
 
@@ -375,6 +470,10 @@ void filterArraysImpl(
     PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
+    /// Some callers pass the row count as the hint, which does not count the passing rows.
+    if (result_size_hint > 0 && static_cast<size_t>(result_size_hint) < src_offsets.size()
+        && static_cast<size_t>(result_size_hint) * 8 >= src_offsets.size() * 7)
+        return filterArraysImplDense<T>(src_elems, src_offsets, res_elems, res_offsets, filt, result_size_hint);
     return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint);
 }
 
