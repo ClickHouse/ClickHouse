@@ -1299,7 +1299,6 @@ public:
             {
                 if (!parameters)
                     parameters = make_intrusive<ASTExpressionList>();
-                /// Like the analyzer rewrite: the separator replaces the delimiter parameter and keeps the optional limit.
                 if (parameters->children.empty())
                     parameters->children.push_back(std::move(elements[1]));
                 else
