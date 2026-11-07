@@ -264,7 +264,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
         || select->limitAfter() || select->limitUntil()
         || select->limitBy() || select->limit_by_all
         || select->limitByLength() || select->limitByOffset()
-        || select->distinct || select->arrayJoinExpressionList().first
+        || select->distinct
         || select->settings())
     {
         return nullptr;
@@ -298,6 +298,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     }
 
     const auto * tables = select->tables().get();
+    /// Every JOIN and ARRAY JOIN clause is a separate element of this list.
     if (!tables || tables->children.size() != 1)
     {
         return nullptr;
@@ -943,7 +944,7 @@ void StorageView::readImpl(
 
         for (const auto & [base_column_name, subcolumn] : requested_subcolumns)
         {
-            if (!supportsOptimizationToSubcolumnsForColumn(storage_snapshot, base_column_name, context, subcolumn))
+            if (!supportsOptimizationToSubcolumnsForColumn(storage_snapshot, base_column_name, context, subcolumn, false))
                 continue;
 
             const auto & subcolumn_name = subcolumn.name;
@@ -1180,7 +1181,8 @@ bool StorageView::supportsOptimizationToSubcolumnsForColumn(
     const StorageSnapshotPtr & storage_snapshot,
     const String & column_name,
     const ContextPtr & context,
-    const std::optional<NameAndTypePair> & map_key_subcolumn) const
+    const std::optional<NameAndTypePair> & map_key_subcolumn,
+    bool require_bucketed_map_serialization) const
 {
     if (isSealed(*storage_snapshot->metadata, context))
         return false;
@@ -1195,6 +1197,9 @@ bool StorageView::supportsOptimizationToSubcolumnsForColumn(
         column_name,
         getViewSubqueryContext(context, storage_snapshot));
     if (!projection)
+        return false;
+
+    if (require_bucketed_map_serialization && !projection->underlying_snapshot->storage.hasBucketedMapSerialization())
         return false;
 
     return !map_key_subcolumn || sourceHasMapKeySubcolumn(*projection, map_key_subcolumn->name, map_key_subcolumn->type);

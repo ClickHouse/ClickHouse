@@ -2,7 +2,6 @@
 -- A correlated subquery keeps one such conjunct per correlated key after decorrelation.
 -- https://github.com/ClickHouse/ClickHouse/issues/122677
 -- Random settings limits: query_plan_optimize_join_order_limit=(1, None); use_statistics=(1, 1); materialize_statistics_on_insert=(1, 1); query_plan_optimize_join_order_randomize=(0, 0)
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t1;

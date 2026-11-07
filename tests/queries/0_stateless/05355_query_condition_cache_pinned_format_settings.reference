@@ -1,0 +1,9 @@
+allow	0
+allow	0
+disallow: exception
+null as default	0
+null as default	0
+null not default: exception
+date saturate	0
+date saturate	0
+date throw: exception

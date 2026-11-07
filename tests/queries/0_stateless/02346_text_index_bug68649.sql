@@ -3,7 +3,6 @@
 -- physical-column predicate won and ran first, on all rows.
 
 SET allow_experimental_full_text_index = 1;
-SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy'; -- the default plan printer reverses the AND arguments
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;

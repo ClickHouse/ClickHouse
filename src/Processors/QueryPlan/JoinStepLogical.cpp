@@ -1832,7 +1832,6 @@ static void constructPhysicalStep(
         join_settings.min_joined_block_size_bytes,
         optimization_settings.max_threads,
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-        false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
     join_step->setLogicalJoinInfo(std::move(logical_join_info));
     join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
@@ -2580,13 +2579,21 @@ void JoinStepLogical::buildPhysicalJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got {}", !join_step ? "nullptr" : "empty children");
     }
 
+    /// The planned algorithm goes first, the user's list stays its fallback.
+    auto join_settings = join_step->join_settings;
+    if (const auto planned = join_step->planned_algorithm)
+    {
+        std::erase(join_settings.join_algorithms, *planned);
+        join_settings.join_algorithms.insert(join_settings.join_algorithms.begin(), *planned);
+    }
+
     UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
     UInt64 join_output_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getJoinOutputCacheKey() : 0;
 
     if (!join_step->join_algorithm_params)
     {
         join_step->join_algorithm_params = std::make_unique<JoinAlgorithmParams>(
-            join_step->join_settings,
+            join_settings,
             optimization_settings.max_threads,
             hash_table_key_hash,
             join_output_key_hash,
@@ -2624,7 +2631,7 @@ void JoinStepLogical::buildPhysicalJoin(
         node.children,
         join_step->join_operator,
         std::move(join_step->expression_actions),
-        join_step->join_settings,
+        join_settings,
         *join_step->join_algorithm_params,
         join_step->sorting_settings,
         join_step->actions_after_join,
@@ -2952,6 +2959,9 @@ void JoinStepLogical::serialize(Serialization & ctx) const
             optimizer_flags |= 1;
         if (runtime_filter_declined_small_probe)
             optimizer_flags |= 2;
+        /// Only `full_sorting_merge` is ever planned.
+        if (planned_algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+            optimizer_flags |= 4;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3026,6 +3036,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
         step->optimized = bool(optimizer_flags & 1);
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
+        if (optimizer_flags & 4)
+            step->planned_algorithm = JoinAlgorithm::FULL_SORTING_MERGE;
     }
     return step;
 }
@@ -3082,6 +3094,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->planned_algorithm = planned_algorithm;
 
     return result_step;
 }

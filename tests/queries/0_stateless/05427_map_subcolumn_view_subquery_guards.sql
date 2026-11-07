@@ -7,13 +7,15 @@ DROP VIEW IF EXISTS v_alias_where;
 DROP TABLE IF EXISTS t_shadow;
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t (id UInt64, m Map(String, String)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t (id UInt64, m Map(String, String)) ENGINE = MergeTree ORDER BY id
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 INSERT INTO t VALUES (1, {'k':'v', 'b':'other'});
 
 SET optimize_functions_to_subcolumns = 1;
 
 SELECT 'physical column with the subcolumn name';
-CREATE TABLE t_shadow (m Map(String, String), `m.key_k` String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_shadow (m Map(String, String), `m.key_k` String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 INSERT INTO t_shadow VALUES ({'k':'correct'}, 'wrong');
 CREATE VIEW v_shadow SQL SECURITY INVOKER AS SELECT m FROM t_shadow;
 SELECT m['k'] FROM v_shadow;

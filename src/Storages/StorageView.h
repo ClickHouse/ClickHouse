@@ -35,11 +35,13 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     /// If `map_key_subcolumn` is set, also checks that the underlying table resolves it to
     /// the key subcolumn of the projected `Map` and not to another column.
+    /// Explicit subcolumn reads set `require_bucketed_map_serialization` to false.
     bool supportsOptimizationToSubcolumnsForColumn(
         const StorageSnapshotPtr & storage_snapshot,
         const String & column_name,
         const ContextPtr & context,
-        const std::optional<NameAndTypePair> & map_key_subcolumn = {}) const;
+        const std::optional<NameAndTypePair> & map_key_subcolumn = {},
+        bool require_bucketed_map_serialization = true) const;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
