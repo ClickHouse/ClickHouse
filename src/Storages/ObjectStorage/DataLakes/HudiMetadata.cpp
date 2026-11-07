@@ -435,29 +435,36 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     }
 
     /// Requested times of the completed write instants in the active timeline, nothing without a timeline. A base file of
-    /// another instant belongs to a failed or running write, unless it precedes every write instant, pending ones included.
+    /// another instant belongs to a failed or running write, unless it precedes the first write instant, pending ones included,
+    /// that is not savepointed (else the last one): archival can go beyond a savepoint, which stays active.
     std::optional<std::set<UInt64>> committed;
     std::optional<UInt64> first_write_instant;
     if (timeline)
     {
         committed.emplace();
-        std::optional<UInt64> earliest_pending;
+        std::set<UInt64> write_instants;
+        std::unordered_set<UInt64> savepoints;
         if (auto it = timeline_directory_files.find(timeline->directory); it != timeline_directory_files.end())
         {
             for (const auto & file_name : it->second)
             {
                 auto completed = parseCompletedInstantName(file_name, timeline->layout_2);
-                if (UInt64 requested = 0; completed
+                if (UInt64 requested = 0; completed && completed->action == "savepoint" && tryParse(requested, completed->requested))
+                    savepoints.insert(requested);
+                else if (completed
                     && (completed->action == "commit" || completed->action == "deltacommit" || completed->action == "replacecommit")
                     && tryParse(requested, completed->requested))
+                {
                     committed->insert(requested);
+                    write_instants.insert(requested);
+                }
                 else if (auto pending = parsePendingWriteInstantTime(file_name); pending && tryParse(requested, *pending))
-                    earliest_pending = std::min(requested, earliest_pending.value_or(requested));
+                    write_instants.insert(requested);
             }
         }
-        first_write_instant = earliest_pending;
-        if (!committed->empty() && (!first_write_instant || *committed->begin() < *first_write_instant))
-            first_write_instant = *committed->begin();
+        if (!write_instants.empty())
+            first_write_instant = *std::find_if(
+                write_instants.begin(), std::prev(write_instants.end()), [&](UInt64 instant) { return !savepoints.contains(instant); });
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_after_listing_timeline);

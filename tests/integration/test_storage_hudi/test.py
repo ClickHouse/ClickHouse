@@ -420,6 +420,26 @@ def timeline_instants(path, table_version):
     return completed, started - completed.keys()
 
 
+def create_savepoint(spark, path, table_version, instant):
+    jvm = spark._jvm
+    properties = jvm.java.util.Properties()
+    properties.setProperty("hoodie.table.name", os.path.basename(path))
+    properties.setProperty("hoodie.write.table.version", str(table_version))
+    properties.setProperty("hoodie.metadata.enable", "false")
+    config = (
+        jvm.org.apache.hudi.config.HoodieWriteConfig.newBuilder()
+        .withPath(path)
+        .withProperties(properties)
+        .build()
+    )
+    context = jvm.org.apache.hudi.client.common.HoodieSparkEngineContext(spark._jsc)
+    client = jvm.org.apache.hudi.client.SparkRDDWriteClient(context, config)
+    try:
+        client.savepoint(instant, "test", "test")
+    finally:
+        client.close()
+
+
 def parquet_files(path):
     return {
         os.path.relpath(os.path.join(root, name), path)
@@ -875,7 +895,71 @@ def test_uncommitted_base_files(started_cluster, table_version):
         assert files_a and all(file.endswith(f"_{first}.parquet") for file in files_a)
         upload_hudi_table(minio_client, bucket, path, prefix)
         assert_rows(instance, source, "id, p, v", [(1, "b", 14)])
+
+        # F: archival beyond a savepoint archives the commits after the savepointed one, which stays active.
+        path, prefix, source = table("f")
+        beyond_savepoint = {**archival, "hoodie.archive.beyond.savepoint": "true"}
+        write_hudi_table(
+            spark, path, [(0, "a", 7, 1)], "insert", table_version, True, beyond_savepoint
+        )
+        (first,) = timeline_instants(path, table_version)[0]
+        create_savepoint(spark, path, table_version, first)
+        # The latest base files of the file groups of `a` and `b`: no later commit touches them.
+        write_hudi_table(
+            spark,
+            path,
+            [(0, "a", 14, 2), (1, "b", 21, 1)],
+            "upsert",
+            table_version,
+            True,
+            beyond_savepoint,
+        )
+        (second,) = timeline_instants(path, table_version)[0].keys() - {first}
+        expected = [(0, "a", 14), (1, "b", 21)]
+        for i in range(2, 9):
+            write_hudi_table(
+                spark,
+                path,
+                [(i, "c", i * 7, 1)],
+                "insert",
+                table_version,
+                True,
+                beyond_savepoint,
+            )
+            expected.append((i, "c", i * 7))
+            if second not in timeline_instants(path, table_version)[0]:
+                break
+        completed, pending = timeline_instants(path, table_version)
+        assert first in completed and second not in completed and not pending
+        assert int(second) < min(int(instant) for instant in completed if instant != first)
+        timeline_dir = os.path.join(
+            path, ".hoodie" if table_version == 6 else ".hoodie/timeline"
+        )
+        assert any(
+            re.fullmatch(rf"{first}(_\d+)?\.savepoint", file)
+            for file in os.listdir(timeline_dir)
+        )
+        assert sorted(
+            file.split("_")[-1]
+            for file in parquet_files(path)
+            if file.startswith(("a/", "b/"))
+        ) == sorted([f"{first}.parquet", f"{second}.parquet", f"{second}.parquet"])
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_rows(instance, source, "id, p, v", expected)
+
+        # Every active commit savepointed.
+        for instant in completed.keys() - {first}:
+            create_savepoint(spark, path, table_version, instant)
+        assert all(
+            any(
+                re.fullmatch(rf"{instant}(_\d+)?\.savepoint", file)
+                for file in os.listdir(timeline_dir)
+            )
+            for instant in completed
+        )
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_rows(instance, source, "id, p, v", expected)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        for arm in "bcde":
+        for arm in "bcdef":
             remove_directory(minio_client, bucket, f"{name}_{arm}")
