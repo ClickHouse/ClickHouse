@@ -7,6 +7,8 @@
 #include <Processors/IProcessor.h>
 #include <Common/PODArray.h>
 
+#include <variant>
+
 namespace DB
 {
 
@@ -45,7 +47,7 @@ private:
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;
-    IColumn::Selector selector;
+    std::variant<IColumn::SmallSelector, IColumn::Selector> selector;
     Chunks output_chunks;
 };
 

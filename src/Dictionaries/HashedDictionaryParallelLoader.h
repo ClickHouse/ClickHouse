@@ -10,6 +10,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
@@ -97,8 +98,8 @@ public:
 
     void addBlock(Block block)
     {
-        IColumn::Selector selector = createShardSelector(block, shards_slots);
-        Blocks shards_blocks = splitBlock(selector, block);
+        IColumn::SmallSelector selector = createShardSelector(block, shards_slots);
+        Blocks shards_blocks = scatterBlock(block, shards, selector);
         block.clear();
 
         for (size_t shard = 0; shard < shards; ++shard)
@@ -213,28 +214,10 @@ private:
         }
     }
 
-    /// Split block to shards smaller block, using 'selector'.
-    Blocks splitBlock(const IColumn::Selector & selector, const Block & block)
-    {
-        Blocks out_blocks(shards);
-        for (size_t shard = 0; shard < shards; ++shard)
-            out_blocks[shard] = block.cloneEmpty();
-
-        size_t columns = block.columns();
-        for (size_t col = 0; col < columns; ++col)
-        {
-            auto split_columns = block.getByPosition(col).column->scatter(shards, selector);
-            for (size_t shard = 0; shard < shards; ++shard)
-                out_blocks[shard].getByPosition(col).column = std::move(split_columns[shard]);
-        }
-
-        return out_blocks;
-    }
-
-    IColumn::Selector createShardSelector(const Block & block, const VectorWithMemoryTracking<UInt64> & slots)
+    IColumn::SmallSelector createShardSelector(const Block & block, const VectorWithMemoryTracking<UInt64> & slots)
     {
         size_t num_rows = block.rows();
-        IColumn::Selector selector(num_rows);
+        IColumn::SmallSelector selector(num_rows);
 
         size_t skip_keys_size_offset = dictionary.dict_struct.getKeysSize();
         Columns key_columns;
@@ -247,7 +230,8 @@ private:
         {
             auto key = keys_extractor.extractCurrentKey();
             size_t shard = dictionary.getShard(key);
-            selector[i] = slots[shard];
+            /// The slot fits `UInt16`: dictionary creation checks that `SHARDS` is within [1, 128].
+            selector[i] = static_cast<UInt16>(slots[shard]);
             keys_extractor.rollbackCurrentKey();
         }
 

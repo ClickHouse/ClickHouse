@@ -176,6 +176,8 @@ private:
     bool any_take_last_row;
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
+    /// When `max_num_buckets` is at most 65536, so is the bucket count, and bucket ids fit `UInt16`.
+    const bool small_bucket_ids;
     const size_t external_join_threshold;
     const size_t max_threads;
 

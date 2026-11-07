@@ -1,3 +1,4 @@
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/castColumn.h>
@@ -33,6 +34,9 @@ ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, si
     hash_input_types.reserve(key_columns.size());
     for (const auto & column_number : key_columns)
         hash_input_types.push_back(header->getByPosition(column_number).type);
+
+    if (output_size > 65536)
+        selector.emplace<IColumn::Selector>();
 }
 
 std::shared_ptr<ScatterByPartitionTransform> ScatterByPartitionTransform::createRoundRobin(SharedHeader header, size_t output_size_, size_t start_bucket)
@@ -209,15 +213,15 @@ void ScatterByPartitionTransform::generateOutputChunks()
             column->computeHashInto(0, num_rows, hash.data(), false);
     }
 
-    selector.resize(num_rows);
-    mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), selector.data());
-
-    for (const auto & column : columns)
+    std::visit([&](auto & ids)
     {
-        auto filtered_columns = column->scatter(output_size, selector);
+        ids.resize(num_rows);
+        mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), ids.data());
+
+        auto scattered = scatterColumns(columns, output_size, ids);
         for (size_t i = 0; i < output_size; ++i)
-            output_chunks[i].addColumn(std::move(filtered_columns[i]));
-    }
+            output_chunks[i].setColumns(std::move(scattered.pieces[i]), scattered.rows[i]);
+    }, selector);
 
     /// A shuffle of partial aggregation states splits a chunk by the keys, and the merge on the other
     /// side needs the bucket number of each part. A two-level bucket is a function of the key, so the

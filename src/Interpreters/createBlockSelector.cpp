@@ -1,3 +1,4 @@
+#include <Interpreters/createBlockSelector.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
@@ -18,8 +19,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template <typename T>
-IColumn::Selector createBlockSelector(
+template <typename T, typename Id>
+PaddedPODArray<Id> createBlockSelector(
     const IColumn & column,
     const std::vector<UInt64> & slots)
 {
@@ -28,7 +29,7 @@ IColumn::Selector createBlockSelector(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "weight is zero");
 
     size_t num_rows = column.size();
-    IColumn::Selector selector(num_rows);
+    PaddedPODArray<Id> selector(num_rows);
 
     /** Modulo of division of negative numbers to positive number in C++11 is negative (so called truncated division).
       * This is not suitable for our task. So we will process signed numbers as unsigned.
@@ -41,7 +42,7 @@ IColumn::Selector createBlockSelector(
     {
         const auto data = assert_cast<const ColumnConst &>(column).getValue<T>();
         const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
-        selector.assign(num_rows, shard_num);
+        selector.assign(num_rows, static_cast<Id>(shard_num));
     }
     else
     {
@@ -53,7 +54,7 @@ IColumn::Selector createBlockSelector(
         const auto & data = typeid_cast<const ColumnVector<T> &>(column).getData();
 
         for (size_t i = 0; i < num_rows; ++i)
-            selector[i] = slots[static_cast<TUInt32Or64>(data[i]) - (static_cast<TUInt32Or64>(data[i]) / divider) * total_weight];
+            selector[i] = static_cast<Id>(slots[static_cast<TUInt32Or64>(data[i]) - (static_cast<TUInt32Or64>(data[i]) / divider) * total_weight]);
     }
 
     return selector;
@@ -69,5 +70,13 @@ template IColumn::Selector createBlockSelector<Int8>(const IColumn & column, con
 template IColumn::Selector createBlockSelector<Int16>(const IColumn & column, const std::vector<UInt64> & slots);
 template IColumn::Selector createBlockSelector<Int32>(const IColumn & column, const std::vector<UInt64> & slots);
 template IColumn::Selector createBlockSelector<Int64>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<UInt8, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<UInt16, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<UInt32, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<UInt64, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<Int8, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<Int16, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<Int32, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
+template IColumn::SmallSelector createBlockSelector<Int64, UInt16>(const IColumn & column, const std::vector<UInt64> & slots);
 
 }

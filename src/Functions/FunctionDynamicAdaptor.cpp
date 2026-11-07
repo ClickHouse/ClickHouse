@@ -10,6 +10,7 @@
 
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -443,6 +444,9 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     /// Create set of arguments for each variant using selector.
     VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
+    VectorWithMemoryTracking<size_t> counts;
+    if (arguments.size() > 1)
+        counts = countColumnsSizeInSelector(variants.size(), selector);
     for (size_t i = 0; i != arguments.size(); ++i)
     {
         if (i == dynamic_argument_index)
@@ -452,7 +456,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
         else
         {
-            auto columns = arguments[i].column->scatter(variants.size(), selector);
+            auto columns = arguments[i].column->scatterWithCounts(selector, counts);
             for (size_t j = 0; j != variants_arguments.size(); ++j)
                 variants_arguments[j].emplace_back(std::move(columns[j]), arguments[i].type, arguments[i].name);
         }

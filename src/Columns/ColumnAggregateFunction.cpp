@@ -764,8 +764,10 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
+    const size_t num_columns = counts.size();
     /// Columns with scattered values will point to this column as the owner of values.
     VectorWithMemoryTracking<MutableColumnPtr> columns(num_columns);
     for (auto & column : columns)
@@ -773,7 +775,6 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::scatter(size
 
     size_t num_rows = size();
 
-    const auto counts = countColumnsSizeInSelector(num_columns, selector);
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (counts[i] > 1)
@@ -784,6 +785,16 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::scatter(size
         assert_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
 
     return columns;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnAggregateFunction::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 void ColumnAggregateFunction::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,

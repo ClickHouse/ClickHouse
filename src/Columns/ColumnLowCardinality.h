@@ -188,7 +188,10 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().replicate(offsets), isSharedDictionary());
     }
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const Selector & selector, std::span<const size_t> counts) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const SmallSelector & selector, std::span<const size_t> counts) const override;
+    template <typename SelectorType>
+    VectorWithMemoryTracking<MutableColumnPtr> scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const;
 
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
     {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Core/Block_fwd.h>
 #include <Common/PODArray.h>
 
 #include <bit>
@@ -79,7 +80,27 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
+/// With a `SmallSelector`, `num_columns` above 65536 is a `LOGICAL_ERROR`.
 VectorWithMemoryTracking<size_t> countColumnsSizeInSelector(size_t num_columns, const IColumn::Selector & selector);
+VectorWithMemoryTracking<size_t> countColumnsSizeInSelector(size_t num_columns, const IColumn::SmallSelector & selector);
+
+/// The result of splitting several columns with one selector.
+struct ScatteredColumns
+{
+    /// `pieces[k]` holds piece k of every column, in the order of the source columns.
+    VectorWithMemoryTracking<MutableColumns> pieces;
+    /// `rows[k]` is the number of rows in piece k.
+    VectorWithMemoryTracking<size_t> rows;
+};
+
+/// Splits each column as `IColumn::scatter` does.
+/// `SourceColumns` is `Columns` or `ColumnRawPtrs`; `SelectorType` is `IColumn::Selector` or `IColumn::SmallSelector`.
+template <typename SourceColumns, typename SelectorType>
+ScatteredColumns scatterColumns(const SourceColumns & columns, size_t num_pieces, const SelectorType & selector);
+
+/// The same for the columns of a block. Piece k keeps the names and types of `block`, but not its `info`.
+template <typename SelectorType>
+Blocks scatterBlock(const Block & block, size_t num_pieces, const SelectorType & selector);
 
 /// Returns true, if the memory contains only zeros.
 bool memoryIsZero(const void * data, size_t start, size_t end);

@@ -14,6 +14,8 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 
+#include <variant>
+
 
 namespace DB
 {
@@ -21,10 +23,13 @@ namespace DB
 class DeduplicationInfo;
 using DeduplicationInfoPtr = std::shared_ptr<DeduplicationInfo>;
 
+/// `SelectorType` is `IColumn::Selector` or `IColumn::SmallSelector`. `selector` stays empty when there is one partition.
+/// With `IColumn::SmallSelector`, it is also empty past 65536 partitions; `partition_num_to_first_row` still lists them all.
+template <typename SelectorType>
 void buildScatterSelector(
     const ColumnRawPtrs & columns,
     PODArray<size_t> & partition_num_to_first_row,
-    IColumn::Selector & selector,
+    SelectorType & selector,
     size_t max_parts,
     ContextPtr context);
 
@@ -70,19 +75,21 @@ public:
     {
     }
 
+    using PartitionSelector = std::variant<IColumn::Selector, IColumn::SmallSelector>;
+
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       * When out_selector is set, it receives the row -> partition-index mapping (empty when the block
       * is not split, i.e. a single resulting partition). Deduplication needs it to attribute each
-      * source row to the partition it landed in.
+      * source row to the partition it landed in. The mapping uses 16-bit ids when the part limit allows them.
       */
     static BlocksWithPartition splitBlockIntoParts(
         Block && block,
         size_t max_parts,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
-        IColumn::Selector * out_selector = nullptr);
+        PartitionSelector * out_selector = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.

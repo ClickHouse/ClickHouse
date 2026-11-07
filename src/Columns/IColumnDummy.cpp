@@ -102,18 +102,27 @@ ColumnPtr IColumnDummy::replicate(const Offsets & offsets) const
     return cloneDummy(offsets.back());
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> IColumnDummy::scatter(size_t num_columns, const Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> IColumnDummy::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");
 
-    auto counts = countColumnsSizeInSelector(num_columns, selector);
-
-    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
+    VectorWithMemoryTracking<MutableColumnPtr> res(counts.size());
+    for (size_t i = 0; i < counts.size(); ++i)
         res[i] = cloneResized(counts[i]);
 
     return res;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> IColumnDummy::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> IColumnDummy::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 double IColumnDummy::getRatioOfDefaultRows(double) const
