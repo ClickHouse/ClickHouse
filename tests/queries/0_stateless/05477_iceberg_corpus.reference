@@ -71,8 +71,8 @@ iceberg/ice143_v2_schema_evolution `c`	ok
 iceberg/ice143_v2_schema_evolution `d`	ok
 iceberg/ice143_v2_schema_evolution `e`	ok
 iceberg/ice143_v2_schema_evolution `st`	ok
-iceberg/ice143_v2_schema_evolution `st`.`x`	NOT_FOUND_COLUMN_IN_BLOCK
-iceberg/ice143_v2_schema_evolution `st`.`y`	NOT_FOUND_COLUMN_IN_BLOCK
+iceberg/ice143_v2_schema_evolution `st`.`x`	ok
+iceberg/ice143_v2_schema_evolution `st`.`y`	ok
 iceberg/ice143_v2_schema_evolution content	15	ok
 iceberg/ice143_v2_schema_evolution content snapshot 1 append	5	ok
 iceberg/ice143_v2_schema_evolution content snapshot 2 append	10	ok
@@ -431,8 +431,8 @@ iceberg/v2_schema_evolution `c`	ok
 iceberg/v2_schema_evolution `d`	ok
 iceberg/v2_schema_evolution `e`	ok
 iceberg/v2_schema_evolution `st`	ok
-iceberg/v2_schema_evolution `st`.`x`	NOT_FOUND_COLUMN_IN_BLOCK
-iceberg/v2_schema_evolution `st`.`y`	NOT_FOUND_COLUMN_IN_BLOCK
+iceberg/v2_schema_evolution `st`.`x`	ok
+iceberg/v2_schema_evolution `st`.`y`	ok
 iceberg/v2_schema_evolution content	15	ok
 iceberg/v2_schema_evolution content snapshot 1 append	5	ok
 iceberg/v2_schema_evolution content snapshot 2 append	10	ok
