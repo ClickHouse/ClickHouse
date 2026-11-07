@@ -278,7 +278,7 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
 
     name = name.substr(0, prefix_bytes) + filler + name.substr(suffix_bytes_begin, std::string::npos);
 
-    return {name, cut_to};
+    return {name, UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size())};
 }
 
 }
