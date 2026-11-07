@@ -182,9 +182,9 @@ geoToH3(lat, lon, resolution)
 
 **Arguments**
 
-- `lat` — Latitude. [Float64](/reference/data-types/float).
-- `lon` — Longitude. [Float64](/reference/data-types/float).
-- `resolution` — Index resolution. Range: `[0, 15]`. [UInt8](/reference/data-types/int-uint).
+- `lat` — Latitude in degrees. Any numeric type.
+- `lon` — Longitude in degrees. Any numeric type.
+- `resolution` — Index resolution. Any integer type. Range: `[0, 15]`.
 
 **Returned values**
 
@@ -203,6 +203,18 @@ SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
 ┌────────────h3Index─┐
 │ 644325524701193974 │
 └────────────────────┘
+```
+
+**Example with integer coordinates and a UInt64 resolution**
+
+```sql title="Query"
+SELECT geoToH3(30, 120, toUInt64(5)) = geoToH3(30., 120., toUInt8(5)) AS sameIndex;
+```
+
+```text title="Response"
+┌─sameIndex─┐
+│         1 │
+└───────────┘
 ```
 
 ## h3ToGeo {#h3togeo}
