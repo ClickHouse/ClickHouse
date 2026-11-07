@@ -98,7 +98,10 @@ void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, C
 
 ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    return else_table_function->getActualTableStructure(context, is_insert_query);
+    /// Both `DESCRIBE` and `executeImpl` resolve the structure of the `ELSE` function before choosing a branch,
+    /// so it owes the same access checks as resolving that structure directly. The `ELSE` function is
+    /// executed separately, where its own execution-mode checks run.
+    return else_table_function->getActualTableStructureWithAccess(context, is_insert_query);
 }
 
 StoragePtr TableFunctionViewIfPermitted::executeImpl(
