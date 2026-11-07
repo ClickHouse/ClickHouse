@@ -33,10 +33,9 @@ void wrapPerArmConstructionSettings(
 /// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting.
 bool hasConstructionSettings(const IAST & ast);
 
-/// Throw if the query of a new `CREATE HANDLER` / `ALTER HANDLER ... AS` definition has construction settings that
-/// cannot be materialized: in one of two query-level `SETTINGS` clauses (`SELECT ... SETTINGS a FORMAT TSV SETTINGS b`),
-/// or under `EXPLAIN` / `EXECUTE AS` in both the clause after `FORMAT` and the statement's own. Not called when a stored
-/// definition is loaded, so a definition stored by an earlier version keeps loading.
+/// Throw if the query of a new handler definition has construction settings in one of two query-level `SETTINGS`
+/// clauses (`SELECT ... SETTINGS a FORMAT TSV SETTINGS b`) or, under `EXPLAIN` / `EXECUTE AS`, in both of them.
+/// Not for stored definitions: those written by earlier versions must keep loading.
 void checkStoredQueryConstructionSettings(const IAST & query);
 
 }

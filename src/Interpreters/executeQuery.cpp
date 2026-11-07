@@ -1957,8 +1957,6 @@ void wrapNestedConstructionSettings(
     }
     if (auto * create_handler = ast->as<ASTCreateHandlerQuery>())
     {
-        /// A handler stores its query and runs it later as a top-level query, so the query's own `SETTINGS`
-        /// clause gets the top-level scope, as for a query sent directly.
         if (create_handler->query)
         {
             ASTPtr query = create_handler->query;
@@ -2281,8 +2279,7 @@ static void applyQueryConstructionSettings(
     }
 }
 
-/// Wrap the top-level `SELECT` / `UNION` `ast` as the derived table of the outer query that materializes the
-/// construction settings; its top-level-only output options and query-level `SETTINGS` clause go to the outer query.
+/// Wrap the top-level `SELECT` / `UNION` `ast` as the derived table of an outer query that materializes the settings.
 static void wrapTopLevelQuery(
     ASTPtr & ast,
     const String & select_expr,
@@ -2528,18 +2525,14 @@ static std::pair<const ASTSetQuery *, const ASTSetQuery *> getQueryLevelSettings
     return {trailing, arm};
 }
 
-/// True if a query-level `SETTINGS` clause of the top-level query `select_union` carries a construction setting.
 static bool hasQueryLevelConstructionSettings(const ASTSelectWithUnionQuery & select_union)
 {
     auto [trailing, arm] = getQueryLevelSettingsClauses(select_union);
     return (trailing && hasConstructionSettings(*trailing)) || (arm && hasConstructionSettings(*arm));
 }
 
-/// `EXPLAIN` and `EXECUTE AS` keep the `SETTINGS` clause after `FORMAT` of their statement on their own node, but it
-/// is a query-level clause of the statement. If it is the statement's only clause with construction settings, they
-/// are materialized on the statement at the top level and removed from the wrapper. Returns false if the
-/// statement's own query-level clauses carry construction settings too: both are then kept as written, and
-/// `checkStoredQueryConstructionSettings` rejects the query.
+/// `EXPLAIN` and `EXECUTE AS` keep their statement's query-level `SETTINGS` clause after `FORMAT` on their own node.
+/// Materialize its construction settings on the statement; return false if the statement's own clauses have them too.
 static bool wrapWrapperConstructionSettings(
     ASTQueryWithOutput & wrapper, ASTPtr & statement, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
@@ -2560,10 +2553,8 @@ static bool wrapWrapperConstructionSettings(
     return true;
 }
 
-/// Materialize the construction settings of a query that is stored now and run later as a top-level query (the
-/// query of `CREATE HANDLER` / `ALTER HANDLER`): those of its own `SETTINGS` clause the way
-/// `applyQueryConstructionSettings` applies them to a query sent directly, then those of its subqueries. `EXPLAIN`
-/// and `EXECUTE AS` run their statement as a top-level query, so the statement is handled the same way.
+/// Materialize the construction settings of a query stored now and run later as a top-level query (a handler's query)
+/// as for a query sent directly. The statement of `EXPLAIN` / `EXECUTE AS` also runs as a top-level query.
 static void wrapStoredQueryConstructionSettings(
     ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
@@ -2611,9 +2602,7 @@ static void wrapStoredQueryConstructionSettings(
         auto [trailing, arm] = getQueryLevelSettingsClauses(*select_union);
         if (trailing && arm)
         {
-            /// One outer clause cannot keep how two query-level clauses are applied (their order, the scope of their
-            /// query parameters), so they stay as written: `checkStoredQueryConstructionSettings` rejects construction
-            /// settings in them. Only the subqueries are materialized.
+            /// Two query-level clauses stay as written; `checkStoredQueryConstructionSettings` rejects construction settings.
             for (auto & child : ast->children)
                 wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
             return;
@@ -2632,9 +2621,6 @@ static void wrapStoredQueryConstructionSettings(
     wrapNestedConstructionSettings(ast, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
-/// Whether `ast` keeps construction settings that cannot be materialized: those of a statement with two query-level
-/// `SETTINGS` clauses (the trailing clause of a `UNION` and its last arm's, or the clause that `EXPLAIN` /
-/// `EXECUTE AS` keeps for its statement and the statement's own).
 static bool hasUnmaterializableConstructionSettings(const IAST & ast)
 {
     const ASTQueryWithOutput * wrapper = nullptr;
