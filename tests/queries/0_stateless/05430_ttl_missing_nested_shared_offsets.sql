@@ -9,10 +9,11 @@ CREATE TABLE ttl_missing_nested_wide
     n Nested(a UInt64)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, max_bytes_to_merge_at_max_space_in_pool = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0,
-    vertical_merge_algorithm_min_columns_to_activate = 1;
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    vertical_merge_optimize_ttl_delete = 1;
 
 INSERT INTO ttl_missing_nested_wide VALUES (0, '2000-01-01', [1, 2]), (1, '2000-01-01', []);
 INSERT INTO ttl_missing_nested_wide VALUES (2, '2000-01-01', [3]), (3, '2000-01-01', [4, 5, 6]);
@@ -23,6 +24,9 @@ ALTER TABLE ttl_missing_nested_wide MODIFY TTL ts + INTERVAL 1 DAY DELETE WHERE 
 OPTIMIZE TABLE ttl_missing_nested_wide FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'wide after', count(), countIf(empty(n.d)) FROM ttl_missing_nested_wide;
 SELECT id, n.a, n.d FROM ttl_missing_nested_wide ORDER BY id;
+SELECT 'wide stored', arraySort(groupUniqArray(column))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_missing_nested_wide' AND active;
 DROP TABLE ttl_missing_nested_wide;
 
 DROP TABLE IF EXISTS ttl_missing_nested_compact;
@@ -33,7 +37,7 @@ CREATE TABLE ttl_missing_nested_compact
     n Nested(a UInt64)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000,
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000,
     max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO ttl_missing_nested_compact VALUES (0, '2000-01-01', [1, 2]), (1, '2000-01-01', []);
@@ -45,6 +49,9 @@ ALTER TABLE ttl_missing_nested_compact MODIFY TTL ts + INTERVAL 1 DAY DELETE WHE
 OPTIMIZE TABLE ttl_missing_nested_compact FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'compact after', count(), countIf(empty(n.d)) FROM ttl_missing_nested_compact;
 SELECT id, n.a, n.d FROM ttl_missing_nested_compact ORDER BY id;
+SELECT 'compact stored', arraySort(groupUniqArray(column))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_missing_nested_compact' AND active;
 DROP TABLE ttl_missing_nested_compact;
 
 DROP TABLE IF EXISTS ttl_missing_nested_unshared;

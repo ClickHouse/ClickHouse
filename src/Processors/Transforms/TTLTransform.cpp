@@ -4,6 +4,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/quoteString.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
@@ -14,9 +16,15 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
 
 namespace ErrorCodes
 {
@@ -151,6 +159,7 @@ TTLTransform::TTLTransform(
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
+    , share_nested_offsets((*storage_.getSettings())[MergeTreeSetting::share_nested_offsets])
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
@@ -359,7 +368,37 @@ void TTLTransform::consume(Chunk chunk)
         if (default_column)
             default_column = default_column->convertToFullColumnIfConst();
         else
-            default_column = data.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(data.type.get());
+            if (share_nested_offsets && array_type)
+            {
+                ISerialization::StreamFileNameSettings stream_settings;
+                stream_settings.share_nested_offsets = share_nested_offsets;
+                const ISerialization::SubstreamPath offsets_path{ISerialization::Substream::ArraySizes};
+                const auto offsets_stream = ISerialization::getFileNameForStream(column, offsets_path, stream_settings);
+
+                /// Use the same offsets stream as the readers, without materializing the expired column in the part.
+                for (const auto & sibling : block)
+                {
+                    if (expired_columns_data.contains(sibling.name)
+                        || ISerialization::getFileNameForStream(sibling.name, offsets_path, stream_settings) != offsets_stream)
+                        continue;
+
+                    const auto * sibling_array = typeid_cast<const ColumnArray *>(sibling.column.get());
+                    if (!sibling_array)
+                        continue;
+
+                    const auto & offsets = sibling_array->getOffsets();
+                    const size_t data_size = offsets.empty() ? 0 : offsets.back();
+                    auto nested = array_type->getNestedType()->createColumnConstWithDefaultValue(data_size)->convertToFullColumnIfConst();
+                    default_column = ColumnArray::create(nested, sibling_array->getOffsetsPtr());
+                    break;
+                }
+            }
+
+            if (!default_column)
+                default_column = data.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst();
+        }
 
         /// Expired column may pre-exist (e.g. from customized merges like ReplacingMergeTree with version key), so
         /// replace it with default instead of inserting a new one.

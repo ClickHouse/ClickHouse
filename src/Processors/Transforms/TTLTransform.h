@@ -54,6 +54,7 @@ private:
     const MergeTreeData::MutableDataPartPtr & data_part;
 
     NamesAndTypesList expired_columns;
+    const bool share_nested_offsets;
 
     struct ExpiredColumnData
     {
