@@ -869,7 +869,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.size() > 11 && initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
+        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
         const auto & current_uri_override = request.getURIOverride();
@@ -1437,10 +1437,6 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
-
-    /// Only after the credentials providers have taken their copies of the configuration: their
-    /// requests are helper traffic and must not be reported as the connection of a logged request.
-    client_configuration.publish_connection_info = true;
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)

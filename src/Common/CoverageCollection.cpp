@@ -26,7 +26,8 @@ void collectAndInsertCoverage(
 {
     if (name_refs.empty())
     {
-        LOG_INFO(getLogger("CoverageCollection"), "No covered counters for test '{}', skipping", test_name);
+        auto msg = fmt::format("CoverageCollection: No covered counters for test '{}', skipping", test_name);
+        LOG_INFO(getLogger("CoverageCollection"), "{}", msg);
         return;
     }
 

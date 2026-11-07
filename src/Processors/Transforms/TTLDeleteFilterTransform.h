@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -27,7 +26,7 @@ public:
             TTLExpressions expressions;
             TTLDescription description;
         };
-        VectorWithMemoryTracking<Entry> entries;
+        std::vector<Entry> entries;
         bool all_data_dropped = false;
         time_t current_time = 0;
     };

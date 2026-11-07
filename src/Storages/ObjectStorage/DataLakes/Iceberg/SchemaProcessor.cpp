@@ -1055,24 +1055,6 @@ std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(P
     return result;
 }
 
-std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema)
-{
-    std::unordered_set<Int64> result;
-    for (UInt32 i = 0; i < schema->size(); ++i)
-    {
-        auto current_object = schema->getObject(i);
-        if (current_object->has(Iceberg::f_type))
-            forEachFieldId(
-                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
-                [&](Int64 field_id, const Poco::Dynamic::Var & type)
-                {
-                    if (type.isString() && canonicalizeTypeName(type.extract<String>()) == Iceberg::f_time)
-                        result.insert(field_id);
-                });
-    }
-    return result;
-}
-
 void IcebergSchemaProcessor::updateLastColumnId(Int32 last_column_id_)
 {
     Int64 current = last_column_id.load();
@@ -1097,7 +1079,6 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
     column_mapper->setStorageColumnEncoding(IcebergSchemaProcessor::traverseSchema(fields));
     column_mapper->setIcebergStringPaths(IcebergSchemaProcessor::collectIcebergStringPaths(fields));
     column_mapper->setIcebergOptionalPaths(IcebergSchemaProcessor::collectIcebergOptionalPaths(fields));
-    column_mapper->setIcebergTimeFieldIds(IcebergSchemaProcessor::collectIcebergTimeFieldIds(fields));
     return column_mapper;
 }
 

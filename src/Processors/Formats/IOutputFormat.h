@@ -43,10 +43,6 @@ public:
     void flush();
     void setAutoFlush() { auto_flush = true; }
 
-    /// Locks the writing methods. A format can also write from a background thread under this lock (`Pretty` formats
-    /// write the squashed blocks there), so the owner of the output buffer holds it to access the buffer between the calls.
-    std::unique_lock<std::mutex> lockWriting() { return std::unique_lock(writing_mutex); }
-
     /// Value for rows_before_limit_at_least field.
     virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
 
@@ -101,7 +97,6 @@ public:
     virtual void setException(const String & /*exception_message*/) {}
 
     virtual std::unordered_map<String, size_t> getColumnSizesOnDisk() const { return {}; }
-    virtual std::vector<UInt64> getRowGroupOffsets() const { return {}; }
 
     /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
     /// packets (progress, logs, profile events, exceptions) in the output stream. The format must
