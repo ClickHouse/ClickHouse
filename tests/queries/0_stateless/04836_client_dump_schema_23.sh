@@ -16,11 +16,10 @@ rm -rf "$work"
 mkdir -p "$work"
 trap 'rm -rf "$work"' EXIT
 
-# Every directory and symlink, and every file with its checksum and size, of the data path `$1`, except the `status`
-# file that each run rewrites.
+# Every directory and symlink, and every file with its checksum and size, of the data path `$1`.
 snapshot()
 {
-    (cd "$1" && find . -mindepth 1 \( -type d -o -type l \) | LC_ALL=C sort && find . -type f ! -name status -exec cksum {} + | LC_ALL=C sort -k3)
+    (cd "$1" && find . -mindepth 1 \( -type d -o -type l \) | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort -k3)
 }
 
 echo '--- a dump changes no file of the data path ---'
@@ -55,6 +54,12 @@ cp "$src/metadata/o/t.sql" "$src/metadata/o/gone.sql.tmp_drop"
 # A leftover of the temporary storage, which its initialization removes, and a mark that the access lists need a rebuild.
 mkdir -p "$src/tmp" "$src/access"
 touch "$src/tmp/tmp_leftover" "$src/access/need_rebuild_lists.mark"
+# A temporary file of a named collection and the status file of a crashed instance, which startup removes, and no
+# directory for dynamic executable functions, which startup creates.
+mkdir -p "$src/named_collections"
+echo 'CREATE NAMED COLLECTION nc AS a = 1' > "$src/named_collections/nc.sql.tmp"
+printf 'PID: 1\n' > "$src/status"
+rm -rf "$src/dynamic_user_defined_executable_functions"
 
 before=$(snapshot "$src")
 $CLICKHOUSE_LOCAL --path "$src" --dump-schema=d,o > "$work/dump.sql" 2> "$work/err.txt" || echo "FAIL: dump failed: $(cat "$work/err.txt")"

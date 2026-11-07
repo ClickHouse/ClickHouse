@@ -768,7 +768,8 @@ void LocalServer::tryInitPath()
     {
         try
         {
-            status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+            /// The dump only locks the directory and keeps a status file left by another instance.
+            status.emplace(fs::path(path) / "status", getClientConfiguration().has("dump-schema") ? nullptr : StatusFile::write_full_info);
         }
         catch (Exception & e)
         {
@@ -812,7 +813,8 @@ void LocalServer::tryInitPath()
         "dynamic_user_defined_executable_functions_path",
         fs::path(path) / "dynamic_user_defined_executable_functions" / "");
     global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
-    fs::create_directories(dynamic_udf_path);
+    if (!getClientConfiguration().has("dump-schema"))
+        fs::create_directories(dynamic_udf_path);
 
     /// Set path for filesystem caches
     String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
