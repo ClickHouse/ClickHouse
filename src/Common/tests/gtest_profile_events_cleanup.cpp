@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <optional>
 #include <thread>
 
 #if defined(OS_LINUX)
@@ -22,6 +23,8 @@ namespace ProfileEvents
 {
     extern const Event TextIndexLazyAdvanceCount;
     extern const Event DirectorySync;
+    extern const Event QueryMemoryDriftSettled;
+    extern const Event QueryMemoryDriftSettledBytes;
     extern const Event MetadataTransactionRollbacks;
     extern const Event MetadataTransactionRollbacksFailed;
 }
@@ -119,6 +122,33 @@ TEST(ProfileEventsCleanup, DirectorySyncPreservesPublishingScopeAndClosesDescrip
     EXPECT_EQ(creator_group->performance_counters[event], 0);
 }
 #endif
+
+TEST(ProfileEventsCleanup, MemoryDriftSettlementPreservesPublishingScopeAfterThreadHandoff)
+{
+    MemoryTracker user(nullptr, VariableContext::User, false);
+    std::optional<MemoryTracker> query;
+    query.emplace(&user, VariableContext::Process, false);
+    query->adjustWithUntrackedMemory(64);
+    ASSERT_EQ(user.get(), 64);
+
+    std::thread publisher([&]
+    {
+        ThreadStatus status;
+        {
+            ProfileEventsScope scope;
+            {
+                DENY_ALLOCATIONS_IN_SCOPE;
+                query.reset();
+            }
+            EXPECT_EQ(CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryDriftSettled], 1);
+            EXPECT_EQ(CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryDriftSettledBytes], 64);
+        }
+        EXPECT_EQ(CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryDriftSettled], 1);
+        EXPECT_EQ(CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryDriftSettledBytes], 64);
+    });
+    publisher.join();
+    EXPECT_EQ(user.get(), 0);
+}
 
 TEST(ProfileEventsCleanup, MetadataRollbackPreservesOriginalFailure)
 {

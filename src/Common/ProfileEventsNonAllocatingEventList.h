@@ -40,6 +40,8 @@
     M(MemoryLargeAllocationTraced) \
     M(QueryMemoryLimitExceeded) \
     M(GlobalMemoryLimitExceeded) \
+    M(QueryMemoryDriftSettled) \
+    M(QueryMemoryDriftSettledBytes) \
     M(PageCacheOvercommitResize) \
     M(ConcurrencyControlWaitMicroseconds) \
     M(ConcurrencyControlPreemptedMicroseconds) \
