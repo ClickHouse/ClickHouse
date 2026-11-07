@@ -1,0 +1,16 @@
+one block
+[0]	[0]
+NULL-bearing rows in their own block
+[0]	[0]
+[0]	[0]
+merge of states
+[0]	[0]
+Tuple
+(0,0)	(0,0)
+(0,0)	(0,0)
+Map
+{0:0}	{0:0}
+{0:0}	{0:0}
+MergeTree parts
+[0]	[0]
+[0]	[0]
