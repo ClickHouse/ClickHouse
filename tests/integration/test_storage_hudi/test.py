@@ -401,6 +401,25 @@ def completed_replace_commits(path, table_version):
     return [name for name in names if re.fullmatch(pattern, name)]
 
 
+def timeline_instants(path, table_version):
+    # {requested time: action} of the completed instants of the active timeline, and
+    # the requested times of the instants that did not complete.
+    if table_version == 6:
+        directory, pattern = ".hoodie", r"(\d+)\.(\w+)"
+    else:
+        directory, pattern = ".hoodie/timeline", r"(\d+)_\d+\.(\w+)"
+    completed = {}
+    started = set()
+    for name in os.listdir(os.path.join(path, directory)):
+        match = re.fullmatch(pattern, name)
+        if match and match.group(2) != "inflight":
+            completed[match.group(1)] = match.group(2)
+        match = re.fullmatch(r"(\d+)\.(?:\w+\.requested|\w+\.inflight|inflight)", name)
+        if match:
+            started.add(match.group(1))
+    return completed, started - completed.keys()
+
+
 def parquet_files(path):
     return {
         os.path.relpath(os.path.join(root, name), path)
@@ -714,3 +733,149 @@ def test_replaced_file_groups(started_cluster, table_version):
             for obj in minio_client.list_objects(root_bucket, recursive=True):
                 minio_client.remove_object(root_bucket, obj.object_name)
             minio_client.remove_bucket(root_bucket)
+
+
+@pytest.mark.parametrize("table_version", [6, 9])
+def test_uncommitted_base_files(started_cluster, table_version):
+    """A write that failed or is still running leaves base files of an instant that
+    did not complete. Hudi does not read them, and ClickHouse must not either."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    name = f"test_uncommitted_base_files_{table_version}_{uuid.uuid4().hex[:8]}"
+    tmp_dir = tempfile.mkdtemp()
+
+    def table(arm):
+        prefix = f"{name}_{arm}/"
+        path = os.path.join(tmp_dir, f"{name}_{arm}")
+        return path, prefix, f"hudi(s3, filename='{prefix}')"
+
+    try:
+        # B: an upsert refused by a pre-commit validator after writing its base files.
+        path, prefix, source = table("b")
+        inserted = [(i, i * 7) for i in range(10)]
+        write_hudi_table(
+            spark,
+            path,
+            [(i, v, 1) for i, v in inserted],
+            "insert",
+            table_version,
+            False,
+        )
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_rows(instance, source, "id, v", inserted)
+        completed, _ = timeline_instants(path, table_version)
+        with pytest.raises(Exception, match="HoodieValidationException"):
+            write_hudi_table(
+                spark,
+                path,
+                [(i, i * 100, 2) for i in [*range(5), *range(10, 13)]],
+                "upsert",
+                table_version,
+                False,
+                {
+                    "hoodie.precommit.validators": "org.apache.hudi.client.validator."
+                    + "SqlQuerySingleResultPreCommitValidator",
+                    "hoodie.precommit.validators.single.value.sql.queries": "select count(*) from <TABLE_NAME>#-1",
+                },
+            )
+        after, pending = timeline_instants(path, table_version)
+        assert after == completed
+        assert len(pending) == 1
+        (instant,) = pending
+        assert int(instant) > max(map(int, completed))
+        assert any(file.endswith(f"_{instant}.parquet") for file in parquet_files(path))
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_rows(instance, source, "id, v", inserted)
+        rows = spark.read.format("hudi").load(path).select("id", "v").collect()
+        assert sorted(tuple(row) for row in rows) == inserted
+
+        # C: the base file of an archived commit is still read.
+        path, prefix, source = table("c")
+        archival = {
+            "hoodie.keep.min.commits": "2",
+            "hoodie.keep.max.commits": "3",
+            "hoodie.clean.commits.retained": "1",
+        }
+        write_hudi_table(
+            spark, path, [(0, "a", 0, 1)], "insert", table_version, True, archival
+        )
+        (first,) = timeline_instants(path, table_version)[0]
+        expected = [(0, "a", 0)]
+        for i in range(1, 9):
+            write_hudi_table(
+                spark,
+                path,
+                [(i, "b", i * 7, 1)],
+                "insert",
+                table_version,
+                True,
+                archival,
+            )
+            expected.append((i, "b", i * 7))
+            if first not in timeline_instants(path, table_version)[0]:
+                break
+        completed, _ = timeline_instants(path, table_version)
+        assert first not in completed
+        assert int(first) < min(map(int, completed))
+        assert [
+            file.split("_")[-1] for file in parquet_files(path) if file.startswith("a/")
+        ] == [f"{first}.parquet"]
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_rows(instance, source, "id, p, v", expected)
+
+        # D: the base files of a delta commit of a Merge-on-Read table.
+        path, prefix, source = table("d")
+        write_hudi_table(
+            spark,
+            path,
+            [(i, i * 7, 1) for i in range(10)],
+            "insert",
+            table_version,
+            False,
+            {"hoodie.datasource.write.table.type": "MERGE_ON_READ"},
+        )
+        assert list(timeline_instants(path, table_version)[0].values()) == [
+            "deltacommit"
+        ]
+        data_files = [
+            file
+            for file in os.listdir(path)
+            if not file.endswith(".crc")
+            and file not in (".hoodie", ".hoodie_partition_metadata")
+        ]
+        assert data_files and all(file.endswith(".parquet") for file in data_files)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_rows(instance, source, "id, v", [(i, i * 7) for i in range(10)])
+
+        # E: a write that has not completed but is older than the completed one (another writer committed first).
+        path, prefix, source = table("e")
+        write_hudi_table(spark, path, [(0, "a", 7, 1)], "insert", table_version, True)
+        write_hudi_table(spark, path, [(1, "b", 14, 1)], "insert", table_version, True)
+        completed, pending = timeline_instants(path, table_version)
+        assert not pending and sorted(completed.values()) == ["commit", "commit"]
+        first = min(completed, key=int)
+        if table_version == 6:
+            completion_file = os.path.join(path, ".hoodie", f"{first}.commit")
+        else:
+            timeline_dir = os.path.join(path, ".hoodie", "timeline")
+            (completion_name,) = [
+                file
+                for file in os.listdir(timeline_dir)
+                if re.fullmatch(rf"{first}_\d+\.commit", file)
+            ]
+            completion_file = os.path.join(timeline_dir, completion_name)
+        shutil.move(completion_file, tmp_dir)
+        completed, pending = timeline_instants(path, table_version)
+        assert pending == {first}
+        assert first not in completed
+        assert int(first) < min(map(int, completed))
+        files_a = [file for file in parquet_files(path) if file.startswith("a/")]
+        assert files_a and all(file.endswith(f"_{first}.parquet") for file in files_a)
+        upload_hudi_table(minio_client, bucket, path, prefix)
+        assert_rows(instance, source, "id, p, v", [(1, "b", 14)])
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        for arm in "bcde":
+            remove_directory(minio_client, bucket, f"{name}_{arm}")

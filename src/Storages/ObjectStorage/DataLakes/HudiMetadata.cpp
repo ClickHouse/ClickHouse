@@ -19,6 +19,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #endif
 
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -65,17 +66,36 @@ std::string_view directoryInTable(std::string_view key, std::string_view root)
     return slash == std::string_view::npos ? "" : key.substr(0, slash);
 }
 
-/// `<digits>.replacecommit`, and in layout 2 also `<requested time>_<completion time>.replacecommit`.
-bool isCompletedReplaceCommitName(std::string_view file_name, bool with_completion_time)
+struct CompletedInstant
 {
-    static constexpr std::string_view suffix = ".replacecommit";
-    if (!file_name.ends_with(suffix))
-        return false;
-    file_name.remove_suffix(suffix.size());
-    size_t separator = file_name.find('_');
+    std::string_view requested;
+    std::string_view completion;
+    std::string_view action;
+};
+
+/// `<digits>.<action>`, and in layout 2 also `<requested time>_<completion time>.<action>`.
+std::optional<CompletedInstant> parseCompletedInstantName(std::string_view file_name, bool with_completion_time)
+{
+    size_t dot = file_name.find('.');
+    if (dot == std::string_view::npos)
+        return std::nullopt;
+    std::string_view time = file_name.substr(0, dot);
+    std::string_view action = file_name.substr(dot + 1);
+    if (action.empty() || action.contains('.'))
+        return std::nullopt;
+
+    size_t separator = time.find('_');
     if (separator == std::string_view::npos)
-        return isNumber(file_name);
-    return with_completion_time && isNumber(file_name.substr(0, separator)) && isNumber(file_name.substr(separator + 1));
+    {
+        if (!isNumber(time))
+            return std::nullopt;
+        return CompletedInstant{time, time, action};
+    }
+    std::string_view requested = time.substr(0, separator);
+    std::string_view completion = time.substr(separator + 1);
+    if (!with_completion_time || !isNumber(requested) || !isNumber(completion))
+        return std::nullopt;
+    return CompletedInstant{requested, completion, action};
 }
 
 /// Parses the Java `Properties.load` format. Returns nothing for a malformed `\uXXXX` escape.
@@ -306,6 +326,30 @@ void collectReplacedFileGroups(
     LOG_TRACE(log, "Hudi instant {} replaces {} file groups", instant.relative_path, num_replaced);
 }
 
+/// Requested time of a pending instant of a write action, the same names in both layouts:
+/// `<t>.inflight` (a commit), `<t>.<action>.requested`, `<t>.<action>.inflight`.
+std::optional<std::string_view> parsePendingWriteInstantTime(std::string_view file_name)
+{
+    size_t dot = file_name.find('.');
+    if (dot == std::string_view::npos || !isNumber(file_name.substr(0, dot)))
+        return std::nullopt;
+    std::string_view time = file_name.substr(0, dot);
+    std::string_view state = file_name.substr(dot + 1);
+    if (state == "inflight")
+        return time;
+
+    size_t state_dot = state.find('.');
+    if (state_dot == std::string_view::npos)
+        return std::nullopt;
+    std::string_view action = state.substr(0, state_dot);
+    std::string_view suffix = state.substr(state_dot + 1);
+    static constexpr std::string_view write_actions[]
+        = {"commit", "deltacommit", "compaction", "logcompaction", "replacecommit", "clustering"};
+    if ((suffix != "requested" && suffix != "inflight") || std::ranges::find(write_actions, action) == std::end(write_actions))
+        return std::nullopt;
+    return time;
+}
+
 }
 
 /**
@@ -328,6 +372,7 @@ void collectReplacedFileGroups(
     * [File Id]_[File Write Token]_[Transaction timestamp].[File Extension]
     *
     * To find needed parts we need to find out latest part file for every file group for every partition.
+    * Only base files of completed (or archived) instants are candidates, as Hudi reads only committed file slices.
     * Explanation why:
     *    Hudi reads in and overwrites the entire table/partition with each update.
     *    Hudi controls the number of file groups under a single partition according to the
@@ -344,6 +389,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     std::optional<RelativePathWithMetadata> properties_file;
     std::optional<RelativePathWithMetadata> backup_file;
     std::vector<RelativePathWithMetadata> instants;
+    /// Directory in the table -> names of its files, for the timeline directories of both layouts.
+    std::unordered_map<String, Strings> timeline_directory_files;
     /// Listed before the data files, so the new files of every instant applied below are listed too.
     listFiles(
         *object_storage,
@@ -355,6 +402,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             if (!key.starts_with(table_path))
                 return false;
             std::string_view path_in_table = std::string_view(key).substr(table_path.size());
+            if (std::string_view directory = directoryInTable(key, table_path); directory == ".hoodie" || directory == ".hoodie/timeline")
+                timeline_directory_files[String(directory)].push_back(object.getFileName());
             if (path_in_table == ".hoodie/hoodie.properties")
                 properties_file.emplace(object);
             else if (path_in_table == ".hoodie/hoodie.properties.backup")
@@ -378,9 +427,38 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     ReplacedFileGroups replaced;
     for (auto & instant : instants)
     {
-        if (directoryInTable(instant.relative_path, table_path) == timeline->directory
-            && isCompletedReplaceCommitName(instant.getFileName(), timeline->layout_2))
+        if (directoryInTable(instant.relative_path, table_path) != timeline->directory)
+            continue;
+        const String file_name = instant.getFileName();
+        auto completed = parseCompletedInstantName(file_name, timeline->layout_2);
+        if (completed && completed->action == "replacecommit")
             collectReplacedFileGroups(instant, object_storage, local_context, log, replaced);
+    }
+
+    /// Requested times of the completed write instants in the active timeline, nothing without a timeline. A base file of
+    /// another instant belongs to a failed or running write, unless it precedes every write instant, pending ones included.
+    std::optional<std::set<UInt64>> committed;
+    std::optional<UInt64> first_write_instant;
+    if (timeline)
+    {
+        committed.emplace();
+        std::optional<UInt64> earliest_pending;
+        if (auto it = timeline_directory_files.find(timeline->directory); it != timeline_directory_files.end())
+        {
+            for (const auto & file_name : it->second)
+            {
+                auto completed = parseCompletedInstantName(file_name, timeline->layout_2);
+                if (UInt64 requested = 0; completed
+                    && (completed->action == "commit" || completed->action == "deltacommit" || completed->action == "replacecommit")
+                    && tryParse(requested, completed->requested))
+                    committed->insert(requested);
+                else if (auto pending = parsePendingWriteInstantTime(file_name); pending && tryParse(requested, *pending))
+                    earliest_pending = std::min(requested, earliest_pending.value_or(requested));
+            }
+        }
+        first_write_instant = earliest_pending;
+        if (!committed->empty() && (!first_write_instant || *committed->begin() < *first_write_instant))
+            first_write_instant = *committed->begin();
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_after_listing_timeline);
@@ -424,6 +502,8 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
         const auto & file_id = file_parts[0];
         const auto timestamp = parse<UInt64>(file_parts[2]);
         if (auto it = replaced.find(partition); it != replaced.end() && it->second.contains(file_id))
+            continue;
+        if (committed && !committed->contains(timestamp) && (!first_write_instant || timestamp >= *first_write_instant))
             continue;
 
         auto & file_info = files[partition][file_id];
