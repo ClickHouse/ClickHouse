@@ -10231,7 +10231,7 @@ for these rows from the original full-precision vectors in the regular SQL pipel
 When possible, ClickHouse filters the scan to candidate rows before the final distance computation.
 Increase `vector_search_index_fetch_multiplier` if more candidate rows are needed for better recall, especially
 with additional filters or quantized vector indexes.
-Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
+Note: A query run without rescoring may fall back to rescoring if parallel replicas are enabled or if it reads with `FINAL`.
 )", 0, \
         {"25.8", true, false, "New setting."}) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(

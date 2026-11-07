@@ -6,7 +6,9 @@ FINAL, deferred PREWHERE, no rescoring: correct result
 0
 FINAL, deferred PREWHERE, rescoring: correct result
 0
-FINAL, no PREWHERE, no rescoring: the vector column is replaced (control)
+no FINAL, no PREWHERE, no rescoring: the vector column is replaced (control)
+1
+FINAL, no PREWHERE, no rescoring: the vector column is kept
 1
 FINAL, deferred PREWHERE, no rescoring: the vector column is kept
 1

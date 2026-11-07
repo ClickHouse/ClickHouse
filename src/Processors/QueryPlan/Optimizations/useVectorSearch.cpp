@@ -430,11 +430,11 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
     ActionsDAG & expression = expression_step->getExpression();
 
-    bool optimize_plan = !settings.vector_search_with_rescoring;
-    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
-    /// vector row hints only describe the original candidates and must not filter
-    /// rows added for the final merge.
-    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
+    /// The vector row hints describe only the candidates of each part. Under FINAL every row version, including the
+    /// ranges added by `use_skip_indexes_if_final_exact_mode`, must reach the final merge, so no row is filtered in the reader.
+    const bool is_final = read_from_mergetree_step->isQueryWithFinal();
+    bool optimize_plan = !settings.vector_search_with_rescoring && !is_final;
+    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !is_final;
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;

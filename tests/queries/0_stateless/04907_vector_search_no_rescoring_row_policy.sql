@@ -73,9 +73,8 @@ SELECT count() FROM
 WHERE explain LIKE '%Sort description: sqrt(_distance)%'
 SETTINGS make_distributed_plan = 0;
 
--- With `FINAL`, this non-consuming policy is deferred and replayed by `FilterTransform`. Its
--- redundant vector-column passthrough must be pruned there as well, so the no-rescoring rewrite
--- keeps applying and the plan still sorts by `_distance`.
+-- With `FINAL` the no-rescoring rewrite does not apply: every row version must reach the final merge, so the plan
+-- does not sort by `_distance`. The query above without `FINAL` keeps the check from passing vacuously.
 SELECT count() FROM
 (
     EXPLAIN SELECT id FROM tab_vec_row_policy FINAL

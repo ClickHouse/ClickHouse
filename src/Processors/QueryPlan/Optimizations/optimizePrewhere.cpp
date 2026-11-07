@@ -57,6 +57,10 @@ static bool shouldSuppressPrewhereForVectorSearch(const ReadFromMergeTree & read
     if (read_from_merge_tree_step.isParallelReadingFromReplicas())
         return false;
 
+    /// Under FINAL the vector search read hints never filter rows.
+    if (read_from_merge_tree_step.isQueryWithFinal())
+        return false;
+
     auto analyzed_result = read_from_merge_tree_step.getAnalyzedResult();
     analyzed_result = analyzed_result ? analyzed_result : read_from_merge_tree_step.selectRangesToRead();
     if (!analyzed_result)
@@ -64,9 +68,6 @@ static bool shouldSuppressPrewhereForVectorSearch(const ReadFromMergeTree & read
 
     if (settings[Setting::vector_search_with_rescoring])
     {
-        if (read_from_merge_tree_step.isQueryWithFinal())
-            return false;
-
         for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
         {
             if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
