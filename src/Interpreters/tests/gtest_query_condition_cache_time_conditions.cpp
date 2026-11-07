@@ -262,3 +262,19 @@ TEST(QueryConditionCacheTimeConditions, UnsupportedShapesAreNotDerived)
         EXPECT_FALSE(deriveDeterministicTimeCondition(test.condition, TimeConditionRounding::Weaken, 0.0, now));
     }
 }
+
+TEST(QueryConditionCacheTimeConditions, DateTime64NearInt64MinDoesNotOverflowFraction)
+{
+    Int64 noon = day_start + day / 2;
+    time_t now = noon + 10 * day;
+    for (UInt32 scale : {4u, 6u, 9u})
+    {
+        auto type = std::make_shared<DataTypeDateTime64>(scale, "UTC");
+        Field constant = DecimalField<DateTime64>(DateTime64(std::numeric_limits<Int64>::min() + 1), scale);
+        ComparisonCase test("greaterOrEquals", std::static_pointer_cast<const IDataType>(type), constant);
+
+        /// Floor-rounded ticks for INT64_MIN + 1 overflow Int64 multiplication, so derivation must safely return nullopt without signed overflow.
+        EXPECT_FALSE(deriveDeterministicTimeCondition(test.condition, TimeConditionRounding::Weaken, 1.0, now));
+        EXPECT_FALSE(deriveDeterministicTimeCondition(test.condition, TimeConditionRounding::Strengthen, 1.0, now));
+    }
+}
