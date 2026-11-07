@@ -1,0 +1,12 @@
+y < 5 sqp=0 10
+y < 5 sqp=1 10
+y IN (SELECT y FROM rp_fa_lookup) sqp=0 3
+y IN (SELECT y FROM rp_fa_lookup) sqp=1 3
+u_alias rp_fa_merge sqp=0 4950
+u_alias rp_fa_merge sqp=1 4950
+u_alias rp_fa_leaf sqp=0 4950
+u_alias rp_fa_leaf sqp=1 4950
+u_name rp_fa_merge sqp=0 10
+u_name rp_fa_merge sqp=1 10
+u_name rp_fa_leaf sqp=0 10
+u_name rp_fa_leaf sqp=1 10

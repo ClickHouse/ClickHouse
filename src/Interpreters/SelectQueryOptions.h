@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
+#include <memory>
 #include <optional>
+#include <utility>
 
 namespace DB
 {
+
+struct FilterDAGInfo;
 
 /**
  * to_stage
@@ -55,6 +59,20 @@ struct SelectQueryOptions
     /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
     bool check_subquery_table_access = false;
 
+    /// A read of a serialized query plan planned again (`resolveStorages.cpp`): the caller checks the grants and
+    /// `max_columns_to_read`, and the planner skips the row policy if `row_policy_in_plan`. `additional_filter` is the
+    /// entry of the sender. If `additional_filter_in_plan`, its filter step stays in the plan and the planner skips an
+    /// entry of its own that is the same. If not, the planner applies that entry too. If `additional_filter_actions` is
+    /// set, the planner stores the filter there instead, for the caller to apply where the sender applies its entry.
+    struct ShippedRead
+    {
+        bool row_policy_in_plan = false;
+        std::optional<String> additional_filter;
+        bool additional_filter_in_plan = false;
+        std::shared_ptr<FilterDAGInfo> additional_filter_actions;
+    };
+    std::optional<ShippedRead> shipped_read;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -100,6 +118,9 @@ struct SelectQueryOptions
         out.to_stage = QueryProcessingStage::Complete;
         out.is_local_shard_plan = false;
         out.is_local_plan_for_distributed_query = false;
+        out.shipped_read.reset();
+        /// A subquery's output is consumed through column identifiers, never by source column name.
+        out.ignore_rename_columns = false;
         out.is_secondary_query_root = false;
         ++out.subquery_depth;
         out.is_subquery = true;

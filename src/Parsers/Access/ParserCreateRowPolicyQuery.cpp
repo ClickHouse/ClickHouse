@@ -485,7 +485,7 @@ This does not extend to every table that reads from another table. A `Buffer` ta
 
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 
-A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](/reference/engines/table-engines/special/distributed) table or a wrapper over one (for example, a materialized view with a `Distributed` target), only ships the query text to the remote servers and cannot apply the policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
+A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](/reference/engines/table-engines/special/distributed) table or a wrapper over one (for example, a materialized view with a `Distributed` target), sends the read to those servers as query text or as an already-built read plan, and in neither form can it apply its own policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
 
 Instead, define the policy on the underlying local tables on each remote server; it is applied there when the shipped query reads them:
 
@@ -495,7 +495,7 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 ```
 
 <Warning>
-This works while the query is shipped as text, which is the default. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep `serialize_query_plan = 0` for users whose row policies must be enforced. See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
+Define the same policy on every server that holds the data. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan, and when it cannot apply its policy inside the read (an engine without `PREWHERE` support, or a policy on a column the engine does not filter in `PREWHERE`) that plan carries the initiator's policy instead of the executing server's own.
 </Warning>
 
 ## Join tables {#join-tables}

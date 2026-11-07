@@ -1,0 +1,14 @@
+<clickhouse>
+    <remote_servers>
+        <!-- The secret makes the receiver run the query as the initial user, with its own grants. -->
+        <receiver_only>
+            <secret>secret</secret>
+            <shard>
+                <replica>
+                    <host>receiver</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </receiver_only>
+    </remote_servers>
+</clickhouse>

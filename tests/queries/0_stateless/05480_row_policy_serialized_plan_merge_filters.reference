@@ -1,0 +1,52 @@
+atf on merge sqp=1 ONCE
+atf on merge sqp=0 ONCE
+constant atf on merge sqp=1 1
+constant atf on merge sqp=0 1
+two-valued constant atf on merge sqp=1 1
+two-valued constant atf on merge sqp=0 1
+constant atf on policy table sqp=1 1
+constant atf on policy table sqp=0 1
+arrayJoin atf on rp_mf_merge sqp=1 200
+arrayJoin atf on rp_mf_merge sqp=0 200
+arrayJoin atf on rp_mf_leaf sqp=1 200
+arrayJoin atf on rp_mf_leaf sqp=0 200
+arrayJoin atf after PREWHERE on rp_mf_merge sqp=1 10
+throwIf atf after PREWHERE on rp_mf_merge sqp=1 5
+arrayJoin atf after PREWHERE on rp_mf_merge sqp=0 10
+throwIf atf after PREWHERE on rp_mf_merge sqp=0 5
+arrayJoin atf after PREWHERE on rp_mf_leaf sqp=1 10
+throwIf atf after PREWHERE on rp_mf_leaf sqp=1 5
+arrayJoin atf after PREWHERE on rp_mf_leaf sqp=0 10
+throwIf atf after PREWHERE on rp_mf_leaf sqp=0 5
+IN set atf on rp_mf_leaf sqp=1 10 1
+IN set atf on rp_mf_leaf sqp=0 10 1
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge sqp=1 10
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge sqp=0 10
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge sqp=1 5
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge sqp=0 5
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge alone sqp=1 10
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge alone sqp=0 10
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge alone sqp=1 5
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge alone sqp=0 5
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_leaf sqp=1 10
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_leaf sqp=0 10
+receiver entry throwIf(y >= 5) = 0 on rp_mf_leaf sqp=1 5
+receiver entry throwIf(y >= 5) = 0 on rp_mf_leaf sqp=0 5
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_leaf alone sqp=1 10
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_leaf alone sqp=0 10
+receiver entry throwIf(y >= 5) = 0 on rp_mf_leaf alone sqp=1 5
+receiver entry throwIf(y >= 5) = 0 on rp_mf_leaf alone sqp=0 5
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge with a policy sqp=1 10
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge with a policy sqp=0 10
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge with a policy sqp=1 5
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge with a policy sqp=0 5
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge alone with a policy sqp=1 10
+receiver entry y < 100000 AND arrayJoin([1, 1]) on rp_mf_merge alone with a policy sqp=0 10
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge alone with a policy sqp=1 5
+receiver entry throwIf(y >= 5) = 0 on rp_mf_merge alone with a policy sqp=0 5
+policy on merge sqp=1 ONCE
+policy on merge sqp=0 ONCE
+max_columns_to_read sqp=1 10
+max_columns_to_read sqp=0 10
+granted x on merge sqp=1 20
+granted x on merge sqp=0 20

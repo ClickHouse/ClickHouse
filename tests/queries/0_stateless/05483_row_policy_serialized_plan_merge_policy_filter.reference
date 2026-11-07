@@ -1,0 +1,4 @@
+arrayJoin sqp=1 100
+arrayJoin sqp=0 100
+randConstant sqp=1 1
+randConstant sqp=0 1

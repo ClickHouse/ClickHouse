@@ -117,6 +117,15 @@ public:
         return selected_column_names;
     }
 
+    /// The columns whose SELECT grant was checked, before the planner added the columns of filters and a column to count
+    /// rows by. Recorded only for a logical plan, which carries them to the node that executes the read.
+    void setAuthorizedColumnsNames(Names column_names_) { authorized_column_names = std::move(column_names_); }
+    const Names & getAuthorizedColumnsNames() const { return authorized_column_names; }
+
+    /// The number of columns checked against `max_columns_to_read`, recorded like the columns above.
+    void setColumnsToReadCount(size_t count) { columns_to_read_count = count; }
+    size_t getColumnsToReadCount() const { return columns_to_read_count; }
+
     /// Get ALIAS columns names mapped to expressions
     AliasColumnExpressions & getAliasColumnExpressions()
     {
@@ -333,6 +342,9 @@ private:
     Names access_checked_column_names;
     /// To deduplicate columns in above
     NameSet access_checked_column_names_set;
+
+    Names authorized_column_names;
+    size_t columns_to_read_count = 0;
 
     /// Expression to calculate ALIAS columns
     /// Keep alias name (String) + expression (ActionsDAG) pairs; vector preserves insertion order.
