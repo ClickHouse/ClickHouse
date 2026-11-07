@@ -203,6 +203,11 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, false, true>> low_cardinality_keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, true>> low_cardinality_keys256_two_level;
 
+    std::unique_ptr<AggregationMethodSingleLowCardinalityDictionaryIndex<AggregatedDataWithUInt64Key>>
+        low_cardinality_single_dictionary;
+    std::unique_ptr<AggregationMethodSingleLowCardinalityDictionaryIndex<AggregatedDataWithUInt64KeyTwoLevel>>
+        low_cardinality_single_dictionary_two_level;
+
     /// In this and similar macros, the option without_key is not considered.
     #define APPLY_FOR_AGGREGATED_VARIANTS(M) \
         M(key8,                       false) \
@@ -312,6 +317,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys256_two_level, true) \
         M(low_cardinality_key_string_two_level, true) \
         M(low_cardinality_key_fixed_string_two_level, true) \
+        M(low_cardinality_single_dictionary, false) \
+        M(low_cardinality_single_dictionary_two_level, true) \
 
     #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key32)            \
@@ -353,6 +360,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys256) \
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
+        M(low_cardinality_single_dictionary) \
 
     /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -432,6 +440,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
         M(low_cardinality_key_fixed_string_two_level) \
+        M(low_cardinality_single_dictionary_two_level) \
 
     #define APPLY_FOR_LOW_CARDINALITY_VARIANTS(M) \
         M(low_cardinality_key8) \
@@ -447,7 +456,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_keys128_two_level) \
         M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
-        M(low_cardinality_key_fixed_string_two_level)
+        M(low_cardinality_key_fixed_string_two_level) \
+        M(low_cardinality_single_dictionary) \
+        M(low_cardinality_single_dictionary_two_level)
 
     enum class Type : uint8_t
     {
@@ -534,6 +545,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// `convertToTwoLevel` for a table whose data was written to disk.
     void resetToSingleLevel();
     bool isLowCardinality() const;
+    bool isSingleLowCardinalityDictionary() const;
+
     /// Serialized hash methods; `Aggregator` passes non-nullable `LowCardinality` key columns
     /// to them without materializing full columns first.
     bool isSerialized() const;

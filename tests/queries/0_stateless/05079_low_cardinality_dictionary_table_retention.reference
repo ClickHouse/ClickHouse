@@ -1,0 +1,21 @@
+decoded_no_spill
+left	64	64
+right	64	640
+decoded_spill
+left	8	8
+right	8	80
+index_single_level
+left	64	64
+right	64	640
+index_no_spill
+left	64	64
+right	64	640
+index_spill
+left	8	8
+right	8	80
+query paths: name, finished, exception, selected parts, dictionary switches, two-level, spilled
+decoded_no_spill	1	0	64	0	1	0
+decoded_spill	1	0	8	0	1	1
+index_no_spill	1	0	64	1	1	0
+index_single_level	1	0	64	1	0	0
+index_spill	1	0	8	1	1	1

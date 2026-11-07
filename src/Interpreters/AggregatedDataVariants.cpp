@@ -329,6 +329,12 @@ bool AggregatedDataVariants::isLowCardinality() const
     }
 }
 
+bool AggregatedDataVariants::isSingleLowCardinalityDictionary() const
+{
+    return type == Type::low_cardinality_single_dictionary
+        || type == Type::low_cardinality_single_dictionary_two_level;
+}
+
 bool AggregatedDataVariants::isSerialized() const
 {
     switch (type)

@@ -1,0 +1,5 @@
+without the spill scheduler
+shared	3	60	[10,20,30]
+Merged 2 single-dictionary variants in 1 dictionary groups by index into 1 variants: 2 rows to 1 rows
+with the spill scheduler
+shared	3	60	[10,20,30]

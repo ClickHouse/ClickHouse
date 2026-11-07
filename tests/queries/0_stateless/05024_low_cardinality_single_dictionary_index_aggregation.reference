@@ -1,0 +1,11 @@
+one_part_string	0	17408
+one_part_uint128	0	17408
+one_part_parallel_string	0	17408
+two_parts_string	0	34816
+two_parts_top_k	value_0	256
+two_parts_top_k	value_1	512
+two_parts_top_k	value_10	2816
+two_parts_uint256	0	34816
+two_parts_fixed_string	0	34816
+two_parts_nullable_string	0	34816
+parallel_string	0	34816
