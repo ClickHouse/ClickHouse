@@ -1,0 +1,8 @@
+c	2	Int64
+l	arrayMap(x -> 2, [1])	Array(UInt8)
+a		AggregateFunction(uniqUpTo(2), UInt8)
+set(2)
+3
+s	arrayExists(lambda(tuple(_a), 5 < _a), [6])
+w	arrayMap(lambda(tuple(x), x + 1), [1])
+a	arrayMap(x -> (x + 1), [1])
