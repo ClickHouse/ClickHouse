@@ -364,6 +364,12 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     AccessRightsElements required_access;
     AccessRights required_access_rights;
 
+    /// Under `ON CLUSTER` each host decides the skip itself, and an older one creates the database, so none is skipped here.
+    auto is_database_skipped = [&](const ASTPtr & create_database_query)
+    {
+        return mode != Mode::CHECK_ACCESS_ONLY && !getSkippedDatabaseEngine(create_database_query, context).empty();
+    };
+
     {
         std::lock_guard lock{mutex};
         for (const auto & [database_name, database_info] : database_infos)
@@ -376,6 +382,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
             {
                 flags |= AccessType::CREATE_DATABASE;
+                const bool database_skipped = is_database_skipped(database_info.create_database_query);
 
                 /// The last point on this path that still runs as the real user. An existing local
                 /// database means nothing is created here, and `create_fn` authorizes it if it is
@@ -391,6 +398,19 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
                         && create.storage->engine->arguments)
                         DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
+                }
+
+                if (!database_skipped && database_info.create_database_query)
+                {
+                    const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+                    /// `Atomic` is what a `CREATE DATABASE` without an engine creates, and that is not checked.
+                    if (create.storage && create.storage->engine && create.storage->engine->name != "Atomic")
+                    {
+                        InterpreterCreateQuery::throwIfEngineIsUnknownAndNotGranted(
+                            create.storage->engine->name, /*is_database_engine=*/ true,
+                            AccessRightsElements{AccessRightsElement{AccessType::CREATE_DATABASE, database_name}}, context);
+                        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+                    }
                 }
             }
 
