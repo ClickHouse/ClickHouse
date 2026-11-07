@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -17,20 +16,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 template <typename Parser>
 SerializationJSON<Parser>::SerializationJSON(
-    const DataTypeObject::TypedPathsMap & typed_paths_types_,
+    const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
     const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
-    const std::unordered_set<String> & shared_typed_paths_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(typed_paths_types_, typed_paths_serializations_, shared_typed_paths_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
+    : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -134,14 +131,6 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
         auto path_info = it.getCurrentPathInfo();
-
-        /// When type_json_skip_null_typed_paths is enabled, treat NULL in typed paths
-        /// as absence of the path, matching the behavior of dynamic paths.
-        if (settings.json.type_json_skip_null_typed_paths
-            && path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
-            && path_info.column->isNullAt(path_info.row))
-            continue;
-
         PathElements path_elements(path_info.path);
         /// Change prefix to common prefix between current prefix and current path.
         /// If prefix changed (it can only decrease), close all finished objects.
@@ -328,20 +317,14 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(buf.str(), ostr);
-    else
-        writeQuotedString(buf.str(), ostr);
+    writeQuotedString(buf.str(), ostr);
 }
 
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
-    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
-    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
-    /// and a JSON column written by us via `Values` must be parseable back by the same path.
-    readQuotedStringWithSQLStyle(object, istr);
+    readQuotedString(object, istr);
     deserializeObject(column, object, settings);
 }
 
@@ -385,19 +368,8 @@ template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object_buffer;
-    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer, settings.json.max_row_size_for_json_each_row);
+    auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
     deserializeObject(column, object_view, settings);
-}
-
-template <typename Parser>
-UInt128 SerializationJSON<Parser>::getHash(
-    const DataTypeObject::TypedPathsMap &,
-    const std::unordered_set<String> &,
-    const std::vector<String> &,
-    const DataTypePtr &)
-{
-    /// Check the comment in the ::create method.
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method getHash is not implemented for SerializationJSON");
 }
 
 #if USE_SIMDJSON
