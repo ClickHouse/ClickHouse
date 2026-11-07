@@ -5,8 +5,11 @@
 #include <Storages/StorageTableFunction.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
+
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -239,6 +242,14 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
             /// `S3::URI` decodes the path once, as the subject does, but folds a query into the key, where `?`
             /// matches any character.
             if (uri.contains('?'))
+                return {};
+        }
+        else if (source == AccessTypeObjects::Source::URL)
+        {
+            /// `url` sends the path as written, so a character the subject escapes, other than glob syntax, is refused.
+            const String raw_path = Poco::URI(uri, /* enable_url_encoding */ false).getPath();
+            if (!std::ranges::all_of(
+                    raw_path, [](char c) { return isAlphaNumericASCII(c) || std::string_view("-._~/&+;=:@*{}|,").contains(c); }))
                 return {};
         }
         else if (Poco::URI(uri, /* enable_url_encoding */ false).getPath().contains('%'))

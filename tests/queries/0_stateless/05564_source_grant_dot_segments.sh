@@ -41,6 +41,7 @@ GRANT READ ON FILE('$ufp/$db/allowed/.*') TO $user;
 GRANT READ ON URL('$s3/test/.*') TO $user;
 GRANT READ ON S3('$s3/esc/a%2A.tsv') TO $user;
 GRANT READ ON URL('$s3/esc/%7Ba%2Cb%7D.tsv') TO $user;
+GRANT READ ON URL('$s3/esc/a%21b.tsv') TO $user;
 GRANT WRITE ON AZURE('$db/arc/ok.tar') TO $user;
 GRANT READ ON S3('$s3/exact/report.csv') TO $user;
 GRANT READ ON URL('$s3/exact/report.csv') TO $user;
@@ -105,6 +106,7 @@ echo "url failover in the query: $(check 'READ ON URL' "SELECT * FROM url('$s3/t
 echo "url glob in the query: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/a.tsv?{x,y}', 'TSV')")"
 echo "file empty segment: $(check 'READ ON FILE' "SELECT * FROM icebergLocal('$ufp/$db/allowed//t')")"
 echo "azure empty segment: $(check 'WRITE ON AZURE' "BACKUP TABLE $db.t TO $(azure "$db/backups//z")")"
+echo "url raw character against an escaped filter: $(check 'READ ON URL' "SELECT * FROM url('$s3/esc/a!b.tsv', 'TSV')")"
 
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON S3 TO $user"
 echo "s3 dot segment with the whole-source grant: $(check 'READ ON S3' "SELECT * FROM s3('$s3/other/../test/a.tsv', 'TSV')")"
