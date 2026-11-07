@@ -77,6 +77,13 @@ void readAllDatums(const std::vector<uint8_t> & file)
 /// resizing a container by the declared count throws `std::length_error` instead of `avro::Exception`.
 constexpr int64_t huge_item_count = int64_t(1) << 62;
 
+/// The number of items that take no bytes a single datum may declare, as set in `contrib/avro`.
+/// 65536 `GenericDatum` objects of 32 bytes are 2 MiB.
+constexpr int64_t max_zero_size_items = int64_t(1) << 16;
+
+constexpr const char * array_of_null = R"({"type":"array","items":"null"})";
+constexpr const char * array_of_empty_records = R"({"type":"array","items":{"type":"record","name":"e","fields":[]}})";
+
 }
 
 TEST(AvroGenericReader, ArrayDeclaringMoreItemsThanDataBacks)
@@ -105,6 +112,19 @@ TEST(AvroGenericReader, ArrayOfEmptyRecordsDeclaringHugeItemCount)
 {
     auto file = makeFileWithDeclaredItemCount(R"({"type":"array","items":{"type":"record","name":"e","fields":[]}})", huge_item_count);
     EXPECT_THROW(readAllDatums(file), avro::Exception);
+}
+
+TEST(AvroGenericReader, ZeroSizeItemsAtTheLimitReachTruncatedBlock)
+{
+    /// Exactly the limit passes the cap, and the reader then fails on the missing end of the block.
+    EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(array_of_null, max_zero_size_items)), avro::Exception);
+    EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(array_of_empty_records, max_zero_size_items)), avro::Exception);
+}
+
+TEST(AvroGenericReader, ZeroSizeItemsOverTheLimitAreRejectedByTheCap)
+{
+    EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(array_of_null, max_zero_size_items + 1)), avro::Exception);
+    EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(array_of_empty_records, max_zero_size_items + 1)), avro::Exception);
 }
 
 #endif
