@@ -1265,7 +1265,7 @@ ossl_rsaz_amm52x30_x2_avxifma256:
 	vmovdqu	%ymm9,192(%rdi)
 	vmovdqu	%ymm10,224(%rdi)
 
-	xorl	%r15d,%r15d
+	xorl	%r9d,%r9d
 
 	leaq	16(%r11),%r11
 	movq	$0xfffffffffffff,%rax
@@ -1735,6 +1735,7 @@ ossl_extract_multiplier_2x30_win5_avx:
 	vmovdqu	%ymm5,416(%rdi)
 	vmovdqu	%ymm6,448(%rdi)
 	vmovdqu	%ymm7,480(%rdi)
+	vzeroupper
 
 	.byte	0xf3,0xc3
 .cfi_endproc	

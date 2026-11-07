@@ -68,7 +68,7 @@ namespace Net {
 
 int checkDistrustedCertificate(X509 * certificate)
 {
-	X509_PUBKEY * key = X509_get_X509_PUBKEY(certificate);
+	const X509_PUBKEY * key = X509_get_X509_PUBKEY(certificate);
 	if (key == nullptr)
 		return X509_V_ERR_UNSPECIFIED;
 

@@ -201,13 +201,14 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
     if (!req)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error creating X509_REQ: {}", getOpenSSLErrors());
 
-    /// Owned by X509_REQ, does not need to be freed.
-    X509_NAME * subject_name = X509_REQ_get_subject_name(req.get());
+    /// Since OpenSSL 4.0, `X509_REQ_get_subject_name` returns a const name, so the subject is
+    /// built separately and then copied into the request by `X509_REQ_set_subject_name`.
+    std::unique_ptr<X509_NAME, decltype(&X509_NAME_free)> subject_name(X509_NAME_new(), X509_NAME_free);
     if (!subject_name)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error getting subject name from X509_REQ: {}", getOpenSSLErrors());
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error creating X509_NAME: {}", getOpenSSLErrors());
 
     if (!X509_NAME_add_entry_by_NID(
-        /*name=*/ subject_name,
+        /*name=*/ subject_name.get(),
         /*nid=*/ NID_commonName,
         /*type=*/ MBSTRING_ASC,
         /*bytes=*/ reinterpret_cast<const unsigned char *>(domain_names.front().c_str()),
@@ -216,6 +217,9 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
         /*set=*/ 0
     ))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error adding CN to X509_NAME: {}", getOpenSSLErrors());
+
+    if (!X509_REQ_set_subject_name(req.get(), subject_name.get()))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Error setting subject name of X509_REQ: {}", getOpenSSLErrors());
 
     /// Add Subject Alternative Names
     std::string san_entries;

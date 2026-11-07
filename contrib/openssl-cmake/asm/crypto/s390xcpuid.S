@@ -1,4 +1,4 @@
-#include "s390x_arch.h"
+#include "arch/s390x_arch.h"
 
 .text
 
@@ -159,26 +159,6 @@ OPENSSL_atomic_add:
 	lgfr	%r2,%r0		# OpenSSL expects the new value
 	br	%r14
 .size	OPENSSL_atomic_add,.-OPENSSL_atomic_add
-
-.globl	OPENSSL_wipe_cpu
-.type	OPENSSL_wipe_cpu,@function
-.align	16
-OPENSSL_wipe_cpu:
-	xgr	%r0,%r0
-	xgr	%r1,%r1
-	lgr	%r2,%r15
-	xgr	%r3,%r3
-	xgr	%r4,%r4
-	lzdr	%f0
-	lzdr	%f1
-	lzdr	%f2
-	lzdr	%f3
-	lzdr	%f4
-	lzdr	%f5
-	lzdr	%f6
-	lzdr	%f7
-	br	%r14
-.size	OPENSSL_wipe_cpu,.-OPENSSL_wipe_cpu
 
 .globl	OPENSSL_cleanse
 .type	OPENSSL_cleanse,@function
@@ -373,16 +353,12 @@ s390x_pcc:
 s390x_kdsa:
 	lr	%r0,%r2
 	lgr	%r1,%r3
-	lhi	%r2,0
 
 	.long	0xb93a0004	# kdsa %r0,%r4
 	brc	1,.-4		# pay attention to "partial completion"
-	brc	7,.Lkdsa_err	# if CC==0 return 0, else return 1
-.Lkdsa_out:
+	ipm	%r2		# load program mask and
+	srl	%r2,28		# extract cc
 	br	%r14
-.Lkdsa_err:
-	lhi	%r2,1
-	j	.Lkdsa_out
 .size	s390x_kdsa,.-s390x_kdsa
 .globl	s390x_flip_endian32
 .type	s390x_flip_endian32,@function
