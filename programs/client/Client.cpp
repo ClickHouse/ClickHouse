@@ -1480,8 +1480,6 @@ void Client::processOptions(
 
 void Client::processConfig()
 {
-    if (!queries.empty() && !queries_files.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
     /// - -q (--query) command line option is present.
