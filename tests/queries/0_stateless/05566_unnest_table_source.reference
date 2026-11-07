@@ -166,6 +166,12 @@ c
 7
 1
 2
+id	t.u	arr	x
+1	(7)	[1,2]	1
+1	(7)	[1,2]	2
+-- the unnest columns on the hidden side of a SEMI JOIN
+1
+3
 -- chains
 1	10
 1	20
@@ -217,6 +223,17 @@ c
 3	30
 1	5
 1	6
+1	0
+a	1
+b	2
+1	0
+1
+2
+1	5
+1	6
+3	7
+refreshed
+1	0
 -- syntax
 SELECT x, n FROM unnest([1]) WITH ORDINALITY AS u(x, n)
 SELECT x FROM unnest([1]) WITH ORDINALITY AS x

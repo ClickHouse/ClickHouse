@@ -6,8 +6,12 @@ DROP TABLE IF EXISTS t_unnest_element;
 DROP TABLE IF EXISTS t_unnest_tuple;
 DROP VIEW IF EXISTS v_unnest;
 DROP VIEW IF EXISTS mv_unnest;
+DROP VIEW IF EXISTS v_unnest_ord;
+DROP VIEW IF EXISTS rmv_unnest;
 DROP TABLE IF EXISTS src_unnest;
 DROP TABLE IF EXISTS dst_unnest;
+DROP TABLE IF EXISTS ctas_unnest;
+DROP TABLE IF EXISTS rmv_dst_unnest;
 
 CREATE TABLE t_unnest (id UInt32, arr Array(UInt32), tags Array(String)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_unnest VALUES (1, [10, 20], ['a', 'b']), (2, [], ['c']), (3, [30], []);
@@ -112,6 +116,12 @@ SELECT u.x FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS
 SELECT u.x FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 SELECT u.* FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
 SELECT u.* FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT * FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL FORMAT TSVWithNames;
+
+SELECT '-- the unnest columns on the hidden side of a SEMI JOIN';
+SELECT u.x FROM t_unnest AS t, unnest(t.arr) AS u(x) RIGHT SEMI JOIN values('id UInt32', 1, 3) AS s ON s.id = t.id SETTINGS semi_join_include_columns_from_both_sides = 0; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT u.* FROM t_unnest AS t, unnest(t.arr) AS u(x) RIGHT SEMI JOIN values('id UInt32', 1, 3) AS s ON s.id = t.id SETTINGS semi_join_include_columns_from_both_sides = 0; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT s.id FROM t_unnest AS t, unnest(t.arr) AS u(x) RIGHT SEMI JOIN values('id UInt32', 1, 3) AS s ON s.id = t.id ORDER BY ALL SETTINGS semi_join_include_columns_from_both_sides = 0;
 
 SELECT '-- chains';
 SELECT t.id, x FROM t_unnest AS t JOIN t_unnest AS s ON s.id = t.id, unnest(s.arr) AS x ORDER BY ALL;
@@ -144,6 +154,29 @@ CREATE TABLE dst_unnest (id UInt32, x UInt32) ENGINE = MergeTree ORDER BY (id, x
 CREATE MATERIALIZED VIEW mv_unnest TO dst_unnest AS SELECT id, x FROM src_unnest AS s, unnest(s.arr) AS x;
 INSERT INTO src_unnest VALUES (1, [5, 6]), (2, []);
 SELECT * FROM dst_unnest ORDER BY ALL;
+SELECT position(create_table_query, 'unnest(t.arr) AS u(x)') > 0, position(create_table_query, 'HIDDEN')
+FROM system.tables WHERE database = currentDatabase() AND name = 'v_unnest';
+CREATE VIEW v_unnest_ord AS SELECT x, n FROM UNNEST(['a', 'b']) WITH ORDINALITY AS u(x, n);
+SELECT * FROM v_unnest_ord ORDER BY n;
+SELECT position(create_table_query, 'UNNEST(') > 0 AND position(create_table_query, 'WITH ORDINALITY AS u(x, n)') > 0,
+    position(create_table_query, 'HIDDEN')
+FROM system.tables WHERE database = currentDatabase() AND name = 'v_unnest_ord';
+CREATE TABLE ctas_unnest ENGINE = Memory AS SELECT x FROM unnest([1, 2]) AS x;
+SELECT * FROM ctas_unnest ORDER BY x;
+ALTER TABLE mv_unnest MODIFY QUERY SELECT id, x FROM src_unnest AS s, unnest(s.arr) AS x WHERE x > 6;
+INSERT INTO src_unnest VALUES (3, [6, 7]);
+SELECT * FROM dst_unnest ORDER BY ALL;
+CREATE TABLE rmv_dst_unnest (x UInt8) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW rmv_unnest REFRESH EVERY 1 YEAR APPEND TO rmv_dst_unnest EMPTY
+    AS SELECT x FROM unnest([1, 2]) AS x;
+SYSTEM REFRESH VIEW rmv_unnest;
+SYSTEM WAIT VIEW rmv_unnest;
+SELECT 'refreshed';
+SELECT x FROM unnest([7]) AS x FORMAT Null SETTINGS log_comment = '05566_unnest_masking';
+SYSTEM FLUSH LOGS query_log;
+SELECT position(query, 'unnest([7])') > 0, position(query, 'HIDDEN') FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05566_unnest_masking'
+    AND type = 'QueryFinish' AND is_initial_query;
 
 SELECT '-- syntax';
 SELECT formatQuerySingleLine('SELECT x, n FROM unnest([1]) WITH ORDINALITY AS u(x, n)');
@@ -154,8 +187,12 @@ SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x, n FROM unnest([1]) WITH O
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 FROM t'), '"type":"TableExpression"', '"type":"TableExpression","with_ordinality":true')); -- { serverError BAD_ARGUMENTS }
 SELECT unnest([1, 2]) AS y ORDER BY y;
 
+DROP VIEW rmv_unnest;
+DROP VIEW v_unnest_ord;
 DROP VIEW mv_unnest;
 DROP VIEW v_unnest;
+DROP TABLE rmv_dst_unnest;
+DROP TABLE ctas_unnest;
 DROP TABLE src_unnest;
 DROP TABLE dst_unnest;
 DROP TABLE t_unnest_tuple;

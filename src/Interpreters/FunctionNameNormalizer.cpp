@@ -70,7 +70,8 @@ void FunctionNameNormalizer::visit(IAST * ast)
         return;
     }
 
-    if (auto * node_func = ast->as<ASTFunction>())
+    // Keep the names of table functions: one can share a name with a function alias, e.g. `unnest`.
+    if (auto * node_func = ast->as<ASTFunction>(); node_func && node_func->getKind() != ASTFunction::Kind::TABLE_FUNCTION)
     {
         const String & canonical_name
             = getAggregateFunctionCanonicalNameIfAny(getFunctionCanonicalNameIfAny(node_func->name));
