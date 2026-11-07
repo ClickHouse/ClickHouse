@@ -80,6 +80,10 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
     extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsString bearer_token_endpoint;
+    extern const DatabaseDataLakeSettingsString bearer_token_header;
+    extern const DatabaseDataLakeSettingsString bearer_token_response_format;
+    extern const DatabaseDataLakeSettingsString bearer_token_response_field;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
@@ -281,6 +285,16 @@ void DatabaseDataLake::initialize() const
     {
         case DB::DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
+            std::shared_ptr<DataLake::JWTEndpointAuth> jwt_auth;
+
+            if (!settings[DatabaseDataLakeSetting::bearer_token_endpoint].value.empty())
+                jwt_auth = std::make_shared<DataLake::JWTEndpointAuth>(
+                    settings[DatabaseDataLakeSetting::bearer_token_endpoint].value,
+                    settings[DatabaseDataLakeSetting::bearer_token_header].value,
+                    settings[DatabaseDataLakeSetting::bearer_token_response_format].value,
+                    settings[DatabaseDataLakeSetting::bearer_token_response_field].value,
+                    Context::getGlobalContextInstance(), allow_server_credentials_in_user_queries);
+
             catalog_impl = std::make_shared<DataLake::RestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
@@ -290,7 +304,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(), std::move(jwt_auth));
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
@@ -1861,6 +1875,29 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         }
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
+        const bool has_bearer_endpoint = !database_settings[DatabaseDataLakeSetting::bearer_token_endpoint].value.empty();
+        const bool has_bearer_options = !database_settings[DatabaseDataLakeSetting::bearer_token_header].value.empty()
+            || database_settings[DatabaseDataLakeSetting::bearer_token_response_format].changed
+            || database_settings[DatabaseDataLakeSetting::bearer_token_response_field].changed;
+        if (has_bearer_endpoint || has_bearer_options)
+        {
+            if (catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "JWT endpoint authentication requires `catalog_type = 'rest'");
+            if (!has_bearer_endpoint)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bearer token request and response settings require `bearer_token_endpoint`");
+            if (!auth_header_str.empty()
+                || !database_settings[DatabaseDataLakeSetting::catalog_credential].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::oauth_server_uri].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_project_id].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_service_account].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_metadata_service].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value.empty()
+                || !database_settings[DatabaseDataLakeSetting::google_adc_credentials_file].value.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`bearer_token_endpoint` cannot be combined with other catalog authentication settings");
+        }
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
         /// There is no URL you need to provide in constructor, even if we would want it
         ///  will be something like https://aws.amazon.com.
@@ -2160,6 +2197,10 @@ The following settings are supported:
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
 | `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
+| `bearer_token_endpoint` | For REST catalogs: HTTP(S) endpoint returning a JWT bearer token on GET. Cached tokens are refreshed using their integer `exp` claim. |
+| `bearer_token_header`   | Optional single header sent only to the token endpoint, such as `Metadata-Flavor: Google`. |
+| `bearer_token_response_format` | `raw` (default): the HTTP body is the token. `json`: extract the token from `bearer_token_response_field`. |
+| `bearer_token_response_field` | String field containing the token in JSON responses. Default: `access_token`. Supports nested paths such as `data.token`. Ignored for `raw`. |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
 | `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                               |
@@ -2173,6 +2214,35 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
+
+For a REST catalog accepting JWT bearer tokens, set `bearer_token_endpoint` to an HTTP(S) endpoint issuing tokens on GET. Use `bearer_token_header` for an optional request header. With `bearer_token_response_format = 'raw'` (the default), the HTTP body is the token itself. With `bearer_token_response_format = 'json'`, ClickHouse extracts a string from `bearer_token_response_field`, which defaults to `access_token`. Dot-separated paths select nested object fields: for example, `data.token` extracts the JWT from `{"data":{"token":"eyJ..."}}`. Missing fields, invalid JSON, and non-string token values are rejected without trying another format.
+
+The extracted token must be a JWT with an integer `exp` claim in the future. ClickHouse caches the token for 90% of its remaining lifetime and refreshes it once if the catalog returns HTTP 401 or 403. The catalog validates the token's signature, issuer, and audience.
+
+Bearer token endpoint authentication requires `s3_allow_server_credentials_in_user_queries` when the database is created, and the endpoint hostname must be listed under `iceberg_bearer_token_host` in the server configuration. The existing remote host and HTTP header restrictions also apply. Redirects are rejected. These settings cannot be combined with other catalog authentication settings and apply only to catalog requests. The database settings are fixed at creation; after a restart, the server credential restriction applies again.
+
+For Google ID tokens, configure the metadata identity endpoint with the audience expected by the catalog:
+
+```xml
+<clickhouse>
+    <iceberg_bearer_token_host>
+        <host>metadata.google.internal</host>
+    </iceberg_bearer_token_host>
+</clickhouse>
+```
+
+```sql
+SET allow_database_iceberg = 1;
+SET s3_allow_server_credentials_in_user_queries = 1;
+
+CREATE DATABASE iceberg_catalog
+ENGINE = DataLakeCatalog('https://catalog.example/api/catalog')
+SETTINGS
+    catalog_type = 'rest',
+    warehouse = 'my_warehouse',
+    bearer_token_endpoint = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=https%3A%2F%2Fcatalog.example&format=full',
+    bearer_token_header = 'Metadata-Flavor: Google';
+```
 
 ## Examples {#examples}
 

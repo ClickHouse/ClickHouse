@@ -23,6 +23,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
+#include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
 #include <Common/HTTPHeaderFilter.h>
 
@@ -35,6 +36,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
+#include <algorithm>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
@@ -229,18 +231,17 @@ bool isNamespaceNotFound(const DB::HTTPException & e)
     }
 }
 
-std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
-    const Poco::Util::AbstractConfiguration & config)
+std::unordered_set<std::string> getAllowedTokenHosts(
+    const Poco::Util::AbstractConfiguration & config, const std::string & section)
 {
-    static constexpr auto SECTION = "iceberg_biglake_metadata_service_hosts";
     std::unordered_set<std::string> allowed;
-    if (!config.has(SECTION))
+    if (!config.has(section))
         return allowed;
 
     std::vector<std::string> keys;
-    config.keys(SECTION, keys);
+    config.keys(section, keys);
     for (const auto & key : keys)
-        allowed.insert(config.getString(std::string(SECTION) + "." + key));
+        allowed.insert(config.getString(section + "." + key));
     return allowed;
 }
 
@@ -269,7 +270,8 @@ RestCatalog::RestCatalog(
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    std::shared_ptr<JWTEndpointAuth> jwt_auth_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -278,7 +280,9 @@ RestCatalog::RestCatalog(
     , oauth_server_uri(oauth_server_uri_)
     , oauth_server_use_request_body(oauth_server_use_request_body_)
     , flat_namespaces(flat_namespaces_)
+    , jwt_auth(std::move(jwt_auth_))
 {
+    update_token_if_expired = jwt_auth != nullptr;
     CatalogState initial_state;
     if (!catalog_credential_.empty())
     {
@@ -290,9 +294,8 @@ RestCatalog::RestCatalog(
         initial_state.auth_header = parseAuthHeader(auth_header_);
         validateAuthHeaders(initial_state.auth_header.value());
     }
-    /// `loadConfig` reaches the virtual `createReadBuffer`, but no catalog constructed through this
-    /// ctor (`OneLakeCatalog`, `BigLakeCatalog`) overrides it, so the base implementation is the intended
-    /// target. `S3TablesCatalog` overrides it and uses the separate ctor, calling `loadConfig` afterwards.
+    /// `loadConfig` reaches the virtual `createReadBuffer`; derived catalogs overriding it use the
+    /// separate constructor and load their configuration after initializing authentication.
     /// NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
     initial_state.config = loadConfig(initial_state);
     state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
@@ -402,6 +405,8 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
         headers.emplace_back("Authorization", "Bearer " + current->token);
         return headers;
     }
+    if (jwt_auth)
+        return jwt_auth->getAuthHeaders(update_token);
     return {};
 }
 
@@ -1027,58 +1032,198 @@ BigLakeCatalog::BigLakeCatalog(
     bool allow_server_credentials_in_user_queries_)
     : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
     , google_project_id(google_project_id_)
-    , google_service_account(google_service_account_)
-    , google_metadata_service(google_metadata_service_)
+    , google_service_account(google_service_account_.empty() ? "default" : google_service_account_)
+    , google_metadata_service(google_metadata_service_.empty() ? "metadata.google.internal" : google_metadata_service_)
     , google_adc_client_id(google_adc_client_id_)
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
+    const bool has_adc = !google_adc_client_id.empty() || !google_adc_client_secret.empty() || !google_adc_refresh_token.empty();
+    if (has_adc && (google_adc_client_id.empty() || google_adc_client_secret.empty() || google_adc_refresh_token.empty()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Invalid ADC credentials: client_id, client_secret, and refresh_token are required");
+
     update_token_if_expired = true;
-    // Get token before loading config so getAuthHeaders() can work
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
-    {
-        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
-    }
     CatalogState initial_state;
     initial_state.config = loadConfig(initial_state);
     state.set(std::make_unique<const CatalogState>(std::move(initial_state)));
 }
 
-DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
+JWTEndpointAuth::JWTEndpointAuth(
+    const std::string & token_url_, const std::string & token_header_,
+    const std::string & response_format_, const std::string & response_field_,
+    DB::ContextPtr context_, bool allow_server_credentials_in_user_queries_)
+    : DB::WithContext(context_)
+    , token_url(token_url_)
+    , response_format(response_format_)
+    , response_field(response_field_)
+    , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
-    /// Google Cloud OAuth2 for BigLake.
-    /// Uses GCP metadata service or Application Default Credentials to get access token.
-    /// Only use Google OAuth if explicitly configured (google_project_id or google_adc_client_id).
-    /// https://developers.google.com/identity/protocols/oauth2
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (response_format != "raw" && response_format != "json")
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "`bearer_token_response_format` must be 'raw' or 'json'");
+    if (response_format == "json"
+        && (response_field.empty() || response_field.front() == '.' || response_field.back() == '.' || response_field.contains("..")))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "`bearer_token_response_field` must be a nonempty dot-separated field path");
+    if (!token_header_.empty())
+        token_headers.emplace_back(parseAuthHeader(token_header_));
+}
+
+DB::HTTPHeaderEntries JWTEndpointAuth::getAuthHeaders(bool update_token) const
+{
+    auto current = access_token.get();
+    if (!current || update_token || current->isExpired())
     {
-        auto current = access_token.get();
-        if (!current || update_token || current->isExpired())
+        access_token.set(std::make_unique<AccessToken>(retrieveToken()));
+        current = access_token.get();
+    }
+    return {{"Authorization", "Bearer " + current->token}};
+}
+
+AccessToken JWTEndpointAuth::retrieveToken() const
+{
+    const auto & context = getContext();
+    if (context->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries))
+        throw DB::Exception(
+            DB::ErrorCodes::ACCESS_DENIED,
+            "JWT endpoint authentication from user queries requires `s3_allow_server_credentials_in_user_queries`");
+
+    Poco::URI url;
+    try
+    {
+        url = Poco::URI(token_url);
+    }
+    catch (...)
+    {
+        /// URI parser errors may include credentials from the query string.
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid `bearer_token_endpoint`");
+    }
+    if ((url.getScheme() != "http" && url.getScheme() != "https") || url.getHost().empty()
+        || !url.getUserInfo().empty() || !url.getFragment().empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "`bearer_token_endpoint` must be an HTTP(S) URL without user info or a fragment");
+    if (url.getPath().empty())
+        url.setPath("/");
+
+    const auto allowed_hosts = getAllowedTokenHosts(context->getConfigRef(), "iceberg_bearer_token_host");
+    if (!allowed_hosts.contains(url.getHost()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS, "Bearer token endpoint host is not in the server-side allow-list <iceberg_bearer_token_host>");
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
+    auto headers = token_headers;
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers);
+
+    String raw_token;
+    unsigned int status = 0;
+    try
+    {
+        const auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+        auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
+        if (!session)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot create JWT endpoint HTTP session");
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+        for (const auto & header : headers)
+            request.set(header.name, header.value);
+        DB::sendHTTPRequest(*session, request)->finalize();
+        Poco::Net::HTTPResponse response;
+        auto in = DB::receiveHTTPResponse(*session, response);
+        status = response.getStatus();
+        if (status == Poco::Net::HTTPResponse::HTTP_OK)
+            DB::readStringUntilEOF(raw_token, *in);
+    }
+    catch (...)
+    {
+        /// Transport errors may contain the URL or header values; never expose them.
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to fetch JWT from token endpoint");
+    }
+    if (status != Poco::Net::HTTPResponse::HTTP_OK)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "JWT token endpoint returned HTTP status {}", status);
+
+    if (response_format == "json")
+    {
+        try
         {
-            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
-            current = access_token.get();
+            Poco::JSON::Parser parser;
+            auto value = parser.parse(raw_token);
+            size_t begin = 0;
+            while (true)
+            {
+                const auto end = response_field.find('.', begin);
+                const auto field = response_field.substr(begin, end == String::npos ? String::npos : end - begin);
+                auto object = value.extract<Poco::JSON::Object::Ptr>();
+                if (!object || !object->has(field))
+                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Missing bearer token response field");
+                value = object->get(field);
+                if (end == String::npos)
+                    break;
+                begin = end + 1;
+            }
+            raw_token = value.extract<String>();
         }
-
-        DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
-
-        std::string project_id = google_project_id;
-        if (project_id.empty() && !google_adc_quota_project_id.empty())
+        catch (...)
         {
-            project_id = google_adc_quota_project_id;
+            /// Parser errors may include the token response; report only the expected structure.
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Bearer token endpoint must return a JSON object with a string at `bearer_token_response_field`");
         }
-
-        if (!project_id.empty())
-        {
-            headers.emplace_back("x-goog-user-project", project_id);
-        }
-
-        return headers;
     }
 
-    return RestCatalog::getAuthHeaders(catalog_state, update_token);
+    const auto first_dot = raw_token.find('.');
+    const auto second_dot = first_dot == String::npos ? String::npos : raw_token.find('.', first_dot + 1);
+    if (first_dot == String::npos || first_dot == 0 || second_dot == String::npos || second_dot == first_dot + 1
+        || second_dot + 1 == raw_token.size() || raw_token.find('.', second_dot + 1) != String::npos
+        || !std::all_of(raw_token.begin(), raw_token.end(), [](char c)
+        {
+            return isAlphaNumericASCII(c) || c == '-' || c == '_' || c == '.';
+        }))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "JWT token endpoint must return a raw JWT with three nonempty segments");
+
+    Int64 expires_at;
+    try
+    {
+        Poco::JSON::Parser parser;
+        auto payload = parser.parse(DB::base64Decode(raw_token.substr(first_dot + 1, second_dot - first_dot - 1), true, true))
+            .extract<Poco::JSON::Object::Ptr>();
+        if (!payload || !payload->has("exp") || !payload->get("exp").isInteger())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "JWT requires an integer `exp` claim");
+        expires_at = payload->getValue<Int64>("exp");
+    }
+    catch (...)
+    {
+        /// JSON parser errors may include the decoded payload.
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "JWT token endpoint returned an invalid payload or integer `exp` claim");
+    }
+    const auto now = std::chrono::system_clock::now();
+    const auto now_seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+    const auto max_seconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::duration::max()).count();
+    if (expires_at <= now_seconds || expires_at > max_seconds)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "JWT token endpoint returned an expired or out-of-range `exp` claim");
+    const auto expiration = std::chrono::system_clock::time_point(std::chrono::seconds(expires_at));
+    return {std::move(raw_token), now + (expiration - now) / 10 * 9};
+}
+
+DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
+{
+    if (google_project_id.empty() && google_adc_client_id.empty())
+        return RestCatalog::getAuthHeaders(catalog_state, update_token);
+
+    auto current = access_token.get();
+    if (!current || update_token || current->isExpired())
+    {
+        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
+        current = access_token.get();
+    }
+
+    DB::HTTPHeaderEntries headers;
+    headers.emplace_back("Authorization", "Bearer " + current->token);
+
+    const auto & project_id = google_project_id.empty() ? google_adc_quota_project_id : google_project_id;
+    if (!project_id.empty())
+        headers.emplace_back("x-goog-user-project", project_id);
+
+    return headers;
 }
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() const
@@ -1128,7 +1273,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
 
-    const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
+    const auto allowed_metadata_hosts = getAllowedTokenHosts(context->getConfigRef(), "iceberg_biglake_metadata_service_hosts");
     if (allowed_metadata_hosts.empty())
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,

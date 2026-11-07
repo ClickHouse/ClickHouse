@@ -1,7 +1,15 @@
-import pytest
+import os
 
+import pytest
+import requests
+
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from helpers.mock_servers import start_mock_servers
+from helpers.test_tools import assert_eq_with_retry
+
+BEARER_TOKEN_PORT = 8085
 
 # The server is given S3 credentials by server-managed mechanisms that user SQL must not be able to reuse
 # when `s3_allow_server_credentials_in_user_queries` is disabled (the default). Here we exercise the AWS
@@ -12,7 +20,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     with_minio=True,
-    main_configs=["configs/named_collections.xml"],
+    main_configs=["configs/named_collections.xml", "configs/bearer_token_hosts.xml"],
     user_configs=["configs/users.xml"],
     env_variables={
         "AWS_SHARED_CREDENTIALS_FILE": "/tmp/aws_credentials",
@@ -682,3 +690,178 @@ def test_server_data_disk_unaffected():
     node.query("INSERT INTO t_local SELECT 4")
     assert node.query("SELECT sum(x) FROM t_local").strip() == "4"
     node.query("DROP TABLE t_local SYNC")
+
+
+@pytest.fixture(scope="module")
+def bearer_catalog_server():
+    start_mock_servers(
+        cluster,
+        os.path.dirname(__file__),
+        [("bearer_token_server.py", "node", BEARER_TOKEN_PORT)],
+    )
+    yield f"http://{node.ip_address}:{BEARER_TOKEN_PORT}"
+
+
+@pytest.fixture
+def bearer_catalog(bearer_catalog_server):
+    def reset(**options):
+        response = requests.post(f"{bearer_catalog_server}/reset", json=options, timeout=10)
+        response.raise_for_status()
+
+    reset()
+    yield reset
+    node.query("DROP DATABASE IF EXISTS bearer_rest_auth")
+
+
+def bearer_catalog_events(server):
+    response = requests.get(f"{server}/events", timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+def create_bearer_catalog(extra="", allow=True, host="127.0.0.1"):
+    return node.query(
+        f"CREATE DATABASE bearer_rest_auth ENGINE = DataLakeCatalog('http://127.0.0.1:{BEARER_TOKEN_PORT}') "
+        "SETTINGS catalog_type = 'rest', warehouse = 'test', "
+        f"bearer_token_endpoint = 'http://{host}:{BEARER_TOKEN_PORT}/token?audience=https%3A%2F%2Fcatalog.example', "
+        f"bearer_token_header = 'X-Token-Request: test'{extra}",
+        settings={
+            "allow_database_iceberg": 1,
+            "s3_allow_server_credentials_in_user_queries": int(allow),
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "response_format, field",
+    [("raw", None), ("json", "access_token"), ("json", "data.token")],
+)
+def test_rest_catalog_jwt_endpoint(
+    bearer_catalog_server, bearer_catalog, response_format, field
+):
+    options = {"jwt_json_field": field} if response_format == "json" else {}
+    bearer_catalog(**options)
+    extra = f", bearer_token_response_format = '{response_format}'"
+    if field == "data.token":
+        extra += ", bearer_token_response_field = 'data.token'"
+    create_bearer_catalog(extra)
+    assert node.query("SHOW TABLES FROM bearer_rest_auth") == ""
+    events = bearer_catalog_events(bearer_catalog_server)
+    assert events[0]["path"] == "/token"
+    assert events[0]["token_request_header"] == "test"
+    assert events[0]["query"] == "audience=https%3A%2F%2Fcatalog.example"
+    assert sum(event["path"] == "/token" for event in events) == 1
+    catalog_requests = [event for event in events if event["path"].startswith("/v1/")]
+    assert catalog_requests[0]["path"] == "/v1/config"
+    assert catalog_requests[0]["authorization"].startswith("Bearer eyJ")
+    assert all(
+        event["authorization"] == catalog_requests[0]["authorization"]
+        for event in catalog_requests
+    )
+    assert all(event["token_request_header"] == "" for event in catalog_requests)
+    definition = node.query("SHOW CREATE DATABASE bearer_rest_auth")
+    assert "catalog.example" not in definition
+    assert "X-Token-Request" not in definition
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_rest_catalog_jwt_rejection_refresh(bearer_catalog_server, bearer_catalog, status):
+    bearer_catalog(reject_jwt_once=status, jwt_json_field="data.token")
+    create_bearer_catalog(
+        ", bearer_token_response_format = 'json', bearer_token_response_field = 'data.token'"
+    )
+    assert node.query("SHOW TABLES FROM bearer_rest_auth") == ""
+    events = bearer_catalog_events(bearer_catalog_server)
+    assert sum(event["path"] == "/token" for event in events) == 2
+    namespace_requests = [event for event in events if event["path"] == "/v1/namespaces"]
+    assert len(namespace_requests) >= 2
+    assert namespace_requests[0]["authorization"] != namespace_requests[1]["authorization"]
+    assert all(
+        event["authorization"] == namespace_requests[1]["authorization"]
+        for event in namespace_requests[1:]
+    )
+
+
+def test_rest_catalog_jwt_expiry_refresh(bearer_catalog_server, bearer_catalog):
+    bearer_catalog(jwt_lifetime=3)
+    create_bearer_catalog()
+
+    def refreshed(_):
+        events = bearer_catalog_events(bearer_catalog_server)
+        return str(sum(event["path"] == "/token" for event in events) >= 2)
+
+    assert_eq_with_retry(
+        node, "SHOW TABLES FROM bearer_rest_auth", "True", get_result=refreshed
+    )
+
+
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        ({"jwt_body": "opaque-token"}, "three nonempty segments"),
+        ({"jwt_body": "eyJhbGciOiJSUzI1NiJ9.e30.signature"}, "integer `exp` claim"),
+        ({"jwt_lifetime": -1}, "expired"),
+        ({"jwt_status": 500}, "HTTP status 500"),
+        ({"jwt_status": 302}, "HTTP status 302"),
+    ],
+)
+def test_rest_catalog_jwt_endpoint_failure(
+    bearer_catalog_server, bearer_catalog, options, message
+):
+    bearer_catalog(**options)
+    with pytest.raises(QueryRuntimeException, match=message):
+        create_bearer_catalog()
+    events = bearer_catalog_events(bearer_catalog_server)
+    assert [event["path"] for event in events] == ["/token"]
+
+
+def test_rest_catalog_jwt_endpoint_restrictions(bearer_catalog_server, bearer_catalog):
+    bearer_catalog()
+    with pytest.raises(QueryRuntimeException, match="ACCESS_DENIED"):
+        create_bearer_catalog(allow=False)
+    with pytest.raises(QueryRuntimeException, match="iceberg_bearer_token_host"):
+        create_bearer_catalog(host="localhost")
+    with pytest.raises(QueryRuntimeException, match="cannot be combined"):
+        create_bearer_catalog(", auth_header = 'Authorization: Bearer explicit-token'")
+    assert bearer_catalog_events(bearer_catalog_server) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "not-json-SECRET_RESPONSE",
+        '{"data": {}}',
+        '{"data": {"token": 42}}',
+        '{"data": {"token": null}}',
+    ],
+)
+def test_rest_catalog_bearer_token_json_failure(
+    bearer_catalog_server, bearer_catalog, body
+):
+    bearer_catalog(jwt_response_body=body)
+    with pytest.raises(QueryRuntimeException, match="JSON object with a string") as error:
+        create_bearer_catalog(
+            ", bearer_token_response_format = 'json', bearer_token_response_field = 'data.token'"
+        )
+    assert "SECRET_RESPONSE" not in str(error.value)
+    assert [event["path"] for event in bearer_catalog_events(bearer_catalog_server)] == [
+        "/token"
+    ]
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        (", bearer_token_response_format = 'xml'", "must be 'raw' or 'json'"),
+        (
+            ", bearer_token_response_format = 'json', bearer_token_response_field = ''",
+            "nonempty dot-separated field path",
+        ),
+    ],
+)
+def test_rest_catalog_bearer_token_response_settings(
+    bearer_catalog_server, bearer_catalog, extra, message
+):
+    with pytest.raises(QueryRuntimeException, match=message):
+        create_bearer_catalog(extra)
+    assert bearer_catalog_events(bearer_catalog_server) == []
