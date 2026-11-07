@@ -6,6 +6,8 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
+# `user_files_path` of this instance is made a symlink to the directory that holds the files.
+node_link = cluster.add_instance("node_link", main_configs=["configs/user_files_link.xml"], stay_alive=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -51,6 +53,21 @@ def started_cluster():
                 "/var/lib/clickhouse/user_files/link",
             ]
         )
+
+        node_link.stop_clickhouse()
+        node_link.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /var/lib/clickhouse/user_files_link /var/lib/clickhouse/user_files_real"
+                " && mkdir -p /var/lib/clickhouse/user_files_real/sub"
+                " && ln -s /var/lib/clickhouse/user_files_real /var/lib/clickhouse/user_files_link"
+                " && printf '1,a\\n2,b\\n' > /var/lib/clickhouse/user_files_real/sub/t.csv"
+                " && printf '9,secret\\n' > /var/lib/clickhouse/outside.csv",
+            ],
+            user="root",
+        )
+        node_link.start_clickhouse()
 
         yield cluster
 
@@ -100,3 +117,22 @@ def test_direct_outside_path():
     assert "DATABASE_ACCESS_DENIED" in node.query_and_get_error(
         "SELECT * FROM filesystem('/tmp/link_target/test.log')"
     )
+
+
+def test_filesystem_database_symlinked_user_files():
+    # The `Filesystem` database checked its tables against the unresolved `user_files_path`, while its own path
+    # and `file` use the resolved one, so it refused every table when `user_files_path` was a symlink.
+    expected = "1\ta\n2\tb\n"
+    assert node_link.query("SELECT * FROM file('sub/t.csv') ORDER BY 1") == expected
+
+    node_link.query("CREATE DATABASE fs_relative ENGINE = Filesystem('sub')")
+    node_link.query("CREATE DATABASE fs_default ENGINE = Filesystem")
+    try:
+        assert node_link.query("SELECT * FROM fs_relative.`t.csv` ORDER BY 1") == expected
+        assert node_link.query("SELECT * FROM fs_default.`sub/t.csv` ORDER BY 1") == expected
+        assert "PATH_ACCESS_DENIED" in node_link.query_and_get_error(
+            "SELECT * FROM fs_relative.`../../outside.csv`"
+        )
+    finally:
+        node_link.query("DROP DATABASE IF EXISTS fs_relative")
+        node_link.query("DROP DATABASE IF EXISTS fs_default")
