@@ -1,0 +1,157 @@
+<!--
+    Merges and squashing of `JSON` and `Map` columns with many small sources. Before merging or squashing, the
+    destination column walks the nested columns of all sources: `IColumn::chooseDynamicStructureForMerge` and
+    `IColumn::takeOrCalculateStatisticsFrom` once per merge and for every written block, `IColumn::prepareForSquashing`
+    once per squashed block. Their cost does not depend on the number of rows, but on the number of sources and on the
+    nesting depth or the number of `JSON` paths, so the setup uses many small sources and wide structures:
+
+    * `json_merge_burst{burst}_vertical{vertical}`: 64 Compact parts of 2048 rows, merged into a Wide part.
+      `JSON` with 256 dynamic paths, 8 per row with `Int64` or `String` values, so every path is a `Dynamic` with
+      two variants. `burst` is the number of consecutive rows with the same 8 paths:
+        - `burst = 1` (dense): every block has every path;
+        - `burst = 512` (sparse, time-clustered events): a part has 32 paths, and a written block of 1024 rows has
+          values for 16 of the 256 paths of the result, but the writer takes the statistics of all paths for every
+          block.
+      `index_granularity` and `merge_max_block_size` of 1024 emulate the small blocks of wide rows (128 written blocks
+      per merge). The key ranges of the parts do not intersect, so the merge takes whole source chunks.
+    * `otel_spans`: a schema like OpenTelemetry traces, with `Map` and `Array(Map)` columns (they carry statistics),
+      64 parts with intersecting key ranges. The common case, for comparison.
+    * `json_squash_src_burst{burst}` and `otel_spans_squash_src`: the same rows in `Memory` tables, in blocks of 128 rows.
+      `INSERT INTO ... ENGINE = Null` squashes 512 blocks into one block of 65536 rows (`prepareForSquashing` with
+      511 sources): one block for `JSON`, four blocks for `otel_spans`. A sparse `JSON` block has 8 of the 256 paths.
+
+    The merges are `OPTIMIZE ... DRY RUN PARTS`: a real merge task, whose result is written to a temporary part and
+    discarded, so every run merges the same 64 parts. Background merges are disabled by
+    `max_bytes_to_merge_at_max_space_in_pool = max_bytes_to_merge_at_min_space_in_pool = 1`. The setup checks the
+    parts and the block sizes.
+-->
+<test>
+    <substitutions>
+        <substitution>
+            <name>burst</name>
+            <values>
+                <value>1</value>
+                <value>512</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>vertical</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- JSON, merges. Sources are Compact (2048 rows < min_rows_for_wide_part), the result is Wide for both algorithms. -->
+    <create_query>
+        CREATE TABLE json_merge_burst{burst}_vertical{vertical} (id UInt64, j JSON)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 10000, index_granularity = 1024, merge_max_block_size = 1024,
+            enable_vertical_merge_algorithm = {vertical}, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1,
+            max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <!-- JSON, squashing. -->
+    <create_query>CREATE TABLE json_squash_src_burst{burst} (id UInt64, j JSON) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE json_squash_dst (id UInt64, j JSON) ENGINE = Null</create_query>
+
+    <!-- Map / Array(Map), merges and squashing. -->
+    <create_query>
+        CREATE TABLE otel_spans
+        (
+            Timestamp DateTime64(9),
+            TraceId String,
+            SpanId String,
+            ServiceName LowCardinality(String),
+            SpanName LowCardinality(String),
+            Duration UInt64,
+            ResourceAttributes Map(LowCardinality(String), String),
+            SpanAttributes Map(LowCardinality(String), String),
+            `Events.Timestamp` Array(DateTime64(9)),
+            `Events.Name` Array(LowCardinality(String)),
+            `Events.Attributes` Array(Map(LowCardinality(String), String)),
+            `Links.TraceId` Array(String),
+            `Links.Attributes` Array(Map(LowCardinality(String), String))
+        )
+        ENGINE = MergeTree ORDER BY (ServiceName, SpanName, toDateTime(Timestamp))
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 10000, enable_vertical_merge_algorithm = 0,
+            max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1
+    </create_query>
+    <create_query>CREATE TABLE otel_spans_squash_src AS otel_spans ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE otel_spans_squash_dst AS otel_spans ENGINE = Null</create_query>
+
+    <!-- 64 parts of 2048 rows each: all_1_1_0 ... all_64_64_0. -->
+    <fill_query>
+        INSERT INTO json_merge_burst{burst}_vertical{vertical}
+        SELECT number, concat('{{', arrayStringConcat(arrayMap(i -> concat('"k', toString((intDiv(number, {burst}) * 8 + i) % 256), '":',
+            if((number + i) % 3 = 0, concat('"s', toString(number), '"'), toString(number + i))), range(8)), ','), '}}')
+        FROM numbers(131072)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 2048, max_insert_block_size = 2048, min_insert_block_size_rows = 2048, min_insert_block_size_bytes = 0
+    </fill_query>
+    <fill_query>
+        SELECT throwIf(groupArray(name) != arrayMap(i -> concat('all_', toString(i), '_', toString(i), '_0'), range(1, 65))
+            OR sum(rows) != 131072 OR countIf(part_type != 'Compact') != 0)
+        FROM (SELECT name, rows, part_type FROM system.parts WHERE database = currentDatabase() AND table = 'json_merge_burst{burst}_vertical{vertical}' AND active ORDER BY min_block_number)
+    </fill_query>
+
+    <!-- The same rows in blocks of 128. -->
+    <fill_query>
+        INSERT INTO json_squash_src_burst{burst}
+        SELECT number, concat('{{', arrayStringConcat(arrayMap(i -> concat('"k', toString((intDiv(number, {burst}) * 8 + i) % 256), '":',
+            if((number + i) % 3 = 0, concat('"s', toString(number), '"'), toString(number + i))), range(8)), ','), '}}')
+        FROM numbers(65536)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 128, max_insert_block_size = 128, min_insert_block_size_rows = 128, min_insert_block_size_bytes = 0
+    </fill_query>
+    <fill_query>SELECT throwIf(count() != 65536 OR max(blockSize()) != 128 OR min(blockSize()) != 128) FROM json_squash_src_burst{burst} SETTINGS max_threads = 1</fill_query>
+
+    <!-- Generated into `Memory` first: reading a MergeTree part returns whole granules, not blocks of 128 rows. -->
+    <fill_query>
+        INSERT INTO otel_spans_squash_src
+        SELECT
+            toDateTime64('2026-01-01 00:00:00', 9) + toIntervalMillisecond(number),
+            hex(cityHash64(intDiv(number, 8))),
+            hex(cityHash64(number)),
+            concat('service_', toString(number % 16)),
+            concat('op_', toString(number % 64)),
+            cityHash64(number) % 1000000,
+            map('service.name', concat('service_', toString(number % 16)), 'host.name', concat('host-', toString(number % 32)), 'k8s.pod.name', concat('pod-', toString(number % 256))),
+            mapFromArrays(arrayMap(i -> concat('attr.', toString((number + i) % 64)), range(number % 12)), arrayMap(i -> toString(number * i), range(number % 12))),
+            arrayMap(i -> toDateTime64('2026-01-01 00:00:00', 9) + toIntervalMillisecond(number + i), range(number % 3)),
+            arrayMap(i -> concat('event_', toString(i)), range(number % 3)),
+            arrayMap(i -> map('exception.type', concat('E', toString((number + i) % 10)), 'exception.message', concat('message ', toString(number))), range(number % 3)),
+            arrayMap(i -> hex(cityHash64(number + i)), range(number % 2)),
+            arrayMap(i -> map('link.kind', toString(i)), range(number % 2))
+        FROM numbers(131072)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 128, max_insert_block_size = 128, min_insert_block_size_rows = 128, min_insert_block_size_bytes = 0
+    </fill_query>
+    <fill_query>SELECT throwIf(count() != 131072 OR max(blockSize()) != 128 OR min(blockSize()) != 128) FROM otel_spans_squash_src SETTINGS max_threads = 1</fill_query>
+    <!-- 16 blocks of 128 rows per part. -->
+    <fill_query>
+        INSERT INTO otel_spans SELECT * FROM otel_spans_squash_src
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 2048, max_insert_block_size = 2048, min_insert_block_size_rows = 2048, min_insert_block_size_bytes = 0
+    </fill_query>
+    <fill_query>
+        SELECT throwIf(groupArray(name) != arrayMap(i -> concat('all_', toString(i), '_', toString(i), '_0'), range(1, 65))
+            OR sum(rows) != 131072 OR countIf(part_type != 'Compact') != 0)
+        FROM (SELECT name, rows, part_type FROM system.parts WHERE database = currentDatabase() AND table = 'otel_spans' AND active ORDER BY min_block_number)
+    </fill_query>
+
+    <!-- Merges: `chooseDynamicStructureForMerge` + `takeOrCalculateStatisticsFrom` with 64 sources once per merge
+         (`MergedData::initialize`, or `ColumnGathererStream::initialize` per gathered column), then single-source
+         `takeOrCalculateStatisticsFrom` for every written block and every `JSON` path
+         (`MergeTreeDataPartWriterOnDisk::prepareBlockForWriting`). -->
+    <query>OPTIMIZE TABLE json_merge_burst{burst}_vertical{vertical} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0', 'all_7_7_0', 'all_8_8_0', 'all_9_9_0', 'all_10_10_0', 'all_11_11_0', 'all_12_12_0', 'all_13_13_0', 'all_14_14_0', 'all_15_15_0', 'all_16_16_0', 'all_17_17_0', 'all_18_18_0', 'all_19_19_0', 'all_20_20_0', 'all_21_21_0', 'all_22_22_0', 'all_23_23_0', 'all_24_24_0', 'all_25_25_0', 'all_26_26_0', 'all_27_27_0', 'all_28_28_0', 'all_29_29_0', 'all_30_30_0', 'all_31_31_0', 'all_32_32_0', 'all_33_33_0', 'all_34_34_0', 'all_35_35_0', 'all_36_36_0', 'all_37_37_0', 'all_38_38_0', 'all_39_39_0', 'all_40_40_0', 'all_41_41_0', 'all_42_42_0', 'all_43_43_0', 'all_44_44_0', 'all_45_45_0', 'all_46_46_0', 'all_47_47_0', 'all_48_48_0', 'all_49_49_0', 'all_50_50_0', 'all_51_51_0', 'all_52_52_0', 'all_53_53_0', 'all_54_54_0', 'all_55_55_0', 'all_56_56_0', 'all_57_57_0', 'all_58_58_0', 'all_59_59_0', 'all_60_60_0', 'all_61_61_0', 'all_62_62_0', 'all_63_63_0', 'all_64_64_0' SETTINGS optimize_dry_run_check_part = 0</query>
+    <query>OPTIMIZE TABLE otel_spans DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0', 'all_4_4_0', 'all_5_5_0', 'all_6_6_0', 'all_7_7_0', 'all_8_8_0', 'all_9_9_0', 'all_10_10_0', 'all_11_11_0', 'all_12_12_0', 'all_13_13_0', 'all_14_14_0', 'all_15_15_0', 'all_16_16_0', 'all_17_17_0', 'all_18_18_0', 'all_19_19_0', 'all_20_20_0', 'all_21_21_0', 'all_22_22_0', 'all_23_23_0', 'all_24_24_0', 'all_25_25_0', 'all_26_26_0', 'all_27_27_0', 'all_28_28_0', 'all_29_29_0', 'all_30_30_0', 'all_31_31_0', 'all_32_32_0', 'all_33_33_0', 'all_34_34_0', 'all_35_35_0', 'all_36_36_0', 'all_37_37_0', 'all_38_38_0', 'all_39_39_0', 'all_40_40_0', 'all_41_41_0', 'all_42_42_0', 'all_43_43_0', 'all_44_44_0', 'all_45_45_0', 'all_46_46_0', 'all_47_47_0', 'all_48_48_0', 'all_49_49_0', 'all_50_50_0', 'all_51_51_0', 'all_52_52_0', 'all_53_53_0', 'all_54_54_0', 'all_55_55_0', 'all_56_56_0', 'all_57_57_0', 'all_58_58_0', 'all_59_59_0', 'all_60_60_0', 'all_61_61_0', 'all_62_62_0', 'all_63_63_0', 'all_64_64_0' SETTINGS optimize_dry_run_check_part = 0</query>
+
+    <!-- Squashing: `prepareForSquashing` with 511 sources. For sparse JSON a source block has 8 of the 256 paths of
+         the result. -->
+    <query>INSERT INTO json_squash_dst SELECT * FROM json_squash_src_burst{burst} SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 65536, min_insert_block_size_bytes = 0</query>
+    <query>INSERT INTO otel_spans_squash_dst SELECT * FROM otel_spans_squash_src SETTINGS max_threads = 1, max_insert_threads = 1, min_insert_block_size_rows = 65536, min_insert_block_size_bytes = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_merge_burst{burst}_vertical{vertical} SYNC</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_squash_src_burst{burst} SYNC</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_squash_dst SYNC</drop_query>
+    <drop_query>DROP TABLE IF EXISTS otel_spans SYNC</drop_query>
+    <drop_query>DROP TABLE IF EXISTS otel_spans_squash_src SYNC</drop_query>
+    <drop_query>DROP TABLE IF EXISTS otel_spans_squash_dst SYNC</drop_query>
+</test>

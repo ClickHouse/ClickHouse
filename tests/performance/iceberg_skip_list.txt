@@ -68,6 +68,7 @@ lazy_final_early_exit_limit.xml                          # assertion in the test
 lazy_final_replacing.xml                                 # FINAL
 lazy_materialization_final_limit.xml                     # assertion in the test (throwIf)
 linear_regression.xml                                    # AggregateFunction column in CREATE ... AS SELECT
+merge_squash_json_map_sources.xml                        # JSON column
 merge_table_function_many_columns.xml                    # ALTER ADD COLUMN
 merge_tree_huge_pk.xml                                   # type UInt8 in CREATE ... AS SELECT
 merge_tree_reorder_columns_merge.xml                     # FINAL
