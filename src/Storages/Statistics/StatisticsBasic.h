@@ -1,7 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction_fwd.h>
-#include <Common/AlignedBuffer.h>
 #include <Core/Field.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -60,7 +58,7 @@ public:
     bool hasStringLengthAvg() const { return tracks_string; }
     bool hasNullCount() const { return is_nullable && has_default_count; }
     bool hasDefaultCount() const { return has_default_count; }
-    bool hasSum() const { return has_sum; }
+    bool hasSum() const { return sum != nullptr; }
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
@@ -86,10 +84,11 @@ private:
     bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
 
-    AlignedBuffer sum_buffer;
-    AggregateFunctionPtr sum_function;
-    AggregateDataPtr sum_state = nullptr;
-    bool has_sum = false; /// false also when deserialized from older code that did not write the sum
+    /// The state of `sum` over the values, allocated only for the types of `canStatisticsTrackSum`, because the parts
+    /// keep the statistics of every column in memory. Null also when deserialized from older code that did not write
+    /// the sum, or merged with such statistics.
+    struct Sum;
+    std::unique_ptr<Sum> sum;
 };
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

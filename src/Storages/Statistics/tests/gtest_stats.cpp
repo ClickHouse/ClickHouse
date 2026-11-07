@@ -919,6 +919,31 @@ TEST(Statistics, BasicSumMissingFromOlderStatistics)
     EXPECT_FALSE(merged->hasSum());
 }
 
+/// The sum is written with the size that `getSerializedSize` declares for every type that tracks it, and read back.
+TEST(Statistics, BasicSumRoundTrip)
+{
+    tryRegisterAggregateFunctions();
+
+    for (const auto * type_name : {"Int8", "UInt16", "Int32", "UInt64", "Int128", "UInt256", "Bool", "Decimal32(2)", "Decimal256(4)"})
+    {
+        auto data_type = DataTypeFactory::instance().get(type_name);
+        MutableColumnPtr col = data_type->createColumn();
+        col->insert(convertFieldToType(Field(UInt64(1)), *data_type));
+        col->insert(convertFieldToType(Field(UInt64(1)), *data_type));
+        col->insertDefault();
+        auto stats = createTestStats({StatisticsType::Basic}, data_type);
+        stats->build(std::move(col));
+        ASSERT_TRUE(stats->hasSum()) << type_name;
+
+        WriteBufferFromOwnString buf;
+        stats->serialize(buf);
+        ReadBufferFromString read_buf(buf.str());
+        auto read_stats = ColumnStatistics::deserialize(read_buf, data_type);
+        ASSERT_TRUE(read_stats->hasSum()) << type_name;
+        EXPECT_EQ(read_stats->getEstimate().estimated_sum, stats->getEstimate().estimated_sum) << type_name;
+    }
+}
+
 /// The selectivity estimator accumulates the statistics of the parts into a copy made by `cloneEmpty`. The copy
 /// must keep the structure of `basic` statistics deserialized from an older format without a default-value count:
 /// otherwise it gets a fabricated exact count of zero defaults, and the following parts with the same old statistics
