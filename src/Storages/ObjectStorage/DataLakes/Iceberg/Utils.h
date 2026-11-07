@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -79,6 +80,18 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// Calls `commit`, which commits the metadata file `metadata_file_info` this writer created to a catalog that does not
+/// write metadata files. When the catalog does not commit it (`false`, or an exception other than an unknown outcome),
+/// the file is removed so that a retry or the next write can use the same name.
+bool commitCreatedMetadataFile(
+    const std::function<bool()> & commit,
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    DB::ObjectStoragePtr object_storage);
+
+/// True while handling the exception of a catalog commit whose outcome is unknown: it may reference the written files.
+bool isCommitStateUnknown();
+
 struct TransformAndArgument
 {
     String transform_name;
@@ -147,7 +160,9 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     bool force_fetch_latest_metadata = true,
     bool ignore_metadata_pointer_overrides = false);
 
-String getCatalogMetadataFilePath(const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier);
+/// `catalog_metadata_location`, if set, receives the metadata location the catalog stores, or an empty string if it stores none.
+String getCatalogMetadataFilePath(
+    const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier, String * catalog_metadata_location = nullptr);
 
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
@@ -160,7 +175,8 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool ignore_metadata_pointer_overrides = true);
+    bool ignore_metadata_pointer_overrides = true,
+    String * catalog_metadata_location = nullptr);
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);

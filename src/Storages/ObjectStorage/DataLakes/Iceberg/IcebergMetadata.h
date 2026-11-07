@@ -231,8 +231,12 @@ public:
         bool force_fetch_latest_metadata = false,
         bool ignore_metadata_pointer_overrides = false) const;
 
+    /// `catalog_metadata_location` is as in `Iceberg::getCatalogMetadataFilePath`.
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
-        const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const;
+        const ContextPtr & context,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const String & table_identifier,
+        String * catalog_metadata_location = nullptr) const;
 
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {

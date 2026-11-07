@@ -57,6 +57,8 @@ enum class DataLakeTableFormat : uint8_t
 struct DataLakeSpecificProperties
 {
     std::string iceberg_metadata_file_location;
+    /// The catalog stores no metadata pointer; the location was found by listing the table location.
+    bool resolved_from_table_location = false;
 };
 
 /// A class representing table metadata,
@@ -285,7 +287,16 @@ public:
     virtual bool writesInitialMetadata() const { return false; }
 
     /// Updates metadata in catalog.
-    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+    /// `base_metadata_location` is the metadata location this catalog reported for the table when the commit's base was read
+    /// (empty if it stores none). A catalog that stores only a pointer returns `false` when its pointer no longer equals it.
+    /// `new_metadata` is the metadata object written to `new_metadata_path`.
+    virtual bool updateMetadata(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_snapshot,
+        const String & base_metadata_location,
+        const Poco::JSON::Object::Ptr & new_metadata) const;
 
     /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
     /// `new_metadata_path` is the path of the freshly written `vN.metadata.json`; it is used by
@@ -293,13 +304,15 @@ public:
     /// `new_schema` is the full new schema object and `previous_schema_id` is the schema id that the
     /// catalog is expected to currently have - used to build the optimistic-concurrency requirement
     /// (`assert-current-schema-id`) on transactional catalogs (e.g. Iceberg REST).
+    /// `base_metadata_location` is as in `updateMetadata`.
     /// Returns `false` on a recoverable conflict so the caller can retry, throws otherwise.
     virtual bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
-        Int32 previous_schema_id) const;
+        Int32 previous_schema_id,
+        const String & base_metadata_location) const;
 
     /// Commit the removal of the snapshots `snapshot_ids` and the snapshot references `ref_names` to a
     /// transactional catalog, which writes the new metadata itself. The files of the removed snapshots are

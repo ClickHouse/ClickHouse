@@ -307,7 +307,10 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
-    const ContextPtr & context, const std::shared_ptr<DataLake::ICatalog> & catalog, const String & table_identifier) const
+    const ContextPtr & context,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
+    String * catalog_metadata_location) const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergGetTableStateMicroseconds);
     const auto [metadata_version, metadata_file_path, _] = getLatestMetadataFileAndVersionWithCatalog(
@@ -320,7 +323,9 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         context,
         log.get(),
         persistent_components.table_uuid,
-        persistent_components.metadata_compression_method);
+        persistent_components.metadata_compression_method,
+        /* ignore_metadata_pointer_overrides */ true,
+        catalog_metadata_location);
     return getState(context, metadata_file_path, metadata_version);
 }
 

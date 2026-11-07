@@ -109,7 +109,7 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
         return std::make_shared<DB::DataTypeTuple>(field_types, field_names);
     }
 
-    return nullable ? DB::makeNullable(DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name))
+    return nullable ? DB::makeNullableSafe(DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name))
                     : DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name);
 }
 

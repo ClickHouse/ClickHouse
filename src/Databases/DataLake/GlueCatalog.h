@@ -18,6 +18,11 @@ namespace Aws::Glue
     class GlueClient;
 }
 
+namespace Aws::Glue::Model
+{
+    class Table;
+}
+
 namespace Aws::Auth
 {
     class AWSCredentialsProvider;
@@ -77,14 +82,21 @@ public:
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+    bool updateMetadata(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_snapshot,
+        const String & base_metadata_location,
+        const Poco::JSON::Object::Ptr & new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
-        Int32 previous_schema_id) const override;
+        Int32 previous_schema_id,
+        const String & base_metadata_location) const override;
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
@@ -126,6 +138,17 @@ private:
     CatalogTables getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
+
+    Aws::Glue::Model::Table getGlueTable(const String & namespace_name, const String & table_name) const;
+
+    /// Replaces the table's metadata pointer with `new_metadata_path` if it still equals `base_metadata_location`,
+    /// keeping the rest of the table definition and refreshing the columns from `new_schema` when it is not null.
+    bool commitTableUpdate(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        const String & base_metadata_location,
+        const Poco::JSON::Object::Ptr & new_schema) const;
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
     /// This method allows to clarify the actual type of the timestamp column.

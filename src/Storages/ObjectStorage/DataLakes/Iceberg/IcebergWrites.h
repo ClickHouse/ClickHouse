@@ -222,6 +222,8 @@ private:
     Int64 snapshot_id = 0;
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
+    /// The catalog commit may have been applied, so the written files must be kept.
+    bool commit_outcome_unknown = false;
 
     /// The manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;
@@ -232,6 +234,8 @@ private:
     std::vector<ManifestPartitionSummary> entry_partition_summaries;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
+    /// The metadata location the catalog reported when `metadata` was read.
+    String base_catalog_metadata_location;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;

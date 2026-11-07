@@ -62,6 +62,8 @@ private:
     {
         IcebergDataSnapshotPtr snapshot;
         TableStateSnapshot table_state;
+        /// The metadata location the catalog reported when `table_state` was read.
+        String base_catalog_metadata_location;
         Poco::JSON::Object::Ptr metadata_object;
         Poco::JSON::Object::Ptr partition_spec;
         Int64 partition_spec_id = 0;

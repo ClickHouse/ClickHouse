@@ -25,7 +25,10 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/checkStackSize.h>
 #include <base/unit.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -61,11 +64,14 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 
+#include <unordered_set>
+
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::FailPoints
@@ -126,6 +132,238 @@ bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
     auto it = parameters.find("table_type");
     const std::string table_type = it != parameters.end() ? it->second : "";
     return Poco::toUpper(table_type) == "ICEBERG";
+}
+
+/// Bounds the retries of a commit after a concurrent change that did not move the metadata pointer.
+constexpr size_t MAX_UPDATE_TABLE_ATTEMPTS = 100;
+
+/// Glue answered the only attempt with a client error, so the update was not applied.
+/// `OperationTimeoutException` is an HTTP 400 that does not say whether the update was applied.
+bool isDefiniteRejection(const Aws::Client::AWSError<Aws::Glue::GlueErrors> & error)
+{
+    if (error.GetErrorType() == Aws::Glue::GlueErrors::OPERATION_TIMEOUT)
+        return false;
+    const auto code = static_cast<int>(error.GetResponseCode());
+    return code >= 400 && code < 500 && !Aws::Http::IsRetryableHttpResponseCode(error.GetResponseCode());
+}
+
+std::optional<String> findTableParameter(const Aws::Glue::Model::Table & table, const String & name)
+{
+    const auto & parameters = table.GetParameters();
+    auto it = parameters.find(name);
+    if (it == parameters.end())
+        return std::nullopt;
+    return it->second;
+}
+
+/// The Glue column type that Iceberg writers register for an Iceberg type, or nothing if a struct field name has
+/// a character that `getType` parses as type syntax, so the Glue database could not read the type back.
+std::optional<String> getGlueColumnType(const Poco::Dynamic::Var & type)
+{
+    checkStackSize();
+
+    if (type.type() == typeid(Poco::JSON::Object::Ptr))
+    {
+        const auto & object = type.extract<Poco::JSON::Object::Ptr>();
+        auto name = object->getValue<String>(DB::Iceberg::f_type);
+        if (name == DB::Iceberg::f_struct)
+        {
+            String result = "struct<";
+            const auto fields = object->getArray(DB::Iceberg::f_fields);
+            for (UInt32 i = 0; i < fields->size(); ++i)
+            {
+                const auto field = fields->getObject(i);
+                const auto field_name = field->getValue<String>(DB::Iceberg::f_name);
+                const auto field_type = getGlueColumnType(field->get(DB::Iceberg::f_type));
+                if (!field_type || field_name.find_first_of(":,<>()") != String::npos)
+                    return std::nullopt;
+                if (i > 0)
+                    result += ',';
+                result += field_name + ':' + *field_type;
+            }
+            return result + '>';
+        }
+        if (name == DB::Iceberg::f_list)
+        {
+            const auto element = getGlueColumnType(object->get(DB::Iceberg::f_element));
+            if (!element)
+                return std::nullopt;
+            return "array<" + *element + '>';
+        }
+        if (name == DB::Iceberg::f_map)
+        {
+            const auto key = getGlueColumnType(object->get(DB::Iceberg::f_key));
+            const auto value = getGlueColumnType(object->get(DB::Iceberg::f_value));
+            if (!key || !value)
+                return std::nullopt;
+            return "map<" + *key + ',' + *value + '>';
+        }
+        return name;
+    }
+
+    auto name = type.extract<String>();
+    if (name == DB::Iceberg::f_long)
+        return "bigint";
+    if (name == DB::Iceberg::f_time || name == DB::Iceberg::f_uuid)
+        return "string";
+    if (name == DB::Iceberg::f_timestamp || name == DB::Iceberg::f_timestamptz)
+        return "timestamp";
+    if (name.starts_with("fixed["))
+        return "binary";
+    if (name.starts_with("decimal("))
+        std::erase_if(name, isWhitespaceASCII);
+    return name;
+}
+
+bool isNonCurrentGlueColumn(const Aws::Glue::Model::Column & column)
+{
+    const auto & parameters = column.GetParameters();
+    auto current = parameters.find("iceberg.field.current");
+    return current != parameters.end() && current->second == "false";
+}
+
+std::optional<String> findColumnParameter(const Aws::Glue::Model::Column & column, const String & name)
+{
+    const auto & parameters = column.GetParameters();
+    auto it = parameters.find(name);
+    if (it == parameters.end())
+        return std::nullopt;
+    return it->second;
+}
+
+/// Glue refuses column text longer than `max_length` UTF-16 code units or with a control character other than tab.
+bool isValidGlueColumnText(const String & text, size_t max_length = 255)
+{
+    size_t utf16_length = 0;
+    for (size_t pos = 0; pos < text.size();)
+    {
+        const size_t length = DB::UTF8::seqLength(static_cast<UInt8>(text[pos]));
+        const auto code_point
+            = pos + length <= text.size() ? DB::UTF8::convertUTF8ToCodePoint(text.data() + pos, length) : std::nullopt;
+        if (!code_point
+            || !(*code_point == '\t' || (*code_point >= 0x20 && *code_point <= 0xD7FF)
+                 || (*code_point >= 0xE000 && *code_point <= 0xFFFD) || *code_point >= 0x10000))
+            return false;
+        utf16_length += *code_point >= 0x10000 ? 2 : 1;
+        pos += length;
+    }
+    return utf16_length <= max_length;
+}
+
+/// Glue columns for an Iceberg schema, or the existing ones if a column name or type cannot be registered. Existing columns,
+/// matched by field id (else by name), keep their parameters, and their comment unless the field has a `doc` Glue
+/// accepts; existing columns the schema no longer has follow as non-current, each name once.
+Aws::Vector<Aws::Glue::Model::Column> getGlueColumns(
+    const Poco::JSON::Object::Ptr & schema, const Aws::Vector<Aws::Glue::Model::Column> & existing_columns)
+{
+    std::unordered_map<String, const Aws::Glue::Model::Column *> existing_by_id;
+    std::unordered_map<String, const Aws::Glue::Model::Column *> existing_by_name;
+    for (const auto & column : existing_columns)
+    {
+        if (isNonCurrentGlueColumn(column))
+            continue;
+        if (auto id = findColumnParameter(column, "iceberg.field.id"))
+            existing_by_id.emplace(*id, &column);
+        else
+            existing_by_name.emplace(column.GetName(), &column);
+    }
+
+    Aws::Vector<Aws::Glue::Model::Column> columns;
+    std::unordered_set<String> current_names;
+    const auto fields = schema->getArray(DB::Iceberg::f_fields);
+    for (UInt32 i = 0; i < fields->size(); ++i)
+    {
+        const auto field = fields->getObject(i);
+        const auto name = field->getValue<String>(DB::Iceberg::f_name);
+        auto type = getGlueColumnType(field->get(DB::Iceberg::f_type));
+        if (!type || !isValidGlueColumnText(name) || !isValidGlueColumnText(*type, 131072))
+            return existing_columns;
+        const auto id = std::to_string(field->getValue<Int32>(DB::Iceberg::f_id));
+        current_names.insert(name);
+
+        const Aws::Glue::Model::Column * existing = nullptr;
+        if (auto by_id = existing_by_id.find(id); by_id != existing_by_id.end())
+            existing = by_id->second;
+        else if (auto by_name = existing_by_name.find(name); by_name != existing_by_name.end())
+            existing = by_name->second;
+
+        Aws::Glue::Model::Column column;
+        column.SetName(name);
+        column.SetType(std::move(*type));
+        if (field->has("doc") && !field->isNull("doc") && isValidGlueColumnText(field->getValue<String>("doc")))
+            column.SetComment(field->getValue<String>("doc"));
+        else if (existing && !existing->GetComment().empty())
+            column.SetComment(existing->GetComment());
+
+        auto parameters = existing ? existing->GetParameters() : Aws::Map<Aws::String, Aws::String>{};
+        parameters["iceberg.field.id"] = id;
+        parameters["iceberg.field.optional"] = field->getValue<bool>(DB::Iceberg::f_required) ? "false" : "true";
+        parameters["iceberg.field.current"] = "true";
+        column.SetParameters(std::move(parameters));
+        columns.push_back(std::move(column));
+    }
+
+    std::unordered_set<String> listed_names = current_names;
+    for (const auto & column : existing_columns)
+    {
+        if (isNonCurrentGlueColumn(column) && listed_names.insert(column.GetName()).second)
+            columns.push_back(column);
+    }
+    for (const auto & column : existing_columns)
+    {
+        if (isNonCurrentGlueColumn(column) || !listed_names.insert(column.GetName()).second)
+            continue;
+        auto retired = column;
+        auto parameters = retired.GetParameters();
+        parameters["iceberg.field.current"] = "false";
+        retired.SetParameters(std::move(parameters));
+        columns.push_back(std::move(retired));
+    }
+    return columns;
+}
+
+/// The current schema of Iceberg table metadata, or null for metadata of another format.
+Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
+{
+    if (!metadata || !metadata->has(DB::Iceberg::f_format_version))
+        return nullptr;
+    if (metadata->getValue<Int32>(DB::Iceberg::f_format_version) >= 2 || metadata->has(DB::Iceberg::f_schemas))
+        return DB::Iceberg::parseTableSchemaV2Method(metadata).first;
+    return DB::Iceberg::parseTableSchemaV1Method(metadata).first;
+}
+
+/// `UpdateTable` replaces the whole table definition, so an update starts from the current one.
+Aws::Glue::Model::TableInput getTableInput(const Aws::Glue::Model::Table & table, const String & table_name)
+{
+    Aws::Glue::Model::TableInput input;
+    input.SetName(table_name);
+    if (table.DescriptionHasBeenSet())
+        input.SetDescription(table.GetDescription());
+    if (table.OwnerHasBeenSet())
+        input.SetOwner(table.GetOwner());
+    if (table.LastAccessTimeHasBeenSet())
+        input.SetLastAccessTime(table.GetLastAccessTime());
+    if (table.LastAnalyzedTimeHasBeenSet())
+        input.SetLastAnalyzedTime(table.GetLastAnalyzedTime());
+    if (table.RetentionHasBeenSet())
+        input.SetRetention(table.GetRetention());
+    if (table.StorageDescriptorHasBeenSet())
+        input.SetStorageDescriptor(table.GetStorageDescriptor());
+    if (table.PartitionKeysHasBeenSet())
+        input.SetPartitionKeys(table.GetPartitionKeys());
+    if (table.ViewOriginalTextHasBeenSet())
+        input.SetViewOriginalText(table.GetViewOriginalText());
+    if (table.ViewExpandedTextHasBeenSet())
+        input.SetViewExpandedText(table.GetViewExpandedText());
+    if (table.TableTypeHasBeenSet())
+        input.SetTableType(table.GetTableType());
+    if (table.ParametersHasBeenSet())
+        input.SetParameters(table.GetParameters());
+    if (table.TargetTableHasBeenSet())
+        input.SetTargetTable(table.GetTargetTable());
+    if (table.FederatedTableHasBeenSet())
+        input.SetFederatedTable(table.GetFederatedTable());
+    return input;
 }
 
 }
@@ -410,7 +648,8 @@ bool GlueCatalog::tryGetTableMetadata(
                 }
                 else
                 {
-                    result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = resolved_metadata_path});
+                    result.setDataLakeSpecificProperties(DataLakeSpecificProperties{
+                        .iceberg_metadata_file_location = resolved_metadata_path, .resolved_from_table_location = true});
                 }
             }
             else
@@ -721,7 +960,7 @@ std::optional<std::string> GlueCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(location_uri) / table_name);
 }
 
-void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
+void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
 {
     Aws::Glue::Model::CreateTableRequest request;
     request.SetDatabaseName(namespace_name);
@@ -736,9 +975,11 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
     fs::path grandparent = parent.parent_path();
 
     sd.SetLocation(grandparent.c_str());
+    if (auto schema = getCurrentSchema(metadata_content))
+        sd.SetColumns(getGlueColumns(schema, {}));
 
     table_input.SetStorageDescriptor(sd);
-    table_input.SetTableType("ICEBERG");
+    table_input.SetTableType("EXTERNAL_TABLE");
 
     Aws::Map<Aws::String, Aws::String> parameters;
     parameters["metadata_location"] = new_metadata_path;
@@ -754,51 +995,163 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
 }
 
-bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
+Aws::Glue::Model::Table GlueCatalog::getGlueTable(const String & namespace_name, const String & table_name) const
 {
-    Aws::Glue::Model::UpdateTableRequest request;
+    Aws::Glue::Model::GetTableRequest request;
     request.SetDatabaseName(namespace_name);
+    request.SetName(table_name);
 
-    Aws::Glue::Model::TableInput table_input;
-    table_input.SetName(table_name);
+    auto outcome = glue_client->GetTable(request);
+    if (!outcome.IsSuccess())
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling GetTable for table {}: {}",
+            namespace_name + "." + table_name, outcome.GetError().GetMessage());
+    return outcome.GetResult().GetTable();
+}
 
-    Aws::Glue::Model::StorageDescriptor sd;
-    fs::path original_path = new_metadata_path;
+bool GlueCatalog::commitTableUpdate(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    const String & base_metadata_location,
+    const Poco::JSON::Object::Ptr & new_schema) const
+{
+    for (size_t attempt = 0; attempt < MAX_UPDATE_TABLE_ATTEMPTS; ++attempt)
+    {
+        const auto table = getGlueTable(namespace_name, table_name);
+        const auto metadata_location = findTableParameter(table, "metadata_location").value_or("");
+        if (metadata_location != base_metadata_location)
+        {
+            if (metadata_location.empty() || base_metadata_location.empty())
+                throw DB::Exception(
+                    DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+                    "The metadata_location of Glue table {} changed from '{}' to '{}' during the commit of '{}'. "
+                    "The commit is not made, and its files are kept because a writer that lists the table may use them",
+                    namespace_name + "." + table_name, base_metadata_location, metadata_location, new_metadata_path);
+            return false;
+        }
 
-    fs::path parent = original_path.parent_path();
-    fs::path grandparent = parent.parent_path();
+        if (table.GetVersionId().empty())
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Glue returned no VersionId for table {}, so it cannot be updated conditionally",
+                namespace_name + "." + table_name);
 
-    /// `new_metadata_path` looks like s3://<bucket>/some/your/path/metadata/v<i>-metadata.json
-    /// We should drop `metadata/v<i>-metadata.json` suffix to get location.
-    sd.SetLocation(grandparent.c_str());
+        auto table_input = getTableInput(table, table_name);
+        auto storage_descriptor = table_input.GetStorageDescriptor();
+        /// `new_metadata_path` looks like s3://<bucket>/<table location>/metadata/<file>.
+        if (storage_descriptor.GetLocation().empty())
+            storage_descriptor.SetLocation(fs::path(new_metadata_path).parent_path().parent_path().string());
+        if (new_schema)
+            storage_descriptor.SetColumns(getGlueColumns(new_schema, storage_descriptor.GetColumns()));
+        table_input.SetStorageDescriptor(std::move(storage_descriptor));
+        if (table_input.GetTableType().empty())
+            table_input.SetTableType("EXTERNAL_TABLE");
 
-    table_input.SetStorageDescriptor(sd);
-    table_input.SetTableType("ICEBERG");
+        auto parameters = table_input.GetParameters();
+        parameters["metadata_location"] = new_metadata_path;
+        if (!metadata_location.empty())
+            parameters["previous_metadata_location"] = metadata_location;
+        parameters["table_type"] = "ICEBERG";
+        table_input.SetParameters(std::move(parameters));
 
-    Aws::Map<Aws::String, Aws::String> parameters;
-    parameters["metadata_location"] = new_metadata_path;
-    parameters["table_type"] = "ICEBERG";
+        Aws::Glue::Model::UpdateTableRequest request;
+        request.SetDatabaseName(namespace_name);
+        request.SetTableInput(std::move(table_input));
+        request.SetVersionId(table.GetVersionId());
+        bool retried = false;
+        request.SetRequestRetryHandler([&retried](const Aws::AmazonWebServiceRequest &) { retried = true; });
 
-    table_input.SetParameters(parameters);
+        std::optional<Aws::Glue::Model::UpdateTableOutcome> response;
+        String error_message;
+        try
+        {
+            response.emplace(glue_client->UpdateTable(request));
+        }
+        catch (...)
+        {
+            error_message = DB::getCurrentExceptionMessage(false);
+        }
 
-    request.SetTableInput(table_input);
+        if (response && response->IsSuccess())
+            return true;
 
-    auto response = glue_client->UpdateTable(request);
+        bool concurrent_modification = false;
+        if (response)
+        {
+            concurrent_modification = response->GetError().GetErrorType() == Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION;
+            error_message = response->GetError().GetMessage();
+        }
 
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+        if (!retried && response)
+        {
+            if (concurrent_modification)
+                continue;
+            if (isDefiniteRejection(response->GetError()))
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", error_message);
+        }
 
-    return true;
+        /// An attempt of the request may have been applied, which moved the version.
+        String current_metadata_location;
+        std::optional<String> previous_metadata_location;
+        try
+        {
+            const auto current = getGlueTable(namespace_name, table_name);
+            current_metadata_location = findTableParameter(current, "metadata_location").value_or("");
+            previous_metadata_location = findTableParameter(current, "previous_metadata_location");
+        }
+        catch (...)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+                "Cannot tell whether the commit of '{}' to Glue table {} was applied: {}",
+                new_metadata_path, namespace_name + "." + table_name, DB::getCurrentExceptionMessage(false));
+        }
+
+        if (current_metadata_location == new_metadata_path || previous_metadata_location == new_metadata_path)
+        {
+            LOG_INFO(
+                log, "Update of {} to {} took effect despite a failed response: {}",
+                namespace_name + "." + table_name, new_metadata_path, error_message);
+            return true;
+        }
+        /// After another error, a request carrying the still current `VersionId` may still be applied later, and a moved
+        /// pointer does not show that ours was refused: the next writer may keep the `previous_metadata_location` we set.
+        if (concurrent_modification && current_metadata_location == base_metadata_location)
+            continue;
+        throw DB::Exception(
+            DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+            "Cannot tell whether the commit of '{}' to Glue table {} was applied: the table now points to '{}' ({})",
+            new_metadata_path, namespace_name + "." + table_name, current_metadata_location, error_message);
+    }
+
+    throw DB::Exception(
+        DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+        "Can not update metadata in glue catalog: table {} was changed concurrently {} times",
+        namespace_name + "." + table_name, MAX_UPDATE_TABLE_ATTEMPTS);
+}
+
+bool GlueCatalog::updateMetadata(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr /*new_snapshot*/,
+    const String & base_metadata_location,
+    const Poco::JSON::Object::Ptr & new_metadata) const
+{
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_location, getCurrentSchema(new_metadata));
 }
 
 bool GlueCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
     const String & new_metadata_path,
-    Poco::JSON::Object::Ptr /*new_schema*/,
-    Int32 /*previous_schema_id*/) const
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 /*previous_schema_id*/,
+    const String & base_metadata_location) const
 {
-    return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, base_metadata_location, new_schema);
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const

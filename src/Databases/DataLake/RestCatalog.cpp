@@ -2033,7 +2033,13 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 }
 
 
-bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
+bool RestCatalog::updateMetadata(
+    const String & namespace_name,
+    const String & table_name,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr new_snapshot,
+    const String & /*base_metadata_location*/,
+    const Poco::JSON::Object::Ptr & /*new_metadata*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
@@ -2235,7 +2241,8 @@ bool RestCatalog::updateSchema(
     const String & table_name,
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr new_schema,
-    Int32 previous_schema_id) const
+    Int32 previous_schema_id,
+    const String & /*base_metadata_location*/) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();

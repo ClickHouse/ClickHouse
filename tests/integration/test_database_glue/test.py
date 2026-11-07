@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -13,12 +14,14 @@ from datetime import timedelta
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import StaticTable
 from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from helpers.config_cluster import minio_access_key, minio_secret_key
 import decimal
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -27,9 +30,11 @@ from pyiceberg.types import (
     MapType,
     DecimalType,
 )
+from minio.commonconfig import CopySource
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
+from helpers.test_tools import wait_condition
 
 import boto3
 import botocore.config
@@ -2216,5 +2221,658 @@ def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
     assert "AMBIGUOUS_COLUMN_NAME" in error_again, error_again
 
     assert node.query("SELECT 1") == "1\n"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+GLUE_WRITE_SETTINGS = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+ID_SCHEMA = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+ID_ARROW_SCHEMA = pa.schema([pa.field("id", pa.int64())])
+
+# Keys of a Glue `Table` that are also `TableInput` fields and that these tests use.
+GLUE_TABLE_INPUT_KEYS = ("Name", "Description", "Owner", "StorageDescriptor", "PartitionKeys", "TableType", "Parameters")
+
+
+def get_glue_table(started_cluster, namespace, table_name):
+    client = boto3.client("glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster))
+    return client.get_table(DatabaseName=namespace, Name=table_name)["Table"]
+
+
+def put_glue_table(started_cluster, namespace, table):
+    """Replaces the Glue table definition with `table`, a `get_table` result, like another Glue writer."""
+    client = boto3.client("glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster))
+    client.update_table(
+        DatabaseName=namespace, TableInput={key: table[key] for key in GLUE_TABLE_INPUT_KEYS if key in table}
+    )
+
+
+def query_glue_fault_proxy(started_cluster, path):
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+    return started_cluster.exec_in_container(proxy, ["curl", "-s", f"http://localhost:8081/{path}"]).strip()
+
+
+def split_s3_path(path):
+    return path[len("s3://") :].split("/", 1)
+
+
+def list_metadata_files(started_cluster, table_location):
+    bucket, prefix = split_s3_path(table_location.rstrip("/") + "/metadata/")
+    return {
+        f"s3://{bucket}/{item.object_name}"
+        for item in started_cluster.minio_client.list_objects(bucket, prefix, recursive=True)
+        if item.object_name.endswith(".metadata.json")
+    }
+
+
+def pyiceberg_metadata_files(table):
+    return {table.metadata_location} | {entry.metadata_file for entry in table.metadata.metadata_log}
+
+
+def read_ids(started_cluster, metadata_location):
+    """Reads the table state `metadata_location` describes, which fails if a file it references is missing."""
+    table = StaticTable.from_metadata(
+        metadata_location,
+        properties={
+            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
+        },
+    )
+    return sorted(table.scan().to_arrow().column("id").to_pylist())
+
+
+def create_pyiceberg_table(
+    started_cluster, namespace, table_name, batches, schema=ID_SCHEMA, arrow_schema=ID_ARROW_SCHEMA, properties={}
+):
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier=f"{namespace}.{table_name}",
+        schema=schema,
+        location=f"s3://warehouse-glue/{namespace}",
+        partition_spec=PartitionSpec(),
+        properties=properties,
+    )
+    for batch in batches:
+        table.append(pa.Table.from_pylist(batch, schema=arrow_schema))
+    return catalog, table
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "insert",
+        "alter_add_column",
+        "alter_rename_column",
+        "alter_drop_column",
+        "delete",
+        "optimize_manifest",
+        "expire_snapshots",
+        "insert_after_wipe",
+    ],
+)
+def test_glue_update_keeps_table_definition(started_cluster, operation):
+    # A ClickHouse commit to a table another engine registered in Glue keeps the table definition, records the
+    # previous pointer and keeps the Glue columns in sync with the Iceberg schema.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"keep_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_keep_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+        NestedField(field_id=2, name="s", field_type=StringType(), required=False),
+    )
+    arrow_schema = pa.schema([pa.field("id", pa.int64()), pa.field("s", pa.string())])
+    batches = [[{"id": 1, "s": "a"}, {"id": 2, "s": "b"}]]
+    if operation in ("optimize_manifest", "expire_snapshots"):
+        batches.append([{"id": 3, "s": "c"}])
+    catalog, _ = create_pyiceberg_table(
+        started_cluster, namespace, table_name, batches, schema, arrow_schema, {"owner_team": "x"}
+    )
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    registered = glue_table["StorageDescriptor"]["Columns"]
+    if operation == "insert_after_wipe":
+        # What a commit of an earlier ClickHouse version leaves.
+        glue_table["StorageDescriptor"] = {**glue_table["StorageDescriptor"], "Columns": []}
+    else:
+        # A comment and a parameter typed in the Glue console, with no Iceberg `doc` behind them, and columns of older
+        # schemas, one of them the old name of `s`.
+        glue_table["StorageDescriptor"]["Columns"][0]["Comment"] = "typed in the console"
+        glue_table["StorageDescriptor"]["Columns"][0]["Parameters"]["owner"] = "team-x"
+        glue_table["StorageDescriptor"]["Columns"].append(
+            {
+                "Name": "old",
+                "Type": "string",
+                "Parameters": {
+                    "iceberg.field.id": "100",
+                    "iceberg.field.optional": "true",
+                    "iceberg.field.current": "false",
+                },
+            }
+        )
+        glue_table["StorageDescriptor"]["Columns"].append(
+            {
+                "Name": "s_old",
+                "Type": "string",
+                "Parameters": {
+                    "iceberg.field.id": "2",
+                    "iceberg.field.optional": "true",
+                    "iceberg.field.current": "false",
+                },
+            }
+        )
+    put_glue_table(started_cluster, namespace, glue_table)
+    before = get_glue_table(started_cluster, namespace, table_name)
+
+    statement, settings, rows = {
+        "insert": (f"INSERT INTO {table_ref} VALUES (4, 'd')", {}, 3),
+        "insert_after_wipe": (f"INSERT INTO {table_ref} VALUES (4, 'd')", {}, 3),
+        "alter_add_column": (f"ALTER TABLE {table_ref} ADD COLUMN c Nullable(String)", {}, 2),
+        "alter_rename_column": (f"ALTER TABLE {table_ref} RENAME COLUMN s TO s2", {}, 2),
+        "alter_drop_column": (f"ALTER TABLE {table_ref} DROP COLUMN s", {}, 2),
+        "delete": (f"ALTER TABLE {table_ref} DELETE WHERE id = 1", {}, 1),
+        "optimize_manifest": (
+            f"OPTIMIZE TABLE {table_ref} MANIFEST",
+            {"allow_experimental_iceberg_compaction": 1, "iceberg_manifest_min_count_to_compact": 1},
+            3,
+        ),
+        "expire_snapshots": (
+            f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+            {"allow_experimental_expire_snapshots": 1},
+            3,
+        ),
+    }[operation]
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    node.query(statement, settings={**GLUE_WRITE_SETTINGS, **settings})
+
+    after = get_glue_table(started_cluster, namespace, table_name)
+    assert after["TableType"] == before["TableType"] == "EXTERNAL_TABLE", after
+    assert after["Parameters"]["owner_team"] == "x", after
+    assert after["Parameters"]["table_type"] == "ICEBERG", after
+    assert after["Parameters"]["metadata_location"] != before["Parameters"]["metadata_location"], after
+    assert after["Parameters"]["previous_metadata_location"] == before["Parameters"]["metadata_location"], after
+    assert after["StorageDescriptor"]["Location"] == before["StorageDescriptor"]["Location"], after
+
+    columns = after["StorageDescriptor"]["Columns"]
+    if operation == "alter_add_column":
+        field_id = catalog.load_table(f"{namespace}.{table_name}").schema().find_field("c").field_id
+        new_column = {
+            "Name": "c",
+            "Type": "string",
+            "Parameters": {
+                "iceberg.field.id": str(field_id),
+                "iceberg.field.optional": "true",
+                "iceberg.field.current": "true",
+            },
+        }
+        older = [c for c in before["StorageDescriptor"]["Columns"] if c["Parameters"]["iceberg.field.current"] == "false"]
+        current = [c for c in before["StorageDescriptor"]["Columns"] if c not in older]
+        assert columns == current + [new_column] + older, columns
+        assert columns[0]["Comment"] == "typed in the console", columns
+        assert columns[0]["Parameters"]["owner"] == "team-x", columns
+        assert "c\tNullable(String)" in node.query(f"DESCRIBE TABLE {table_ref}")
+    elif operation in ("alter_rename_column", "alter_drop_column"):
+        older = [c for c in before["StorageDescriptor"]["Columns"] if c["Parameters"]["iceberg.field.current"] == "false"]
+        id_column, s_column = [c for c in before["StorageDescriptor"]["Columns"] if c not in older]
+        retired = {**s_column, "Parameters": {**s_column["Parameters"], "iceberg.field.current": "false"}}
+        kept = [id_column, {**s_column, "Name": "s2"}] if operation == "alter_rename_column" else [id_column]
+        assert columns == kept + older + [retired], columns
+    elif operation == "insert_after_wipe":
+        assert columns == registered, columns
+    else:
+        assert columns == before["StorageDescriptor"]["Columns"], columns
+
+    assert catalog.load_table(f"{namespace}.{table_name}").scan().to_arrow().num_rows == rows
+    assert node.query(f"SELECT count() FROM {table_ref}") == f"{rows}\n"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize(
+    "concurrent", ["append", "append_then_unregister", "unregister_only", "same_version_repoint"]
+)
+def test_glue_update_detects_concurrent_commit(started_cluster, concurrent):
+    # Another writer changes the Glue table after a ClickHouse INSERT read its base and before it commits:
+    # the commit must not overwrite that change. The INSERT reads its source from the proxy, which holds the
+    # request until the test releases it.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"race_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_race_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}]])
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    insert = node.get_query_request(
+        f"INSERT INTO {table_ref} SELECT * FROM url('{GLUE_FAULT_PROXY_URL}/hold/{test_ref}', 'CSV', 'id Int64')",
+        settings={**GLUE_WRITE_SETTINGS, "max_threads": 1},
+    )
+    wait_condition(
+        lambda: query_glue_fault_proxy(started_cluster, f"waiting/{test_ref}"),
+        lambda value: value == "1",
+        max_attempts=600,
+    )
+
+    if concurrent in ("append", "append_then_unregister"):
+        table.append(pa.Table.from_pylist([{"id": 3}], schema=ID_ARROW_SCHEMA))
+    foreign = pyiceberg_metadata_files(table)
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    if concurrent in ("append_then_unregister", "unregister_only"):
+        # The table is now published only by its `Location`.
+        del glue_table["Parameters"]["metadata_location"]
+        glue_table["Parameters"].pop("previous_metadata_location", None)
+        put_glue_table(started_cluster, namespace, glue_table)
+    elif concurrent == "same_version_repoint":
+        # The pointer moves to a copy of the same metadata file, so the rebased commit has the same version.
+        bucket, key = split_s3_path(table.metadata_location)
+        copy_key = f"{key.rsplit('/', 1)[0]}/00001-{uuid.uuid4()}.metadata.json"
+        started_cluster.minio_client.copy_object(bucket, copy_key, CopySource(bucket, key))
+        glue_table["Parameters"]["metadata_location"] = f"s3://{bucket}/{copy_key}"
+        foreign.add(glue_table["Parameters"]["metadata_location"])
+        put_glue_table(started_cluster, namespace, glue_table)
+    query_glue_fault_proxy(started_cluster, f"release/{test_ref}")
+
+    if concurrent in ("append", "same_version_repoint"):
+        insert.get_answer()
+        ids = [1, 2, 3] if concurrent == "append" else [1, 2]
+        assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "".join(f"{i}\n" for i in ids)
+        parameters = get_glue_table(started_cluster, namespace, table_name)["Parameters"]
+        ours = parameters["metadata_location"]
+        assert ours not in foreign, parameters
+        assert read_ids(started_cluster, ours) == ids
+        assert parameters["previous_metadata_location"] == glue_table["Parameters"]["metadata_location"], parameters
+    else:
+        error = insert.get_error()
+        assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+        parameters = get_glue_table(started_cluster, namespace, table_name)["Parameters"]
+        assert "metadata_location" not in parameters, parameters
+        # Another writer can take a file found by listing as its base, so the commit keeps every file it wrote.
+        ours = list_metadata_files(started_cluster, table.location()) - foreign
+        assert len(ours) == 1, ours
+        assert read_ids(started_cluster, ours.pop()) == [1, 2]
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_expire_snapshots_retries_after_concurrent_commit(started_cluster):
+    # Another writer commits while the proxy holds the `UpdateTable` of a ClickHouse `expire_snapshots`: Glue refuses
+    # the stale `VersionId`, and the expiration is retried on top of the other commit.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"held_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_expire_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}], [{"id": 2}]])
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    expire = node.get_query_request(
+        f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+        settings={**GLUE_WRITE_SETTINGS, "allow_experimental_expire_snapshots": 1},
+    )
+    wait_condition(
+        lambda: query_glue_fault_proxy(started_cluster, f"waiting/{namespace}"),
+        lambda value: value == "1",
+        max_attempts=600,
+    )
+    table.append(pa.Table.from_pylist([{"id": 3}], schema=ID_ARROW_SCHEMA))
+    concurrent = table.metadata_location
+    query_glue_fault_proxy(started_cluster, f"release/{namespace}")
+    expire.get_answer()
+
+    assert int(query_glue_fault_proxy(started_cluster, f"rejected/{namespace}")) >= 1
+    parameters = get_glue_table(started_cluster, namespace, table_name)["Parameters"]
+    assert parameters["previous_metadata_location"] == concurrent, parameters
+    assert read_ids(started_cluster, parameters["metadata_location"]) == [1, 2, 3]
+    # The metadata file of the refused attempt is removed, so only the retried commit added one.
+    ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
+    assert ours == {parameters["metadata_location"]}, ours
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "touch",
+        "lost_response",
+        "superseded",
+        "superseded_unknown",
+        "superseded_stale_previous",
+        "readback_fails",
+        "lost_final_error",
+        "lost_no_retry",
+        "lost_timeout",
+        "failed_no_retry",
+        "failed_timeout",
+        "rejected",
+    ],
+)
+def test_glue_update_conditional_on_version_id(started_cluster, mode):
+    # The proxy enforces `UpdateTable.VersionId`, which moto ignores, and injects the fault named by the
+    # namespace prefix (see `s3_mocks/glue_fault_proxy.py`). A commit that cannot tell whether it was applied
+    # fails with UNKNOWN_STATUS_OF_TRANSACTION and keeps every file it wrote.
+    node = started_cluster.instances["node1"]
+    prefix = {
+        "touch": "touch_",
+        "lost_response": "lostresp_",
+        "superseded": "superseded_",
+        "superseded_unknown": "unknown_",
+        "superseded_stale_previous": "staleprev_",
+        "readback_fails": "readbackfail_",
+        "lost_final_error": "lostfinal_",
+        "lost_no_retry": "lostnoretry_",
+        "lost_timeout": "losttimeout_",
+        "failed_no_retry": "failnoretry_",
+        "failed_timeout": "failtimeout_",
+        "rejected": "rejected_",
+    }[mode]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"{prefix}{test_ref}"
+    table_name = "t"
+    db_name = f"glue_cas_{test_ref}"
+
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}]])
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    insert = f"INSERT INTO {db_name}.`{namespace}.{table_name}` VALUES (2)"
+    if mode in ("touch", "lost_response", "superseded", "lost_final_error", "lost_no_retry", "lost_timeout"):
+        node.query(insert, settings=GLUE_WRITE_SETTINGS)
+    elif mode == "rejected":
+        error = node.query_and_get_error(insert, settings=GLUE_WRITE_SETTINGS)
+        assert "DATALAKE_DATABASE_ERROR" in error and "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    else:
+        error = node.query_and_get_error(insert, settings=GLUE_WRITE_SETTINGS)
+        assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+
+    parameters = get_glue_table(started_cluster, namespace, table_name)["Parameters"]
+    if mode in ("failed_no_retry", "failed_timeout", "rejected"):
+        assert parameters["metadata_location"] == table.metadata_location, parameters
+    if mode != "rejected":
+        ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
+        assert len(ours) == 1, ours
+        ours = ours.pop()
+        assert read_ids(started_cluster, ours) == [1, 2]
+        if mode in ("superseded", "superseded_unknown", "superseded_stale_previous"):
+            assert parameters["metadata_location"] == ours + "-superseded", parameters
+            if mode == "superseded_stale_previous":
+                assert parameters["previous_metadata_location"] == table.metadata_location, parameters
+        elif mode not in ("failed_no_retry", "failed_timeout"):
+            assert parameters["metadata_location"] == ours, parameters
+    if mode == "touch":
+        assert parameters["concurrent_touch"] == "1", parameters
+        assert query_glue_fault_proxy(started_cluster, f"updates/{namespace}") == "2"
+        assert query_glue_fault_proxy(started_cluster, f"rejected/{namespace}") == "1"
+    if mode == "rejected":
+        # The rejected commit removes its metadata file, so it does not block the next write.
+        assert list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table) == set()
+        node.query(insert, settings=GLUE_WRITE_SETTINGS)
+        assert node.query(f"SELECT id FROM {db_name}.`{namespace}.{table_name}` ORDER BY id") == "1\n2\n"
+        assert get_glue_table(started_cluster, namespace, table_name)["Parameters"]["metadata_location"] != table.metadata_location
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize("operation", ["delete", "optimize_manifest"])
+def test_glue_unknown_commit_keeps_files_of_mutation_and_compaction(started_cluster, operation):
+    # Like `superseded_unknown` of test_glue_update_conditional_on_version_id, for the other writers that clean up
+    # after a failed commit: a mutation and a manifest compaction.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"unknown_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_unknown_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [[{"id": 1}], [{"id": 2}]])
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    statement, settings, ids = {
+        "delete": (f"ALTER TABLE {table_ref} DELETE WHERE id = 1", {}, [2]),
+        "optimize_manifest": (
+            f"OPTIMIZE TABLE {table_ref} MANIFEST",
+            {"allow_experimental_iceberg_compaction": 1, "iceberg_manifest_min_count_to_compact": 1},
+            [1, 2],
+        ),
+    }[operation]
+    error = node.query_and_get_error(statement, settings={**GLUE_WRITE_SETTINGS, **settings})
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+
+    ours = list_metadata_files(started_cluster, table.location()) - pyiceberg_metadata_files(table)
+    assert len(ours) == 1, ours
+    assert read_ids(started_cluster, ours.pop()) == ids
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_update_keeps_nested_nanosecond_timestamp_readable(started_cluster):
+    # A commit registers a nested nanosecond timestamp with a Glue type the Glue database can still read.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"nanos_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_nanos_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+        NestedField(
+            field_id=2,
+            name="st",
+            field_type=StructType(NestedField(field_id=3, name="ts", field_type=TimestampType(), required=False)),
+            required=False,
+        ),
+    )
+    _, table = create_pyiceberg_table(started_cluster, namespace, table_name, [], schema)
+    # pyiceberg 0.11.1 cannot write format version 3, which `timestamp_ns` needs, so make the table the one a
+    # version 3 writer registers: `st.ts` is `timestamp_ns`, with the Glue type pyiceberg gives it.
+    bucket, key = split_s3_path(table.metadata_location)
+    metadata = json.loads(started_cluster.minio_client.get_object(bucket, key).read())
+    metadata["format-version"] = 3
+    metadata["next-row-id"] = 0
+    for field in metadata["schemas"][0]["fields"]:
+        if field["name"] == "st":
+            field["type"]["fields"][0]["type"] = "timestamp_ns"
+    v3_key = f"{key.rsplit('/', 1)[0]}/00001-{uuid.uuid4()}.metadata.json"
+    data = json.dumps(metadata).encode()
+    started_cluster.minio_client.put_object(bucket, v3_key, io.BytesIO(data), len(data))
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    glue_table["Parameters"]["previous_metadata_location"] = glue_table["Parameters"]["metadata_location"]
+    glue_table["Parameters"]["metadata_location"] = f"s3://{bucket}/{v3_key}"
+    for column in glue_table["StorageDescriptor"]["Columns"]:
+        if column["Name"] == "st":
+            column["Type"] = "struct<ts:timestamp_ns>"
+    put_glue_table(started_cluster, namespace, glue_table)
+
+    def glue_type(name):
+        columns = get_glue_table(started_cluster, namespace, table_name)["StorageDescriptor"].get("Columns", [])
+        return next((c["Type"] for c in columns if c["Name"] == name), None)
+
+    assert glue_type("st") == "struct<ts:timestamp_ns>"
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    node.query(f"INSERT INTO {table_ref} (id) VALUES (1)", settings=GLUE_WRITE_SETTINGS)
+    assert glue_type("st") == "struct<ts:timestamp_ns>"
+    assert node.query(f"SELECT count() FROM {table_ref}") == "1\n"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_create_registers_columns(started_cluster):
+    # A table ClickHouse creates in Glue registers its columns the way Iceberg writers do.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"create_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_create_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    columns = (
+        "a Int32, b Nullable(Int64), s String, d Nullable(Decimal(9, 2)), dt Nullable(Date), "
+        "ts Nullable(DateTime64(6)), u Nullable(UUID), arr Array(Int64), m Map(String, Int64), tup Tuple(x String, y Int32)"
+    )
+    # (name, Iceberg type, Glue type, iceberg.field.optional)
+    expected = [
+        ("a", "int", "int", "false"),
+        ("b", "long", "bigint", "true"),
+        ("s", "string", "string", "false"),
+        ("d", "decimal(9, 2)", "decimal(9,2)", "true"),
+        ("dt", "date", "date", "true"),
+        ("ts", "timestamp", "timestamp", "true"),
+        ("u", "uuid", "string", "true"),
+        ("arr", "list<long>", "array<bigint>", "false"),
+        ("m", "map<string,long>", "map<string,bigint>", "false"),
+        ("tup", "struct<x:string,y:int>", "struct<x:string,y:int>", "false"),
+    ]
+
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    node.query(
+        f"CREATE TABLE {table_ref} ({columns}) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{namespace}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings={"allow_database_glue_catalog": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    assert glue_table["TableType"] == "EXTERNAL_TABLE", glue_table
+
+    def iceberg_type(field_type):
+        if isinstance(field_type, str):
+            return field_type
+        if field_type["type"] == "list":
+            return f"list<{iceberg_type(field_type['element'])}>"
+        if field_type["type"] == "map":
+            return f"map<{iceberg_type(field_type['key'])},{iceberg_type(field_type['value'])}>"
+        return "struct<" + ",".join(f"{f['name']}:{iceberg_type(f['type'])}" for f in field_type["fields"]) + ">"
+
+    bucket, key = split_s3_path(glue_table["Parameters"]["metadata_location"])
+    metadata = json.loads(started_cluster.minio_client.get_object(bucket, key).read())
+    schema = next(s for s in metadata["schemas"] if s["schema-id"] == metadata["current-schema-id"])
+    assert [
+        (field["name"], iceberg_type(field["type"]), str(not field["required"]).lower()) for field in schema["fields"]
+    ] == [(name, iceberg, optional) for name, iceberg, _, optional in expected]
+    assert [
+        (column["Name"], column["Type"], column["Parameters"]["iceberg.field.optional"])
+        for column in glue_table["StorageDescriptor"]["Columns"]
+    ] == [(name, glue, optional) for name, _, glue, optional in expected]
+
+    values = (
+        "1, 2, 'x', 3.14, '2024-01-02', '2024-01-02 03:04:05.123456', '00000000-0000-0000-0000-000000000001', "
+        "[1, 2], map('k', 1), tuple('a', 5)"
+    )
+    node.query(f"INSERT INTO {table_ref} VALUES ({values})", settings=GLUE_WRITE_SETTINGS)
+    reference = f"default.glue_create_reference_{test_ref}"
+    node.query(f"CREATE TABLE {reference} ({columns}) ENGINE = Memory")
+    node.query(f"INSERT INTO {reference} VALUES ({values})")
+    assert node.query(f"SELECT * FROM {table_ref}") == node.query(f"SELECT * FROM {reference}")
+    node.query(f"DROP TABLE {reference}")
+
+    show_create = node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert all(f"`{name}`" in show_create for name, *_ in expected), show_create
+    catalog = load_catalog_impl(started_cluster)
+    assert [field.name for field in catalog.load_table(f"{namespace}.{table_name}").schema().fields] == [
+        name for name, *_ in expected
+    ]
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize("case", ["create", "insert_after_wipe"])
+def test_glue_registers_optional_geometry_readably(started_cluster, case):
+    # An optional Iceberg `geometry` field, which a ClickHouse `Geometry` column is, reads back from its Glue column
+    # as `Geometry`, a type that cannot be inside `Nullable`.
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"geo_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_geo_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    geo_settings = {"allow_geo_types_in_iceberg": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, db_name)
+    node.query(
+        f"CREATE TABLE {table_ref} (id Int64, g Geometry) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{namespace}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings={"allow_database_glue_catalog": 1, "write_full_path_in_iceberg_metadata": 1, **geo_settings},
+    )
+    if case == "insert_after_wipe":
+        glue_table = get_glue_table(started_cluster, namespace, table_name)
+        glue_table["StorageDescriptor"]["Columns"] = []
+        put_glue_table(started_cluster, namespace, glue_table)
+
+    node.query(
+        f"INSERT INTO {table_ref} SELECT 1, readWkt('POINT(1 2)') UNION ALL SELECT 2, readWkt('LINESTRING(0 0, 1 1)')",
+        settings={**GLUE_WRITE_SETTINGS, **geo_settings},
+    )
+    columns = get_glue_table(started_cluster, namespace, table_name)["StorageDescriptor"]["Columns"]
+    assert [(c["Name"], c["Type"], c["Parameters"]["iceberg.field.optional"]) for c in columns] == [
+        ("id", "bigint", "false"),
+        ("g", "geometry", "true"),
+    ], columns
+    assert (
+        node.query(f"SELECT id, variantType(g) FROM {table_ref} ORDER BY id", settings=geo_settings)
+        == "1\tPoint\n2\tLineString\n"
+    )
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize("case", ["comments", "long_name", "nested_name", "nested_delimiter"])
+def test_glue_update_skips_column_text_glue_refuses(started_cluster, case):
+    # Glue refuses a column name, comment or type longer than its limit or with a control character other than tab,
+    # which an Iceberg field can have, and the proxy refuses such an `UpdateTable` like Glue does. A commit keeps
+    # the existing Glue comment instead of such a `doc`, and the existing columns instead of such a name or type,
+    # or of a type the Glue database cannot parse back (a nested field name with a colon).
+    node = started_cluster.instances["node1"]
+    test_ref = uuid.uuid4().hex[:12]
+    namespace = f"text_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_text_{test_ref}"
+    table_ref = f"{db_name}.`{namespace}.{table_name}`"
+    if case == "comments":
+        docs = {"id": "a" * 255, "u": "\u00e9" * 255, "s": "b" * 256, "m": "line one\nline two"}
+        fields = [
+            NestedField(field_id=i + 1, name=name, field_type=LongType(), required=False, doc=doc)
+            for i, (name, doc) in enumerate(docs.items())
+        ]
+        arrow_fields = [pa.field(name, pa.int64()) for name in docs]
+    elif case == "long_name":
+        fields = [NestedField(field_id=2, name="c" * 256, field_type=LongType(), required=False)]
+        arrow_fields = [pa.field("c" * 256, pa.int64())]
+    else:
+        nested_name = "line one\nline two" if case == "nested_name" else "a:b"
+        nested = NestedField(field_id=3, name=nested_name, field_type=LongType(), required=False)
+        fields = [NestedField(field_id=2, name="st", field_type=StructType(nested), required=False)]
+        arrow_fields = [pa.field("st", pa.struct([pa.field(nested.name, pa.int64())]))]
+    if case != "comments":
+        fields.insert(0, NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+        arrow_fields.insert(0, pa.field("id", pa.int64()))
+    schema = Schema(*fields)
+    catalog, _ = create_pyiceberg_table(
+        started_cluster, namespace, table_name, [[{"id": 1}]], schema, pa.schema(arrow_fields)
+    )
+    # The Glue table another writer leaves: comments Glue accepted, or no columns.
+    glue_table = get_glue_table(started_cluster, namespace, table_name)
+    if case == "comments":
+        for column in glue_table["StorageDescriptor"]["Columns"]:
+            column.pop("Comment", None)
+            if column["Name"] == "s":
+                column["Comment"] = "typed in the console"
+    else:
+        glue_table["StorageDescriptor"]["Columns"] = []
+    put_glue_table(started_cluster, namespace, glue_table)
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    node.query(f"INSERT INTO {table_ref} (id) VALUES (2)", settings=GLUE_WRITE_SETTINGS)
+    assert node.query(f"SELECT count() FROM {table_ref}") == "2\n"
+
+    columns = get_glue_table(started_cluster, namespace, table_name)["StorageDescriptor"].get("Columns", [])
+    if case == "comments":
+        expected = {"id": "a" * 255, "u": "\u00e9" * 255, "s": "typed in the console", "m": None}
+        assert {column["Name"]: column.get("Comment") for column in columns} == expected, columns
+    else:
+        assert columns == [], columns
+    table = catalog.load_table(f"{namespace}.{table_name}")
+    assert table.schema().fields == schema.fields
+    assert table.scan().to_arrow().num_rows == 2
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
