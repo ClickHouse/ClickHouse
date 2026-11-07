@@ -214,6 +214,16 @@ SELECT 'parquet-testing/data/datapage_v2.snappy.parquet `d`', if((SELECT sum(cit
 SELECT 'parquet-testing/data/datapage_v2.snappy.parquet `e`', if((SELECT sum(cityHash64(tuple(`e`))) FROM file('{PARQUET_TESTING}/data/datapage_v2.snappy.parquet', Parquet)) = (SELECT sum(cityHash64(tuple(`e`))) FROM e), 'ok', 'MISMATCH');
 SELECT 'parquet-testing/data/datapage_v2.snappy.parquet `e`.size0', if((SELECT sum(cityHash64(tuple(`e`.size0))) FROM file('{PARQUET_TESTING}/data/datapage_v2.snappy.parquet', Parquet)) = (SELECT sum(cityHash64(tuple(`e`.size0))) FROM e), 'ok', 'MISMATCH');
 
+SELECT '@@ parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet';
+DROP TABLE IF EXISTS t; DROP TABLE IF EXISTS e;
+CREATE TABLE t ENGINE = Memory AS SELECT * FROM file('{PARQUET_TESTING}/data/datapage_v2_empty_datapage.snappy.parquet', Parquet);
+CREATE TABLE e AS t ENGINE = Memory;
+INSERT INTO e SELECT * FROM file('{CORPUS}/expected/2e5bb0a6612ff908.jsonl.zst', JSONEachRow);
+SELECT 'parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet types', arrayStringConcat(groupArray(type), ', ') FROM system.columns WHERE database = currentDatabase() AND table = 't';
+SELECT 'parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet content', (SELECT count() FROM t), if((SELECT count(), sum(cityHash64(tuple(*))) FROM t) = (SELECT count(), sum(cityHash64(tuple(*))) FROM e), 'ok', 'MISMATCH');
+SELECT 'parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet stress', if((SELECT count(), sum(cityHash64(tuple(*))) FROM file('{PARQUET_TESTING}/data/datapage_v2_empty_datapage.snappy.parquet', Parquet) SETTINGS max_block_size = 7, input_format_parquet_max_block_size = 7, input_format_parquet_prefer_block_bytes = 1, input_format_parquet_use_offset_index = 0, input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0, input_format_parquet_enable_row_group_prefetch = 0, input_format_parquet_local_file_min_bytes_for_seek = 0, input_format_parquet_preserve_order = 1, max_threads = 1) = (SELECT count(), sum(cityHash64(tuple(*))) FROM e), 'ok', 'MISMATCH');
+SELECT 'parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet `value`', if((SELECT sum(cityHash64(tuple(`value`))) FROM file('{PARQUET_TESTING}/data/datapage_v2_empty_datapage.snappy.parquet', Parquet)) = (SELECT sum(cityHash64(tuple(`value`))) FROM e), 'ok', 'MISMATCH');
+
 SELECT '@@ parquet-testing/data/delta_binary_packed.parquet';
 DROP TABLE IF EXISTS t; DROP TABLE IF EXISTS e;
 CREATE TABLE t ENGINE = Memory AS SELECT * FROM file('{PARQUET_TESTING}/data/delta_binary_packed.parquet', Parquet);
