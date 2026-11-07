@@ -9,8 +9,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 class FilesystemCacheLog;
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 /**
  * Remote disk might need to split one clickhouse file into multiple files in remote fs.
@@ -28,8 +26,7 @@ public:
         const StoredObjects & blobs_to_read_,
         size_t min_bytes_for_seek_,
         bool use_external_buffer_,
-        size_t buffer_size,
-        QueryStatusPtr query_status_);
+        size_t buffer_size);
 
     String getFileName() const override { return current_object.remote_path; }
 
@@ -75,9 +72,6 @@ private:
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
     const String query_id;
-    /// Null unless `interruptible_reads` was set: resolved by the caller, never here,
-    /// because a gather can be constructed on a pool worker with no query context.
-    const QueryStatusPtr query_status;
     const bool use_external_buffer;
 
     /// `std::nullopt` means "no right bound". A plain `0` sentinel could not tell an unbounded read

@@ -66,16 +66,14 @@ void assertFileDeleted(std::string path)
 }
 
 nuraft::ptr<nuraft::log_entry>
-getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t /*zxid*/, const Coordination::ZooKeeperRequestPtr & request)
+getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
-    /// (zxid is unused: the serialized entry has a placeholder zxid, like the dispatchers produce;
-    ///  the real zxid is patched in by the leader or defaulted to the log idx on commit.)
-    DB::KeeperRequestBatch batch;
-    auto & request_for_session = batch.requests.emplace_back();
+    DB::KeeperRequestForSession request_for_session;
     request_for_session.session_id = session_id;
+    request_for_session.zxid = zxid;
     request_for_session.request = request;
-    auto buffers = DB::KeeperStateMachine::serializeRequestBatch(batch, /*log_entry_version=*/ thread_local_rng() % 2);
-    return nuraft::cs_new<nuraft::log_entry>(term, buffers.at(0));
+    auto buffer = DB::KeeperStateMachine::getZooKeeperLogEntry(request_for_session);
+    return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner, DB::ACLId acl_id, int64_t seq_num)

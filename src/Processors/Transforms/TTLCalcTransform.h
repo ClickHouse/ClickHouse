@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -39,7 +38,7 @@ protected:
     void finalize();
 
 private:
-    VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
+    std::vector<TTLAlgorithmPtr> algorithms;
     PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading
