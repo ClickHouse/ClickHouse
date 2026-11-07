@@ -1,0 +1,11 @@
+=== READ ON URL: insert into url ===
+ACCESS_DENIED
+=== READ ON URL: insert through viewIfPermitted ===
+ACCESS_DENIED
+=== READ ON URL: select through viewIfPermitted ===
+from-url
+=== READ ON URL: select through viewIfPermitted with parallel replicas ===
+from-url
+=== WRITE ON URL: insert through viewIfPermitted ===
+=== rows in the sink ===
+allowed	1

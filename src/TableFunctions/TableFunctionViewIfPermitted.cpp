@@ -124,7 +124,11 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
     }
     else
     {
-        storage = else_table_function->execute(else_ast, context, table_name);
+        /// The query names this function, so a `*Cluster` storage of the `ELSE` function could not rewrite it for the replicas.
+        ContextMutablePtr else_context = Context::createCopy(context);
+        else_context->setSetting("parallel_replicas_for_cluster_engines", false);
+        storage = else_table_function->execute(
+            else_ast, else_context, table_name, /*cached_columns_=*/ {}, /*use_global_context=*/ false, is_insert_query);
     }
 
     storage->startup();
