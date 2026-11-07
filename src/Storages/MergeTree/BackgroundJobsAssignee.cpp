@@ -79,33 +79,33 @@ void BackgroundJobsAssignee::postpone()
 }
 
 
-bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
+bool BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr && merge_task)
 {
-    bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
+    bool res = getContext()->getMergeMutateExecutor()->trySchedule(std::move(merge_task));
     res ? trigger() : postpone();
     return res;
 }
 
 
-bool BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
+bool BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr && fetch_task)
 {
-    bool res = getContext()->getFetchesExecutor()->trySchedule(fetch_task);
+    bool res = getContext()->getFetchesExecutor()->trySchedule(std::move(fetch_task));
     res ? trigger() : postpone();
     return res;
 }
 
 
-bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
+bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr && move_task)
 {
-    bool res = getContext()->getMovesExecutor()->trySchedule(move_task);
+    bool res = getContext()->getMovesExecutor()->trySchedule(std::move(move_task));
     res ? trigger() : postpone();
     return res;
 }
 
 
-bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
+bool BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr && common_task, bool need_trigger)
 {
-    bool schedule_res = getContext()->getCommonExecutor()->trySchedule(common_task);
+    bool schedule_res = getContext()->getCommonExecutor()->trySchedule(std::move(common_task));
     schedule_res && need_trigger ? trigger() : postpone();
     return schedule_res;
 }

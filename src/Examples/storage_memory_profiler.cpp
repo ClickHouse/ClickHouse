@@ -17,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <optional>
 #include <vector>
 #include <unistd.h>
 
@@ -52,6 +53,7 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sources/JemallocProfileSource.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/registerStorages.h>
@@ -83,6 +85,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int SYSTEM_ERROR;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace ServerSetting
@@ -466,6 +469,38 @@ void StorageMemoryProfiler::executeQueriesFromFile(const std::string & filepath)
 }
 
 
+template <typename Callback>
+void withPausedBackgroundScheduling(const ContextMutablePtr & context, Callback && callback)
+{
+    /// `mutations_sync` waits for a mutation to be applied, not for the background task that ran it
+    /// to be released. Fence all executors before waiting so no new task can enter between the
+    /// idle observation and the heap dump.
+    auto merge_mutate_executor = context->getMergeMutateExecutor();
+    auto moves_executor = context->getMovesExecutor();
+    auto fetches_executor = context->getFetchesExecutor();
+    auto common_executor = context->getCommonExecutor();
+
+    /// The initial checkpoint can run before the first `MergeTree` table initializes these
+    /// executors. Do not initialize them just for the checkpoint: their threads and queues would
+    /// become part of the measured allocation baseline.
+    auto merge_mutate_pause
+        = merge_mutate_executor ? std::make_optional(merge_mutate_executor->pauseScheduling()) : std::nullopt;
+    auto moves_pause = moves_executor ? std::make_optional(moves_executor->pauseScheduling()) : std::nullopt;
+    auto fetches_pause = fetches_executor ? std::make_optional(fetches_executor->pauseScheduling()) : std::nullopt;
+    auto common_pause = common_executor ? std::make_optional(common_executor->pauseScheduling()) : std::nullopt;
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    const auto wait_for_idle = [deadline](auto & pause) { return !pause || pause->waitForIdle(deadline); };
+
+    if (!wait_for_idle(merge_mutate_pause) || !wait_for_idle(moves_pause) || !wait_for_idle(fetches_pause)
+        || !wait_for_idle(common_pause))
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED, "Background tasks did not finish in 30 seconds; cannot take a stable heap measurement");
+
+    callback();
+}
+
+
 int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
 {
     /// Parse command line arguments
@@ -579,14 +614,20 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
         fmt::print(stdout, "\n#\ncheckpoint\tallocated_bytes\tdiff_from_start\tdiff_from_prev\n");
 
         /// Initial measurement
-        flushJemallocThreadCache();
-        refreshJemallocEpoch();
-        size_t initial_allocated = getJemallocAllocated();
+        size_t initial_allocated = 0;
+        withPausedBackgroundScheduling(
+            global_context,
+            [&]
+            {
+                flushJemallocThreadCache();
+                refreshJemallocEpoch();
+                initial_allocated = getJemallocAllocated();
+
+                fmt::print(stdout, "start\t{}\t0\t0\n", initial_allocated);
+
+                dumpProfile("start");
+            });
         size_t prev_allocated = initial_allocated;
-
-        fmt::print(stdout, "start\t{}\t0\t0\n", initial_allocated);
-
-        dumpProfile("start");
 
         /// Process each SQL file
         for (size_t i = 0; i < sql_files.size(); ++i)
@@ -599,17 +640,23 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
             executeQueriesFromFile(filepath);
 
             /// Measure memory after execution
-            flushJemallocThreadCache();
-            refreshJemallocEpoch();
-            size_t current_allocated = getJemallocAllocated();
-
             std::string label = fmt::format("after_{:02d}_{}", i + 1, filename);
-            int64_t diff_from_start = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(initial_allocated);
-            int64_t diff_from_prev = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(prev_allocated);
+            size_t current_allocated = 0;
+            withPausedBackgroundScheduling(
+                global_context,
+                [&]
+                {
+                    flushJemallocThreadCache();
+                    refreshJemallocEpoch();
+                    current_allocated = getJemallocAllocated();
 
-            fmt::print(stdout, "{}\t{}\t{}\t{}\n", label, current_allocated, diff_from_start, diff_from_prev);
+                    int64_t diff_from_start = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(initial_allocated);
+                    int64_t diff_from_prev = static_cast<int64_t>(current_allocated) - static_cast<int64_t>(prev_allocated);
 
-            dumpProfile(label);
+                    fmt::print(stdout, "{}\t{}\t{}\t{}\n", label, current_allocated, diff_from_start, diff_from_prev);
+
+                    dumpProfile(label);
+                });
 
             prev_allocated = current_allocated;
         }
