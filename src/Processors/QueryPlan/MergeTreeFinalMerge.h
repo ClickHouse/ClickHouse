@@ -13,6 +13,10 @@
 namespace DB
 {
 
+/// The name of the `...Map` structure that the merge of `SummingMergeTree` sums the column `column` in, as `defineColumns`
+/// in `SummingSortedAlgorithm.cpp` names it, or an empty string.
+String getSummingMapName(const NameAndTypePair & column, bool allow_tuple_element_aggregation);
+
 /// Adds the FINAL merge transform for the table's merging engine on top of `pipe`, collapsing rows
 /// that share the sort key into the single FINAL result. The pipe's input streams must already be
 /// sorted by `sort_description`. For `Replacing` with `enable_vertical_final`, appends the

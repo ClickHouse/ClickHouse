@@ -2685,6 +2685,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             columns_to_restore.insert(column.name);
         for (const auto & column : getMergingParamsColumns(data.merging_params))
             columns_to_restore.insert(column);
+        /// The merge of `SummingMergeTree` needs all the columns of a `...Map` structure that the read includes, see `spreadMarkRanges`.
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
+        {
+            const auto & columns = storage_snapshot->metadata->getColumns();
+            for (const auto & column_name : column_names)
+                if (auto column = columns.tryGetPhysical(column_name);
+                    column && !getSummingMapName(*column, data.merging_params.allow_tuple_element_aggregation).empty())
+                    columns_to_restore.insert(column_name);
+        }
         restorePrewhereInputs(query_info.row_level_filter.get(), query_info.prewhere_info.get(), columns_to_restore);
     }
 
@@ -4880,6 +4889,46 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimization isn't supposed to be used for queries with final");
 
         auto original_column_names = column_names_to_read;
+
+        /// The merge of `SummingMergeTree` takes the first column of a `...Map` structure in the block as its key, and
+        /// sums the structure only if all its value columns can be summed. A merge in the background reads all the
+        /// columns in the order of the table, so read all the columns of a structure in that order when the query reads
+        /// any of them. Otherwise a value column read before the key or without it is taken as the key, and a value
+        /// column read alone is not summed at all.
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
+        {
+            const auto & columns = storage_snapshot->metadata->getColumns();
+            const bool allow_tuple_element_aggregation = data.merging_params.allow_tuple_element_aggregation;
+
+            std::unordered_map<String, Names> map_columns;
+            for (const auto & column : columns.getAllPhysical())
+                if (auto map_name = getSummingMapName(column, allow_tuple_element_aggregation); !map_name.empty())
+                    map_columns[map_name].push_back(column.name);
+
+            if (!map_columns.empty())
+            {
+                Names columns_with_maps;
+                NameSet columns_with_maps_set;
+                for (const auto & column_name : column_names_to_read)
+                {
+                    auto column = columns.tryGetPhysical(column_name);
+                    auto map_name = column ? getSummingMapName(*column, allow_tuple_element_aggregation) : String{};
+                    if (map_name.empty())
+                    {
+                        if (columns_with_maps_set.emplace(column_name).second)
+                            columns_with_maps.push_back(column_name);
+                        continue;
+                    }
+
+                    for (const auto & map_column_name : map_columns.at(map_name))
+                        if (columns_with_maps_set.emplace(map_column_name).second)
+                            columns_with_maps.push_back(map_column_name);
+                }
+
+                column_names_to_read = std::move(columns_with_maps);
+                names = std::move(columns_with_maps_set);
+            }
+        }
 
         /// Add columns needed to calculate the sorting expression and the columns the merging transform reads.
         for (const auto & column : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
