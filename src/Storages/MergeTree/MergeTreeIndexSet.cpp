@@ -563,10 +563,12 @@ static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node 
     if (!result_dag_or_null)
         return index_hint.getActions().getOutputs();
 
-    /// Import the DAG and map argument pointers.
+    /// Nodes are not bound by name: a name in the hint need not denote the same value as in the
+    /// filter (an alias can be named like a column). Key columns are bound by `atomFromDAG`.
     auto actions_clone = index_hint.getActions().clone();
     chassert(storage);
-    result_dag_or_null->mergeNodes(std::move(actions_clone), storage);
+    *storage = actions_clone.getOutputs();
+    result_dag_or_null->unite(std::move(actions_clone));
     return *storage;
 }
 
