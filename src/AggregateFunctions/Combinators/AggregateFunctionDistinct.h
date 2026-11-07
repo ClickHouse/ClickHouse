@@ -203,6 +203,8 @@ public:
     , nested_func(nested_func_)
     , arguments_num(arguments.size())
     {
+        nested_func->throwIfCannotProduceFinalizedResult();
+
         size_t nested_size = nested_func->alignOfData();
         prefix_size = (sizeof(Data) + nested_size - 1) / nested_size * nested_size;
     }

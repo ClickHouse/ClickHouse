@@ -8,8 +8,6 @@
 #include <libdivide-config.h>
 #include <libdivide.h>
 
-#include <vector>
-
 
 namespace DB
 {
