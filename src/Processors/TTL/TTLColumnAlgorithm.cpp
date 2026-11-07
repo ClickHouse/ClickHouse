@@ -55,7 +55,7 @@ void TTLColumnAlgorithm::execute(Block & block)
         auto result_column = column_with_type.column->cloneEmpty();
         result_column->reserve(block.rows());
 
-        auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+        auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name, {});
         if (default_column)
         {
             default_column = default_column->convertToFullColumnIfConst();
@@ -70,7 +70,7 @@ void TTLColumnAlgorithm::execute(Block & block)
         return;
     }
 
-    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column, description.expression_columns);
 
     const size_t rows = block.rows();
     PaddedPODArray<Int64> timestamps;
@@ -88,7 +88,7 @@ void TTLColumnAlgorithm::execute(Block & block)
         {
             if (!default_column_initialized)
             {
-                default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+                default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name, {});
                 if (default_column)
                     default_column = default_column->convertToFullColumnIfConst();
                 default_column_initialized = true;
