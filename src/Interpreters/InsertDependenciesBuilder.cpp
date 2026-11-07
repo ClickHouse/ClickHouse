@@ -1534,6 +1534,11 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         materialized_view = dynamic_cast<StorageMaterializedView *>(storages.at(current).get());
     }
 
+    auto column_names = init_context->getInsertionTableColumnsDescription()->getAllPhysical().getNames();
+
+    if (init_context->hasQueryContext())
+        init_context->getQueryContext()->addQueryAccessInfo(current, column_names);
+
     auto set_defaults_for_root_view = [&] (const StorageIDMaybeEmpty & root_view_, const StorageIDMaybeEmpty & inner_table_)
     {
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
@@ -1587,9 +1592,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         /// the last case is a regular table
         /// at the first iteration it is the init_table_id most likely
         /// the following iterations will be for inner tables of materialized views
-
-        if (init_context->hasQueryContext())
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
 
         if (current == init_table_id)
         {
