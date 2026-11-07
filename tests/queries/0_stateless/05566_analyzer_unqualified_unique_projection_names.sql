@@ -89,5 +89,10 @@ SELECT a.all FROM (SELECT 1 AS id, 2 AS all) AS a JOIN (SELECT 1 AS id, 3 AS all
 SELECT a.id AS all, a.id FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id ORDER BY ALL; -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a.id AS all, a.id FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
 
+SELECT '-- case 16: an unqualified outer reference can match the renamed column';
+SELECT v FROM (SELECT a.k, a.v FROM values('id Int32, k Int32, v String', (1, 7, 'a')) a JOIN values('id Int32, v String', (1, 'b')) b ON a.id = b.id JOIN values('id Int32, v String', (1, 'c')) c ON a.id = c.id) AS s JOIN values('k Int32, v String', (7, 'd')) d ON s.k = d.k;
+SELECT v FROM (SELECT a.k, a.v FROM values('id Int32, k Int32, v String', (1, 7, 'a')) a JOIN values('id Int32, v String', (1, 'b')) b ON a.id = b.id JOIN values('id Int32, v String', (1, 'c')) c ON a.id = c.id) AS s JOIN values('k Int32, v String', (7, 'd')) d ON s.k = d.k SETTINGS analyzer_compatibility_qualify_ambiguous_column_names = 1;
+SELECT v FROM (SELECT a.k, a.v FROM values('id Int32, k Int32, v String', (1, 7, 'a')) a JOIN values('id Int32, v String', (1, 'b')) b ON a.id = b.id JOIN values('id Int32, v String', (1, 'c')) c ON a.id = c.id) AS s JOIN values('k Int32, v String', (7, 'd')) d ON s.k = d.k JOIN values('k Int32', 7) e ON s.k = e.k; -- { serverError AMBIGUOUS_IDENTIFIER }
+
 DROP TABLE rmv;
 DROP TABLE mv;

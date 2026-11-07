@@ -85,3 +85,6 @@ id	x
 2	35
 all	id
 1	1
+-- case 16: an unqualified outer reference can match the renamed column
+a
+d
