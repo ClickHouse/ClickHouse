@@ -1,0 +1,13 @@
+--- column defaults need both settings at once ---
+SET allow_lossy_numeric_supertype = 1;
+SET enable_named_columns_in_function_tuple = 1;
+pair: replay rc=0 
+--- storage expressions ---
+Warning: the storage expressions of d.mv need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile; a SET in the dump does not reach them.
+mv_inner_key: replay rc=0 
+Warning: the storage expressions of d.t need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile; a SET in the dump does not reach them.
+index: replay rc=0 
+Warning: the storage expressions of d.t need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile; a SET in the dump does not reach them.
+projection: replay rc=0 
+Warning: the storage expressions of d.t need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile; a SET in the dump does not reach them.
+ttl: replay rc=0 
