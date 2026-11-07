@@ -5,6 +5,7 @@
 #include <thread>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -35,6 +36,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/MergeTree/checkDataPart.h>
 
 
@@ -107,20 +109,10 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
 class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
-    TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
-        : table(DatabaseCatalog::instance().getTable(table_id, context))
+    TableCheckTask(StoragePtr table_, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
+        : table(std::move(table_))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
-        chassert(context);
-        context->checkAccess(AccessType::CHECK, table_id);
-    }
-
-    TableCheckTask(StoragePtr table_, ContextPtr context)
-        : table(table_)
-        , check_data_tasks(table->getCheckTaskList({}, context))
-    {
-        chassert(context);
-        context->checkAccess(AccessType::CHECK, table_->getStorageID());
     }
 
     TableCheckTask(const TableCheckTask & other)
@@ -237,7 +229,9 @@ private:
             auto table = getValidTable();
             if (table)
             {
-                table_check_task = std::make_shared<TableCheckTask>(table, context);
+                /// Re-check in case the database engine ignored the name filter.
+                context->checkAccess(AccessType::CHECK, table->getStorageID());
+                table_check_task = std::make_shared<TableCheckTask>(table, std::monostate{}, context);
                 LOG_DEBUG(log, "Checking {} parts in table '{}'", table_check_task->size(), table_check_task->getNameForLogs());
                 return table_check_task;
             }
@@ -246,7 +240,14 @@ private:
             auto database = getNextDatabase();
             if (!database)
                 break;
-            current_table_it = database->getTablesIterator(context);
+            /// Tables the user may not `CHECK` are filtered out by name before the database waits for the
+            /// remaining ones to load: a load failure of such a table must stay invisible to the user.
+            auto access = context->getAccess();
+            current_table_it = database->getTablesIterator(context,
+                [access, database_name = database->getDatabaseName()](const String & table_name)
+                {
+                    return access->isGranted(AccessType::CHECK, database_name, table_name);
+                });
         }
 
         return {};
@@ -258,6 +259,18 @@ private:
         {
             /// Try to get next table from current database
             StoragePtr table = current_table_it->table();
+
+            /// `StorageAlias::isMergeTree` resolves the target chain, waiting for each hop to load, so every hop
+            /// needs the `CHECK` privilege before the probe, as `CHECK TABLE` on the alias requires it anyway.
+            const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+            if (alias && !alias->isTargetTableGranted(context, AccessType::CHECK, {}))
+            {
+                LOG_TRACE(log, "Skip checking table '{}.{}' because the user may not check its target",
+                    current_table_it->databaseName(), current_table_it->name());
+                current_table_it->next();
+                continue;
+            }
+
             if (table && table->isMergeTree())
                 return table;
 
@@ -427,12 +440,16 @@ BlockIO InterpreterCheckQuery::execute()
     bool is_table_name_in_output = false;
     if (const auto * check_query = query_ptr->as<ASTCheckTableQuery>())
     {
-        /// Check specific table. Use `ResolveAll` so that an unqualified name
-        /// prefers a `TEMPORARY` table over a permanent one of the same name,
-        /// matching the scoping precedence of `SHOW CREATE TABLE` and
-        /// `DESCRIBE TABLE` introduced in #100966.
-        auto table_id = context->resolveStorageID(*check_query);
-        auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context);
+        /// Check specific table. An unqualified name prefers a `TEMPORARY` table over a permanent one,
+        /// matching `SHOW CREATE TABLE` and `DESCRIBE TABLE` (#100966). `Context::resolveStorageID` is
+        /// not used: it also looks the table up for its UUID, which waits for the table to load, and a
+        /// user without `CHECK` must not see a load failure or a missing database instead of `ACCESS_DENIED`.
+        auto table_id = context->tryResolveStorageID(StorageID(*check_query), Context::ResolveExternal);
+        if (!table_id)
+            table_id = StorageID(context->resolveDatabase(check_query->getDatabase()), check_query->getTable());
+        context->checkAccess(AccessType::CHECK, table_id);
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
+        auto table_check_task = std::make_shared<TableCheckTask>(table, check_query->getPartitionOrPartitionID(), context);
         worker_source = std::make_shared<TableCheckSource>(table_check_task, log);
         worker_source->addTotalRowsApprox(table_check_task->size());
     }

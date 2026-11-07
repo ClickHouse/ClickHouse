@@ -227,7 +227,7 @@ SETTINGS check_query_single_value_result = 0
 
 If the checksums.txt file is missing, it can be restored. It will be recalculated and rewritten during the execution of the CHECK TABLE command for the specific partition, and the status will still be reported as 'is_passed = 1'.
 
-You can check all existing `(Replicated)MergeTree` tables at once by using the `CHECK ALL TABLES` query.
+You can check all existing `(Replicated)MergeTree` tables at once by using the `CHECK ALL TABLES` query. Tables the user has no `CHECK` privilege on are skipped.
 
 ```sql
 CHECK ALL TABLES
