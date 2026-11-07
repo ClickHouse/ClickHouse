@@ -186,6 +186,114 @@ def skip_empty_data_block(sock):
         raise RuntimeError("Unexpected result data for INSERT query")
 
 
+PROFILE_EVENTS_SCHEMA = (
+    ("host_name", "String"),
+    ("current_time", "DateTime"),
+    ("thread_id", "UInt64"),
+    ("type", "Enum8('increment' = 1, 'gauge' = 2)"),
+    ("name", "String"),
+    ("value", "Int64"),
+)
+MAX_PROFILE_EVENTS_ROWS = 100_000
+MAX_PROFILE_EVENTS_STRING_BYTES = 1024 * 1024
+MAX_PROFILE_EVENTS_BLOCK_BYTES = 64 * 1024 * 1024
+MAX_PROFILE_BLOCK_OUT_OF_ORDER_BUCKETS = 256
+
+
+def read_bounded_native_string(sock, max_size):
+    size = read_var_uint(sock)
+    if size > max_size:
+        raise RuntimeError("Oversized string in Native ProfileEvents block")
+    try:
+        return read_exact(sock, size).decode("utf-8")
+    except UnicodeDecodeError as ex:
+        raise RuntimeError("Invalid UTF-8 in Native ProfileEvents schema") from ex
+
+
+def skip_profile_events_bytes(sock, size, consumed):
+    if size > MAX_PROFILE_EVENTS_BLOCK_BYTES - consumed:
+        raise RuntimeError("Oversized Native ProfileEvents block")
+    remaining = size
+    while remaining:
+        chunk_size = min(remaining, 64 * 1024)
+        read_exact(sock, chunk_size)
+        remaining -= chunk_size
+    return consumed + size
+
+
+def read_profile_events_bytes(sock, size, consumed):
+    if size > MAX_PROFILE_EVENTS_BLOCK_BYTES - consumed:
+        raise RuntimeError("Oversized Native ProfileEvents block")
+    return read_exact(sock, size), consumed + size
+
+
+def read_profile_events_packet(sock):
+    consumed = 0
+    if read_bounded_native_string(sock, 256):
+        raise RuntimeError("Unexpected table name in Native ProfileEvents block")
+
+    block_info_fields = set()
+    while True:
+        field = read_var_uint(sock)
+        if field == 0:
+            break
+        if field in block_info_fields:
+            raise RuntimeError("Duplicate field in Native ProfileEvents block info")
+        block_info_fields.add(field)
+        if field == 1:
+            is_overflows = read_exact(sock)[0]
+            if is_overflows not in (0, 1):
+                raise RuntimeError("Invalid overflow flag in Native ProfileEvents block")
+        elif field == 2:
+            read_exact(sock, 4)  # bucket number
+        elif field == 3:
+            out_of_order_buckets = read_var_uint(sock)
+            if out_of_order_buckets > MAX_PROFILE_BLOCK_OUT_OF_ORDER_BUCKETS:
+                raise RuntimeError("Too many out-of-order buckets in Native ProfileEvents block")
+            read_exact(sock, out_of_order_buckets * 4)
+        else:
+            raise RuntimeError("Unexpected block info field in Native ProfileEvents")
+    # REVISION 54484 includes field 3, introduced at revision 54480.
+    if block_info_fields != {1, 2, 3}:
+        raise RuntimeError("Incomplete Native ProfileEvents block info")
+
+    columns = read_var_uint(sock)
+    rows = read_var_uint(sock)
+    if columns != len(PROFILE_EVENTS_SCHEMA):
+        raise RuntimeError("Unexpected column count in Native ProfileEvents block")
+    if rows > MAX_PROFILE_EVENTS_ROWS:
+        raise RuntimeError("Too many rows in Native ProfileEvents block")
+
+    consumed = 0
+    for expected_name, expected_type in PROFILE_EVENTS_SCHEMA:
+        name = read_bounded_native_string(sock, 256)
+        data_type = read_bounded_native_string(sock, 256)
+        if (name, data_type) != (expected_name, expected_type):
+            raise RuntimeError("Unexpected schema in Native ProfileEvents block")
+        # Revision 54484 includes the per-column custom-serialization flag.
+        if read_exact(sock)[0] != 0:
+            raise RuntimeError("Unsupported Native ProfileEvents serialization")
+
+        if data_type == "String":
+            for _ in range(rows):
+                size = read_var_uint(sock)
+                if size > MAX_PROFILE_EVENTS_STRING_BYTES:
+                    raise RuntimeError("Oversized string in Native ProfileEvents data")
+                consumed = skip_profile_events_bytes(sock, size, consumed)
+        elif data_type == "DateTime":
+            consumed = skip_profile_events_bytes(sock, rows * 4, consumed)
+        elif data_type == "UInt64":
+            consumed = skip_profile_events_bytes(sock, rows * 8, consumed)
+        elif data_type == "Enum8('increment' = 1, 'gauge' = 2)":
+            values, consumed = read_profile_events_bytes(sock, rows, consumed)
+            if any(value not in (1, 2) for value in values):
+                raise RuntimeError("Unknown ProfileEvents type value")
+        elif data_type == "Int64":
+            consumed = skip_profile_events_bytes(sock, rows * 8, consumed)
+        else:
+            raise RuntimeError("Unsupported Native ProfileEvents data type")
+
+
 def run_query(
     authenticated_user,
     query,
@@ -229,6 +337,8 @@ def run_query(
                     read_var_uint(sock)
             elif packet_type == 6:  # ProfileInfo
                 skip_profile_info(sock)
+            elif packet_type == 14:  # ProfileEvents Native block
+                read_profile_events_packet(sock)
             elif packet_type == 1:  # final empty Data block
                 skip_empty_data_block(sock)
             elif packet_type == 5:  # EndOfStream
