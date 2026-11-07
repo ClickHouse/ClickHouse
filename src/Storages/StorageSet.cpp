@@ -192,6 +192,7 @@ StorageSet::StorageSet(
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     Block header = metadata_snapshot->getSampleBlock();
+    set->disableCuckooLookup();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
@@ -288,6 +289,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     increment = 0;
 
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
+    new_set->disableCuckooLookup();
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
         /// Table data belongs to the server, not to the query releasing it.
