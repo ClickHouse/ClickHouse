@@ -3215,12 +3215,13 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        bool ttl_delete_applied_by_merge_)
+        bool ttl_delete_applied_by_merge_,
+        const NameSet & columns_with_reader_defaults_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
             context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
-            ttl_delete_applied_by_merge_);
+            ttl_delete_applied_by_merge_, columns_with_reader_defaults_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3492,6 +3493,24 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ctx->column_sizes ? ctx->column_sizes->keyColumnsWeight() : 1.0);
 
     Names merging_column_names = global_ctx->merging_columns.getNames();
+    NameSet columns_with_reader_defaults;
+    if (global_ctx->metadata_snapshot->hasAnyTTL()
+        && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Horizontal
+        && (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets])
+    {
+        /// Read expired arrays for TTL evaluation using each part's own offsets, before missing sibling defaults
+        /// are evaluated. Keep them out of `merging_columns`, so the writer still leaves them expired and unwritten.
+        for (const auto & column : global_ctx->merging_columns_expired_by_ttl)
+        {
+            if (!isArray(column.type))
+                continue;
+
+            columns_with_reader_defaults.insert(column.name);
+            if (std::find(merging_column_names.begin(), merging_column_names.end(), column.name) == merging_column_names.end())
+                merging_column_names.push_back(column.name);
+        }
+    }
+
     for (const auto * projection : global_ctx->projections_to_merge)
     {
         /// If projection needs part offset mapping, add _part_index column to build this mapping
@@ -3734,7 +3753,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
             ctx->force_ttl,
-            global_ctx->vertical_ttl_delete);
+            global_ctx->vertical_ttl_delete,
+            columns_with_reader_defaults);
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));

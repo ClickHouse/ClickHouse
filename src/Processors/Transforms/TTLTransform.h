@@ -23,7 +23,8 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        bool ttl_delete_applied_by_merge_ = false
+        bool ttl_delete_applied_by_merge_ = false,
+        const NameSet & columns_with_reader_defaults_ = {}
     );
 
     String getName() const override { return "TTL"; }
@@ -54,7 +55,6 @@ private:
     const MergeTreeData::MutableDataPartPtr & data_part;
 
     NamesAndTypesList expired_columns;
-    const bool share_nested_offsets;
 
     struct ExpiredColumnData
     {
