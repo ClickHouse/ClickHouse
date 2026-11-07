@@ -183,6 +183,85 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 This works while the query is shipped as text, which is the default. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep `serialize_query_plan = 0` for users whose row policies must be enforced. See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
+## Engines which merge rows {#blending-table-engines}
+
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` and `GraphiteMergeTree` produce one
+row out of all the rows with the same sorting key, and the values of that row come from all of them —
+summed, aggregated, or taken from whichever row had a non-`NULL` value. A row policy cannot hide a row
+from that merge, only from its result, and by then the values of the hidden rows are already in it.
+
+```sql
+CREATE TABLE test (key String, data1 Nullable(String), data2 Nullable(String))
+ENGINE = CoalescingMergeTree ORDER BY key;
+
+INSERT INTO test VALUES ('key', 'sensitive_data', 'top_secret');
+INSERT INTO test VALUES ('key', 'not sensitive data', NULL);
+
+CREATE ROW POLICY sensitive_filter ON test USING data1 != 'sensitive_data' TO accountant;
+```
+
+Once the two parts are merged, the table holds a single row `('key', 'not sensitive data', 'top_secret')`,
+which passes the filter and shows `top_secret` to `accountant`.
+
+A row policy on such a table is therefore rejected:
+
+```text
+Received exception:
+Code: 36. DB::Exception: Table `default`.`test` has the CoalescingMergeTree engine, which merges rows with
+the same sorting key into one row taking the values of all of them, so a row policy on this table does not
+hide the values of the rows it filters out ...
+```
+
+Keep the raw rows in a plain `MergeTree` table and define the policy there, letting the users read a
+pre-aggregated table which contains nothing they are not allowed to see.
+
+If you still want the policy on the merging table, enable
+`allow_suspicious_row_policies_with_blending_engines`:
+
+```sql
+SET allow_suspicious_row_policies_with_blending_engines = 1;
+```
+
+In that case filter by the sorting key columns — rows with the same sorting key are always hidden or shown
+together, so nothing of a hidden row survives in a visible one:
+
+```sql
+CREATE ROW POLICY sensitive_filter ON test USING key != 'secret_key' TO accountant;
+```
+
+Do not use a floating-point sorting key column (`Float32`, `Float64`, `BFloat16`, also inside `Tuple`, `Array` or
+`Nullable`) in such a filter. A merge puts `-0.0` and `0.0` into one row, but the filter can tell them apart.
+
+This rule does not apply to `GraphiteMergeTree`. Its rollup rounds the time column and puts rows with different
+times into one row. Filter it by the path column. If the filter uses the time column, it must give the same
+result for all the times that each rollup rule rounds to the same value.
+
+<Note>
+The same check runs in these cases:
+
+- A policy on the whole database (`ON db.*`), if the database holds such a table.
+- A policy on a table which reads such a table: an `Alias` table, a materialized view, a `Buffer` table, a `Merge` table,
+  a view or a table which a table function makes. If the user does not have `SHOW TABLES` on all the tables which it can
+  read, the check fails with `ACCESS_DENIED`, also when these tables do not exist. For a `Merge` table, these are all the
+  tables of its source database, or of all the databases if a regular expression selects the databases. For a view,
+  these are the tables in `FROM`, `JOIN` and the right operand of `IN` of its query and its subqueries. A table function
+  in the query of a view is not checked. For a table which a table function makes, these are all the tables of the
+  server. A table which a table function makes from data outside of the server, such as `s3` or `url`, is not checked.
+- `CREATE TABLE` and `ATTACH TABLE` with a full definition, if a policy for the table already exists.
+- `RENAME TABLE` and `EXCHANGE TABLES`, if a policy for the new name exists.
+
+The check does not run in these cases, so a policy can still apply to such a table without the setting:
+
+- A table which the database did not load yet when a policy on `ON db.*` is created, for example during the
+  asynchronous loading of tables after the server starts.
+- A table which is created or renamed after the policy on a table which reads it, for example the target of an `Alias` table.
+- `RENAME DATABASE`, if a policy for the new database name or for a table in it exists.
+
+Policies which were created before the upgrade keep working. On these engines the policy is always applied before `FINAL`, regardless of
+`apply_row_policy_after_final`, so at least
+`FINAL` does not merge hidden rows into the result of a query.
+</Note>
+
 ## Join tables {#join-tables}
 
 A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered there. A policy on such a table, including a database-wide `ON db.*` policy, filters a plain `SELECT` from the table, but while it applies, `JOIN` and `joinGet` queries against the table fail with `ACCESS_DENIED`.
