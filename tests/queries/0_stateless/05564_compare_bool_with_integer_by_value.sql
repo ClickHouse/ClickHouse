@@ -58,3 +58,16 @@ SELECT 'key eq', count() FROM t_key WHERE arr = [toUInt8(2)] SETTINGS use_primar
 SELECT 'key eq noidx', count() FROM t_key WHERE arr = [toUInt8(2)] SETTINGS use_primary_key = 0;
 SELECT 'key lt plan', countIf(explain ILIKE '%Condition: (arr in (-Inf, [2]))%') FROM (EXPLAIN indexes = 1 SELECT arr FROM t_key WHERE arr < [toUInt8(2)] SETTINGS use_primary_key = 1, enable_parallel_replicas = 0);
 DROP TABLE t_key;
+
+DROP TABLE IF EXISTS t_key_expr;
+CREATE TABLE t_key_expr (arr Array(Nullable(Bool))) ENGINE = MergeTree ORDER BY materialize(arr) SETTINGS index_granularity = 8, allow_nullable_key = 1;
+INSERT INTO t_key_expr SELECT [number % 2 = 1, true] FROM numbers(3000);
+SELECT 'expr key', (SELECT count() FROM t_key_expr WHERE arr = [toUInt8(2), toUInt8(1)]), (SELECT count() FROM t_key_expr WHERE arr != [toUInt8(2), toUInt8(1)]), (SELECT count() FROM t_key_expr WHERE arr < [toUInt8(2), toUInt8(0)]) SETTINGS use_primary_key = 1;
+SELECT 'expr key keep plan', countIf(explain ILIKE '%Condition: (materialize(arr) in [[1, 1], [1, 1]])%') FROM (EXPLAIN indexes = 1 SELECT arr FROM t_key_expr WHERE arr = [toUInt8(1), toUInt8(1)] SETTINGS use_primary_key = 1, enable_parallel_replicas = 0);
+DROP TABLE t_key_expr;
+
+DROP TABLE IF EXISTS t_key_expr_scalar;
+CREATE TABLE t_key_expr_scalar (b Nullable(Bool)) ENGINE = MergeTree ORDER BY materialize(b) SETTINGS index_granularity = 8, allow_nullable_key = 1;
+INSERT INTO t_key_expr_scalar SELECT number % 2 = 1 FROM numbers(3000);
+SELECT 'expr key scalar', (SELECT count() FROM t_key_expr_scalar WHERE b != toUInt8(2)), (SELECT count() FROM t_key_expr_scalar WHERE b > toInt8(-1)) SETTINGS use_primary_key = 1;
+DROP TABLE t_key_expr_scalar;

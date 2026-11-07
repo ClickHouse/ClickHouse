@@ -43,3 +43,6 @@ key lt noidx	3000
 key eq	0
 key eq noidx	0
 key lt plan	1
+expr key	0	3000	3000
+expr key keep plan	1
+expr key scalar	3000	3000

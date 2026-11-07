@@ -2009,6 +2009,26 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, size_
     return FieldRef(field.columns, field.row_idx, result_idx);
 }
 
+/// Whether a cast into `cast_type` changed a value of `column` as a comparison sees it: a cast into `Bool`
+/// turns every nonzero number into `true`, while a comparison treats a `Bool` facing a number as `UInt8`.
+static bool castChangedComparedValue(
+    const ColumnPtr & column, const DataTypePtr & type, const ColumnPtr & cast_column, const DataTypePtr & cast_type)
+{
+    if (!anyInTypeTree(*cast_type, [](const IDataType & node) { return WhichDataType(node).isUInt8() && node.getName() == "Bool"; }))
+        return false;
+
+    const DataTypePtr compared_type = tryGetLeastSupertypeForComparison(type, cast_type);
+    if (!compared_type)
+        return false;
+
+    const ColumnPtr compared = castColumn({column, type, ""}, compared_type)->convertToFullColumnIfConst();
+    const ColumnPtr cast_compared = castColumn({cast_column, cast_type, ""}, compared_type)->convertToFullColumnIfConst();
+    for (size_t i = 0, size = compared->size(); i < size; ++i)
+        if (compared->compareAt(i, i, *cast_compared, 1) != 0)
+            return true;
+    return false;
+}
+
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
 /// signatures, and none of the functions produce `NULL` output.
@@ -2040,6 +2060,8 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    const ColumnPtr source_column = result_column;
+    const DataTypePtr source_type = result_type;
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -2073,6 +2095,9 @@ static bool applyFunctionChainToColumn(
         result_column = result_column_nullable.getNestedColumnPtr();
         result_type = removeNullable(in_argument_type);
     }
+
+    if (castChangedComparedValue(source_column, source_type, result_column, result_type))
+        return false;
 
     for (const auto & func : functions)
     {
@@ -2994,8 +3019,14 @@ static bool convertColumnForDeterministicDag(
     /// all (`Array`, `Tuple`), decline - this helper also transforms whole set columns, where one such
     /// element would drag the representable ones along. The caller then reads more instead of pruning by
     /// a value the key space does not hold.
-    if (!input_type->equals(*dag.input_type) && !castColumnWithoutNulls(input_column, input_type, dag.input_type, out_cast_is_exact))
-        return false;
+    if (!input_type->equals(*dag.input_type))
+    {
+        const ColumnPtr source_column = input_column;
+        const DataTypePtr source_type = input_type;
+        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type, out_cast_is_exact)
+            || castChangedComparedValue(source_column, source_type, input_column, input_type))
+            return false;
+    }
 
     out_column = input_column;
     out_type = input_type;
