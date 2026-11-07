@@ -44,6 +44,21 @@ struct Inserter
         new_keys += key_getter.emplaceKey(map, i, pool).isInserted();
     }
 
+    static ALWAYS_INLINE void
+    insertCount(HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
+    {
+        auto emplace_result = key_getter.emplaceKey(map, i, pool);
+        if (emplace_result.isInserted())
+        {
+            if constexpr (std::is_same_v<typename HashMap::mapped_type, RowRefWithCount>)
+                new (&emplace_result.getMapped()) RowRefWithCount{RowRef(stored_block_no, i), 0};
+            else
+                new (&emplace_result.getMapped()) RowCount{};
+            ++new_keys;
+        }
+        ++emplace_result.getMapped().remaining;
+    }
+
     static ALWAYS_INLINE bool
     insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, UInt32 stored_block_no, size_t i, Arena & pool, size_t & new_keys)
     {
@@ -86,7 +101,7 @@ struct Inserter
     }
 };
 
-/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof and MapsSet
+/// MapsTemplate is one of MapsOne, MapsAll, MapsAsof, MapsSet, MapsCount and MapsCountWithRef
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
@@ -231,6 +246,9 @@ extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::All, Hash
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Semi, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, HashJoin::MapsOne>;
+extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Any, HashJoin::MapsCount>;
+extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsCount>;
+extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Anti, HashJoin::MapsCountWithRef>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Asof, HashJoin::MapsAsof>;
 
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::RightAny, HashJoin::MapsOne>;

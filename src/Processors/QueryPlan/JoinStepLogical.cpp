@@ -2110,7 +2110,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         output_from_left = first_arm_is_left;
 
         /// The build side of `INTERSECT` is needed only for the keys if the rows come from the probe side.
-        if (!first_arm_is_left && join_operator.set_operation == JoinSetOperation::IntersectDistinct)
+        const bool is_intersect = join_operator.set_operation == JoinSetOperation::IntersectDistinct || join_operator.set_operation == JoinSetOperation::IntersectAll;
+        if (!first_arm_is_left && is_intersect)
         {
             outputFromProbe(join_operator, expression_actions, actions_after_join);
             output_from_left = true;

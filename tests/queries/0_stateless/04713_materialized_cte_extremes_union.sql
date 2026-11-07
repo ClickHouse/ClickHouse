@@ -1,5 +1,8 @@
 SET enable_materialized_cte = 1;
 
+-- This test covers combining the extremes of the arms. As a join, `INTERSECT` and `EXCEPT` compute the extremes on their result instead.
+SET rewrite_intersect_except_all_to_join = 0;
+
 -- `extremes` is pinned per statement: a runner-injected `extremes = 0` removes the extremes
 -- plumbing entirely and would make every query below pass without exercising the bug.
 -- The UNION ALL arms below deliberately produce identical row sets, because the order in which

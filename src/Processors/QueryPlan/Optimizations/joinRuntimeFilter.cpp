@@ -333,6 +333,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
+    /// `EXCEPT ALL` still emits a left row whose key is on the right once the right copies are used up.
+    if (join_operator.set_operation == JoinSetOperation::ExceptAll && join_operator.kind == JoinKind::Left)
+        return false;
+
     /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
     /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
     /// be attached, and the algorithm list must not be pinned to hash-family ones below.

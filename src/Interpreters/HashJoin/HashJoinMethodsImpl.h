@@ -13,6 +13,7 @@
 #include <base/scope_guard.h>
 
 #include <algorithm>
+#include <atomic>
 #include <type_traits>
 
 namespace ProfileEvents
@@ -229,8 +230,9 @@ BuildResult insertSlotRows(
         if (null_map && (*null_map)[ind])
         {
             /// nulls are not inserted into hash table,
-            /// keep them for RIGHT and FULL joins - a set map is never used by one of those
-            if constexpr (!is_set)
+            /// keep them for RIGHT and FULL joins - a set map is never used by one of those, and a count map
+            /// only by RIGHT ANTI, which keeps the block anyway.
+            if constexpr (!is_set && !CountJoinMaps<MapsTemplate>)
                 result.is_inserted = true;
             continue;
         }
@@ -244,6 +246,8 @@ BuildResult insertSlotRows(
                 asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, new_keys, *asof_column);
         else if constexpr (is_set)
             Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool, new_keys);
+        else if constexpr (CountJoinMaps<MapsTemplate>)
+            Inserter<HashMap, KeyGetter>::insertCount(map, key_getter, stored_block_no, ind, pool, new_keys);
         else if constexpr (mapped_one)
             result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
                 any_take_last_row, map, key_getter, stored_block_no, ind, pool, new_keys);
@@ -280,6 +284,10 @@ BuildResult insertFromBlockImplTypeCase(
     /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
     /// the block has to be kept for another algorithm the caller drops it.
     if constexpr (is_set)
+        result.is_inserted = join.mustKeepRightBlocks();
+    else if constexpr (std::is_same_v<MapsTemplate, HashJoin::MapsCountWithRef>)
+        result.is_inserted = true;
+    else if constexpr (CountJoinMaps<MapsTemplate>)
         result.is_inserted = join.mustKeepRightBlocks();
     else
         result.is_inserted = !mapped_one || is_asof_join;
@@ -630,6 +638,49 @@ void processMatch(
     {
         /// Only the first left row of a key is emitted. A set map has one disjunct, so the key is marked, not the row.
         if (used_flags.template setUsedOnce<join_features.need_flags, /*flag_per_row=*/ false>(find_result))
+            setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    }
+}
+
+/// A count map holds the number of right rows of a key not used up yet. Each left row of the key uses up one:
+/// INNER ANY emits the left row while one is left, LEFT ANTI once none is left. RIGHT ANTI emits the rest at the end.
+template <
+    JoinKind KIND,
+    JoinStrictness STRICTNESS,
+    bool need_filter,
+    bool flag_per_row,
+    typename MapsTemplate,
+    typename Map,
+    typename KeyGetter,
+    typename AddedColumns>
+requires CountJoinMaps<MapsTemplate>
+void processMatch(
+    const typename KeyGetter::FindResult & find_result,
+    AddedColumns & added_columns,
+    JoinStuff::JoinUsedFlags &,
+    size_t i,
+    size_t,
+    IColumn::Offset &,
+    KnownRowsHolder<flag_per_row> &,
+    bool)
+{
+    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
+    static_assert(
+        (join_features.inner && join_features.is_any_join) || join_features.is_anti_join,
+        "A count map is only chosen for INNER ANY, LEFT ANTI and RIGHT ANTI");
+
+    const auto & mapped = find_result.getMapped();
+    std::atomic_ref<Int64> remaining(mapped.remaining);
+    const bool taken = remaining.load(std::memory_order_relaxed) > 0 && remaining.fetch_sub(1, std::memory_order_relaxed) > 0;
+
+    if constexpr (join_features.inner)
+    {
+        if (taken)
+            setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    }
+    else if constexpr (join_features.left)
+    {
+        if (!taken)
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
     }
 }

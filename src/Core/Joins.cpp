@@ -55,6 +55,8 @@ const char * toString(JoinSetOperation set_operation)
         case JoinSetOperation::None: return "NONE";
         case JoinSetOperation::IntersectDistinct: return "INTERSECT DISTINCT";
         case JoinSetOperation::ExceptDistinct: return "EXCEPT DISTINCT";
+        case JoinSetOperation::IntersectAll: return "INTERSECT ALL";
+        case JoinSetOperation::ExceptAll: return "EXCEPT ALL";
     }
 }
 
