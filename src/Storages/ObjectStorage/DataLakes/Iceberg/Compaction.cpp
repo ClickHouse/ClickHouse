@@ -1027,6 +1027,12 @@ static bool writeConsolidatedManifestFile(
             }
         }
     }
+    catch (const Exception & e)
+    {
+        if (!Iceberg::isCommitStateUnknown(e))
+            cleanup();
+        throw;
+    }
     catch (...)
     {
         cleanup();
