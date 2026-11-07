@@ -1,4 +1,5 @@
 import logging
+import os
 
 import pytest
 
@@ -7,6 +8,7 @@ from helpers.config_cluster import minio_secret_key
 from helpers.blobs import wait_blobs_count_synchronization
 
 cluster = ClickHouseCluster(__file__)
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
 @pytest.fixture(scope="module")
@@ -170,6 +172,74 @@ def test_merge_tree_disk_setting(start_cluster):
 
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
+
+
+def test_object_storage_namespace_in_storage_policy(start_cluster):
+    node = cluster.instances["node1"]
+    invalid_policy_path = "/etc/clickhouse-server/config.d/duplicate_object_storage_policy.xml"
+
+    assert (
+        node.query(
+            "SELECT count() FROM system.storage_policies "
+            "WHERE policy_name = 'object_storage_different_buckets'"
+        )
+        == "2\n"
+    )
+
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/duplicate_object_storage_policy.xml"),
+        invalid_policy_path,
+    )
+    # `Context::updateStorageConfiguration` catches the exception that building the policy
+    # raises, logs it, and keeps the previous storage policies, so the reload itself reports
+    # success and the rejected policy never appears. At server startup there is no such catch
+    # and the exception is fatal.
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.wait_for_log_line("resolve to the same storage namespace")
+        assert (
+            node.query(
+                "SELECT count() FROM system.storage_policies "
+                "WHERE policy_name = 'object_storage_same_bucket'"
+            )
+            == "0\n"
+        )
+    finally:
+        node.exec_in_container(["rm", "-f", invalid_policy_path])
+        node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_symlinked_metadata_path_in_storage_policy(start_cluster):
+    node = cluster.instances["node1"]
+    invalid_policy_path = "/etc/clickhouse-server/config.d/duplicate_local_metadata_policy.xml"
+
+    # The symlink has to exist before the disks are created, otherwise the disk creates a real directory in its place.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "mkdir -p /var/lib/clickhouse/disks/shared_local_metadata /var/lib/clickhouse/disks/shared_local_objects"
+            " && ln -sfn shared_local_metadata /var/lib/clickhouse/disks/shared_local_metadata_link",
+        ]
+    )
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/duplicate_local_metadata_policy.xml"),
+        invalid_policy_path,
+    )
+    # As above: the reload succeeds, the error is logged and the policy is not applied.
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.wait_for_log_line("resolve to the same storage namespace")
+        assert (
+            node.query(
+                "SELECT count() FROM system.storage_policies "
+                "WHERE policy_name = 'local_metadata_symlink_alias'"
+            )
+            == "0\n"
+        )
+    finally:
+        node.exec_in_container(["rm", "-f", invalid_policy_path])
+        node.query("SYSTEM RELOAD CONFIG")
 
 
 def test_merge_tree_custom_disk_setting(start_cluster):

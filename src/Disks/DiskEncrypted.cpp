@@ -221,8 +221,12 @@ namespace
     }
 
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
-    void getDiskAndPathFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map,
-                                  DiskPtr & out_disk, String & out_path)
+    void getDiskAndPathFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const DisksMap & map,
+        DiskPtr & out_disk,
+        String & out_path)
     {
         String disk_name = config.getString(config_prefix + ".disk", "");
         if (disk_name.empty())
@@ -239,6 +243,68 @@ namespace
         out_path = config.getString(config_prefix + ".path", "");
         if (!out_path.empty() && (out_path.back() != '/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path must ends with '/', but '{}' doesn't.", quoteString(out_path));
+
+        /// The path must be relative to the wrapped disk's root. An absolute path would escape the delegate:
+        /// `DiskLocal` joins paths with `fs::path(delegate_root) / out_path`, and `fs::path::operator/` discards
+        /// the left-hand side when the right-hand side is absolute, so the files would land outside the delegate.
+        /// It also makes storage namespace identity unreliable, because disks over different delegates would appear
+        /// distinct while operating on the same underlying files. Rejecting absolute paths keeps the delegate's root
+        /// as a prefix of the effective path.
+        if (!out_path.empty() && (out_path.front() == '/'))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
+                quoteString(out_path));
+
+        /// An `encrypted` disk over another `encrypted` disk passes `out_path` followed by a relative path to it, and
+        /// the wrapped disk treats a path that already starts with its own `path` as wrapped and does not prefix it
+        /// (see `DiskEncryptedTransaction::wrappedPath`). So with such an `out_path` the files would not be where the
+        /// joined path below says: `enc/` over a disk with `path = 'enc/'` would share the files of the wrapped disk,
+        /// and `enc/../other/` would leave it. Reject it, so that the joined path is where the files are.
+        if (const auto * wrapped_encrypted = dynamic_cast<const DiskEncrypted *>(out_disk.get()))
+        {
+            const String & wrapped_disk_path = wrapped_encrypted->getPathInWrappedDisk();
+            if (!wrapped_disk_path.empty() && out_path.starts_with(wrapped_disk_path))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Disk path '{}' must not start with the path '{}' of the wrapped encrypted disk {}, "
+                    "because the wrapped disk would take it for a path it has already prefixed",
+                    quoteString(out_path),
+                    quoteString(wrapped_disk_path),
+                    backQuote(out_disk->getName()));
+        }
+
+        /// Normalize the effective path before checking that it stays under the delegate's root. When the delegate's
+        /// path is a local directory, including object storage with local metadata or local objects, canonicalize the
+        /// paths to resolve existing symlink components too. This happens before the lexical normalization, because a
+        /// `..` after a symlink leaves the directory the symlink points to, not the one that holds the symlink.
+        /// `weakly_canonical` also works when the encrypted disk's trailing directories do not exist yet.
+        ///
+        /// The delegate's root is joined with the path as a filesystem path, because the root does not have to end
+        /// with a separator: `metadata_path` of an object storage disk is taken as is.
+        const fs::path raw_delegate_root = fs::path(out_disk->getPath());
+        const fs::path raw_effective_path = raw_delegate_root / out_path;
+        fs::path delegate_root;
+        fs::path effective_path;
+        if (out_disk->getDataSourceDescription().isPathLocal())
+        {
+            delegate_root = fs::weakly_canonical(raw_delegate_root).lexically_normal();
+            effective_path = fs::weakly_canonical(raw_effective_path).lexically_normal();
+        }
+        else
+        {
+            delegate_root = raw_delegate_root.lexically_normal();
+            effective_path = raw_effective_path.lexically_normal();
+        }
+
+        if (const auto relative_to_root = effective_path.lexically_relative(delegate_root);
+            relative_to_root.empty() || *relative_to_root.begin() == "..")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path '{}' must stay within the wrapped disk's root '{}'.",
+                quoteString(out_path),
+                quoteString(out_disk->getPath()));
+
     }
 
     /// Parses the settings of an encrypted disk from the configuration.
@@ -352,6 +418,21 @@ namespace
     };
 }
 
+namespace
+{
+    /// The path of an encrypted disk on the local filesystem: the root of the wrapped disk followed by `disk_path`.
+    /// The root does not have to end with a separator (`metadata_path` of an object storage disk is taken as is),
+    /// so one is inserted between them when it is missing. Without a `disk_path`, the root is returned exactly as
+    /// the wrapped disk reports it: `MergeTreeData::loadDataParts` recognizes an encrypted disk that shares the
+    /// path of its delegate by comparing the two strings, so even an added trailing separator would break it.
+    String joinWrappedDiskPath(const String & wrapped_disk_path, const String & disk_path)
+    {
+        if (disk_path.empty() || wrapped_disk_path.empty() || wrapped_disk_path.ends_with('/'))
+            return wrapped_disk_path + disk_path;
+        return wrapped_disk_path + "/" + disk_path;
+    }
+}
+
 class DiskEncryptedReservation : public IReservation
 {
 public:
@@ -391,7 +472,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
-    , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
+    , disk_absolute_path(joinWrappedDiskPath(settings_->wrapped_disk->getPath(), settings_->disk_path))
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
@@ -402,7 +483,7 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , delegate(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
-    , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
+    , disk_absolute_path(joinWrappedDiskPath(settings_->wrapped_disk->getPath(), settings_->disk_path))
     , current_settings(std::move(settings_))
 {
     delegate->createDirectories(disk_path);
@@ -617,7 +698,7 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 
             checkCustomDiskPathIsInsideWrappedDisk(path);
             if (!wrapped_disk->isRemote())
-                checkCustomLocalDiskPath(wrapped_disk->getPath() + path, context);
+                checkCustomLocalDiskPath((fs::path(wrapped_disk->getPath()) / path).string(), context);
         }
 
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);

@@ -1,0 +1,32 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <local_metadata_original>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <path>/var/lib/clickhouse/disks/shared_local_objects/</path>
+                <metadata_type>local</metadata_type>
+                <metadata_path>/var/lib/clickhouse/disks/shared_local_metadata/</metadata_path>
+            </local_metadata_original>
+            <local_metadata_symlink>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <path>/var/lib/clickhouse/disks/shared_local_objects/</path>
+                <metadata_type>local</metadata_type>
+                <metadata_path>/var/lib/clickhouse/disks/shared_local_metadata_link/</metadata_path>
+            </local_metadata_symlink>
+        </disks>
+        <policies>
+            <local_metadata_symlink_alias>
+                <volumes>
+                    <original>
+                        <disk>local_metadata_original</disk>
+                    </original>
+                    <alias>
+                        <disk>local_metadata_symlink</disk>
+                    </alias>
+                </volumes>
+            </local_metadata_symlink_alias>
+        </policies>
+    </storage_configuration>
+</clickhouse>

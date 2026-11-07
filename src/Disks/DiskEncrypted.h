@@ -31,6 +31,9 @@ public:
     const String & getName() const override { return encrypted_name; }
     const String & getPath() const override { return disk_absolute_path; }
 
+    /// The path of this disk inside the wrapped disk, as configured by `path`.
+    const String & getPathInWrappedDisk() const { return disk_path; }
+
     ReservationPtr reserve(UInt64 bytes) override;
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;

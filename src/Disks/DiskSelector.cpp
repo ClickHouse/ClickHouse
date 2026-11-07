@@ -9,6 +9,9 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
+#include <filesystem>
+#include <optional>
+
 
 namespace DB
 {
@@ -37,6 +40,113 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
 
     chassert(metadata_storage);
     return metadata_storage;
+}
+
+namespace
+{
+
+/// Identity of the storage that a disk reads and writes.
+struct StorageNamespace
+{
+    DataSourceType type;
+    ObjectStorageType object_storage_type;
+    String description;
+    String objects_namespace;
+    String zookeeper_name;
+    String path;
+
+    bool operator==(const StorageNamespace &) const = default;
+};
+
+/// Normalizes a disk path. A local directory is canonicalized before its `..` components are collapsed,
+/// because a `..` after a symlink leaves the directory the symlink points to, not the one that holds it.
+/// Any other path is a prefix of object keys, where repeated separators and `..` are significant bytes
+/// that address different objects, so it is kept as is.
+/// A trailing separator is dropped in both cases, so that a root with and without one compare equal.
+String normalizeDiskPath(const String & path, bool is_local)
+{
+    if (!is_local)
+    {
+        if (path.size() > 1 && path.ends_with('/'))
+            return path.substr(0, path.size() - 1);
+        return path;
+    }
+
+    auto normalized = std::filesystem::weakly_canonical(std::filesystem::path(path)).lexically_normal();
+    if (!normalized.has_filename() && normalized.has_relative_path())
+        normalized = normalized.parent_path();
+
+    return normalized.string();
+}
+
+/// Returns the storage namespace of a disk, or nothing when the disk has no persistent one.
+std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
+{
+    const auto data_source = disk->getDataSourceDescription();
+
+    /// Separate in-memory disks do not share a persistent namespace even though their paths are empty.
+    if (data_source.type == DataSourceType::RAM)
+        return {};
+
+    const auto path = normalizeDiskPath(disk->getPath(), data_source.isPathLocal());
+
+    /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
+    /// so its identity is its description and its path.
+    String objects_namespace;
+    if (data_source.type == DataSourceType::ObjectStorage && data_source.object_storage_type != ObjectStorageType::None)
+        objects_namespace = disk->getObjectStorage()->getObjectsNamespace();
+
+    return StorageNamespace{
+        .type = data_source.type,
+        .object_storage_type = data_source.object_storage_type,
+        .description = data_source.type == DataSourceType::ObjectStorage ? data_source.description : String{},
+        .objects_namespace = std::move(objects_namespace),
+        .zookeeper_name = data_source.type == DataSourceType::ObjectStorage ? data_source.zookeeper_name : String{},
+        .path = path,
+    };
+}
+
+/// Returns the local directory that a disk lists its files from, or nothing when the listing does not come
+/// from the local filesystem.
+///
+/// For a `local` disk it is the disk's directory. For an object storage disk with `metadata_type = local`,
+/// `DiskObjectStorage::iterateDirectory` lists the local metadata directory, whatever the object storage
+/// behind it is. For a `local` object storage with plain metadata, it is the directory of the objects.
+std::optional<String> getLocalListingDirectory(const DiskPtr & disk)
+{
+    const auto data_source = disk->getDataSourceDescription();
+    if (data_source.type == DataSourceType::RAM || !data_source.isPathLocal())
+        return {};
+
+    return normalizeDiskPath(disk->getPath(), /*is_local=*/ true);
+}
+
+}
+
+bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    /// Two disks that list one local directory see the same parts, even when the objects behind them are in
+    /// different buckets.
+    if (const auto lhs_directory = getLocalListingDirectory(lhs))
+    {
+        if (lhs_directory == getLocalListingDirectory(rhs))
+            return true;
+    }
+
+    const auto lhs_namespace = getStorageNamespace(lhs);
+    if (!lhs_namespace)
+        return false;
+
+    return lhs_namespace == getStorageNamespace(rhs);
+}
+
+bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    /// Every pair of disks over one storage in one policy makes the table enumerate the same parts twice. This
+    /// holds for a read-only disk beside a writable one too: if the reader's copy of a part wins, the writer's
+    /// copy is loaded as outdated and removed through the writable disk, which deletes the files the reader
+    /// uses. And it holds for a `cache` or `encrypted` disk beside the disk it wraps, which list the same files.
+    return haveSameStorageNamespace(lhs, rhs);
 }
 
 void DiskSelector::assertInitialized() const
