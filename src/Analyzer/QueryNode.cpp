@@ -28,6 +28,7 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
@@ -88,6 +89,9 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     size_t projection_columns_size = projection_columns.size();
     size_t write_index = 0;
 
+    /// Old position -> new position, `projection_columns_size` for a removed column.
+    std::vector<size_t> new_indexes(projection_columns_size, projection_columns_size);
+
     for (size_t i = 0; i < projection_columns_size; ++i)
     {
         if (!used_projection_columns_indexes.contains(i))
@@ -95,11 +99,30 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
         projection_nodes[write_index] = projection_nodes[i];
         projection_columns[write_index] = projection_columns[i];
+        new_indexes[i] = write_index;
         ++write_index;
     }
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+
+    auto remap_indexes = [&](std::vector<size_t> & indexes)
+    {
+        std::erase_if(indexes, [&](size_t index) { return index >= projection_columns_size || new_indexes[index] == projection_columns_size; });
+        for (auto & index : indexes)
+            index = new_indexes[index];
+    };
+
+    if (hasOrderBy())
+    {
+        for (auto & sort_node : getOrderBy().getNodes())
+        {
+            auto & sort_node_typed = sort_node->as<SortNode &>();
+            remap_indexes(sort_node_typed.getProjectionColumnIndexes());
+            for (auto & argument_indexes : sort_node_typed.getArgumentsProjectionColumnIndexes())
+                remap_indexes(argument_indexes);
+        }
+    }
 
     if (hasInterpolate())
     {
@@ -114,9 +137,23 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
             [&used_projection_columns](const QueryTreeNodePtr & interpolate)
             { return !used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()); });
 
+        for (auto & interpolate : interpolate_list_nodes)
+            remap_indexes(interpolate->as<InterpolateNode &>().getProjectionColumnIndexes());
+
         if (interpolate_list_nodes.empty())
             interpolate_node = nullptr;
     }
+}
+
+void QueryNode::clearFillProjectionColumnIndexes()
+{
+    if (hasOrderBy())
+        for (auto & sort_node : getOrderBy().getNodes())
+            sort_node->as<SortNode &>().setProjectionColumnIndexes({});
+
+    if (hasInterpolate())
+        for (auto & interpolate_node : getInterpolate()->as<ListNode &>().getNodes())
+            interpolate_node->as<InterpolateNode &>().setProjectionColumnIndexes({});
 }
 
 ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
@@ -576,6 +613,18 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     size_t projection_expression_list_ast_children_size = projection_expression_list_ast.children.size();
     if (projection_expression_list_ast_children_size != getProjection().getNodes().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid projection conversion to AST");
+
+    /// The planner gives a projection column linked to a sort key the key's values, so it is written as the key.
+    if (hasOrderBy())
+    {
+        for (const auto & sort_node : getOrderBy().getNodes())
+        {
+            const auto & sort_node_typed = sort_node->as<SortNode &>();
+            for (size_t index : sort_node_typed.getProjectionColumnIndexes())
+                if (index < projection_expression_list_ast_children_size)
+                    projection_expression_list_ast.children[index] = sort_node_typed.getExpression()->toAST(options);
+        }
+    }
 
     if (!projection_columns.empty())
     {

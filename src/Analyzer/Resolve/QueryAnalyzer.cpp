@@ -263,6 +263,79 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+/// `isEqual` compares column sources structurally, so the same-named columns of a self-join are equal. Requires `isEqual`
+/// nodes. The arguments of a lambda and the columns of a subquery belong to the compared expressions.
+bool haveSameColumnSources(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
+{
+    if (const auto * lhs_column = lhs.as<ColumnNode>())
+    {
+        auto lhs_source = lhs_column->getColumnSourceOrNull();
+        auto rhs_source = rhs.as<ColumnNode &>().getColumnSourceOrNull();
+        if (lhs_source != rhs_source && (!lhs_source || lhs_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS))
+            return false;
+    }
+
+    if (lhs.getNodeType() == QueryTreeNodeType::QUERY || lhs.getNodeType() == QueryTreeNodeType::UNION)
+        return true;
+
+    const auto & lhs_children = lhs.getChildren();
+    const auto & rhs_children = rhs.getChildren();
+    for (size_t i = 0; i < lhs_children.size(); ++i)
+        if (lhs_children[i] && !haveSameColumnSources(*lhs_children[i], *rhs_children[i]))
+            return false;
+
+    return true;
+}
+
+void linkFillColumnsWithProjection(QueryNode & query_node)
+{
+    if (!query_node.hasOrderBy())
+        return;
+
+    auto & sort_nodes = query_node.getOrderBy().getNodes();
+    if (std::none_of(sort_nodes.begin(), sort_nodes.end(), [](const QueryTreeNodePtr & sort_node) { return sort_node->as<SortNode &>().withFill(); }))
+        return;
+
+    const auto & projection_nodes = query_node.getProjection().getNodes();
+    const auto & projection_columns = query_node.getProjectionColumns();
+    if (projection_nodes.size() != projection_columns.size())
+        return;
+
+    auto find_indexes = [&](const QueryTreeNodePtr & node, const std::string * column_name)
+    {
+        std::vector<size_t> indexes;
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
+            if ((!column_name || projection_columns[i].name == *column_name)
+                && projection_nodes[i]->isEqual(*node, IQueryTreeNode::CompareOptions{.compare_aliases = false})
+                && haveSameColumnSources(*projection_nodes[i], *node))
+                indexes.push_back(i);
+        return indexes;
+    };
+
+    for (auto & sort_node : sort_nodes)
+    {
+        auto & sort_node_typed = sort_node->as<SortNode &>();
+        const auto & expression = sort_node_typed.getExpression();
+
+        std::vector<std::vector<size_t>> arguments_indexes;
+        if (const auto * function_node = expression->as<FunctionNode>(); function_node && function_node->getFunctionName() == "tuple")
+            for (const auto & argument : function_node->getArguments().getNodes())
+                arguments_indexes.push_back(find_indexes(argument, nullptr));
+
+        sort_node_typed.setProjectionColumnIndexes(find_indexes(expression, nullptr), std::move(arguments_indexes));
+    }
+
+    if (query_node.hasInterpolate())
+    {
+        for (auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
+        {
+            auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+            interpolate_node_typed.setProjectionColumnIndexes(
+                find_indexes(interpolate_node_typed.getExpression(), &interpolate_node_typed.getExpressionName()));
+        }
+    }
+}
+
 /// Hides lambda argument names in the scopes they belong to and restores them on destruction.
 struct HiddenExpressionArguments
 {
@@ -8104,6 +8177,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
+
+    /// Before the passes, which may rewrite only the projection copy of a sort key or INTERPOLATE target.
+    linkFillColumnsWithProjection(query_node_typed);
 }
 
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)

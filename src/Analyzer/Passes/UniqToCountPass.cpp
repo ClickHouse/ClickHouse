@@ -141,6 +141,14 @@ public:
         if (!subquery_node)
             return;
 
+        /// WITH FILL and `arrayJoin` can add rows to the subquery result after its GROUP BY or DISTINCT, so its rows are not distinct.
+        if (hasWithFill(*subquery_node) || hasFunctionNode(query_node->getJoinTreeNode(), "arrayJoin"))
+            return;
+
+        /// `arrayJoin` in this query repeats rows of the subquery before the aggregation.
+        if (hasFunctionNode(node, "arrayJoin"))
+            return;
+
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();
         if (projection_nodes.size() != 1)

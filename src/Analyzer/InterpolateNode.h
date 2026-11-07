@@ -53,6 +53,11 @@ public:
 
     const std::string & getExpressionName() const { return expression_name; }
 
+    /// Positions of the projection columns named `expression_name` that are the target, not a source column of that name.
+    const std::vector<size_t> & getProjectionColumnIndexes() const { return projection_column_indexes; }
+    std::vector<size_t> & getProjectionColumnIndexes() { return projection_column_indexes; }
+    void setProjectionColumnIndexes(std::vector<size_t> indexes) { projection_column_indexes = std::move(indexes); }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -71,6 +76,8 @@ private:
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t interpolate_expression_child_index = 1;
     static constexpr size_t children_size = interpolate_expression_child_index + 1;
+
+    std::vector<size_t> projection_column_indexes;
 };
 
 }

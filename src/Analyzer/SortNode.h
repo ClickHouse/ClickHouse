@@ -148,6 +148,20 @@ public:
 
     const std::string & getColumnName() const { return column_name; }
 
+    /// Positions of the projection columns that had this expression (for a `tuple`, each argument)
+    /// when a query with WITH FILL was analyzed.
+    const std::vector<size_t> & getProjectionColumnIndexes() const { return projection_column_indexes; }
+    std::vector<size_t> & getProjectionColumnIndexes() { return projection_column_indexes; }
+
+    const std::vector<std::vector<size_t>> & getArgumentsProjectionColumnIndexes() const { return arguments_projection_column_indexes; }
+    std::vector<std::vector<size_t>> & getArgumentsProjectionColumnIndexes() { return arguments_projection_column_indexes; }
+
+    void setProjectionColumnIndexes(std::vector<size_t> indexes, std::vector<std::vector<size_t>> arguments_indexes = {})
+    {
+        projection_column_indexes = std::move(indexes);
+        arguments_projection_column_indexes = std::move(arguments_indexes);
+    }
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
@@ -168,6 +182,8 @@ private:
     static constexpr size_t children_size = fill_staleness_child_index + 1;
 
     std::string column_name;
+    std::vector<size_t> projection_column_indexes;
+    std::vector<std::vector<size_t>> arguments_projection_column_indexes;
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;
