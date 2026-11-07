@@ -341,6 +341,9 @@ select parseDateTimeInJodaSyntax('2025', 'YYY', 'UTC') = toDateTime('2025-01-01'
 select parseDateTimeInJodaSyntax('2025', 'xxx', 'UTC') = toDateTime('2024-12-30', 'UTC');
 select parseDateTimeInJodaSyntax('2025', 'yyy', 'UTC') = toDateTime('2025-01-01', 'UTC');
 
+-- a time zone name that moves the result before 1970 reports the time zone error
+select parseDateTimeInJodaSyntax('1970-01-01 00:00:00 Asia/Shanghai', 'yyyy-MM-dd HH:mm:ss z', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+
 -- -------------------------------------------------------------------------------------------------------------------------
 
 -- { echoOff }
