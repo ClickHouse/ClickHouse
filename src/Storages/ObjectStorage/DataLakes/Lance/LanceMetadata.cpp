@@ -29,6 +29,8 @@
 #include <Storages/StorageSnapshot.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/filesystemHelpers.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/isValidUTF8.h>
 #include <Common/ProfileEvents.h>
@@ -101,6 +103,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
+extern const int PATH_ACCESS_DENIED;
 }
 
 namespace FailPoints
@@ -1461,7 +1464,27 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_
     }
 #endif
 
-    options.uri = configuration_ptr->getRawPath().path;
+    /// Pass the dataset path resolved the same way as `DataLakeConfiguration::assertLocalPathCorrect` validates it:
+    /// a relative path is relative to the key prefix of the local object storage (`user_files_path` in the server),
+    /// not to the current directory of the process. The path is made absolute and lexically normal (like the check),
+    /// so that the `Lance` SDK opens exactly the directory that passed the check and cannot reinterpret it as a URI
+    /// (`file://`, `s3://`) or expand `~`. Symbolic links inside the dataset are checked by the Rust side.
+    if (!object_storage || object_storage->getType() != ObjectStorageType::Local)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage for a local `Lance` dataset");
+
+    String dataset_path = configuration_ptr->getPathForRead().path;
+    if (fs::path(dataset_path).is_relative())
+        dataset_path = resolvePathRelativelyToBase(dataset_path, object_storage->getCommonKeyPrefix());
+    dataset_path = fs::absolute(dataset_path).lexically_normal().string();
+
+    if (local_context)
+    {
+        const auto user_files_path = local_context->getUserFilesPath();
+        if (!fileOrSymlinkPathStartsWith(dataset_path, user_files_path) || !pathStartsWith(dataset_path, user_files_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", dataset_path, user_files_path);
+    }
+
+    options.uri = std::move(dataset_path);
     return options;
 }
 

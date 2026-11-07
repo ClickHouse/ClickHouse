@@ -1163,6 +1163,7 @@ async fn open_dataset(options: DatasetOpenOptions) -> FfiResult<OpenedDataset> {
         ensure_no_external_base_paths(&dataset, origin)?;
         Ok(OpenedDataset { dataset, origin })
     } else {
+        ensure_local_dataset_path(&uri)?;
         ensure_local_dataset_contained(&uri)?;
         let dataset = Dataset::open(&uri)
             .await
@@ -1219,12 +1220,29 @@ fn split_s3_uri(uri: &str) -> FfiResult<(&str, &str)> {
     Ok((bucket, key))
 }
 
+// ClickHouse validates and passes an absolute, lexically normal filesystem path of a local dataset. `Lance` would
+// interpret anything else on its own: a URI (`file://`, `s3://`, ...) selects an object store by its scheme, `~` is
+// expanded to the home directory, and a relative path is resolved against the current directory of the process.
+// Reject such a path, so that the dataset is opened exactly at the path that ClickHouse checked.
+fn ensure_local_dataset_path(path: &str) -> FfiResult<()> {
+    if !std::path::Path::new(path).is_absolute() {
+        return Err(FfiError::new(
+            ChLanceErrorKind::InvalidArgument,
+            ChLanceErrorOrigin::Local,
+            format!(
+                "Local Lance dataset path {:?} must be an absolute filesystem path",
+                path
+            ),
+        ));
+    }
+    Ok(())
+}
+
 // ClickHouse checks only that the dataset directory is inside `user_files_path`, while Lance reads the
 // files of a local dataset directly and follows symbolic links. Reject a dataset with a symbolic link
 // that resolves outside of the dataset directory, so that it cannot expose files outside of it.
-fn ensure_local_dataset_contained(uri: &str) -> FfiResult<()> {
+fn ensure_local_dataset_contained(path: &str) -> FfiResult<()> {
     let origin = ChLanceErrorOrigin::Local;
-    let path = uri.strip_prefix("file://").unwrap_or(uri);
     let root = match std::fs::canonicalize(path) {
         Ok(root) => root,
         // Let `Dataset::open` report a missing dataset.
@@ -5036,6 +5054,29 @@ mod tests {
         assert_eq!(error.origin, ChLanceErrorOrigin::Local as u32);
         unsafe {
             ch_lance_free_error(addr_of_mut!(error));
+        }
+    }
+
+    #[test]
+    fn ffi_rejects_local_dataset_path_that_is_not_absolute() {
+        let dir = write_test_dataset();
+        let absolute = dir.path().to_str().unwrap().to_string();
+        for path in [
+            format!("file://{}", absolute),
+            "s3://bucket/dataset.lance".to_string(),
+            "~/dataset.lance".to_string(),
+            "dataset.lance".to_string(),
+        ] {
+            let uri = CString::new(path.clone()).unwrap();
+            let options = dataset_options(&uri);
+            let mut error = empty_error();
+            let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+            assert!(dataset.is_null(), "{}", path);
+            assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32, "{}", path);
+            assert_eq!(error.origin, ChLanceErrorOrigin::Local as u32, "{}", path);
+            unsafe {
+                ch_lance_free_error(addr_of_mut!(error));
+            }
         }
     }
 
