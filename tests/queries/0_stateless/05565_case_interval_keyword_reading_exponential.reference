@@ -1,0 +1,5 @@
+31
+31
+1
+1
+SELECT case(multiIf(1, 2, NULL)), caseWithExpression((case(1)), 1, 2, NULL), `interval`(toIntervalDay(1)), toIntervalDay((`interval`(1))), toIntervalDay(1) + `interval`
