@@ -28,7 +28,7 @@ namespace ErrorCodes
       "With ordered mode, only the max name of the successfully consumed file stored." \
       "With exclusive mode, no tracking is done; assumes only one node will ever access this S3-compatible storage.", \
       0) \
-    DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete, keep, move or tag file after successful processing", 0) \
+    DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete, keep, move or tag file after successful processing. On a versioned S3 bucket, delete and move remove only the version that was read. If the same bytes are uploaded again between the listing and the read, the new version is read and removed, and the listed version stays", 0) \
     DECLARE(String, keeper_path, "", "Zookeeper node path", 0) \
     DECLARE(UInt64, loading_retries, 10, "Retry loading up to specified number of times", 0) \
     DECLARE(UInt64, processing_threads_num, 1, "Number of processing threads (default number of available CPUs or 16)", 0) \
@@ -65,7 +65,8 @@ namespace ErrorCodes
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to. Setting it requires the `WRITE` grant on the `S3` source (not limited to a URL filter), and `ALTER` also requires `SELECT` on the table. The URL must be allowed by `remote_url_allow_hosts`", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
-    DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name", 0) \
+    DECLARE(Bool, after_processing_move_preserve_path, false, "If true, preserve the full source path under after_processing_move_prefix instead of using only the file name. If false and several processed files map to the same destination (equal file names under different prefixes), only the first is moved and the rest are left in place", 0) \
+    DECLARE(Bool, after_processing_move_preserve_tags, false, "S3 only; setting it on any other object storage is an error. Opt-in: if true, a guarded move (after_processing_move_preserve_path = 0) restates the source object's tag set on the destination, which requires permission to read those tags (s3:GetObjectTagging); a move whose tags cannot be read then fails and leaves the source in place. The default moves without restating tags, preserving the pre-guard contract for existing tables", 0) \
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
@@ -116,7 +117,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     };
     auto is_changeable = [&](const std::string & setting_name) -> bool
     {
-        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
+        return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode], storage.getType());
     };
     /// Hides what `SHOW CREATE TABLE` hides. A secret is hidden whole, as its masker renders SQL.
     auto render_value = [&](const std::string & setting_name, const Field & value) -> String

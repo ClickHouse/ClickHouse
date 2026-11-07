@@ -149,6 +149,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
     extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
+    extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_tags;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
     extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
@@ -179,6 +180,15 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Concurrent inserts commit independently, so in an ordered queue without buckets one of them could move the processed
+    /// pointer past a file that another one reads again after a rewrite. Such a queue runs its threads in one insert.
+    bool runsParallelInserts(const ObjectStorageQueueMetadata & metadata)
+    {
+        const auto & table_metadata = metadata.getTableMetadata();
+        return table_metadata.parallel_inserts
+            && (table_metadata.getMode() != ObjectStorageQueueMode::ORDERED || metadata.useBucketsForProcessing());
+    }
+
     /// The move uses only the destination of the storage type of the table, so only that one is checked.
     void checkMoveDestinationHost(
         ObjectStorageType type,
@@ -218,6 +228,14 @@ namespace
                 "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        /// Only the S3 move path reads and restates tags, so accepting either value elsewhere would be a no-op.
+        if (type != ObjectStorageType::S3 && queue_settings[ObjectStorageQueueSetting::after_processing_move_preserve_tags].changed)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
+                type);
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
         {
@@ -358,6 +376,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
         .after_processing_move_preserve_path = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
+        .after_processing_move_preserve_tags = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_tags],
         .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
         .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
         .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
@@ -421,8 +440,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     object_storage_context->setSetting(
         "s3_allow_server_credentials_in_user_queries",
         allow_server_credentials_in_user_queries_);
-
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
+    if (!isLoadingFromExistingMetadata(mode) && (*queue_settings_)[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
+        ObjectStorageQueuePostProcessor::checkS3MoveDestination(
+            (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
+            (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
+            (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
+            *object_storage);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
@@ -516,7 +540,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
 
-    size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
+    size_t task_count = runsParallelInserts(*temp_metadata) ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
         auto task = getContext()->getSchedulePool()->createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
@@ -798,12 +822,21 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", storage->getStorageID());
 
     size_t processing_threads_num = metadata->getTableMetadata().processing_threads_num;
+    /// Each source of a committing `SELECT` commits on its own. In ordered mode a source must not move the pointer
+    /// of a bucket past a file that another source is still reading, because that file can turn out to be rewritten
+    /// and has to be read again. A bucket is held by one source for the whole query, but without buckets all sources
+    /// share the single pointer, so read with one source.
+    if (commit_once_processed
+        && metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED
+        && !metadata->useBucketsForProcessing())
+        processing_threads_num = 1;
 
     createIterator(nullptr);
 
     auto parser_shared_resources
         = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/processing_threads_num);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
+    const auto after_processing = metadata->getTableMetadata().after_processing.load();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
             i /* processor_id */,
@@ -815,7 +848,8 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             max_block_size,
             context,
             commit_once_processed,
-            /*is_direct_select=*/true));
+            /*is_direct_select=*/true,
+            after_processing));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -838,6 +872,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
+    ObjectStorageQueueAction after_processing,
     size_t max_processed_files_override)
 {
     CommitSettings commit_settings_copy;
@@ -849,6 +884,16 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
+    /// `alter` publishes the destination settings before the action, so a batch should never capture `MOVE` without a
+    /// destination. If it does, it would read and insert its files and then fail to move them, so it is not started.
+    if (after_processing == ObjectStorageQueueAction::MOVE
+        && after_processing_settings_copy.after_processing_move_uri.empty()
+        && after_processing_settings_copy.after_processing_move_prefix.empty()
+        && after_processing_settings_copy.after_processing_move_container.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The destination of `after_processing = 'move'` is not set yet, the settings are being altered. Will retry");
+
     if (max_processed_files_override)
         commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
     /// Mirrors `is_deduplication_v2` computed in `streamToViews`.
@@ -866,6 +911,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         parser_shared_resources,
         commit_settings_copy,
         after_processing_settings_copy,
+        after_processing,
         std::move(metadata),
         local_context,
         max_block_size,
@@ -1068,7 +1114,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
     const auto & table_metadata = metadata->getTableMetadata();
     const size_t processing_threads_num = table_metadata.processing_threads_num;
-    const bool parallel_inserts = table_metadata.parallel_inserts;
+    const bool parallel_inserts = runsParallelInserts(*metadata);
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
@@ -1104,6 +1150,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
+        std::vector<size_t> processor_ids;
 
         pipes.reserve(threads);
         sources.reserve(threads);
@@ -1112,9 +1159,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
+        /// One value for the whole batch, so an `ALTER` applies from the next batch on.
+        const auto after_processing = table_metadata.after_processing.load();
         for (size_t i = 0; i < threads; ++i)
         {
-            size_t processor_id = i * (streaming_tasks_index + 1);
+            /// Unique per source, so that concurrent inserts never share the buckets of an ordered queue.
+            size_t processor_id = streaming_tasks_index * threads + i;
+            processor_ids.push_back(processor_id);
             auto source = createSource(
                 processor_id,
                 read_from_format_info,
@@ -1126,6 +1177,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
+                after_processing,
                 effective_max_files);
 
             pipes.emplace_back(source);
@@ -1183,7 +1235,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     message,
                     error_code);
 
-                file_iterator->releaseFinishedBuckets();
+                file_iterator->releaseFinishedBuckets(processor_ids);
                 file_iterator->refreshExpiringBucketLocks();
 
                 if (interrupted)
@@ -1221,7 +1273,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         });
 
         commit(/*insert_succeeded=*/ true, rows, sources, *metadata, transaction_start_time);
-        file_iterator->releaseFinishedBuckets();
+        file_iterator->releaseFinishedBuckets(processor_ids);
         file_iterator->refreshExpiringBucketLocks();
         max_files_override = 0;
         total_rows += rows;
@@ -1245,26 +1297,15 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 void StorageObjectStorageQueue::postProcess(
     const StoredObjects & successful_objects,
     UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-    const ObjectStorageQueueMetadata & metadata) const
+    const ObjectStorageQueueMetadata & metadata,
+    ObjectStorageQueueAction after_processing,
+    const AfterProcessingSettings & after_processing_settings_) const
 {
-    std::optional<ObjectStorageQueuePostProcessor> post_processor;
-
     LOG_TEST(log, "Executing post process for {} objects", successful_objects.size());
-    {
-        std::lock_guard lock(mutex);
-        post_processor.emplace(
-            getContext(),
-            type,
-            object_storage,
-            getName(),
-            metadata.getTableMetadata(),
-            after_processing_settings);
-    }
-
-    if (post_processor)
-    {
-        post_processor->process(successful_objects, post_processing_failed_paths);
-    }
+    ObjectStorageQueuePostProcessor post_processor(
+        getContext(), type, object_storage, after_processing, after_processing_settings_,
+        metadata.getKeeperIdentity());
+    post_processor.process(successful_objects, post_processing_failed_paths);
 }
 
 void StorageObjectStorageQueue::commit(
@@ -1283,11 +1324,16 @@ void StorageObjectStorageQueue::commit(
 
     PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
+    /// In ordered mode a file of another source that is read again bounds which key may move the pointer.
+    std::map<size_t, String> reread_paths_per_bucket;
+    if (metadata.getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED)
+        for (const auto & source : sources)
+            source->collectRereadPaths(reread_paths_per_bucket);
     for (auto & source : sources)
     {
         source->prepareCommitRequests(
             requests, insert_succeeded, successful_objects,
-            last_processed_file_per_partition, created_nodes, exception_message, error_code);
+            last_processed_file_per_partition, created_nodes, exception_message, error_code, reread_paths_per_bucket);
     }
 
     // Use partition-based processing for both HIVE and REGEX modes
@@ -1307,12 +1353,33 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    /// Post-processing runs before the Keeper requests on purpose: an object that is no longer the
+    /// generation that was ingested throws out of here, so the batch is not committed as processed.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
-    if (!successful_objects.empty()
-        && metadata.getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+    /// The sources share one file iterator, whose `after_processing` decided how their files were read.
+    const auto after_processing = sources.empty() ? ObjectStorageQueueAction::KEEP : sources.front()->getAfterProcessing();
+    if (!successful_objects.empty() && after_processing != ObjectStorageQueueAction::KEEP)
     {
-        postProcess(successful_objects, post_processing_failed_paths, metadata);
+        try
+        {
+            /// The settings captured with the action by the sources, as a concurrent `ALTER` may have changed them since.
+            postProcess(successful_objects, post_processing_failed_paths, metadata, after_processing, sources.front()->getAfterProcessingSettings());
+        }
+        catch (...)
+        {
+            /// Exclusive mode keeps no processing nodes in Keeper, so the batch's files are released here.
+            if (mode == ObjectStorageQueueMode::EXCLUSIVE && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+            {
+                const auto message = getCurrentExceptionMessage(false);
+                for (auto & source : sources)
+                    source->releaseAfterChangedGeneration(message);
+            }
+            /// Ordered mode must read the new generation before later keys move the pointer past it.
+            if (mode == ObjectStorageQueueMode::ORDERED && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+                sources.front()->invalidateFileIterator();
+            throw;
+        }
     }
 
     /// In exclusive mode nothing is written to Keeper, but the after_processing action may have
@@ -1489,6 +1556,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1524,6 +1592,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1556,6 +1625,7 @@ static const std::unordered_set<std::string_view> changeable_settings_exclusive_
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1581,9 +1651,12 @@ static void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode, ObjectStorageType storage_type)
 {
     checkNormalizedSetting(name);
+
+    if (storage_type != ObjectStorageType::S3 && name == "after_processing_move_preserve_tags")
+        return false;
 
     if (mode == ObjectStorageQueueMode::UNORDERED)
         return changeable_settings_unordered_mode.contains(name);
@@ -1671,7 +1744,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         {
             /// `new_settings` contains a full set of settings, changed and non-changed together.
             /// So we check whether setting is allowed to be changed only if it is actually changed.
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1830,7 +1903,7 @@ void StorageObjectStorageQueue::alter(
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1852,6 +1925,19 @@ void StorageObjectStorageQueue::alter(
             }
 
             changed_settings.push_back(setting);
+        }
+        /// A setting change can turn the definition into a flattened move to GCS, which CREATE refuses.
+        if (std::ranges::any_of(changed_settings, [](const SettingChange & change)
+            { return change.name == "after_processing" || change.name.starts_with("after_processing_move_"); }))
+        {
+            ObjectStorageQueueSettings effective_settings;
+            effective_settings.applyChanges(new_settings);
+            if (effective_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
+                ObjectStorageQueuePostProcessor::checkS3MoveDestination(
+                    effective_settings[ObjectStorageQueueSetting::after_processing_move_uri],
+                    effective_settings[ObjectStorageQueueSetting::after_processing_move_prefix],
+                    effective_settings[ObjectStorageQueueSetting::after_processing_move_preserve_path],
+                    *object_storage);
         }
         if (requires_detached_mv)
         {
@@ -1877,11 +1963,58 @@ void StorageObjectStorageQueue::alter(
             new_metadata.settings_changes->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
-        /// Alter settings which are stored in keeper.
-        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        /// The companion settings of `after_processing` are published all at once, under one lock, and before the action
+        /// itself is published in Keeper metadata. A batch that captures the new `MOVE` then also captures its whole new
+        /// destination (uri, prefix, container and credentials), never a part of it. The reverse interval, the old action
+        /// with the new destination, is what the `ALTER` asks for anyway.
+        AfterProcessingSettings previous_after_processing_settings;
         {
-            metadata->alterSettings(changed_settings, local_context);
-        });
+            std::lock_guard lock(mutex);
+            previous_after_processing_settings = after_processing_settings;
+            AfterProcessingSettings new_after_processing_settings = after_processing_settings;
+            for (const auto & change : changed_settings)
+            {
+                if (change.name == "after_processing_retries")
+                    new_after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
+                else if (change.name == "after_processing_move_uri")
+                    new_after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_prefix")
+                    new_after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_preserve_path")
+                    new_after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
+                else if (change.name == "after_processing_move_preserve_tags")
+                    new_after_processing_settings.after_processing_move_preserve_tags = change.value.safeGet<bool>();
+                else if (change.name == "after_processing_move_access_key_id")
+                    new_after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_secret_access_key")
+                    new_after_processing_settings.after_processing_move_secret_access_key = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_connection_string")
+                    new_after_processing_settings.after_processing_move_connection_string = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_container")
+                    new_after_processing_settings.after_processing_move_container = change.value.safeGet<String>();
+                else if (change.name == "after_processing_tag_key")
+                    new_after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
+                else if (change.name == "after_processing_tag_value")
+                    new_after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
+            }
+            after_processing_settings = std::move(new_after_processing_settings);
+        }
+
+        /// Alter settings which are stored in keeper.
+        try
+        {
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+            {
+                metadata->alterSettings(changed_settings, local_context);
+            });
+        }
+        catch (...)
+        {
+            /// The `ALTER` failed, so the table keeps its old definition, including the old destination.
+            std::lock_guard lock(mutex);
+            after_processing_settings = std::move(previous_after_processing_settings);
+            throw;
+        }
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
@@ -1910,26 +2043,6 @@ void StorageObjectStorageQueue::alter(
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
-            else if (change.name == "after_processing_retries")
-                after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
-            else if (change.name == "after_processing_move_uri")
-                after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_prefix")
-                after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_preserve_path")
-                after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
-            else if (change.name == "after_processing_move_access_key_id")
-                after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_secret_access_key")
-                after_processing_settings.after_processing_move_secret_access_key = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_connection_string")
-                after_processing_settings.after_processing_move_connection_string = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_container")
-                after_processing_settings.after_processing_move_container = change.value.safeGet<String>();
-            else if (change.name == "after_processing_tag_key")
-                after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
-            else if (change.name == "after_processing_tag_value")
-                after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
             else if (change.name == "commit_on_select")
                 commit_on_select = change.value.safeGet<UInt64>();
             else if (change.name == "deduplication_v2")
@@ -2053,6 +2166,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
         settings[ObjectStorageQueueSetting::after_processing_move_preserve_path] = after_processing_settings.after_processing_move_preserve_path;
+        settings[ObjectStorageQueueSetting::after_processing_move_preserve_tags] = after_processing_settings.after_processing_move_preserve_tags;
         settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
         settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
         settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;

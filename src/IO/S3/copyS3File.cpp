@@ -21,6 +21,9 @@
 #include <IO/ReadBufferFromS3.h>
 
 #include <IO/S3/Requests.h>
+#include <aws/core/http/HttpResponse.h>
+
+#include <aws/core/utils/StringUtils.h>
 
 #include <fmt/ranges.h>
 
@@ -53,8 +56,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace S3RequestSetting
@@ -79,6 +84,28 @@ namespace
     /// InvalidRequest otherwise -- so a range of a smaller source cannot be server-side copied at all.
     constexpr size_t MIN_SOURCE_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
 
+    /// Classify 412 before `S3Exception` discards the raw response code.
+    bool isPreconditionFailed(const Aws::S3::S3Error & error)
+    {
+        return error.GetResponseCode() == Aws::Http::HttpResponseCode::PRECONDITION_FAILED
+            || error.GetExceptionName() == "PreconditionFailed";
+    }
+
+    /// Format tags for `PutObject` and `CreateMultipartUpload`.
+    String urlEncodeTagSet(const ObjectAttributes & tags)
+    {
+        String result;
+        for (const auto & [tag_key, tag_value] : tags)
+        {
+            if (!result.empty())
+                result += '&';
+            result += Aws::Utils::StringUtils::URLEncode(tag_key.c_str());
+            result += '=';
+            result += Aws::Utils::StringUtils::URLEncode(tag_value.c_str());
+        }
+        return result;
+    }
+
     class UploadHelper
     {
     public:
@@ -91,7 +118,8 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_,
-            bool use_upload_checksum_algorithm_)
+            bool use_upload_checksum_algorithm_,
+            const S3CopyFileSettings & copy_settings_ = {})
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -107,6 +135,7 @@ namespace
                 use_upload_checksum_algorithm_ && !client_ptr->isClientForGCS()
                     ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
                     : std::nullopt)
+            , copy_settings(copy_settings_)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -128,6 +157,7 @@ namespace
         /// Empty if disabled by the `use_idempotency_id` request setting.
         const String idempotency_id
             = request_settings[S3RequestSetting::use_idempotency_id] ? getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH) : "";
+        const S3CopyFileSettings copy_settings;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -148,6 +178,37 @@ namespace
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
+        /// Restate headers that `CopyObject` would preserve.
+        template <typename RequestType>
+        void applySourceHeaders(RequestType & request) const
+        {
+            if (!copy_settings.source_headers.has_value())
+                return;
+            const auto & headers = *copy_settings.source_headers;
+            if (!headers.content_type.empty())
+                request.SetContentType(headers.content_type);
+            if (!headers.content_encoding.empty())
+                request.SetContentEncoding(headers.content_encoding);
+            if (!headers.content_language.empty())
+                request.SetContentLanguage(headers.content_language);
+            if (!headers.content_disposition.empty())
+                request.SetContentDisposition(headers.content_disposition);
+            if (!headers.cache_control.empty())
+                request.SetCacheControl(headers.cache_control);
+            if (headers.expires.Millis() > 0)
+                request.SetExpires(headers.expires);
+            if (!headers.website_redirect_location.empty())
+                request.SetWebsiteRedirectLocation(headers.website_redirect_location);
+        }
+
+        /// Restate tags that `CopyObject` would preserve.
+        template <typename RequestType>
+        void applySourceTags(RequestType & request) const
+        {
+            if (copy_settings.source_tags.has_value() && !copy_settings.source_tags->empty())
+                request.SetTagging(urlEncodeTagSet(*copy_settings.source_tags));
+        }
+
         void fillCreateMultipartRequest(S3::CreateMultipartUploadRequest & request)
         {
             request.SetBucket(dest_bucket);
@@ -155,9 +216,16 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+            applySourceHeaders(request);
+            applySourceTags(request);
 
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            if (!idempotency_id.empty())
+            /// S3 caps user metadata at 2 KiB, so the id is left out where it would not fit beside the source's own.
+            size_t metadata_size = 0;
+            for (const auto & [key, value] : metadata)
+                metadata_size += key.size() + value.size();
+            if (!idempotency_id.empty()
+                && metadata_size + std::string_view(S3::IDEMPOTENCY_ID_METADATA_KEY).size() + idempotency_id.size() <= 2048)
                 metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 
@@ -218,6 +286,9 @@ namespace
             request.SetUploadId(multipart_upload_id);
             request.setIdempotencyId(idempotency_id);
 
+            if (!copy_settings.if_none_match.empty())
+                request.SetIfNoneMatch(copy_settings.if_none_match);
+
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
             for (size_t i = 0; i < multipart_tags.size(); ++i)
             {
@@ -263,6 +334,11 @@ namespace
                     continue; /// will retry
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+                if (!copy_settings.if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
+                    throw Exception(
+                        ErrorCodes::FILE_ALREADY_EXISTS,
+                        "Object already exists, If-None-Match precondition failed. Key: {}, Bucket: {}",
+                        dest_key, dest_bucket);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Tags: {}",
@@ -486,17 +562,19 @@ namespace
             const S3::S3RequestSettings & request_settings_,
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-            BlobStorageLogWriterPtr blob_storage_log_)
+            BlobStorageLogWriterPtr blob_storage_log_,
+            const S3CopyFileSettings & copy_settings_)
             : UploadHelper(
-                client_ptr_,
-                dest_bucket_,
-                dest_key_,
-                request_settings_,
-                object_metadata_,
-                schedule_,
-                blob_storage_log_,
-                getLogger("copyDataToS3File"),
-                /* use_upload_checksum_algorithm =*/ true)
+                  client_ptr_,
+                  dest_bucket_,
+                  dest_key_,
+                  request_settings_,
+                  object_metadata_,
+                  schedule_,
+                  blob_storage_log_,
+                  getLogger("copyDataToS3File"),
+                  /* use_upload_checksum_algorithm =*/ true,
+                  copy_settings_)
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -552,6 +630,11 @@ namespace
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
+            applySourceHeaders(request);
+            applySourceTags(request);
+
+            if (!copy_settings.if_none_match.empty())
+                request.SetIfNoneMatch(copy_settings.if_none_match);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -619,6 +702,11 @@ namespace
                     continue; /// will retry
                 }
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
+                if (!copy_settings.if_none_match.empty() && isPreconditionFailed(outcome.GetError()))
+                    throw Exception(
+                        ErrorCodes::FILE_ALREADY_EXISTS,
+                        "Object already exists, If-None-Match precondition failed. Key: {}, Bucket: {}",
+                        dest_key, dest_bucket);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, Key: {}, Bucket: {}, Object size: {}",
@@ -696,17 +784,19 @@ namespace
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_,
-            bool is_ranged_copy_)
+            bool is_ranged_copy_,
+            const S3CopyFileSettings & copy_settings_)
             : UploadHelper(
-                client_ptr_,
-                dest_bucket_,
-                dest_key_,
-                request_settings_,
-                object_metadata_,
-                schedule_,
-                blob_storage_log_,
-                getLogger("copyS3File"),
-                /* use_upload_checksum_algorithm =*/ false)
+                  client_ptr_,
+                  dest_bucket_,
+                  dest_key_,
+                  request_settings_,
+                  object_metadata_,
+                  schedule_,
+                  blob_storage_log_,
+                  getLogger("copyS3File"),
+                  /* use_upload_checksum_algorithm =*/ false,
+                  copy_settings_)
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -725,7 +815,9 @@ namespace
 
         void performCopy()
         {
-            LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
+            LOG_TEST(log, "Copy object {} to {} using native copy{}{}", src_key, dest_key,
+                copy_settings.source_version_id.empty() ? "" : fmt::format(" of version {}", copy_settings.source_version_id),
+                copy_settings.source_if_match.empty() ? "" : fmt::format(", pinned to the generation with `ETag` {}", copy_settings.source_if_match));
 
             /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
             /// the single-operation path -- doing so would copy the entire source object. It can only use
@@ -756,6 +848,13 @@ namespace
             /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
             chassert(!(is_ranged_copy && use_single_operation_copy));
 
+            /// `CopyObject` ignores destination preconditions, so guarded copies must re-upload.
+            if (use_single_operation_copy && !copy_settings.if_none_match.empty())
+            {
+                fallback_method();
+                return;
+            }
+
             if (use_single_operation_copy)
                 performSingleOperationCopy();
             else
@@ -776,6 +875,22 @@ namespace
         const ReadSettings read_settings;
         std::function<void()> fallback_method;
 
+        /// Whether the endpoint refused the copy because the source is not the pinned generation; the SDK has
+        /// no typed error for `PreconditionFailed`, so the raw code and the HTTP status are both checked.
+        bool sourceIsNotThePinnedGeneration(const Aws::S3::S3Error & error) const
+        {
+            return !copy_settings.source_if_match.empty() && isPreconditionFailed(error);
+        }
+
+        [[noreturn]] void throwSourceChanged() const
+        {
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "S3 object {}/{} was not copied to {}/{}: it was replaced after it was selected for the copy "
+                "(`x-amz-copy-source-if-match` on `ETag` {} failed)",
+                src_bucket, src_key, dest_bucket, dest_key, copy_settings.source_if_match);
+        }
+
         void performSingleOperationCopy()
         {
             S3::CopyObjectRequest request;
@@ -786,6 +901,9 @@ namespace
         void fillCopyRequest(S3::CopyObjectRequest & request)
         {
             request.SetCopySource(src_bucket + "/" + src_key);
+            request.setCopySourceVersionId(copy_settings.source_version_id);
+            if (!copy_settings.source_if_match.empty())
+                request.SetCopySourceIfMatch(copy_settings.source_if_match);
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
 
@@ -834,6 +952,11 @@ namespace
                         size);
                     break;
                 }
+
+                /// Decided before every other route: a `412` means the source is another generation
+                /// now, and neither a multipart copy nor the read-and-write fallback may copy that one.
+                if (sourceIsNotThePinnedGeneration(outcome.GetError()))
+                    throwSourceChanged();
 
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" ||
                     outcome.GetError().GetExceptionName() == "InvalidRequest" ||
@@ -915,6 +1038,11 @@ namespace
 
             /// Make a copy request to copy a part.
             request->SetCopySource(src_bucket + "/" + src_key);
+            request->setCopySourceVersionId(copy_settings.source_version_id);
+            /// Every part is pinned to the same generation, so a source replaced in place between two
+            /// parts cannot make the destination a splice of two generations.
+            if (!copy_settings.source_if_match.empty())
+                request->SetCopySourceIfMatch(copy_settings.source_if_match);
             request->SetBucket(dest_bucket);
             request->SetKey(dest_key);
             request->SetUploadId(multipart_upload_id);
@@ -944,6 +1072,8 @@ namespace
 
             if (!outcome.IsSuccess())
             {
+                if (sourceIsNotThePinnedGeneration(outcome.GetError()))
+                    throwSourceChanged();
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
@@ -981,7 +1111,8 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    const S3CopyFileSettings & copy_settings)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -993,7 +1124,8 @@ void copyDataToS3File(
         settings,
         object_metadata,
         schedule,
-        blob_storage_log};
+        blob_storage_log,
+        copy_settings};
     helper.performCopy();
 }
 
@@ -1018,7 +1150,8 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule,
         const CreateReadBuffer & fallback_file_reader,
         const std::optional<ObjectAttributes> & object_metadata,
-        bool is_ranged_copy)
+        bool is_ranged_copy,
+        const S3CopyFileSettings & copy_settings)
     {
         if (!dest_s3_client)
             dest_s3_client = src_s3_client;
@@ -1035,7 +1168,8 @@ namespace
                 settings,
                 blob_storage_log,
                 schedule,
-                object_metadata);
+                object_metadata,
+                copy_settings);
         };
 
         if (!settings[S3RequestSetting::allow_native_copy])
@@ -1060,7 +1194,8 @@ namespace
             schedule,
             blob_storage_log,
             std::move(fallback_method),
-            is_ranged_copy};
+            is_ranged_copy,
+            copy_settings};
         helper.performCopy();
     }
 }
@@ -1078,7 +1213,8 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    const S3CopyFileSettings & copy_settings)
 {
     copyS3FileImpl(
         std::move(src_s3_client),
@@ -1096,7 +1232,8 @@ void copyS3File(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ false);
+        /* is_ranged_copy= */ false,
+        copy_settings);
 }
 
 void copyS3FileRange(
@@ -1132,7 +1269,8 @@ void copyS3FileRange(
         std::move(schedule),
         fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ true);
+        /* is_ranged_copy= */ true,
+        /* copy_settings= */ {});
 }
 
 }
