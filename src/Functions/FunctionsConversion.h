@@ -50,6 +50,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/Serializations/SerializationBool.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -3768,10 +3769,11 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
 ///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
-/// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
+/// - a `Bool`, also as the storage type of `SimpleAggregateFunction(f, Bool)`: it can hold bytes other than
+///   0 and 1, and every non-zero byte is rendered as `true`.
 ///
 /// An unknown type is assumed to collapse, so that an undecidable case is never claimed to be injective.
-inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const FormatSettings & format_settings)
+inline bool renderingCollapsesDistinctValues(const DataTypePtr & type)
 {
     if (!type)
         return true;
@@ -3785,8 +3787,8 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
             collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
         else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
-        else if (isUInt8(nested) && nested.getName() == "Bool")
-            collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
+        else if (typeid_cast<const SerializationBool *>(nested.getCustomSerialization()))
+            collapses = true;
     };
 
     forEachInTypeTree(*type, check);
@@ -3844,7 +3846,7 @@ public:
             if (sample_columns.size() != 1)
                 return false;
 
-            return !renderingCollapsesDistinctValues(sample_columns.front().type, settings.format_settings);
+            return !renderingCollapsesDistinctValues(sample_columns.front().type);
         }
         else
             return false;
