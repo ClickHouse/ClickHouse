@@ -24,6 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool enable_multiple_prewhere_read_steps;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
@@ -339,14 +340,23 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         for (const auto & input : row_level_filter->actions.getInputs())
             columns_read_before_filter.insert(input->result_name);
     /// `installTopKDynamicFilter` runs later and prepends `__topKFilter` to PREWHERE, so it reads its column too.
+    String top_k_filter_column;
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
-        columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
+    {
+        const auto & column = read_from_merge_tree_step->getTopKFilterInfo()->column_name;
+        columns_read_before_filter.insert(column);
+        /// Only then a condition on that column alone gets its own read step after `__topKFilter` (see `tryBuildPrewhereSteps`).
+        if (settings[Setting::enable_multiple_prewhere_read_steps]
+            && read_from_merge_tree_step->canReadColumnsAhead({column}, read_from_merge_tree_step->getParts()))
+            top_k_filter_column = column;
+    }
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final,
-        columns_read_before_filter);
+        columns_read_before_filter,
+        top_k_filter_column);
 
     if (optimize_result.prewhere_nodes.empty())
         return;

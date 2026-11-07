@@ -715,6 +715,7 @@ public:
 
     /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
     bool isPrewhereDeferredAfterFinal() const;
+    bool canReadColumnsAhead(const Names & column_names, const RangesInDataParts & parts) const;
     bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
