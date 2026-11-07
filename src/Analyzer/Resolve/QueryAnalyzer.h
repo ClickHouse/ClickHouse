@@ -265,17 +265,10 @@ private:
         bool allow_niladic_functions = true,
         bool is_top_level_projection = false);
 
-    /// A result column of a `SELECT` list and the bare column name it can be named with if it is a column reference (empty if not).
-    struct ProjectionColumnReference
-    {
-        String bare_column_name;
-        bool is_identifier = false;
-    };
+    /// `bare_column_names` has, per result column of a `SELECT` list, the bare column name a column reference can be named with (empty if not one).
+    static std::vector<size_t> findUniqueBareProjectionNames(const NamesAndTypes & projection_columns, const Names & bare_column_names);
 
-    static std::vector<size_t> findUniqueBareProjectionNames(
-        const NamesAndTypes & projection_columns, const std::vector<ProjectionColumnReference> & column_references);
-
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false, std::vector<ProjectionColumnReference> * column_references = nullptr);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false, Names * bare_column_names = nullptr);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 

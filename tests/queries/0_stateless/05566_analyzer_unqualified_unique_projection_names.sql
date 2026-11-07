@@ -67,6 +67,9 @@ SELECT '-- case 13: matcher transformers';
 SELECT r.* APPLY (x -> x, 'f_') FROM (SELECT 1 AS a) AS l CROSS JOIN (SELECT 2 AS a) AS r CROSS JOIN (SELECT 3 AS a) AS t FORMAT TSVWithNames;
 SELECT l.* EXCEPT (b) FROM (SELECT 1 AS a, 2 AS b) AS l CROSS JOIN (SELECT 3 AS a) AS r CROSS JOIN (SELECT 4 AS a) AS t FORMAT TSVWithNames;
 SELECT l.* REPLACE (x + 1 AS x) FROM (SELECT 1 AS a, 2 AS x) AS l CROSS JOIN (SELECT 3 AS a) AS r CROSS JOIN (SELECT 4 AS a) AS t FORMAT TSVWithNames;
+SELECT a.* APPLY (x -> x) FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
+SELECT t.* APPLY (x -> x, 't.') FROM values('id Int32', 1) AS t FORMAT TSVWithNames;
+SELECT t.* APPLY (x -> (x AS `t.id`)) FROM values('id Int32', 1) AS t FORMAT TSVWithNames;
 
 SELECT '-- case 14: subcolumn';
 CREATE TABLE t_s (id Int32, tup Tuple(x Int32)) ENGINE = MergeTree ORDER BY id;
@@ -84,6 +87,8 @@ SELECT a.id, a.x FROM values('id Int32, x Int32', (1, 10), (1, 20), (1, 30)) a J
 ORDER BY 1 WITH FILL TO 4 INTERPOLATE (id AS id + 1); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT a.id, a.x FROM values('id Int32, x Int32', (1, 10), (1, 20), (1, 30)) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id
 ORDER BY 1 WITH FILL TO 4 INTERPOLATE (id AS id + 1); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT a.* APPLY (x -> x) FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id
+ORDER BY 1 WITH FILL TO 5 INTERPOLATE (id AS id + 10); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT a.all FROM (SELECT 1 AS id, 2 AS all) AS a JOIN (SELECT 1 AS id, 3 AS all) AS b ON a.id = b.id ORDER BY ALL; -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a.all FROM (SELECT 1 AS id, 2 AS all) AS a JOIN (SELECT 1 AS id, 3 AS all) AS b ON a.id = b.id JOIN (SELECT 1 AS id, 4 AS all) AS c ON a.id = c.id ORDER BY ALL; -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a.id AS all, a.id FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id ORDER BY ALL; -- { serverError UNEXPECTED_EXPRESSION }
