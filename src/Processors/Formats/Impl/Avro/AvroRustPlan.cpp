@@ -401,7 +401,12 @@ struct Plan::Impl
         }
         nodes.clear();
         nodes.shrink_to_fit();
-        state.reset(avro_state_new(256));
+        /// The nesting of the data (arrays, maps and recursive records that are skipped) is kept on a stack of frames on the heap,
+        /// 24 bytes per level, not on the native stack, so it is bounded by the hard cap of the library (0): 100000 levels, 2.4 MB per
+        /// state. The schema depth (`MAX_AVRO_SCHEMA_DEPTH`) does not apply to it: a schema of a few levels describes data of any
+        /// depth with a recursive record, and the decoder over `contrib/avro`, which recursed on the native stack, read what its stack
+        /// had room for, about as many levels as the cap.
+        state.reset(avro_state_new(0));
         if (!state)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create Avro decoder state");
         sinks.resize(buffers.size());

@@ -16,8 +16,10 @@ use common::*;
 
 const STACK: usize = 192 * 1024;
 
-/// The depth ClickHouse passes to `avro_state_new` and `avro_schema_parse`.
-const CLICKHOUSE_DEPTH: usize = 256;
+/// The depth that ClickHouse passes to `avro_schema_parse`.
+const CLICKHOUSE_SCHEMA_DEPTH: usize = 256;
+/// The depth that ClickHouse passes to `avro_state_new`: none, so the hard cap of the library applies.
+const CLICKHOUSE_DATA_DEPTH: usize = 0;
 
 fn on_small_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     std::thread::Builder::new()
@@ -50,49 +52,78 @@ fn skip_program(s: &Schema) -> Program {
 }
 
 #[test]
-fn a_chain_of_fifty_thousand_named_records_is_rejected_by_the_depth_limit() {
+fn a_chain_of_fifty_thousand_named_records_decodes_on_a_small_stack() {
     let n = 50_000;
     // `last` is a chain of `n` nested records: the data nests `n` levels although the schema JSON is shallow.
-    let (limited, unlimited) = on_small_stack(move || {
+    let (limited, decoded) = on_small_stack(move || {
         let json = chain_schema(n);
-        let s = Schema::parse(json.as_bytes(), CLICKHOUSE_DEPTH).unwrap();
+        let s = Schema::parse(json.as_bytes(), CLICKHOUSE_SCHEMA_DEPTH).unwrap();
         // Same as the plan the stateless test builds: every field but `id` is skipped.
         let skip = skip_program(&s);
         let mut payload = zz(42);
         payload.extend(std::iter::repeat_n(0u8, n));
         payload.extend(zz(7));
         assert!(s.canonical_form().len() > n);
-        let mut state = State::new(CLICKHOUSE_DEPTH);
+        // The limit that a caller sets is exact and leaves the state at a row boundary.
+        let mut state = State::new(256);
         let limited = decode(&skip, &mut state, &payload, 1, &mut []).unwrap_err();
         assert!(state.at_row_boundary());
-        // Only the depth limit stops it: with the internal cap the same 50 000 levels decode.
-        let mut state = State::new(0);
-        let unlimited = decode(&skip, &mut state, &payload, 1, &mut [])
+        // The depth that ClickHouse passes decodes the same 50 000 levels: they are on the heap.
+        let mut state = State::new(CLICKHOUSE_DATA_DEPTH);
+        let decoded = decode(&skip, &mut state, &payload, 1, &mut [])
             .unwrap()
             .rows_done;
-        (limited, unlimited)
+        (limited, decoded)
     });
     // `TOO_DEEP_RECURSION` is what ClickHouse maps `DataTooDeep` to.
     assert_eq!(limited.code, ErrorCode::DataTooDeep);
-    assert_eq!(unlimited, 1);
+    assert_eq!(decoded, 1);
+}
+
+fn list_schema() -> Schema {
+    Schema::parse(
+        br#"{"type":"record","name":"root","fields":[{"name":"id","type":"long"},{"name":"list","type":{"type":"record","name":"L","fields":[{"name":"next","type":["null","L"]}]}}]}"#,
+        CLICKHOUSE_SCHEMA_DEPTH,
+    )
+    .unwrap()
+}
+
+/// `id` and a list of `links` records `L { next: [null, L] }`.
+fn list_payload(links: usize) -> Vec<u8> {
+    let mut payload = zz(42);
+    for _ in 0..links {
+        payload.extend(zz(1));
+    }
+    payload.extend(zz(0));
+    payload
+}
+
+/// The schema is a few levels deep, but the data of a recursive record is as deep as it has links. A list of more than
+/// 256 links (the depth of a schema) is read, as it is by the decoder over `contrib/avro`, which recurses on the native
+/// stack; the stateless test `05576_avro_recursive_data_deeper_than_schema` runs the same shapes.
+#[test]
+fn a_recursive_list_of_more_than_the_schema_depth_decodes_on_a_small_stack() {
+    let decoded = on_small_stack(|| {
+        let skip = skip_program(&list_schema());
+        [300usize, 1_000, 90_000].map(|links| {
+            let mut state = State::new(CLICKHOUSE_DATA_DEPTH);
+            let p = decode(&skip, &mut state, &list_payload(links), 1, &mut []).unwrap();
+            assert!(state.at_row_boundary());
+            (p.rows_done, p.consumed)
+        })
+    });
+    assert_eq!(
+        decoded,
+        [300usize, 1_000, 90_000].map(|links| (1, list_payload(links).len()))
+    );
 }
 
 #[test]
-fn a_recursive_list_of_a_hundred_thousand_levels_is_rejected_by_the_depth_limit() {
+fn a_recursive_list_beyond_the_hard_cap_is_rejected_by_the_depth_limit() {
     let err = on_small_stack(|| {
-        let s = Schema::parse(
-            br#"{"type":"record","name":"root","fields":[{"name":"id","type":"long"},{"name":"list","type":{"type":"record","name":"L","fields":[{"name":"next","type":["null","L"]}]}}]}"#,
-            CLICKHOUSE_DEPTH,
-        )
-        .unwrap();
-        let skip = skip_program(&s);
-        let mut payload = zz(42);
-        for _ in 0..100_000 {
-            payload.extend(zz(1));
-        }
-        payload.extend(zz(0));
-        let mut state = State::new(CLICKHOUSE_DEPTH);
-        let e = decode(&skip, &mut state, &payload, 1, &mut []).unwrap_err();
+        let skip = skip_program(&list_schema());
+        let mut state = State::new(CLICKHOUSE_DATA_DEPTH);
+        let e = decode(&skip, &mut state, &list_payload(200_000), 1, &mut []).unwrap_err();
         assert!(state.at_row_boundary());
         e
     });
@@ -105,13 +136,13 @@ fn deeply_nested_json_and_schemas_are_rejected_without_native_recursion() {
     on_small_stack(|| {
         for n in [1_000usize, 100_000] {
             let json = "[".repeat(n) + &"]".repeat(n);
-            let e = Schema::parse(json.as_bytes(), CLICKHOUSE_DEPTH).unwrap_err();
+            let e = Schema::parse(json.as_bytes(), CLICKHOUSE_SCHEMA_DEPTH).unwrap_err();
             assert_eq!(e.code, ErrorCode::JsonDepth);
             let mut sch = String::from("\"int\"");
             for _ in 0..n.min(40_000) {
                 sch = format!(r#"{{"type":"array","items":{sch}}}"#);
             }
-            let e = Schema::parse(sch.as_bytes(), CLICKHOUSE_DEPTH).unwrap_err();
+            let e = Schema::parse(sch.as_bytes(), CLICKHOUSE_SCHEMA_DEPTH).unwrap_err();
             assert!(
                 matches!(e.code, ErrorCode::JsonDepth | ErrorCode::SchemaDepth),
                 "{e}"

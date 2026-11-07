@@ -21,6 +21,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int AVRO_EXCEPTION;
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CANNOT_WRITE_TO_SOCKET;
     extern const int INCORRECT_DATA;
@@ -160,7 +161,11 @@ Chunk AvroRowInputFormat::read()
         }
         catch (Exception & e)
         {
-            e.addMessage("(while reading header)");
+            /// The decoder over `contrib/avro` throws `avro::Exception`, which is not a `DB::Exception`, so `IRowInputFormat`
+            /// never annotates what the library finds wrong with the header. The messages must stay the same: a reader of
+            /// `system.kafka_consumers` or of a log compares them.
+            if (e.code() != ErrorCodes::AVRO_EXCEPTION)
+                e.addMessage("(while reading header)");
             throw;
         }
     }
