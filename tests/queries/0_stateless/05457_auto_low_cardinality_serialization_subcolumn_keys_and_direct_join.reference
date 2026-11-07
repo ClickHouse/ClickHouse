@@ -1,0 +1,11 @@
+Default
+LowCardinality
+sorting key on a subcolumn
+900	310	3190
+partition key on a subcolumn
+3	610
+4	90
+5	200
+direct join
+600	310	b_9	a_0
+600	310	b_9	a_0

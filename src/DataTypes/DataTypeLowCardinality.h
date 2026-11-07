@@ -98,10 +98,24 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
 /// Remove LowCardinality recursively from all nested columns.
 ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 
+/// Like recursiveRemoveLowCardinality, but only converts non-native LowCardinality columns
+/// (automatic LowCardinality serialization) to full columns, leaving genuine LowCardinality(T) intact.
+ColumnPtr recursiveRemoveNonNativeLowCardinality(const ColumnPtr & column);
+
+/// True if the column or any of its nested columns is a non-native LowCardinality column, i.e. exactly when
+/// recursiveRemoveNonNativeLowCardinality would change it. Cheap: it does not allocate.
+bool hasNonNativeLowCardinality(const IColumn & column);
+
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
 ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
 /// Removes LowCardinality and Nullable in a correct order and returns T
 /// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
 DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
+
+/// Creates an empty LowCardinality column whose dictionary holds keys of type `dictionary_type`.
+/// When `is_native` is false, the result is a non-native LowCardinality column: the in-memory
+/// dictionary-encoded representation of a column whose data type is `dictionary_type` itself
+/// (i.e. not LowCardinality). Used for automatic LowCardinality serialization.
+MutableColumnPtr createEmptyLowCardinalityColumn(const IDataType & dictionary_type, bool is_native);
 }

@@ -229,7 +229,10 @@ Block NativeReader::read()
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
+            {
                 info->deserializeFromKindsBinary(istr, allowed_kinds);
+                info->checkKindStackForType(*column.type);
+            }
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);
@@ -274,6 +277,10 @@ Block NativeReader::read()
 
                 if (!header_column.type->equals(*column.type))
                 {
+                    /// The conversions below key on the data types, which do not reflect the dictionary-encoded
+                    /// representation of automatic LowCardinality serialization, so convert to the full column first.
+                    column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+
                     /// In the event of the same aggregate function but of a different variant (e.g. Window vs Aggregate),
                     /// we should try to convert and read, since the difference in `Window` vs `Aggregate` is not a
                     /// user-facing type difference but rather an internal implementation detail.
