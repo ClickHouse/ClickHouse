@@ -16,7 +16,7 @@ from pure_http_client import ClickHouseClient
 
 # unpooled variance z-test for proportions of two samples
 def twosample_proportion_ztest(s1, s2, t1, t2, alpha):
-    if s1 == 0 or s2 == 0 or s1 > t1 or s2 > t2 or t1 + t2 == 0:
+    if s1 > t1 or s2 > t2 or t1 == 0 or t2 == 0:
         return nan, nan, nan, nan
 
     p1 = s1 / t1
