@@ -1362,6 +1362,11 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     if (settings[Setting::max_rows_to_group_by] && settings[Setting::group_by_overflow_mode] != OverflowMode::THROW)
         throwCorrelatedInNotSupported(" with `max_rows_to_group_by` and `group_by_overflow_mode` other than 'throw'", node);
 
+    /// The left argument is resolved again inside a new subquery, which does not see the aliases and CTEs of this
+    /// scope with this setting.
+    if (!settings[Setting::enable_global_with_statement])
+        throwCorrelatedInNotSupported(" with `enable_global_with_statement` disabled", node);
+
     if (in_first_argument->getResultType()->onlyNull())
         throwCorrelatedInNotSupported(" when the left argument is NULL", node);
 
@@ -1388,21 +1393,12 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     if (hasSubqueryWithSettingsChanges(in_second_argument))
         throwCorrelatedInNotSupported(" when the subquery has its own SETTINGS clause", node);
 
-    /// The left argument is resolved again inside the new subquery, where its own aliases and the aliases of this
-    /// scope are visible differently under these settings.
+    /// The left argument is resolved again inside the new subquery, where an alias defined in it is found before
+    /// a column of this scope with this setting.
     const auto & unresolved_left_argument = unresolved_in_arguments->as<ListNode &>().getNodes().at(0);
     if (settings[Setting::prefer_column_name_to_alias]
         && hasNodeOutsideSubqueries(unresolved_left_argument, [](const QueryTreeNodePtr & left_node) { return left_node->hasAlias(); }))
         throwCorrelatedInNotSupported(" when the left argument defines an alias and `prefer_column_name_to_alias` is enabled", node);
-
-    if (!settings[Setting::enable_global_with_statement]
-        && hasNodeOutsideSubqueries(unresolved_left_argument, [&scope](const QueryTreeNodePtr & left_node)
-            {
-                const auto * identifier_node = left_node->as<IdentifierNode>();
-                return identifier_node && IdentifierResolver::tryBindIdentifierToAliases(
-                    IdentifierLookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION}, scope);
-            }))
-        throwCorrelatedInNotSupported(" when the left argument refers to an alias and `enable_global_with_statement` is disabled", node);
 
     for (const auto & table_expression : extractTableExpressions(
              std::static_pointer_cast<ITableExpressionNode>(in_second_argument), /*add_array_join=*/ false, /*recursive=*/ true))

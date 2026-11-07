@@ -263,6 +263,7 @@ SELECT k, x, CASE WHEN x IN (SELECT e FROM i WHERE i.k = o.k) THEN 'in' ELSE 'ou
 SELECT k, x FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) OR k = 3 ORDER BY k, x;
 SELECT k, x FROM o WHERE (o.x AS a) IN (SELECT e FROM i WHERE i.k = o.k) AND a > 1 ORDER BY k, x;
 SELECT k, x * 10 AS y FROM o WHERE y IN (SELECT e * 10 FROM i WHERE i.k = o.k) ORDER BY k, y;
+WITH v -> v + 1 AS abs SELECT k, x FROM o WHERE abs(x) IN (SELECT e FROM i WHERE i.k = o.k) ORDER BY k, x;
 SELECT k, x, 1 IN (SELECT e FROM i WHERE i.k = o.k) FROM o ORDER BY k, x;
 SELECT k, x, (x, k) IN (SELECT e, i.k FROM i WHERE i.k = o.k) FROM o ORDER BY k, x;
 -- Inside a correlated EXISTS, correlated with the subquery of EXISTS.
@@ -341,6 +342,7 @@ SELECT k FROM o WHERE arrayExists(v -> v IN (SELECT e FROM i WHERE i.k = o.k), a
 SELECT (o.x + 1 AS z) IN (SELECT e FROM values('e Int32, k Int32', (1, 1)) AS i WHERE i.k = z)
 FROM values('x Int32, z Int32', (0, 2)) AS o SETTINGS prefer_column_name_to_alias = 1; -- { serverError NOT_IMPLEMENTED }
 SELECT k, x * 10 AS y FROM o WHERE y IN (SELECT e * 10 FROM i WHERE i.k = o.k) SETTINGS enable_global_with_statement = 0; -- { serverError NOT_IMPLEMENTED }
+WITH v -> v + 1 AS abs SELECT k, x FROM o WHERE abs(x) IN (SELECT e FROM i WHERE i.k = o.k) ORDER BY k, x SETTINGS enable_global_with_statement = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM remote('127.0.0.1', currentDatabase(), o) AS o WHERE x IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 
 DROP VIEW IF EXISTS v;
