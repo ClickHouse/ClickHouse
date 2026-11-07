@@ -20,8 +20,11 @@ $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $DB"
 
 $CLICKHOUSE_CLIENT --multiquery <<EOF | sed "s/$DB/$PLACEHOLDER/g"
-CREATE TABLE $DB.\`$TABLE\`(\`$COLUMN\` UInt64) ENGINE = MergeTree ORDER BY \`$COLUMN\`;
+-- A read box shows its parts and granules: pin the granularity and the part format, which the test harness randomizes
+-- (the format of a part changes its number of granules), and merge the inserted blocks into one part.
+CREATE TABLE $DB.\`$TABLE\`(\`$COLUMN\` UInt64) ENGINE = MergeTree ORDER BY \`$COLUMN\` SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO $DB.\`$TABLE\` SELECT number FROM numbers(100000);
+OPTIMIZE TABLE $DB.\`$TABLE\` FINAL;
 
 SET max_rows_to_group_by = 0;
 SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0;

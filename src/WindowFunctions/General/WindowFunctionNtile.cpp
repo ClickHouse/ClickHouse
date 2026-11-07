@@ -73,7 +73,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function '{}' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING', '{}' given", getName(), window.frame.toString());
     }
 
-    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         NtileState & state = *reinterpret_cast<NtileState *>(place);
         if (state.buckets == 0)
@@ -91,6 +91,7 @@ public:
             const Int64 bucket = row < rows_in_large_buckets ? row / large_bucket_rows : large_buckets + (row - rows_in_large_buckets) / small_bucket_rows;
             data.push_back(bucket + 1);
         }
+        return bounds.row.back() + 1;
     }
 };
 
