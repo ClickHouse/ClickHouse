@@ -565,6 +565,9 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
     {
         const RangeState & range = ranges[idx];
         RequestState * req = range.request;
+        /// A cancelled request may have had a task, which `PrefetchHandle::reset` reads without the mutex.
+        if (req->state.load(std::memory_order_relaxed) == RequestState::State::Cancelled)
+            continue;
         req->task = &task;
         req->task_offset = range.start - task.offset;
 
