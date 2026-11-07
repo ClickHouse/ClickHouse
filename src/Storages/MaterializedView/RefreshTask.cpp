@@ -1917,7 +1917,8 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
                     /// `last_attempt_time` is the end of the failed attempt rounded down to seconds.
                     if (!has_untried_dependency_refresh)
                         retry_not_before = std::chrono::system_clock::time_point(znode.last_attempt_time) + std::chrono::seconds(1)
-                            + std::chrono::milliseconds(refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms]);
+                            + std::chrono::milliseconds(std::min(
+                                refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms].value, UInt64(max_delay_ms)));
                 }
             }
         }
