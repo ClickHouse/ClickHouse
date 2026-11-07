@@ -197,7 +197,8 @@
           "expanded": false,
           "group": "Operators",
           "pages": [
-            "reference/operators/index"
+            "reference/operators/index",
+            "reference/operators/unique"
           ]
         }
       ]
