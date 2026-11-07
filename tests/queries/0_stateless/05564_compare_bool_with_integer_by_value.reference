@@ -32,8 +32,12 @@ exists	0
 has col	0	0	0	0
 exists col	0
 exists col noopt	0
+exists col plan	1
 has any	0	0	0	0	0	0
 keep has	1	1	1
+starts ends	0	0	0	0
+map remove	{[true]:'x'}	{(true):'x'}
+keep starts remove	1	1	{[false]:'y'}
 key lt	3000
 key lt noidx	3000
 key eq	0

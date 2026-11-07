@@ -1,4 +1,4 @@
--- Comparisons of `Bool` with integers inside arrays, maps, JSON, under `<=>` and in `has` functions do not depend on the operand order or on index analysis.
+-- Comparisons of `Bool` with integers inside arrays, maps, JSON, under `<=>` and in `has`-like functions do not depend on the operand order or on index analysis.
 
 SET allow_suspicious_low_cardinality_types = 1;
 SELECT 'arr eq', CAST([true], 'Array(Nullable(Bool))') = [toUInt8(2)], [toUInt8(2)] = CAST([true], 'Array(Nullable(Bool))');
@@ -42,8 +42,12 @@ SELECT 'exists', arrayExists(x -> x = [toUInt8(2)], [CAST([true], 'Array(Nullabl
 SELECT 'has col', has(a, [toUInt8(2)]), indexOf(a, [toUInt8(2)]), countEqual(a, [toUInt8(2)]), has(b, CAST([true], 'Array(Nullable(Bool))')) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a, materialize([[toUInt8(2)]]) AS b);
 SELECT 'exists col', arrayExists(x -> x = [toUInt8(2)], a) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a) SETTINGS optimize_rewrite_array_exists_to_has = 1;
 SELECT 'exists col noopt', arrayExists(x -> x = [toUInt8(2)], a) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT 'exists col plan', countIf(explain ILIKE '%has(%') FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT arrayExists(x -> x = [toUInt8(2)], a) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a) SETTINGS optimize_rewrite_array_exists_to_has = 1);
 SELECT 'has any', hasAny(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), hasAny([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))')), hasAll(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), hasAll([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))')), hasSubstr(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), hasSubstr([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))'));
 SELECT 'keep has', has(a, [toUInt8(1)]), hasAny(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(1)]), hasAll(CAST([true, false], 'Array(Nullable(Bool))'), [toUInt8(0)]) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a);
+SELECT 'starts ends', startsWith(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), startsWith([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))')), endsWith(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), endsWith([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))'));
+SELECT 'map remove', mapRemove(CAST(map([true], 'x'), 'Map(Array(Nullable(Bool)), String)'), [toUInt8(2)]), mapRemove(CAST(map(tuple(true), 'x'), 'Map(Tuple(Nullable(Bool)), String)'), tuple(toUInt8(2)));
+SELECT 'keep starts remove', startsWith(CAST([true, false], 'Array(Nullable(Bool))'), [toUInt8(1)]), endsWith(CAST([true, false], 'Array(Nullable(Bool))'), [toUInt8(0)]), mapRemove(CAST(map([true], 'x', [false], 'y'), 'Map(Array(Nullable(Bool)), String)'), [toUInt8(1)]);
 
 DROP TABLE IF EXISTS t_key;
 CREATE TABLE t_key (arr Array(Nullable(Bool))) ENGINE = MergeTree ORDER BY arr SETTINGS index_granularity = 8, allow_nullable_key = 1;
