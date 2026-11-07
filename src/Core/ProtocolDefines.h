@@ -204,9 +204,6 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 /// First query-plan serialization version that knows the `adaptive_aggregator_disable_thaw` plan setting
 /// name. Gates writing it in `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW = 21;
-/// First query-plan serialization version that knows `join_probe_resize_to_max_threads`.
-/// Older peers keep the probe input's stream count, and plans received from them do the same.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_RESIZE = 21;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;
@@ -251,6 +248,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_B
 /// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
 /// `JoinSettings::updatePlanSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT = 21;
+/// First query-plan serialization version that carries the `join_probe_resize_to_max_threads` plan setting. Gates writing it in
+/// `JoinSettings::updatePlanSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_RESIZE = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

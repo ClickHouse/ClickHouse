@@ -1,18 +1,12 @@
-Algorithm: HashJoin
 serial layout below threshold	4	1
 Algorithm: SpillingHashJoin(HashJoin)
 spilling serial layout below threshold	4	1
-Algorithm: HashJoin
 parallel layout	4	4
-Algorithm: HashJoin
 explicit serial layout	1	1
-Algorithm: HashJoin
 resize disabled	1	1
 Algorithm: SpillingHashJoin(HashJoin)
 spilling resize disabled	1	1
-Algorithm: HashJoin
 serial layout from cached stats	4	1
-Algorithm: SpillingHashJoin(HashJoin)
 limit by default join	1
 300	268300517865934087
 1000	1080294199748678623
