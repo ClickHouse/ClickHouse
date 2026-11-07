@@ -84,6 +84,8 @@ public:
     bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part = true);
 
 protected:
+    InsertStartGate::Check getPreWriteCheck() const override;
+
     virtual void finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper);
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 
@@ -144,16 +146,11 @@ protected:
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
 
-    /// The result of the "too many parts" check, evaluated on the query thread at sink
-    /// construction and thrown from onStart, when the sink starts executing.
-    std::exception_ptr too_many_parts_exception;
-
     bool is_attach = false;
     bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     bool deduplicate = true;
     bool synchronously_commit_part_for_dependent_views = false;
-    UInt64 num_blocks_processed = 0;
 
     LoggerPtr log;
 

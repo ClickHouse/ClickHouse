@@ -39,6 +39,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
@@ -946,10 +947,23 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
-    /// With allow_delay = false, only the throw checks are performed and the function never sleeps:
-    /// this is for a check on the query thread before the insert pipeline is built, where a sleep
-    /// would run once per parallel sink stream instead of once per query.
+    /// `allow_throw` enables the 'parts_to_throw_insert' rejection, `allow_delay` enables the
+    /// 'parts_to_delay_insert' backpressure; with `allow_delay` = false the function only checks the
+    /// throw thresholds and returns without sleeping. This is for the rejection check that is shared
+    /// by all the parallel sinks of one insert, where a sleep would otherwise run once per sink
+    /// stream instead of once per query.
     void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
+
+    /// The rejection part of `delayInsertOrThrowIfNeeded` as a callable that a sink registers as its
+    /// pre-write check (see `SinkToStorage::getPreWriteCheck`). It does not keep the table alive: once
+    /// it is gone, there is no write to check any more. It keeps the context alive, though: a `Buffer`
+    /// keeps the pending decision of a query (see `InsertStartGates`) after the query and its sinks are
+    /// gone, until it flushes the rows of the query, and the check must still use the limits of that query.
+    std::function<void()> makeTooManyPartsCheck(const ContextPtr & query_context) const;
+
+    /// The query-level limits the check of `makeTooManyPartsCheck` depends on: two checks of the table with the
+    /// same limits have the same outcome against the same state of the table, see `InsertStartGate::Check::limits`.
+    static InsertStartGate::TooManyPartsLimits getTooManyPartsLimits(const ContextPtr & query_context);
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
