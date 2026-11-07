@@ -1,0 +1,30 @@
+full wide before	3
+full wide base	0
+full wide projection	0
+0	0	0
+1	0	0
+full wide stored	0
+full compact before	3
+full compact base	0
+full compact projection	0
+0	0	0
+1	0	0
+full compact stored	0
+partial wide before	3
+partial wide base	1
+partial wide projection	1
+0	0	0
+1	1	1
+partial wide stored	0
+partial compact before	3
+partial compact base	1
+partial compact projection	1
+0	0	0
+1	1	1
+partial compact stored	0
+recomputed before	3
+recomputed base	0
+recomputed projection	0
+0	0	0
+1	0	0
+recomputed stored	0

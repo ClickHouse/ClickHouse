@@ -65,6 +65,8 @@ private:
         String default_column_name;
     };
     UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
+    UnorderedMapWithMemoryTracking<String, String> shared_offsets_sources;
+    UnorderedMapWithMemoryTracking<size_t, String> column_ttl_algorithms;
 
     /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
     /// Its stored value describes the pre-expiry data, so it is recomputed once the TTL algorithms that
@@ -96,10 +98,14 @@ private:
         const MergeTreeData & storage,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & reset_columns,
-        const NameSet & columns_to_leave_alone);
+        const NameSet & columns_to_leave_alone,
+        const UnorderedMapWithMemoryTracking<String, String> & shared_offsets_dependencies);
 
     /// Recomputes `dependents` in the block the TTL algorithms have already worked on.
-    static void recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents);
+    void recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents);
+
+    /// Refreshes omitted arrays after their output offsets source has changed, not before row TTL evaluation.
+    void refreshSharedOffsetsColumns(Block & block, const String & source_column);
 
     /// Runs the TTL algorithms, recomputing the dependents in between.
     void executeAlgorithms(Block & block);

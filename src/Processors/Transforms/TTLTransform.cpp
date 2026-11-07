@@ -6,6 +6,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/quoteString.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
@@ -49,7 +51,8 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
     const MergeTreeData & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & reset_columns,
-    const NameSet & columns_to_leave_alone)
+    const NameSet & columns_to_leave_alone,
+    const UnorderedMapWithMemoryTracking<String, String> & shared_offsets_dependencies)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
     const auto context = storage.getContext();
@@ -80,8 +83,13 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
 
         size_t level = 0;
         for (const auto & dependency : materialized_dependencies.findNode(name)->dependencies)
-            if (dependency != name && dependents.contains(dependency))
-                level = std::max(level, self(dependency, self) + 1);
+        {
+            /// An omitted array also depends on the column that writes its shared offsets stream.
+            auto it = shared_offsets_dependencies.find(dependency);
+            const auto & source = it == shared_offsets_dependencies.end() ? dependency : it->second;
+            if (source != name && dependents.contains(source))
+                level = std::max(level, self(source, self) + 1);
+        }
 
         level_of[name] = level;
         return level;
@@ -227,6 +235,26 @@ TTLTransform::TTLTransform(
 
     const auto expired_columns_map = expired_columns.getNameToTypeMap();
 
+    ISerialization::StreamFileNameSettings stream_settings;
+    stream_settings.share_nested_offsets = true;
+    const ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
+    for (const auto & name : columns_with_reader_defaults_)
+    {
+        const auto offsets_stream = ISerialization::getFileNameForStream(name, offsets_path, stream_settings);
+        /// The first non-expired output array writes the shared offsets stream. Its computed default is not a
+        /// source for row TTLs: it is used here only after a column TTL or recalculation changes its output shape.
+        for (const auto & column : storage_columns.getAllPhysical())
+        {
+            if (expired_columns_map.contains(column.name) || !header_->has(column.name) || !isArray(column.type))
+                continue;
+            if (ISerialization::getFileNameForStream(column.name, offsets_path, stream_settings) == offsets_stream)
+            {
+                shared_offsets_sources.emplace(name, column.name);
+                break;
+            }
+        }
+    }
+
     /// The columns this transform resets to their default.
     NameSet reset_columns;
     for (const auto & [name, description] : column_ttls)
@@ -243,7 +271,8 @@ TTLTransform::TTLTransform(
             expired_column_names.insert(expired_column.name);
 
         recompute_levels
-            = analyzeDependentMaterializedColumns(storage_, metadata_snapshot_, reset_columns, expired_column_names);
+            = analyzeDependentMaterializedColumns(
+                storage_, metadata_snapshot_, reset_columns, expired_column_names, shared_offsets_sources);
 
         for (const auto & level : recompute_levels)
             for (const auto & dependent : level)
@@ -256,6 +285,7 @@ TTLTransform::TTLTransform(
             return;
 
         auto [default_expression, default_column_name] = build_default_expr(name);
+        column_ttl_algorithms.emplace(algorithms.size(), name);
         algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
             getExpressions(description, subqueries_for_sets, context),
             description,
@@ -330,7 +360,30 @@ void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemo
 
         auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
         if (recomputed)
+        {
             block.getByName(dependent.name).column = recomputed->convertToFullColumnIfConst();
+            refreshSharedOffsetsColumns(block, dependent.name);
+        }
+    }
+}
+
+void TTLTransform::refreshSharedOffsetsColumns(Block & block, const String & source_column)
+{
+    if (block.empty() || !block.has(source_column))
+        return;
+
+    for (const auto & [name, source] : shared_offsets_sources)
+    {
+        if (source != source_column || !block.has(name))
+            continue;
+
+        const auto & source_array = assert_cast<const ColumnArray &>(*block.getByName(source).column);
+        const auto & offsets = source_array.getOffsets();
+        auto & column = block.getByName(name);
+        const auto & array_type = assert_cast<const DataTypeArray &>(*column.type);
+        auto nested = array_type.getNestedType()->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())
+            ->convertToFullColumnIfConst();
+        column.column = ColumnArray::create(nested, source_array.getOffsetsPtr());
     }
 }
 
@@ -345,6 +398,8 @@ void TTLTransform::executeAlgorithms(Block & block)
             recomputeDependentColumns(block, recompute_stages[next_stage].columns);
 
         algorithms[i]->execute(block);
+        if (auto it = column_ttl_algorithms.find(i); it != column_ttl_algorithms.end())
+            refreshSharedOffsetsColumns(block, it->second);
     }
 
     for (; next_stage < recompute_stages.size(); ++next_stage)
