@@ -406,6 +406,25 @@ StoragePtr StorageMerge::traverseTablesUntilImpl(const ContextPtr & query_contex
 }
 
 template <typename F>
+StoragePtr StorageMerge::traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const
+{
+    auto access = query_context->getAccess();
+    std::optional<String> last_database;
+    bool granted_show_on_all_tables = false;
+    return traverseTablesUntilImpl(query_context, this, database_name_or_regexp, [&](const StoragePtr & table)
+    {
+        auto id = table->getStorageID();
+        if (id.database_name != last_database)
+        {
+            last_database = id.database_name;
+            granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, id.database_name);
+        }
+        return (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+            && predicate(table);
+    });
+}
+
+template <typename F>
 void StorageMerge::forEachTable(F && func) const
 {
     traverseTablesUntil([&func](const auto & table)
@@ -3049,11 +3068,23 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns, b
     return column_sizes;
 }
 
-std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
+std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes(const ContextPtr & query_context) const
 {
     try
     {
-        return getColumnSizes();
+        ColumnSizeByName column_sizes;
+        auto first_table_without_sizes = traverseVisibleTablesUntil(query_context, [&](const auto & table)
+        {
+            auto sizes = table->tryGetColumnSizes(query_context);
+            if (!sizes)
+                return true;
+            for (const auto & [name, size] : *sizes)
+                column_sizes[name].add(size);
+            return false;
+        });
+        if (first_table_without_sizes)
+            return std::nullopt;
+        return column_sizes;
     }
     catch (const Exception & e)
     {
@@ -3093,27 +3124,44 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
     /// A child's row policy is only applied when its rows are actually read, so counting one from
     /// metadata would return rows the policy hides.
-    return traverseTablesUntil([&](const auto & table)
+    auto access = ctx->getAccess();
+    return traverseVisibleTablesUntil(ctx, [&](const auto & table)
     {
-        return !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
+        /// Like a direct `SELECT count()`, counting a child needs `SELECT` on at least one of its columns.
+        auto id = table->getStorageID();
+        bool has_select_access = access->isGranted(AccessType::SELECT, id.database_name);
+        if (!has_select_access)
+        {
+            const auto metadata = table->getInMemoryMetadataPtr(ctx, false);
+            for (const auto & column : metadata->getColumns())
+            {
+                if (access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+                {
+                    has_select_access = true;
+                    break;
+                }
+            }
+        }
+
+        return !has_select_access || !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
     }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(query_context); });
+    return totalRowsOrBytes(query_context, [&](const auto & table) { return table->totalRows(query_context); });
 }
 
 std::optional<UInt64> StorageMerge::totalBytes(ContextPtr query_context) const
 {
-    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(query_context); });
+    return totalRowsOrBytes(query_context, [&](const auto & table) { return table->totalBytes(query_context); });
 }
 
 template <typename F>
-std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
+std::optional<UInt64> StorageMerge::totalRowsOrBytes(const ContextPtr & query_context, F && func) const
 {
     UInt64 total_rows_or_bytes = 0;
-    auto first_table = traverseTablesUntil([&](const auto & table)
+    auto first_table = traverseVisibleTablesUntil(query_context, [&](const auto & table)
     {
         if (auto rows_or_bytes = func(table))
         {
