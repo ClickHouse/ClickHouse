@@ -71,8 +71,8 @@ public:
     };
 
     /// Whether the token at `index` is followed by the terminator of `keyword` (`END` for `CASE`, an interval kind
-    /// for `INTERVAL`) in the same brackets: after it, outside nested brackets, and before the brackets around it close.
-    /// If it is not, the token cannot begin that expression. Does not move `max`.
+    /// for `INTERVAL`) in the same brackets: after it, outside nested brackets, and before the brackets around it close,
+    /// and before the end of the statement. If it is not, the token cannot begin that expression. Does not move `max`.
     ///
     /// The scan also answers for every other occurrence of `keyword` it passes, so all the occurrences in
     /// a query are answered in time linear in the length of the query.

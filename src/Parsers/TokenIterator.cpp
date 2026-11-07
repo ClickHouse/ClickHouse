@@ -62,9 +62,10 @@ bool Tokens::followedInSameBrackets(size_t index, KeywordWithTerminator keyword)
     for (size_t i = index + 1; !pending.empty(); ++i)
     {
         const Token & token = peek(i);
-        if (token.isEnd() || token.isError())
+        if (token.isEnd() || token.isError() || token.type == TokenType::Semicolon)
         {
-            /// The parser does not go past this token.
+            /// The expression cannot go past this token. Stopping at the end of the statement also keeps the scan
+            /// linear for scripts: they are parsed statement by statement, each with new `Tokens` over the rest.
             for (auto & occurrences : pending)
                 answer(occurrences, false);
             break;
