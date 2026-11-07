@@ -53,5 +53,7 @@ public:
     DataTypeGeometryName() : DataTypeCustomFixedName("Geometry") {}
 };
 
+bool isGeoDataTypeCustomName(std::string_view name);
+bool isGeoDataType(const IDataType & type);
 
 }
