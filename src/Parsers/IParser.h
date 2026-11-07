@@ -17,6 +17,7 @@ namespace DB
 {
 
 struct LiteralTokenMap;
+struct PartialASTState;
 
 namespace ErrorCodes
 {
@@ -86,6 +87,10 @@ struct Expected
     /// and for LIKE/SIMILAR_TO/REGEXP syntax highlighting.
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
+
+    /// Capture of the tree built so far when a statement parser fails, for the standalone WebAssembly
+    /// parser; see `Parsers/PartialASTCapture.h`. Off while null. The caller owns the state.
+    PartialASTState * partial_ast = nullptr;
 
     /// 'description' should be statically allocated string.
     ALWAYS_INLINE void add(const char * current_pos, const char * description)

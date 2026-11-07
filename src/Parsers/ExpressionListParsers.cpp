@@ -27,6 +27,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/PartialASTCapture.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
@@ -87,6 +88,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto parse_element = [&]
     {
         ASTPtr element;
+        countPartialASTUnionBranch(expected);
         if (!elem_parser.parse(pos, element, expected))
             return false;
 
@@ -3152,10 +3154,13 @@ public:
             ASTPtr query;
             auto select_pos = pos;
             auto select_expected = expected;
+            /// A failed attempt drops what it captured: the arguments are parsed as expressions next.
+            PartialASTSavepoint partial_ast_savepoint(expected);
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
             {
+                partial_ast_savepoint.commit();
                 pos = select_pos;
                 expected = select_expected;
                 elements = {make_intrusive<ASTSubquery>(std::move(query))};
