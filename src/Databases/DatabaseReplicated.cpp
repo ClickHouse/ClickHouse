@@ -1152,6 +1152,17 @@ UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const
     return DB::getMetadataHash(table_name, readMetadataFile(table_name));
 }
 
+UInt64 DatabaseReplicated::calculateMetadataDigest() const
+{
+    UInt64 digest = 0;
+    for (const auto & table : tables)
+        digest += getMetadataHash(table.first);
+    for (const auto & table_name : tables_failed_to_load)
+        if (!tables.contains(table_name))
+            digest += getMetadataHash(table_name);
+    return digest;
+}
+
 LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
     auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
@@ -1165,9 +1176,12 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             UInt64 digest = 0;
             {
                 std::lock_guard lock{mutex};
-                for (const auto & table : tables)
-                    digest += getMetadataHash(table.first);
-                LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", tables.size(), digest);
+                for (const auto & [table_name, _] : startup_table)
+                    if (!tables.contains(table_name))
+                        tables_failed_to_load.insert(table_name);
+                digest = calculateMetadataDigest();
+                LOG_DEBUG(log, "Calculated metadata digest of {} tables ({} of them failed to load): {}",
+                          tables.size() + tables_failed_to_load.size(), tables_failed_to_load.size(), digest);
             }
 
             {
@@ -1549,8 +1563,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     UInt64 local_digest = 0;
     {
         std::lock_guard lock{mutex};
-        for (const auto & table : tables)
-            local_digest += getMetadataHash(table.first);
+        local_digest = calculateMetadataDigest();
     }
 
     if (local_digest != tables_metadata_digest)
@@ -1765,10 +1778,34 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     /// This is needed to generate intermediate name
     String salt = toString(thread_local_rng());
 
+    /// A table whose load or startup failed cannot be renamed, moved or created again, and the iterator below rethrows its error.
+    NameSet failed_tables_to_keep;
+    {
+        std::vector<std::pair<String, LoadTaskPtr>> startup_tasks;
+        {
+            std::lock_guard lock{mutex};
+            startup_tasks.assign(startup_table.begin(), startup_table.end());
+        }
+        for (const auto & [table_name, task] : startup_tasks)
+        {
+            if (std::ranges::none_of(task->goals(), [](const LoadJobPtr & job) { return job->exception() != nullptr; }))
+                continue;
+            auto in_zk = table_name_to_metadata.find(table_name);
+            if (in_zk != table_name_to_metadata.end() && in_zk->second == readMetadataFile(table_name))
+            {
+                LOG_WARNING(log, "Keeping table {} that failed to load or start up, its metadata is the same as in Keeper", backQuoteIfNeed(table_name));
+                failed_tables_to_keep.insert(table_name);
+            }
+        }
+    }
+
     std::vector<RenameEdge> replicated_tables_to_rename;
-    size_t total_tables = 0;
+    /// The kept tables are tables of the database too, for max_broken_tables_ratio.
+    size_t total_tables = failed_tables_to_keep.size();
     std::vector<UUID> replicated_ids;
-    for (auto existing_tables_it = getTablesIterator(getContext(), {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
+    for (auto existing_tables_it = getTablesIterator(
+             getContext(), [&](const String & table_name) { return !failed_tables_to_keep.contains(table_name); }, /*skip_not_loaded=*/false);
+         existing_tables_it->isValid();
          existing_tables_it->next(), ++total_tables)
     {
         String name = existing_tables_it->name();
@@ -2036,7 +2073,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Note that passing references here to runner is fine:
             /// table_id is part of tables_to_create, which is part of tables_to_create_by_level, which is alive until runner is destroyed
             /// Same for table_name_to_metadata and make_query_context
-            auto task = [this, &table_id, &table_name_to_metadata, &make_query_context]()
+            auto task = [this, &table_id, &table_name_to_metadata, &make_query_context, &failed_tables_to_keep]()
             {
                 /// The task might run on a different thread, so we need to set current component for it
                 auto inner_component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
@@ -2052,6 +2089,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 }
 
                 const auto & create_query_string = metadata_it->second;
+                if (failed_tables_to_keep.contains(table_name))
+                    return;
                 if (isTableExist(table_name, getContext()))
                 {
                     chassert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
