@@ -1,0 +1,23 @@
+--- the CPU of the analysis is reported to the workload
+64
+1
+--- the analysis of one part is preempted inside the part
+16
+1	1
+16
+1	1
+10
+1	1
+--- no hang in a workload with one CPU slot
+64
+2000
+200
+4
+0
+--- KILL QUERY wakes up an analysis starved by a higher priority query
+starved: 1
+1
+replaced: 1
+1
+kill after replace: 0
+1

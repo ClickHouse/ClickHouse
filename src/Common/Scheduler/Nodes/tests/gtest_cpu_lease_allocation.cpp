@@ -256,3 +256,176 @@ TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
     worker2_slot.reset();
     scheduler.stop();
 }
+
+/// A worker thread that renews the lease inside a task (a nested pipeline) cannot stop, so after the preemption
+/// timeout it must keep waiting for a grant instead of running without one. Another query holds every slot here.
+TEST(SchedulerCPULeaseAllocation, WorkerPreemptedInsideTaskWaitsForGrant)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 2);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    CPULeaseSettings settings;
+    settings.preemption_timeout = std::chrono::milliseconds(1);
+    ResourceLink link;
+    link.queue = queue.get();
+
+    // Another query takes both slots, so the request of the query waits in the queue
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+    while (semaphore->getInflights().first != 2)
+        std::this_thread::yield();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+    while (queue->getQueueLengthAndCost().first != 1)
+        std::this_thread::yield();
+
+    // Both threads run before any slot is granted, so the worker is preempted at its first report
+    auto master_slot = allocation->acquire();
+    auto worker_slot = allocation->acquire();
+    ASSERT_EQ(worker_slot->slot_id, 1u);
+    const auto preempted_before = CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
+    auto worker_thread = std::async(std::launch::async, [&, slot = std::move(worker_slot)]() mutable
+    {
+        auto * worker = dynamic_cast<ISlotLease *>(slot.get());
+        worker->startConsumption();
+        burnCPU(settings.report_ns);
+        worker->renewInTask();
+        slot.reset();
+    });
+
+    EXPECT_TRUE(waitUntil([&]
+    {
+        return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted) > preempted_before
+            || worker_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    }));
+    EXPECT_EQ(worker_thread.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout)
+        << "a worker preempted inside a task stopped waiting for a grant after the preemption timeout";
+
+    // The other query frees its slots, and the grants resume the worker
+    other->free();
+    bool resumed = worker_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!resumed)
+        allocation->free(); // Wakes the worker thread, so the test fails instead of hanging
+    EXPECT_TRUE(resumed) << "the worker preempted inside a task is not resumed by a grant";
+
+    worker_thread.get();
+    master_slot.reset();
+    allocation->free();
+    scheduler.stop();
+}
+
+/// `free` (query cancellation) wakes a thread preempted inside a task, and the lost slot is reported by `renew`.
+TEST(SchedulerCPULeaseAllocation, FreeWakesThreadPreemptedInsideTask)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    CPULeaseSettings settings;
+    ResourceLink link;
+    link.queue = queue.get();
+
+    // Another query takes the only slot, so the request of the query is never granted
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    while (semaphore->getInflights().first != 1)
+        std::this_thread::yield();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    while (queue->getQueueLengthAndCost().first != 1)
+        std::this_thread::yield();
+
+    auto master_slot = allocation->acquire();
+    const auto preempted_before = CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
+    auto master_thread = std::async(std::launch::async, [&, slot = std::move(master_slot)]() mutable
+    {
+        auto * master = dynamic_cast<ISlotLease *>(slot.get());
+        master->startConsumption();
+        burnCPU(settings.quantum_ns);
+        master->renewInTask();
+        bool renewed = master->renew();
+        slot.reset();
+        return renewed;
+    });
+
+    EXPECT_TRUE(waitUntil([&]
+    {
+        return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted) > preempted_before
+            || master_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    }));
+    EXPECT_EQ(master_thread.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout)
+        << "a thread preempted inside a task did not wait for a grant";
+
+    allocation->free();
+    bool woken = master_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!woken)
+        other->free(); // Grants the slot and wakes the thread, so the test fails instead of hanging
+    EXPECT_TRUE(woken) << "free() did not wake a thread preempted inside a task";
+    EXPECT_FALSE(master_thread.get()) << "renew() after free() must report the lost slot";
+
+    other->free();
+    scheduler.stop();
+}
+
+/// A thread releases its slot while another thread of the query is preempted inside a task (the query thread of
+/// index analysis finishes while a worker still holds a part). The released slot is allocated, but no running
+/// thread uses it, so it must resume the preempted thread instead of leaving it to wait for one more grant.
+TEST(SchedulerCPULeaseAllocation, ReleaseResumesPreemptedThread)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 2);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    CPULeaseSettings settings;
+    ResourceLink link;
+    link.queue = queue.get();
+
+    // Another query holds one slot, the query gets the other one, and its second request waits in the queue
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    while (semaphore->getInflights().first != 1)
+        std::this_thread::yield();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+    while (semaphore->getInflights().first != 2 || queue->getQueueLengthAndCost().first != 1)
+        std::this_thread::yield();
+
+    auto master_slot = allocation->acquire();
+    auto worker_slot = allocation->acquire();
+    ASSERT_EQ(worker_slot->slot_id, 1u);
+    const auto preempted_before = CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
+    auto worker_thread = std::async(std::launch::async, [&, slot = std::move(worker_slot)]() mutable
+    {
+        auto * worker = dynamic_cast<ISlotLease *>(slot.get());
+        worker->startConsumption();
+        burnCPU(settings.quantum_ns);
+        worker->renewInTask();
+        slot.reset();
+    });
+
+    // The worker consumes the granted quantum and is preempted. The second request is granted, the master thread
+    // runs on it, and the third request waits in the queue.
+    EXPECT_TRUE(waitUntil([&] { return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted) > preempted_before; }));
+    EXPECT_TRUE(waitUntil([&] { return queue->dequeued_requests.load() == 3 && queue->getQueueLengthAndCost().first == 1; }));
+
+    // The master thread stops without consuming the granted quantum
+    dynamic_cast<ISlotLease *>(master_slot.get())->startConsumption();
+    master_slot.reset();
+
+    bool resumed = worker_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!resumed)
+        other->free(); // The next grant resumes the worker, so the test fails instead of hanging
+    EXPECT_TRUE(resumed) << "a thread preempted inside a task is not resumed on the slot released by another thread";
+
+    worker_thread.get();
+    allocation->free();
+    other->free();
+    scheduler.stop();
+}

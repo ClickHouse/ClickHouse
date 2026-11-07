@@ -5,14 +5,17 @@
 namespace DB
 {
 
-/// The CPU lease of the current executor thread, published by `WorkloadResources` in the pipeline executor,
-/// so `CPULeaseParkGuard` can park it deep in a processor's `work` or in the executor's idle wait.
-/// No-op when the thread has no CPU lease.
+/// The CPU lease the current thread runs on: an executor thread (published by `WorkloadResources`) or index analysis.
+/// `CPULeaseParkGuard` parks it, if parking is enabled, deep in a processor's `work` or in the executor's idle wait.
 
 ISlotLease * getCurrentCPULease();
 void setCurrentCPULease(ISlotLease * lease);
 
-/// RAII: parks the current thread's CPU lease (if any) for a non-CPU wait and unparks it on scope exit.
+/// Renews the current thread's CPU lease without leaving the task (see `ISlotLease::renewInTask`).
+/// No-op without a lease or while it is parked.
+void renewCurrentCPULeaseInTask();
+
+/// RAII: parks the current thread's CPU lease (if any and parkable) for a non-CPU wait and unparks it on scope exit.
 /// Nesting-safe: only the outermost guard parks.
 class CPULeaseParkGuard
 {

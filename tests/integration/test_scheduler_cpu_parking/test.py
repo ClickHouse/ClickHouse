@@ -191,6 +191,6 @@ def test_parking_disabled_no_parks(with_custom_config):
     query_id = "cpu_parking_off"
     node.query(THROTTLED_QUERY, query_id=query_id)
     node.query("system flush logs")
-    # With cpu_slot_parking disabled the executor never publishes the lease, so the same
-    # throttled read must not park at all (zero-overhead-when-off gate).
+    # With cpu_slot_parking disabled the lease is not parkable, so the same
+    # throttled read must not park at all.
     assert get_profile_event(query_id, "ConcurrencyControlParks") == 0

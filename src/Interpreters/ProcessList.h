@@ -15,6 +15,7 @@
 #include <Poco/Condition.h>
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ISlotControl.h>
 #include <Common/UniqueLock.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
@@ -210,6 +211,10 @@ protected:
     /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
     std::unordered_map<IExecutor *, ExecutorHolderPtr> executors;
 
+    /// CPU slot allocations of the query outside its pipeline executors, freed when a cancelQuery is received
+    std::vector<SlotAllocationPtr> slot_allocations;
+    void freeSlotAllocations();
+
     enum class QueryStreamsStatus : uint8_t
     {
         NotInitialized,
@@ -334,6 +339,11 @@ public:
 
     /// Removes a pipeline to the QueryStatus
     void removePipelineExecutor(IExecutor * e);
+
+    /// CPU slot allocations of the query outside its pipeline executors (index analysis). `cancelQuery` frees them,
+    /// which wakes their preempted threads.
+    void addSlotAllocation(const SlotAllocationPtr & allocation);
+    void removeSlotAllocation(const SlotAllocationPtr & allocation);
 
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
