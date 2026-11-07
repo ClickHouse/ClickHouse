@@ -6,6 +6,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
@@ -64,16 +66,25 @@ namespace Setting
 namespace
 {
 
-bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
+bool subtreeHasViewSource(const IQueryTreeNode * node, const ContextPtr & context)
 {
     if (!node)
         return false;
 
+    StoragePtr storage;
     if (const auto * table_node = node->as<TableNode>())
     {
-        if (table_node->getStorageID().getFullNameNotQuoted() == context.getViewSource()->getStorageID().getFullNameNotQuoted())
+        if (table_node->getStorageID().getFullNameNotQuoted() == context->getViewSource()->getStorageID().getFullNameNotQuoted())
             return true;
+        storage = table_node->getStorage();
     }
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        storage = table_function_node->getStorage();
+    }
+
+    if (storage && storage->mayReadViewSource(context))
+        return true;
 
     for (const auto & child : node->getChildren())
         if (subtreeHasViewSource(child.get(), context))
@@ -135,7 +146,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+    const bool is_local_scalar = !only_analyze_subquery && context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), context);
+    bool can_use_global_scalars = !only_analyze_subquery && !is_local_scalar;
 
     auto & scalars_cache = early_short_circuit_type_inference_in_process
         ? scalar_subquery_to_scalar_value_type_only
@@ -431,9 +443,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
     /// The EXISTS caller also requires a ConstantNode. In type-only analysis its sample value is
     /// only a placeholder; `early_short_circuit_type_inference_failed` prevents folding from it.
+    /// A scalar that reads the view source is folded too: `__getScalar` reads the query context, which all blocks of an `INSERT` share.
     if (execute_for_exists || !context->getSettingsRef()[Setting::enable_scalar_subquery_optimization]
         || !useless_literal_types.contains(scalar_type_name) || !context->hasQueryContext()
-        || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
+        || !nearest_query_scope || parameterized_view_arguments_in_resolve_process || is_local_scalar)
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
