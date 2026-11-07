@@ -78,9 +78,12 @@ class DelayedMaterializingCTEsStep final : public IQueryPlanStep
 {
 public:
 
-    DelayedMaterializingCTEsStep(SharedHeader input_header, std::vector<MaterializedCTEPtr> ctes_);
+    DelayedMaterializingCTEsStep(SharedHeader input_header, std::vector<MaterializedCTEPtr> ctes_, bool is_safety_net_);
 
     String getName() const override { return "DelayedMaterializingCTEs"; }
+
+    bool isSafetyNet() const { return is_safety_net; }
+    const std::vector<MaterializedCTEPtr> & getCTEs() const { return ctes; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
 
@@ -119,19 +122,17 @@ private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 
     std::vector<MaterializedCTEPtr> ctes;
+    /// Planted under `force_materialize_cte`: an enclosing plan materializes these CTEs
+    /// when this plan is attached to it.
+    bool is_safety_net;
 };
 
-/// Strip every `DelayedMaterializingCTEsStep` node from `plan`'s tree, at
-/// any depth. Called from `DelayedCreatingSetsStep::makePlansForSets` when
-/// attaching a pre-built IN-subquery plan for runtime set construction; the
-/// strip forces the outer query plan to win `is_materialization_planned`
-/// for every referenced CTE so the outer `MaterializingCTEsStep`'s
-/// `DelayedPortsProcessor` becomes the single point that gates every
-/// reader. Nested `DelayedCreatingSetsStep` source plans (held in
-/// `subqueries`, not in the immediate node tree) are not touched.
-void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan);
+/// Strip, at any depth of `plan`'s tree, the `DelayedMaterializingCTEsStep` entries for every
+/// CTE that a safety-net step of the tree lists. Nested `DelayedCreatingSetsStep` source plans
+/// (held in `subqueries`, not in the immediate node tree) are not touched.
+void removeSafetyNetDelayedMaterializingCTEsSteps(QueryPlan & plan);
 
-/// Same as `removeAllDelayedMaterializingCTEsStep`, but restricted to the CTEs
+/// Strip, at any depth of `plan`'s tree, the `DelayedMaterializingCTEsStep` entries for the CTEs
 /// in `ctes_to_remove`: a step that also owns CTEs outside that set keeps those
 /// and stays in the plan. Used by `ReadFromMerge` and the parallel replicas local
 /// plan to stop a nested plan from claiming a CTE that the outer query references
