@@ -56,6 +56,12 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy
 /// Same as above but return nullptr instead of throwing exception.
 DataTypePtr tryGetLeastSupertype(const DataTypes & types);
 
+/// The least supertype of two values to compare, with each `Bool` outside a `Variant` or a custom-named type replaced by `UInt8`:
+/// a conversion into `Bool` turns every nonzero integer into `true`.
+DataTypePtr getLeastSupertypeForComparison(const DataTypePtr & left, const DataTypePtr & right);
+/// Same as above but return nullptr instead of throwing exception.
+DataTypePtr tryGetLeastSupertypeForComparison(const DataTypePtr & left, const DataTypePtr & right);
+
 /// If `type` is a Variant whose alternatives are all numeric (after removing any
 /// Nullable/LowCardinality wrappers), returns a hint pointing at the
 /// `allow_lossy_numeric_supertype` setting, suitable for appending to an aggregate
