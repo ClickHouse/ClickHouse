@@ -284,7 +284,9 @@ public:
     /// True when the catalog writes the first metadata file itself on create. The client must not prewrite it.
     virtual bool writesInitialMetadata() const { return false; }
 
-    /// Updates metadata in catalog.
+    /// Updates metadata in catalog. Returns false on a commit conflict, after which the caller may retry.
+    /// Throws `DATALAKE_CATALOG_COMMIT_STATE_UNKNOWN` when the catalog may have applied the commit,
+    /// e.g. its response was lost: the caller must then keep the files the new snapshot references.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
 
     /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
