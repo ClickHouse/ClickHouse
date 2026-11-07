@@ -82,7 +82,7 @@ BlockIO InterpreterDeleteQuery::execute()
     /// lowered into an UPDATE / ALTER text: the replaying host may not carry this session's settings.
     /// SQL UDF bodies are inlined above, so a `toTime` hidden in one is canonicalized too.
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-        replaceLegacyToTime(*query_ptr);
+        replaceLegacyToTime(*query_ptr, getContext());
 
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);

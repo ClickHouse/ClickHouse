@@ -26,6 +26,7 @@
 #include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
@@ -5817,6 +5818,10 @@ ActionsDAG ActionsDAG::deserialize(
             else
             {
                 auto function = FunctionFactory::instance().get(function_name, context);
+
+                /// A deserialized plan does not pass through the analyzer, so check the grant of the function which
+                /// is executed here. The functions of a lambda are checked by the nested `deserialize` of its DAG.
+                checkFunctionAccess(context, function->getName());
 
                 node.function_base = function->build(arguments);
                 node.function = node.function_base->prepare(arguments);

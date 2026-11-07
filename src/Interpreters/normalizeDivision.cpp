@@ -2,6 +2,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -55,6 +56,8 @@ bool normalize(IAST & ast, bool exact, const ContextPtr & context)
     bool changed = false;
     if (auto * function = ast.as<ASTFunction>(); exact && function && function->name == "divide")
     {
+        /// The analysis sees only `divideExact`, so check the grant for the written `divide` here.
+        checkFunctionAccess(current_context, function->name);
         function->name = "divideExact";
         function->setIsOperator(false);
         changed = true;

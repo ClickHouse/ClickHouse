@@ -1,0 +1,33 @@
+<clickhouse>
+    <access_control_improvements>
+        <functions_requiring_grant>
+            <!-- Upper case on purpose: a case-insensitive function listed in another case must still be protected. -->
+            <function>HEX</function>
+            <function>decrypt</function>
+            <function>listed_udf</function>
+            <function>isValidASCII</function>
+            <function>FQDN</function>
+            <!-- A case-insensitive alias of `lower`, also in another case. -->
+            <function>LCASE</function>
+            <function>listed_executable_udf</function>
+            <!-- Can be called without parentheses: `SELECT currentUser`, `SELECT current_user`. -->
+            <function>currentUser</function>
+            <!-- The analyzer may replace these calls before resolving the function itself:
+                 `if` with a constant condition by its branch, `IN` with an array by `has`. -->
+            <function>if</function>
+            <function>in</function>
+            <!-- Handled by the legacy `ExpressionAnalyzer` before the function is looked up. -->
+            <function>indexHint</function>
+            <!-- `in` is replaced by it under `transform_null_in`. -->
+            <function>nullIn</function>
+            <!-- Renamed to `divideExact` before the analysis under `sql_compatible_division_for_integers`. -->
+            <function>divide</function>
+            <!-- The factory gives it for `toTime` under `use_legacy_to_time`. -->
+            <function>toTimeWithFixedDate</function>
+            <!-- Renamed to `toTimeWithFixedDate` by `ALTER` under `use_legacy_to_time`. -->
+            <function>toTime</function>
+            <!-- A lambda keeps its parameters in `tuple(...)`, which is not a call of it. -->
+            <function>tuple</function>
+        </functions_requiring_grant>
+    </access_control_improvements>
+</clickhouse>

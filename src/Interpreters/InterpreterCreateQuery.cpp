@@ -278,7 +278,7 @@ void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & conte
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         substituteUserDefinedFunctionsOutsideEngines(query, context);
-    replaceLegacyToTime(*query);
+    replaceLegacyToTime(*query, context);
 }
 
 }
@@ -2359,7 +2359,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// definition (short attach, metadata load, backup restore) already records its spelling.
     if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
         && getContext()->getSettingsRef()[Setting::use_legacy_to_time]
-        && replaceLegacyToTime(*query_ptr))
+        && replaceLegacyToTime(*query_ptr, getContext()))
     {
         /// `properties` was derived before the rewrite, and the live table below is built from it while
         /// the metadata written to disk comes from the rewritten query. `CREATE TABLE ... AS src` copies
@@ -2372,9 +2372,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         for (const auto & column : properties.columns)
         {
             if (column.default_desc.expression)
-                replaceLegacyToTime(*column.default_desc.expression);
+                replaceLegacyToTime(*column.default_desc.expression, getContext());
             if (column.ttl)
-                replaceLegacyToTime(*column.ttl);
+                replaceLegacyToTime(*column.ttl, getContext());
         }
 
         /// Constraints need the same treatment: `MergeTree` reparses them from the rewritten AST, but most
