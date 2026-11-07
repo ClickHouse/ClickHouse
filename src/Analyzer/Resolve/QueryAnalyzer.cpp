@@ -5680,6 +5680,18 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             continue;
         }
 
+        /// The key of a `key = value` argument names a parameter of the table function, so it must not
+        /// resolve to a column or an alias of the query that has the same name.
+        if (auto * key_value_argument = table_function_argument->as<FunctionNode>();
+            key_value_argument && key_value_argument->getFunctionName() == "equals"
+            && key_value_argument->getArguments().getNodes().size() == 2
+            && key_value_argument->getArguments().getNodes()[0]->as<IdentifierNode>())
+        {
+            skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+            result_table_function_arguments.push_back(table_function_argument);
+            continue;
+        }
+
         /** Table functions arguments can contain expressions with invalid identifiers.
           * We cannot skip analysis for such arguments, because some table functions cannot provide
           * information if analysis for argument should be skipped until other arguments will be resolved.
