@@ -944,10 +944,10 @@ private:
 
     /// 128-bit and 256-bit addition and subtraction use add_sub instead of the generic two-pass loops (plus / minus),
     /// which branch on the sign of the right-hand side and propagate the carry in a second pass. The right-hand side is
-    /// the same type or a native integer of up to 64 bits, which is sign- or zero-extended first.
+    /// a wide integer of at most `Bits` bits or a native integer of up to 64 bits, which is sign- or zero-extended first.
     template <typename T>
     static constexpr bool use_add_sub = (Bits == 128 || Bits == 256)
-        && (std::is_same_v<T, integer<Bits, Signed>> || (std::is_integral_v<T> && sizeof(T) <= sizeof(base_type)));
+        && (IsWideInteger<T>::value || (std::is_integral_v<T> && sizeof(T) <= sizeof(base_type)));
 
     /// Two's-complement addition and subtraction are the same for signed and unsigned values, so add_sub needs no
     /// branch on the sign. It makes one pass over the 64-bit pieces, with the carry (or borrow) running from each
