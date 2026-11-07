@@ -16,7 +16,6 @@ SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 -- An aggregation that spills merges on a path that collects no statistics either.
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 -- Rewrites `uniqExact(v)` to a `count()` over `GROUP BY v`, an aggregation with keys.
-SET count_distinct_optimization = 0;
 
 SELECT uniqExact(v) FROM t_keyless_owning_state FORMAT Null SETTINGS log_comment = 'keyless_owning_1';
 SELECT uniqExact(v) FROM t_keyless_owning_state FORMAT Null SETTINGS log_comment = 'keyless_owning_2';

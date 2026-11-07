@@ -894,7 +894,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
 
             NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
             /// Pass skip_subcolumns=false: subquery projection columns are full
-            /// query-level outputs (e.g. tup.a from CountDistinctPass rewrite),
+            /// query-level outputs (e.g. tup.a in SELECT count() FROM (SELECT tup.a FROM t GROUP BY tup.a)),
             /// not storage meta-subcolumns (.size0, .keys) that should be skipped.
             additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list, /*skip_subcolumns=*/ false);
         }

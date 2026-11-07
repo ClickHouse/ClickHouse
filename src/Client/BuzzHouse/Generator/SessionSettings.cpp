@@ -370,7 +370,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"compile_sort_description", trueOrFalseSetting},
        {"correlated_subqueries_substitute_equivalent_expressions", trueOrFalseSetting},
        {"correlated_subqueries_use_in_memory_buffer", trueOrFalseSetting},
-       {"count_distinct_optimization", trueOrFalseSetting},
        {"defer_partition_pruning_after_final", trueOrFalseSetting},
        {"enable_adaptive_aggregator", trueOrFalseSetting},
        {"enable_adaptive_memory_spill_scheduler", trueOrFalseSetting},
