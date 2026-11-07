@@ -329,8 +329,8 @@ SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k LIMIT 1 BY e); -- { 
 SELECT k FROM o WHERE x IN (SELECT DISTINCT ON (f) e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS transform_null_in = 1; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE nullIn(x, (SELECT e FROM i WHERE i.k = o.k)); -- { serverError NOT_IMPLEMENTED }
-SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_rows_in_set = 1000; -- { serverError NOT_IMPLEMENTED }
-SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_bytes_in_set = 1000000; -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_rows_in_set = 1000, set_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_bytes_in_set = 1000000, set_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k GROUP BY e) SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k SETTINGS additional_table_filters = {'i': 'rand() % 2 = 0'}); -- { serverError NOT_IMPLEMENTED }
@@ -350,8 +350,12 @@ INSERT INTO o_mt VALUES (1, 1), (2, 2);
 SELECT k FROM o_mt PREWHERE x IN (SELECT e FROM i WHERE i.k = o_mt.k); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE o_mt;
 
--- A keyed GROUP BY limit that throws cannot change a result.
+-- A size limit that throws cannot change a result.
 SELECT k, x FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k GROUP BY e) ORDER BY k, x SETTINGS max_rows_to_group_by = 100, group_by_overflow_mode = 'throw';
+SELECT k, x FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) ORDER BY k, x SETTINGS max_rows_in_set = 1000, set_overflow_mode = 'throw';
+SELECT k, x, x IN (SELECT DISTINCT e FROM i WHERE i.k = o.k) FROM o ORDER BY k, x SETTINGS max_rows_in_distinct = 1000, distinct_overflow_mode = 'throw';
+SELECT k, x, x IN (SELECT e FROM i WHERE i.k = o.k UNION DISTINCT SELECT j.e FROM j WHERE j.a = o.k * 10)
+FROM o ORDER BY k, x SETTINGS max_rows_in_distinct = 1000, distinct_overflow_mode = 'throw';
 
 DROP TABLE o;
 DROP TABLE i;

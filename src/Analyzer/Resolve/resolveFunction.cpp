@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
@@ -1353,8 +1354,8 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         throwCorrelatedInNotSupported(" with `transform_null_in` or a function that compares NULLs", node);
 
     const auto & settings = scope.context->getSettingsRef();
-    if (settings[Setting::max_rows_in_set] || settings[Setting::max_bytes_in_set])
-        throwCorrelatedInNotSupported(" with `max_rows_in_set` or `max_bytes_in_set`", node);
+    if ((settings[Setting::max_rows_in_set] || settings[Setting::max_bytes_in_set]) && settings[Setting::set_overflow_mode] != OverflowMode::THROW)
+        throwCorrelatedInNotSupported(" with `max_rows_in_set` or `max_bytes_in_set` and `set_overflow_mode` other than 'throw'", node);
 
     if (settings[Setting::max_rows_to_group_by] && settings[Setting::group_by_overflow_mode] != OverflowMode::THROW)
         throwCorrelatedInNotSupported(" with `max_rows_to_group_by` and `group_by_overflow_mode` other than 'throw'", node);
@@ -1490,14 +1491,15 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     for (size_t i = 0; i < keys_count; ++i)
         column_names.push_back(fmt::format("__in_column_{}_{}_{}", subquery_hash.low64, subquery_hash.high64, i));
 
-    /// The set does not depend on DISTINCT, unless DISTINCT is limited or followed by a limit.
+    /// The set does not depend on DISTINCT, unless DISTINCT is followed by a limit or truncates at a size limit.
     /// The DISTINCT of an EXCEPT or INTERSECT arm changes the membership, so it is kept.
-    const bool distinct_is_unlimited = !settings[Setting::max_rows_in_distinct] && !settings[Setting::max_bytes_in_distinct];
+    const bool distinct_cannot_truncate = (!settings[Setting::max_rows_in_distinct] && !settings[Setting::max_bytes_in_distinct])
+        || settings[Setting::distinct_overflow_mode] == OverflowMode::THROW;
     std::function<void(const QueryTreeNodePtr &)> drop_distinct = [&](const QueryTreeNodePtr & subquery)
     {
         if (auto * query_node = subquery->as<QueryNode>())
         {
-            if (distinct_is_unlimited && !hasLimitClause(*query_node))
+            if (distinct_cannot_truncate && !hasLimitClause(*query_node))
                 query_node->setIsDistinct(false);
         }
         else if (auto * union_node = subquery->as<UnionNode>())
@@ -1506,7 +1508,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
             if (union_mode != SelectUnionMode::UNION_ALL && union_mode != SelectUnionMode::UNION_DISTINCT)
                 return;
 
-            if (union_mode == SelectUnionMode::UNION_DISTINCT && distinct_is_unlimited)
+            if (union_mode == SelectUnionMode::UNION_DISTINCT && distinct_cannot_truncate)
                 union_node->setUnionMode(SelectUnionMode::UNION_ALL);
 
             for (const auto & union_query : union_node->getQueries().getNodes())
