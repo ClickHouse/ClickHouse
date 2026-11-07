@@ -163,6 +163,11 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
 /// grouping by them yields contiguous groups.
 SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns, const Block & header);
 
+/// Values that comparison declares equal while hash equality - the equality of `GROUP BY`, `DISTINCT`,
+/// `LIMIT BY` and `IN` - keeps apart: `-0.0` and `0.0`, and the `NaN` payloads. `Dynamic`, `Variant`
+/// and `Object` are only known at run time and may hold such a value.
+bool comparisonCanMergeDistinctValues(const IDataType & type);
+
 /// True when every key of `description` is constant in `header`, so all rows compare equal under it.
 bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header);
 
