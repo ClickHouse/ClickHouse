@@ -108,6 +108,17 @@ public:
         params.having_prefilter_count_index = count_index;
     }
 
+    /// The kept-keys cutoff (`Aggregator::Params::shared_kept_keys_for_overflow_any`) is exact only when this step
+    /// aggregates every row of the query.
+    void dropSharedKeptKeysCutoff()
+    {
+        if (!params.shared_kept_keys_for_overflow_any)
+            return;
+        params.shared_kept_keys_for_overflow_any = false;
+        /// Derived from `LIMIT` for the cutoff (see `getAggregatorParams` in the planner), not set by the user.
+        params.max_rows_to_group_by = 0;
+    }
+
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
     bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
