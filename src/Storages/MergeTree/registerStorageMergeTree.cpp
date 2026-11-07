@@ -1130,6 +1130,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
+    /// Only a fresh definition written now, not one loaded from stored metadata or replayed from another replica's DDL.
+    if (is_fresh_definition && !args.getLocalContext()->isRecoveryFromStoredMetadata())
+    {
+        const auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+        if (!txn || txn->isInitialQuery())
+            MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
+    }
+
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
     {
