@@ -652,6 +652,30 @@ public:
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
 
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return this->nested_function->getNormalizedStateType();
+    }
+
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return this->nested_function->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr &,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & properties) const override
+    {
+        return this->nested_function->getOwnNullAdapter(this->nested_function, arguments, params, properties);
+    }
+
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return this->nested_function->getArgumentsThatCanBeOnlyNull();
+    }
+
     AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();

@@ -106,9 +106,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
 
-    auto get_impl = [&](const DataTypes & types, const Array & params, bool has_null_arguments)
+    auto wrap_internal_nulls = [&](AggregateFunctionPtr function, const DataTypes & types, const Array & params)
     {
-        auto function = getImpl(name, action, types, params, out_properties, has_null_arguments, state_variant);
         if (function && !is_window_function && std::any_of(types.begin(), types.end(),
                 [](const auto & type) { return canContainNull(*type) && !type->isNullable(); }))
             function = std::make_shared<AggregateFunctionInternalNulls>(function, types, params);
@@ -129,7 +128,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = get_impl(nested_types, nested_parameters, has_null_arguments);
+        AggregateFunctionPtr nested_function = getImpl(
+            name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -137,14 +137,19 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         // that are rewritten to AggregateFunctionNothing, in this case
         // nested_function is nullptr.
         if (!nested_function || !nested_function->isOnlyWindowFunction())
-            return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
+        {
+            auto function = combinator->transformAggregateFunction(
+                nested_function, out_properties, types_without_low_cardinality, parameters);
+            return wrap_internal_nulls(std::move(function), types_without_low_cardinality, parameters);
+        }
     }
 
-    auto with_original_arguments = get_impl(types_without_low_cardinality, parameters, false);
+    auto with_original_arguments = getImpl(
+        name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
-    return with_original_arguments;
+    return wrap_internal_nulls(std::move(with_original_arguments), types_without_low_cardinality, parameters);
 }
 
 const AggregateFunctionWithProperties *
