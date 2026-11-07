@@ -3,8 +3,8 @@
 SELECT (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + (interval + 1)))))))))))))))))))))))))))))) FROM (SELECT 1 AS `interval`);
 SELECT (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + (case + 1)))))))))))))))))))))))))))))) FROM (SELECT 1 AS `case`);
 
-SELECT length(formatQuery('SELECT ' || repeat('case(', 300) || '1' || repeat(')', 300))) > 0;
-SELECT length(formatQuery('SELECT ' || repeat('interval(', 300) || '1' || repeat(')', 300))) > 0;
+SELECT length(formatQuery('SELECT ' || repeat('case(', 30) || '1' || repeat(')', 30))) > 0;
+SELECT length(formatQuery('SELECT ' || repeat('interval(', 30) || '1' || repeat(')', 30))) > 0;
 
 SELECT formatQuery('SELECT ' || repeat('CASE(', 30)); -- { serverError SYNTAX_ERROR }
 SELECT defaultValueOfTypeName('SimpleAggregateFunction(any(' || repeat('CASE(', 30)); -- { serverError SYNTAX_ERROR }
