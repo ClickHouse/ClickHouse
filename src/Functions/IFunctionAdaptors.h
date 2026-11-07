@@ -115,7 +115,7 @@ public:
 
     bool isExpensive() const override { return function->isExpensive(); }
 
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override;
 
     ComparisonOrderDomain getComparisonOrderDomain() const override
     {
