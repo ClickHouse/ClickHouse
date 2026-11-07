@@ -1,0 +1,44 @@
+-- `modulo` must give the same result whether or not the divisor is a constant.
+-- https://github.com/ClickHouse/ClickHouse/issues/119739
+
+SELECT '-- the most negative divisor';
+SELECT modulo(materialize(toInt64(7)), toInt64(-9223372036854775808)), modulo(materialize(toInt64(-7)), toInt64(-9223372036854775808)), modulo(materialize(toInt64(-9223372036854775808)), toInt64(-9223372036854775808));
+SELECT modulo(materialize(toInt64(1000)), toInt8(-128)), modulo(materialize(toInt64(-1000)), toInt8(-128)), modulo(materialize(toInt32(100000)), toInt16(-32768)), modulo(materialize(toInt32(-7)), toInt32(-2147483648));
+
+SELECT '-- a divisor just above the range of a narrower dividend';
+SELECT modulo(materialize(toInt32(-2147483648)), toInt64(2147483648)), modulo(materialize(toInt32(-2147483647)), toInt64(2147483648)), modulo(materialize(toInt32(2147483647)), toInt64(2147483648));
+
+SELECT '-- the minimal signed number modulo -1 is 0';
+SELECT modulo(toInt64(-9223372036854775808), toInt64(-1)), modulo(materialize(toInt64(-9223372036854775808)), toInt64(-1)), modulo(materialize(toInt64(-9223372036854775808)), materialize(toInt64(-1)));
+SELECT modulo(toInt8(-128), toInt8(-1)), modulo(materialize(toInt16(-32768)), toInt16(-1)), modulo(materialize(toInt32(-2147483648)), materialize(toInt64(-1)));
+SELECT modulo(toInt128('-170141183460469231731687303715884105728'), toInt128(-1)), modulo(toInt256('-57896044618658097711785492504343953926634992332820282019728792003956564819968'), toInt256(-1));
+SELECT -9223372036854775808 % -1, positiveModulo(toInt64(-9223372036854775808), toInt64(-1)), moduloOrZero(toInt64(-9223372036854775808), toInt64(-1));
+
+SELECT '-- the same for wide and mixed types, in all four constness shapes';
+{% for a, b in [("CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')", 'toInt8(-1)'), ("CAST('-170141183460469231731687303715884105728', 'Int128')", 'toInt64(-1)'), ('toInt8(-128)', 'toInt128(-1)'), ('toInt8(-128)', 'toInt256(-1)')] -%}
+SELECT modulo(materialize({{ a }}), materialize({{ b }})), modulo({{ a }}, materialize({{ b }})), modulo(materialize({{ a }}), {{ b }}), modulo(identity({{ a }}), identity({{ b }}));
+{% endfor -%}
+
+{# The type pairs with a kernel for a constant divisor in `modulo.cpp`, and the limits of their types. -#}
+{% set pairs = [('UInt64', 'UInt8'), ('UInt64', 'UInt16'), ('UInt64', 'UInt32'), ('UInt64', 'UInt64'), ('UInt32', 'UInt8'), ('UInt32', 'UInt16'), ('UInt32', 'UInt32'), ('UInt32', 'UInt64'), ('Int64', 'Int8'), ('Int64', 'Int16'), ('Int64', 'Int32'), ('Int64', 'Int64'), ('Int32', 'Int8'), ('Int32', 'Int16'), ('Int32', 'Int32'), ('Int32', 'Int64')] -%}
+{% set limits = {'UInt8': (0, 255), 'UInt16': (0, 65535), 'UInt32': (0, 4294967295), 'UInt64': (0, 18446744073709551615), 'Int8': (-128, 127), 'Int16': (-32768, 32767), 'Int32': (-2147483648, 2147483647), 'Int64': (-9223372036854775808, 9223372036854775807)} -%}
+
+SELECT '-- division by zero throws for a constant and a column divisor';
+{% for a, b in pairs -%}
+SELECT modulo(materialize(to{{ a }}('{{ limits[a][0] }}')), to{{ b }}(0)); -- { serverError ILLEGAL_DIVISION }
+SELECT modulo(materialize(to{{ a }}('{{ limits[a][0] }}')), materialize(to{{ b }}(0))); -- { serverError ILLEGAL_DIVISION }
+SELECT modulo(to{{ a }}('{{ limits[a][0] }}'), to{{ b }}(0)); -- { serverError ILLEGAL_DIVISION }
+{% endfor %}
+SELECT '-- col % const, col % col and const % const agree: mismatches of col % const, and whether const % const matches';
+{% for a, b in pairs -%}
+{% set a_min, a_max = limits[a] -%}
+{% set b_min, b_max = limits[b] -%}
+{% set dividends = ([a_min, a_min + 1, -1] if a_min < 0 else []) + [0, 1, a_max - 1, a_max] -%}
+{% set divisors = [1] + ([-1, b_min] if b_min < 0 else []) + ([a_max] if a_max <= b_max else []) + ([a_max + 1] if a_max + 1 <= b_max else []) + [b_max] -%}
+{% for d in divisors | unique -%}
+SELECT '{{ a }} % {{ b }}({{ d }})',
+    countIf(modulo(x, to{{ b }}('{{ d }}')) != modulo(x, materialize(to{{ b }}('{{ d }}')))),
+    {% for v in dividends %}modulo(to{{ a }}('{{ v }}'), to{{ b }}('{{ d }}')) = modulo(materialize(to{{ a }}('{{ v }}')), materialize(to{{ b }}('{{ d }}'))){{ ' AND ' if not loop.last }}{% endfor %}
+FROM (SELECT x FROM generateRandom('x {{ a }}', 42) LIMIT 10000 UNION ALL SELECT arrayJoin([{% for v in dividends %}to{{ a }}('{{ v }}'){{ ', ' if not loop.last }}{% endfor %}]) AS x);
+{% endfor -%}
+{% endfor -%}
