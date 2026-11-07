@@ -1192,6 +1192,8 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
     Strings entries_to_load;
     bool some_active_mutations_were_killed = false;
     {
+        /// A removal must finish once it changed the counters, so a query memory limit must not stop this block halfway.
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
         std::lock_guard state_lock(state_mutex);
 
         for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end();)
