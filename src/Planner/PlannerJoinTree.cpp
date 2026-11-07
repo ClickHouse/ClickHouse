@@ -3511,9 +3511,7 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     right_query_plan.addStep(std::move(join_lookup_step));
 }
 
-/// A correlated subquery in `JOIN ON` that reads columns of one side only is evaluated on that side before
-/// the join, so the join condition reads its result as an ordinary column of that side.
-/// Returns whether the right side was changed.
+/// Evaluates each one-sided correlated subquery of `JOIN ON` on its side. Returns whether the right side changed.
 bool decorrelateJoinExpressionSubqueries(
     const JoinNode & join_node,
     QueryPlan & left_query_plan,
