@@ -57,8 +57,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         Float64 resets = 0;
         /// The rounding error of `resets`, so the exact mode doesn't lose small resets when a big one leaves the window.
         Float64 resets_error = 0;
-        /// The sum of the sizes of the errors added to `resets_error`, which bounds its own rounding.
-        Float64 resets_error_bound = 0;
+        /// Set when an addition to `resets_error` was rounded, so `resets + resets_error` may no longer be exact.
+        bool resets_error_inexact = false;
 
         void merge(const Summary & added)
         {
@@ -75,8 +75,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                     addToResets(static_cast<Float64>(last_value));     /// reset across the bucket boundary
             }
             addToResets(added.resets);
-            resets_error += added.resets_error;
-            resets_error_bound += added.resets_error_bound;
+            addToResetsError(added.resets_error);
+            resets_error_inexact |= added.resets_error_inexact;
             last_timestamp = added.last_timestamp;
             last_value = added.last_value;
             count += added.count;
@@ -85,7 +85,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         void unmerge(const Summary & leaving, const Summary * new_first)
         {
             addToResets(-leaving.resets);
-            resets_error -= leaving.resets_error;
+            addToResetsError(-leaving.resets_error);
             count -= leaving.count;
             if (new_first)
             {
@@ -106,11 +106,19 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             if (std::isfinite(sum))
             {
                 const Float64 value_part = sum - resets;
-                const Float64 error = (resets - (sum - value_part)) + (value - value_part);
-                resets_error += error;
-                resets_error_bound += std::abs(error);
+                addToResetsError((resets - (sum - value_part)) + (value - value_part));
             }
             resets = sum;
+        }
+
+        /// `resets_error += value`, noting whether the addition was rounded (TwoSum again; a NaN error counts as rounded).
+        void addToResetsError(Float64 value)
+        {
+            const Float64 sum = resets_error + value;
+            const Float64 value_part = sum - resets_error;
+            if ((resets_error - (sum - value_part)) + (value - value_part) != 0)
+                resets_error_inexact = true;
+            resets_error = sum;
         }
     };
 
@@ -186,8 +194,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
-            /// The exact mode sums the window again only if the reset sum overflowed or its tracked errors are no longer small next to it.
-            /// Otherwise `resets + resets_error` still holds the small resets after big ones left.
+            /// The exact mode sums the window again only if the reset sum overflowed or its error term was rounded.
+            /// Otherwise `resets + resets_error` is still exact after big resets left.
             if constexpr (check_resets)
             {
                 if (exact_rate)
@@ -195,7 +203,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                     const Float64 resets_before = sliding_sum.getCurrentSum().resets;
                     if (sliding_sum.removeBefore(cut_off)
                         && (!std::isfinite(resets_before)
-                            || sliding_sum.getCurrentSum().resets_error_bound > std::abs(sliding_sum.getCurrentSum().resets)))
+                            || sliding_sum.getCurrentSum().resets_error_inexact))
                         sliding_sum.recomputeCurrentSum();
                     return;
                 }
