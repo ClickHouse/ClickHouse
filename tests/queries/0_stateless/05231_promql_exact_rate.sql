@@ -52,6 +52,10 @@ SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Arr
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Array(UInt32), [1e36, 1e18, 2, 1, 2]::Array(Float64));
 SELECT timeSeriesIncreaseToGrid(120, 200, 20, 40, 1)([70, 75, 100, 110, 120, 140, 160, 180, 200]::Array(UInt32), [1e36, 1e18, 2, 1, 2, 3, 4, 5, 6]::Array(Float64));
 
+SELECT '--- A huge difference does not overflow the rate when the rate itself fits ---';
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [0, 1e308]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(DateTime64(3)), [0, 1e308]::Array(Float64));
+
 SELECT '--- The sample before the window of the first grid point: used only in the exact mode ---';
 SELECT timeSeriesRateToGrid(120, 120, 1, 40)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 120]::Array(UInt32), [10, 20]::Array(Float64));

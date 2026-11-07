@@ -57,6 +57,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         Float64 resets = 0;
         /// The rounding error of `resets`, so the exact mode doesn't lose small resets when a big one leaves the window.
         Float64 resets_error = 0;
+        /// The sum of the sizes of the errors added to `resets_error`, which bounds its own rounding.
+        Float64 resets_error_bound = 0;
 
         void merge(const Summary & added)
         {
@@ -74,6 +76,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             }
             addToResets(added.resets);
             resets_error += added.resets_error;
+            resets_error_bound += added.resets_error_bound;
             last_timestamp = added.last_timestamp;
             last_value = added.last_value;
             count += added.count;
@@ -103,7 +106,9 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             if (std::isfinite(sum))
             {
                 const Float64 value_part = sum - resets;
-                resets_error += (resets - (sum - value_part)) + (value - value_part);
+                const Float64 error = (resets - (sum - value_part)) + (value - value_part);
+                resets_error += error;
+                resets_error_bound += std::abs(error);
             }
             resets = sum;
         }
@@ -181,18 +186,16 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
-            /// Subtracting big resets that left can lose the small ones still in the window, so the exact mode sums the window again.
-            /// It is needed only when a reset left or the sum overflowed (inf minus a reset stays inf), and never for delta.
+            /// The exact mode sums the window again only if the reset sum overflowed or its tracked errors are no longer small next to it.
+            /// Otherwise `resets + resets_error` still holds the small resets after big ones left.
             if constexpr (check_resets)
             {
                 if (exact_rate)
                 {
                     const Float64 resets_before = sliding_sum.getCurrentSum().resets;
-                    const Float64 resets_error_before = sliding_sum.getCurrentSum().resets_error;
                     if (sliding_sum.removeBefore(cut_off)
                         && (!std::isfinite(resets_before)
-                            || sliding_sum.getCurrentSum().resets != resets_before
-                            || sliding_sum.getCurrentSum().resets_error != resets_error_before))
+                            || sliding_sum.getCurrentSum().resets_error_bound > std::abs(sliding_sum.getCurrentSum().resets)))
                         sliding_sum.recomputeCurrentSum();
                     return;
                 }
@@ -325,7 +328,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             value_difference += compensation;
 
             if constexpr (is_rate)
-                value_difference = value_difference * static_cast<Float64>(grid_ticks_per_second) / static_cast<Float64>(window);
+                value_difference /= static_cast<Float64>(window) / static_cast<Float64>(grid_ticks_per_second);
 
             return value_difference;
         }

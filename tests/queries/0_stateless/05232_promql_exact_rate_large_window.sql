@@ -10,6 +10,13 @@ SELECT length(r), round(r[-1], 6) FROM
     FROM numbers(100001)
 );
 
+SELECT 'rate with a reset every other sample';
+SELECT length(r), round(r[-1], 6) FROM
+(
+    SELECT timeSeriesRateToGrid(0, 100000, 10, 30000, 1)(toUInt32(number), toFloat64(number % 2)) AS r
+    FROM numbers(100001)
+);
+
 SELECT 'delta';
 SELECT length(r), round(r[-1], 6) FROM
 (

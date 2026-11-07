@@ -37,6 +37,9 @@
 [4]
 [0.1]
 [4,3,2,2,2]
+--- A huge difference does not overflow the rate when the rate itself fits ---
+[2.5e306]
+[2.5e306]
 --- The sample before the window of the first grid point: used only in the exact mode ---
 [NULL]
 [0.25]
