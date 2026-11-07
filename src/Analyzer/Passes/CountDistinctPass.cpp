@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/Context.h>
 
@@ -92,7 +93,7 @@ public:
 
         /// `countDistinct`/`uniqExact` skip NULLs, but `GROUP BY` on a Nullable column produces a NULL group
         /// that `count` would include. Skip the rewrite for nullable arguments to preserve semantics.
-        if (isNullableOrLowCardinalityNullable(count_distinct_argument_column_typed.getColumnType()))
+        if (canContainNull(*count_distinct_argument_column_typed.getColumnType()))
             return;
 
         /// Build subquery SELECT count_distinct_argument_column FROM table_expression GROUP BY count_distinct_argument_column

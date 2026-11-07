@@ -519,7 +519,12 @@ bool AggregatingStep::canUseRadixUniqExact() const
         return false;
 
     const auto & aggregate = params.aggregates[0];
-    return aggregate.function->getName() == "uniqExact" && aggregate.parameters.empty() && aggregate.argument_names.size() == 1
+    const bool has_internal_nulls = std::any_of(
+        aggregate.function->getArgumentTypes().begin(),
+        aggregate.function->getArgumentTypes().end(),
+        [](const auto & type) { return canContainNull(*type) && !type->isNullable(); });
+    return !has_internal_nulls
+        && aggregate.function->getName() == "uniqExact" && aggregate.parameters.empty() && aggregate.argument_names.size() == 1
         && WhichDataType(aggregate.function->getResultType()).isUInt64();
 }
 

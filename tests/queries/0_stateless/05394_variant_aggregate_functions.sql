@@ -13,7 +13,7 @@ SELECT sumIf(v, k = 1), argMax(k, v), argMin(k, v), maxArgMin(v, v) FROM t_varia
 SELECT sumMerge(s) FROM (SELECT sumState(v) AS s FROM t_variant_agg GROUP BY k);
 SELECT sum(v) FROM t_variant_agg WHERE v IS NULL;
 
--- Functions that support Variant natively are not affected.
+-- Functions that support Variant natively retain their result types, while internal NULL values are skipped as for Nullable.
 SELECT count(v), groupArray(v), toTypeName(any(v)) FROM t_variant_agg;
 -- Only the arguments that are not supported are converted: the first argument of argMax and topKWeighted is processed natively.
 SELECT toTypeName(argMax(v, k)), toTypeName(topKWeighted(v, k)), toTypeName(argMax(k, v)), toTypeName(argMax(v, v)) FROM t_variant_agg;
@@ -50,7 +50,7 @@ SELECT uniqIf(number::Variant(UInt64), toNullable(number % 2 = 0)), anyIf(number
 SELECT sumIf(number::Variant(UInt64), if(number = 2, NULL, toNullable(number % 2 = 0))) FROM numbers(5);
 SELECT number % 3 AS k, sumIf(number::Variant(UInt64), number % 2 = 0), maxIf(number::Variant(UInt64), toNullable(number % 2 = 1)) FROM numbers(10) GROUP BY k ORDER BY k;
 
--- Only the key of -ArgMax, argMax and the weight of topKWeighted are converted, the payload keeps its type and NULL values.
+-- Only the key of -ArgMax, argMax and the weight of topKWeighted are converted; the payload keeps its type and skips NULL values.
 SELECT groupArrayArgMax(v, k), groupArrayArgMax(v, CAST(k AS Nullable(UInt8))), argMax(v, k), toTypeName(argMax(v, k))
 FROM values('v Variant(UInt64), k Variant(UInt8)', (NULL, 2), (1, 1));
 SELECT argMax(v, k), argMax(v, CAST(k AS Nullable(UInt8))), topKWeighted(2)(v, k), groupArrayResample(0, 2, 1)(v, k)
