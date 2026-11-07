@@ -430,7 +430,7 @@ void notePathLimitSkip(
 }
 
 /// Whether a skip still counts and no other name has returned what it would have.
-bool isMissing(PruningState::SkippedPath & skipped, const PruningState & pruning, const std::unordered_set<std::string> & matched_paths)
+bool isMissing(PruningState::SkippedPath & skipped, const PruningState & pruning, const std::unordered_map<std::string, size_t> & matched_paths)
 {
     if (skipped.walk != skipped.frame->matches_before_retries.size())
         return false;
@@ -447,7 +447,7 @@ bool isMissing(PruningState::SkippedPath & skipped, const PruningState & pruning
 /// Whether `prefix`, another name for the frame's directory, resolves what its last walk could not: the
 /// first path it left unresolved, or any skip below it that is still missing or leads into an incomplete frame.
 bool resolvesUnresolved(
-    const VisitedFrame & frame, const std::string & prefix, PruningState & pruning, const std::unordered_set<std::string> & matched_paths)
+    const VisitedFrame & frame, const std::string & prefix, PruningState & pruning, const std::unordered_map<std::string, size_t> & matched_paths)
 {
     if (!frame.unresolved)
         return false;
@@ -485,7 +485,7 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
-    std::unordered_set<std::string> & matched_paths,
+    std::unordered_map<std::string, size_t> & matched_paths,
     bool recursive,
     size_t depth,
     PruningState & pruning,
@@ -549,18 +549,18 @@ void listFilesWithRegexpMatchingImpl(
                     dedup_key = (parent_canonical / as_path.filename()).string();
             }
         }
-        if (matched_paths.emplace(std::move(dedup_key)).second)
+        const auto [returned, inserted] = matched_paths.try_emplace(std::move(dedup_key), result.size());
+        if (inserted)
         {
             total_bytes_to_read += bytes;
             result.push_back(collapseRedundantSeparators(path));
             for (auto * frame : pruning.active_frames)
                 ++frame->matches;
         }
-        else
+        else if (fs::path(result[returned->second]).lexically_normal() != fs::path(path).lexically_normal())
         {
-            /// Two matching paths named one file. The caller has to know, because the
-            /// number of returned paths then no longer says how many paths the pattern
-            /// selected, and the read-only guard on writes reads that number.
+            /// Another path to a file already returned. The read-only guard on writes counts the
+            /// paths the pattern selected, so it has to know; the same path reached twice is not one.
             collapsed_a_match = true;
         }
     };
@@ -884,11 +884,12 @@ std::vector<std::string> listFilesWithRegexpMatching(
     for (const auto & for_match_expanded : for_match_paths_expanded)
     {
         /// Tracks the normalized form of every matched path so that adjacent globstars such as
-        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The set is scoped
+        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The map is scoped
         /// to a single expanded pattern on purpose: independent brace-expanded alternatives
         /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
         /// same concrete file once per alternative, rather than being silently collapsed.
-        std::unordered_set<std::string> matched_paths;
+        /// Each key maps to the index of the path returned for it in `result`.
+        std::unordered_map<std::string, size_t> matched_paths;
 
         /// Records the (canonical directory, remaining pattern) frames the walk has already
         /// entered, so a symlink cycle or an aliased directory is not walked twice. Scoped per

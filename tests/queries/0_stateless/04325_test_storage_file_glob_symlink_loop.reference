@@ -56,6 +56,9 @@ single-match-glob-insert-is-allowed
 2
 empty-alias-insert-is-allowed
 2
+same-path-reached-twice-insert-is-allowed
+2
+3
 nested-alias-insert-stays-readonly
 refused
 1

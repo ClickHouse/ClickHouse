@@ -240,6 +240,12 @@ mkdir -p "$TEST_DIR_ABS/emptyalias/root/empty"
 printf "row1\n" > "$TEST_DIR_ABS/emptyalias/root/only.tsv"
 ln -s empty "$TEST_DIR_ABS/emptyalias/root/alias"
 
+# One path reached twice: through both `**` of `root/**/**/*.txt`, and through the `..` folded
+# after `a` and after `b`. No symlink anywhere, so each pattern selects one path and stays WRITABLE.
+mkdir -p "$TEST_DIR_ABS/samepath/root/sub" "$TEST_DIR_ABS/dotdotwrite/root/a" "$TEST_DIR_ABS/dotdotwrite/root/b"
+printf "row1\n" > "$TEST_DIR_ABS/samepath/root/sub/f.txt"
+printf "row1\n" > "$TEST_DIR_ABS/dotdotwrite/root/f.txt"
+
 # The same two aliases, but the matching file sits one level BELOW the aliased directory:
 # `nestedalias/root/target/inner/f.txt`, with `aliasA` and `aliasB` both naming `target`.
 # The pruned frame is the one at `target`, while the match is emitted by its descendant, so
@@ -670,6 +676,17 @@ echo "empty-alias-insert-is-allowed"
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/emptyalias/root/**/only.tsv', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/emptyalias/root/only.tsv', 'TSV', 'val String')"
+
+# Reaching the one selected path twice is not a second name for it. The row counts show the writes landed.
+echo "same-path-reached-twice-insert-is-allowed"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/samepath/root/**/**/*.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/samepath/root/sub/f.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/dotdotwrite/root/*/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/dotdotwrite/root/**/{..}/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dotdotwrite/root/f.txt', 'TSV', 'val String')"
 
 # The refusal must also hold when the match is emitted below the aliased directory rather
 # than inside it, which is the case a per-frame count reaching only the innermost frame
