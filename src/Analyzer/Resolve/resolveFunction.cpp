@@ -504,8 +504,7 @@ bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const Identif
     ///
     /// Keep the opt-in fast path limited to local physical tables: Memory and MergeTree-family
     /// engines. All other storages fail closed rather than requiring per-engine semantic proofs.
-    const bool is_local_physical_table = storage->getName() == "Memory" || storage->isMergeTree();
-    return !is_local_physical_table || storage->isView() || storage->isRemote() || storage->getName() == "Alias";
+    return !isLocalPhysicalTable(*storage);
 }
 
 bool hasLateAttachedTableFilter(
