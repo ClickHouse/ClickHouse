@@ -133,6 +133,13 @@ class ClickHouseIcebergWriter(Writer):
                 caps,
                 op_weights={k: v for k, v in caps.op_weights.items() if k != "compact"},
             )
+        if gates.active("clickhouse_iceberg_bucket_partition_type"):
+            caps = dataclasses.replace(
+                caps,
+                partition_transforms=tuple(
+                    t for t in caps.partition_transforms if t != "bucket"
+                ),
+            )
         return caps
 
     @property
