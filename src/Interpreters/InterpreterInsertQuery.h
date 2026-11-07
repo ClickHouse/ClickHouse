@@ -66,6 +66,11 @@ public:
     /// Never set this for a user-visible target table.
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
+    /// Suppress this insert's own write accounting: quota `WRITTEN_BYTES`, the `InsertedRows` and
+    /// `InsertedBytes` profile events, and the query's write progress. Set it on the nested insert of
+    /// a transparent forwarder, whose rows an outer pipeline has already counted for the same query.
+    void setSkipWriteAccounting(bool skip) { skip_write_accounting = skip; }
+
     /// The pipeline is built only to be printed by `EXPLAIN PIPELINE` and is not executed.
     void setExplainOnly(bool value) { explain_only = value; }
 
@@ -99,7 +104,8 @@ public:
         size_t max_threads_,
         bool no_squash_,
         bool async_insert_,
-        ProcessorPtr * returning_output = nullptr);
+        ProcessorPtr * returning_output = nullptr,
+        bool skip_write_accounting_ = false);
 
 private:
     static Block getSampleBlock(
@@ -121,6 +127,7 @@ private:
     const bool positional_arguments_already_resolved;
     bool select_query_sorted = false;
     bool skip_target_insert_access_check = false;
+    bool skip_write_accounting = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
