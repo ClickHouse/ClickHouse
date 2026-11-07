@@ -7851,7 +7851,7 @@ Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
 )", 0, \
         {"26.6", false, true, "New setting that replaces injective functions by their arguments in the LIMIT BY keys."}) \
     DECLARE(Bool, optimize_group_by_constant_keys, true, R"(
-Optimize GROUP BY when all keys in block are constant
+Optimize `GROUP BY` when all keys in block are constant, or when the only key is 2, 4 or 8 bytes wide or a `FixedString(1)` and holds one value over long runs of rows
 )", 0, \
         {"23.9", false, true, "Optimize group by constant keys by default"}) \
     DECLARE(Bool, optimize_constant_columns_after_filter, true, R"(
