@@ -1,0 +1,54 @@
+-- limit
+1
+-- ALTER, filter
+2
+-- page
+3
+-- select, filter, order
+30
+20
+-- UNION with query-level SETTINGS
+1
+2
+-- FORMAT stays on the outer query
+{"a":1}
+-- a query-level setting stays on the outer query
+1#
+-- query parameter inside a filter
+2
+-- the request shapes the result of the definition
+1
+2
+2
+-- EXECUTE AS, query parameter inside a filter
+2
+-- EXPLAIN
+filtered
+0
+-- a second SETTINGS clause
+rejected
+-- IF NOT EXISTS on an existing handler stays a no-op
+noop
+-- EXECUTE AS, SETTINGS after FORMAT: the request shapes the result of the definition
+1
+-- EXPLAIN, SETTINGS after FORMAT
+filtered
+0
+-- a second SETTINGS clause under EXECUTE AS and EXPLAIN
+rejected
+rejected
+-- ALTER with a second SETTINGS clause is rejected, the handler keeps its definition
+rejected
+1
+2
+-- implicit_table_at_top_level for a SELECT without FROM
+1
+2
+1
+1
+2
+1
+1
+2
+1
+rejected
