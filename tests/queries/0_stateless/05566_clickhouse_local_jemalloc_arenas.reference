@@ -1,0 +1,7 @@
+opt.percpu_arena: "disabled"	1
+opt.percpu_arena: "disabled"
+opt.narenas: 1
+opt.percpu_arena: "percpu"
+0
+1
+4999950000
