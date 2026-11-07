@@ -1140,6 +1140,15 @@ public:
     }
 };
 
+/// `groupConcat(x, sep)` is `groupConcat(sep)(x)`, see `QueryTreeBuilder::setSecondArgumentAsParameter`.
+/// The names mirror `GroupConcatImpl::getNameAndAliases` (the parser cannot depend on aggregate functions).
+static bool isGroupConcatWithSeparator(const String & function_name, const ASTs & arguments)
+{
+    return arguments.size() == 2
+        && (equalsCaseInsensitive(function_name, "groupConcat") || equalsCaseInsensitive(function_name, "group_concat")
+            || equalsCaseInsensitive(function_name, "string_agg"));
+}
+
 /// Layer for regular and aggregate functions without syntax sugar
 class FunctionLayer : public Layer
 {
@@ -1282,6 +1291,22 @@ public:
 
         if (state == 2)
         {
+            /// DISTINCT and FILTER rename the function, after which the analyzer does not recognize the separator argument.
+            Expected filter_expected;
+            if (allow_function_parameters
+                && (has_distinct || ParserKeyword(Keyword::FILTER).checkWithoutMoving(pos, filter_expected))
+                && isGroupConcatWithSeparator(function_name, elements))
+            {
+                if (!parameters)
+                    parameters = make_intrusive<ASTExpressionList>();
+                /// Like the analyzer rewrite: the separator replaces the delimiter parameter and keeps the optional limit.
+                if (parameters->children.empty())
+                    parameters->children.push_back(std::move(elements[1]));
+                else
+                    parameters->children[0] = std::move(elements[1]);
+                elements.pop_back();
+            }
+
             if (has_distinct)
                 function_name += "Distinct";
 
