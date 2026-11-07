@@ -2,23 +2,18 @@
     <settings><max_threads>1</max_threads></settings>
 
     <!-- The GROUP BY key extends past the sorting key, so the in-order transform builds one hashing
-         state per run of equal `a`, and `a` is unique. The table is small on purpose: the per-block
-         cost this measures used to be quadratic in the block size, and even one run of the first
-         query has to stay inside the harness's 15-second per-query budget. That budget is what bounds
-         the fill: on the master side the first query measures 4.7 s and the DISTINCT one 3.5 s here,
-         and the cost is the product of the row count and the block size, which granule alignment caps
-         near 65k rows, so halving the fill buys about 2x on both. -->
+         state per run of equal `a`, and `a` is unique. The fill keeps every query on this table above 50 ms. -->
     <create_query>CREATE TABLE agg_in_order_partial_key (a UInt64, b UInt64, c UInt64, nb Nullable(UInt64), nc Nullable(UInt32)) ENGINE = MergeTree ORDER BY a</create_query>
-    <fill_query>INSERT INTO agg_in_order_partial_key SELECT number, number * 7, number * 11, if(number % 7 = 0, NULL, number * 13), if(number % 7 = 0, NULL, toUInt32(number * 17)) FROM numbers_mt(100000)</fill_query>
+    <fill_query>INSERT INTO agg_in_order_partial_key SELECT number, number * 7, number * 11, if(number % 7 = 0, NULL, number * 13), if(number % 7 = 0, NULL, toUInt32(number * 17)) FROM numbers_mt(800000)</fill_query>
     <fill_query>OPTIMIZE TABLE agg_in_order_partial_key FINAL</fill_query>
 
     <query>SELECT a, b, count() FROM agg_in_order_partial_key GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
 
-    <!-- DISTINCT in order builds a state per run of equal `a` in the same way, over the two columns
-         outside the sorting key. Unlike aggregation in order, it is on by default. -->
+    <!-- DISTINCT in order deduplicates each run of equal `a` over the two columns outside the sorting
+         key. Unlike aggregation in order, it is on by default. -->
     <query>SELECT DISTINCT a, b, c FROM agg_in_order_partial_key SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
 
-    <!-- The same per-run states with a nullable key outside the sorting key. -->
+    <!-- The same with a nullable key outside the sorting key. -->
     <query>SELECT a, nb, count() FROM agg_in_order_partial_key GROUP BY a, nb SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
     <query>SELECT a, nc, count() FROM agg_in_order_partial_key GROUP BY a, nc SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
     <query>SELECT DISTINCT a, nb FROM agg_in_order_partial_key SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
