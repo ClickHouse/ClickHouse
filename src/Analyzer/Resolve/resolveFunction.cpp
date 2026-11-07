@@ -26,6 +26,7 @@
 #include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
+#include <AggregateFunctions/AggregateFunctionGroupConcat.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -112,6 +113,35 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             "Function with name {} cannot use {} NULLS",
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+}
+
+/** The number of arguments of `function_name` when it is a `groupConcat` alias, possibly with combinators,
+  * called with the separator as its second argument. Nothing for any other name.
+  * `STRING_AGG(DISTINCT x, sep) FILTER (WHERE cond)` is parsed as `STRING_AGGDistinctIf(x, sep, cond)`.
+  * Only combinators that keep the separator as the second argument are matched, `-If` appends the condition.
+  */
+std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & function_name)
+{
+    const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
+    String nested_name = function_name;
+    size_t arguments_count = 2;
+    while (true)
+    {
+        if (std::any_of(aliases.begin(), aliases.end(), [&](const auto & alias) { return equalsCaseInsensitive(alias, nested_name); }))
+            return arguments_count;
+
+        auto combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(nested_name);
+        if (!combinator)
+            return {};
+
+        const auto suffix = combinator->getName();
+        if (suffix == "If")
+            ++arguments_count;
+        else if (suffix != "Distinct" && suffix != "OrNull" && suffix != "OrDefault" && suffix != "State")
+            return {};
+
+        nested_name.resize(nested_name.size() - suffix.size());
+    }
 }
 
 /// The arity of a registered function name, or nothing when no function with this name is
@@ -1473,6 +1503,39 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
+    }
+
+    /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
+    /// with this name keeps its arguments.
+    if (auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
+        arguments_count && function_node_ptr->getArguments().getNodes().size() == *arguments_count
+        && (function_node_ptr->isWindowFunction()
+            || (!lambda_expression_untyped && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+                && !UserDefinedExecutableFunctionFactory::has(function_name, scope.context)))) /// NOLINT(readability-static-accessed-through-instance)
+    {
+        auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
+        const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
+        if (!separator_node || separator_node->getValue().getType() != Field::Types::String)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "If groupConcat is used with two arguments, the second argument must be a constant String");
+
+        /// The separator replaces the delimiter parameter and keeps the optional limit
+        if (parameters_nodes.empty())
+            parameters_nodes.push_back(arguments_nodes[1]);
+        else
+            parameters_nodes[0] = arguments_nodes[1];
+        arguments_nodes.erase(arguments_nodes.begin() + 1);
+
+        parameters_projection_names = resolveExpressionNodeList(
+            function_node_ptr->getParametersNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/,
+            allow_niladic_functions);
+
+        parameters.clear();
+        for (const auto & parameter_node : parameters_nodes)
+            parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
     }
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this

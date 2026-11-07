@@ -1,0 +1,15 @@
+SELECT STRING_AGG(DISTINCT x, ', ') FROM values('x String', 'a', 'b', 'a');
+SELECT string_agg(DISTINCT x, '-') FROM values('x String', 'a', 'b', 'a');
+SELECT group_concat(DISTINCT x, '|') FROM values('x String', 'a', 'b', 'a');
+SELECT groupConcat(DISTINCT x, ',') FROM values('x String', 'a', 'b', 'a');
+SELECT groupConcat(',', 1)(DISTINCT x, '/') FROM values('x String', 'a', 'b', 'a');
+SELECT STRING_AGG(x, ', ') FILTER (WHERE x != 'b') FROM values('x String', 'a', 'b', 'c');
+SELECT STRING_AGG(DISTINCT x, ', ') FILTER (WHERE x != 'b') FROM values('x String', 'a', 'b', 'c', 'a');
+SELECT groupConcatIf(x, '-', x != 'b') FROM values('x String', 'a', 'b', 'c');
+SELECT groupConcatIf(x, x != 'b') FROM values('x String', 'a', 'b', 'c');
+SELECT groupConcatIf(',', 1)(x, '/', x != 'a') FROM values('x String', 'a', 'b', 'c');
+SELECT groupConcatOrNull(x, ', ') FROM values('x String', 'a', 'b');
+SELECT groupConcatOrNull(x, ', ') FROM values('x String', 'a', 'b') WHERE x = 'z';
+SELECT groupConcatOrDefault(x, ', ') FROM values('x String', 'a', 'b') WHERE x = 'z';
+SELECT groupConcatMerge(', ')(s) FROM (SELECT groupConcatState(x, ', ') AS s FROM values('x String', 'a', 'b'));
+WITH (x, y) -> concat(x, y) AS groupConcatDistinct SELECT groupConcatDistinct('a', 'b');
