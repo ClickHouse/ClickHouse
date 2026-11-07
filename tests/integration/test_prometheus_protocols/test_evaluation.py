@@ -612,11 +612,12 @@ def send_test_data():
         ]
     )
 
+    # Prometheus gives in-memory series to sort_by_label in arrival order, so send them in label order like its blocks.
     send_data(
         [
             ({"__name__": name, "host": host}, {200: i + 1})
             for name, count in [("natsort_twenty", 20), ("natsort_sixty", 60)]
-            for i, host in enumerate(natsort_many_hosts(count))
+            for i, host in sorted(enumerate(natsort_many_hosts(count)), key=lambda item: item[1])
         ]
     )
 
