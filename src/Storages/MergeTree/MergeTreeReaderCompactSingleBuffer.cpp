@@ -42,61 +42,23 @@ catch (...)
     throw;
 }
 
-namespace
-{
-
-/// Sorts the ranges and merges those that overlap, dropping the empty ones.
-void mergeRanges(CompressedBlockRanges & ranges)
-{
-    std::sort(ranges.begin(), ranges.end());
-    size_t size = 0;
-    for (const auto & [begin, end] : ranges)
-    {
-        if (end <= begin)
-            continue;
-        if (size != 0 && begin <= ranges[size - 1].second)
-            ranges[size - 1].second = std::max(ranges[size - 1].second, end);
-        else
-            ranges[size++] = {begin, end};
-    }
-    ranges.resize(size);
-}
-
-}
-
 std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
-    if (!count_compressed_bytes_read)
+    if (!counted_compressed_blocks)
         return std::nullopt;
 
-    /// A compressed block may hold several columns, read or served from the cache, and may be loaded more than once. In a
-    /// stripe of several granules, it may also hold the granules of consecutive steps: it is counted in the first of them.
-    /// The buffer keeps the block it loaded last until it loads another, and doesn't report it again while it reuses it.
-    if (!ranges_read.empty())
-        last_loaded_block = ranges_read.back();
-    ranges_read.insert(ranges_read.end(), ranges_served.begin(), ranges_served.end());
-    ranges_served.clear();
-    mergeRanges(ranges_read);
+    if (!counted_file)
+        counted_file = &counted_compressed_blocks->getFile(
+            data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+    return counted_compressed_blocks->take(*counted_file, ranges_read);
+}
 
-    size_t bytes = 0;
-    auto counted = ranges_counted_before.begin();
-    for (const auto & [begin, end] : ranges_read)
-    {
-        bytes += end - begin;
-        while (counted != ranges_counted_before.end() && counted->second <= begin)
-            ++counted;
-        for (auto it = counted; it != ranges_counted_before.end() && it->first < end; ++it)
-            bytes -= std::min(end, it->second) - std::max(begin, it->first);
-    }
-
-    ranges_counted_before = std::move(ranges_read);
-    ranges_read.clear();
-    if (last_loaded_block)
-    {
-        ranges_counted_before.push_back(*last_loaded_block);
-        mergeRanges(ranges_counted_before);
-    }
-    return bytes;
+void MergeTreeReaderCompactSingleBuffer::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+{
+    /// A reader gets the same object for each of its tasks.
+    if (counted != counted_compressed_blocks)
+        counted_file = nullptr;
+    MergeTreeReaderCompact::countCompressedBytesRead(std::move(counted));
 }
 
 void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark)
@@ -142,7 +104,7 @@ void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_
 
     for (size_t mark = from_mark; mark < to_mark; ++mark)
         for (const size_t position : positions)
-            stream->addRangeOfPosition(mark, position, ranges_served);
+            stream->addRangeOfPosition(mark, position, ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(
@@ -224,7 +186,7 @@ try
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
-    if (count_compressed_bytes_read)
+    if (counted_compressed_blocks)
         stream->setBlocksReadSink(&ranges_read);
 
     initialized = true;

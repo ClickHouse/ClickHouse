@@ -332,6 +332,56 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
+CountedCompressedBlocks::File & CountedCompressedBlocks::getFile(const String & path)
+{
+    std::lock_guard lock(mutex);
+    /// References to the elements of an unordered map stay valid when it grows.
+    return counted[path];
+}
+
+size_t CountedCompressedBlocks::take(File & file, CompressedBlockRanges & ranges)
+{
+    std::lock_guard lock(mutex);
+    size_t bytes = 0;
+    for (const auto & [begin, end] : ranges)
+    {
+        chassert(begin <= end);
+        /// The first counted range that overlaps or touches the range.
+        auto it = file.upper_bound(begin);
+        if (it != file.begin() && std::prev(it)->second >= begin)
+            --it;
+        if (it == file.end() || it->first > end)
+        {
+            bytes += end - begin;
+            file.emplace_hint(it, begin, end);
+            continue;
+        }
+
+        /// Merge the range and the counted ranges it overlaps or touches into the first of them, which is extended in place,
+        /// as reading goes on from where the previous block ended.
+        const auto first = it;
+        size_t covered = 0;
+        size_t merged_end = end;
+        for (; it != file.end() && it->first <= end; ++it)
+        {
+            if (it->second > begin && it->first < end)
+                covered += std::min(end, it->second) - std::max(begin, it->first);
+            merged_end = std::max(merged_end, it->second);
+        }
+        bytes += end - begin - covered;
+        first->second = merged_end;
+        file.erase(std::next(first), it);
+        if (begin < first->first)
+        {
+            auto node = file.extract(first);
+            node.key() = begin;
+            file.insert(std::move(node));
+        }
+    }
+    ranges.clear();
+    return bytes;
+}
+
 void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
 {
     if (!settings.is_compressed)
@@ -610,6 +660,45 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     }
 
     return {max_range_bytes, sum_range_bytes};
+}
+
+void MergeTreeReaderStream::addRangeOfMark(size_t mark, bool shared_with_next_granules, CompressedBlockRanges & ranges)
+{
+    /// All marks of an empty file point to its beginning, so don't load them.
+    if (file_size == 0)
+        return;
+
+    loadMarks();
+    const auto mark_in_file = marks_getter->getMark(mark, 0);
+    const size_t begin = mark_in_file.offset_in_compressed_file;
+    size_t end = file_size;
+    if (mark + 1 < marks_count)
+    {
+        const auto next_mark = marks_getter->getMark(mark + 1, 0);
+        /// The granule wrote nothing to the stream, like empty arrays or strings.
+        if (next_mark == mark_in_file && !shared_with_next_granules)
+            return;
+
+        end = next_mark.offset_in_compressed_file;
+        /// The block goes on to the next later offset if the next mark is inside it. The granule needs the block also if
+        /// it shares the data written after it, like a `LowCardinality` dictionary: then the next mark is the same, at the
+        /// start of the block.
+        /// A dictionary is written at the end of the call that fills it, so a granule written in one call needs none after
+        /// the next mark. A merge may write a granule in several calls and start the next dictionary in the middle of it.
+        /// The marks don't tell these apart, so unlike `MergeTreeReaderStreamSingleColumn::getRightOffset`, which bounds
+        /// what reading may need, the next dictionary is not counted for the granule.
+        if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
+        {
+            /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.
+            const auto marks = std::views::iota(mark + 1, marks_count);
+            const auto it = std::ranges::partition_point(marks, [&](size_t i)
+            {
+                return marks_getter->getMark(i, 0).offset_in_compressed_file <= next_mark.offset_in_compressed_file;
+            });
+            end = it == marks.end() ? file_size : marks_getter->getMark(*it, 0).offset_in_compressed_file;
+        }
+    }
+    ranges.emplace_back(begin, end);
 }
 
 void MergeTreeReaderStreamMultipleColumns::addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges)
