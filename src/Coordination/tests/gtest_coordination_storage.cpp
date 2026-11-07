@@ -6,6 +6,7 @@
 
 #include <Coordination/KeeperStorage.h>
 
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Stopwatch.h>
@@ -1350,6 +1351,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
         auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
         request->path = path;
         request->options = options;
+        request->options_version = requiredListOptionsVersion(options);
         request->xid = ++zxid;
         storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
         const auto responses = storage.processRequest(request, 1, request->xid);
@@ -1400,6 +1402,131 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
         ASSERT_EQ(response.names.size(), 1);
         EXPECT_TRUE(response.names[0] == "a" || response.names[0] == "b");
         EXPECT_TRUE(response.truncated);
+    }
+
+    create("/list_with_options_pagination");
+    for (const auto * child_name : {"a", "c", "e", "g", "i"})
+        create("/list_with_options_pagination/" + String(child_name));
+
+    {
+        SCOPED_TRACE("Lexicographic list pagination with start_after");
+        ListOptions options;
+        options.max_results = 2;
+        options.start_after = "";
+        const auto & page1 = list("/list_with_options_pagination", options);
+        ASSERT_EQ(page1.error, Error::ZOK);
+        EXPECT_EQ(page1.names, (std::vector<String>{"a", "c"}));
+        EXPECT_TRUE(page1.truncated);
+
+        options.start_after = page1.names.back();
+        const auto & page2 = list("/list_with_options_pagination", options);
+        ASSERT_EQ(page2.error, Error::ZOK);
+        EXPECT_EQ(page2.names, (std::vector<String>{"e", "g"}));
+        EXPECT_TRUE(page2.truncated);
+
+        options.start_after = page2.names.back();
+        options.max_results = 10;
+        const auto & page3 = list("/list_with_options_pagination", options);
+        ASSERT_EQ(page3.error, Error::ZOK);
+        EXPECT_EQ(page3.names, (std::vector<String>{"i"}));
+        EXPECT_FALSE(page3.truncated);
+
+        options.start_after = "z";
+        const auto & empty_page = list("/list_with_options_pagination", options);
+        ASSERT_EQ(empty_page.error, Error::ZOK);
+        EXPECT_TRUE(empty_page.names.empty());
+        EXPECT_FALSE(empty_page.truncated);
+    }
+
+    create("/list_with_options_page_data");
+    for (const auto * child_name : {"a", "c", "e"})
+        create("/list_with_options_page_data/" + String(child_name), "payload-" + String(child_name));
+
+    {
+        SCOPED_TRACE("V2 page carries data only for the returned names");
+        ListOptions options;
+        options.max_results = 2;
+        options.with_data = true;
+        options.start_after = "a";
+        const auto & page = list("/list_with_options_page_data", options);
+        ASSERT_EQ(page.error, Error::ZOK);
+        EXPECT_EQ(page.names, (std::vector<String>{"c", "e"}));
+        EXPECT_EQ(page.data, (std::vector<String>{"payload-c", "payload-e"}));
+        EXPECT_TRUE(page.stats.empty());
+        EXPECT_FALSE(page.truncated);
+    }
+
+    {
+        SCOPED_TRACE("Filtered V2 first page is lexicographic");
+        create("/list_with_options_filter_page");
+        create("/list_with_options_filter_page/a", "payload-a");
+        create("/list_with_options_filter_page/b", "payload-b", /*ephemeral=*/ true);
+        create("/list_with_options_filter_page/c", "payload-c");
+        create("/list_with_options_filter_page/e", "payload-e");
+
+        ListOptions options;
+        options.filter = ListRequestType::PERSISTENT_ONLY;
+        options.with_data = true;
+        options.max_results = 1;
+        options.start_after = "";
+        const auto & page1 = list("/list_with_options_filter_page", options);
+        ASSERT_EQ(page1.error, Error::ZOK);
+        EXPECT_EQ(page1.names, (std::vector<String>{"a"}));
+        EXPECT_EQ(page1.data, (std::vector<String>{"payload-a"}));
+        EXPECT_TRUE(page1.truncated);
+
+        options.start_after = page1.names.back();
+        const auto & page2 = list("/list_with_options_filter_page", options);
+        ASSERT_EQ(page2.error, Error::ZOK);
+        EXPECT_EQ(page2.names, (std::vector<String>{"c"}));
+        EXPECT_EQ(page2.data, (std::vector<String>{"payload-c"}));
+        EXPECT_TRUE(page2.truncated);
+
+        options.start_after = page2.names.back();
+        options.max_results = 10;
+        const auto & page3 = list("/list_with_options_filter_page", options);
+        ASSERT_EQ(page3.error, Error::ZOK);
+        EXPECT_EQ(page3.names, (std::vector<String>{"e"}));
+        EXPECT_EQ(page3.data, (std::vector<String>{"payload-e"}));
+        EXPECT_FALSE(page3.truncated);
+    }
+
+    {
+        SCOPED_TRACE("start_after rejects shuffle and recursive");
+        EXPECT_THROW(requiredListOptionsVersion(ListOptions{.shuffle = true, .start_after = "a"}), Coordination::Exception);
+
+        ListOptions bad_options;
+        bad_options.start_after = "a";
+        bad_options.shuffle = true;
+        auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = "/list_with_options_pagination";
+        request->options = bad_options;
+        request->options_version = ListOptionsVersion::V2;
+        request->xid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
+        const auto shuffle_responses = storage.processRequest(request, 1, request->xid);
+        ASSERT_EQ(shuffle_responses.size(), 1);
+        EXPECT_EQ(shuffle_responses[0].response->error, Error::ZBADARGUMENTS);
+
+        bad_options.shuffle = false;
+        bad_options.recursive = true;
+        request->options = bad_options;
+        request->options_version = ListOptionsVersion::V2;
+        request->xid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
+        const auto recursive_responses = storage.processRequest(request, 1, request->xid);
+        ASSERT_EQ(recursive_responses.size(), 1);
+        EXPECT_EQ(recursive_responses[0].response->error, Error::ZBADARGUMENTS);
+    }
+
+    {
+        SCOPED_TRACE("V2 is unimplemented when the feature flag is off");
+        this->keeper_context->disableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
+        ListOptions options;
+        options.start_after = "";
+        const auto & response = list("/list_with_options_pagination", options);
+        EXPECT_EQ(response.error, Error::ZUNIMPLEMENTED);
+        this->keeper_context->enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
     }
 
     {
@@ -1485,6 +1612,7 @@ TEST_P(CoordinationTest, TestListWithOptionsAcls)
         const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
         request->path = path;
         request->options = options;
+        request->options_version = requiredListOptionsVersion(options);
         request->xid = ++zxid;
         KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = session_id, .request = request}};
         const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
@@ -1509,6 +1637,35 @@ TEST_P(CoordinationTest, TestListWithOptionsAcls)
         options.with_stat = true;
         const auto & response = list("/list_with_options_acl", options, unauthorized_session_id);
         EXPECT_EQ(response.error, Error::ZNOAUTH);
+    }
+
+    {
+        ListOptions options;
+        options.with_data = true;
+        options.max_results = 1;
+        options.start_after = "";
+        const auto & first_page = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(first_page.error, Error::ZNOAUTH);
+
+        options.start_after = "hidden";
+        const auto & after_hidden = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(after_hidden.error, Error::ZOK);
+        EXPECT_EQ(after_hidden.names, (std::vector<String>{"visible"}));
+    }
+
+    {
+        ListOptions options;
+        options.filter = ListRequestType::PERSISTENT_ONLY;
+        options.max_results = 1;
+        options.start_after = "";
+        const auto & first_page = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(first_page.error, Error::ZNOAUTH);
+
+        options.start_after = "hidden";
+        const auto & after_hidden = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(after_hidden.error, Error::ZOK);
+        EXPECT_EQ(after_hidden.names, (std::vector<String>{"visible"}));
+        EXPECT_FALSE(after_hidden.truncated);
     }
 
     {

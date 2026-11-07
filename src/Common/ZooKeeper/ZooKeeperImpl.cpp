@@ -2065,10 +2065,13 @@ void ZooKeeper::listWithOptions(
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
     if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
         throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions request type cannot be used because it is not supported by the server");
+    const auto options_version = requiredListOptionsVersion(options);
+    if (options_version == ListOptionsVersion::V2 && !isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions start_after pagination is not supported by the server");
 
     auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
     request->path = path;
-    request->options_version = requiredListOptionsVersion(options);
+    request->options_version = options_version;
     request->options = options;
     request->has_watch = static_cast<bool>(watch);
 
@@ -2302,6 +2305,9 @@ void ZooKeeper::multi(
             {
                 if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS))
                     throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions in MultiRead is not supported by the server");
+                if (list_with_options->options_version == ListOptionsVersion::V2
+                    && !isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
+                    throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions start_after pagination is not supported by the server");
                 if (list_with_options->options.recursive && subrequest->watch_callback)
                     throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
             }

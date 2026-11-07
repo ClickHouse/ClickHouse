@@ -223,11 +223,14 @@ void KeeperOverDispatcher::listWithOptions(
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
     if (!isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS))
         throw Coordination::Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions is not supported by this Keeper cluster");
+    const auto options_version = requiredListOptionsVersion(options);
+    if (options_version == ListOptionsVersion::V2 && !isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
+        throw Coordination::Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions start_after pagination is not supported by this Keeper cluster");
 
     const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
     request->path = path;
     request->addRootPath({});
-    request->options_version = requiredListOptionsVersion(options);
+    request->options_version = options_version;
     request->options = options;
     pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {

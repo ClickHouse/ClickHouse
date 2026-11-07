@@ -82,6 +82,8 @@ public:
 
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
+    void enableFeatureFlag(KeeperFeatureFlag feature) { feature_flags.enableFeatureFlag(feature); }
+    void disableFeatureFlag(KeeperFeatureFlag feature) { feature_flags.disableFeatureFlag(feature); }
     SnapshotVersion getWriteSnapshotVersion() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;

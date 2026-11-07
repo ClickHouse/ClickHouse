@@ -398,7 +398,7 @@ void KeeperRequestDispatcherOld::requestThread()
 
                         handle_opentelemetry_spans(request.request, request.session_id);
 
-                        /// Don't append read request into batch, we have to process them separately
+                        /// Don't append read request into batch, we have to process them separately.
                         if (!quorum_reads && request.request->isReadRequest())
                         {
                             const auto & last_request = current_batch.back();

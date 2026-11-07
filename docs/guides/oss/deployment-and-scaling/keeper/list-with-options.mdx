@@ -1,0 +1,39 @@
+---
+description: 'Paginate ClickHouse Keeper child listings with ListWithOptions start_after'
+sidebarTitle: 'ListWithOptions pagination'
+slug: /guides/sre/keeper/list-with-options
+title: 'Keeper ListWithOptions pagination'
+doc_type: 'guide'
+---
+
+# Keeper `ListWithOptions` pagination {#keeper-listwithoptions-pagination}
+
+ClickHouse Keeper `ListWithOptions` can resume a direct-child listing from a lexicographic cursor.
+
+Set `start_after` on `ListOptions`, including to an empty string for the first page. The client then sends options version V2. The response contains names strictly greater than the cursor, in lexicographic order, truncated to `max_results` when that limit is set. `truncated` is computed after the cursor and the filter.
+
+An unset `start_after` keeps options version V1: `max_results` is still an unordered prefix of matching children.
+
+## Constraints {#constraints}
+
+- `shuffle` or `recursive` together with `start_after` is rejected.
+- On a V2 page, `with_data` and `with_stat` are filled only for the names on that page.
+- The listing is not a snapshot: creates at or below the cursor, and deletes between pages, can be missed.
+- Pagination requires the `LIST_WITH_OPTIONS_V2` Keeper feature flag. Servers that only advertise `LIST_WITH_OPTIONS` reject the cursor on the client, and a V2 request that still reaches a server with the flag disabled returns `ZUNIMPLEMENTED`. With `quorum_reads`, a V2 listing is written to the Raft log like any other read. Keep `list_with_options_v2` disabled until every replica is upgraded, because an older replica cannot parse that log entry.
+
+## Example {#example}
+
+```cpp
+Coordination::ListOptions options;
+options.max_results = 1000;
+options.start_after = ""; // first lexicographic page (V2)
+
+while (true)
+{
+    auto page = zookeeper.asyncListWithOptions(path, options).get();
+    // use page.names
+    if (!page.truncated)
+        break;
+    options.start_after = page.names.back();
+}
+```
