@@ -1,0 +1,3 @@
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+1000

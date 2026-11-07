@@ -1,0 +1,25 @@
+--- INNER ALL: merge join is selected, no runtime filter ---
+        Algorithm: FullSortingMergeJoin
+--- LEFT SEMI: not supported by the merge algorithm, hash with a runtime filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- LEFT ANTI: not supported by the merge algorithm, hash with a runtime filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- Earlier `default` and `auto` win before `sorted_merge`, with a runtime filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- Earlier `partial_merge` wins before `sorted_merge` ---
+        Algorithm: PartialMergeJoin
+--- Unsupported earlier `partial_merge` falls through to `hash` with a runtime filter ---
+        Algorithm: HashJoin
+            BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- Results are the same as with plain `hash` ---
+1000
+1000
+1000
+1000
+99000
+99000

@@ -1,0 +1,7 @@
+local_no_runtime_filter	1
+local_hash_has_runtime_filter	1
+full_sorting_merge_before_sorted_merge_has_runtime_filter	1
+parallel_replicas_hash_has_runtime_filter	1
+parallel_replicas_plain_hash_has_runtime_filter	1
+8000	54988000
+8000	54988000

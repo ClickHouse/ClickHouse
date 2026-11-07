@@ -1,6 +1,7 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/MergeJoin.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -213,6 +214,21 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_gra
         (join_algorithm == JoinAlgorithm::GRACE_HASH && can_run_grace_hash && join_strictness != JoinStrictness::Asof);
 }
 
+/// Same as `supportsRuntimeFilter`, but also requires that `tryCreateJoin` can actually build the algorithm
+/// for this join. Without a spill threshold `grace_hash` is not runnable and is skipped in favour of the next
+/// listed algorithm, so it must not stop the scan of the preference list, nor be the reason to plant a filter
+/// (planting erases every other algorithm and would leave a standalone `grace_hash` that refuses to run).
+static bool supportsRuntimeFilterAndIsRunnable(JoinAlgorithm join_algorithm, const JoinStepLogical & join_step, bool can_run_grace_hash)
+{
+    if (!supportsRuntimeFilter(join_algorithm, can_run_grace_hash, join_step.getJoinOperator().strictness))
+        return false;
+
+    if (join_algorithm == JoinAlgorithm::GRACE_HASH && join_step.isGraceHashJoinSkipped())
+        return false;
+
+    return true;
+}
+
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
 /// identical across the two Auto-PR plan builds (single-replica and parallel-replicas), so their
 /// plans hash equally with no special-casing.
@@ -328,7 +344,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
         /// A runtime filter would drop `full_sorting_merge`, which the join order optimizer chose for sorted inputs.
         join_step->getPlannedAlgorithm() != JoinAlgorithm::FULL_SORTING_MERGE &&
-        std::ranges::any_of(join_algorithms, supports_runtime_filter);
+        std::ranges::any_of(join_algorithms,
+            [&](auto algorithm) { return supportsRuntimeFilterAndIsRunnable(algorithm, *join_step, can_run_grace_hash); });
 
     if (!can_use_runtime_filter)
         return false;
@@ -339,28 +356,101 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
+    /// The suppression flag records only the latest decision: a join re-visited because of it (see
+    /// `optimizeTree`) that now gets its filter must not be visited again, or every later re-run would
+    /// plant one more `BuildRuntimeFilterStep` per key with a fresh rendezvous key.
+    join_step->resetRuntimeFilterSuppressedForSortedMerge();
+
+    const auto is_sorted_merge = [](JoinAlgorithm algorithm)
+    {
+        return algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE;
+    };
+    /// `sorted_merge` / `parallel_sorted_merge` are selectable only when the join inputs can be read in the
+    /// order of the join keys. The predicate is memoized on the step, and `buildPhysicalJoin` uses the same
+    /// one, so this pass and the algorithm selection cannot disagree.
+    const auto sorted_merge_is_selectable = [&]
+    {
+        return optimization_settings.read_in_order && join_step->inputsCanBeReadInJoinKeyOrder(node);
+    };
+
     /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
     /// `full_sorting_merge`: unlike other strictnesses, `HashJoin` can't run every `ASOF` join (narrower column
     /// types, no spill). Skip the filter if pruning would change the algorithm actually chosen; the algorithms
-    /// excluded below never run `ASOF`, so they fall through regardless of list order.
+    /// excluded below never run `ASOF`, so they fall through regardless of list order. So does a
+    /// `sorted_merge` / `parallel_sorted_merge` whose inputs cannot be read in the join key order.
     if (join_operator.strictness == JoinStrictness::Asof)
     {
         const auto first_candidate = std::ranges::find_if(
             join_algorithms,
-            [](JoinAlgorithm algorithm)
+            [&](JoinAlgorithm algorithm)
             {
+                if (is_sorted_merge(algorithm))
+                    return sorted_merge_is_selectable();
                 return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
                     && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
                     && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
             });
-        if (first_candidate == join_algorithms.end()
-            || *first_candidate != JoinAlgorithm::HASH)
+        if (first_candidate == join_algorithms.end())
+            return false;
+        if (is_sorted_merge(*first_candidate))
+        {
+            /// See the suppression below: the merge join wins, and it cannot use a runtime filter.
+            join_step->setRuntimeFilterSuppressedForSortedMerge();
+            return false;
+        }
+        if (*first_candidate != JoinAlgorithm::HASH)
             return false;
     }
 
     /// Sometimes cross join can be represented by inner join without expressions
     if (join_operator.expression.empty())
         return false;
+
+    /// A `sorted_merge` / `parallel_sorted_merge` listed before the first runtime-filter-compatible
+    /// algorithm wins the selection when the join inputs can be read in the order of the join keys, and a
+    /// merge join cannot use a runtime filter (it reads both sides concurrently, so the probe side would
+    /// wait forever on a filter that is only complete when the build side is fully read). Planting the
+    /// filter would also erase the merge algorithms from the list below, silently overriding the
+    /// priority order the user asked for - the defining feature of these two algorithms. When the inputs
+    /// cannot be read in order, those algorithms are not selectable anyway, so the filter (and the erase)
+    /// stays.
+    ///
+    /// A list without either sorted-merge variant keeps the runtime-filter policy it had before these
+    /// algorithms existed: e.g. `partial_merge,hash` still gets its filter, and the filter removes `partial_merge`.
+    const bool has_sorted_merge_algorithm = std::ranges::any_of(join_algorithms, is_sorted_merge);
+    if (has_sorted_merge_algorithm)
+    {
+        for (auto algorithm : join_algorithms)
+        {
+            if (supportsRuntimeFilterAndIsRunnable(algorithm, *join_step, can_run_grace_hash))
+                break;
+
+            /// `partial_merge` is a merge algorithm too. If it is supported and precedes
+            /// `sorted_merge` / `parallel_sorted_merge`, it wins algorithm selection and cannot use a
+            /// runtime filter.
+            if (algorithm == JoinAlgorithm::PARTIAL_MERGE
+                && join_step->isPartialMergeJoinSupported())
+                return false;
+
+            /// Unlike the sorted-merge algorithms below, these algorithms may be selected without
+            /// exploiting the input order. If one precedes `sorted_merge` / `parallel_sorted_merge`, it
+            /// wins algorithm selection, so the runtime filter must remain enabled for that join.
+            if (algorithm == JoinAlgorithm::DEFAULT
+                || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+                || algorithm == JoinAlgorithm::AUTO
+                || algorithm == JoinAlgorithm::FULL_SORTING_MERGE
+                || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+                break;
+
+            if (is_sorted_merge(algorithm) && sorted_merge_is_selectable())
+            {
+                /// `applyParallelReplicas` may later invalidate the eligibility; the pass is then re-run
+                /// for the joins skipped here, so the fall-through algorithm gets its filter back.
+                join_step->setRuntimeFilterSuppressedForSortedMerge();
+                return false;
+            }
+        }
+    }
 
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
     /// Planning and pipeline overhead outweighs any saving on a tiny probe.

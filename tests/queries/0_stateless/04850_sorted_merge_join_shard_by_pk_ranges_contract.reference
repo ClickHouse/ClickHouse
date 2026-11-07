@@ -1,0 +1,5 @@
+sorted_merge_stays_single_stream	1
+sorted_merge_runs_merge_join	1
+parallel_sorted_merge_sharded	1
+full_sorting_merge_sharded	1
+results_agree	1

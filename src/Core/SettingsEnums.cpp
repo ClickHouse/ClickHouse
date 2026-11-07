@@ -59,6 +59,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"parallel_full_sorting_merge", JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE},
+     {"sorted_merge",         JoinAlgorithm::SORTED_MERGE},
+     {"parallel_sorted_merge", JoinAlgorithm::PARALLEL_SORTED_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH},
      {"ie_join",              JoinAlgorithm::IE_JOIN}})
 

@@ -1,0 +1,16 @@
+--- hash ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- sorted_merge,hash: unsorted inputs, hash with a runtime filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- parallel_sorted_merge,hash: unsorted inputs, hash with a runtime filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- sorted_merge,hash: sorted inputs, merge join without a runtime filter ---
+        Algorithm: FullSortingMergeJoin
+--- Results are the same ---
+5895000
+5895000
+5895000
+5895000

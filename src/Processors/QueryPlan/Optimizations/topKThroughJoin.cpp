@@ -117,8 +117,9 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// `FullSortingMergeJoin` explicitly (mode 2). For
 /// `JoinStepLogical` the algorithm is chosen later from `JoinSettings::join_algorithms`,
 /// so we conservatively flag any configured `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` /
-/// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` (the parallel variant
-/// physicalizes to the same `FullSortingMergeJoin` with the same pre-JOIN sort).
+/// `FULL_SORTING_MERGE` / `PARALLEL_FULL_SORTING_MERGE` / `SORTED_MERGE` /
+/// `PARALLEL_SORTED_MERGE` (all the merge variants physicalize to the same
+/// `FullSortingMergeJoin` with the same pre-JOIN sort).
 /// A physical `PartialMergeJoin` can be pinned to the order-preserving probe for
 /// INNER/LEFT ANY/ALL joins, but whether the pin applies depends on physical-level
 /// details, so the logical branch stays fail-closed.
@@ -152,7 +153,9 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
             return a == JoinAlgorithm::PARTIAL_MERGE
                 || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
                 || a == JoinAlgorithm::FULL_SORTING_MERGE
-                || a == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE;
+                || a == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE
+                || a == JoinAlgorithm::SORTED_MERGE
+                || a == JoinAlgorithm::PARALLEL_SORTED_MERGE;
         });
     }
     /// Unknown step kind - be conservative.
