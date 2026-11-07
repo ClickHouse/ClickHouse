@@ -4,6 +4,8 @@ SELECT STRING_AGG(DISTINCT x, ', ') FROM values('x String', 'a', 'b', 'a');
 SELECT string_agg(DISTINCT x, '-'), group_concat(DISTINCT x, '-'), groupConcat(DISTINCT x, '-') FROM values('x String', 'a', 'b', 'a');
 SELECT STRING_AGG(x, ', ') FILTER (WHERE x != 'b') FROM values('x String', 'a', 'b', 'a', 'c');
 SELECT STRING_AGG(DISTINCT x, ', ') FILTER (WHERE x != 'b') FROM values('x String', 'a', 'b', 'a', 'c');
+SELECT STRING_AGG(DISTINCT x, NULL) FROM values('x String', 'a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT STRING_AGG(x, NULL) FILTER (WHERE x != 'b') FROM values('x String', 'a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT STRING_AGG(DISTINCT x, ', ') OVER () FROM values('x String', 'a', 'b', 'a');
 SELECT groupConcat(',', 2)(DISTINCT x, '/') AS s, s = groupConcat('/', 2)(DISTINCT x), length(s) FROM values('x String', 'aa', 'bb', 'cc');
 

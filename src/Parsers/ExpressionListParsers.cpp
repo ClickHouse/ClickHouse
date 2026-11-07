@@ -1294,8 +1294,8 @@ public:
             /// DISTINCT and FILTER rename the function, after which the analyzer does not recognize the separator argument.
             Expected filter_expected;
             if (allow_function_parameters
-                && (has_distinct || ParserKeyword(Keyword::FILTER).checkWithoutMoving(pos, filter_expected))
-                && isGroupConcatWithSeparator(function_name, elements))
+                && isGroupConcatWithSeparator(function_name, elements)
+                && (has_distinct || ParserKeyword(Keyword::FILTER).checkWithoutMoving(pos, filter_expected)))
             {
                 if (!parameters)
                     parameters = make_intrusive<ASTExpressionList>();
