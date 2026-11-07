@@ -2020,8 +2020,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         {
             /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
               * but LIMIT is specified, and limit + offset < max_block_size,
-              * then as the block size we will use limit + offset (not to read more from the table than requested),
-              * and also set the number of threads to 1.
+              * then set trivial_limit so that the storage can optimize reading.
+              * The actual block_size and num_streams reduction is done in ReadFromMergeTree::initializePipeline,
+              * where lightweight deletes can disable it. `arrayJoin` still shrinks the block size here,
+              * because the LIMIT does not bound source rows (#82279).
               */
             /// Use the same effective-filter checks as the row-policy / additional-filter
             /// planning further down: the trivial-LIMIT optimization must be disabled
@@ -2034,27 +2036,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             {
                 const bool has_array_join = hasFunctionNode(select_query_info.query_tree->as<QueryNode &>().getProjectionNode(), "arrayJoin");
                 const bool shrink_block = max_block_size_limited < max_block_size;
-                if (shrink_block)
+                if (shrink_block && has_array_join)
                 {
                     /// With `arrayJoin` the source cannot stop at the LIMIT, so over a long run of empty arrays it streams
                     /// every row anyway, and one-row blocks make that hundreds of times slower than the default block.
                     /// Keep a few hundred rows per block: still a small read, and the empty prefix stays cheap.
+                    /// This path does not set `trivial_limit`, so it stays independent of the lightweight-delete guard.
                     constexpr UInt64 min_block_size_above_array_join = 256;
-                    if (has_array_join)
-                        max_block_size = std::min(max_block_size, std::max(max_block_size_limited, min_block_size_above_array_join));
-                    else
-                        max_block_size = std::max<UInt64>(1, max_block_size_limited);
+                    max_block_size = std::min(max_block_size, std::max(max_block_size_limited, min_block_size_above_array_join));
                 }
 
                 /// With `arrayJoin` the LIMIT does not bound the source rows, so only the block size shrinks (#82279).
+                /// Otherwise defer block_size / num_streams reduction until `ReadFromMergeTree::initializePipeline`.
                 if (!has_array_join)
                 {
                     max_source_rows = max_block_size_limited;
-                    if (shrink_block)
-                    {
-                        max_streams = 1;
-                        max_threads_execute_query = 1;
-                    }
 
                     if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
                     {
