@@ -9,6 +9,8 @@
 #include <Access/ContextAccess.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
@@ -37,8 +39,43 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
 }
+namespace FailPoints
+{
+    extern const char self_authentication_before_identity_lookup[];
+    extern const char self_authentication_before_update[];
+}
 namespace
 {
+    /// Keep new account-property fields here so both self-service privileges reject them.
+    bool hasAccountPropertyChanges(const ASTCreateUserQuery & query)
+    {
+        return query.new_name
+            || query.hosts || query.add_hosts || query.remove_hosts
+            || query.roles || query.default_roles
+            || query.settings || query.alter_settings
+            || query.grantees || query.default_database
+            || query.global_valid_until;
+    }
+
+    /// Whether the authentication changes are covered by `ALTER USER SELF AUTHENTICATION`.
+    bool isAuthenticationOnlyAlter(const ASTCreateUserQuery & query)
+    {
+        if (!query.alter || query.attach)
+            return false;
+
+        /// Clause presence requires full `ALTER_USER`, including empty clauses and `NONE`.
+        if (hasAccountPropertyChanges(query))
+            return false;
+
+        for (const auto & method : query.authentication_methods)
+        {
+            if (method->valid_until)
+                return false;
+        }
+
+        return !query.authentication_methods.empty() || query.reset_authentication_methods_to_new;
+    }
+
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
@@ -292,8 +329,7 @@ namespace
         /// The user-level `VALID UNTIL` (`global_valid_until`) is rejected because it re-dates the
         /// pre-existing authentication methods of the account too. A deadline which belongs to the added
         /// method itself lives in `ASTAuthenticationData::valid_until` and is what `CREATE TOKEN` uses.
-        if (query.new_name || query.hosts || query.add_hosts || query.remove_hosts || query.roles || query.default_roles
-            || query.settings || query.alter_settings || query.grantees || query.default_database || query.global_valid_until)
+        if (hasAccountPropertyChanges(query))
             return false;
 
         const auto names = query.names->toStrings();
@@ -309,43 +345,75 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
-    /// A session whose access rights are limited by the GRANTS clause of an authentication method must not
-    /// mint credentials for an existing user. The GRANTS clause of a new authentication method is intersected
+    const Strings names = query.names->toStrings();
+    std::optional<UUID> self_service_user_id;
+
+    /// A session whose access rights are limited by the `GRANTS` clause of an authentication method must not
+    /// change credentials for an existing user. The `GRANTS` clause of a new authentication method is intersected
     /// at login with the *user's* full access rights, not with the limit of the session which created the
-    /// method, so such a session could otherwise issue itself a token wider than itself. Deny it (fail-close),
-    /// as with role administration. `CREATE USER` is not affected: a newly created user has no access rights,
+    /// method, so such a session could otherwise issue itself a token wider than itself. Resetting methods
+    /// can also widen subsequent authentication by deleting a restrictive method matching the same password.
+    /// Deny both, as with role administration. `CREATE USER` is not affected: a newly created user has no access rights,
     /// so a limit placed on its authentication methods cannot hand out more than nothing.
-    if (query.alter && !query.authentication_methods.empty() && access->getParams().authentication_grants)
+    if (query.alter
+        && (!query.authentication_methods.empty() || query.reset_authentication_methods_to_new)
+        && access->getParams().authentication_grants)
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Not enough privileges. "
             "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
-            "and such sessions cannot add authentication methods to an existing user");
+            "and such sessions cannot change authentication methods of an existing user");
 
-    const bool self_service_authentication_method_addition
-        = isSelfServiceAuthenticationMethodAddition(query, getContext()->getUserName());
-
-    /// `CREATE USER OR REPLACE` overwrites an existing user - its authentication methods, its granted
-    /// roles and its settings - so it is a drop followed by a create and requires the privileges of both.
-    /// With `CREATE USER` alone its holder could reset the password of any user, including a privileged
-    /// one, and then log in as that user. `DROP USER` is required whether or not the user currently
-    /// exists, mirroring `REPLACE TABLE`, so that the check does not reveal which users exist either.
-    AccessFlags required_access = query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER;
-    if (query.or_replace)
-        required_access |= AccessType::DROP_USER;
-
-    for (const auto & name : query.names->toStrings())
+    /// Authorize every target before credential conversion, cluster dispatch, or storage updates.
+    /// `IF EXISTS` and storage selection do not bypass these checks.
+    if (query.alter)
     {
-        /// `CREATE TOKEN` is an alternative to `ALTER USER` here, not an addition to it: check it only when
-        /// `ALTER USER` is missing, so that the error message of an unprivileged user names the privilege
-        /// which is actually meant for this statement.
-        if (self_service_authentication_method_addition && !access->isGranted(AccessType::ALTER_USER, name))
-            access->checkAccess(AccessType::CREATE_TOKEN);
-        else
-            access->checkAccess(required_access, name);
-    }
+        const auto authenticated_user_id = access->getUserID();
+        const auto authenticated_user_name = access->getUserName();
+        const bool self_service = isAuthenticationOnlyAlter(query)
+            && names.size() == 1 && query.storage_name.empty()
+            && authenticated_user_id && names.front() == authenticated_user_name;
+        const bool token_addition = isSelfServiceAuthenticationMethodAddition(query, authenticated_user_name);
+        const auto rights = access->getAccessRightsWithImplicit();
+        for (const auto & name : names)
+        {
+            /// Prefer full administration, then self-service rotation, then upstream token addition.
+            /// These select a privilege; the throwing check still enforces session restrictions.
+            if (rights->isGranted(AccessType::ALTER_USER, name))
+                access->checkAccess(AccessType::ALTER_USER, name);
+            else if (self_service && (rights->isGranted(AccessType::ALTER_USER_SELF_AUTHENTICATION) || !token_addition))
+                access->checkAccess(AccessType::ALTER_USER_SELF_AUTHENTICATION);
+            else if (token_addition)
+                access->checkAccess(AccessType::CREATE_TOKEN);
+            else
+                access->checkAccess(AccessType::ALTER_USER, name);
+        }
 
-    if (query.new_name && !query.alter)
-        access->checkAccess(AccessType::CREATE_USER, query.new_name->toString());
+        if (self_service)
+        {
+            FailPointInjection::pauseFailPoint(FailPoints::self_authentication_before_identity_lookup);
+            /// Resolve after authorization. `IF EXISTS` may skip a missing target, but a recreated
+            /// account must match the authenticated ID. Retain that ID through the storage update.
+            self_service_user_id = query.if_exists
+                ? access_control.find<User>(names.front())
+                : std::optional<UUID>{access_control.getID<User>(names.front())};
+            if (!self_service_user_id)
+                return {};
+            if (*self_service_user_id != *authenticated_user_id)
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Self-service authentication requires the authenticated account");
+        }
+    }
+    else
+    {
+        /// `CREATE USER OR REPLACE` overwrites an existing account, so it requires both `CREATE USER` and `DROP USER`.
+        AccessFlags required_access = AccessType::CREATE_USER;
+        if (query.or_replace)
+            required_access |= AccessType::DROP_USER;
+        for (const auto & name : names)
+            access->checkAccess(required_access, name);
+
+        if (query.new_name)
+            access->checkAccess(AccessType::CREATE_USER, query.new_name->toString());
+    }
 
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
@@ -470,7 +538,6 @@ BlockIO InterpreterCreateUserQuery::execute()
         storage = storage_ptr.get();
     }
 
-    Strings names = query.names->toStrings();
     if (query.alter)
     {
         std::optional<RolesOrUsersSet> grantees_from_query;
@@ -479,6 +546,11 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
+            /// Check inside the storage callback, including retries, before applying changes.
+            /// `updateUserFromQueryImpl` must not rename the account back to a stale query name.
+            if (self_service_user_id && entity->getName() != names.front())
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Self-service authentication target changed during alteration");
+
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, authentication_methods, {}, roles_from_query, default_roles_from_query, settings_from_query, grantees_from_query,
@@ -489,8 +561,12 @@ BlockIO InterpreterCreateUserQuery::execute()
             return updated_user;
         };
 
-        auto ids = query.if_exists ? storage->find<User>(names) : storage->getIDs<User>(names);
+        /// Keep the self-service update bound to the verified ID, including the constraint preflight.
+        const auto ids = self_service_user_id ? std::vector<UUID>{*self_service_user_id}
+            : (query.if_exists ? storage->find<User>(names) : storage->getIDs<User>(names));
         getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
+        if (self_service_user_id)
+            FailPointInjection::pauseFailPoint(FailPoints::self_authentication_before_update);
         if (query.if_exists)
             access_control.tryUpdate(ids, update_func);
         else
