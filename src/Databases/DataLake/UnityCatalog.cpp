@@ -268,13 +268,12 @@ bool UnityCatalog::tryGetTableMetadata(
                         const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                         std::string name = column_json->getValue<String>("name");
                         auto is_nullable = column_json->getValue<bool>("nullable");
-                        auto type_json_str = column_json->get("type_json").extract<String>();
+                        const auto type_json_str = column_json->get("type_json").extract<String>();
                         DB::DataTypePtr data_type;
                         /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
                         if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                         {
-                            type_json_str.pop_back();
-                            String type_name = type_json_str.substr(1);
+                            String type_name = type_json_str.substr(1, type_json_str.size() - 2);
                             auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
                             data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                         }
