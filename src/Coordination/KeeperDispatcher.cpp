@@ -246,6 +246,11 @@ void KeeperDispatcher::shutdownBeforeConnectionsFinish()
             signalShutdown();
             waitForFourLetterCommands();
 
+            /// While RAFT is still fully operational, so that the rest of the cluster
+            /// does not have to wait for an election timeout to get a new leader.
+            if (server && keeper_context && !keeper_context->isShutdownCalled())
+                server->yieldLeadershipBeforeShutdown();
+
             if (!keeper_context || !keeper_context->setShutdownCalled())
                 return;
 
