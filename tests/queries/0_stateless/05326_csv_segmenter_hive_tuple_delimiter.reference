@@ -1,0 +1,6 @@
+hive_comma_apostrophe	0	a\'b\nc\nd\ne
+hive_comma_apostrophe	0	foo,\'x
+count_hive_comma_apostrophe	0	2
+hive_comma_apostrophe	1	a\'b\nc\nd\ne
+hive_comma_apostrophe	1	foo,\'x
+count_hive_comma_apostrophe	1	2

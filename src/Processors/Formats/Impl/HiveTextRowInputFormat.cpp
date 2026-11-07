@@ -78,9 +78,12 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory)
     factory.registerFileSegmentationEngineCreator(
         "HiveText",
         [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine {
-            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            /// The CSV segmenter must see the Hive field delimiter, not the CSV one.
+            FormatSettings segmenter_settings = settings;
+            segmenter_settings.csv.delimiter = settings.hive_text.fields_delimiter;
+            return [segmenter_settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
             {
-                return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows, settings);
+                return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows, segmenter_settings);
             };
         });
 }
