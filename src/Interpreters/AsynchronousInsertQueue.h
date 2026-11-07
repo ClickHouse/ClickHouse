@@ -296,6 +296,9 @@ private:
 
         OptionalTimePoint last_insert_time TSA_GUARDED_BY(mutex);
         std::chrono::milliseconds busy_timeout_ms TSA_GUARDED_BY(mutex) {};
+        /// The last batch flushed by its deadline had a single entry, whose client waits for the flush.
+        /// Then waiting did not batch anything, and the next insert into an idle shard is flushed at once.
+        bool last_batch_waited_alone TSA_GUARDED_BY(mutex) = false;
     };
 
     /// Times of the two most recent queue flushes.

@@ -110,6 +110,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool wait_for_async_insert;
 }
 
 namespace ErrorCodes
@@ -821,16 +822,37 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
             return *TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time) + max_ms < now && *flush_time_points.first + max_ms < *flush_time_points.second;
         };
 
+        /// A client that waits for each insert sends the next one only after the previous one is flushed, so the busy timeout
+        /// never batches its inserts and only adds latency, and the gap between them stays short because of this wait.
+        /// So flush at once if the last batch waited for its deadline alone, and the shard is idle: nothing is queued
+        /// besides this insert, and every earlier insert into the shard came before the last flush finished.
+        /// Concurrent clients make the shard busy, so their inserts wait and are batched as before.
+        auto batching_is_not_happening = [&shard, &settings, &flush_time_points, inserted]() -> bool
+        {
+            if (!inserted || !settings[Setting::async_insert_use_adaptive_busy_timeout] || !settings[Setting::wait_for_async_insert])
+                return false;
+
+            const auto & last_insert_time = TSA_SUPPRESS_WARNING_FOR_READ(shard.last_insert_time);
+            if (!TSA_SUPPRESS_WARNING_FOR_READ(shard.last_batch_waited_alone) || TSA_SUPPRESS_WARNING_FOR_READ(shard.queue).size() != 1
+                || !last_insert_time || !flush_time_points.second)
+                return false;
+
+            return *last_insert_time < *flush_time_points.second;
+        };
+
         /// Here we check whether we have hit the limit on the maximum data size in the buffer or
         /// if the elapsed time since the last insert exceeds the maximum busy wait timeout.
         /// We also use the limit settings from the query context.
         /// This works because queries with the same set of settings are already grouped together.
-        if (!flush_stopped && (has_enough_bytes || has_enough_queries || max_busy_timeout_exceeded()))
+        if (!flush_stopped && (has_enough_bytes || has_enough_queries || max_busy_timeout_exceeded() || batching_is_not_happening()))
         {
             LOG_TRACE(log, "Scheduling async insert processing job because {}",
                       has_enough_bytes ? "enough bytes accumulated" :
                       has_enough_queries ? "enough queries accumulated" :
-                      "maximum busy wait timeout exceeded");
+                      max_busy_timeout_exceeded() ? "maximum busy wait timeout exceeded" :
+                      "the previous insert was not batched with any other");
+            if (data->entries.size() > 1)
+                shard.last_batch_waited_alone = false;
             data->timeout_ms = Milliseconds::zero();
             data->trackFlush(shard.in_flight_flushes);
             data_to_process = std::move(data);
@@ -1155,6 +1177,9 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
                     MemoryTrackerBlockerInThread lock_memory_tracker;
 
                     shard.iterators.erase(it->second.key.hash);
+
+                    shard.last_batch_waited_alone
+                        = it->second.data->entries.size() == 1 && (*it->second.key.settings)[Setting::wait_for_async_insert];
 
                     it->second.data->trackFlush(shard.in_flight_flushes);
                     entries_to_flush.emplace_back(std::move(it->second));
