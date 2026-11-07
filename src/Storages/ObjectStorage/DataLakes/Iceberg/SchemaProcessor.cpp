@@ -624,7 +624,7 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser, bool time_as_int64)
 {
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
@@ -644,7 +644,11 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     if (type_name == f_date)
         return std::make_shared<DataTypeDate32>();
     if (type_name == f_time)
-        return std::make_shared<DataTypeInt64>();
+    {
+        if (time_as_int64)
+            return std::make_shared<DataTypeInt64>();
+        return std::make_shared<DataTypeTime64>(6);
+    }
     if (type_name == f_timestamp)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
@@ -761,7 +765,7 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     if (type.isString())
     {
         const String & type_name = type.extract<String>();
-        auto data_type = getSimpleType(type_name, allow_geo_parser);
+        auto data_type = getSimpleType(type_name, allow_geo_parser, time_as_int64);
         return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
     }
 
