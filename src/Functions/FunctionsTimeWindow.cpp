@@ -139,6 +139,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// At the zero time, a hop window longer than its hop would start before the epoch.
+    bool canBeExecutedOnDefaultArguments() const override { return type != HOP && type != HOP_START && type != HOP_END; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
