@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
@@ -24,6 +25,21 @@ extern const int LOGICAL_ERROR;
 
 namespace DB
 {
+
+DataTypePtr getArgumentTypeForMonotonicity(const ActionsDAG::Node & node, size_t pos)
+{
+    const auto & type = node.children[pos]->result_type;
+    if (pos == 0 && node.children.size() == 2 && node.children[1]->column)
+    {
+        const auto & time_zone = *node.children[1];
+        auto type_with_time_zone = getDateTimeTypeWithTimeZoneArgument(
+            *node.function_base, *type, {time_zone.column, time_zone.result_type, time_zone.result_name});
+        if (type_with_time_zone && *type_with_time_zone)
+            return *type_with_time_zone;
+    }
+    return type;
+}
+
 /// A NULL constant argument makes the default implementation for NULLs return a constant NULL, which is not strictly monotonic.
 static bool hasNullConstantArgument(const ActionsDAG::Node & node)
 {
@@ -259,12 +275,17 @@ MatchedTrees::Matches matchTrees(
                 {
                     size_t num_const_args = 0;
                     const ActionsDAG::Node * monotonic_child = nullptr;
-                    for (const auto * child : frame.node->children)
+                    size_t monotonic_child_pos = 0;
+                    for (size_t i = 0; i < frame.node->children.size(); ++i)
                     {
+                        const auto * child = frame.node->children[i];
                         if (child->column)
                             ++num_const_args;
                         else
+                        {
                             monotonic_child = child;
+                            monotonic_child_pos = i;
+                        }
                     }
 
                     if (monotonic_child && num_const_args + 1 == frame.node->children.size())
@@ -272,7 +293,8 @@ MatchedTrees::Matches matchTrees(
                         const auto & child_match = matches[monotonic_child];
                         if (child_match.node)
                         {
-                            auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, {}, {});
+                            auto info = frame.node->function_base->getMonotonicityForRange(
+                                *getArgumentTypeForMonotonicity(*frame.node, monotonic_child_pos), {}, {});
                             if (info.is_monotonic)
                             {
                                 MatchedTrees::Monotonicity monotonicity;
@@ -381,7 +403,7 @@ static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicCha
         size_t pos = *it;
         ++it;
 
-        const auto & type = node->children[pos]->result_type;
+        const auto type = getArgumentTypeForMonotonicity(*node, pos);
         const Field field{};
         auto monotonicity = node->function_base->getMonotonicityForRange(*type, field, field);
         if (!monotonicity.is_monotonic)
