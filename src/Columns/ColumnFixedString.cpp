@@ -1,5 +1,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/StringPrefixKey.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 
@@ -212,14 +213,17 @@ struct ColumnFixedString::ComparatorBase
 void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
+    auto sort_asc = makePrefixKeySort<true>(prefixKeyGetter(*this));
+    auto sort_desc = makePrefixKeySort<false>(prefixKeyGetter(*this));
+
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), sort_asc, sort_asc);
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorAscendingStable(*this), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this), sort_asc, sort_asc);
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), sort_desc, sort_desc);
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this), sort_desc, sort_desc);
 }
 
 size_t ColumnFixedString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
@@ -257,15 +261,17 @@ void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection dire
                                     size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
     auto comparator_equal = ComparatorEqual(*this);
+    auto sort_asc = makePrefixKeySort<true>(prefixKeyGetter(*this));
+    auto sort_desc = makePrefixKeySort<false>(prefixKeyGetter(*this));
 
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, sort_asc, sort_asc);
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, sort_asc, sort_asc);
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, sort_desc, sort_desc);
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
-        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, sort_desc, sort_desc);
 }
 
 size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
