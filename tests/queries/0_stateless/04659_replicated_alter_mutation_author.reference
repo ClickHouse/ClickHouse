@@ -1,0 +1,5 @@
+(MODIFY COLUMN `value` LowCardinality(String))	1	1
+(MATERIALIZE INDEX idx_value)	1	1
+(MODIFY COLUMN `value` LowCardinality(String))	1
+(MATERIALIZE INDEX idx_value)	1
+(MODIFY COLUMN `value` LowCardinality(String))	1	
