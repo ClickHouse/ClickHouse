@@ -767,7 +767,20 @@ void generateManifestFile(
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
 
-        if (per_file_fresh_statistics && effective_statistics && !effective_statistics->getSplitOffsets().empty()
+        if (!per_file_statistics.empty())
+        {
+            /// Manifest-only rewrite: carry over the source file's split offsets verbatim.
+            const auto & split_offsets = per_file_statistics[file_idx].split_offsets;
+            if (split_offsets.has_value() && data_file.hasField(Iceberg::f_split_offsets))
+            {
+                auto & split_offsets_field = data_file.field(Iceberg::f_split_offsets);
+                split_offsets_field.selectBranch(1);
+                auto & split_offsets_array = split_offsets_field.value<avro::GenericArray>().value();
+                for (Int64 offset : *split_offsets)
+                    split_offsets_array.push_back(avro::GenericDatum(offset));
+            }
+        }
+        else if (per_file_fresh_statistics && effective_statistics && !effective_statistics->getSplitOffsets().empty()
             && data_file.hasField(Iceberg::f_split_offsets))
         {
             auto & split_offsets_field = data_file.field(Iceberg::f_split_offsets);

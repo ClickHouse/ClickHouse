@@ -4,6 +4,8 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
@@ -21,6 +23,8 @@
 #include <algorithm>
 #include <limits>
 
+#include <Poco/String.h>
+
 namespace DB::ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -29,6 +33,77 @@ extern const int LOGICAL_ERROR;
 
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+/// The Avro primitive type of the manifest `partition` field of a partition field with transform `transform` of a source
+/// column of the Iceberg type `source_type`, as the Iceberg spec requires it. Empty when unknown.
+String getRequiredAvroPartitionType(const String & transform_name, const String & source_type)
+{
+    String transform = Poco::toLower(transform_name);
+    String result_type = source_type;
+    if (transform.starts_with("bucket") || transform == "year" || transform == "month" || transform == "day" || transform == "hour")
+        result_type = "int";
+    else if (transform != "identity" && !transform.starts_with("truncate") && transform != "void")
+        return {};
+
+    if (result_type == "boolean")
+        return "boolean";
+    if (result_type == "int" || result_type == "date")
+        return "int";
+    if (result_type == "long" || result_type == "time" || result_type == "timestamp" || result_type == "timestamptz"
+        || result_type == "timestamp_ns" || result_type == "timestamptz_ns")
+        return "long";
+    if (result_type == "float")
+        return "float";
+    if (result_type == "double")
+        return "double";
+    if (result_type == "string")
+        return "string";
+    if (result_type == "binary")
+        return "bytes";
+    if (result_type == "uuid" || result_type.starts_with("fixed") || result_type.starts_with("decimal"))
+        return "fixed";
+    return {};
+}
+
+/// The Avro primitive type `getAvroType` declares for `type`.
+String getDeclaredAvroPartitionType(const DataTypePtr & type)
+{
+    auto avro_type = getAvroType(removeNullable(type), /* field_id */ 0);
+    if (avro_type.type() == typeid(Poco::JSON::Object::Ptr))
+        return avro_type.extract<Poco::JSON::Object::Ptr>()->getValue<String>("type");
+    return avro_type.convert<String>();
+}
+
+/// The type to write the values of a partition field with, derived from the type `partitioner_type` its transform
+/// returns, such that `getAvroType` declares the Avro type the Iceberg spec requires and the manifest-list partition
+/// summary encodes its bounds the same way. Null when there is no such type.
+DataTypePtr getManifestPartitionType(const DataTypePtr & partitioner_type, const String & transform, const String & source_type)
+{
+    String required = getRequiredAvroPartitionType(transform, source_type);
+    if (required.empty() || !canGetAvroType(partitioner_type))
+        return nullptr;
+
+    String declared = getDeclaredAvroPartitionType(partitioner_type);
+    if (declared == required)
+        return partitioner_type;
+
+    /// Integer partition values are written as Avro `int` or `long`, which share their encoding, but the bounds of the
+    /// partition summary take their width from the type: write them as the integer type of the Iceberg partition type.
+    auto nested = removeNullable(partitioner_type);
+    if (!isInteger(nested) || isBool(nested) || (required != "int" && required != "long"))
+        return nullptr;
+    DataTypePtr result;
+    if (required == "int")
+        result = std::make_shared<DataTypeInt32>();
+    else
+        result = std::make_shared<DataTypeInt64>();
+    return partitioner_type->isNullable() ? makeNullable(result) : result;
+}
+
+}
 
 DataManifestsRewriter::DataManifestsRewriter(
     Poco::JSON::Object::Ptr metadata_object_,
@@ -120,6 +195,7 @@ void DataManifestsRewriter::collect(
             file.file_size_in_bytes = entry.file_size_in_bytes;
             file.file_format = entry.file_format;
             file.sort_order_id = entry.sort_order_id;
+            file.statistics.split_offsets = entry.split_offsets;
 
             /// Resolve the inherited (null) snapshot id and sequence numbers from the manifest, since EXISTING entries require them.
             file.lineage.added_snapshot_id = entry.parsed_snapshot_id;
@@ -381,41 +457,57 @@ const DataManifestsRewriter::ResolvedPartitionSpec & DataManifestsRewriter::reso
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No Iceberg schema defines all source columns referenced by partition spec {}", spec_id);
 
     auto schema_for_spec = persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
-
-    /// The partition types are derived from `ChunkPartitioner`, which resolves the source columns among the top-level
-    /// fields only, and from the ClickHouse types, which do not tell an Iceberg `binary` from a `string`: a `binary`
-    /// partition value must be written as Avro `bytes`, but would be declared as `string`. Such specs are not rewritten.
     auto schema_fields = schema_for_spec->getArray(f_fields);
-    for (size_t i = 0; i < source_ids.size(); ++i)
+
+    /// The Iceberg type of each partition source column. `ChunkPartitioner` resolves the source columns among the
+    /// top-level fields only, so a nested source column (or a source of a non-primitive type) is not supported.
+    std::vector<String> source_types;
+    for (Int32 source_id : source_ids)
     {
         Poco::JSON::Object::Ptr source_field;
         for (UInt32 j = 0; j < schema_fields->size(); ++j)
         {
-            if (schema_fields->getObject(j)->getValue<Int32>(f_id) == source_ids[i])
+            if (schema_fields->getObject(j)->getValue<Int32>(f_id) == source_id)
             {
                 source_field = schema_fields->getObject(j);
                 break;
             }
         }
-        if (!source_field)
-        {
-            /// A nested source column.
-            resolved.is_supported = false;
-            break;
-        }
-        if (source_field->isObject(f_type))
-            continue;
-        if (source_field->getValue<String>(f_type) == "binary" && !transforms[i].starts_with("bucket") && transforms[i] != "void")
+        if (!source_field || source_field->isObject(f_type))
         {
             resolved.is_supported = false;
-            break;
+            return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
         }
+        source_types.push_back(source_field->getValue<String>(f_type));
     }
-    if (!resolved.is_supported)
-        return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
 
     auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
-    resolved.partition_types = ChunkPartitioner(spec_fields, schema_for_spec->getArray(f_fields), context, shared_sample_block).getResultTypes();
+    DataTypes partitioner_types = ChunkPartitioner(spec_fields, schema_fields, context, shared_sample_block).getResultTypes();
+
+    /// The return types of the transform functions are not the Iceberg partition types: e.g. `icebergBucket` returns
+    /// `UInt32` for the Iceberg `int`, and the identity of a `uuid` or a `binary` column is a `UUID` or a `String`,
+    /// which `getAvroType` declares as `string`. The manifest schema and the bounds of the manifest-list partition
+    /// summary must keep the physical types the Iceberg spec defines for the partition type, so the partition types are
+    /// derived from the Iceberg types, and a spec whose partition values cannot be written that way is not rewritten.
+    for (size_t i = 0; i < partitioner_types.size(); ++i)
+    {
+        auto partition_type = getManifestPartitionType(partitioner_types[i], transforms[i], source_types[i]);
+        if (!partition_type)
+        {
+            LOG_DEBUG(
+                log,
+                "Iceberg data manifests of partition spec {} are not rewritten: partition field {} with transform {} of a source column of type {} cannot be written as {}",
+                spec_id,
+                resolved.partition_columns[i],
+                transforms[i],
+                source_types[i],
+                partitioner_types[i]->getName());
+            resolved.is_supported = false;
+            resolved.partition_types.clear();
+            break;
+        }
+        resolved.partition_types.push_back(std::move(partition_type));
+    }
 
     return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
 }

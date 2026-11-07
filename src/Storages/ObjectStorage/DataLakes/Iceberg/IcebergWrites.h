@@ -55,6 +55,8 @@ struct DataFileColumnStatistics
     std::vector<std::pair<Int32, Int64>> null_value_counts;
     std::vector<std::pair<Int32, String>> lower_bounds;
     std::vector<std::pair<Int32, String>> upper_bounds;
+    /// The `split_offsets` of the data file; readers use them to split the file without reading its footer.
+    std::optional<std::vector<Int64>> split_offsets;
 };
 
 /// Per-file manifest-entry lineage (`added_snapshot_id`, data `sequence_number` and `file_sequence_number`) carried over for a manifest-only rewrite.
