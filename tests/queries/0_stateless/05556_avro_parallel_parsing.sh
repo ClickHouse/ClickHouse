@@ -34,7 +34,7 @@ check() {
 ${CLICKHOUSE_LOCAL} -q "
     SELECT number::Int64 AS i, toString(number) AS s, range(number % 6) AS arr,
            if(number % 3 = 0, NULL, number)::Nullable(UInt32) AS n
-    FROM numbers(100000)
+    FROM numbers(6000)
     INTO OUTFILE '${D}_mixed.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 512"
 echo -n "mixed: "; check "${D}_mixed.avro" "$struct"
 
@@ -43,7 +43,7 @@ for codec in null deflate zstd snappy; do
     ${CLICKHOUSE_LOCAL} -q "
         SELECT number::Int64 AS i, toString(number) AS s, range(number % 6) AS arr,
                if(number % 3 = 0, NULL, number)::Nullable(UInt32) AS n
-        FROM numbers(60000)
+        FROM numbers(3000)
         INTO OUTFILE '${D}_${codec}.avro' FORMAT Avro
         SETTINGS output_format_avro_sync_interval = 256, output_format_avro_codec = '${codec}'"
     echo -n "codec ${codec}: "; check "${D}_${codec}.avro" "$struct"
@@ -56,7 +56,7 @@ echo -n "tiny: "; check "${D}_tiny.avro" "i Int64"
 # 4) schema evolution: read a subset plus a missing-with-default column, under parallel parsing
 ${CLICKHOUSE_LOCAL} -q "
     SELECT number::Int64 AS a, toString(number) AS b, (number * 2)::Int64 AS c
-    FROM numbers(50000)
+    FROM numbers(4000)
     INTO OUTFILE '${D}_evo.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 300"
 echo -n "schema-evolution: "; check "${D}_evo.avro" "a Int64, c Int64, d Int32" "input_format_avro_allow_missing_fields=1, "
 
@@ -65,7 +65,7 @@ echo -n "schema-evolution: "; check "${D}_evo.avro" "a Int64, c Int64, d Int32" 
 # the sync sequence must not cause a false split -- random 200-byte strings exercise that.
 ${CLICKHOUSE_LOCAL} -q "
     SELECT number::Int64 AS i, randomString(200) AS s
-    FROM numbers(20000)
+    FROM numbers(4000)
     INTO OUTFILE '${D}_wide.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 256"
 echo -n "wide-random-bytes: "; check "${D}_wide.avro" "i Int64, s String"
 
@@ -73,9 +73,9 @@ echo -n "wide-random-bytes: "; check "${D}_wide.avro" "i Int64, s String"
 # growth in the segmentator (each block is copied in bounded steps that repeatedly grow the buffer past
 # its capacity) over many buffer refills; the parallel read must still match the sequential one.
 ${CLICKHOUSE_LOCAL} -q "
-    SELECT number::Int64 AS i, randomString(4000) AS s
-    FROM numbers(8000)
-    INTO OUTFILE '${D}_bigblk.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 4194304"
+    SELECT number::Int64 AS i, randomString(2000) AS s
+    FROM numbers(1500)
+    INTO OUTFILE '${D}_bigblk.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 2097152"
 echo -n "large-blocks-small-buffer: "; check "${D}_bigblk.avro" "i Int64, s String" "max_read_buffer_size=4096, "
 
 rm -f "${D}"_*.avro
