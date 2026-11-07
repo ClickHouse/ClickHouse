@@ -59,6 +59,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/MergeTreeIndexAnalyzerNames.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
@@ -3261,10 +3262,19 @@ ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition
     const ContextPtr & query_context,
     bool skip_constant_folding)
 {
-    auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
+    /// Match the primary key not only by the original names of its expressions but also by the
+    /// names the same expressions get after the query's rewrite passes, otherwise a rewritten
+    /// filter expression does not match an expression key (issue #103128). The alternative form
+    /// is computed once, because the factory is invoked per part for constant folding, and not
+    /// at all when there is no filter to analyze.
+    auto alternative_primary_key = std::make_shared<LazyAlternativeKeyExpression>();
+    auto key_condition_factory = [query_context, metadata_snapshot, alternative_primary_key, filter_dag](const ActionsDAG *, const ActionsDAG::Node * predicate)
     {
         ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-        return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+        const bool skip_primary_key_analysis = !query_context->getSettingsRef()[Setting::use_primary_key];
+        return KeyCondition{
+            wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, skip_primary_key_analysis,
+            (skip_primary_key_analysis || !predicate) ? nullptr : alternative_primary_key->get(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getColumns(), filter_dag->predicate, query_context)};
     };
     return std::make_shared<ConditionTemplate<KeyCondition>>(
         std::move(filter_dag), std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
@@ -3370,11 +3380,15 @@ void ReadFromMergeTree::buildIndexes(
         }
         else
         {
-            factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+            /// Match a minmax index not only by the original names of its expressions but also by
+            /// the names the same expressions get after the query's rewrite passes, otherwise a
+            /// rewritten filter expression does not match the index expression (issue #103128).
+            /// The factory computes the alternative form of the key once, because it is invoked
+            /// per part for constant folding.
+            auto condition_factory = std::make_shared<RewriteAwareIndexConditionFactory>(index_helper, metadata_snapshot);
+            factory = [condition_factory, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
             {
-                if (!predicate)
-                    return nullptr;
-                return index_helper->createIndexCondition(predicate, query_context);
+                return condition_factory->create(predicate, query_context);
             };
         }
 

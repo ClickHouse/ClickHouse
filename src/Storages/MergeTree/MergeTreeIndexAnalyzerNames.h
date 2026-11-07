@@ -1,0 +1,125 @@
+#pragma once
+
+#include <memory>
+#include <mutex>
+
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+
+namespace DB
+{
+
+struct IndexDescription;
+struct KeyDescription;
+class ColumnsDescription;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct AlternativeKeyExpression;
+using AlternativeKeyExpressionPtr = std::shared_ptr<const AlternativeKeyExpression>;
+
+class MergeTreeIndexMinMax;
+
+/** Compute the alternative form of the index key: the names the index expressions get after the
+  * query's rewrite passes, applied with the settings of the given query context, together with the
+  * rewritten expressions themselves.
+  *
+  * The index expressions are analyzed when the index description is built, so their column names do
+  * not reflect the rewrites that are applied to the query (e.g. `multiIf` with a single condition is
+  * rewritten to `if` by `optimize_multiif_to_if`, map element access to a subcolumn read). Index
+  * analysis matches filter expressions against index expressions (and their subexpressions) by name,
+  * so without the alternative form a rewritten filter expression does not match the index expression,
+  * and the index is not used (issue #103128).
+  *
+  * The rewrites of the query analyzer (the query tree passes) are reproduced with the settings of
+  * the given query context, against a table on which the source columns are key columns, as they are
+  * in the real table (some passes do not rewrite functions of key columns).
+  *
+  * The rewritten form is used only when it is another name of the stored key, not a different
+  * expression: every constant the analyzer folds with the query's settings must have the same value
+  * as the subexpression of the same name in the stored key expression, and every rewritten key column
+  * must have the same type and read the same storage columns as the original one.
+  *
+  * Returns nullptr when not applicable: the index is on plain columns, no name differs after the
+  * rewrites, or the index expression cannot be analyzed (best effort). Otherwise the result's
+  * `column_names` is parallel to `index.column_names` and `expression` computes the same index
+  * columns in the rewritten form.
+  *
+  * The rewritten form is not used either when one of its names can refer to another column of the
+  * table, `table_columns`: e.g. the rewrite of `m['k']` to the subcolumn `m.key_k` is not applied to the
+  * query when the table has a column `m.key_k`, and the name refers to that column; a subcolumn name
+  * can resolve through another column of the table (`j.m.key_k` through a `JSON` column `j`); and a
+  * rewritten expression can have the name of another column (`if(greater(v, 0), v, 0)`).
+  *
+  * The result is cached by the content of the key (its AST and the stored key expression) and the
+  * query's changed settings and current database, because computing it runs the query tree passes.
+  *
+  * `predicate` is the query's filter. `FunctionToSubcolumnsPass` does not rewrite the functions of a
+  * column to subcolumn reads when the query uses the column in another way or reads with `FINAL`,
+  * which the replay does not see. If the rewritten form reads subcolumns the filter does not read, it
+  * is computed again without the subcolumn rewrites of their source columns, keeping the rewrites of
+  * the other columns.
+  *
+  * `index_is_in_table` is false for a hypothetical index of `EXPLAIN WHATIF`: the query was analyzed
+  * against `table_metadata` without the index, so the passes see only the keys and indexes of the
+  * table, not this index, and the alternative form is computed the same way.
+  */
+AlternativeKeyExpressionPtr getAlternativeIndexExpression(
+    const IndexDescription & index,
+    const StorageInMemoryMetadata & table_metadata,
+    bool index_is_in_table,
+    const ActionsDAG::Node * predicate,
+    const ContextPtr & context);
+
+/** The same for a primary or partition key: index analysis matches the filter expression against the
+  * key expressions by name as well, so a key on expressions (e.g. `ORDER BY multiIf(v > 0, v, NULL)`
+  * or the same as `PARTITION BY`) loses pruning when the query's rewrite passes rename the filter
+  * side of the comparison. Returns nullptr when not applicable, see above.
+  */
+AlternativeKeyExpressionPtr getAlternativeKeyExpression(
+    const KeyDescription & key, const ColumnsDescription & table_columns, const ActionsDAG::Node * predicate, const ContextPtr & context);
+
+/** Computes the alternative form of a key at most once, for the query plan's condition factories,
+  * which create a `KeyCondition` many times for the same query (once per part, for constant folding).
+  */
+class LazyAlternativeKeyExpression
+{
+public:
+    AlternativeKeyExpressionPtr get(
+        const KeyDescription & key, const ColumnsDescription & table_columns, const ActionsDAG::Node * predicate, const ContextPtr & context) const;
+
+private:
+    mutable std::once_flag initialized;
+    mutable AlternativeKeyExpressionPtr alternative_key;
+};
+
+/** The single entry point for creating a skip index condition that is aware of the query's rewrites:
+  * a `minmax` index on expressions is matched not only by the original names of its expressions, but
+  * also by their alternative (rewritten) names, see `getAlternativeIndexExpression`. For every other
+  * index it is the plain `IMergeTreeIndex::createIndexCondition`.
+  *
+  * The alternative form of the key is computed lazily, once per factory, because a condition can be
+  * created many times for the same query (once per part, for constant folding), and not at all when
+  * the query has no filter.
+  *
+  * `index_is_in_table` is false for a hypothetical index, which is not in `metadata_snapshot_`,
+  * see `getAlternativeIndexExpression`.
+  */
+class RewriteAwareIndexConditionFactory
+{
+public:
+    RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_, StorageMetadataPtr metadata_snapshot_, bool index_is_in_table_ = true);
+
+    MergeTreeIndexConditionPtr create(const ActionsDAG::Node * predicate, const ContextPtr & context) const;
+
+private:
+    MergeTreeIndexPtr index_helper;
+    StorageMetadataPtr metadata_snapshot;
+    bool index_is_in_table = true;
+    const MergeTreeIndexMinMax * minmax_index = nullptr;
+
+    mutable std::once_flag alternative_key_initialized;
+    mutable AlternativeKeyExpressionPtr alternative_key;
+};
+
+}

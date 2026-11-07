@@ -1,0 +1,19 @@
+--- hypothetical minmax index on a rewritten expression ---
+  marks:       25
+With idx_multiif (minmax, hypothetical):
+  status:       applicable
+  marks:        2
+--- the same estimate with the rewrite disabled ---
+  marks:       25
+With idx_multiif (minmax, hypothetical):
+  status:       applicable
+  marks:        2
+--- hypothetical minmax index on a mixed expression with a subcolumn rewrite ---
+  marks:       25
+With idx_mixed (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+--- the same real index ---
+Granules: 25/25
+Name: idx_mixed
+Granules: 1/25
