@@ -3,6 +3,7 @@
         <host>host:80</host>
         <host>host:123</host>
         <host>yandex.ru</host>
+        <host>onelake.blob.fabric.microsoft.com</host>
     </remote_url_allow_hosts>
 </clickhouse>
 
