@@ -201,3 +201,30 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
         node.query(
             "DROP TABLE IF EXISTS data_least_used_detect_background_changes SYNC"
         )
+
+
+def test_least_used_reservation_tries_other_disks(start_cluster):
+    table = "least_used_reservation"
+    medium_file = "/test_jbod_load_balancing_jbod2/reservation_filler"
+    large_file = "/test_jbod_load_balancing_jbod3/reservation_filler"
+
+    try:
+        # Both larger disks have more free bytes than the smallest disk, but
+        # neither has 75% of its capacity free.
+        node.exec_in_container(["fallocate", "-l", "70M", medium_file])
+        node.exec_in_container(["fallocate", "-l", "130M", large_file])
+        node.query(
+            f"""
+            CREATE TABLE {table} (n UInt8) ENGINE = MergeTree ORDER BY n
+            SETTINGS storage_policy = 'jbod_least_used',
+                     min_free_disk_ratio_to_perform_insert = 0.75
+            """
+        )
+        node.query(f"INSERT INTO {table} VALUES (1)")
+        assert node.query(
+            f"SELECT disk_name FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active"
+        ).strip() == "jbod1"
+    finally:
+        node.exec_in_container(["rm", "-f", medium_file, large_file])
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
