@@ -127,12 +127,20 @@ std::string PlainRewritableLayout::makePendingReplaceTombstoneContent(const Pend
     return fmt::format("{}{}\n{}\n{}\n", PENDING_REPLACE_TOMBSTONE_PREFIX, pending_replace.directory_remote_path, pending_replace.file_name, pending_replace.size);
 }
 
+std::string PlainRewritableLayout::makeBlobRemovalTombstoneContent(const std::string & blob_key)
+{
+    if (blob_key.contains('\n'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove the blob '{}' on a plain_rewritable disk: the key contains a line feed", blob_key);
+
+    return fmt::format("{}{}\n", BLOB_REMOVAL_TOMBSTONE_PREFIX, blob_key);
+}
+
 PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMarkerContent(std::string_view content, std::string_view removed_name)
 {
     using Kind = TombstoneMarker::Kind;
 
     if (content == removed_name)
-        return {.kind = Kind::Committed, .pending_original_path = {}, .pending_replace = {}};
+        return {.kind = Kind::Committed, .pending_original_path = {}, .pending_replace = {}, .blob_key = {}};
 
     if (content.starts_with(PENDING_TOMBSTONE_PREFIX))
     {
@@ -145,7 +153,7 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
         if (path.empty() || path.contains('\n') || !path.ends_with('/'))
             return {};
 
-        return {.kind = Kind::PendingRemoval, .pending_original_path = std::string(path), .pending_replace = {}};
+        return {.kind = Kind::PendingRemoval, .pending_original_path = std::string(path), .pending_replace = {}, .blob_key = {}};
     }
 
     if (content.starts_with(PENDING_REPLACE_TOMBSTONE_PREFIX))
@@ -164,7 +172,20 @@ PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMark
 
         pending_replace.directory_remote_path = std::move(lines[0]);
         pending_replace.file_name = std::move(lines[1]);
-        return {.kind = Kind::PendingReplace, .pending_original_path = {}, .pending_replace = std::move(pending_replace)};
+        return {.kind = Kind::PendingReplace, .pending_original_path = {}, .pending_replace = std::move(pending_replace), .blob_key = {}};
+    }
+
+    if (content.starts_with(BLOB_REMOVAL_TOMBSTONE_PREFIX))
+    {
+        auto blob_key = content.substr(BLOB_REMOVAL_TOMBSTONE_PREFIX.size());
+        if (!blob_key.ends_with('\n'))
+            return {};
+        blob_key.remove_suffix(1);
+
+        if (blob_key.empty() || blob_key.contains('\n'))
+            return {};
+
+        return {.kind = Kind::BlobRemoval, .pending_original_path = {}, .pending_replace = {}, .blob_key = std::string(blob_key)};
     }
 
     return {};
