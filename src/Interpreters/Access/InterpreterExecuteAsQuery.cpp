@@ -80,8 +80,7 @@ namespace
         new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         new_context->applySettingsChanges(changed_settings);
 
-        /// The HTTP `filter` parameters of the request shape the statement's result, as for a statement sent
-        /// directly, and are checked against the target user's `filter` constraint like `HTTPHandler` does.
+        /// The request's HTTP `filter` applies to the statement too, checked against the target user's constraints.
         if (const String & http_filter = context->getHTTPCombinedFilter(); !http_filter.empty())
         {
             const String & target_filter = new_context->getSettingsRef()[Setting::filter].value;
