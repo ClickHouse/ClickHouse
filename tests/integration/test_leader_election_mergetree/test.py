@@ -3043,6 +3043,63 @@ def test_dedup_log_reconciled_when_lease_goes_stale_during_drop_records(started_
             pass
 
 
+SHARED_UUID_DEDUP_LOAD_ERROR = "12345678-abcd-abcd-abcd-12345678ab64"
+
+
+def test_takeover_refused_when_dedup_log_cannot_be_read(started_cluster):
+    """
+    A takeover must not enable writes with a partial deduplication history.
+    `MergeTreeDeduplicationLog::load` used to log and skip a log it could not read, so a
+    transient read error made the new leader forget the block ids of that log, and a retried
+    `INSERT` was inserted twice (a missing `ADD` record) or silently dropped (a missing `DROP`
+    record). Under `leader_election` the error now aborts the takeover, which is retried on the
+    next heartbeat with the complete history.
+
+    The `merge_tree_deduplication_log_throw_on_load` failpoint (`ONCE`) fails one log read
+    during the takeover reload.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_deduplication_log_throw_on_load"
+    table = "test_dedup_load_error"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DEDUP_LOAD_ERROR}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, non_replicated_deduplication_window = 100
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+
+        assert node1.contains_in_log(
+            "Failed to reload mutations or the deduplication log on leadership acquisition"
+        ), "The takeover did not fail on the injected read error of the deduplication log"
+
+        # The takeover that enabled writes loaded the complete history: the retry is deduplicated.
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3, (
+            "The retried INSERT was not deduplicated: the takeover enabled writes "
+            "with a partial deduplication history"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
 SHARED_UUID_CLEAR_EMPTY_COVERED = "12345678-abcd-abcd-abcd-12345678ab30"
 
 

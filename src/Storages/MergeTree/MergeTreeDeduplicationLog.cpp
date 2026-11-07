@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int TABLE_IS_READ_ONLY;
 }
 
@@ -33,6 +34,7 @@ namespace FailPoints
     extern const char merge_tree_leader_election_stale_lease_dedup_log_write[];
     extern const char merge_tree_leader_election_stale_lease_dedup_log_mid_batch[];
     extern const char merge_tree_leader_election_stale_lease_dedup_log_before_rotate[];
+    extern const char merge_tree_deduplication_log_throw_on_load[];
 }
 
 namespace
@@ -112,7 +114,7 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
         disk->createDirectories(logs_dir);
 }
 
-void MergeTreeDeduplicationLog::load()
+void MergeTreeDeduplicationLog::load(bool throw_on_broken_log)
 {
     /// Table state: not charged to the query that happens to touch it, and kept in the arena for state
     /// that outlives queries rather than fragmenting the ones serving them.
@@ -147,10 +149,25 @@ void MergeTreeDeduplicationLog::load()
         {
             try
             {
+                /// Simulates a transient read error of a log during a `leader_election` takeover.
+                if (throw_on_broken_log)
+                    fiu_do_on(FailPoints::merge_tree_deduplication_log_throw_on_load,
+                        { throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected read error of deduplication log {}", desc.path); });
                 desc.entries_count = loadSingleLog(desc.path);
+            }
+            catch (Exception & e)
+            {
+                if (throw_on_broken_log)
+                {
+                    e.addMessage("while loading MergeTree deduplication log on path {}", desc.path);
+                    throw;
+                }
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
             }
             catch (...)
             {
+                if (throw_on_broken_log)
+                    throw;
                 tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
             }
         }

@@ -92,6 +92,7 @@ static struct InitFiu
     REGULAR(merge_tree_leader_election_stale_epoch_before_commit) \
     REGULAR(merge_tree_leader_election_stale_epoch_before_detached_clone) \
     REGULAR(merge_tree_leader_election_stale_lease_cleanup) \
+    ONCE(merge_tree_deduplication_log_throw_on_load) \
     REGULAR(merge_tree_leader_election_stale_lease_before_clear_empty) \
     REGULAR(merge_tree_leader_election_stale_lease_during_takeover_scan) \
     REGULAR(merge_tree_leader_election_stale_lease_detached_ddl) \

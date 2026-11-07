@@ -180,8 +180,11 @@ public:
     /// retiring the partition and updating the log).
     void dropPart(const MergeTreePartInfo & drop_part_info);
 
-    /// Load history from disk. Ignores broken logs.
-    void load();
+    /// Load history from disk. Ignores broken logs, unless `throw_on_broken_log` is set: then an error
+    /// reading any log propagates, because a partial history can silently drop a retried insert (a missing
+    /// `DROP` record) or let it be duplicated (a missing `ADD` record). Used on a `leader_election`
+    /// takeover, which retries on the next heartbeat instead of enabling writes with a partial history.
+    void load(bool throw_on_broken_log = false);
 
     void setDeduplicationWindowSize(size_t deduplication_window_);
 

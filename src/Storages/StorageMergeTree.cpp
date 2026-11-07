@@ -576,8 +576,20 @@ void StorageMergeTree::startup()
                     ///    records were not loaded.
                     /// These run while `writes_enabled` is still false (set by the election task
                     /// only after this callback returns) and before the background jobs below.
-                    loadMutations(/* reloading = */ true);
-                    loadDeduplicationLog();
+                    try
+                    {
+                        loadMutations(/* reloading = */ true);
+                        loadDeduplicationLog();
+                    }
+                    catch (...)
+                    {
+                        /// As for a failed part refresh above: do not enable writes, keep serving follower
+                        /// reads during the retry window, and let the election task retry on the next tick.
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                        tryLogCurrentException(log, "Failed to reload mutations or the deduplication log on leadership acquisition, refusing to enable writes");
+                        throw;
+                    }
 
                     /// `loadMutations` / `loadDeduplicationLog` above can themselves run long — they
                     /// list and rewrite shared metadata (mutation entries can gain `csn:` markers or
@@ -2566,7 +2578,9 @@ void StorageMergeTree::loadDeduplicationLog()
         auto new_deduplication_log = std::make_shared<MergeTreeDeduplicationLog>(
             path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk,
             std::move(may_write_shared_state));
-        new_deduplication_log->load();
+        /// Under `leader_election`, an error reading any log aborts the takeover (it is retried on the next
+        /// heartbeat) instead of enabling writes with a partial deduplication history.
+        new_deduplication_log->load(/* throw_on_broken_log = */ (*settings)[MergeTreeSetting::leader_election]);
 
         /// Reconcile the loaded log with the part set. An active *empty* part is a covering
         /// part: all data in its range was dropped (`DROP`/`DETACH`/`TRUNCATE`/`REPLACE
