@@ -1,0 +1,24 @@
+--- local: after OPTIMIZE
+position deletes: 0
+3
+default partition spec: 1	['part']
+--- local: after a later INSERT
+0
+1	a
+5	e
+3	c
+4	d
+6	f
+5
+--- s3: after OPTIMIZE
+position deletes: 0
+3
+default partition spec: 1	['part']
+--- s3: after a later INSERT
+0
+1	a
+5	e
+3	c
+4	d
+6	f
+5
