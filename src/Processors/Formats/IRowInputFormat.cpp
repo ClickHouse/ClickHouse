@@ -150,7 +150,11 @@ Chunk IRowInputFormat::read()
             try
             {
                 info.read_columns.clear();
+                const size_t column_size_before_read = columns.empty() ? 0 : columns.front()->size();
                 continue_reading = readRow(columns, info);
+
+                /// `readRow` can return true without appending a row (e.g. `Regexp` skips an unmatched line).
+                const bool row_was_appended = !columns.empty() && columns.front()->size() > column_size_before_read;
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
                     if (!info.read_columns[column_idx])
@@ -176,7 +180,7 @@ Chunk IRowInputFormat::read()
                 if (columns.empty())
                     ++num_rows;
 
-                if (min_block_size_bytes || max_block_size_bytes)
+                if ((min_block_size_bytes || max_block_size_bytes) && row_was_appended)
                 {
                     for (const auto & column : columns)
                         total_bytes += column->byteSizeAt(column->size() - 1);
