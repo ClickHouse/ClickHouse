@@ -456,8 +456,9 @@ public:
 #if CLICKHOUSE_CLOUD
     std::optional<NamedCollectionsEncryptionKeyInfo> getEncryptionKeyInfo() const override
     {
+        loadIfNeeded();
         return NamedCollectionsEncryptionKeyInfo{
-            .algorithm = FileEncryption::toString(algorithm), .key_fingerprint = key_fingerprint, .kms_key_info = {}};
+            .algorithm = FileEncryption::toString(algorithm), .key_fingerprint = key_fingerprint, .kms_key_info = kms_key_info};
     }
 #endif
 
