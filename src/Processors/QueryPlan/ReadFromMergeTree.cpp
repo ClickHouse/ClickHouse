@@ -1995,19 +1995,24 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
 
         /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
-        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
-        /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
+        /// A single stream stays one (it reads in order), unless the read feeds a TopK, which sorts the rows anyway.
+        /// Only the plain read pool cuts tasks of exactly this size (adaptive granularity, no columns cache, local
+        /// prefetched pool not allowed).
         if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
             && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
-            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
+            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && (num_streams > 1 || top_k_filter_info)
+            && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
             const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
             const size_t task_marks = std::min(
                 info.min_marks_for_concurrent_read, std::max(info.sum_marks / tasks_per_stream / initial_num_streams, min_task_marks));
+            /// For a TopK read, a part's remainder of at least half a task counts as a task: the pool leaves it to another
+            /// stream (`MergeTreeReadPool::cutFromThreadTask`).
+            const size_t partial_task_marks = top_k_filter_info ? task_marks / 2 : 0;
             size_t tasks = 0;
             for (const size_t part_marks : info.sum_marks_in_parts)
-                tasks += std::max<size_t>(1, part_marks / task_marks);
+                tasks += std::max<size_t>(1, (part_marks + partial_task_marks) / task_marks);
             if (std::min(tasks, initial_num_streams) > num_streams)
             {
                 num_streams = std::min(tasks, initial_num_streams);

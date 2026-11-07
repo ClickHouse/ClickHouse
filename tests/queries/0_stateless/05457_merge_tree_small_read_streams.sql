@@ -51,3 +51,18 @@ SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k, v FROM t_small_read AN
 
 DROP TABLE t_small_read;
 DROP TABLE t_small_read_join;
+
+-- A TopK read is spread even from one stream, counting a remainder of at least half a task.
+DROP TABLE IF EXISTS t_small_read_top_k;
+CREATE TABLE t_small_read_top_k (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO t_small_read_top_k SELECT number, number % 1000 FROM numbers(20 * 8192);
+OPTIMIZE TABLE t_small_read_top_k FINAL;
+SET use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000;
+-- 20 marks: 2 tasks and a remainder of 4.
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT v FROM t_small_read_top_k ORDER BY v LIMIT 10) WHERE explain ILIKE '%MergeTreeSelect%';
+-- 11 marks: 1 task and a remainder of 3.
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT v FROM t_small_read_top_k WHERE k < 11 * 8192 ORDER BY v LIMIT 10) WHERE explain ILIKE '%MergeTreeSelect%';
+-- Without TopK, one stream.
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT v FROM t_small_read_top_k ORDER BY v LIMIT 10 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0) WHERE explain ILIKE '%MergeTreeSelect%';
+DROP TABLE t_small_read_top_k;
