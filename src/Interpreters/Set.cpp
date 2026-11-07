@@ -734,8 +734,7 @@ void Set::processDateTime64Column(
     }
 }
 
-/// A conversion into `Bool` turns every nonzero number into `true`, while one into `UInt8`, which stores `Bool`,
-/// keeps the value or fails, so a number is looked up among `Bool` keys by its value.
+/// A cast into `Bool` turns every nonzero number into `true`; one into `UInt8`, which stores `Bool`, keeps the value or fails.
 static DataTypePtr getTypeToConvertKeyTo(const DataTypePtr & set_key_type, const DataTypePtr & key_type)
 {
     const DataTypePtr key_value_type = removeLowCardinalityAndNullable(key_type);
