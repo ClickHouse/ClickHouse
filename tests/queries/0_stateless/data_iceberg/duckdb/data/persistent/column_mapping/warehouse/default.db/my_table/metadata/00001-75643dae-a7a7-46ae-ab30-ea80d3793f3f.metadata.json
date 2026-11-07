@@ -1,0 +1,141 @@
+{
+	"location": "data/persistent/column_mapping/warehouse/default.db/my_table",
+	"table-uuid": "c8953799-2165-4f86-b40f-4bca6bb535f8",
+	"last-updated-ms": 1746354955271,
+	"last-column-id": 11,
+	"schemas": [
+		{
+			"type": "struct",
+			"fields": [
+				{
+					"id": 1,
+					"name": "id",
+					"type": "long",
+					"required": false
+				},
+				{
+					"id": 2,
+					"name": "name",
+					"type": "string",
+					"required": false
+				},
+				{
+					"id": 3,
+					"name": "age",
+					"type": "long",
+					"required": false
+				},
+				{
+					"id": 4,
+					"name": "attributes",
+					"type": {
+						"type": "map",
+						"key-id": 7,
+						"key": "string",
+						"value-id": 8,
+						"value": "string",
+						"value-required": false
+					},
+					"required": false
+				},
+				{
+					"id": 5,
+					"name": "scores",
+					"type": {
+						"type": "list",
+						"element-id": 9,
+						"element": "long",
+						"element-required": false
+					},
+					"required": false
+				},
+				{
+					"id": 6,
+					"name": "profile",
+					"type": {
+						"type": "struct",
+						"fields": [
+							{
+								"id": 10,
+								"name": "email",
+								"type": "string",
+								"required": false
+							},
+							{
+								"id": 11,
+								"name": "verified",
+								"type": "boolean",
+								"required": false
+							}
+						]
+					},
+					"required": false
+				}
+			],
+			"schema-id": 0,
+			"identifier-field-ids": []
+		}
+	],
+	"current-schema-id": 0,
+	"partition-specs": [
+		{
+			"spec-id": 0,
+			"fields": []
+		}
+	],
+	"default-spec-id": 0,
+	"last-partition-id": 999,
+	"properties": {
+		"schema.name-mapping.default": "[{\"names\":[\"id\"],\"field-id\":1},{\"names\":[\"name\"],\"field-id\":2},{\"names\":[\"age\"],\"field-id\":3},{\"names\":[\"attributes\"],\"field-id\":4,\"fields\":[{\"names\":[\"key\"],\"field-id\":7},{\"names\":[\"value\"],\"field-id\":8}]},{\"names\":[\"scores\"],\"field-id\":5,\"fields\":[{\"names\":[\"element\"],\"field-id\":9}]},{\"names\":[\"profile\"],\"field-id\":6,\"fields\":[{\"names\":[\"email\"],\"field-id\":10},{\"names\":[\"verified\"],\"field-id\":11}]}]"
+	},
+	"current-snapshot-id": 6154553663017965981,
+	"snapshots": [
+		{
+			"snapshot-id": 6154553663017965981,
+			"sequence-number": 1,
+			"timestamp-ms": 1746354955271,
+			"manifest-list": "data/persistent/column_mapping/warehouse/default.db/my_table/metadata/snap-6154553663017965981-0-104fb5ef-95f5-4b94-88c9-b546cb3d9493.avro",
+			"summary": {
+				"operation": "append",
+				"added-files-size": "2729",
+				"added-data-files": "1",
+				"added-records": "3",
+				"total-data-files": "1",
+				"total-delete-files": "0",
+				"total-records": "3",
+				"total-files-size": "2729",
+				"total-position-deletes": "0",
+				"total-equality-deletes": "0"
+			},
+			"schema-id": 0
+		}
+	],
+	"snapshot-log": [
+		{
+			"snapshot-id": 6154553663017965981,
+			"timestamp-ms": 1746354955271
+		}
+	],
+	"metadata-log": [
+		{
+			"metadata-file": "data/persistent/column_mapping/warehouse/default.db/my_table/metadata/00000-5d9111ed-e56c-4ceb-9040-09d3be71926b.metadata.json",
+			"timestamp-ms": 1746354955237
+		}
+	],
+	"sort-orders": [
+		{
+			"order-id": 0,
+			"fields": []
+		}
+	],
+	"default-sort-order-id": 0,
+	"refs": {
+		"main": {
+			"snapshot-id": 6154553663017965981,
+			"type": "branch"
+		}
+	},
+	"statistics": [],
+	"format-version": 2,
+	"last-sequence-number": 1
+}

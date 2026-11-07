@@ -1,0 +1,77 @@
+{
+  "format-version": 3,
+  "table-uuid": "0b6f6a68-65aa-4e4e-b520-3f5d7b70c2a1",
+  "location": "data/persistent/timestamptz_ns",
+  "last-sequence-number": 0,
+  "last-updated-ms": 1750000000000,
+  "last-column-id": 2,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "id": 2,
+          "name": "val",
+          "required": false,
+          "type": "timestamptz_ns"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [
+        {
+          "source-id": 2,
+          "field-id": 1000,
+          "transform": "year",
+          "name": "val_year"
+        },
+        {
+          "source-id": 2,
+          "field-id": 1001,
+          "transform": "month",
+          "name": "val_month"
+        },
+        {
+          "source-id": 2,
+          "field-id": 1002,
+          "transform": "day",
+          "name": "val_day"
+        },
+        {
+          "source-id": 2,
+          "field-id": 1003,
+          "transform": "hour",
+          "name": "val_hour"
+        }
+      ]
+    }
+  ],
+  "last-partition-id": 1003,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {},
+  "current-snapshot-id": -1,
+  "refs": {},
+  "snapshots": [],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [],
+  "metadata-log": []
+}

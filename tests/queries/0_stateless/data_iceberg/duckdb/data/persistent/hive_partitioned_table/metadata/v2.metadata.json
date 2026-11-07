@@ -1,0 +1,89 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "86d0c44c-b287-47c1-b9bb-cbff310b393f",
+  "location" : "data/persistent/hive_partitioned_table",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1746793271358,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "event_date",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 2,
+      "name" : "user_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 3,
+      "name" : "event_type",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "event_date",
+      "transform" : "identity",
+      "source-id" : 1,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "thijs",
+    "write.update.mode" : "merge-on-read",
+    "write.parquet.write-partition-values" : "false",
+    "write.parquet.compression-codec" : "zstd",
+    "write.data.partition-columns" : "false"
+  },
+  "current-snapshot-id" : 2541674261311761067,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 2541674261311761067,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 2541674261311761067,
+    "timestamp-ms" : 1746793271358,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1746793268518",
+      "added-data-files" : "2",
+      "added-records" : "2",
+      "added-files-size" : "1876",
+      "changed-partition-count" : "2",
+      "total-records" : "2",
+      "total-files-size" : "1876",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "data/persistent/hive_partitioned_table/metadata/snap-2541674261311761067-1-8f7c6cdd-f7e6-4743-857e-021adfe0b999.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1746793271358,
+    "snapshot-id" : 2541674261311761067
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1746793270313,
+    "metadata-file" : "data/persistent/hive_partitioned_table/metadata/v1.metadata.json"
+  } ]
+}

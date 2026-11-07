@@ -1,0 +1,89 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "d09cc8d2-371d-4870-8503-6e7e0de0e31c",
+  "location" : "data/persistent/partition_bool",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1746881382079,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "partition_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 2,
+      "name" : "user_id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 3,
+      "name" : "event_type",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "partition_col",
+      "transform" : "identity",
+      "source-id" : 1,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "thijs",
+    "write.update.mode" : "merge-on-read",
+    "write.parquet.write-partition-values" : "false",
+    "write.parquet.compression-codec" : "zstd",
+    "write.data.partition-columns" : "false"
+  },
+  "current-snapshot-id" : 3510418671079281357,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 3510418671079281357,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 3510418671079281357,
+    "timestamp-ms" : 1746881382079,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1746881379454",
+      "added-data-files" : "2",
+      "added-records" : "2",
+      "added-files-size" : "1846",
+      "changed-partition-count" : "2",
+      "total-records" : "2",
+      "total-files-size" : "1846",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "data/persistent/partition_bool/metadata/snap-3510418671079281357-1-3f284d0d-6487-49fa-84b0-25631b376ad3.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1746881382079,
+    "snapshot-id" : 3510418671079281357
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1746881380655,
+    "metadata-file" : "data/persistent/partition_bool/metadata/v1.metadata.json"
+  } ]
+}

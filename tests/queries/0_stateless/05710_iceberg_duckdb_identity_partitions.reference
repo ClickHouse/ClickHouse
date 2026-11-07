@@ -1,0 +1,135 @@
+partition_bigint
+-9223372036854775808	67890	purchase
+9223372036854775807	12345	click
+12345
+partition_binary
+010203	12345	click
+AABBCC	67890	purchase
+12345
+67890
+partition_bool
+false	67890	purchase
+true	12345	click
+12345
+partition_decimal_smallint
+Nullable(Decimal(3, 2))
+1.23	12345	click
+4.56	67890	purchase
+12345
+partition_decimal_integer
+Nullable(Decimal(8, 4))
+1.23	67890	purchase
+42.563	12345	click
+1234.5432	111213	delete
+12345
+partition_decimal_bigint
+Nullable(Decimal(16, 11))
+-9876.54321098765	222333	view
+-5432.10987654321	654321	swipe
+-0.12345678901	888999	drag
+0	987654	pinch
+0.00000000001	444555	scroll
+1.23456789012	67890	purchase
+42.56378901234	12345	click
+123.45678901234	123456	drop
+1234.54321098765	111213	delete
+9999.99999999999	666777	hover
+123456
+partition_decimal_hugeint
+Nullable(Decimal(36, 23))
+-1000000000000.00000000000000000001	246802	rotate
+-5432109876.10987654321098765432109	654321	swipe
+-9876.54321098765432109876543	222333	view
+-2.71828182845904523536029	271828	doubletap
+-0.12345678901234567890123	888999	drag
+0	987654	pinch
+0.00000000000000000000001	444555	scroll
+0.5	975310	tap
+1.23456789012345678901234	67890	purchase
+3.14159265358979323846264	314159	longpress
+42.56378901234567890123456	12345	click
+1234.54321098765432109876543	111213	delete
+123456789.45678901234567890123456	123456	drop
+1000000000000.00000000000000000001	135790	zoom
+9999999999999.99999999999999999999	666777	hover
+314159
+partition_double
+2.7182817	67890	purchase
+3.1415927	12345	click
+12345
+partition_float
+1.23	12345	click
+4.56	67890	purchase
+12345
+partition_integer
+42	12345	click
+1337	67890	purchase
+12345
+hive_partitioned_table
+2024-01-01	12345	click
+2024-01-02	67890	purchase
+2024-01-03	13579	view
+2024-01-03	24680	click
+2024-01-04	86420	view
+2024-01-04	97531	purchase
+67890
+13579
+86420
+partition_values_missing_from_files/shared_source
+1	eu
+2	eu
+2
+partition_values_missing_from_files/nested_source
+1	('fr','paris')
+2	('fr','lyon')
+2
+partition_values_missing_edge_cases/mixed
+1	eu	('fr','paris',(42,'a'))
+2	eu	('fr','lyon',(42,'b'))
+3	us	('us','ny',(7,'c'))
+4	\N	(NULL,'null-city',(NULL,'null-code'))
+5	ap	('jp','tokyo',(9,'d'))
+6	\N	(NULL,NULL,(NULL,NULL))
+7	eu	('fr','unknown-city',(84,'unknown-label'))
+8	eu	('it','rome',(12,'unknown-label'))
+9	unknown-region	('unknown-country','default-city',(-1,'default-code'))
+10	de	('de','berlin',(16,'e'))
+11	\N	(NULL,NULL,(NULL,NULL))
+(84,'unknown-label')
+(12,'unknown-label')
+3	10
+1	7
+3	21
+3	21
+9
+11	unpartitioned-default
+partition_time
+30069000000	67890	purchase
+45296000000	12345	click
+12345
+partition_timestamp
+2023-05-15 14:30:45.000000	12345	click
+2023-08-22 09:15:20.000000	67890	purchase
+12345
+partition_timestamptz
+2023-05-15 14:30:45.000000	12345	click
+2023-08-22 09:15:20.000000	67890	purchase
+12345
+partition_fixed_length_binary
+FixedString(11)	11
+fixed value	67890	purchase
+hello world	12345	click
+12345
+67890
+partition_timestamptz_ns
+Nullable(DateTime64(9, \'UTC\'))
+1	1791540000123456789
+2	1791540000123456790
+3	-1
+4	0
+5	\N
+1
+2
+3
+5
+2026-10-09 12:00:00.123456789

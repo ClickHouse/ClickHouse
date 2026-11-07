@@ -1,0 +1,79 @@
+add_columns_with_defaults
+click	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+purchase	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	2023-05-15 14:30:45.000000	World	020d4fc7-acd6-45ac-b216-7873f4038e1f	8000800080	800080
+add_columns_with_defaults_in_struct
+test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	\N	World	\N	\N	800080
+test	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+test
+test
+case_sensitive_names
+user_id	Int64					
+uSeR_Id	Nullable(String)					
+1	user_1
+2	user_2
+3	user_3
+user_1
+user_2
+user_3
+column_mapping
+1	Alice	25	{'height':'5.5','weight':'130'}	[85,90]	('alice@example.com',true)
+2	Bob	30	{'height':'6.0','weight':'180'}	[78,82,88]	('bob@example.com',false)
+3	Charlie	35	{'height':'5.8','weight':'160'}	[92]	('charlie@example.com',true)
+name_mapping
+3	0	10000
+3.1	10000	10000
+3.2	10000	10000
+4	0	10000
+4.1	10000	10000
+7	10000	10000
+issue1270
+row-1
+row-2
+row-3
+row-4
+3	row-3
+4	row-4
+Code: 53
+Code: 53
+Code: 53
+mapping_failures
+struct_to_list Code: 53 [1,2]
+struct_to_map Code: 53 [1,2]
+list_to_struct Code: 53 [1,2]
+list_to_map Code: 53 [1,2]
+map_to_struct Code: 53 [1,2]
+map_to_list Code: 53 [1,2]
+struct_child Code: 53 [1,2]
+list_element Code: 53 [1,2]
+map_value Code: 53 [1,2]
+missing_map_keys
+map Code: 743
+struct Code: 743
+list Code: 743
+missing_map 1	{}
+manifest_column_sizes 1	{'key':'value'}
+manifest_value_counts 1	{'key':'value'}
+manifest_null_value_counts 1	{'key':'value'}
+manifest_nan_value_counts 1	{'key':'value'}
+manifest_lower_bounds 1	{'key':'value'}
+manifest_upper_bounds 1	{'key':'value'}
+uuid
+UUID
+1571effb-facd-42a3-90e9-0af522e9b6c2
+160a53fe-3d8b-443d-bd36-ad66287f585a
+37afa09a-f496-48a8-89a9-61ea7ccd85d5
+3ef257b8-e9c6-4c53-9c22-973729e1043f
+7fae299c-cf05-4777-9b42-57a52e1415ed
+8dc314d8-3fd4-4b3a-8bf5-c008f363c2e4
+a217c09f-06fa-4e91-8315-ff44753c4a54
+abd6f939-9b99-4e1d-9cda-0dc8ce60a161
+e6218567-354b-4a9c-8cd7-3d4b6a2470f8
+f9f28465-51cf-45f1-8985-e01d9a82253c
+1571effb-facd-42a3-90e9-0af522e9b6c2
+timestamptz_ns
+id	Nullable(Int32)					
+val	Nullable(DateTime64(9, \'UTC\'))					
+0
+invalid_decimal_type/decimal_max_precision
+d	Nullable(Decimal(38, 38))					
