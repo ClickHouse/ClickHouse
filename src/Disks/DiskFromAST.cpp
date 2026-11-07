@@ -341,7 +341,6 @@ void addSourceAccessOfDiskFunction(const ASTFunction & function, AccessRightsEle
     }
     else if (object_storage_type || !DiskFactory::instance().reachesNoSource(backend))
     {
-        /// Unknown here, but the hosts that build the disk may know it.
         res.emplace_back(read_write);
     }
 }

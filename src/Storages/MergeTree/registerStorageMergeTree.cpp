@@ -1310,7 +1310,6 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
-        /// A custom `disk` setting defines where the table stores its data.
         .get_export_access_fn = &DiskFromAST::getSourceAccessOfSettings,
     };
 

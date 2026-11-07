@@ -17,7 +17,6 @@ namespace DiskFromAST
 
     /// The source grants needed to define the disks of every `disk` setting in the subtree, nested disks included.
     AccessRightsElements getSourceAccess(const ASTPtr & ast);
-    /// The same for the `disk` setting in `changes`.
     AccessRightsElements getSourceAccessOfSettings(const SettingsChanges & changes);
 }
 
