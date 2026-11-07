@@ -125,7 +125,8 @@ std::string DataPartStorageOnDiskBase::getParentDirectory() const
     return "";
 }
 
-std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
+std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken,
+                                                                         const NameTakenChecker & name_taken_anywhere) const
 {
     chassert(!broken || detached);
     String res;
@@ -141,13 +142,21 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
     {
         res = getPartDirForPrefix(prefix, detached, try_no);
 
-        if (!volume->getDisk()->existsDirectory(full_relative_path / res))
+        bool taken_here = volume->getDisk()->existsDirectory(full_relative_path / res);
+        /// Our own disk is always probed, so the answer is only ever wider than that probe alone:
+        /// the predicate adds the other disks sharing this table-wide namespace.
+        bool taken = taken_here || (name_taken_anywhere && name_taken_anywhere(res));
+
+        if (!taken)
             return res;
 
         /// If part with compacted storage is broken then we probably
         /// cannot read the single file with data and check its content.
+        /// The content comparison can only read a directory on our own disk, so "is it taken here"
+        /// stays a narrower question than the "is the name free at all" decision above.
         if (broken
             && isFullPartStorage(*this)
+            && taken_here
             && looksLikeBrokenDetachedPartHasTheSameContent(res, original_checksums_content, original_files_list))
         {
             LOG_WARNING(log, "Directory {} (to detach to) already exists, "
@@ -158,6 +167,13 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
 
         LOG_WARNING(log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
     }
+
+    /// Returning a name we know is taken relies on the caller's own collision guard, and every such
+    /// guard only looks at our own disk. Fail closed instead, or a name taken on another disk would
+    /// produce a second directory under the same name in a table-wide namespace.
+    if (name_taken_anywhere)
+        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                        "Cannot find a free directory name to detach to, last tried: {}", res);
 
     return res;
 }
