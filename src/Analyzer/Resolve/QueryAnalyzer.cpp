@@ -9070,12 +9070,35 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         if (!duplicated_aliases_by_expression.empty())
         {
-            for_each_aliased_projection_node([&](const QueryTreeNodePtr & node)
+            /** Only the projection nodes that carry snapshots are looked up: hashing every aliased node would take
+              * a quadratic time for many matcher-expanded expressions, because the hash of a column includes its source.
+              * Returns true if the subtree has a node with a snapshot.
+              */
+            std::function<bool(const QueryTreeNodePtr &, bool)> find_projection_nodes_with_snapshots
+                = [&](const QueryTreeNodePtr & node, bool look_up_aliased_nodes)
             {
-                auto it = duplicated_aliases_by_expression.find(node.get());
-                if (it != duplicated_aliases_by_expression.end())
-                    it->second.second = node;
-            });
+                bool has_snapshots = named_window_snapshots.contains(node);
+
+                /// As `for_each_aliased_projection_node`, the aliased nodes inside lambdas and subqueries are not looked up,
+                /// but their snapshots are copied by `copyNamedWindowSnapshots` as well.
+                auto node_type = node->getNodeType();
+                const bool look_up_aliased_children = look_up_aliased_nodes
+                    && node_type != QueryTreeNodeType::LAMBDA && node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION;
+
+                for (const auto & child : node->getChildren())
+                    if (child)
+                        has_snapshots |= find_projection_nodes_with_snapshots(child, look_up_aliased_children);
+
+                if (look_up_aliased_nodes && has_snapshots && node->hasAlias())
+                {
+                    auto it = duplicated_aliases_by_expression.find(node.get());
+                    if (it != duplicated_aliases_by_expression.end())
+                        it->second.second = node;
+                }
+
+                return has_snapshots;
+            };
+            find_projection_nodes_with_snapshots(query_node_typed.getProjectionNode(), true);
 
             for (const auto & [_, duplicates] : duplicated_aliases_by_expression)
             {
