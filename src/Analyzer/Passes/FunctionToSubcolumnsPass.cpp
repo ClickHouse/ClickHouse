@@ -1820,6 +1820,12 @@ public:
             if (!should_optimize)
                 return;
 
+            /// An outer join supplies an empty `Map`, whose lookup can differ from a key subcolumn's
+            /// declared default, e.g. zero versus the first `Enum` value.
+            if (isMap(column.type) && function_node->getFunctionName() == "arrayElement"
+                && outer_joined_tables.contains(column_source.get()))
+                return;
+
             auto result_type = function_node->getResultType();
             auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
 
@@ -1910,7 +1916,12 @@ class MapSubquerySubcolumnVisitor : public InDepthQueryTreeVisitorWithContext<Ma
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<MapSubquerySubcolumnVisitor>;
-    using Base::Base;
+
+    MapSubquerySubcolumnVisitor(ContextPtr context_, const std::unordered_set<const IQueryTreeNode *> & outer_joined_tables_)
+        : Base(std::move(context_))
+        , outer_joined_tables(outer_joined_tables_)
+    {
+    }
 
     bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
     {
@@ -2016,7 +2027,8 @@ public:
 
         auto table_source = query_node->getJoinTreeNodeTyped();
         auto * table_node = table_source->as<TableNode>();
-        if (!table_node)
+        /// Keep the lookup above an outer join, rather than defaulting its projected value there.
+        if (!table_node || outer_joined_tables.contains(table_node))
             return;
 
         const auto & projection_columns = query_node->getProjectionColumns();
@@ -2108,6 +2120,7 @@ private:
     };
 
     std::vector<Scope> scopes;
+    const std::unordered_set<const IQueryTreeNode *> & outer_joined_tables;
     CorrelatedColumnsStack correlated_columns;
     SubcolumnSupportCache subcolumn_support_cache;
 
@@ -2203,11 +2216,15 @@ public:
 
 void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    /// Identify default-producing join boundaries before adding any projected subcolumns.
+    GetOuterJoinedTablesVisitor outer_join_visitor(context);
+    outer_join_visitor.visit(query_tree_node);
+
     CanWrapColumnsWithNullableVisitor nullable_visitor(context);
     nullable_visitor.visit(query_tree_node);
     if (!nullable_visitor.result)
     {
-        MapSubquerySubcolumnVisitor subquery_visitor(context);
+        MapSubquerySubcolumnVisitor subquery_visitor(context, outer_join_visitor.outer_joined_tables);
         subquery_visitor.visit(query_tree_node);
     }
 
@@ -2221,8 +2238,6 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
     /// Tables appearing in LEFT or RIGHT JOIN may produce default values for missing rows.
     /// Inserting a default into a null-mask (of type UInt8) gives a different result than inserting NULL into a Nullable column.
     /// Therefore, functions on Nullable columns from outer-joined tables cannot be optimized.
-    GetOuterJoinedTablesVisitor outer_join_visitor(context);
-    outer_join_visitor.visit(query_tree_node);
     FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize), std::move(outer_join_visitor.outer_joined_tables));
     second_visitor.visit(query_tree_node);
 }

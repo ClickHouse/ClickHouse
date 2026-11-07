@@ -418,7 +418,7 @@ std::optional<DirectViewProjection> getDirectViewProjection(
     DatabaseAndTableWithAlias source_table(*table_expression, context->getCurrentDatabase());
 
     auto metadata_handle = underlying_storage->getInMemoryMetadataPtr(context, false);
-    auto underlying_snapshot = underlying_storage->getStorageSnapshot(metadata_handle, context);
+    auto underlying_snapshot = underlying_storage->getStorageSnapshot(metadata_handle, context)->withStorageHolder(underlying_storage);
 
     const ASTIdentifier * result = nullptr;
     String source_column_name;
