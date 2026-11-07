@@ -50,6 +50,13 @@ public:
     const std::string & getSessionId() const { return session_id; }
     std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
+    void closeSession(bool enable_close);
+
+    /// Defer named-session teardown until `CallCompleted`, the same path as `x-clickhouse-session-close`.
+    /// Closing in the middle of `DoAction` would let `CallCompleted` refresh prepared-statement TTLs
+    /// for a session recreated under the same id before this RPC finishes.
+    void requestCloseSession();
+
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
 
@@ -61,7 +68,7 @@ private:
     std::string username;
     ArrowFlight::CallsData & calls_data;
     const std::string session_id;
-    const bool session_close;
+    bool session_close;
     const std::chrono::steady_clock::duration session_timeout;
 };
 
