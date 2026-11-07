@@ -85,7 +85,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
@@ -102,7 +102,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
@@ -118,7 +118,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
