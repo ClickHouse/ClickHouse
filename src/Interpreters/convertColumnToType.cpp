@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/ConstantValue.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -532,6 +533,17 @@ ColumnPtr convertColumnToTypeOrThrow(
     }
 
     return result;
+}
+
+ConstantValue resolveActiveAlternative(const ConstantValue & value)
+{
+    const DataTypePtr active_type = resolveActiveAlternativeType(value.getColumn()->getDataColumn(), value.getType());
+    if (active_type == value.getType())
+        return value;
+
+    /// `CAST` from a `Variant`/`Dynamic` to the type of its active alternative extracts that alternative's value.
+    const ColumnPtr active = castColumn({value.getColumn()->getDataColumnPtr(), value.getType(), ""}, active_type);
+    return ConstantValue{ConstantValue::wrapToColumnConst(active), active_type};
 }
 
 }

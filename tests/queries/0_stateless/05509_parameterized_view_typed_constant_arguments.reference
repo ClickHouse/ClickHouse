@@ -1,0 +1,22 @@
+true	1.5	2024-01-01 00:00:00.123	\N	x	[1,2]
+true	0.1	2024-01-01 00:00:00.500	-5	lc	[0,1,2]
+false	-0.25	1970-01-02 00:00:01.500	7	ab	[]
+SELECT *\nFROM\n(\n    SELECT\n        _CAST(\'true\', \'Bool\') AS b,\n        _CAST(1.5, \'Float32\') AS f,\n        _CAST(_CAST(\'1704067200.123\', \'Decimal(18, 3)\'), \'DateTime64(3, \\\'UTC\\\')\') AS d,\n        _CAST(NULL, \'Nullable(Int32)\') AS n,\n        \'lc\' AS s,\n        _CAST([1, 2], \'Array(UInt8)\') AS a\n    FROM system.one\n) AS v_typed_parameters_invoker
+SELECT *\nFROM\n(\n    SELECT\n        _CAST(\'false\', \'Bool\') AS b,\n        _CAST(0.10000000149011612, \'Float32\') AS f,\n        _CAST(_CAST(\'86401.5\', \'Decimal(18, 3)\'), \'DateTime64(3, \\\'UTC\\\')\') AS d,\n        _CAST(-5, \'Nullable(Int32)\') AS n,\n        \'ab\' AS s,\n        _CAST([0, 1, 2], \'Array(UInt8)\') AS a\n    FROM system.one\n) AS v_typed_parameters_invoker
+b	Bool					
+f	Float32					
+d	DateTime64(3, \'UTC\')					
+n	Nullable(Int32)					
+s	String					
+a	Array(UInt8)					
+2024-01-01 00:00:00
+2024-01-01 00:00:00
+0.1
+0.1
+b
+7
+SELECT *\nFROM\n(\n    SELECT \'2024-01-01 00:00:00\' AS s\n    FROM system.one\n) AS v_string_parameter
+SELECT *\nFROM\n(\n    SELECT \'0.1\' AS s\n    FROM system.one\n) AS v_string_parameter
+s	String					
+42
+x	UInt64					
