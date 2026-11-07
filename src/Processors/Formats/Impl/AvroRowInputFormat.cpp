@@ -6,6 +6,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
@@ -1722,6 +1723,9 @@ void copyAvroBytes(ReadBuffer & in, String & raw, size_t n)
 {
     while (n)
     {
+        /// A block length is not bounded by the segment thresholds, so check cancellation between steps;
+        /// otherwise a cancelled query keeps the segmentator reading a huge value to the end.
+        CurrentThread::checkIfNotCancelled();
         size_t step = n < AVRO_SEGMENT_COPY_STEP ? n : AVRO_SEGMENT_COPY_STEP;
         size_t old = raw.size();
         raw.resize(old + step);
@@ -1734,6 +1738,10 @@ void copyAvroBytesToMemory(ReadBuffer & in, DB::Memory<> & memory, size_t n)
 {
     while (n)
     {
+        /// `ParallelParsingInputFormat` only checks cancellation between segments, and a single block's
+        /// declared length is not bounded by the segment thresholds, so check it between steps here --
+        /// otherwise a cancelled/timed-out query keeps draining a large block to the end.
+        CurrentThread::checkIfNotCancelled();
         size_t step = n < AVRO_SEGMENT_COPY_STEP ? n : AVRO_SEGMENT_COPY_STEP;
         size_t old = memory.size();
         /// Grow the segment amortized: an exact `resize` reallocates the whole buffer on every append,
@@ -1783,6 +1791,8 @@ void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
         }
         for (Int64 i = 0; i < count; ++i)
         {
+            /// A declared entry count is untrusted and can be huge, so stay cancellable here too.
+            CurrentThread::checkIfNotCancelled();
             copyAvroString(in, h); /// key
             copyAvroString(in, h); /// value
         }
@@ -1826,6 +1836,9 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
     bool eof = false;
     while (true)
     {
+        /// A segment can accumulate many blocks before reaching `min_bytes`, and the framework only checks
+        /// cancellation between whole segments, so check it per block here too.
+        CurrentThread::checkIfNotCancelled();
         if (in.eof())
         {
             eof = true;
