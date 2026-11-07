@@ -1,0 +1,503 @@
+# The re-trigger half of the unresolved-review-threads CI gate
+# (https://github.com/ClickHouse/ClickHouse/issues/114724).
+#
+# While a PR has unresolved review threads, the PR workflow runs only builds
+# and the preliminary checks, and its finish step records the verdict in the
+# `Review Threads` commit status (see
+# ci/jobs/scripts/workflow_hooks/review_threads.py). This workflow watches
+# `PR` workflow completions and changes to the `ignore-unresolved-threads`
+# label. When an event exposes a stale recorded verdict, it re-runs the last
+# completed `PR` workflow run for the current head commit.
+# Previously succeeded jobs are restored from the CI cache, so such a re-run
+# only executes the jobs that were skipped (or newly need to be skipped).
+#
+# GitHub Actions has no supported trigger for review-thread resolution. `PR`
+# workflow completions catch threads resolved while CI is in flight. Threads
+# resolved after the run has finished are caught by the `poll` job: on a
+# schedule, it looks for open PRs whose recorded verdict is a block while no
+# blocking thread is unresolved any more, and dispatches this workflow for each
+# of them (`workflow_dispatch`, so the reconciliation is serialized with the
+# other events for the same head commit). Label events use
+# `pull_request_target` so they can reconcile fork PRs with a write-capable
+# token. This workflow never checks out or executes PR code.
+
+name: Rerun On Review Threads
+
+on:
+  workflow_run:
+    workflows: ["PR"]
+    types: [completed]
+  pull_request_target:
+    types: [labeled, unlabeled]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'The PR to reconcile'
+        required: true
+      head_sha:
+        description: 'The PR head commit the reconciliation is requested for'
+        required: true
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+  statuses: write
+
+# Key on the head commit, which all the reconciling event payloads carry, so a
+# label event, a dispatch from the `poll` job and a `PR` workflow completion for
+# the same head never reconcile at once (otherwise several could see no active
+# run and dispatch duplicate reruns). Scheduled `poll` runs key on their run id.
+concurrency:
+  group: rerun-on-review-threads-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || inputs.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the reconciliation for PRs whose blocking threads were resolved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # Keep in sync with REVIEW_THREADS_STATUS_NAME in
+          # ci/jobs/scripts/workflow_hooks/review_threads.py.
+          STATUS_NAME: Review Threads
+        run: |
+          set -euo pipefail
+
+          owner="${GH_REPO%%/*}"
+          name="${GH_REPO##*/}"
+
+          # Open PRs whose head commit carries a failing gate marker. The
+          # marker must have been written for the PR itself (the Praktika
+          # report URL of the PR, or the URL of the PR): another open PR can
+          # share the head commit.
+          candidates=$(gh api graphql --paginate \
+            -f query='query($owner: String!, $name: String!, $context: String!, $endCursor: String) {
+              repository(owner: $owner, name: $name) {
+                pullRequests(states: OPEN, first: 100, after: $endCursor) {
+                  pageInfo { hasNextPage endCursor }
+                  nodes {
+                    number
+                    url
+                    headRefOid
+                    commits(last: 1) {
+                      nodes { commit { oid status { context(name: $context) { state targetUrl } } } }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$owner" -f name="$name" -f context="$STATUS_NAME" \
+            --jq '.data.repository.pullRequests.nodes[]
+                  | .number as $pr
+                  | (.commits.nodes[0].commit // {}) as $commit
+                  | ($commit.status.context // {}) as $marker
+                  | select($commit.oid == .headRefOid)
+                  | select($marker.state == "FAILURE" or $marker.state == "ERROR")
+                  | select((($marker.targetUrl // "") | contains("?PR=\($pr)&")) or $marker.targetUrl == .url)
+                  | "\(.number) \(.headRefOid)"')
+
+          dispatched=0
+          while read -r pr head_sha; do
+            [ -n "$pr" ] || continue
+            # The live unresolved blocking review thread count. Keep the
+            # pattern in sync with NON_BLOCKING_THREAD_PATTERN in
+            # ci/jobs/scripts/workflow_hooks/review_threads.py.
+            unresolved=$(gh api graphql --paginate \
+              -f query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $pr) {
+                    reviewThreads(first: 100, after: $endCursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { isResolved comments(first: 1) { nodes { body } } }
+                    }
+                  }
+                }
+              }' \
+              -f owner="$owner" -f name="$name" -F pr="$pr" \
+              --jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                     | select(.isResolved | not)
+                     | select((.comments.nodes[0].body // "") | test("^\\s*(\\[(P2|P3|Major|Minor|Nit)\\]|Nit:)"; "i") | not)
+                    ] | length' \
+              | awk '{s+=$1} END {print s+0}')
+            if [ "$unresolved" -gt 0 ]; then
+              continue
+            fi
+            # The `reconcile` job re-checks everything (a run in progress,
+            # shared heads, the attempt cap) and decides between a status
+            # refresh and a re-run.
+            echo "PR #$pr (head $head_sha): no unresolved blocking review threads - dispatching the reconciliation"
+            gh api --method POST "repos/$GH_REPO/actions/workflows/rerun_on_review_threads.yml/dispatches" \
+              -f ref="$GITHUB_REF_NAME" -f "inputs[pr_number]=$pr" -f "inputs[head_sha]=$head_sha" >/dev/null
+            dispatched=$((dispatched + 1))
+          done <<< "$candidates"
+          echo "Dispatched the reconciliation for $dispatched PR(s)."
+
+  reconcile:
+    # Label events matter only for the gate's override label.
+    # Keep the label name in sync with Labels.IGNORE_UNRESOLVED_THREADS in
+    # ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py.
+    if: >-
+      github.event_name != 'schedule' &&
+      (github.event_name != 'pull_request_target' || github.event.label.name == 'ignore-unresolved-threads')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rerun the PR workflow if the recorded review-threads verdict is stale
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
+          # The head commit a label event or a dispatch from the `poll` job was
+          # raised for. The concurrency group is keyed on it, so the event must
+          # not act on a newer head.
+          LABEL_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.head_sha || '' }}
+          WR_PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+          WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
+          WR_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name || '' }}
+          WR_HEAD_REPO_ID: ${{ github.event.workflow_run.head_repository.id || '' }}
+          # Keep in sync with REVIEW_THREADS_STATUS_NAME in
+          # ci/jobs/scripts/workflow_hooks/review_threads.py.
+          STATUS_NAME: Review Threads
+          # Keep in sync with READY_FOR_MERGE_CUSTOM_STATUS_NAME in
+          # ci/settings/settings.py.
+          MERGEABLE_CHECK_STATUS_NAME: Mergeable Check
+          OVERRIDE_LABEL: ignore-unresolved-threads
+          # Safety valve: never grow a single run past this many attempts, so
+          # a reconciliation bug cannot re-run one workflow forever.
+          MAX_ATTEMPTS: 5
+        run: |
+          set -euo pipefail
+
+          api_with_retries() {
+            local attempt output
+            for attempt in 1 2 3; do
+              if output=$(gh api "$@"); then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              echo "GitHub API request failed (attempt $attempt/3): gh api $*" >&2
+            done
+            return 1
+          }
+
+          post_status() {
+            local state="$1"
+            local context="$2"
+            local description="$3"
+            api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha" \
+              -f state="$state" -f context="$context" \
+              -f description="$description" \
+              -f target_url="https://github.com/$GH_REPO/pull/$pr" >/dev/null
+
+            # `gh api --jq` takes no `--arg`, so filter with a separate `jq`.
+            # Several PRs can share the head commit, so match the status of
+            # this PR by its `target_url`, not by the context alone.
+            local posted posted_state posted_description
+            posted=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              | jq --arg context "$context" --arg url "https://github.com/$GH_REPO/pull/$pr" \
+                '[.[] | select(.context == $context and .target_url == $url)] | first // {}')
+            posted_state=$(echo "$posted" | jq -r '.state // empty')
+            posted_description=$(echo "$posted" | jq -r '.description // empty')
+            if [ "$posted_state" != "$state" ] || [ "$posted_description" != "$description" ]; then
+              echo "Failed to verify $context status update" >&2
+              return 1
+            fi
+          }
+
+          # --- Resolve the PR number ---
+          pr="$PR_NUMBER"
+          if [ -z "$pr" ] && [ -n "$WR_HEAD_SHA" ]; then
+            # Several open PRs can share the head commit of a run, so match
+            # the candidates against the run's own head branch and repository
+            # instead of trusting the first one. `workflow_run.pull_requests`
+            # names the PRs of this repository; it is empty for fork PRs, so
+            # then look the PRs up through the head commit.
+            candidates=$(echo "$WR_PULL_REQUESTS" \
+              | jq -c --arg ref "$WR_HEAD_BRANCH" --arg repo_id "$WR_HEAD_REPO_ID" \
+                '[(. // [])[] | select(.head.ref == $ref and (.head.repo.id | tostring) == $repo_id)
+                  | .number] | unique')
+            if [ "$(echo "$candidates" | jq 'length')" -eq 0 ]; then
+              candidates=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
+                | jq -c --arg ref "$WR_HEAD_BRANCH" --arg repo "$WR_HEAD_REPO" \
+                  '[.[] | select(.state == "open" and .head.ref == $ref and .head.repo.full_name == $repo)
+                    | .number] | unique')
+            fi
+            # Only PRs from the same branch into different base branches are
+            # left here; the run does not tell which of them it belongs to.
+            if [ "$(echo "$candidates" | jq 'length')" -gt 1 ]; then
+              echo "Run for $WR_HEAD_REPO:$WR_HEAD_BRANCH ($WR_HEAD_SHA) belongs to several PRs ($candidates) - ambiguous, nothing to do."
+              exit 0
+            fi
+            pr=$(echo "$candidates" | jq -r '.[0] // empty')
+          fi
+          if [ -z "$pr" ]; then
+            echo "No PR associated with the event - nothing to do."
+            exit 0
+          fi
+
+          # --- Current PR state ---
+          pr_data=$(api_with_retries "repos/$GH_REPO/pulls/$pr")
+          state=$(echo "$pr_data" | jq -r '.state')
+          head_sha=$(echo "$pr_data" | jq -r '.head.sha')
+          head_ref=$(echo "$pr_data" | jq -r '.head.ref')
+          head_repo=$(echo "$pr_data" | jq -r '.head.repo.full_name // ""')
+          head_owner=$(echo "$pr_data" | jq -r '.head.repo.owner.login // ""')
+          override=$(echo "$pr_data" | jq -r --arg override_label "$OVERRIDE_LABEL" \
+            '[.labels[].name] | index($override_label) != null')
+          if [ "$state" != "open" ]; then
+            echo "PR #$pr is $state - nothing to do."
+            exit 0
+          fi
+          # Both event kinds are serialized by the head commit they were raised
+          # for (see `concurrency` above). Acting on a newer head from here would
+          # escape that serialization and race with the reconciliation for it;
+          # the `PR` run of the newer push re-triggers this workflow anyway.
+          event_head_sha="${WR_HEAD_SHA:-$LABEL_HEAD_SHA}"
+          if [ -n "$event_head_sha" ] && [ "$event_head_sha" != "$head_sha" ]; then
+            echo "Event is for $event_head_sha but the PR head is $head_sha - a newer push supersedes it."
+            exit 0
+          fi
+
+          # --- Live unresolved blocking review thread count ---
+          # A thread whose first comment starts with a non-blocking severity tag
+          # does not count. Keep the pattern in sync with
+          # NON_BLOCKING_THREAD_PATTERN in ci/jobs/scripts/workflow_hooks/review_threads.py.
+          owner="${GH_REPO%%/*}"
+          name="${GH_REPO##*/}"
+          unresolved=$(api_with_retries graphql --paginate \
+            -f query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100, after: $endCursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { isResolved comments(first: 1) { nodes { body } } }
+                  }
+                }
+              }
+            }' \
+            -f owner="$owner" -f name="$name" -F pr="$pr" \
+            --jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                   | select(.isResolved | not)
+                   | select((.comments.nodes[0].body // "") | test("^\\s*(\\[(P2|P3|Major|Minor|Nit)\\]|Nit:)"; "i") | not)
+                  ] | length' \
+            | awk '{s+=$1} END {print s+0}')
+
+          desired_blocked=false
+          if [ "$unresolved" -gt 0 ] && [ "$override" != "true" ]; then
+            desired_blocked=true
+          fi
+
+          # --- Recorded verdict: the latest gate commit status on the head ---
+          # A failing marker has two distinct meanings: a limited pipeline
+          # must be replayed after threads resolve, whereas a forced full
+          # pipeline only needs its merge-gate status refreshed.
+          #
+          # Commit statuses belong to the commit, and another open PR can share
+          # this head, so only a status written for this PR is its verdict: the
+          # gate posts it with the Praktika report URL of the PR (`?PR=<n>&`),
+          # and this workflow with the URL of the PR itself.
+          own_report_url_part="?PR=$pr&"
+          own_pr_url="https://github.com/$GH_REPO/pull/$pr"
+          is_own_status_url() {
+            [[ "$1" == *"$own_report_url_part"* ]] || [ "$1" = "$own_pr_url" ]
+          }
+          marker=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+            | jq --arg context "$STATUS_NAME" --arg report "$own_report_url_part" --arg pr_url "$own_pr_url" '
+              [.[] | select(.context == $context)
+                   | select((.target_url // "") as $url | ($url | contains($report)) or $url == $pr_url)]
+              | first // {}')
+          marker_state=$(echo "$marker" | jq -r '.state // "none"')
+          marker_description=$(echo "$marker" | jq -r '.description // ""')
+          pipeline_limited=false
+          if [[ "$marker_description" == *"running the limited CI suite"* ]] \
+             || [[ "$marker_description" == *"full CI suite was skipped"* ]] \
+             || [[ "$marker_description" == *"full CI suite will be re-run"* ]]; then
+            pipeline_limited=true
+          fi
+          recorded_blocked=false
+          if [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; then
+            recorded_blocked=true
+          fi
+
+          echo "PR #$pr (head $head_sha): unresolved=$unresolved override=$override" \
+               "desired_blocked=$desired_blocked recorded=$marker_state pipeline_limited=$pipeline_limited"
+
+          if [ "$desired_blocked" = "$recorded_blocked" ]; then
+            echo "The recorded verdict matches the live state - nothing to do."
+            exit 0
+          fi
+
+          # --- Never clear a block on a head commit shared by several PRs ---
+          # Commit statuses are keyed by the commit and the context only, so
+          # GitHub applies a status written here to every PR with this head,
+          # whatever `target_url` says. Fail close: a success (or a re-run whose
+          # finish step would write one) could clear the block of another PR.
+          # The gate in `can_be_merged.py` blocks such PRs as well. A new block
+          # is still recorded below - it only adds a block to the other PRs.
+          if [ "$desired_blocked" != "true" ]; then
+            shared_sha_prs=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/pulls" \
+              | jq -c --arg sha "$head_sha" \
+                '[.[] | select(.state == "open" and .head.sha == $sha) | .number] | unique')
+            if [ "$(echo "$shared_sha_prs" | jq 'length')" -gt 1 ]; then
+              echo "Head commit $head_sha is the head of several open PRs ($shared_sha_prs) -" \
+                   "not clearing the review-thread block, push a distinct commit."
+              exit 0
+            fi
+          fi
+
+          # --- Do nothing while a PR workflow run is in progress ---
+          # Checked before the refresh-only path as well: a status posted
+          # from here while "Finish Workflow" runs would land in the same
+          # time window as the gate's own verdict and could be mistaken for
+          # it by retry_infra_failures.yml.
+          #
+          # Another PR can share this head commit, so keep only the runs of
+          # this PR: by the head branch and repository of the run, which is
+          # all there is for fork PRs (`pull_requests` is empty for them).
+          # `pull_requests` lists every PR that shares the head commit, so a
+          # match there alone would accept another PR's run; when it is
+          # filled in, it must also name this PR.
+          #
+          # A run carries no base branch, and `pull_requests` names every PR of
+          # its head branch whatever their base, so the runs of PRs from the
+          # same branch into different base branches cannot be told apart.
+          # Then a run picked here could belong to the other PR: rerun it on
+          # the wrong base, or green this PR from its conclusion.
+          # `workflow_run` events already skip such PRs as ambiguous.
+          shared_head_prs=$(api_with_retries "repos/$GH_REPO/pulls?state=open&head=$head_owner:$head_ref&per_page=100" \
+            | jq -c --arg head_ref "$head_ref" --arg head_repo "$head_repo" \
+              '[.[] | select(.head.ref == $head_ref and .head.repo.full_name == $head_repo) | .number] | unique')
+          if [ "$(echo "$shared_head_prs" | jq 'length')" -gt 1 ]; then
+            echo "Branch $head_repo:$head_ref is the head of several open PRs ($shared_head_prs) -" \
+                 "their runs cannot be told apart, nothing to do."
+            exit 0
+          fi
+          runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+            | jq --argjson pr "$pr" --arg head_ref "$head_ref" --arg head_repo "$head_repo" \
+              '[.workflow_runs[] | select(.name == "PR")
+                | select(.head_branch == $head_ref and .head_repository.full_name == $head_repo)
+                | select((.pull_requests | length) == 0 or any(.pull_requests[]; .number == $pr))]')
+          active=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
+          if [ "$active" -gt 0 ]; then
+            echo "A PR workflow run is still in progress - its finish step records the" \
+                 "fresh state, and its completion re-triggers this reconciliation."
+            exit 0
+          fi
+
+          if [ "$pipeline_limited" != "true" ]; then
+            # A full pipeline already ran. Refresh only its gate status;
+            # rerunning would be wasteful (and `ci-force-all` skips cache
+            # lookup, so it would execute the full suite again).
+            if [ "$desired_blocked" = "true" ]; then
+              state=failure
+              description="$unresolved unresolved review thread(s)"
+            else
+              state=success
+              description="all review threads resolved"
+            fi
+            # `Mergeable Check` is the aggregate verdict of the PR workflow.
+            # A new unresolved thread must block merging immediately, but do
+            # not turn an unrelated CI failure into success when it resolves,
+            # and do not overwrite one either: the gate owns this status only
+            # while nothing else is failing in it.
+            mergeable_statuses=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              | jq --arg context "$MERGEABLE_CHECK_STATUS_NAME" '[.[] | select(.context == $context)]')
+            is_review_threads_marker() {
+              [[ "$1" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
+                || [ "$1" = "Failed: review threads only" ]
+            }
+            read_mergeable() {
+              mergeable_state=$(echo "$1" | jq -r '.state // "none"')
+              mergeable_description=$(echo "$1" | jq -r '.description // ""')
+              mergeable_url=$(echo "$1" | jq -r '.target_url // ""')
+              # A review-thread marker written for another PR that shares this
+              # head is not this PR's to claim or clear.
+              gate_owned_mergeable=false
+              if is_own_status_url "$mergeable_url" \
+                 && is_review_threads_marker "$mergeable_description"; then
+                gate_owned_mergeable=true
+              fi
+            }
+            read_mergeable "$(echo "$mergeable_statuses" | jq 'first // {}')"
+            if [ "$desired_blocked" = "true" ]; then
+              # This distinct description lets the resolving event identify a
+              # failure injected here rather than one from the PR workflow.
+              #
+              # Only claim `Mergeable Check` when the last completed run left
+              # it green (or it is missing/pending, so there is no verdict to
+              # hide), or when it already carries one of this workflow's own
+              # markers. Overwriting an unrelated failure would both hide the
+              # real reason and strand the marker: the resolving path below
+              # refuses to green a status whose run did not conclude
+              # `success`, so the review-thread text would survive until a
+              # manual rerun. `Review Threads` alone records the new block.
+              if [ "$mergeable_state" = "failure" ] || [ "$mergeable_state" = "error" ]; then
+                if [ "$gate_owned_mergeable" = "true" ]; then
+                  post_status failure "$MERGEABLE_CHECK_STATUS_NAME" \
+                    "review threads: $unresolved unresolved review thread(s)"
+                else
+                  echo "'$MERGEABLE_CHECK_STATUS_NAME' already fails for another reason" \
+                       "($mergeable_description) - leaving it intact; '$STATUS_NAME' records the block."
+                fi
+              else
+                post_status failure "$MERGEABLE_CHECK_STATUS_NAME" \
+                  "review threads: $unresolved unresolved review thread(s)"
+              fi
+            else
+              # The newest marker can be a review-thread marker of another PR
+              # that shared this head and has been closed since: the shared-head
+              # guard above has established that this PR is the only open one
+              # on the head now, so it no longer blocks anybody else. Decide by
+              # the latest `Mergeable Check` of this PR then, or the foreign
+              # marker would stay red until a manual re-run. A foreign failure
+              # for any other reason stays intact.
+              if ! is_own_status_url "$mergeable_url" \
+                 && is_review_threads_marker "$mergeable_description"; then
+                read_mergeable "$(echo "$mergeable_statuses" \
+                  | jq --arg report "$own_report_url_part" --arg pr_url "$own_pr_url" '
+                    [.[] | select((.target_url // "") as $url | ($url | contains($report)) or $url == $pr_url)]
+                    | first // {}')"
+              fi
+              last_pr_run=$(echo "$runs" \
+                | jq '[.[] | select(.status == "completed")] | sort_by(.created_at) | last // {}')
+              last_pr_conclusion=$(echo "$last_pr_run" | jq -r '.conclusion // ""')
+              if [ "$mergeable_state" = "failure" ] && [ "$gate_owned_mergeable" = "true" ] \
+                 && { [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
+                      && [ "$last_pr_conclusion" = "success" ] \
+                      || [ "$mergeable_description" = "Failed: review threads only" ]; }; then
+                post_status success "$MERGEABLE_CHECK_STATUS_NAME" "all review threads resolved"
+              fi
+            fi
+            post_status "$state" "$STATUS_NAME" "$description"
+            echo "Refreshed the review-thread status without rerunning full CI."
+            exit 0
+          fi
+
+          # --- Re-run the last completed PR workflow run for this head ---
+          run_id=$(echo "$runs" | jq -r 'sort_by(.created_at) | last | .id // empty')
+          run_attempt=$(echo "$runs" | jq -r 'sort_by(.created_at) | last | .run_attempt // 0')
+          if [ -z "$run_id" ]; then
+            echo "No completed PR workflow run for $head_sha - nothing to re-run."
+            exit 0
+          fi
+          if [ "$run_attempt" -ge "$MAX_ATTEMPTS" ]; then
+            echo "Run $run_id already has $run_attempt attempts - not re-running (safety cap)."
+            exit 0
+          fi
+
+          echo "Re-running PR workflow run $run_id (attempt $run_attempt) to re-evaluate the gate..."
+          api_with_retries --method POST "repos/$GH_REPO/actions/runs/$run_id/rerun" >/dev/null
+          refreshed_runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "PR")]')
+          rerun_started=$(echo "$refreshed_runs" | jq --argjson run_id "$run_id" --argjson run_attempt "$run_attempt" \
+            '[.[] | select(.id == $run_id and (.status != "completed" or .run_attempt > $run_attempt))] | length')
+          if [ "$rerun_started" -eq 0 ]; then
+            echo "Failed to verify re-run of $run_id" >&2
+            exit 1
+          fi
