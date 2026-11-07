@@ -4,6 +4,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -148,7 +149,8 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     StorageObjectStorageConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    PartitionedWriteAccessCheck write_access_check_)
     : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -156,6 +158,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     , format_settings(format_settings_)
     , sample_block(sample_block_)
     , context(context_)
+    , write_access_check(std::move(write_access_check_))
 {
 }
 
@@ -172,10 +175,29 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
 
+    /// A partition id can make the key fully qualified, e.g. `s3://other-bucket/x.tsv` for the template `{_partition_id}.tsv`,
+    /// and the S3 object storage would then write to that bucket instead of the one whose URI is checked below.
+    /// Other object storages write such a key as a literal name.
+    if (object_storage->getType() == ObjectStorageType::S3 && !configuration->supportsFullyQualifiedPaths()
+        && trySplitFullyQualifiedObjectPath(file_path))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The key {} of a partition refers to another bucket, which is not allowed",
+            file_path);
+
+    /// The partition id comes from the data, so its destination is checked before anything is written to it.
+    /// The key is checked before it is looked up too, so that an existing object outside the grant is not disclosed.
+    if (write_access_check)
+        write_access_check(context, configuration->getURIForAccessCheck(file_path));
+
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
             *object_storage, *configuration, query_settings, file_path, /* sequence_number */1))
     {
         file_path = *new_key;
+
+        /// The new key can be outside the grant, e.g. `team.1.v1/data.tsv` for `team.v1/data.tsv`.
+        if (write_access_check)
+            write_access_check(context, configuration->getURIForAccessCheck(file_path));
     }
 
     last_written_object_path = file_path;

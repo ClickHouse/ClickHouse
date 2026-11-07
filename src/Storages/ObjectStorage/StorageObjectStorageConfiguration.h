@@ -110,6 +110,11 @@ public:
     /// Raw URI, specified by a user. Used in permission check.
     virtual const String & getRawURI() const = 0;
 
+    /// The function returns the URI of the object at `write_path` in the form the source access check uses, so that a
+    /// write to a path computed at write time is checked against the same filtered grants. It returns an empty string
+    /// when the raw URI does not end with the raw path, and then only an unfiltered grant allows the write.
+    virtual String getURIForAccessCheck(const String & write_path) const;
+
     const Path & getPathForRead() const;
     // Path used for writing, it should not be globbed and might contain a partition key
     Path getPathForWrite(const std::string & partition_id = "") const;

@@ -834,6 +834,141 @@ def test_table_function_url_access_rights():
     )
 
 
+def test_partitioned_write_filtered_grant():
+    """
+     A filtered `WRITE` grant is checked against the URI template of the table function, but the partition id
+     substituted into `{_partition_id}` comes from the data. A partition id with `../` must not let the write
+     leave the granted prefix, for `url` (Nginx resolves the dot segments) as well as for `s3`.
+     Example:
+        INSERT INTO FUNCTION url('http://nginx/allowed/{_partition_id}.tsv', 'TSV', 'p String, v UInt32')
+        PARTITION BY p
+        VALUES ('a', 1), ('../protected/owned', 2);
+    """
+
+    suffix = uuid.uuid4().hex  # suffix used for all random names
+    user = f"partition_writer_{suffix}"
+    table = f"partitioned_s3_table_{suffix}"
+    allowed = f"allowed_{suffix}"
+    protected = f"protected_{suffix}"
+    minio_url = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}"
+    columns = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    # The path is a template: ClickHouse replaces `{_partition_id}` in it with the value of `PARTITION BY` for each row.
+    partition_template = f"{allowed}/{{_partition_id}}.tsv"
+    # The only row is `(1, 2, 3)`, so `column1` is 1.
+    safe_partition = "PARTITION BY toString(column1)"  # -> "1", written to `allowed_.../1.tsv`
+    # partition id that traverses the protected prefix and should be refused
+    traversal_partition = f"PARTITION BY concat('../{protected}/owned_', toString(column1))"  # -> "../protected_.../owned_1"
+
+    def insert_url_error(path, partition_by=""):
+        """Insert the row into `http://nginx:80/<path>` as the user; return the error text, empty on success."""
+        _, error = node1.query_and_get_answer_with_error(
+            f"INSERT INTO FUNCTION url(url_file, url = 'http://nginx:80/{path}', format = 'TSV') "
+            f"{partition_by} VALUES (1, 2, 3)",
+            user=user,
+        )
+        return error
+
+    def insert_s3_error(path, partition_by="", settings=None):
+        """Insert the row into `<bucket>/<path>` on MinIO as the user; return the error text, empty on success."""
+        _, error = node1.query_and_get_answer_with_error(
+            f"INSERT INTO FUNCTION s3('{minio_url}/{path}', 'minio', '{cluster.minio_secret_key}', 'TSV', '{columns}') "
+            f"{partition_by} VALUES (1, 2, 3)",
+            settings=settings,
+            user=user,
+        )
+        return error
+
+    def read_url_data(path):
+        """Read `http://nginx:80/<path>` as `default`; return its rows as TSV, or `None` if it does not exist."""
+        data, error = node1.query_and_get_answer_with_error(
+            f"SELECT * FROM url('http://nginx:80/{path}', 'TSV', '{columns}')"
+        )
+        return None if error else data
+
+    def s3_keys(prefix, bucket=cluster.minio_bucket):
+        """List the keys under `prefix` in a MinIO bucket."""
+        return [obj.object_name for obj in cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True)]
+
+    node1.query(f"CREATE USER {user}")
+    node1.query(f"GRANT CREATE TEMPORARY TABLE ON *.*, NAMED COLLECTION ON url_file TO {user}")
+    # The filter is matched against the normalized URI, which omits the default port of the scheme.
+    node1.query(f"GRANT WRITE ON URL('^http://nginx/{allowed}/.*$') TO {user}")
+    node1.query(f"GRANT WRITE ON S3('^{minio_url}/{allowed}/.*$') TO {user}")
+    # Keys starting with `allowed_<suffix>-`, so that `{_partition_id}` can be in the first segment of the key.
+    node1.query(f"GRANT WRITE ON S3('^{minio_url}/{allowed}-.*$') TO {user}")
+    # Only file names without a dot, such as the template `{_partition_id}.tsv` and `1.tsv`, in a directory with a dot,
+    # `versioned.<suffix>/`.
+    versioned = f"versioned.{suffix}"
+    node1.query(f"GRANT WRITE ON S3('^{minio_url}/versioned\\\\.{suffix}/[^./]+\\\\.tsv$') TO {user}")
+
+    try:
+        # Happy path: `url`: a partition inside the granted prefix is written.
+        assert insert_url_error(partition_template, safe_partition) == ""
+        assert read_url_data(f"{allowed}/1.tsv") == "1\t2\t3\n"
+
+        # Reject: a path outside the grant is refused.
+        assert "Not enough privileges" in insert_url_error(f"{protected}/direct.tsv")
+
+        # Reject: a partition id that leaves the granted prefix is refused too, and nothing is written there.
+        assert "Not enough privileges" in insert_url_error(partition_template, traversal_partition)
+        assert read_url_data(f"{protected}/owned_1.tsv") is None
+
+        # Happy path: `s3`: the same three cases.
+        assert insert_s3_error(partition_template, safe_partition) == ""
+        assert s3_keys(f"{allowed}/") == [f"{allowed}/1.tsv"]
+
+        # Reject: a path outside the grant is refused.
+        assert "Not enough privileges" in insert_s3_error(f"{protected}/direct.tsv")
+
+        # Reject: a partition id that leaves the granted prefix is refused too, and nothing is written there.
+        assert "Not enough privileges" in insert_s3_error(partition_template, traversal_partition)
+        assert s3_keys(f"{protected}/") == []
+
+        # Reject: the same, with `{_partition_id}` percent-encoded in the URI. `s3` decodes the key, so the encoded
+        # placeholder is still replaced with the partition id when writing.
+        encoded_template = f"{allowed}/%7B_partition_id%7D.tsv"
+        assert "Not enough privileges" in insert_s3_error(encoded_template, traversal_partition)
+        assert s3_keys(f"{protected}/") == []
+
+        # Reject: an existing object is not overwritten but renamed by `s3_create_new_file_on_insert`, and the new key
+        # is outside the grant. Depending on the version, `.1` is inserted before the first dot of the key or of the
+        # file name, so `versioned.<suffix>/1.tsv` becomes `versioned.1.<suffix>/1.tsv` or `versioned.<suffix>/1.1.tsv`.
+        versioned_template = f"{versioned}/{{_partition_id}}.tsv"
+        assert insert_s3_error(versioned_template, safe_partition) == ""
+        assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
+        assert "Not enough privileges" in insert_s3_error(
+            versioned_template, safe_partition, settings={"s3_create_new_file_on_insert": 1}
+        )
+        assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
+        assert s3_keys(f"versioned.1.{suffix}/") == []
+
+        # Reject: a partition id that makes the key fully qualified, `allowed_<suffix>-s3://root2/owned_<suffix>_1.tsv`,
+        # which the object storage would write as `owned_<suffix>_1.tsv` into the bucket `root2`, while the checked URI
+        # is in the granted bucket. A plain partition id with the same template is written.
+        qualified_template = f"{allowed}-{{_partition_id}}.tsv"
+        assert insert_s3_error(qualified_template, safe_partition) == ""
+        assert s3_keys(f"{allowed}-") == [f"{allowed}-1.tsv"]
+        other_bucket_partition = f"PARTITION BY concat('s3://{cluster.minio_bucket_2}/owned_{suffix}_', toString(column1))"
+        assert "refers to another bucket" in insert_s3_error(qualified_template, other_bucket_partition)
+        assert s3_keys(f"owned_{suffix}_", bucket=cluster.minio_bucket_2) == []
+
+        # A partitioned table with the `S3` engine is not checked against the source grants of the user who
+        # inserts into it, so it keeps working with a destination outside the prefix the user could write to.
+        # (The `URL` engine does not support `PARTITION BY`.)
+        node1.query(
+            f"CREATE TABLE {table} ({columns}) "
+            f"ENGINE = S3('{minio_url}/{protected}/{{_partition_id}}.tsv', 'minio', '{cluster.minio_secret_key}', 'TSV') "
+            f"PARTITION BY toString(column1)"
+        )
+        node1.query(f"GRANT INSERT ON {table} TO {user}")
+        node1.query(f"INSERT INTO {table} VALUES (1, 2, 3)", user=user)
+        assert s3_keys(f"{protected}/") == [f"{protected}/1.tsv"]
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table}")
+        node1.query(f"DROP USER IF EXISTS {user}")
+
+
 @pytest.mark.parametrize("file_format", ["Parquet", "CSV", "TSV", "JSONEachRow"])
 def test_file_formats(file_format):
     # Generate random URL with timestamp to make test idempotent

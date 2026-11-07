@@ -241,3 +241,51 @@ def test_url_s3_scheme_with_parallel_replicas(started_cluster):
 
     for function in ("url", "s3"):
         node.query(f"DROP TABLE {function}_s3_parallel_replicas SYNC")
+
+
+def test_partitioned_write_filtered_grant_with_scheme_mapper(started_cluster):
+    """
+    The server config of this module, `configs/config.d/minio.xml`, maps the `minio` scheme with `url_scheme_mappers`:
+
+        <minio><to>http://minio1:9001/root/{bucket}</to></minio>
+
+    `S3::URI` puts the host of a `minio://` URI in place of `{bucket}`, so `minio://data/x.tsv` becomes
+    `http://minio1:9001/root/data/x.tsv`: the key `data/x.tsv` in the bucket `root`. The key then has a prefix, `data/`,
+    that the path of the URI as the user typed it does not have. Each partition of a partitioned write must still be
+    checked against a filtered grant on the typed URI.
+    """
+
+    suffix = uuid.uuid4().hex
+    user = f"partition_writer_{suffix}"
+    allowed = f"allowed_{suffix}"
+    protected = f"protected_{suffix}"
+    columns = "column1 UInt32, column2 UInt32, column3 UInt32"
+    template = f"minio://data/{allowed}/{{_partition_id}}.tsv"
+
+    def insert_error(partition_by):
+        """Insert the row into `template` as the user; return the error text, empty on success."""
+        _, error = node.query_and_get_answer_with_error(
+            f"INSERT INTO FUNCTION s3('{template}', 'minio', '{minio_secret_key}', 'TSV', '{columns}') "
+            f"PARTITION BY {partition_by} VALUES (1, 2, 3)",
+            user=user,
+        )
+        return error
+
+    def keys(prefix):
+        """List the keys under `prefix` in the bucket `root`."""
+        return [obj.object_name for obj in cluster.minio_client.list_objects(cluster.minio_bucket, prefix=prefix, recursive=True)]
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+    node.query(f"GRANT WRITE ON S3('^minio://data/{allowed}/.*$') TO {user}")
+
+    try:
+        # Happy path: a partition inside the granted prefix is written to the mapped key.
+        assert insert_error("toString(column1)") == ""
+        assert keys(f"data/{allowed}/") == [f"data/{allowed}/1.tsv"]
+
+        # Reject: a partition id that leaves the granted prefix is refused, and nothing is written there.
+        assert "Not enough privileges" in insert_error(f"concat('../{protected}/owned_', toString(column1))")
+        assert keys(f"data/{protected}/") == []
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
