@@ -1,3 +1,6 @@
+-- Tags: no-random-settings
+-- no-random-settings: the last query verifies `compatibility` reverts `optimize_and_compare_chain_max_hash_work`
+-- to 0, which only holds when the setting is not explicitly set (clickhouse-test randomizes it, PR #106734).
 -- The `optimize_and_compare_chain` optimization derives transitive predicates from an AND-chain of
 -- comparisons (e.g. `(a < b) AND (b < c) AND (c < 5)` also implies `b < 5` and `a < 5`). Its work is
 -- bounded by the `optimize_and_compare_chain_max_hash_work` budget, measured in query-tree nodes

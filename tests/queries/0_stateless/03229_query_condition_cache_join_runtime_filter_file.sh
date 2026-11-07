@@ -45,7 +45,9 @@ touch -d '2020-01-01 00:00:00' "$DATA_FILE"
 JOIN_QUERY="SELECT count() FROM t_qcc_jrf_file AS p, t_qcc_jrf_dim AS d WHERE p.k = d.k AND p.val % 7 = 3"
 JOIN_SETTINGS="use_query_condition_cache = 1, enable_join_runtime_filters = 1,
     join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash,parallel_hash',
-    query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+    query_plan_join_swap_table = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+    join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7,
+    join_runtime_filter_exact_values_limit = 10000"
 NO_RF_SETTINGS="use_query_condition_cache = 1, enable_join_runtime_filters = 0,
     join_algorithm = 'hash,parallel_hash', query_plan_join_swap_table = 0,
     optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"

@@ -4,6 +4,9 @@ SET prefer_external_sort_block_bytes = 0;
 SET temporary_files_buffer_size = 1048576;
 SET group_by_two_level_threshold = 1;
 SET optimize_aggregation_in_order = 0;
+-- Pin to default: CI randomizes min_bytes_before_external_group_by up to 16 MiB, which suppresses the
+-- spilling this test measures.
+SET min_bytes_before_external_group_by = 0;
 
 -- Shared scopes must be counted once, even when several processors write spill files.
 -- The sorting threshold is divided between four streams; one byte per stream spills every block.

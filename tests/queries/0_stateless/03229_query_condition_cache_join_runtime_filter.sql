@@ -7,6 +7,9 @@
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 1;
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that one control below checks.
+SET enable_join_seal_gated_reading = 0;
 
 DROP VIEW IF EXISTS v_tab;
 DROP TABLE IF EXISTS tab;

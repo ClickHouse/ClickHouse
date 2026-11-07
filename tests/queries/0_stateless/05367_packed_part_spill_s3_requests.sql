@@ -14,12 +14,16 @@ CREATE TABLE t_packed_s3_spill (id UInt64, s String, a Array(UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, index_granularity_bytes = '10Mi',
     min_bytes_for_full_part_storage = '1T', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    -- Pin to default: CI randomizes prewarm_statistics_cache on, which reads statistics on part load
+    -- and adds S3 requests this test counts.
+    prewarm_statistics_cache = 0,
     max_bytes_to_buffer_for_packed_part = 65536;
 
 CREATE TABLE t_packed_s3_no_spill (id UInt64, s String, a Array(UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS storage_policy = 's3_no_cache', index_granularity = 8192, index_granularity_bytes = '10Mi',
     min_bytes_for_full_part_storage = '1T', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    prewarm_statistics_cache = 0,
     max_bytes_to_buffer_for_packed_part = 0;
 
 SYSTEM STOP MERGES t_packed_s3_spill;

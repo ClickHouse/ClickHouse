@@ -6,6 +6,10 @@
 -- That also lets the nesting stay well away from the 5 % of a thread's stack that `checkStackSize`
 -- allows under TSan, which 20 levels of subquery analysis already exceed.
 
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the primary key
+-- analysis by the set that `force_primary_key` checks does not happen.
+SET max_bytes_before_external_set = 0;
+
 DROP TABLE IF EXISTS mergetree_00673;
 
 CREATE TABLE mergetree_00673 (x UInt64) ENGINE = MergeTree ORDER BY x;

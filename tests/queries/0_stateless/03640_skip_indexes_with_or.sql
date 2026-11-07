@@ -10,6 +10,9 @@ SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
 SET use_skip_indexes = 1;
+-- Pin the disjunction RPN budget to its default: CI randomizes it as low as 8, so a large disjunction
+-- stops using the combined skip index and reads more granules than `max_rows_to_read` allows.
+SET use_skip_indexes_for_disjunctions_max_rpn_elements = 128;
 
 DROP TABLE IF EXISTS tab;
 

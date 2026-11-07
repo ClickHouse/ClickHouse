@@ -10,7 +10,12 @@ SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_for_disjunctions = 1;
+-- Pin the disjunction RPN budget to its default: CI randomizes it as low as 8, which drops the
+-- `<Combined skip indexes>` step this test asserts on (rows unchanged).
+SET use_skip_indexes_for_disjunctions_max_rpn_elements = 128;
 SET allow_key_condition_coalesce_rewrite = 1;
+-- Pin off: folding partition constants changes the granule counts this test asserts on (rows unchanged).
+SET use_constant_folding_in_index_analysis = 0;
 
 DROP TABLE IF EXISTS tab;
 
