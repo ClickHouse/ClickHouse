@@ -68,11 +68,6 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     return {};
 }
 
-bool DataTypeTuple::hasValidElementNames(const Strings & names)
-{
-    return !checkTupleNames(names).has_value();
-}
-
 DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
     : elems(elems_), names(names_), has_explicit_names(true)
 {
@@ -227,13 +222,6 @@ void DataTypeTuple::insertDefaultInto(IColumn & column) const
         for (const auto & i : collections::range(0, elems.size()))
             elems[i]->insertDefaultInto(extractElementColumn(column, i));
     });
-}
-
-bool DataTypeTuple::isDefaultInsertTrivial() const
-{
-    return elems.empty()
-        || std::ranges::all_of(elems.begin(), elems.end(),
-            [](const DataTypePtr & elem) { return elem->isDefaultInsertTrivial(); });
 }
 
 bool DataTypeTuple::equals(const IDataType & rhs) const
@@ -410,11 +398,13 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 }
 
 
-DataTypePtr DataTypeTuple::doCloneWithChildren(const DataTypes & new_children) const
+void DataTypeTuple::forEachChild(const ChildCallback & callback) const
 {
-    if (has_explicit_names)
-        return std::make_shared<DataTypeTuple>(new_children, names);
-    return std::make_shared<DataTypeTuple>(new_children);
+    for (const auto & elem : elems)
+    {
+        callback(*elem);
+        elem->forEachChild(callback);
+    }
 }
 
 void DataTypeTuple::updateHashImpl(SipHash & hash) const
@@ -641,6 +631,11 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
+:::note Beta Feature
+Requires `SET enable_nullable_tuple_type = 1`
+This is a Beta feature.
+:::
+
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
 
 | Type                                       | Tuple can be NULL | Elements can be NULL |
@@ -651,6 +646,8 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 Example:
 
 ```sql
+SET enable_nullable_tuple_type = 1;
+
 CREATE TABLE test (
     id UInt32,
     data Nullable(Tuple(String, Int64))

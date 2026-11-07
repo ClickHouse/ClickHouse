@@ -89,10 +89,6 @@ protected:
 
     ResultT impl(uintptr_t addr) const
     {
-        /// 0 is the stored form of frames outside the main executable.
-        if (!addr)
-            return {};
-
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         if (const auto * object = symbol_index.thisObject())

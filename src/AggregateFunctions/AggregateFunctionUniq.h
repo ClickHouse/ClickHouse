@@ -10,26 +10,22 @@
 #include <base/bit_cast.h>
 
 
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
-#include <Common/SipHashStrings.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/ThetaSketchData.h>
-#include <AggregateFunctions/UniqBatch.h>
 #include <AggregateFunctions/UniqExactSet.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Core/ProtocolDefines.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -259,16 +255,6 @@ struct IsUniqExactSet<UniqExactSet<T1, T2>> : std::true_type
 {
 };
 
-template <typename T>
-struct IsUniquesHashSet : std::false_type
-{
-};
-
-template <typename Hash>
-struct IsUniquesHashSet<UniquesHashSet<Hash>> : std::true_type
-{
-};
-
 /** Hash function for uniq.
   */
 template <typename T, typename ColumnType>
@@ -303,8 +289,9 @@ struct AggregateFunctionUniqTraits
     {
         if constexpr (std::is_same_v<T, std::string_view>)
         {
-            /// The strings come from the padded `ColumnString` and `ColumnFixedString`.
-            return sipHash128Padded(x.data(), x.size());
+            SipHash hash;
+            hash.update(x.data(), x.size());
+            return hash.get128();
         }
         else if constexpr (std::is_same_v<T, IPv6>)
         {
@@ -328,80 +315,6 @@ struct AggregateFunctionUniqTraits
         {
             return assert_cast<const ColumnType &>(column).getData()[row_num];
         }
-    }
-
-    /// Whether `hashExactChunk` exists; it gives the hashes of `hashExact`, several values at a time.
-    static constexpr bool has_batched_hash_exact = std::is_same_v<T, std::string_view> || std::is_same_v<T, IPv6>;
-
-    /// keys[k] = hashExact(value(column, begin + rows[k])), for k in [0, num_rows). `rows` is increasing and below
-    /// `chunk_rows` <= 256; it is not read when `num_rows == chunk_rows`.
-    static void hashExactChunk(const IColumn & column, size_t begin, size_t chunk_rows, const UInt32 * rows, size_t num_rows, UInt128 * keys)
-        requires has_batched_hash_exact
-    {
-        /// A group of `SipHashStrings::hashGroup` is 8 values; fewer are cheaper one at a time.
-        if (num_rows < 8)
-        {
-            for (size_t k = 0; k < num_rows; ++k)
-                keys[k] = hashExact(value(column, begin + (num_rows == chunk_rows ? k : rows[k])));
-        }
-        else if (num_rows == chunk_rows)
-        {
-            hashExactRange(column, begin, num_rows, keys);
-        }
-        else
-        {
-            std::array<UInt128, 256> row_hashes; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the hashes of `rows` are read
-            chassert(chunk_rows <= row_hashes.size());
-            hashExactRows(column, begin, rows, num_rows, row_hashes.data());
-            for (size_t k = 0; k < num_rows; ++k)
-                keys[k] = row_hashes[rows[k]];
-        }
-    }
-
-private:
-    /// hashes[i] = hashExact(value(column, begin + i)), for i in [0, num_rows).
-    static void hashExactRange(const IColumn & column, size_t begin, size_t num_rows, UInt128 * hashes)
-    {
-        const auto & typed_column = assert_cast<const ColumnType &>(column);
-        if constexpr (std::is_same_v<ColumnType, ColumnString>)
-        {
-            sipHash128PaddedStrings(
-                reinterpret_cast<const char *>(typed_column.getChars().data()), typed_column.getOffsets().data() + begin, num_rows, hashes);
-        }
-        else
-        {
-            const auto [chars, n] = fixedSizeValues(typed_column);
-            sipHash128PaddedFixedStrings(chars + begin * n, n, num_rows, hashes);
-        }
-    }
-
-    /// hashes[rows[i]] = hashExact(value(column, begin + rows[i])), for i in [0, num_rows).
-    static void hashExactRows(const IColumn & column, size_t begin, const UInt32 * rows, size_t num_rows, UInt128 * hashes)
-    {
-        const auto & typed_column = assert_cast<const ColumnType &>(column);
-        if constexpr (std::is_same_v<ColumnType, ColumnString>)
-        {
-            sipHash128PaddedStringRows(
-                reinterpret_cast<const char *>(typed_column.getChars().data()),
-                typed_column.getOffsets().data() + begin,
-                rows,
-                num_rows,
-                hashes);
-        }
-        else
-        {
-            const auto [chars, n] = fixedSizeValues(typed_column);
-            sipHash128PaddedFixedStringRows(chars + begin * n, n, rows, num_rows, hashes);
-        }
-    }
-
-    /// The bytes of a `FixedString` column, or of an `IPv6` column, which `hashExact` hashes as `FixedString(16)`.
-    static std::pair<const char *, size_t> fixedSizeValues(const ColumnType & column)
-    {
-        if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
-            return {reinterpret_cast<const char *>(column.getChars().data()), column.getN()};
-        else
-            return {reinterpret_cast<const char *>(column.getData().data()), sizeof(IPv6)};
     }
 };
 
@@ -464,7 +377,6 @@ private:
 
     /// The batched path applies to non-variadic functions whose sets support insertion of whole chunks of keys.
     static constexpr bool is_batchable = is_uniques_hash_set || is_hll || is_uniq_exact;
-    static constexpr bool is_batched_hash = is_uniq_exact && AggregateFunctionUniqTraits<T, ColumnType>::has_batched_hash_exact;
     static constexpr size_t hash_chunk_size = 256;
 
     /// Returns the key inserted into the set:
@@ -535,7 +447,6 @@ private:
 
         using Key = decltype(getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_begin)));
         std::array<Key, hash_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are written before read
-        std::array<UInt32, is_batched_hash ? hash_chunk_size : 0> key_rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
         size_t row = row_begin;
 
@@ -552,10 +463,7 @@ private:
             if (use_last_value_cache)
             {
                 last_value = AggregateFunctionUniqTraits<T, ColumnType>::value(column, row);
-                if constexpr (is_batched_hash)
-                    key_rows[num_keys++] = 0;
-                else
-                    keys[num_keys++] = getKey(last_value);
+                keys[num_keys++] = getKey(last_value);
 
                 for (size_t i = 1; i < chunk_size; ++i)
                 {
@@ -564,13 +472,8 @@ private:
                         continue;
 
                     last_value = value;
-                    if constexpr (is_batched_hash)
-                        key_rows[num_keys++] = static_cast<UInt32>(i);
-                    else
-                        keys[num_keys++] = getKey(value);
+                    keys[num_keys++] = getKey(value);
                 }
-                if constexpr (is_batched_hash)
-                    AggregateFunctionUniqTraits<T, ColumnType>::hashExactChunk(column, row, chunk_size, key_rows.data(), num_keys, keys.data());
 
                 /// Disable the cache for the rest of the batch when consecutive duplicates are rare.
                 cache_hits += chunk_size - num_keys;
@@ -583,40 +486,12 @@ private:
             {
                 num_keys = chunk_size;
 
-                if constexpr (is_batched_hash && std::is_same_v<T, std::string_view>)
-                {
-                    AggregateFunctionUniqTraits<T, ColumnType>::hashExactChunk(column, row, chunk_size, nullptr, chunk_size, keys.data());
-                }
-                else
-                {
-                    for (size_t i = 0; i < chunk_size; ++i)
-                        keys[i] = getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row + i));
-                }
+                for (size_t i = 0; i < chunk_size; ++i)
+                    keys[i] = getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row + i));
             }
 
             insertManyKeys<hint>(data, keys.data(), num_keys);
             row += chunk_size;
-        }
-    }
-
-    /// `addManyImpl` with `flags` or `null_map` for `is_batched_hash`: the rows that pass in a chunk are hashed together.
-    template <SetLevelHint hint>
-    static void addManyFiltered(Data & data, const IColumn & column, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
-        requires is_batched_hash
-    {
-        std::array<UInt128, hash_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
-        std::array<UInt32, hash_chunk_size> key_rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-        for (size_t row = row_begin; row < row_end; row += hash_chunk_size)
-        {
-            const size_t chunk_size = std::min(hash_chunk_size, row_end - row);
-            size_t num_keys = 0;
-            for (size_t i = 0; i < chunk_size; ++i)
-            {
-                key_rows[num_keys] = static_cast<UInt32>(i);
-                num_keys += (!null_map || !null_map[row + i]) & (!flags || flags[row + i]);
-            }
-            AggregateFunctionUniqTraits<T, ColumnType>::hashExactChunk(column, row, chunk_size, key_rows.data(), num_keys, keys.data());
-            insertManyKeys<hint>(data, keys.data(), num_keys);
         }
     }
 
@@ -630,15 +505,6 @@ private:
         const char8_t * flags,
         const UInt8 * null_map)
     {
-        if constexpr (is_batched_hash)
-        {
-            if (flags || null_map)
-            {
-                addManyFiltered<hint>(data, *columns[0], row_begin, row_end, flags, null_map);
-                return;
-            }
-        }
-
         if (flags && null_map)
         {
             for (size_t row = row_begin; row < row_end; ++row)
@@ -682,113 +548,6 @@ private:
     static constexpr size_t num_args = 1;
     static constexpr bool is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
-    static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<DataSet>::value;
-    static constexpr bool is_uniq_exact_set = detail::IsUniqExactSet<DataSet>::value;
-
-    /// `uniqExact` with GROUP BY: a row whose place and value equal those of the previous row is not inserted,
-    /// because inserting a key that a set already contains never changes it.
-    template <bool check_places>
-    void addBatchExact(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const
-    {
-        using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
-        using Key = typename DataSet::value_type;
-        static constexpr auto hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
-        static constexpr bool is_batched_hash = Traits::has_batched_hash_exact;
-        /// The values of the other types are their keys.
-        static_assert(is_batched_hash || std::is_same_v<std::decay_t<decltype(Traits::hashExact(T{}))>, T>);
-        static constexpr size_t chunk_size = 256;
-
-        const char8_t * flags = nullptr;
-        if (if_argument_pos >= 0)
-            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-        const IColumn & column = *columns[0];
-
-        std::array<Key, chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `count` entries are read
-        std::array<UInt32, is_batched_hash ? chunk_size : 0> rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-        std::array<DataSet *, chunk_size> sets; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-        bool skip_repeats = true;
-        AggregateDataPtr last_place = nullptr;
-        T last_value{};
-        size_t considered = 0;
-        size_t repeats = 0;
-
-        size_t row = row_begin;
-        while (row < row_end)
-        {
-            const size_t chunk_begin = row;
-            const size_t chunk_end = row + std::min(chunk_size, row_end - row);
-            size_t count = 0;
-            size_t chunk_considered = 0;
-            for (; row < chunk_end; ++row)
-            {
-                if constexpr (check_places)
-                {
-                    if (!places[row])
-                        continue;
-                }
-                if (flags && !flags[row])
-                    continue;
-
-                AggregateDataPtr place = places[row] + place_offset;
-                if constexpr (is_batched_hash)
-                {
-                    if (skip_repeats)
-                    {
-                        ++chunk_considered;
-                        const auto value = Traits::value(column, row);
-                        if (place == last_place && bitEquals(value, last_value))
-                            continue;
-                        last_place = place;
-                        last_value = value;
-                    }
-                    rows[count] = static_cast<UInt32>(row - chunk_begin);
-                    sets[count++] = &this->data(place).set;
-                }
-                else
-                {
-                    ++chunk_considered;
-                    const auto value = Traits::value(column, row);
-                    /// Branch-free: on short runs a skip branch mispredicts more than a skipped insert saves.
-                    const bool repeated = (place == last_place) & bitEquals(value, last_value);
-                    keys[count] = value;
-                    sets[count] = &this->data(place).set;
-                    count += !repeated;
-                    last_place = place;
-                    last_value = value;
-                }
-            }
-
-            if constexpr (is_batched_hash)
-                Traits::hashExactChunk(column, chunk_begin, chunk_end - chunk_begin, rows.data(), count, keys.data());
-            for (size_t i = 0; i < count; ++i)
-                sets[i]->template insert<const Key &, hint>(keys[i]);
-
-            if (!skip_repeats)
-                continue;
-
-            /// Repeats are rare: stop looking for them, and for the types without `hashExactChunk` use the per-row loop
-            /// for the rest of the batch.
-            considered += chunk_considered;
-            repeats += chunk_considered - count;
-            if (repeats * 2 <= considered)
-            {
-                if constexpr (is_batched_hash)
-                {
-                    skip_repeats = false;
-                }
-                else
-                {
-                    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>;
-                    if constexpr (check_places)
-                        Base::addBatch(row, row_end, places, place_offset, columns, arena, if_argument_pos);
-                    else
-                        Base::addBatchWithNonNullPlaces(row, row_end, places, place_offset, columns, arena, if_argument_pos);
-                    return;
-                }
-            }
-        }
-    }
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
@@ -800,68 +559,10 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
-    /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
-    bool isVersioned() const override { return is_uniques_hash_set; }
-
-    /// The default version - the one used when the type carries no explicit version - must stay 0,
-    /// so that unversioned `AggregateFunction(uniq, ...)` types in persisted data keep the byte
-    /// layout unversioned data always had. Version 1 applies only where it is spelled out
-    /// in the type name (see `getStateType`) or derived from the negotiated revision on the `Native` wire.
-    /// See the analogous comment for `quantileDeterministic` in AggregateFunctionQuantile.h for the full reasoning.
-    size_t getDefaultVersion() const override { return 0; }
-
-    /// The state type spells the version out, so that the type name and the payload stay consistent
-    /// on every medium the state can travel through.
-    DataTypePtr getStateType() const override
-    {
-        if constexpr (is_uniques_hash_set)
-            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
-        else
-            return IAggregateFunction::getStateType();
-    }
-
-    size_t getVersionFromRevision(size_t revision) const override
-    {
-        if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
-            return 1;
-        return 0;
-    }
-
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         detail::Adder<T, ColumnType, Data>::add(this->data(place), columns, num_args, row_num);
-    }
-
-    void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
-    {
-        if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
-        {
-            using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
-            addBatchUniq<&DataSet::insertHash>(row_begin, row_end, places, place_offset, columns, if_argument_pos,
-                [&](size_t row) { return DataSet::fullHash(Traits::hash(Traits::value(*columns[0], row))); },
-                [&](AggregateDataPtr place) { return &this->data(place).set; });
-        }
-        else if constexpr (is_uniq_exact_set)
-            addBatchExact</* check_places = */ true>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-        else
-            IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatch(
-                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-    }
-
-    void addBatchWithNonNullPlaces(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
-    {
-        if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
-            addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-        else if constexpr (is_uniq_exact_set)
-            addBatchExact</* check_places = */ false>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-        else
-            /// Unlike its addBatch, the base's non-null variant skips the per-row places[] test.
-            IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatchWithNonNullPlaces(
-                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void ALWAYS_INLINE addBatchSinglePlace(
@@ -902,20 +603,6 @@ public:
 
     bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
-    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
-    {
-        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
-            return this->data(place).set.size();
-        return 0;
-    }
-
-    size_t getStateBytesPerDistinctInput() const override
-    {
-        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
-            return Data::Set::getEstimatedBytesPerValue();
-        return 0;
-    }
-
     constexpr static bool parallelizeMergeWithKey() { return true; }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -938,14 +625,6 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
-    {
-        if constexpr (is_able_to_parallelize_merge)
-            return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
-        else
-            return false;
-    }
-
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
@@ -966,36 +645,19 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if constexpr (is_uniques_hash_set)
-            this->data(place).set.write(buf, version.value_or(getDefaultVersion()) < 1);
-        else
-            this->data(place).set.write(buf);
+        this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        if constexpr (is_uniques_hash_set)
-            this->data(place).set.read(buf, version.value_or(getDefaultVersion()) < 1);
-        else
-            this->data(place).set.read(buf);
+        this->data(place).set.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
-    }
-
-    /// `uniqExact` counts an exact set union: at least the largest and at most the sum of the
-    /// partial counts. The bound is not declared for the estimating variants (`uniq`,
-    /// `uniqHLL12`): their estimates are only approximately subadditive.
-    MergedValueBound getMergedValueBound() const override
-    {
-        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
-            return MergedValueBound::Subadditive;
-        else
-            return MergedValueBound::Unknown;
     }
 };
 
@@ -1011,9 +673,7 @@ private:
     using T = typename Data::Set::value_type;
 
     static constexpr size_t is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
-    static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr size_t argument_is_tuple = Data::argument_is_tuple;
-    static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<typename Data::Set>::value;
 
     size_t num_args = 0;
 
@@ -1029,36 +689,7 @@ public:
 
     String getName() const override { return Data::getName(); }
 
-    size_t getStateBytesPerDistinctInput() const override
-    {
-        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
-            return Data::Set::getEstimatedBytesPerValue();
-        return 0;
-    }
-
     bool allocatesMemoryInArena() const override { return false; }
-
-    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
-    /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
-    /// The versioning follows the same scheme as the single-argument `uniq` above, see the comments there.
-    bool isVersioned() const override { return is_uniques_hash_set; }
-
-    size_t getDefaultVersion() const override { return 0; }
-
-    DataTypePtr getStateType() const override
-    {
-        if constexpr (is_uniques_hash_set)
-            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
-        else
-            return IAggregateFunction::getStateType();
-    }
-
-    size_t getVersionFromRevision(size_t revision) const override
-    {
-        if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
-            return 1;
-        return 0;
-    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -1098,38 +729,7 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
-    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
-    {
-        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
-            return this->data(place).set.size();
-        return 0;
-    }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
-
-    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
-
-    constexpr static bool parallelizeMergeWithKey() { return true; }
-
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
-    {
-        if constexpr (is_parallelize_merge_prepare_needed)
-        {
-            using DataSet = typename Data::Set;
-            DataSet::parallelizeMergePrepare(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() is only implemented when is_parallelize_merge_prepare_needed is true for {} ", getName());
-        }
-    }
-
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
-    {
-        if constexpr (is_able_to_parallelize_merge)
-            return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
-        else
-            return false;
-    }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
@@ -1152,34 +752,19 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        if constexpr (is_uniques_hash_set)
-            this->data(place).set.write(buf, version.value_or(getDefaultVersion()) < 1);
-        else
-            this->data(place).set.write(buf);
+        this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        if constexpr (is_uniques_hash_set)
-            this->data(place).set.read(buf, version.value_or(getDefaultVersion()) < 1);
-        else
-            this->data(place).set.read(buf);
+        this->data(place).set.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
-    }
-
-    /// See `AggregateFunctionUniq::getMergedValueBound`.
-    MergedValueBound getMergedValueBound() const override
-    {
-        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
-            return MergedValueBound::Subadditive;
-        else
-            return MergedValueBound::Unknown;
     }
 };
 
