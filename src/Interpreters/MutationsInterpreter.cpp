@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -7,9 +8,12 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -795,6 +799,106 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     }
 
     return res;
+}
+
+/// In `v -> v.a`, `v.a` is a field of the lambda argument, not a column: replace it by `v`, which RequiredSourceColumnsVisitor skips.
+static void replaceFieldsOfLambdaArguments(ASTPtr & ast, const NameSet & lambda_arguments)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->compound() && lambda_arguments.contains(identifier->name_parts.front()))
+        {
+            auto argument = make_intrusive<ASTIdentifier>(identifier->name_parts.front());
+            argument->setAlias(identifier->tryGetAlias());
+            ast = std::move(argument);
+        }
+        return;
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet body_lambda_arguments = lambda_arguments;
+        for (auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            body_lambda_arguments.insert(std::move(name));
+        replaceFieldsOfLambdaArguments(function->arguments->children[1], body_lambda_arguments);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceFieldsOfLambdaArguments(child, lambda_arguments);
+}
+
+/// The columns the default expression of `column_name` reads directly, named as by getColumnsReadByDefault.
+static Names getColumnsReadByDefaultExpression(const ColumnsDescription & columns, const String & column_name)
+{
+    auto column_default = columns.getDefault(column_name);
+    if (!column_default || !column_default->expression)
+        return {};
+
+    RequiredSourceColumnsVisitor::Data required_columns;
+    auto expression = column_default->expression->clone();
+    /// A dictionary or table name (`dictGet(db.dict, ...)`, `x IN t`) is not a column.
+    Aliases aliases;
+    MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
+    MarkTableIdentifiersVisitor(identifiers_data).visit(expression);
+    replaceFieldsOfLambdaArguments(expression, {});
+    RequiredSourceColumnsVisitor(required_columns).visit(expression);
+
+    Names reads;
+    for (const auto & required : required_columns.requiredColumns())
+    {
+        reads.push_back(required);
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required))
+        {
+            if (column->isSubcolumn())
+                reads.push_back(column->getNameInStorage());
+        }
+        else if (columns.hasNested(required))
+        {
+            /// A flattened `Nested` column `n` is built from the columns `n.*`.
+            for (const auto & element : columns)
+                if (element.name.starts_with(required + "."))
+                    reads.push_back(element.name);
+        }
+        else
+        {
+            /// An ALIAS column registers no subcolumns, so `p.q` reads the column `p` whose type has the subcolumn `q`.
+            String prefix = Nested::splitName(required).first;
+            for (const auto & [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required))
+            {
+                const auto * description = columns.tryGet(String(name_in_storage));
+                if (description && description->type->tryGetSubcolumnType(subcolumn_name))
+                {
+                    prefix = name_in_storage;
+                    break;
+                }
+            }
+            reads.push_back(std::move(prefix));
+        }
+    }
+    return reads;
+}
+
+NameSet MutationsInterpreter::getColumnsReadByDefault(
+    const ColumnsDescription & columns,
+    const Names & column_names,
+    const std::function<bool(const String &)> & is_stored)
+{
+    NameSet result;
+    NameSet visited(column_names.begin(), column_names.end());
+    std::vector<String> to_visit(column_names.begin(), column_names.end());
+    while (!to_visit.empty())
+    {
+        String name = std::move(to_visit.back());
+        to_visit.pop_back();
+        for (auto & read : getColumnsReadByDefaultExpression(columns, name))
+        {
+            result.insert(read);
+            if (visited.insert(read).second && !is_stored(read))
+                to_visit.push_back(std::move(read));
+        }
+    }
+    return result;
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
@@ -1872,6 +1976,116 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_projections.insert(projection.name);
     }
 
+    if (const auto & part = source.getMergeTreeDataPart(); part && !settings.apply_on_fly_for_read)
+    {
+        const auto & alter_conversions = source.getAlterConversions();
+        auto part_stores = [&](const String & name)
+        {
+            String name_in_part = name;
+            if (alter_conversions && alter_conversions->isColumnRenamed(name))
+                name_in_part = alter_conversions->getColumnOldName(name);
+            if (part->getSerializationInfos().isMissingColumn(name_in_part))
+                return true;
+            auto column = part->tryGetColumn(name_in_part);
+            return column && part->hasColumnFiles(*column);
+        };
+
+        NameSet unstored_defaults;
+        for (const auto & column : columns_desc)
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Default && column.default_desc.expression
+                && available_columns_set.contains(column.name) && !patch_updated_columns.contains(column.name)
+                && !part_stores(column.name))
+                unstored_defaults.insert(column.name);
+        }
+
+        if (!unstored_defaults.empty())
+        {
+            auto is_stored = [&](const String & name)
+            {
+                if (patch_updated_columns.contains(name))
+                    return true;
+                const auto * column = columns_desc.tryGet(name);
+                return column && column->default_desc.kind == ColumnDefaultKind::Default && part_stores(name);
+            };
+
+            /// The part reader cannot compute a DEFAULT that reads a subcolumn of a column the part does not store,
+            /// or a flattened `Nested` column.
+            auto reader_reads = [&](const String & input)
+            {
+                if (columns_desc.has(input))
+                    return true;
+                auto column = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, input);
+                return column && part_stores(column->getNameInStorage());
+            };
+
+            /// A name -> the columns whose default expression reads it directly, for the expressions that
+            /// getColumnsReadByDefault looks into for `unstored_defaults`.
+            std::unordered_map<String, Names> readers;
+            NameSet analysed;
+            std::vector<String> to_visit(unstored_defaults.begin(), unstored_defaults.end());
+            while (!to_visit.empty())
+            {
+                String name = std::move(to_visit.back());
+                to_visit.pop_back();
+                if (!analysed.insert(name).second)
+                    continue;
+                for (const auto & read : getColumnsReadByDefaultExpression(columns_desc, name))
+                {
+                    readers[read].push_back(name);
+                    if (!analysed.contains(read) && !is_stored(read))
+                        to_visit.push_back(read);
+                }
+            }
+
+            /// Adds to `marked` every column whose getColumnsReadByDefault result contains `name`.
+            auto mark_readers = [&](const String & name, NameSet & marked)
+            {
+                std::vector<const String *> to_mark{&name};
+                while (!to_mark.empty())
+                {
+                    auto it = readers.find(*to_mark.back());
+                    to_mark.pop_back();
+                    if (it == readers.end())
+                        continue;
+                    for (const auto & reader : it->second)
+                        if (marked.insert(reader).second)
+                            to_mark.push_back(&reader);
+                }
+            };
+
+            NameSet not_computed_by_reader;
+            for (const auto & [read, _] : readers)
+                if (!reader_reads(read))
+                    mark_readers(read, not_computed_by_reader);
+
+            /// An unstored ordinary column is received as its DEFAULT over the part's values, so a stage after one
+            /// that changed an input of that DEFAULT computes the column itself, as does every stage if the reader cannot.
+            NameSet reads_changed;
+            NameSet stored;
+            for (auto & stage : stages)
+            {
+                for (const auto & name : unstored_defaults)
+                {
+                    if (!stored.contains(name) && (not_computed_by_reader.contains(name) || reads_changed.contains(name)))
+                        stage.stale_defaults.insert(name);
+                }
+
+                if (stage.affects_all_columns)
+                    stored.insert(unstored_defaults.begin(), unstored_defaults.end());
+
+                if (!stage.is_readonly)
+                {
+                    for (const auto & [name, _] : stage.column_to_updated)
+                    {
+                        mark_readers(name, reads_changed);
+                        stored.insert(name);
+                    }
+                }
+            }
+        }
+    }
+
     /// Every column emitted by a non-readonly stage is written into the new part at its current
     /// metadata type, so its statistics have to be recomputed rather than carried over from the
     /// source part. `updated_columns` and `changed_columns` do not cover all emitters: MATERIALIZE
@@ -2078,6 +2292,203 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             }
         }
 
+        /// The stale columns this stage reads or outputs are computed from the stage's input, as the part reader does.
+        std::optional<ActionsDAG> stale_defaults_dag;
+        if (table_expression_data && !stage.stale_defaults.empty())
+        {
+            NameSet needed;
+            NamesAndTypesList subcolumns;
+            NameSet subcolumn_names;
+            auto col_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+            for (const auto & name : table_expression_data->getColumnNames())
+            {
+                if (stage.stale_defaults.contains(name))
+                {
+                    needed.insert(name);
+                }
+                else if (auto column = storage_snapshot->tryGetColumn(col_options, name);
+                         column && column->isSubcolumn() && stage.stale_defaults.contains(column->getNameInStorage()))
+                {
+                    needed.insert(column->getNameInStorage());
+                    subcolumns.push_back(*column);
+                    subcolumn_names.insert(column->name);
+                }
+            }
+
+            if (!needed.empty())
+            {
+                const auto & table_columns = metadata_snapshot->getColumns();
+                auto is_alias = [&](const String & name)
+                {
+                    const auto * column = table_columns.tryGet(name);
+                    return column && column->default_desc.kind == ColumnDefaultKind::Alias;
+                };
+
+                /// evaluateMissingDefaults computes only the columns missing from the header. An ALIAS column is not read
+                /// from the part either, so a default computes it from its expression.
+                std::erase_if(input_columns, [&](const auto & column)
+                {
+                    return stage.stale_defaults.contains(column.name) || subcolumn_names.contains(column.name) || is_alias(column.name);
+                });
+
+                NamesAndTypesList columns_to_compute;
+                for (const auto & column : all_columns)
+                    if (needed.contains(column.name))
+                        columns_to_compute.push_back(column);
+
+                auto default_columns = metadata_snapshot->getColumns();
+                for (const auto & virtual_column : metadata_snapshot->virtuals)
+                    if (virtual_column.default_desc.expression)
+                        default_columns.add(virtual_column);
+
+                auto defaults_context = Context::createCopy(execution_context);
+                enableAllExperimentalSettings(defaults_context);
+
+                auto add_subcolumn = [&](ActionsDAG & dag, const NameAndTypePair & subcolumn)
+                {
+                    auto name_type = std::make_shared<DataTypeString>();
+                    String name = subcolumn.getSubcolumnName();
+                    /// The actions visitor resolves a name to the last node that has it,
+                    /// so the literal must not take the name of a column the stage reads.
+                    String name_node_name = calculateConstantActionNodeName(Field(name));
+                    while (table_expression_data->hasColumn(name_node_name))
+                        name_node_name = "_" + name_node_name;
+                    const auto & name_node = dag.addColumn(name_type->createColumnConst(1, name), name_type, name_node_name);
+                    const auto & value = dag.addFunction(FunctionFactory::instance().get("getSubcolumn", execution_context),
+                        {&dag.findInOutputs(subcolumn.getNameInStorage()), &name_node}, subcolumn.name);
+                    dag.getOutputs().push_back(&value);
+                };
+
+                /// The part reader reads the subcolumns a default reads from the part; here they always come from the header's
+                /// parent column, which an earlier stage may have rewritten.
+                std::unordered_map<String, DataTypePtr> input_types;
+                for (const auto & column : input_columns)
+                    input_types.emplace(column.name, column.type);
+                auto in_header = [&](const String & name) { return input_types.contains(name); };
+                NamesAndTypesList default_input_subcolumns;
+                NameSet default_input_subcolumn_names;
+                NameSet computed_parents;
+                NamesAndTypesList computed_parent_subcolumns;
+                for (const auto & name : getColumnsReadByDefault(default_columns, columns_to_compute.getNames(), in_header))
+                {
+                    auto subcolumn = storage_snapshot->tryGetColumn(col_options, name);
+                    /// An ALIAS column registers no subcolumns, so a subcolumn of one is found by the type of the column.
+                    if (!subcolumn)
+                    {
+                        for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+                        {
+                            DataTypePtr type;
+                            if (auto it = input_types.find(String(column_name)); it != input_types.end())
+                                type = it->second;
+                            else if (is_alias(String(column_name)))
+                                type = table_columns.get(String(column_name)).type;
+                            else
+                                continue;
+                            if (auto subcolumn_type = type->tryGetSubcolumnType(subcolumn_name))
+                            {
+                                subcolumn.emplace(String(column_name), String(subcolumn_name), type, subcolumn_type);
+                                break;
+                            }
+                        }
+                    }
+                    if (!subcolumn || !subcolumn->isSubcolumn())
+                        continue;
+                    String parent = subcolumn->getNameInStorage();
+                    if (input_types.contains(parent))
+                    {
+                        if (default_input_subcolumn_names.insert(subcolumn->name).second)
+                            default_input_subcolumns.push_back(*subcolumn);
+                    }
+                    /// A stale or ALIAS parent is computed together with the default, which then reads the subcolumn of it.
+                    else if (stage.stale_defaults.contains(parent) || is_alias(parent))
+                    {
+                        computed_parent_subcolumns.push_back(*subcolumn);
+                        if (!needed.contains(parent))
+                            computed_parents.insert(std::move(parent));
+                    }
+                }
+                for (const auto & column : table_columns)
+                    if (computed_parents.contains(column.name))
+                        columns_to_compute.emplace_back(column.name, column.type);
+                std::erase_if(input_columns, [&](const auto & column) { return default_input_subcolumn_names.contains(column.name); });
+
+                Block header(input_columns);
+                ActionsDAG default_inputs_dag(input_columns);
+                for (const auto & subcolumn : default_input_subcolumns)
+                {
+                    add_subcolumn(default_inputs_dag, subcolumn);
+                    header.insert(ColumnWithTypeAndName(subcolumn.type, subcolumn.name));
+                }
+
+                std::optional<ActionsDAG> defaults_dag;
+                auto add_defaults = [&](const NamesAndTypesList & columns)
+                {
+                    auto dag = evaluateMissingDefaults(header, columns, default_columns, defaults_context);
+                    if (!dag)
+                        return;
+                    dag->appendInputsForUnusedColumns(header);
+                    NameSet dag_outputs;
+                    for (const auto * output : dag->getOutputs())
+                        dag_outputs.insert(output->result_name);
+                    for (const auto * input : dag->getInputs())
+                        if (dag_outputs.insert(input->result_name).second)
+                            dag->getOutputs().push_back(input);
+                    header = Block(dag->getResultColumns());
+                    defaults_dag = defaults_dag ? ActionsDAG::merge(std::move(*defaults_dag), std::move(*dag)) : std::move(*dag);
+                };
+
+                /// The analyzer resolves neither a dotted column (`n.e`) nor a flattened `Nested` built from it (`n`) computed
+                /// in the same expression list, so such a column is computed first, after the dotted columns it reads.
+                auto in_block = [&](const String & name) { return header.has(name); };
+                NameSet dotted;
+                for (const auto & name : getColumnsReadByDefault(default_columns, columns_to_compute.getNames(), in_block))
+                    if (name.contains('.') && table_columns.has(name) && !header.has(name))
+                        dotted.insert(name);
+                while (!dotted.empty())
+                {
+                    NameSet ready_names;
+                    for (const auto & column : table_columns)
+                    {
+                        if (!dotted.contains(column.name))
+                            continue;
+                        auto reads = getColumnsReadByDefault(default_columns, {column.name}, in_block);
+                        if (std::ranges::any_of(reads, [&](const auto & read) { return read != column.name && dotted.contains(read); }))
+                            continue;
+                        ready_names.insert(column.name);
+                        for (const auto & read : reads)
+                            if (computed_parents.contains(read) && !header.has(read))
+                                ready_names.insert(read);
+                    }
+                    if (ready_names.empty())
+                        break;
+                    NamesAndTypesList ready;
+                    for (const auto & column : table_columns)
+                        if (ready_names.contains(column.name))
+                            ready.emplace_back(column.name, column.type);
+                    for (const auto & name : ready_names)
+                        dotted.erase(name);
+                    add_defaults(ready);
+                    for (const auto & subcolumn : computed_parent_subcolumns)
+                    {
+                        if (defaults_dag && header.has(subcolumn.getNameInStorage()) && !header.has(subcolumn.name))
+                        {
+                            add_subcolumn(*defaults_dag, subcolumn);
+                            header.insert(ColumnWithTypeAndName(subcolumn.type, subcolumn.name));
+                        }
+                    }
+                }
+                add_defaults(columns_to_compute);
+
+                if (defaults_dag)
+                {
+                    stale_defaults_dag = ActionsDAG::merge(std::move(default_inputs_dag), std::move(*defaults_dag));
+                    for (const auto & subcolumn : subcolumns)
+                        if (!header.has(subcolumn.name))
+                            add_subcolumn(*stale_defaults_dag, subcolumn);
+                }
+            }
+        }
+
         ColumnNodePtrWithHashSet empty_correlated_columns;
 
         /// Remember the boundary between filters and other expressions in all_asts.
@@ -2085,6 +2496,20 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
         stage.new_actions_chain = std::make_unique<ActionsChain>();
         auto & actions_chain = *stage.new_actions_chain;
+
+        /// The first step of the stage starts from the computed stale columns, so all its steps see one value.
+        auto make_step_dag = [&]() -> ActionsDAG
+        {
+            if (actions_chain.getStepsSize() > 0)
+                return ActionsDAG(actions_chain.getLastStepAvailableOutputColumns());
+            if (stale_defaults_dag)
+            {
+                ActionsDAG dag = std::move(*stale_defaults_dag);
+                stale_defaults_dag.reset();
+                return dag;
+            }
+            return ActionsDAG(input_columns);
+        };
 
         /// 4. Build filter step (combine all filter expressions with AND).
         if (!stage.filters.empty())
@@ -2109,7 +2534,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             }
 
             auto filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-            filter_actions->dag = ActionsDAG(input_columns);
+            filter_actions->dag = make_step_dag();
             /// Use PlannerActionsVisitor directly instead of
             /// buildActionsDAGFromExpressionNode, because the latter
             /// replaces DAG outputs with only the expression results.
@@ -2164,10 +2589,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         /// 5. Build update step.
         if (!stage.column_to_updated.empty())
         {
-            auto available_columns_for_step = actions_chain.getStepsSize() > 0
-                ? actions_chain.getLastStepAvailableOutputColumns()
-                : input_columns;
-
             /// Build a combined expression list for all update expressions.
             auto update_expr_list = make_intrusive<ASTExpressionList>();
             for (const auto & kv : stage.column_to_updated)
@@ -2179,7 +2600,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             collectSetsAndSourceColumns(update_tree, planner_context, true);
 
             auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-            update_actions->dag = ActionsDAG(available_columns_for_step);
+            update_actions->dag = make_step_dag();
             PlannerActionsVisitor update_visitor(planner_context, empty_correlated_columns, false);
             auto [update_expression_nodes, update_correlated_subtrees] = update_visitor.visit(update_actions->dag, update_tree);
             update_correlated_subtrees.assertEmpty("in mutation update");
@@ -2244,24 +2665,28 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         ///    the identity DAG and cause reading unnecessary columns.
         if (i == 0 && actions_chain.getStepsSize() == 0)
         {
-            ColumnsWithTypeAndName initial_columns;
-            for (const auto & col : input_columns)
-                if (stage.output_columns.contains(col.name))
-                    initial_columns.push_back(col);
-
             auto initial_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-            initial_actions->dag = ActionsDAG(initial_columns);
+            if (stale_defaults_dag)
+            {
+                initial_actions->dag = make_step_dag();
+                std::erase_if(initial_actions->dag.getOutputs(),
+                    [&](const auto * output) { return !stage.output_columns.contains(output->result_name); });
+            }
+            else
+            {
+                ColumnsWithTypeAndName initial_columns;
+                for (const auto & col : input_columns)
+                    if (stage.output_columns.contains(col.name))
+                        initial_columns.push_back(col);
+                initial_actions->dag = ActionsDAG(initial_columns);
+            }
             actions_chain.addStep(
                 std::make_unique<ActionsChainStep>(std::move(initial_actions)));
         }
 
         /// 7. Build projection step - keep only output_columns.
         {
-            auto available_columns_for_proj = actions_chain.getStepsSize() > 0
-                ? actions_chain.getLastStepAvailableOutputColumns()
-                : input_columns;
-
-            ActionsDAG proj_dag(available_columns_for_proj);
+            ActionsDAG proj_dag = make_step_dag();
             ActionsDAG::NodeRawConstPtrs proj_outputs;
             /// Iterate all_columns (metadata order) for deterministic output
             /// ordering.  Consumers like EmbeddedRocksDBSink expect columns

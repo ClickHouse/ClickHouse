@@ -184,6 +184,16 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    /// Columns the default expressions of `column_names` read, closed transitively through the default expressions
+    /// of those columns, except that the expression of a column for which `is_stored` returns true is not looked into.
+    /// For a subcolumn it also returns the column that stores it (`n.e` for `n.e.size0`), for a flattened `Nested` column `n`
+    /// the columns `n.*`, and for a name `p.q` that is no column, the column `p` whose type has the subcolumn `q`,
+    /// or else the first part of the name.
+    static NameSet getColumnsReadByDefault(
+        const ColumnsDescription & columns,
+        const Names & column_names,
+        const std::function<bool(const String &)> & is_stored);
+
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands.
     std::vector<MutationActions> getMutationActions() const;
@@ -308,6 +318,9 @@ private:
         /// True if columns in column_to_updated are not changed, but they need
         /// to be read (for example to materialize projection).
         bool is_readonly = false;
+
+        /// Unstored ordinary columns whose DEFAULT reads a column an earlier stage changed: the stage computes those it needs.
+        NameSet stale_defaults;
 
         /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;
