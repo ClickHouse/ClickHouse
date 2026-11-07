@@ -24,7 +24,10 @@ public:
     explicit ParallelReplicasReadingCoordinator(size_t replicas_count_);
     ~ParallelReplicasReadingCoordinator();
 
-    InitialAllRangesAnnouncementResponse handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement);
+    /// `progress_callback` is the announcing replica's: the total rows to read are reported through it.
+    /// The initiator's local read passes none, as it sets the total itself.
+    InitialAllRangesAnnouncementResponse
+    handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement, const ProgressCallback & progress_callback = {});
     ParallelReadResponse handleRequest(ParallelReadRequest request);
 
     /// Called when some replica is unavailable and we skipped it.
@@ -32,9 +35,6 @@ public:
     /// consistent hashing, because otherwise coordinator will continue working in
     /// "pending" state waiting for the unavailable replica to send the announcement.
     void markReplicaAsUnavailable(size_t replica_number);
-
-    /// needed to report total rows to read
-    void setProgressCallback(ProgressCallback callback);
 
     std::optional<size_t> getSnapshotReplicaNum() const { return snapshot_replica_num; }
 
@@ -56,7 +56,6 @@ private:
 
     std::mutex mutex;
     const size_t replicas_count{0};
-    ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
     std::set<size_t> replicas_used;
     std::optional<size_t> snapshot_replica_num;
     std::optional<ReadCompletedCallback> read_completed_callback;

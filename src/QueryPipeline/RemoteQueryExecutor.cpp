@@ -1102,7 +1102,7 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
     announcement_received = true;
 
-    auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement), progress_callback);
     if (send_response)
         connections->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
@@ -1470,9 +1470,6 @@ void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 {
     LockAndBlocker guard(was_cancelled_mutex);
     progress_callback = std::move(callback);
-
-    if (extension && extension->parallel_reading_coordinator)
-        extension->parallel_reading_coordinator->setProgressCallback(progress_callback);
 }
 
 void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
