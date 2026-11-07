@@ -145,6 +145,67 @@ namespace
             column.popBack(n);
         }
     }
+    /// Appends a default row to a column, walking composite columns through the borrowed
+    /// sub-column pointers for the same reason as `popBackBorrowed`: `IColumn::insertDefault`
+    /// of a composite column would reach sub-columns that are also held by the serializers
+    /// of its nested fields through the non-const `WrappedPtr` dereference.
+    /// Exception-safe: on failure, the already appended sub-columns are rolled back.
+    void insertDefaultBorrowed(IColumn & column)
+    {
+        if (auto * column_array = typeid_cast<ColumnArray *>(&column))
+        {
+            /// A default array is empty: only the offsets grow.
+            auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(borrowColumnRef(std::as_const(*column_array).getOffsetsPtr())).getData();
+            auto last_offset = offsets.back(); /// By value: `push_back` may reallocate.
+            offsets.push_back(last_offset);
+        }
+        else if (auto * column_tuple = typeid_cast<ColumnTuple *>(&column))
+        {
+            /// A tuple without elements keeps its own length and has no sub-columns to borrow.
+            if (column_tuple->tupleSize() == 0)
+            {
+                column_tuple->insertDefault();
+                return;
+            }
+            const auto & elements = std::as_const(*column_tuple).getColumns();
+            size_t i = 0;
+            try
+            {
+                for (; i < elements.size(); ++i)
+                    insertDefaultBorrowed(borrowColumnRef(elements[i]));
+            }
+            catch (...)
+            {
+                for (size_t rollback = 0; rollback < i; ++rollback)
+                    popBackBorrowed(borrowColumnRef(elements[rollback]), 1);
+                throw;
+            }
+        }
+        else if (auto * column_map = typeid_cast<ColumnMap *>(&column))
+        {
+            insertDefaultBorrowed(borrowColumnRef(std::as_const(*column_map).getNestedColumnPtr()));
+        }
+        else if (auto * column_nullable = typeid_cast<ColumnNullable *>(&column))
+        {
+            const auto & const_nullable = std::as_const(*column_nullable);
+            auto & nested_column = borrowColumnRef(const_nullable.getNestedColumnPtr());
+            insertDefaultBorrowed(nested_column);
+            try
+            {
+                assert_cast<ColumnUInt8 &>(borrowColumnRef(const_nullable.getNullMapColumnPtr())).getData().push_back(true);
+            }
+            catch (...)
+            {
+                popBackBorrowed(nested_column, 1);
+                throw;
+            }
+        }
+        else
+        {
+            column.insertDefault();
+        }
+    }
+
     /// The maximum nesting depth of messages we process. The schema is provided by the user,
     /// and a chain of distinct messages, each having a field of the type of the next one, is not limited
     /// by the protobuf library, while the functions below process it recursively.
@@ -2267,8 +2328,10 @@ namespace
             /// `ColumnNullable::insertDefault` goes through `getNestedColumn()` non-const, which dereferences
             /// the nested `WrappedPtr` and triggers the `use_count == 1` assertion; the nested serializer
             /// holds an additional `ColumnPtr` to the same column, so we borrow through pointers instead.
+            /// The nested column can itself be composite (e.g. `Nullable(Tuple(...))`) with sub-columns
+            /// held by the nested serializers, so it is also filled through the borrowed pointers.
             auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
-            nested_column.insertDefault();
+            insertDefaultBorrowed(nested_column);
             /// Mirror `ColumnNullable::insertDefault`: keep the nested column and the null map
             /// in sync even if appending to the null map throws (e.g. on a memory limit).
             try
@@ -2288,7 +2351,7 @@ namespace
             if (row_num < column_nullable.size())
                 return;
             auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
-            nested_column.insertDefault();
+            insertDefaultBorrowed(nested_column);
             /// Same rollback contract as in `insertDefaults` above.
             try
             {

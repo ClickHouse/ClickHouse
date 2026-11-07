@@ -1,0 +1,9 @@
+The nested message is absent in every row:
+1	\N
+2	\N
+3	\N
+The nested message is absent in some rows:
+1	\N
+2	(5,[1,2])
+3	\N
+4	(6,[])

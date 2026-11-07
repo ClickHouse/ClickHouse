@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message Inner {
+  uint32 x = 1;
+  repeated uint32 a = 2;
+}
+
+message Row {
+  uint32 id = 1;
+  Inner t = 2;
+}
