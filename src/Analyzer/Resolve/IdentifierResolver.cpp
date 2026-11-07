@@ -788,6 +788,9 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
         if (isTableExpressionHiddenBySemiAntiJoin(table_expression.get(), scope))
             continue;
 
+        if (array_join_node->isUnnest() && identifier_lookup.identifier.front() == array_join_node->getUnnestAlias())
+            return true;
+
         for (const auto & array_join_expression : array_join_node->getJoinExpressions())
         {
             auto array_join_expression_alias = array_join_expression->getAlias();
@@ -1732,6 +1735,8 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
+            if (!database_qualified && arr.isUnnest() && arr.getUnnestAlias() == qualifier)
+                return true;
             return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier, scope, database_qualified);
         }
         default:
@@ -2338,6 +2343,40 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
     const auto & array_join_column_expressions_nodes = array_join_column_expressions.getNodes();
+
+    /** `u.x` names the column `x` of `unnest(...) AS u(x)`. As for a table alias, a same-named subcolumn
+      * of the preceding tables wins unless `analyzer_compatibility_prefer_alias_over_subcolumn` is set.
+      */
+    const auto & identifier = identifier_lookup.identifier;
+    if (from_array_join_node.isUnnest() && identifier.getPartsSize() > 1 && identifier.front() == from_array_join_node.getUnnestAlias()
+        && (!resolve_result.resolved_identifier || scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]))
+    {
+        Identifier column_identifier(std::vector<String>(identifier.begin() + 1, identifier.end()));
+
+        for (const auto & array_join_column_expression : array_join_column_expressions_nodes)
+        {
+            auto & array_join_column_expression_typed = array_join_column_expression->as<ColumnNode &>();
+            auto prefix_size = getCompoundIdentifierPrefixSize(column_identifier, array_join_column_expression_typed.getColumnName());
+            if (!prefix_size)
+                continue;
+
+            auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
+                array_join_column_expression_typed.getColumnSource());
+            if (*prefix_size == column_identifier.getPartsSize())
+                return { .resolved_identifier = array_join_column, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+
+            auto compound_expr = tryResolveIdentifierFromCompoundExpression(
+                identifier,
+                *prefix_size + 1 /*identifier_bind_size*/,
+                array_join_column,
+                {} /* compound_expression_source */,
+                scope,
+                true /* can_be_not_found */);
+
+            if (compound_expr)
+                return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        }
+    }
 
     /** Allow JOIN with USING with ARRAY JOIN.
       *

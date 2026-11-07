@@ -98,6 +98,12 @@ public:
         return is_left;
     }
 
+    /// Set for `unnest(...)` in `FROM`: the alias that qualifies the array join columns,
+    /// which also form a relation for `*`, `u.*` and `join_use_nulls`.
+    const String & getUnnestAlias() const { return unnest_alias; }
+    void setUnnestAlias(String unnest_alias_) { unnest_alias = std::move(unnest_alias_); }
+    bool isUnnest() const { return !unnest_alias.empty(); }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::ARRAY_JOIN;
@@ -116,6 +122,7 @@ protected:
 
 private:
     bool is_left = false;
+    String unnest_alias;
 
     static constexpr size_t table_expression_child_index = 0;
     static constexpr size_t join_expressions_child_index = 1;

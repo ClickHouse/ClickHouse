@@ -1,0 +1,164 @@
+-- `unnest(...)` as a table source in FROM and JOIN, as in PostgreSQL: https://github.com/ClickHouse/ClickHouse/issues/129645
+
+DROP TABLE IF EXISTS t_unnest;
+DROP TABLE IF EXISTS t_unnest_binder;
+DROP TABLE IF EXISTS t_unnest_element;
+DROP TABLE IF EXISTS t_unnest_tuple;
+DROP VIEW IF EXISTS v_unnest;
+DROP VIEW IF EXISTS mv_unnest;
+DROP TABLE IF EXISTS src_unnest;
+DROP TABLE IF EXISTS dst_unnest;
+
+CREATE TABLE t_unnest (id UInt32, arr Array(UInt32), tags Array(String)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_unnest VALUES (1, [10, 20], ['a', 'b']), (2, [], ['c']), (3, [30], []);
+
+SELECT '-- issue examples';
+SELECT x FROM unnest([1, 2, 3]) AS x ORDER BY ALL;
+SELECT t.id, x FROM values('id Int32', 1, 2) t CROSS JOIN unnest([1, 2]) AS x ORDER BY ALL;
+SELECT t.id, x FROM values('id Int32', 1, 2) t LEFT JOIN unnest([1, 2]) AS x ON x > 1 ORDER BY ALL;
+SELECT x, n FROM unnest(['a', 'b']) WITH ORDINALITY AS u(x, n) ORDER BY ALL;
+
+SELECT '-- standalone';
+SELECT * FROM unnest([1, 2]) ORDER BY ALL;
+SELECT * FROM UNNEST([1, 2]) ORDER BY ALL;
+DESCRIBE (SELECT * FROM unnest([1, 2]));
+DESCRIBE (SELECT * FROM unnest([1, 2]) AS x);
+SELECT unnest.unnest FROM unnest([1, 2]) ORDER BY ALL;
+SELECT u.x FROM unnest([1, 2]) AS u(x) ORDER BY ALL;
+SELECT u.* FROM unnest([1, 2]) AS u(x) ORDER BY ALL;
+SELECT x.x FROM unnest([1, 2]) AS x ORDER BY ALL;
+SELECT count() FROM unnest(CAST([], 'Array(UInt8)'));
+SELECT * FROM unnest([[1, 2], [3]]) ORDER BY ALL;
+SELECT a, b FROM unnest([1, 2], ['a', 'b']) AS u(a, b) ORDER BY ALL;
+DESCRIBE (SELECT * FROM unnest([1, 2], ['a', 'b']));
+DESCRIBE (SELECT * FROM unnest(['a', 'b']) WITH ORDINALITY);
+DESCRIBE (SELECT * FROM unnest(['a', 'b']) WITH ORDINALITY AS u(x));
+DESCRIBE (SELECT * FROM unnest(['a', 'b']) WITH ORDINALITY AS t);
+SELECT * FROM unnest(map('a', 1, 'b', 2)) ORDER BY ALL;
+SELECT a.x, b.y FROM unnest([1, 2, 3]) AS a(x) JOIN unnest([2, 3, 4]) AS b(y) ON a.x = b.y ORDER BY ALL;
+
+SELECT '-- errors';
+SELECT * FROM unnest(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT * FROM unnest(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM unnest([1]) AS u(a, b); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM unnest([1, 2], [3]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT * FROM numbers(2) WITH ORDINALITY; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM unnest([1]) FINAL; -- { serverError UNSUPPORTED_METHOD }
+SELECT * FROM unnest([1], [2]) AS u(x, x); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM unnest([1]) WITH ORDINALITY AS ordinality; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_unnest AS t, unnest(t.arr, t.arr) AS u(x, x); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_unnest AS u, unnest(u.arr) AS u; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT * FROM unnest([1]) AS u, unnest([2]) AS u; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT * FROM t_unnest AS t, unnest(t.arr), unnest(t.tags); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT * FROM t_unnest AS t, unnest(t.arr) AS u(x) WHERE 10 IN u; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM t_unnest AS t, unnest(t.arr) AS u(x) JOIN u ON 1; -- { serverError UNKNOWN_TABLE }
+
+SELECT '-- lateral';
+SELECT id, x FROM t_unnest AS t, unnest(t.arr) AS x ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t CROSS JOIN unnest(t.arr) AS x ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t, LATERAL unnest(t.arr) AS x ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t CROSS JOIN LATERAL unnest(t.arr) AS x ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS x ON true ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t INNER JOIN unnest(t.arr) AS x ON 1 ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN LATERAL unnest(t.arr) AS x ON TRUE ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS x ON true ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id, x FROM t_unnest AS t LEFT JOIN LATERAL unnest(t.arr) AS x ON true ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS x ON true ORDER BY ALL SETTINGS join_use_nulls = 1;
+SELECT id, x FROM t_unnest AS t LEFT JOIN LATERAL unnest(t.arr) AS x ON true ORDER BY ALL SETTINGS join_use_nulls = 1;
+SELECT id, x, toTypeName(x) FROM t_unnest AS t LEFT JOIN unnest(if(t.id = 1, [[1, 2]], [])) AS x ON true ORDER BY ALL SETTINGS join_use_nulls = 1;
+SELECT id, u.x FROM t_unnest AS t, unnest(t.arr) AS u(x) WHERE u.x > 10 ORDER BY ALL;
+SELECT u.x % 20 AS k, count() FROM t_unnest AS t, unnest(t.arr) AS u(x) GROUP BY u.x % 20 ORDER BY ALL;
+SELECT id, u.x FROM t_unnest AS t, unnest(t.arr) AS u(x) ORDER BY u.x DESC;
+SELECT * FROM t_unnest AS t, unnest(t.tags) AS u(tag) ORDER BY ALL;
+DESCRIBE (SELECT * FROM t_unnest AS t, unnest(t.tags) AS u(tag));
+DESCRIBE (SELECT * FROM t_unnest AS t, unnest(t.arr) AS u(id));
+SELECT t.id, u.id, id FROM t_unnest AS t, unnest(t.arr) AS u(id) ORDER BY ALL;
+SELECT u.* FROM t_unnest AS t, unnest(t.tags) AS u(tag) ORDER BY ALL;
+SELECT t.* FROM t_unnest AS t, unnest(t.tags) AS u(tag) ORDER BY ALL;
+SELECT COLUMNS('ta') FROM t_unnest AS t, unnest(t.tags) AS u(tag) ORDER BY ALL;
+SELECT id, x, tag FROM t_unnest AS t, unnest(t.arr, t.tags) AS u(x, tag) ORDER BY ALL; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT id, x, tag FROM t_unnest AS t, unnest(t.arr, t.tags) AS u(x, tag) ORDER BY ALL SETTINGS enable_unaligned_array_join = 1;
+SELECT id, x, n FROM t_unnest AS t, unnest(t.arr) WITH ORDINALITY AS u(x, n) ORDER BY ALL;
+SELECT id, x, tag, n FROM t_unnest AS t, unnest(t.arr, t.tags) WITH ORDINALITY AS u(x, tag, n) ORDER BY ALL SETTINGS enable_unaligned_array_join = 1;
+SELECT id, u.x.1, u.x.b FROM t_unnest AS t, unnest(arrayMap(e -> CAST((e, toString(e)), 'Tuple(a UInt32, b String)'), t.arr)) AS u(x) ORDER BY ALL;
+
+SELECT '-- on';
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS x ON x > 15 ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS x ON x > 15 ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS x ON t.id = 1 ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id, x, n FROM t_unnest AS t LEFT JOIN unnest(t.arr) WITH ORDINALITY AS u(x, n) ON u.x > 15 ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS x ON false ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS x ON false ORDER BY ALL;
+SELECT id, tag FROM t_unnest AS t JOIN unnest(t.tags) AS tag ON tag IS NOT NULL ORDER BY ALL;
+SELECT id, u.tag FROM t_unnest AS t JOIN unnest(t.tags) AS u(tag) ON u.tag = t.tags[1] ORDER BY ALL;
+SELECT id, tag FROM t_unnest AS t JOIN unnest(t.tags) AS tag ON tag IN (SELECT 'a') ORDER BY ALL;
+-- A lambda in `ON` cannot capture the unnest column: `u.x` stays the element, `x` is the lambda parameter.
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(x -> u.x = x, [10]) ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(u -> u = x, [20]) ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(u -> u.x = x, [CAST(tuple(20), 'Tuple(x UInt32)')]) ORDER BY ALL;
+
+CREATE TABLE t_unnest_binder (id UInt32, arr Array(UInt32), __unnest_column_1 UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_unnest_binder VALUES (1, [10, 20], 0), (2, [30], 1), (3, [40], 0);
+SELECT id, x FROM t_unnest_binder AS t JOIN unnest(t.arr) AS u(x) ON __unnest_column_1 = 0 AND u.x > 15 ORDER BY ALL;
+
+CREATE TABLE t_unnest_element (id UInt32, __unnest_element Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_unnest_element VALUES (1, [10, 20]), (2, []);
+SELECT id, (SELECT groupArray((x, n)) FROM unnest(__unnest_element) WITH ORDINALITY AS u(x, n)) AS g FROM t_unnest_element ORDER BY id;
+
+SELECT '-- precedence of a Tuple column over the unnest alias, as for a table alias';
+CREATE TABLE t_unnest_tuple (id UInt32, u Tuple(x UInt8), arr Array(UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_unnest_tuple VALUES (1, tuple(7), [1, 2]);
+SELECT u.x FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+SELECT u.x FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT u.* FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+SELECT u.* FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+
+SELECT '-- chains';
+SELECT t.id, x FROM t_unnest AS t JOIN t_unnest AS s ON s.id = t.id, unnest(s.arr) AS x ORDER BY ALL;
+SELECT t.id, u.tag, m.v FROM t_unnest AS t, unnest(t.tags) AS u(tag) JOIN (SELECT 'a' AS k, 'A' AS v) AS m ON m.k = u.tag ORDER BY ALL;
+SELECT t.id, tag, m.v FROM t_unnest AS t, unnest(t.tags) AS u(tag) JOIN (SELECT 'a' AS tag, 'A' AS v) AS m USING (tag) ORDER BY ALL;
+SELECT id, a, b FROM t_unnest AS t, unnest(t.arr) AS a, unnest(t.tags) AS b ORDER BY ALL;
+SELECT x FROM unnest([[1, 2], [3]]) AS u(arr), unnest(u.arr) AS x ORDER BY ALL;
+SELECT j.x FROM (t_unnest AS t, unnest(t.arr) AS x) AS j ORDER BY ALL;
+SELECT * FROM (t_unnest AS t, unnest(t.arr) AS x) AS j ORDER BY ALL;
+
+SELECT '-- other join kinds';
+SELECT t.id, x FROM t_unnest AS t RIGHT JOIN unnest([1, 3, 5]) AS x ON t.id = x ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id FROM t_unnest AS t JOIN unnest([1, 3]) AS u(id) USING (id) ORDER BY ALL;
+SELECT t.id, x FROM t_unnest AS t RIGHT JOIN unnest(t.arr) AS x ON t.id = x; -- { serverError NOT_IMPLEMENTED }
+
+SELECT '-- correlated';
+SELECT id FROM t_unnest AS t WHERE EXISTS (SELECT 1 FROM unnest(t.tags) AS tag WHERE tag = 'b') ORDER BY id;
+SELECT id, (SELECT groupArray(x) FROM unnest(t.arr) AS x) AS g FROM t_unnest AS t ORDER BY id;
+
+SELECT '-- distributed';
+SELECT id, x FROM remote('127.0.0.{1,2}', currentDatabase(), t_unnest) AS t, unnest(t.arr) AS u(x) WHERE u.x > 10 ORDER BY ALL;
+SELECT id, x FROM remote('127.0.0.{1,2}', currentDatabase(), t_unnest) AS t LEFT JOIN unnest(t.arr) AS u(x) ON u.x > 15 ORDER BY ALL SETTINGS join_use_nulls = 0;
+SELECT id FROM remote('127.0.0.{1,2}', currentDatabase(), t_unnest) AS t WHERE id IN (SELECT x FROM unnest([1, 3]) AS x) ORDER BY ALL;
+
+SELECT '-- views';
+CREATE VIEW v_unnest AS SELECT id, u.x FROM t_unnest AS t, unnest(t.arr) AS u(x);
+SELECT * FROM v_unnest ORDER BY ALL;
+CREATE TABLE src_unnest (id UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE dst_unnest (id UInt32, x UInt32) ENGINE = MergeTree ORDER BY (id, x);
+CREATE MATERIALIZED VIEW mv_unnest TO dst_unnest AS SELECT id, x FROM src_unnest AS s, unnest(s.arr) AS x;
+INSERT INTO src_unnest VALUES (1, [5, 6]), (2, []);
+SELECT * FROM dst_unnest ORDER BY ALL;
+
+SELECT '-- syntax';
+SELECT formatQuerySingleLine('SELECT x, n FROM unnest([1]) WITH ORDINALITY AS u(x, n)');
+SELECT formatQuerySingleLine('SELECT x FROM unnest([1]) WITH ORDINALITY x');
+SELECT formatQuerySingleLine('SELECT x FROM t, LATERAL unnest(t.arr) AS x');
+SELECT formatQuerySingleLine('SELECT x FROM t LEFT JOIN LATERAL unnest(t.arr) AS x ON true');
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT x, n FROM unnest([1]) WITH ORDINALITY AS u(x, n)'));
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 FROM t'), '"type":"TableExpression"', '"type":"TableExpression","with_ordinality":true')); -- { serverError BAD_ARGUMENTS }
+SELECT unnest([1, 2]) AS y ORDER BY y;
+
+DROP VIEW mv_unnest;
+DROP VIEW v_unnest;
+DROP TABLE src_unnest;
+DROP TABLE dst_unnest;
+DROP TABLE t_unnest_tuple;
+DROP TABLE t_unnest_element;
+DROP TABLE t_unnest_binder;
+DROP TABLE t_unnest;

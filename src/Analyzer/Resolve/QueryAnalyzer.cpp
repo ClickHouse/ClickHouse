@@ -2426,6 +2426,41 @@ static void checkSemiAntiJoinTableAccess(
     }
 }
 
+/// The resolved `unnest(...)` ARRAY JOIN of the nearest query whose unnest alias is `qualifier`.
+static QueryTreeNodePtr findUnnestArrayJoinNode(const Identifier & qualifier, const IdentifierResolveScope & scope)
+{
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const auto * query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+    if (qualifier.getPartsSize() != 1 || !query_node || !query_node->getJoinTreeNode())
+        return nullptr;
+
+    QueryTreeNodes nodes_to_process{query_node->getJoinTreeNode()};
+    while (!nodes_to_process.empty())
+    {
+        auto node = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        if (const auto * array_join_node = node->as<ArrayJoinNode>())
+        {
+            if (array_join_node->isUnnest() && array_join_node->getUnnestAlias() == qualifier.getFullName())
+                return nearest_query_scope->table_expressions_in_resolve_process.contains(node.get()) ? nullptr : node;
+            nodes_to_process.push_back(array_join_node->getTableExpressionNode());
+        }
+        else if (const auto * join_node = node->as<JoinNode>())
+        {
+            nodes_to_process.push_back(join_node->getLeftTableExpressionNode());
+            nodes_to_process.push_back(join_node->getRightTableExpressionNode());
+        }
+        else if (const auto * cross_join_node = node->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+                nodes_to_process.push_back(table_expression);
+        }
+    }
+
+    return nullptr;
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
@@ -2484,7 +2519,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 identifier_resolve_settings.allow_to_check_database_catalog = false;
 
                 auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings).resolved_identifier != nullptr;
+                prefer_table_expression = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings).resolved_identifier != nullptr
+                    || findUnnestArrayJoinNode(matcher_node_typed.getQualifiedIdentifier(), scope) != nullptr;
             }
 
             if (!prefer_table_expression)
@@ -2515,6 +2551,24 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 return matched_expression_nodes_with_column_names;
             }
         }
+    }
+
+    /// The qualifier of `unnest(...) AS u` names the unnest columns, like a table alias names the table columns.
+    if (auto unnest_node = findUnnestArrayJoinNode(matcher_node_typed.getQualifiedIdentifier(), scope))
+    {
+        checkSemiAntiJoinTableAccess(unnest_node, scope, matcher_node);
+
+        QueryTreeNodesWithNames matched_column_nodes_with_names;
+        for (const auto & array_join_expression : unnest_node->as<ArrayJoinNode &>().getJoinExpressions().getNodes())
+        {
+            const auto & array_join_column = array_join_expression->as<ColumnNode &>();
+            if (matcher_node_typed.isMatchingColumn(array_join_column.getColumnName()))
+                matched_column_nodes_with_names.emplace_back(
+                    std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource()),
+                    array_join_column.getColumnName());
+        }
+
+        return matched_column_nodes_with_names;
     }
 
     /// Try to resolve qualified matcher for table expression
@@ -2731,6 +2785,19 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         scope);
                 if (array_join_resolved_expression)
                     table_expression_column_node = std::move(array_join_resolved_expression);
+            }
+
+            /// The columns of `unnest(...)` in `FROM` are a relation, so `*` includes them.
+            if (const auto & array_join_node = table_expression->as<ArrayJoinNode &>(); array_join_node.isUnnest())
+            {
+                for (const auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
+                {
+                    const auto & array_join_column = array_join_expression->as<ColumnNode &>();
+                    if (matcher_node_typed.isMatchingColumn(array_join_column.getColumnName()))
+                        table_expression_column_nodes_with_names.emplace_back(
+                            std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource()),
+                            array_join_column.getColumnName());
+                }
             }
 
             continue;
@@ -6039,11 +6106,23 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             }
         }
 
-        auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
+        auto process_array_join_expression = [&](QueryTreeNodePtr expression)
         {
             auto result_type = expression->getResultType();
             bool is_array_type = isArray(result_type);
             bool is_map_type = isMap(result_type);
+
+            /// `t LEFT JOIN unnest(t.arr) ON ...` gives `NULL` for a row without elements, as any `LEFT JOIN`.
+            if (array_join_node_typed.isUnnest() && array_join_node_typed.isLeft() && scope.join_use_nulls && is_array_type)
+            {
+                auto element_type = assert_cast<const DataTypeArray &>(*result_type).getNestedType();
+                if (JoinCommon::canBecomeNullable(element_type))
+                {
+                    expression = buildCastFunction(
+                        expression, std::make_shared<DataTypeArray>(makeNullableOrLowCardinalityNullable(element_type)), scope.context);
+                    result_type = expression->getResultType();
+                }
+            }
 
             if (!is_array_type && !is_map_type)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
