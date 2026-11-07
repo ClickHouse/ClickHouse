@@ -236,9 +236,11 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, 
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution
-/// so that index pruning (MergeTree primary key) on the other side picks them up
-size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+/// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution.
+/// A copy onto a primary key column prunes granules when `index_analysis_enabled`; a cheap comparison
+/// is copied onto any column, where it shrinks the other side's join input
+size_t tryPropagatePredicateAcrossEquiJoin(
+    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool index_analysis_enabled, const Optimization::ExtraSettings & settings);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
