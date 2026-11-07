@@ -1,5 +1,6 @@
 #include <Access/DefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -514,6 +515,20 @@ StorageView::StorageView(
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
 
+    /// A definition read back from metadata can have unqualified names (see `qualifyNamesFromLegacyMetadata`).
+    /// They resolve against the database of the view, unless the reading session has a temporary table of that name.
+    if (query.attach_short_syntax)
+    {
+        auto qualified_inner_query = description.inner_query->clone();
+        AddDefaultDatabaseVisitor(Context::getGlobalContextInstance(), table_id_.database_name).visitTableExpressions(*qualified_inner_query);
+        if (qualified_inner_query->getTreeHash(/*ignore_aliases=*/false) != description.inner_query->getTreeHash(/*ignore_aliases=*/false))
+        {
+            stored_inner_query = description.inner_query;
+            stored_database = table_id_.database_name;
+            description.inner_query = std::move(qualified_inner_query);
+        }
+    }
+
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
     storage_metadata.setVirtuals(createVirtuals());
@@ -799,6 +814,26 @@ void StorageView::drop()
         DefinerDependencies::instance().removeDependencies(table_id);
 }
 
+StorageMetadataHandle StorageView::getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const
+{
+    auto metadata = IStorage::getInMemoryMetadataPtr(context, bypass_metadata_cache);
+    /// The SELECT of a `DEFINER` or `NONE` view runs in a context without the temporary tables of the reader.
+    const bool runs_as_invoker = !metadata->sql_security_type || *metadata->sql_security_type == SQLSecurityType::INVOKER;
+    if (!stored_inner_query || !runs_as_invoker || !context || context->isGlobalContext() || context->getExternalTables().empty())
+        return metadata;
+
+    auto inner_query = stored_inner_query->clone();
+    AddDefaultDatabaseVisitor(context, stored_database).visitTableExpressions(*inner_query);
+    if (inner_query->getTreeHash(/*ignore_aliases=*/false) == metadata->getSelectQuery().inner_query->getTreeHash(/*ignore_aliases=*/false))
+        return metadata;
+
+    auto description = metadata->getSelectQuery();
+    description.inner_query = std::move(inner_query);
+    auto result = std::make_shared<StorageInMemoryMetadata>(*metadata);
+    result->setSelectQuery(description);
+    return result;
+}
+
 void StorageView::alter(
     const AlterCommands & params,
     ContextPtr context,
@@ -806,7 +841,8 @@ void StorageView::alter(
     DDLGuardPtr &)
 {
     auto table_id = getStorageID();
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    /// Not the SELECT adjusted to the temporary tables of this session.
+    auto metadata_snapshot = IStorage::getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 

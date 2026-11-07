@@ -94,7 +94,7 @@ namespace ErrorCodes
 void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const String & database_name, ContextPtr context)
 {
     /// Metadata written before the table names were qualified at CREATE time — in particular the
-    /// names introduced by SQL UDF expansion into a view SELECT, a column DEFAULT expression or a
+    /// names introduced by SQL UDF expansion into a materialized view SELECT, a column DEFAULT expression or a
     /// constraint — can contain unqualified names. They have to resolve against the database owning
     /// the table and not against the current database of the loading context, which is unrelated to
     /// this table: the analysis of the constraints executes their scalar subqueries, and the view
@@ -106,7 +106,9 @@ void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const Str
         return;
 
     AddDefaultDatabaseVisitor visitor(context, database_name);
-    if (ast_create_query.select && ast_create_query.isView())
+    /// `StorageView` repairs the SELECT of an ordinary view itself: an unqualified name there may be a
+    /// temporary table of the reading session, which `CREATE` leaves unqualified on purpose.
+    if (ast_create_query.select && ast_create_query.is_materialized_view)
         visitor.visitTableExpressions(*ast_create_query.select);
     if (ast_create_query.columns_list)
         visitor.visitTableExpressions(*ast_create_query.columns_list);
