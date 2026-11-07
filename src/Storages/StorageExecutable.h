@@ -32,6 +32,9 @@ public:
 
     bool supportsTruncate() const override { return false; }
 
+    /// An input query may read any table.
+    bool mayReadViewSource(const ContextPtr & /*query_context*/) const override { return !input_queries.empty(); }
+
     static VirtualColumnsDescription createVirtuals();
 
     void readImpl(

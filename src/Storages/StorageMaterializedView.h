@@ -55,6 +55,11 @@ public:
     bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
+    bool mayReadViewSource(const ContextPtr & query_context) const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->mayReadViewSource(query_context);
+    }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
