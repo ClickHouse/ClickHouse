@@ -136,6 +136,67 @@ def test_saturated_pool_does_not_lock_queue_shard(
             node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
 
 
+def test_pool_admission_parks_cpu_lease(tables):
+    c_query = "SELECT sum(cityHash64(number)) FROM numbers(200000000)"
+    b_id = f"pool_admission_{uuid4().hex}"
+    workload_settings = "workload = 'pool_admission_w1', max_threads = 1, use_concurrency_control = 1"
+    b = None
+    c = None
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        try:
+            expected = node.query(c_query)
+            node.query("CREATE RESOURCE pool_admission_cpu (MASTER THREAD, WORKER THREAD)")
+            node.query("CREATE WORKLOAD pool_admission_w1 SETTINGS max_concurrent_threads = 1")
+
+            node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
+            node.http_query(
+                "INSERT INTO saturated FORMAT TSV",
+                data="1\n",
+                params=SETTINGS,
+                timeout=30,
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {FAILPOINT} PAUSE", timeout=30)
+            assert metric("AsynchronousInsertThreadsScheduled") == 1
+
+            # The single-row block is 8 bytes: it is diverted to the queue and fills the batch,
+            # so the query thread waits for pool admission while it holds the workload's only slot.
+            b = executor.submit(
+                node.query,
+                f"""INSERT INTO saturated SELECT toUInt64(2) SETTINGS {workload_settings},
+                async_insert = 1, async_insert_select_as_async_insert = 1, wait_for_async_insert = 0,
+                async_insert_max_data_size = 8, async_insert_use_adaptive_busy_timeout = 0,
+                async_insert_busy_timeout_min_ms = 3600000, async_insert_busy_timeout_max_ms = 3600000""",
+                query_id=b_id,
+                timeout=120,
+            )
+            node.wait_for_log_line(
+                rf"\{{{b_id}\}}.*Scheduling async insert processing job because enough bytes accumulated",
+                timeout=30,
+            )
+
+            # C outlasts the first CPU quantum, which a new query gets on credit, so it needs the slot B holds.
+            c = executor.submit(
+                node.query, f"{c_query} SETTINGS {workload_settings}", timeout=120
+            )
+            assert c.result(timeout=30) == expected
+            assert not b.done()
+
+            node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
+            assert b.result(timeout=30) == ""
+            node.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
+            assert node.query("SELECT x FROM saturated ORDER BY x") == "1\n2\n"
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
+            for future in (b, c):
+                if future is not None:
+                    try:
+                        future.result(timeout=60)
+                    except Exception:
+                        pass
+            node.query("DROP WORKLOAD IF EXISTS pool_admission_w1")
+            node.query("DROP RESOURCE IF EXISTS pool_admission_cpu")
+
+
 @pytest.mark.parametrize("trigger", ["size", "deadline"])
 @pytest.mark.parametrize("bad_data", [False, True])
 def test_forced_flush_waits_for_batch_before_pool_admission(tables, trigger, bad_data):
