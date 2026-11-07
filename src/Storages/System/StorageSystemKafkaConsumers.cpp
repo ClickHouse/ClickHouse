@@ -274,7 +274,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & db : databases)
     {
-        for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())
+        for (auto it = db.second->getTablesIteratorSkippingFailed(context); it->isValid(); it->next())
         {
             StoragePtr storage = it->table();
             if (auto kafka_table = castStorage<StorageKafka>(storage, DeferredTable::Skip))

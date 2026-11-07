@@ -146,7 +146,7 @@ static void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, con
         const bool check_access_for_columns_in_db = check_access_for_columns
             && !access->isGranted(AccessType::SHOW_COLUMNS, database_name);
 
-        for (auto iterator = database_ptr->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = database_ptr->getTablesIteratorSkippingFailed(context); iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
             const auto & table = iterator->table();

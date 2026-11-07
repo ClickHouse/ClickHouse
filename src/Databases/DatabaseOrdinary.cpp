@@ -956,6 +956,20 @@ void DatabaseOrdinary::stopLoading()
     stop_load_table.clear();
 }
 
+void DatabaseOrdinary::waitTablesStarted(const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool no_throw) const
+{
+    LoadTaskPtrs tasks_to_wait;
+    {
+        std::lock_guard lock(mutex);
+        if (!filter_by_table_name)
+            tasks_to_wait.reserve(startup_table.size());
+        for (const auto & [table_name, task] : startup_table)
+            if (!filter_by_table_name || filter_by_table_name(table_name))
+                tasks_to_wait.emplace_back(task);
+    }
+    waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait, no_throw);
+}
+
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
     if (!skip_not_loaded)
@@ -964,18 +978,27 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
         // It is important, because otherwise table might be:
         //  - not attached and thus will be missed in the snapshot;
         //  - not started, which is not good for DDL operations.
-        LoadTaskPtrs tasks_to_wait;
-        {
-            std::lock_guard lock(mutex);
-            if (!filter_by_table_name)
-                tasks_to_wait.reserve(startup_table.size());
-            for (const auto & [table_name, task] : startup_table)
-                if (!filter_by_table_name || filter_by_table_name(table_name))
-                    tasks_to_wait.emplace_back(task);
-        }
-        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), tasks_to_wait);
+        waitTablesStarted(filter_by_table_name, /* no_throw */ false);
+        return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
     }
-    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+
+    /// A table whose startup failed or was canceled stays attached, but every access to it rethrows that error.
+    std::unordered_set<String> not_started;
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & [table_name, task] : startup_table)
+            for (const auto & job : task->goals())
+                if (auto status = job->status(); status == LoadStatus::FAILED || status == LoadStatus::CANCELED)
+                    not_started.insert(table_name);
+    }
+    if (not_started.empty())
+        return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+
+    auto filter = [&](const String & table_name)
+    {
+        return !not_started.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name));
+    };
+    return DatabaseWithOwnTablesBase::getTablesIterator(local_context, filter, skip_not_loaded);
 }
 
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIterator(

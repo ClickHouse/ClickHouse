@@ -567,7 +567,7 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
                 const DatabasePtr & database = databases.at(database_name);
                 /// Enumerating a table means resolving its storage, so let the database skip the
                 /// names the query cannot ask for instead of walking everything it holds.
-                auto iterator = database->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
+                auto iterator = database->getTablesIteratorSkippingFailed(context, table_name_filter);
                 for (; iterator->isValid(); iterator->next())
                 {
                     if (const auto & table = iterator->table())

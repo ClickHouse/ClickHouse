@@ -59,7 +59,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIteratorSkippingFailed(context); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
             RocksDBStoragePtr rocksdb_table = table ? castStorage<StorageEmbeddedRocksDB>(table, DeferredTable::Skip) : nullptr;

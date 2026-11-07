@@ -51,7 +51,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
         if (db.second->isExternal())
             continue;
 
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIteratorSkippingFailed(context); iterator->isValid(); iterator->next())
         {
             auto table_data = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table_data)

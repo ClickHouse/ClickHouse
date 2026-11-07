@@ -66,7 +66,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
         auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         for (const auto & db : databases)
         {
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIteratorSkippingFailed(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
                 if (auto queue_table = castStorage<StorageObjectStorageQueue>(storage, DeferredTable::Skip))

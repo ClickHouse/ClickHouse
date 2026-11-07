@@ -51,7 +51,8 @@ public:
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
-    StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
+    /// Returns nullptr if the target does not exist or failed to load; `getTargetTable` reports why.
+    StoragePtr tryGetTargetTable() const;
 
     /// Returns whether the current user has the specified access to every table this alias resolves
     /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.
@@ -315,7 +316,7 @@ public:
         if (!target)
             return std::nullopt;
 
-        return target->getColumnSizes();
+        return target->tryGetColumnSizes();
     }
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
