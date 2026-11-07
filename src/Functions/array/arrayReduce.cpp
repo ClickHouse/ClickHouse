@@ -1,3 +1,6 @@
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Common/SipHash.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -19,6 +22,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
 
 namespace ErrorCodes
 {
@@ -197,7 +205,16 @@ class FunctionArrayReduceOverloadResolver final : public IFunctionOverloadResolv
 public:
     static constexpr auto name = "arrayReduce";
     static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionArrayReduceOverloadResolver>(context_); }
-    explicit FunctionArrayReduceOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionArrayReduceOverloadResolver(ContextPtr context_)
+        : WithContext(context_)
+        , cast_fixed_string_to_string_strip_trailing_zeros(context_->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
+    {
+    }
+
+    /// The adaptors for `Dynamic` and `Variant` arguments hash the resolver rather than the built function, see
+    /// `IFunctionOverloadResolver::updateHash`. The aggregate built from it captures the conversion mode of
+    /// `FixedString` to `String` of the query, see `IAggregateFunction::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -238,6 +255,8 @@ public:
     }
 
 private:
+    const bool cast_fixed_string_to_string_strip_trailing_zeros;
+
     AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() < 2)
