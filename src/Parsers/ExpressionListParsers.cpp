@@ -3967,17 +3967,29 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     auto current_checkpoint = layers.back()->current_checkpoint;
     layers.back()->current_checkpoint = Checkpoint::None;
 
+    /// `INTERVAL` and `CASE` are tried as keywords first and, if that fails, again as identifiers, from a checkpoint.
+    /// Do not try them as keywords when the keyword form cannot be completed: then a failure inside nested
+    /// `CASE(CASE(...` would retry every combination of the two readings, which takes time exponential in the depth.
     if (current_checkpoint != Checkpoint::Interval && parseOperator(pos, toStringView(Keyword::INTERVAL), expected))
     {
-        layers.back()->saved_checkpoint = {old_pos, Checkpoint::Interval};
-        layers.push_back(std::make_unique<IntervalLayer>());
-        return Action::OPERAND;
+        if (pos->type == TokenType::StringLiteral || pos->type == TokenType::HereDoc
+            || old_pos.followedInSameBrackets(Tokens::KeywordWithTerminator::Interval))
+        {
+            layers.back()->saved_checkpoint = {old_pos, Checkpoint::Interval};
+            layers.push_back(std::make_unique<IntervalLayer>());
+            return Action::OPERAND;
+        }
+        pos = old_pos;
     }
     if (current_checkpoint != Checkpoint::Case && parseOperator(pos, toStringView(Keyword::CASE), expected))
     {
-        layers.back()->saved_checkpoint = {old_pos, Checkpoint::Case};
-        layers.push_back(std::make_unique<CaseLayer>());
-        return Action::OPERAND;
+        if (old_pos.followedInSameBrackets(Tokens::KeywordWithTerminator::Case))
+        {
+            layers.back()->saved_checkpoint = {old_pos, Checkpoint::Case};
+            layers.push_back(std::make_unique<CaseLayer>());
+            return Action::OPERAND;
+        }
+        pos = old_pos;
     }
 
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
