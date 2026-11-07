@@ -8,6 +8,8 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 START_SERVER_READY_TIMEOUT=120
+# Where MALLOC_CONF (set by stress_job.py for jemalloc builds) points prof_prefix.
+JEMALLOC_PROFILES_DIR=/var/log/clickhouse-server/jemalloc_profiles
 
 function escaped()
 {
@@ -112,6 +114,9 @@ function configure()
     #  DB::Exception: Incorrect file extension: V.sql.move_from.X in metadata directory store/346/346b09d6-907d-4b6b-a1e3-361ecfdab8a4/. (INCORRECT_FILE_NAME)
     #
     /repo/tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client --no-keeper-inject-auth --no-remote-database-disk "$@"
+
+    # jemalloc does not create the prof_prefix directory itself.
+    mkdir -p "$JEMALLOC_PROFILES_DIR"
 
     # These jobs mix config drop-ins and binaries of different versions (the upgrade
     # check boots the previous release with the current repo's configs) - an unknown
@@ -426,6 +431,40 @@ function check_logs_for_critical_errors()
     [ -s /test_output/no_such_key_errors.txt ] || rm -f /test_output/no_such_key_errors.txt
 
     dmesg -T > /test_output/dmesg.log
+}
+
+# Arguments: logs of the server(s) that produced the top-level profiles, consulted to decide
+# whether rendering is worth it.
+function collect_jemalloc_profiles()
+{
+    if [[ -z "$(find "$JEMALLOC_PROFILES_DIR" -name '*.heap' -print -quit)" ]]; then
+        echo "No jemalloc profiles were dumped"
+        return 0
+    fi
+
+    # Symbolizing a debug build takes minutes, so render only the latest profile and only when
+    # memory is in question: the total limit was hit, or the server was killed (OOM killer).
+    # The raw .heap files always ship and can be rendered offline with jeprof and the binary.
+    # Only top-level profiles belong to the installed binary (see upgrade_runner.sh). Newest by
+    # mtime: the servers are restarted several times and each restarts jemalloc's dump sequence.
+    local latest
+    latest=$(find "$JEMALLOC_PROFILES_DIR" -maxdepth 1 -name '*.heap' -printf '%T@ %p\n' | sort -n | tail -n1 | cut -d' ' -f2-)
+    if [[ -n "$latest" ]] \
+        && grep -a -q -F -e 'after total memory exceeded' -e '(total) memory limit exceeded' -e 'Child process was terminated by signal 9' "$@"
+    then
+        local collapsed="${latest%.heap}.collapsed"
+        if timeout --verbose --signal=TERM --kill-after=60 600 \
+            jeprof "$(readlink -f "$(command -v clickhouse)")" "$latest" --collapsed > "$collapsed" 2> "${collapsed}.log"
+        then
+            flamegraph.pl --color mem --width 2560 < "$collapsed" > "${latest%.heap}.svg" || rm -f "${latest%.heap}.svg"
+        else
+            echo "Failed to symbolize $latest"
+            rm -f "$collapsed"
+        fi
+    fi
+
+    tar -C "$(dirname "$JEMALLOC_PROFILES_DIR")" -cf - "$(basename "$JEMALLOC_PROFILES_DIR")" | zstd --threads=0 -f -o /test_output/jemalloc.tar.zst \
+        || echo "Failed to archive jemalloc profiles"
 }
 
 function collect_query_and_trace_logs()

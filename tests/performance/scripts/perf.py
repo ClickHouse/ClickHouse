@@ -762,6 +762,48 @@ all_connections = [
 # Connection 0 is the reference only in a comparison: a single server is the tested one.
 reference = 0 if len(all_connections) > 1 else None
 
+drop_query_templates = [q.text for q in root.findall("drop_query")] + extra_drop_queries
+# The connections that run the setup queries, and so the drop queries.
+setup_connections = []
+threads = []
+teardown_done = False
+
+
+def teardown():
+    """Print `teardown-complete` and return True only if every drop query succeeded or found its object absent."""
+    global teardown_done
+    if teardown_done:
+        return
+    teardown_done = True
+    if any(t.is_alive() for t in threads):
+        print("teardown-skipped\tsetup workers active")
+        return False
+    # A drop query that waits for a mutation would hang while merges are stopped.
+    if stop_merges:
+        for c in (all_connections[i] for i in setup_connections):
+            c.execute("SYSTEM START MERGES")
+    clean = True
+    for conn_index in setup_connections:
+        c = all_connections[conn_index]
+        for q in substitute_parameters(drop_query_templates):
+            try:
+                c.execute(q)
+                print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
+            except Exception as e:
+                # The object is not there, so the server is clean.
+                if getattr(e, "code", None) in (UNKNOWN_TABLE, UNKNOWN_DATABASE):
+                    continue
+                print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
+                clean = False
+    if clean:
+        print("teardown-complete")
+    return clean
+
+
+# Runs after an uncaught exception, `KeyboardInterrupt` and `sys.exit` too.
+if not args.keep_created_tables and not args.use_existing_tables:
+    atexit.register(teardown)
+
 # Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
 # etc.) in parallel so both servers see the same operation at the same wall
 # clock moment.
@@ -872,8 +914,6 @@ if not args.use_existing_tables:
     # Run drop queries, ignoring errors. Do this before all other activity,
     # because clickhouse_driver disconnects on error (this is not configurable),
     # and the new connection loses the changes in settings.
-    drop_query_templates = [q.text for q in root.findall("drop_query")]
-    drop_query_templates += extra_drop_queries
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
         for q in drop_queries:
@@ -911,36 +951,7 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
-# The connections that run the setup queries, and so the drop queries.
 setup_connections = [i for i, e in enumerate(setup_error_on_connection) if not e]
-threads = []
-
-
-def teardown_long():
-    """Print `teardown-complete` only if the servers are known clean."""
-    if any(t.is_alive() for t in threads):
-        print("teardown-skipped\tsetup workers active")
-        return
-    clean = True
-    for conn_index in setup_connections:
-        c = all_connections[conn_index]
-        for q in substitute_parameters(drop_query_templates):
-            try:
-                c.execute(q)
-                print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
-            except Exception as e:
-                # The object is not there, so the server is clean.
-                if getattr(e, "code", None) in (UNKNOWN_TABLE, UNKNOWN_DATABASE):
-                    continue
-                print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
-                clean = False
-    if clean:
-        print("teardown-complete")
-
-
-# Runs after an uncaught exception, `KeyboardInterrupt` and `sys.exit` too.
-if args.long and not args.keep_created_tables and not args.use_existing_tables:
-    atexit.register(teardown_long)
 
 # Diagnostics of setup queries tolerated on the reference server, reported
 # from the main thread below. They must not reach this test's stderr: a
@@ -1464,22 +1475,13 @@ if stop_merges:
         c.execute("SYSTEM START MERGES")
 
 # Run drop queries
+teardown_clean = True
 if not args.long and not args.keep_created_tables and not args.use_existing_tables:
-    drop_queries = substitute_parameters(drop_query_templates)
-    for conn_index, c in enumerate(all_connections):
-        # Best-effort teardown on a connection whose setup never completed: the objects may not exist there.
-        setup_failed = setup_error_on_connection[conn_index] is not None
-        for q in drop_queries:
-            try:
-                c.execute(q)
-            except Exception:
-                if setup_failed:
-                    continue
-                raise
-            print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
-
+    teardown_clean = teardown()
     reportStageEnd("drop-2")
 
 if failed_queries:
     print(f"{len(failed_queries)} queries failed, see the 'run-error' lines", file=sys.stderr)
+    sys.exit(1)
+if not teardown_clean:
     sys.exit(1)

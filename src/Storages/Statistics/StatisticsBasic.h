@@ -46,6 +46,7 @@ public:
     size_t allocatedBytes() const override;
 
     bool isCompatibleWith(const IStatistics & other) const override;
+    void copyStructureFrom(const IStatistics & other) override;
 
     bool hasNumericMinMax() const { return tracks_numeric; }
     bool hasStringLengthAvg() const { return tracks_string; }

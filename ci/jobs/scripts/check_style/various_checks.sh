@@ -191,7 +191,7 @@ find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or 
 
 # Check for misuse of timeout in .sh tests
 find $ROOT_PATH/tests/queries -name '*.sh' |
-    grep -vP '02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03710_parallel_alter_comment_rename_selects' |
+    grep -vP 'queries/shell_config\.sh|02835_drop_user_during_session|02922_deduplication_with_zero_copy|00738_lock_for_inner_table|shared_merge_tree|_sc_|03710_parallel_alter_comment_rename_selects' |
     xargs grep -l -P 'export -f' |
     xargs grep -l -F 'timeout' &&
     echo ".sh tests cannot use the 'timeout' command, because it leads to race conditions, when the timeout is expired, and waiting for the command is done, but the server still runs some queries"
@@ -269,6 +269,10 @@ for test_case in "${curl_flush_logs_tests[@]}"; do
         echo "$test_case uses curl and SYSTEM FLUSH LOGS without a retry loop. Add a retry loop to handle the race between HTTP response and log entry writing. See https://github.com/ClickHouse/ClickHouse/issues/84364"
     fi
 done
+
+# Unbounded loops spin forever on the host when the runner dies before `clickhouse-test` kills the test.
+git grep -nP '^[^#]*\bwhile\s+(true|:)\s*(;|$)' -- "$ROOT_PATH/tests/queries/0_stateless/*.sh" "$ROOT_PATH/tests/queries/0_stateless/*.lib" &&
+    echo "Use 'while clickhouse_test_time_left' instead of an unbounded loop in tests, see shell_config.sh"
 
 # `clickhouse-test` passes non-SQL tests to the interpreter for their extension (`TEST_INTERPRETERS`), so the shebang
 # must name that interpreter.

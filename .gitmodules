@@ -392,7 +392,7 @@
 	url = https://github.com/ClickHouse/musl
 [submodule "contrib/zmij"]
 	path = contrib/zmij
-	url = https://github.com/vitaut/zmij.git
+	url = https://github.com/ClickHouse/zmij.git
 [submodule "contrib/sql-console"]
 	path = contrib/sql-console
 	url = https://github.com/ClickHouse/clickhouse-sql-console.git
@@ -438,6 +438,9 @@
 [submodule "contrib/substrait"]
 	path = contrib/substrait
 	url = https://github.com/substrait-io/substrait.git
+[submodule "contrib/optimized-routines"]
+	path = contrib/optimized-routines
+	url = https://github.com/ARM-software/optimized-routines
 [submodule "contrib/cudf"]
 	path = contrib/cudf
 	url = https://github.com/rapidsai/cudf.git

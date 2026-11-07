@@ -105,6 +105,8 @@ void validateNamespace(const IcebergNamespaceName & name)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be non-empty");
         if (level.size() > MAX_NAMESPACE_LEVEL_LENGTH)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be at most {} bytes", MAX_NAMESPACE_LEVEL_LENGTH);
+        if (level.contains(NAMESPACE_LEVEL_SEPARATOR))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must not contain the unit separator 0x1F");
     }
 }
 

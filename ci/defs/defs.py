@@ -359,18 +359,17 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
-    # sccache-warmup variants of the release builds (MasterCI only): PR-style
-    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
-    # but built on master so the shared sccache is populated read-write for
-    # read-only PR builds to reuse. See build_clickhouse.py and
-    # PR_CACHE_WARMUP_BUILD_TYPES.
-    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
+    # The release builds of master made exactly like a PR release build (MasterCI
+    # only, see PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py). Their
+    # server binary is the reference of the PR performance comparison, and as
+    # master builds they also fill the shared sccache that PR builds read.
+    AMD_RELEASE_PERFORMANCE_REFERENCE = "amd_release_performance_reference"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
-    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
+    ARM_RELEASE_PERFORMANCE_REFERENCE = "arm_release_performance_reference"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
@@ -497,11 +496,13 @@ class ArtifactNames:
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
+    CH_AMD_RELEASE_PERFORMANCE_REFERENCE = "CH_AMD_RELEASE_PERFORMANCE_REFERENCE"
     CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
+    CH_ARM_RELEASE_PERFORMANCE_REFERENCE = "CH_ARM_RELEASE_PERFORMANCE_REFERENCE"
     CH_ARM_DEBUG = "CH_ARM_DEBUG"
     CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
@@ -711,6 +712,17 @@ class ArtifactConfigs:
             path=f"{TEMP_DIR}/build/programs/clickhouse",
             compress_zst=True,
         )
+    )
+    # Built by MasterCI only, hence not part of the shared `clickhouse_binaries`.
+    clickhouse_performance_reference_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/self-extracting/clickhouse",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE,
+            ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE,
+        ]
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(
         name="...",

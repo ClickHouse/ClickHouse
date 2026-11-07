@@ -1979,7 +1979,6 @@ void writeFileFooter(FileWriteState & file,
                     type->getCustomName()->getName() == WKBMultiPolygonTransform::name)
                 {
                     geom_meta->set("edges", "planar");
-                    geom_meta->set("orientation", "counterclockwise");
                 }
                 geo_columns_metadata.push_back({column_name, geom_meta});
             }

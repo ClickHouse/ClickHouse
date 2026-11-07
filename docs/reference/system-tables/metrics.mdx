@@ -722,6 +722,14 @@ Number of threads in the distributed exchange server handshake thread pool runni
 
 Number of queued or active jobs in the distributed exchange server handshake thread pool.
 
+### ExternalSetCacheBytes {#externalsetcachebytes}
+
+Total size, in bytes, of the blocks held in the caches of `IN` sets in external memory
+
+### ExternalSetCacheCells {#externalsetcachecells}
+
+Total number of blocks held in the caches of `IN` sets in external memory
+
 ### FiberStackBytes {#fiberstackbytes}
 
 Sum size of currently allocated fiber stacks.
@@ -1985,6 +1993,14 @@ Number of threads in the stateless worker thread pool running a task.
 ### StatelessWorkerThreadsScheduled {#statelessworkerthreadsscheduled}
 
 Number of queued or active jobs in the stateless worker thread pool.
+
+### StatisticsCacheBytes {#statisticscachebytes}
+
+Total size of the statistics cache in bytes. Holds the column statistics of data parts of MergeTree tables, one entry per part and column.
+
+### StatisticsCacheCells {#statisticscachecells}
+
+Total number of entries (one per data part and column) in the statistics cache
 
 ### StorageBufferBytes {#storagebufferbytes}
 

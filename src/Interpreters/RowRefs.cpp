@@ -118,7 +118,7 @@ public:
     }
 
     /// Unrolled version of upper_bound and lower_bound
-    /// Loosely based on https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
+    /// Loosely based on https://web.archive.org/web/20190917063426/https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
     /// In the future it'd interesting to replace it with a B+Tree Layout as described
     /// at https://en.algorithmica.org/hpc/data-structures/s-tree/
     size_t boundSearch(TKey value)

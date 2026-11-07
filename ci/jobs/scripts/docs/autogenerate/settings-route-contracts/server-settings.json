@@ -37,6 +37,7 @@
     {"prefix":"mlock_executable","mode":"token","target":"/reference/settings/server-settings/settings/mlock-executable"},
     {"prefix":"parquet_metadata","mode":"token","target":"/reference/settings/server-settings/settings/parquet-metadata"},
     {"prefix":"snapshot_cleaner","mode":"token","target":"/reference/settings/server-settings/settings/snapshot-cleaner"},
+    {"prefix":"statistics_cache","mode":"token","target":"/reference/settings/server-settings/settings/statistics-cache"},
     {"prefix":"threadpool_local","mode":"token","target":"/reference/settings/server-settings/settings/threadpool-local"},
     {"prefix":"default_replica","mode":"token","target":"/reference/settings/server-settings/settings/default-replica"},
     {"prefix":"distributed_ddl","mode":"token","target":"/reference/settings/server-settings/settings/distributed-ddl"},

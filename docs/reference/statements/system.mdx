@@ -98,6 +98,11 @@ Clears the mark cache.
 Clears the primary index cache, which holds the primary keys of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory.
 Its size is configured with the server-level setting [`primary_index_cache_size`](/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
+## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
+
+Clears the statistics cache, which holds the column statistics of the data parts of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory, one entry per data part and column.
+Its size is configured with the server-level setting `statistics_cache_size`.
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.

@@ -140,7 +140,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         /// keeps the per-field Arrow nullability flag.
         bool make_nullable = false;
         if (make_columns_nullable != 0 && make_columns_nullable != 1)
-            make_nullable = field.nullable;
+            make_nullable = ArrowIPC::isNullableField(field);
 
         DataTypePtr type;
         try

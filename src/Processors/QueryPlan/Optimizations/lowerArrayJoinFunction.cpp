@@ -4,10 +4,33 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoin.h>
+#include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// arrayJoin(emptyArrayToSingle(x)) is LEFT ARRAY JOIN x, make `before` return x for the join
+static bool unpadArrayJoinArgument(ActionsDAG & before, const String & name)
+{
+    for (auto & output : before.getOutputs())
+    {
+        if (output->result_name != name)
+            continue;
+        const auto * padded = output;
+        while (padded->type == ActionsDAG::ActionType::ALIAS)
+            padded = padded->children.front();
+        if (padded->type != ActionsDAG::ActionType::FUNCTION || padded->function_base->getName() != "emptyArrayToSingle")
+            return false;
+        const auto * array = padded->children.front();
+        if (!array->result_type->equals(*padded->result_type))
+            return false;
+        output = &before.addAlias(*array, name);
+        before.removeUnusedActions(/*allow_remove_inputs=*/false);
+        return true;
+    }
+    return false;
+}
 
 /// Lower an `arrayJoin` function into a real ArrayJoinStep so it gets lazy replication and filter fusion.
 /// Peels one join per call; the driver repeats for the rest (independent joins are a cross product).
@@ -35,6 +58,7 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
         return 0;
 
     auto * child_node = parent_node->children.front();
+    bool is_left = unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
 
     /// Expression/Filter(after) -> ArrayJoin -> Expression(before) -> child
     auto & before_node = nodes.emplace_back();
@@ -46,7 +70,7 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     array_join_node.children.push_back(&before_node);
     array_join_node.step = std::make_unique<ArrayJoinStep>(
         before_node.step->getOutputHeader(),
-        ArrayJoin{Names{extracted->array_join_column_name}, /*is_left=*/false},
+        ArrayJoin{Names{extracted->array_join_column_name}, is_left},
         /*is_unaligned=*/false,
         settings.max_block_size,
         settings.enable_lazy_columns_replication);
