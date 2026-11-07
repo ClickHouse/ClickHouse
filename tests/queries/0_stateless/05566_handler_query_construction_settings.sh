@@ -15,7 +15,7 @@ APP_USER="u_05566_${DB}"
 
 cleanup() {
     local drops=""
-    for i in 1 3 4 5 6 7 8 9 10 11 12; do
+    for i in 1 3 4 5 6 7 8 9 10 11 12 14 15 16 17; do
         drops+="DROP HANDLER IF EXISTS h${i}_${DB}; "
     done
     ${CLICKHOUSE_CLIENT} -q "${drops}DROP USER IF EXISTS ${APP_USER}"
@@ -38,6 +38,8 @@ CREATE HANDLER h8_${DB} URL '/h8_${DB}' AS SELECT a FROM ${DB}.t ORDER BY a SETT
 CREATE HANDLER h9_${DB} URL '/h9_${DB}' AS SELECT a FROM ${DB}.t ORDER BY a SETTINGS limit = 2;
 CREATE HANDLER h10_${DB} URL '/h10_${DB}' METHODS (POST) AS EXECUTE AS ${APP_USER} SELECT a FROM ${DB}.t ORDER BY a SETTINGS filter = 'a = {n:UInt8}';
 CREATE HANDLER h11_${DB} URL '/h11_${DB}' AS EXPLAIN SELECT a FROM ${DB}.t SETTINGS filter = 'a = 2';
+CREATE HANDLER h14_${DB} URL '/h14_${DB}' METHODS (POST) AS EXECUTE AS ${APP_USER} SELECT a FROM ${DB}.t ORDER BY a FORMAT TSV SETTINGS limit = 2;
+CREATE HANDLER h15_${DB} URL '/h15_${DB}' AS EXPLAIN SELECT a FROM ${DB}.t FORMAT TSV SETTINGS filter = 'a = 2';
 "
 
 echo "-- limit"
@@ -74,6 +76,7 @@ ${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h10_${DB}?param_n=2"
 
 echo "-- EXPLAIN"
 ${CLICKHOUSE_CURL} -sS "${BASE}/h11_${DB}" | grep -q 'Filter' && echo filtered || echo not filtered
+${CLICKHOUSE_CLIENT} -q "SELECT countSubstrings(query, 'SETTINGS') FROM system.handlers WHERE name = 'h11_${DB}'"
 
 echo "-- a second SETTINGS clause"
 ${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h12_${DB} URL '/h12_${DB}' AS SELECT a FROM ${DB}.t ORDER BY a SETTINGS max_threads = 1 FORMAT TSV SETTINGS limit = 1" 2>&1 \
@@ -81,3 +84,16 @@ ${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h12_${DB} URL '/h12_${DB}' AS SELECT a F
 
 echo "-- IF NOT EXISTS on an existing handler stays a no-op"
 ${CLICKHOUSE_CLIENT} -q "CREATE HANDLER IF NOT EXISTS h1_${DB} URL '/h1_${DB}' AS SELECT a FROM ${DB}.t ORDER BY a SETTINGS max_threads = 1 FORMAT TSV SETTINGS limit = 1" && echo noop
+
+echo "-- EXECUTE AS, SETTINGS after FORMAT: the request shapes the result of the definition"
+${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h14_${DB}?limit=1"
+
+echo "-- EXPLAIN, SETTINGS after FORMAT"
+${CLICKHOUSE_CURL} -sS "${BASE}/h15_${DB}" | grep -q 'Filter' && echo filtered || echo not filtered
+${CLICKHOUSE_CLIENT} -q "SELECT countSubstrings(query, 'SETTINGS') FROM system.handlers WHERE name = 'h15_${DB}'"
+
+echo "-- a second SETTINGS clause under EXECUTE AS and EXPLAIN"
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h16_${DB} URL '/h16_${DB}' METHODS (POST) AS EXECUTE AS ${APP_USER} SELECT a FROM ${DB}.t SETTINGS filter = 'a > 1' FORMAT TSV SETTINGS limit = 1" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h17_${DB} URL '/h17_${DB}' AS EXPLAIN SELECT a FROM ${DB}.t SETTINGS filter = 'a > 1' FORMAT TSV SETTINGS limit = 1" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted

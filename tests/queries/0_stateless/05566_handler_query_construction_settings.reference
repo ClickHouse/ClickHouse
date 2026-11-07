@@ -24,7 +24,16 @@
 2
 -- EXPLAIN
 filtered
+0
 -- a second SETTINGS clause
 rejected
 -- IF NOT EXISTS on an existing handler stays a no-op
 noop
+-- EXECUTE AS, SETTINGS after FORMAT: the request shapes the result of the definition
+1
+-- EXPLAIN, SETTINGS after FORMAT
+filtered
+0
+-- a second SETTINGS clause under EXECUTE AS and EXPLAIN
+rejected
+rejected
