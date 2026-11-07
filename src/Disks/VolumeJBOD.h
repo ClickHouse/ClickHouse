@@ -109,7 +109,7 @@ private:
     };
 
     mutable std::mutex mutex;
-    /// Index of last used disk, for load_balancing=round_robin
+    /// The next turn of load_balancing=round_robin: turn `t` goes to the disk `disks[t % disks.size()]`
     mutable std::atomic<size_t> last_used = 0;
     /// Priority queue of disks sorted by size, for load_balancing=least_used
     using LeastUsedDisksQueue = std::priority_queue<DiskWithSize>;
