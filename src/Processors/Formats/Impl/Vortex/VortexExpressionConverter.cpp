@@ -699,10 +699,9 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
     /// the keys to the type of the column. The two agree only when the conversion of the column is
     /// injective, and a key that converts back exactly does not prove that: a numeric row `1` is
     /// looked up as the string `'1'` and misses the key `'01'`, which parses to the literal `1`; a
-    /// `String` row `'a'` is padded to match the `FixedString(2)` key `'a\0'`; a `UInt8` row `2`
-    /// becomes `true` and matches a `Bool` key that is the literal `1`; a `DateTime` row at noon is
-    /// cut down to a `Date` key. So only keys of the column's own type are pushed, and integer keys
-    /// for an integer column, which `Set::execute` converts exactly or not at all.
+    /// `String` row `'a'` is padded to match the `FixedString(2)` key `'a\0'`; a `DateTime` row at
+    /// noon is cut down to a `Date` key. So only keys of the column's own type are pushed, and
+    /// integer keys for an integer column, which `Set::execute` converts exactly or not at all.
     const DataTypePtr key_type = removeLowCardinalityAndNullable(set_types.front());
     const auto is_plain_integer = [](const DataTypePtr & type) { return isInteger(type) && !isBool(type); };
     /// `Bool` is checked apart because it `equals` `UInt8`.
