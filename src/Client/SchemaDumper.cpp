@@ -5351,6 +5351,9 @@ std::set<String> overlaySourceDatabases(const String & database, const String & 
     return sources;
 }
 
+/// The engine and create query of each table, by database and name.
+using PredefinedTables = std::map<std::pair<String, String>, std::pair<String, String>>;
+
 /// What decides whether analyzing a stored query on the source server stays inside it.
 struct ProbeCatalog
 {
@@ -5358,8 +5361,8 @@ struct ProbeCatalog
     ProbedTables tables;
     std::set<String> listed_databases;
     const std::map<String, DatabaseInfo> * databases = nullptr;
-    /// The engine of each table of the predefined databases, which are never dumped; read on first need.
-    std::function<const std::map<std::pair<String, String>, String> &()> predefined_engines;
+    /// The tables of the predefined databases, which are never dumped; read on first need.
+    std::function<const PredefinedTables &()> predefined_tables;
     /// The analyzer resolves a table named in a query through the refresh task when it is the target of a refreshable
     /// materialized view, which first runs `SYSTEM SYNC REPLICA` on it in a `Replicated` database.
     std::set<std::pair<String, String>> refresh_targets;
@@ -5393,6 +5396,26 @@ bool databaseResolvesLocally(const ProbeCatalog & catalog, const String & databa
 bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String, String> & table, size_t depth);
 bool tableFunctionAnalyzesPassively(const ASTFunction & function, const ProbeCatalog & catalog, size_t depth);
 bool functionAnalyzesPassively(const ASTFunction & function, const ContextPtr & context);
+
+/// The analyzer expands and folds an ALIAS column, so it must pass the same function check as the probed query.
+bool aliasColumnsAnalyzePassively(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!create.columns_list || !create.columns_list->columns)
+        return true;
+    bool passive = true;
+    for (const auto & child : create.columns_list->columns->children)
+    {
+        const auto * column = child->as<ASTColumnDeclaration>();
+        if (!column || column->default_specifier != ColumnDefaultSpecifier::Alias || !column->getDefaultExpression())
+            continue;
+        forEachNode(*column->getDefaultExpression(), [&](const IAST & node)
+        {
+            const auto * function = node.as<ASTFunction>();
+            passive = passive && !node.as<ASTSubquery>() && (!function || functionAnalyzesPassively(*function, context));
+        });
+    }
+    return passive;
+}
 
 /// A database or table name written as a string or an identifier.
 std::optional<String> literalName(const ASTPtr & argument)
@@ -5447,10 +5470,18 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
     if (DatabaseCatalog::isPredefinedDatabase(table.first))
     {
         /// A `System*` table is built at startup with a fixed structure; the `system.all_*` logs are `Proxy` tables.
-        const auto & engines = catalog.predefined_engines();
-        const auto it = engines.find(table);
-        return it != engines.end()
-            && (it->second.starts_with("System") || it->second.ends_with("MergeTree") || passive.contains(it->second));
+        const auto & tables = catalog.predefined_tables();
+        const auto it = tables.find(table);
+        if (it == tables.end())
+            return false;
+        const auto & [engine, create_query] = it->second;
+        if (engine.starts_with("System"))
+            return true;
+        /// Any other table there may be a user's, with its own ALIAS columns.
+        const ASTPtr ast = tryParseCreate(create_query);
+        const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+        return create && aliasColumnsAnalyzePassively(*create, catalog.context)
+            && (engine.ends_with("MergeTree") || passive.contains(engine));
     }
     const auto it = catalog.tables.find(table);
     if (it == catalog.tables.end())
@@ -5458,29 +5489,13 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
     const auto & [engine, create_query, target] = it->second;
     const ASTPtr ast = tryParseCreate(create_query);
     const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
-    if (!create)
+    if (!create || !aliasColumnsAnalyzePassively(*create, catalog.context))
         return false;
     if (create->as_table_function)
     {
         const auto * function = create->as_table_function->as<ASTFunction>();
         return function && tableFunctionAnalyzesPassively(*function, catalog, depth + 1);
     }
-    /// The analyzer expands and folds an ALIAS column, so it must pass the same function check as the probed query.
-    if (create->columns_list && create->columns_list->columns)
-        for (const auto & child : create->columns_list->columns->children)
-        {
-            const auto * column = child->as<ASTColumnDeclaration>();
-            if (!column || column->default_specifier != ColumnDefaultSpecifier::Alias || !column->getDefaultExpression())
-                continue;
-            bool may_do_io = false;
-            forEachNode(*column->getDefaultExpression(), [&](const IAST & node)
-            {
-                const auto * function = node.as<ASTFunction>();
-                may_do_io |= node.as<ASTSubquery>() != nullptr || (function && !functionAnalyzesPassively(*function, catalog.context));
-            });
-            if (may_do_io)
-                return false;
-        }
     if (engine.ends_with("MergeTree") || passive.contains(engine))
         return true;
     if (engine == "MaterializedView")
@@ -6035,14 +6050,14 @@ void dumpDatabaseSchema(
     ProbeCatalog probe_catalog;
     probe_catalog.context = context;
     probe_catalog.databases = &database_info;
-    probe_catalog.predefined_engines = [&, cached = std::optional<std::map<std::pair<String, String>, String>>{}]() mutable
-        -> const std::map<std::pair<String, String>, String> &
+    probe_catalog.predefined_tables = [&, cached = std::optional<PredefinedTables>{}]() mutable
+        -> const PredefinedTables &
     {
         if (cached)
             return *cached;
         cached.emplace();
         executeQuery(connection, timeouts, client_info,
-            "SELECT database, name, engine FROM system.tables "
+            "SELECT database, name, engine, create_table_query FROM system.tables "
             "WHERE database IN ('system', 'information_schema', 'INFORMATION_SCHEMA') AND NOT is_temporary",
             [&](const Block & block)
             {
@@ -6052,10 +6067,11 @@ void dumpDatabaseSchema(
                 const auto & database_column = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
                 const auto & name_column = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
                 const auto & engine_column = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
+                const auto & create_column = typeid_cast<const ColumnString &>(*full.getByPosition(3).column);
                 for (size_t i = 0; i < database_column.size(); ++i)
                     cached->emplace(
                         std::pair(database_column[i].safeGet<String>(), name_column[i].safeGet<String>()),
-                        engine_column[i].safeGet<String>());
+                        std::pair(engine_column[i].safeGet<String>(), create_column[i].safeGet<String>()));
             }, context->getSettingsRef());
         return *cached;
     };
