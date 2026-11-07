@@ -84,10 +84,10 @@
     </fill_query>
     <fill_query>OPTIMIZE TABLE map_basic_compact FINAL</fill_query>
 
-    <query>SELECT m['k0'], m['k1'], m['k2'], m['k3'], m['k4'] FROM map_basic_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
-    <query>SELECT m, m.keys, m.values, m['k0'], m['k1'] FROM map_basic_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
-    <query>SELECT m['k0'], m['k1'], m['k2'], m['k3'], m['k4'] FROM map_basic_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
-    <query>SELECT m, m.keys, m.values, m['k0'], m['k1'] FROM map_basic_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m.key_k0, m.key_k1, m.key_k2, m.key_k3, m.key_k4 FROM map_basic_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m, m.keys, m.values, m.key_k0, m.key_k1 FROM map_basic_wide WHERE skip = 0 FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m.key_k0, m.key_k1, m.key_k2, m.key_k3, m.key_k4 FROM map_basic_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
+    <query>SELECT m, m.keys, m.values, m.key_k0, m.key_k1 FROM map_basic_compact FORMAT Null SETTINGS max_threads = 1, preferred_block_size_bytes = 1000000000000</query>
 
     <!-- ============================ Map(String, String) — bucketed serialization (2 buckets) ============================ -->
     <create_query>

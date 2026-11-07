@@ -525,6 +525,7 @@ add_object_library(clickhouse_processors_transforms_window Processors/Transforms
 add_object_library(clickhouse_window_functions WindowFunctions)
 add_object_library(clickhouse_window_functions_common WindowFunctions/Common)
 add_object_library(clickhouse_window_functions_general WindowFunctions/General)
+add_object_library(clickhouse_window_functions_aggregate WindowFunctions/Aggregate)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
@@ -582,6 +583,9 @@ set_property(SOURCE
     WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
     WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
     WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
+    WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
+    WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
+    WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
