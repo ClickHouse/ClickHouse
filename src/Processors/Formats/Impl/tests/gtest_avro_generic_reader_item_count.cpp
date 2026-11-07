@@ -93,4 +93,18 @@ TEST(AvroGenericReader, MapDeclaringMoreItemsThanDataBacks)
     EXPECT_THROW(readAllDatums(file), avro::Exception);
 }
 
+TEST(AvroGenericReader, ArrayOfItemsThatTakeNoBytesDeclaringHugeItemCount)
+{
+    /// Items of type `null` occupy no bytes, so reaching the end of the input never stops the loop that reads them.
+    /// The reader must cap the number of such items and report `avro::Exception` instead of growing the array without bound.
+    auto file = makeFileWithDeclaredItemCount(R"({"type":"array","items":"null"})", huge_item_count);
+    EXPECT_THROW(readAllDatums(file), avro::Exception);
+}
+
+TEST(AvroGenericReader, ArrayOfEmptyRecordsDeclaringHugeItemCount)
+{
+    auto file = makeFileWithDeclaredItemCount(R"({"type":"array","items":{"type":"record","name":"e","fields":[]}})", huge_item_count);
+    EXPECT_THROW(readAllDatums(file), avro::Exception);
+}
+
 #endif
