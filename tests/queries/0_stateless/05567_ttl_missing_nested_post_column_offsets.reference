@@ -28,3 +28,17 @@ recomputed projection	0
 0	0	0
 1	0	0
 recomputed stored	0
+rollup wide before	10
+rollup wide base	4
+rollup wide projection	4
+0	0	0
+1	4	4
+2	0	0
+rollup wide stored	0
+rollup compact before	10
+rollup compact base	4
+rollup compact projection	4
+0	0	0
+1	4	4
+2	0	0
+rollup compact stored	0

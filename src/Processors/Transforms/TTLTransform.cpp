@@ -186,6 +186,8 @@ TTLTransform::TTLTransform(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
+    first_rewrite_algorithm = algorithms.size();
+
     /// `consume` adds the expired columns to the block before the algorithms run.
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
@@ -242,7 +244,7 @@ TTLTransform::TTLTransform(
     {
         const auto offsets_stream = ISerialization::getFileNameForStream(name, offsets_path, stream_settings);
         /// The first non-expired output array writes the shared offsets stream. Its computed default is not a
-        /// source for row TTLs: it is used here only after a column TTL or recalculation changes its output shape.
+        /// source for row TTLs: it is used here only when preparing the post-TTL output.
         for (const auto & column : storage_columns.getAllPhysical())
         {
             if (expired_columns_map.contains(column.name) || !header_->has(column.name) || !isArray(column.type))
@@ -285,7 +287,6 @@ TTLTransform::TTLTransform(
             return;
 
         auto [default_expression, default_column_name] = build_default_expr(name);
-        column_ttl_algorithms.emplace(algorithms.size(), name);
         algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
             getExpressions(description, subqueries_for_sets, context),
             description,
@@ -344,6 +345,8 @@ void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemo
     if (block.empty())
         return;
 
+    refreshSharedOffsetsColumns(block);
+
     /// The expressions read the post-TTL columns, so this restores the invariant the `MATERIALIZED`
     /// expression states. A mutation may read only a part of the columns, so a dependent whose inputs
     /// (or the dependent itself) are not in the block is left to the merge that has them.
@@ -369,17 +372,20 @@ void TTLTransform::recomputeDependentColumns(Block & block, const VectorWithMemo
 
 void TTLTransform::refreshSharedOffsetsColumns(Block & block, const String & source_column)
 {
-    if (block.empty() || !block.has(source_column))
+    if (block.empty())
         return;
 
     for (const auto & [name, source] : shared_offsets_sources)
     {
-        if (source != source_column || !block.has(name))
+        if ((!source_column.empty() && source != source_column) || !block.has(name) || !block.has(source))
             continue;
 
         const auto & source_array = assert_cast<const ColumnArray &>(*block.getByName(source).column);
         const auto & offsets = source_array.getOffsets();
         auto & column = block.getByName(name);
+        if (assert_cast<const ColumnArray &>(*column.column).getOffsetsPtr() == source_array.getOffsetsPtr())
+            continue;
+
         const auto & array_type = assert_cast<const DataTypeArray &>(*column.type);
         auto nested = array_type.getNestedType()->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())
             ->convertToFullColumnIfConst();
@@ -398,12 +404,16 @@ void TTLTransform::executeAlgorithms(Block & block)
             recomputeDependentColumns(block, recompute_stages[next_stage].columns);
 
         algorithms[i]->execute(block);
-        if (auto it = column_ttl_algorithms.find(i); it != column_ttl_algorithms.end())
-            refreshSharedOffsetsColumns(block, it->second);
+        /// Preserve reader-filled values through all row TTL predicates, then normalize each rewritten output,
+        /// including rows that `TTLAggregationAlgorithm` flushes from `generate`.
+        if (i >= first_rewrite_algorithm)
+            refreshSharedOffsetsColumns(block);
     }
 
     for (; next_stage < recompute_stages.size(); ++next_stage)
         recomputeDependentColumns(block, recompute_stages[next_stage].columns);
+
+    refreshSharedOffsetsColumns(block);
 }
 
 void TTLTransform::consume(Chunk chunk)

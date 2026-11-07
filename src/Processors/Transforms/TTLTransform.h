@@ -46,6 +46,7 @@ protected:
 
 private:
     VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
+    size_t first_rewrite_algorithm = 0;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
@@ -66,7 +67,6 @@ private:
     };
     UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
     UnorderedMapWithMemoryTracking<String, String> shared_offsets_sources;
-    UnorderedMapWithMemoryTracking<size_t, String> column_ttl_algorithms;
 
     /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
     /// Its stored value describes the pre-expiry data, so it is recomputed once the TTL algorithms that
@@ -104,8 +104,8 @@ private:
     /// Recomputes `dependents` in the block the TTL algorithms have already worked on.
     void recomputeDependentColumns(Block & block, const VectorWithMemoryTracking<DependentMaterializedColumn> & dependents);
 
-    /// Refreshes omitted arrays after their output offsets source has changed, not before row TTL evaluation.
-    void refreshSharedOffsetsColumns(Block & block, const String & source_column);
+    /// Refreshes omitted arrays from their output offsets sources, not before row TTL evaluation.
+    void refreshSharedOffsetsColumns(Block & block, const String & source_column = {});
 
     /// Runs the TTL algorithms, recomputing the dependents in between.
     void executeAlgorithms(Block & block);
