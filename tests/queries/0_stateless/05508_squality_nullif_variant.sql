@@ -57,7 +57,7 @@ SELECT finalizeAggregation(CAST(
 SELECT groupArrayIf(number::Dynamic, NULL), groupArrayIf(CAST(number AS Variant(UInt64, String)), NULL)
 FROM numbers(1);
 
-SELECT toTypeName(countIfState(number::Dynamic, toNullable(toUInt8(1))));
+SELECT toTypeName(countIfState(number::Dynamic, toNullable(toUInt8(1)))) FROM numbers(1);
 
 -- Its state identity is the nested function's normalized identity.
 SELECT finalizeAggregation(CAST(countState(number::Dynamic), 'AggregateFunction(count)')) FROM numbers(3);
