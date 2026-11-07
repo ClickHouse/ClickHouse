@@ -42,7 +42,7 @@ CREATE VIEW v_05396_protected DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
 SELECT id FROM t_05396_protected;
 
 CREATE TABLE t_05396_source (id UInt64) ENGINE = Null;
-CREATE TABLE t_05396_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05396_sink (id UInt64) ENGINE = Memory;
 
 CREATE MATERIALIZED VIEW mv_05396_nested TO t_05396_sink
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
@@ -52,8 +52,8 @@ AS SELECT id FROM t_05396_source WHERE id IN (SELECT id FROM v_05396_protected);
 -- Each has a private source so no other triggered MV can set the marker on its behalf.
 CREATE TABLE t_05396_direct_definer_source (id UInt64) ENGINE = Null;
 CREATE TABLE t_05396_direct_none_source (id UInt64) ENGINE = Null;
-CREATE TABLE t_05396_direct_definer_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t_05396_direct_none_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05396_direct_definer_sink (id UInt64) ENGINE = Memory;
+CREATE TABLE t_05396_direct_none_sink (id UInt64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv_05396_direct_definer TO t_05396_direct_definer_sink
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT id FROM t_05396_direct_definer_source WHERE id IN (SELECT id FROM t_05396_protected);
@@ -66,8 +66,8 @@ CREATE TABLE t_05396_invoker_base (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_05396_invoker_base VALUES (1);
 CREATE VIEW v_05396_invoker SQL SECURITY INVOKER AS SELECT id FROM t_05396_invoker_base;
 CREATE TABLE t_05396_multi_source (id UInt64) ENGINE = Null;
-CREATE TABLE t_05396_multi_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t_05396_multi_none_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05396_multi_sink (id UInt64) ENGINE = Memory;
+CREATE TABLE t_05396_multi_none_sink (id UInt64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv_05396_multi_definer TO t_05396_multi_sink
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT id FROM t_05396_multi_source WHERE id IN (SELECT id FROM v_05396_invoker);
@@ -77,8 +77,8 @@ AS SELECT id FROM t_05396_multi_source WHERE id IN (SELECT id FROM t_05396_prote
 
 -- Direct root-target inserts exercise the root-view context setup separately from source triggers.
 CREATE TABLE t_05396_root_protected (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t_05396_root_definer_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t_05396_root_none_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05396_root_definer_sink (id UInt64) ENGINE = Memory;
+CREATE TABLE t_05396_root_none_sink (id UInt64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv_05396_root_definer TO t_05396_root_definer_sink
 DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT id FROM t_05396_root_protected;
 CREATE MATERIALIZED VIEW mv_05396_root_none TO t_05396_root_none_sink
