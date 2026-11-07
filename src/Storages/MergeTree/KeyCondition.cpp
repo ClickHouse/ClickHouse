@@ -2334,7 +2334,7 @@ static bool isFixedStringConstant(
 /// flag cannot repair it and the candidate has to be dropped. An input `FixedString` at least as
 /// wide as the constant keeps the padded bytes, so the transform stays sound there.
 /// Even a constant that fills its declared width can match longer `String` values ending in zero
-/// bytes. `Variant` and `Dynamic` retain the comparison semantics of their active member type.
+/// bytes. The same holds for an `Enum` input, whose names are compared zero-padded. `Variant` and `Dynamic` retain the comparison semantics of their active member type.
 static bool fixedStringConstantLosesPadding(
     const Field & value, bool is_fixed_string, const DataTypePtr & key_expression_input_type)
 {
@@ -2343,6 +2343,11 @@ static bool fixedStringConstantLosesPadding(
 
     const auto & constant_bytes = value.safeGet<String>();
     const auto input_type = removeLowCardinalityAndNullable(key_expression_input_type);
+
+    /// An `Enum` is compared with a `FixedString` by its name zero-padded, so the constant can match several
+    /// enum values (`'a'` and `'a\0'`), while its conversion to the `Enum` gives one of them.
+    if (isEnum(input_type))
+        return true;
 
     /// Even without stored padding, a string input can match additional trailing zero bytes.
     if (!isStringOrFixedString(input_type) && (constant_bytes.empty() || constant_bytes.back() != '\0'))
@@ -6201,6 +6206,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     if (!fixed_key || fixed_key->getN() < const_value.safeGet<String>().size())
                         return std::nullopt;
                 }
+
+                /// An `Enum` is compared with a `FixedString` by its name zero-padded, so the constant can equal
+                /// several enum values (`'a'` and `'a\0'`), not a single point of the key.
+                if (candidate.const_is_fixed_string && isEnum(key_expr_type_not_null))
+                    return std::nullopt;
 
                 /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
                 /// constant instead of throwing, so the index must do the same instead of converting.

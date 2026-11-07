@@ -938,6 +938,16 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
         && isStringOrFixedString(actual_type);
 }
 
+/// Whether a constant of this type can be a `FixedString`: a `Variant` or `Dynamic` constant carries the nested
+/// value under its declared type, so an active `FixedString` alternative cannot be told from another one.
+static bool constantMayBeFixedString(const DataTypePtr & value_type)
+{
+    if (!value_type)
+        return false;
+    const WhichDataType which(removeLowCardinalityAndNullable(value_type));
+    return which.isFixedString() || which.isVariant() || which.isDynamic();
+}
+
 /// Convert a constant for hashing against the elements of an indexed array column, the way the
 /// functions built on arrayIndex.h (`has`, `indexOf`, `mapContainsKey`, `mapContainsValue`,
 /// `mapContains`, and `has` over a `Map`) compare it. Over a plain `String` element they compare
@@ -947,30 +957,25 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
 /// Over `Enum` values a `String` or `FixedString` constant is compared by the name of the enum value,
 /// after the cast of both arguments to their common type `String` (arrayIndex.h `executeGeneric`,
 /// hasAllAny.h). That cast keeps the zero padding of a `FixedString`, so the search functions match the
-/// name with all the bytes of the constant (an enum name can itself end with a zero byte), while `equals`
-/// compares a `FixedString` with the name zero-padded. With `strip_fixed_string_padding` (for `equals`)
-/// the padding is stripped, otherwise (for the search functions) the name is taken as is. Return the
+/// name with all the bytes of the constant (an enum name can itself end with a zero byte). (`equals` compares a
+/// `FixedString` with the name zero-padded, so its callers decline a `FixedString` constant.) Return the
 /// value of the enum to hash. A name that is not in the `Enum` does not throw there, it does not match, so return a
 /// null `Field` for it: the caller declines the index instead of throwing `UNKNOWN_ELEMENT_OF_ENUM`
 /// while it is prepared. Returns `std::nullopt` when the constant is not a name of an enum value.
 static std::optional<Field> tryConvertEnumNameConstant(
-    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & enum_type, bool strip_fixed_string_padding)
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & enum_type)
 {
     if (!isEnum(enum_type) || value_field.getType() != Field::Types::String || !value_type
         || !isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
         return std::nullopt;
 
-    String name = value_field.safeGet<String>();
-    if (strip_fixed_string_padding && isFixedString(removeLowCardinalityAndNullable(value_type)))
-        name.resize(name.find_last_not_of('\0') + 1);
-
-    return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
+    return tryConvertFieldToType(value_field, *enum_type, nullptr, {}, /* strict */ true);
 }
 
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
-    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, actual_type, /*strip_fixed_string_padding=*/ false))
+    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, actual_type))
         return std::move(*enum_value);
 
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
@@ -1006,7 +1011,7 @@ static ColumnPtr createColumnFromConstantArray(
 
         /// `has`, `hasAny` and `hasAll` compare a `String` or `FixedString` constant with an `Enum` by the name
         /// of the enum value, see `tryConvertEnumNameConstant`.
-        std::optional<Field> enum_value = tryConvertEnumNameConstant(f, element_type, actual_type, /*strip_fixed_string_padding=*/ false);
+        std::optional<Field> enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
 
         Field converted;
         if (enum_value)
@@ -1230,6 +1235,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = RPNElement::FUNCTION_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
+            /// `equals` compares an `Enum` with a `FixedString` by the name zero-padded, so the constant can equal
+            /// several enum values (`'a'` and `'a\0'`), while the index holds the hash of each value. A `Variant` or
+            /// `Dynamic` constant may hold a `FixedString` as well.
+            if (isEnum(actual_type) && constantMayBeFixedString(value_type))
+                return false;
+
             /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
             /// length, while the index holds only the hash of each value's exact bytes. It is then usable only
             /// for a `FixedString(N)` index at least as wide, where padding gives the one value that can match.
@@ -1237,9 +1248,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             {
                 /// A `Variant` or `Dynamic` constant carries the nested padded value under its
                 /// declared type, so an active `FixedString` alternative cannot be told from a `String` one.
-                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
-                const bool constant_may_be_fixed_string
-                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+                const bool constant_may_be_fixed_string = constantMayBeFixedString(value_type);
                 const size_t constant_bytes = value_field.safeGet<String>().size();
                 const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
 
@@ -1390,7 +1399,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 const DataTypePtr map_value_type = removeLowCardinalityAndNullable(dag_node->result_type);
                 if (isEnum(map_value_type))
                 {
-                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type, /*strip_fixed_string_padding=*/ true))
+                    /// `equals` compares an `Enum` with a `FixedString` by the name zero-padded, so the constant can
+                    /// equal several enum values (`'a'` and `'a\0'`), while the index holds the hash of each value.
+                    if (constantMayBeFixedString(value_type))
+                        return false;
+
+                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type))
                         map_value_field = std::move(*enum_value);
                     else
                         map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);
