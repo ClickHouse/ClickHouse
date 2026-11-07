@@ -1,0 +1,7 @@
+active parts: 1
+read-time route: stopped in function has
+read-time route spent over 1s filtering marks: 1
+planning route: stopped in function has
+planning route spent over 1s filtering marks: 1
+KILL QUERY: cancelled
+KILL QUERY reached the index scan: 1
