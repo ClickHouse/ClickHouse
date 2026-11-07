@@ -1,0 +1,14 @@
+table
+READ, WRITE ON S3
+READ, WRITE ON S3
+0
+database
+READ, WRITE ON S3
+0
+database that exists now
+READ, WRITE ON S3
+with the S3 grant
+allowed
+10
+allowed
+1

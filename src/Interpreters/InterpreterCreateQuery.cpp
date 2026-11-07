@@ -34,6 +34,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
+#include <Disks/DiskFromAST.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -4255,6 +4257,12 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
     required_access.append_range(StorageFactory::instance().getExportAccess(create));
+    /// Also before an engine is named: a database engine is not in `StorageFactory`, and legacy `ON CLUSTER` sends the query as written.
+    if (create.storage)
+        required_access.append_range(DiskFromAST::getSourceAccess(create.storage->ptr()));
+    if (create.targets)
+        for (ASTStorage * inner_engine : create.targets->getInnerEngines())
+            required_access.append_range(DiskFromAST::getSourceAccess(inner_engine->ptr()));
 
     return required_access;
 }

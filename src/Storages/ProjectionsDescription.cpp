@@ -465,13 +465,49 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         result.index = ProjectionIndexFactory::instance().get(*projection_definition);
     }
 
+    static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
+        "index_granularity",
+        "index_granularity_bytes",
+        "add_minmax_index_for_numeric_columns",
+        "add_minmax_index_for_string_columns",
+        "add_minmax_index_for_temporal_columns",
+        "add_minmax_index_for_block_number_column",
+        "add_minmax_index_for_block_offset_column",
+        "min_compress_block_size",
+        "max_compress_block_size",
+        "min_bytes_for_wide_part",
+        "min_level_for_wide_part",
+        "min_rows_for_wide_part",
+        "ratio_of_defaults_for_sparse_serialization",
+        "write_marks_for_substreams_in_compact_parts",
+        "serialization_info_version",
+        "nullable_serialization_version",
+        "string_serialization_version",
+        "replace_long_file_name_to_hash",
+        "map_serialization_version",
+        "map_serialization_version_for_zero_level_parts",
+        "propagate_types_serialization_versions_to_nested_types",
+    };
+
     /// Compute effective MergeTree settings for the projection (defaults possibly contributed by
     /// the projection index, with user-supplied WITH SETTINGS overrides applied on top). This must
     /// happen before fillProjectionDescription[ByQuery] because the latter reconstructs settings
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
+    {
+        /// Before applying, because applying some settings has effects, e.g. `disk` creates a custom disk.
+        if (isFreshTableDefinition(mode, attach_short_syntax))
+        {
+            for (const auto & change : projection_definition->with_settings->changes)
+            {
+                if (MergeTreeSettings::hasBuiltin(change.name)
+                    && !ALLOWED_PROJECTION_SETTINGS.contains(MergeTreeSettings::resolveName(change.name)))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
+            }
+        }
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
+    }
     result.settings_changes = merge_tree_settings->changes();
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
@@ -508,30 +544,6 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         if (expressionContainsArrayJoin(projection_definition->query))
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Projection '{}' cannot contain arrayJoin, because it changes the number of rows", result.name);
-
-        static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
-            "index_granularity",
-            "index_granularity_bytes",
-            "add_minmax_index_for_numeric_columns",
-            "add_minmax_index_for_string_columns",
-            "add_minmax_index_for_temporal_columns",
-            "add_minmax_index_for_block_number_column",
-            "add_minmax_index_for_block_offset_column",
-            "min_compress_block_size",
-            "max_compress_block_size",
-            "min_bytes_for_wide_part",
-            "min_level_for_wide_part",
-            "min_rows_for_wide_part",
-            "ratio_of_defaults_for_sparse_serialization",
-            "write_marks_for_substreams_in_compact_parts",
-            "serialization_info_version",
-            "nullable_serialization_version",
-            "string_serialization_version",
-            "replace_long_file_name_to_hash",
-            "map_serialization_version",
-            "map_serialization_version_for_zero_level_parts",
-            "propagate_types_serialization_versions_to_nested_types",
-        };
 
         for (const auto & change : result.settings_changes)
         {

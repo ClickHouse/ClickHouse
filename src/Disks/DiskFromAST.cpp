@@ -1,14 +1,21 @@
 #include <Disks/DiskFromAST.h>
 #include <Disks/getDiskConfigurationFromAST.h>
+#include <Disks/DiskFactory.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -17,7 +24,9 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -267,6 +276,120 @@ void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPt
             "Disk name `{}` is a custom disk that is used in other table. "
             "That disk could not be used by a reference by other tables. The custom disk should be fully specified with a disk function.",
             disk_name);
+}
+
+namespace
+{
+
+/// The value as `getDiskConfigurationFromASTImpl` reads it, or `std::nullopt` if it is neither a literal nor an identifier.
+std::optional<String> getDiskArgumentValue(const ASTPtr & value)
+{
+    if (const auto * identifier = value->as<ASTIdentifier>())
+        return identifier->name();
+    if (const auto * literal = value->as<ASTLiteral>())
+        return convertFieldToString(literal->value);
+    return std::nullopt;
+}
+
+void addSourceAccessOfDiskFunction(const ASTFunction & function, AccessRightsElements & res)
+{
+    std::optional<String> type;
+    std::optional<String> object_storage_type;
+    /// `include` and `from_zk` (spliced as XML) can add backends, `from_env` hides a selector, and a repeated selector is ambiguous.
+    bool backends_not_stated = false;
+
+    for (const auto & arg : function.arguments->children)
+    {
+        const auto * equals = arg->as<ASTFunction>();
+        /// The arguments `getDiskConfigurationFromASTImpl` reads: it takes the first two operands of a longer `equals` too.
+        if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() < 2)
+            continue;
+        const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
+        if (!key)
+            continue;
+
+        const auto value = getDiskArgumentValue(equals->arguments->children[1]);
+        if (key->name() == "include" || (value && value->starts_with("from_zk")))
+        {
+            backends_not_stated = true;
+        }
+        else if (key->name() == "type" || key->name() == "object_storage_type")
+        {
+            auto & selector = key->name() == "type" ? type : object_storage_type;
+            if (selector || !value || value->starts_with("from_env"))
+                backends_not_stated = true;
+            selector = value.value_or("");
+        }
+    }
+
+    const AccessFlags read_write = AccessType::READ | AccessType::WRITE;
+    /// Without a parameter, the element needs the grant on every source.
+    if (backends_not_stated)
+    {
+        res.emplace_back(read_write);
+        return;
+    }
+
+    const String backend = object_storage_type.value_or(type.value_or("local"));
+    const auto & object_storage_factory = ObjectStorageFactory::instance();
+    if (object_storage_factory.isRegistered(backend))
+    {
+        if (const auto source_access = object_storage_factory.getSourceAccessObject(backend))
+            res.emplace_back(
+                source_access->read_only ? AccessFlags(AccessType::READ) : read_write,
+                AccessTypeObjects::toStringSource(source_access->source));
+    }
+    else if (object_storage_type || !DiskFactory::instance().reachesNoSource(backend))
+    {
+        res.emplace_back(read_write);
+    }
+}
+
+/// Inside a `disk` setting value every `disk*` function is a disk, as `DiskConfigurationFlattener` builds them.
+void collectSourceAccessOfDiskDefinition(const ASTPtr & ast, AccessRightsElements & res)
+{
+    checkStackSize();
+    if (!ast)
+        return;
+    if (isDiskFunction(ast))
+        addSourceAccessOfDiskFunction(ast->as<const ASTFunction &>(), res);
+
+    for (const auto & child : ast->children)
+        collectSourceAccessOfDiskDefinition(child, res);
+}
+
+/// Only `disk` settings define disks: a `disk*` function elsewhere, e.g. a UDF in `ORDER BY`, is not one.
+void collectSourceAccess(const ASTPtr & ast, AccessRightsElements & res)
+{
+    checkStackSize();
+    if (!ast)
+        return;
+    if (const auto * set_query = ast->as<ASTSetQuery>())
+        res.append_range(DiskFromAST::getSourceAccessOfSettings(set_query->changes));
+
+    for (const auto & child : ast->children)
+        collectSourceAccess(child, res);
+}
+
+}
+
+AccessRightsElements DiskFromAST::getSourceAccess(const ASTPtr & ast)
+{
+    AccessRightsElements res;
+    collectSourceAccess(ast, res);
+    return res;
+}
+
+AccessRightsElements DiskFromAST::getSourceAccessOfSettings(const SettingsChanges & changes)
+{
+    AccessRightsElements res;
+    for (const auto & change : changes)
+    {
+        CustomType custom;
+        if (change.name == "disk" && change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+            collectSourceAccessOfDiskDefinition(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, res);
+    }
+    return res;
 }
 
 }

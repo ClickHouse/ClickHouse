@@ -75,10 +75,22 @@ ObjectStorageFactory & ObjectStorageFactory::instance()
     return factory;
 }
 
-void ObjectStorageFactory::registerObjectStorageType(const std::string & type, Creator creator)
+void ObjectStorageFactory::registerObjectStorageType(const std::string & type, Creator creator, std::optional<SourceAccess> source_access)
 {
-    if (!registry.emplace(type, creator).second)
+    if (!registry.emplace(type, RegisteredType{std::move(creator), source_access}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ObjectStorageFactory: the metadata type '{}' is not unique", type);
+}
+
+bool ObjectStorageFactory::isRegistered(const std::string & type) const
+{
+    return registry.contains(type);
+}
+
+std::optional<ObjectStorageFactory::SourceAccess> ObjectStorageFactory::getSourceAccessObject(const std::string & type) const
+{
+    if (const auto it = registry.find(type); it != registry.end())
+        return it->second.source_access;
+    return std::nullopt;
 }
 
 ObjectStoragePtr ObjectStorageFactory::create(
@@ -108,7 +120,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, remote_host_filter_check);
+    return it->second.creator(name, config, config_prefix, context, run_access_check, run_local_paths_check, remote_host_filter_check);
 }
 
 /// A custom disk with an endpoint that remote_url_allow_hosts does not allow: a log line per disk
@@ -212,10 +224,11 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         return std::make_shared<S3ObjectStorage>(std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
     };
 
-    factory.registerObjectStorageType("s3", creator);
-    factory.registerObjectStorageType("s3_with_keeper", creator);
-    factory.registerObjectStorageType("s3_plain", creator);
-    factory.registerObjectStorageType("s3_plain_rewritable", creator);
+    const ObjectStorageFactory::SourceAccess source_access{.source = AccessTypeObjects::Source::S3};
+    factory.registerObjectStorageType("s3", creator, source_access);
+    factory.registerObjectStorageType("s3_with_keeper", creator, source_access);
+    factory.registerObjectStorageType("s3_plain", creator, source_access);
+    factory.registerObjectStorageType("s3_plain_rewritable", creator, source_access);
 }
 
 #endif
@@ -242,7 +255,8 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
             return std::make_shared<HDFSObjectStorage>(uri, std::move(settings), config, /* lazy_initialize */false, name);
-        });
+        },
+        ObjectStorageFactory::SourceAccess{.source = AccessTypeObjects::Source::HDFS});
 }
 #endif
 
@@ -324,10 +338,11 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
 
-    factory.registerObjectStorageType("azure_blob_storage", creator);
-    factory.registerObjectStorageType("azure", creator);
-    factory.registerObjectStorageType("azure_plain", creator);
-    factory.registerObjectStorageType("azure_plain_rewritable", creator);
+    const ObjectStorageFactory::SourceAccess source_access{.source = AccessTypeObjects::Source::AZURE};
+    factory.registerObjectStorageType("azure_blob_storage", creator, source_access);
+    factory.registerObjectStorageType("azure", creator, source_access);
+    factory.registerObjectStorageType("azure_plain", creator, source_access);
+    factory.registerObjectStorageType("azure_plain_rewritable", creator, source_access);
 }
 #endif
 
@@ -357,7 +372,8 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         }
 
         return std::make_shared<WebObjectStorage>(uri, "", context);
-    });
+    },
+    ObjectStorageFactory::SourceAccess{.source = AccessTypeObjects::Source::URL, .read_only = true});
 }
 
 static void registerLocalObjectStorage(ObjectStorageFactory & factory)
@@ -387,10 +403,11 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         return std::make_shared<LocalObjectStorage>(settings);
     };
 
-    factory.registerObjectStorageType("local_blob_storage", creator);
-    factory.registerObjectStorageType("local", creator);
-    factory.registerObjectStorageType("local_plain", creator);
-    factory.registerObjectStorageType("local_plain_rewritable", creator);
+    /// A custom disk's local path is confined by `checkCustomLocalDiskPath` instead.
+    factory.registerObjectStorageType("local_blob_storage", creator, std::nullopt);
+    factory.registerObjectStorageType("local", creator, std::nullopt);
+    factory.registerObjectStorageType("local_plain", creator, std::nullopt);
+    factory.registerObjectStorageType("local_plain_rewritable", creator, std::nullopt);
 }
 
 void registerObjectStorages();

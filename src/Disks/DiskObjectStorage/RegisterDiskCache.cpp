@@ -164,7 +164,8 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check)
     factory.registerDiskType("cache", creator, Documentation{
         .description = "Wraps another disk with a local filesystem cache, caching data read from a remote disk on local storage to speed up repeated reads.",
         .syntax = "disk(type = cache, disk = remote_disk, path = '/var/lib/clickhouse/disk_cache/', max_size = '10Gi')",
-        .related = {"object_storage", "s3"}});
+        .related = {"object_storage", "s3"}},
+        /* reaches_no_source */ true);
 }
 
 }

@@ -11,6 +11,7 @@
 #include <functional>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -36,7 +37,10 @@ public:
 
     static DiskFactory & instance();
 
-    void registerDiskType(const String & disk_type, Creator creator, Documentation documentation = {});
+    /// `reaches_no_source`: the type owns no storage backend, so defining it in SQL needs no source grant.
+    void registerDiskType(const String & disk_type, Creator creator, Documentation documentation = {}, bool reaches_no_source = false);
+
+    bool reachesNoSource(const String & disk_type) const;
 
     /// Returns the names of all registered disk types.
     std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -90,6 +94,8 @@ private:
 
     /// Embedded documentation, keyed by disk type.
     std::unordered_map<String, Documentation> documentations;
+
+    std::unordered_set<String> types_reaching_no_source;
 };
 
 }
