@@ -227,8 +227,8 @@ DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataType
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
 
 /** Return the table or table function that a `PREWHERE` expression's columns come from, or nullptr
-  * when the expression has no such column (a constant `PREWHERE`). Nested `QUERY` / `UNION` / `LAMBDA`
-  * nodes are not visited, so a set subquery does not hide the outer column source.
+  * when the expression has no such column (a constant `PREWHERE`). Nested `QUERY` / `UNION` nodes are
+  * not visited, so a set subquery does not hide the outer column source.
   */
 TableExpressionNodePtr getPrewhereTableExpression(const QueryTreeNodePtr & prewhere);
 

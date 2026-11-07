@@ -13,6 +13,10 @@ left_prewhere
 right_prewhere
 1	a	1	A	4
 \N	\N	3	C	2
+right_prewhere_lambda
+1	a	1	A	4
+\N	\N	3	C	2
+1
 constant_prewhere
 \N	\N	1	A	2
 \N	\N	2	B	2
