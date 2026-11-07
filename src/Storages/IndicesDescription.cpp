@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/KeyDescription.h>
 
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
@@ -187,12 +188,16 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
 
     expression_list_ast = expr_list->clone();
 
-    TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
+    /// sample_block and data_types below fix the skip-index column types in the metadata. The columns fed to
+    /// the index serializers are produced under the storage (global) context, so analyze under its baseline.
+    auto index_context = createKeyExpressionContext(context);
+
+    TreeRewriterResultPtr syntax = TreeRewriter(index_context).analyze(
         expr_list,
         columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns())
     );
 
-    expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+    expression = ExpressionAnalyzer(expr_list, syntax, index_context).getActions(true);
 
     sample_block = expression->getSampleBlock();
 }
@@ -303,6 +308,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
+    /// `context` is the storage (global) context, so the index types match IndexDescription::data_types.
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
