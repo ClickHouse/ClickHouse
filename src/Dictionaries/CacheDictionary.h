@@ -167,11 +167,11 @@ private:
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns_from_storage,
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
-        const MutableColumns & fetched_columns_during_update,
+        const Columns & fetched_columns_during_update,
         const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
         IColumn::Filter * default_mask = nullptr) const;
 
-    void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
+    CacheDictionaryUpdateKeys update(VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>> & update_units);
 
     /// Update dictionary source pointer if required and return it. Thread safe.
     /// MultiVersion is not used here because it works with constant pointers.
