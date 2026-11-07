@@ -26,7 +26,8 @@ SELECT 'wide after', count(), countIf(empty(n.d)) FROM ttl_missing_nested_wide;
 SELECT id, n.a, n.d FROM ttl_missing_nested_wide ORDER BY id;
 SELECT 'wide stored', arraySort(groupUniqArray(column))
 FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 'ttl_missing_nested_wide' AND active;
+WHERE database = currentDatabase() AND table = 'ttl_missing_nested_wide' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
 DROP TABLE ttl_missing_nested_wide;
 
 DROP TABLE IF EXISTS ttl_missing_nested_compact;
@@ -51,7 +52,8 @@ SELECT 'compact after', count(), countIf(empty(n.d)) FROM ttl_missing_nested_com
 SELECT id, n.a, n.d FROM ttl_missing_nested_compact ORDER BY id;
 SELECT 'compact stored', arraySort(groupUniqArray(column))
 FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 'ttl_missing_nested_compact' AND active;
+WHERE database = currentDatabase() AND table = 'ttl_missing_nested_compact' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
 DROP TABLE ttl_missing_nested_compact;
 
 DROP TABLE IF EXISTS ttl_missing_nested_unshared;

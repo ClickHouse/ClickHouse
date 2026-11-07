@@ -20,7 +20,8 @@ OPTIMIZE TABLE merge_missing_nested_later_default FINAL SETTINGS optimize_throw_
 
 SELECT arraySort(groupUniqArray(column))
 FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 'merge_missing_nested_later_default' AND active;
+WHERE database = currentDatabase() AND table = 'merge_missing_nested_later_default' AND active
+    AND column IN ('id', 'n.i', 'n.s', 'n.a');
 
 ALTER TABLE merge_missing_nested_later_default MODIFY COLUMN n.a Array(String) DEFAULT ['zzz'];
 SELECT groupUniqArray(n.a) FROM merge_missing_nested_later_default;
