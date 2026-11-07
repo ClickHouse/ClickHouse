@@ -51,7 +51,8 @@ check()
     ${CLIENT} --query "SYSTEM FLUSH LOGS query_log"
     pruned=$(${CLIENT} --query "
         SELECT ProfileEvents['IcebergMinMaxIndexPrunedFiles'] FROM system.query_log
-        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '${query_id}'")
+        WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
+            AND query_id = '${query_id}'")
     echo "WHERE $2 -> rows=${rows} pruned_files=${pruned}"
 }
 
