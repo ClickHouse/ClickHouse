@@ -317,6 +317,10 @@ void applyQueryLevelSettings(
     /// The clause of a query inside the body of a `SQL SECURITY DEFINER` / `NONE` view must not turn parallel replicas back on.
     if (updated_context->isSQLSecurityOverriddenBody())
         updated_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
+
+    /// All parts of a query are scheduled under the query's settings, so a part can neither change
+    /// them nor reset them to their defaults.
+    updated_context->checkSchedulingSettingsOfQueryPart(set_query.changes, set_query.default_settings);
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
