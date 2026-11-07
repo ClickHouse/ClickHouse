@@ -33,11 +33,12 @@ FunctionBasePtr buildFunction(const String & name, const DataTypes & argument_ty
 void checkMonotonicity(
     const FunctionBasePtr & function_base,
     const IDataType & argument_type,
+    const Field & left_bound,
     const Field & right_bound,
     bool expected_is_monotonic,
     bool expected_is_always_monotonic)
 {
-    auto monotonicity = function_base->getMonotonicityForRange(argument_type, Field{}, right_bound);
+    auto monotonicity = function_base->getMonotonicityForRange(argument_type, left_bound, right_bound);
 
     ASSERT_EQ(monotonicity.is_monotonic, expected_is_monotonic);
     ASSERT_EQ(monotonicity.is_always_monotonic, expected_is_always_monotonic);
@@ -55,14 +56,18 @@ void testNullWrapperMonotonicity(const String & name, const DataTypes & function
     const auto nullable_type = makeNullable(nested_type);
     const auto low_cardinality_nullable_type = std::make_shared<DataTypeLowCardinality>(nullable_type);
 
-    /// Unbounded range (right = NULL) is monotonic only for non-Nullable argument types.
-    checkMonotonicity(function_base, *nested_type, Field{}, true, true);
-    checkMonotonicity(function_base, *nullable_type, Field{}, false, false);
-    checkMonotonicity(function_base, *low_cardinality_nullable_type, Field{}, false, false);
+    /// An infinite bound may stand for NULL, so a range with one is monotonic only for non-Nullable argument types.
+    checkMonotonicity(function_base, *nested_type, Field{}, Field{}, true, true);
+    checkMonotonicity(function_base, *nested_type, Field{}, UInt64(1), true, true);
+    checkMonotonicity(function_base, *nullable_type, Field{}, Field{}, false, false);
+    checkMonotonicity(function_base, *nullable_type, Field{}, UInt64(1), false, false);
+    checkMonotonicity(function_base, *nullable_type, UInt64(0), Field{}, false, false);
+    checkMonotonicity(function_base, *low_cardinality_nullable_type, Field{}, Field{}, false, false);
+    checkMonotonicity(function_base, *low_cardinality_nullable_type, Field{}, UInt64(1), false, false);
 
-    /// Bounded range (right != NULL) is monotonic for Nullable/LowCardinality(Nullable) too.
-    checkMonotonicity(function_base, *nullable_type, UInt64(1), true, false);
-    checkMonotonicity(function_base, *low_cardinality_nullable_type, UInt64(1), true, false);
+    /// A range with both bounds finite is monotonic for Nullable/LowCardinality(Nullable) too.
+    checkMonotonicity(function_base, *nullable_type, UInt64(0), UInt64(1), true, false);
+    checkMonotonicity(function_base, *low_cardinality_nullable_type, UInt64(0), UInt64(1), true, false);
 }
 
 }

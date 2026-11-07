@@ -1153,6 +1153,14 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     for (size_t i = 0; i < tuple_size; ++i)
         ordered_set[i] = block_to_sort.getByPosition(i).column;
 
+    set_column_has_null.assign(tuple_size, false);
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        const IColumn & column = *ordered_set[i];
+        for (size_t row = 0; row < column.size() && !set_column_has_null[i]; ++row)
+            set_column_has_null[i] = column.isNullAt(row);
+    }
+
     /// Only fixed-width key columns keep the cached ranges buffer small and bounded: their
     /// columns hold at most one value, so reuse cannot grow them. Variable-width columns
     /// (e.g. `ColumnString`) do not release reserved capacity on popBack, so caching them in
@@ -1266,6 +1274,13 @@ BoolMask MergeTreeSetIndex::checkInRange(
         range.right.update(new_range->right);
         range.left_included = new_range->left_included;
         range.right_included = new_range->right_included;
+
+        /// A NULL element compares only as `+inf`, while the range may hold its NULL at an included `-inf`.
+        if (set_column_has_null[i] && range.left.isNegativeInfinity() && range.left_included)
+        {
+            range.right.update(POSITIVE_INFINITY);
+            range.right_included = true;
+        }
     }
 
     if (tuple_size == 1)
@@ -1419,6 +1434,13 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
         range.right.update(new_range->right);
         range.left_included = new_range->left_included;
         range.right_included = new_range->right_included;
+
+        /// A NULL element compares only as `+inf`, while the range may hold its NULL at an included `-inf`.
+        if (set_column_has_null[i] && range.left.isNegativeInfinity() && range.left_included)
+        {
+            range.right.update(POSITIVE_INFINITY);
+            range.right_included = true;
+        }
     }
 
     if (tuple_size == 1)
