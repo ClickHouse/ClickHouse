@@ -11,6 +11,7 @@
 #endif
 
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
@@ -45,7 +46,37 @@ namespace
         CANNOT_EXEC                 = 0x55555558,
         CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
         CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
+        CANNOT_SET_PROCESS_GROUP    = 0x55555561,
+        CANNOT_CLOSE_DESCRIPTORS    = 0x55555562,
     };
+}
+
+namespace
+{
+
+/// Closes every descriptor from @p first on. Called in the child after `vfork`, so it uses only system calls.
+int closeDescriptorsFrom(int first)
+{
+#if defined(OS_LINUX)
+#if !defined(SYS_close_range)
+#define SYS_close_range 436
+#endif
+    if (0 == syscall(SYS_close_range, first, ~0U, 0))
+        return 0;
+    if (errno != ENOSYS)
+        return -1;
+#endif
+    /// Kernels without `close_range` (Linux before 5.9).
+    rlimit limit{};
+    if (0 != getrlimit(RLIMIT_NOFILE, &limit))
+        return -1;
+    const rlim_t end = std::min<rlim_t>(limit.rlim_cur, 1 << 20);
+    /// Most of the descriptors are not open, so the errors are expected.
+    for (rlim_t fd = first; fd < end; ++fd)
+        [[maybe_unused]] int err = close(static_cast<int>(fd));
+    return 0;
+}
+
 }
 
 namespace ProfileEvents
@@ -184,6 +215,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 {
     logCommand(filename, argv);
     ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
+    chassert(!config.close_inherited_descriptors || (config.read_fds.empty() && config.write_fds.empty()));
 
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
@@ -304,6 +336,12 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             if (fd != dup2(fds.fds_rw[0], fd))
                 _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
         }
+
+        if (config.close_inherited_descriptors && 0 != closeDescriptorsFrom(STDERR_FILENO + 1))
+            _exit(static_cast<int>(ReturnCodes::CANNOT_CLOSE_DESCRIPTORS));
+
+        if (config.new_process_group && 0 != setpgid(0, 0))
+            _exit(static_cast<int>(ReturnCodes::CANNOT_SET_PROCESS_GROUP));
 
         // Reset the signal mask: it may be non-empty and will be inherited
         // by the child process, which might not expect this.
@@ -489,6 +527,10 @@ void ShellCommand::handleProcessRetcode(int retcode) const
                 throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 read descriptor of child process");
             case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
                 throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 write descriptor of child process");
+            case static_cast<int>(ReturnCodes::CANNOT_CLOSE_DESCRIPTORS):
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot close inherited descriptors in child process");
+            case static_cast<int>(ReturnCodes::CANNOT_SET_PROCESS_GROUP):
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot put child process into a new process group");
             default:
                 throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
         }
