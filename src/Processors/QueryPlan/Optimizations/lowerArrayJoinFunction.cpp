@@ -33,28 +33,28 @@ static bool unpadArrayJoinArgument(ActionsDAG & before, const String & name)
 }
 
 /// Peels one join per call
-static bool tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
-        return false;
+        return 0;
 
     auto & parent = parent_node->step;
     auto * expression_step = typeid_cast<ExpressionStep *>(parent.get());
     auto * filter_step = typeid_cast<FilterStep *>(parent.get());
     if (!expression_step && !filter_step)
-        return false;
+        return 0;
 
     auto & dag = expression_step ? expression_step->getExpression() : filter_step->getExpression();
     if (!dag.hasArrayJoin())
-        return false;
+        return 0;
 
     /// a stateful function sees other blocks after the step
     if (settings.legacy_array_join_function_nondeterministic_evaluation && dag.hasStatefulFunctions())
-        return false;
+        return 0;
 
     auto extracted = dag.extractFirstArrayJoin(settings.legacy_array_join_function_nondeterministic_evaluation);
     if (!extracted)
-        return false;
+        return 0;
 
     auto * child_node = parent_node->children.front();
     bool is_left = unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
@@ -90,7 +90,7 @@ static bool tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::
 
     parent = std::move(after_step);
     parent_node->children = {&array_join_node};
-    return true;
+    return 3;
 }
 
 void lowerArrayJoinFunctions(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
