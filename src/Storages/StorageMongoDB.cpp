@@ -44,6 +44,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <algorithm>
 #include <memory>
 
 using bsoncxx::builder::basic::document;
@@ -103,6 +104,7 @@ void MongoDBLogger::operator()(
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
@@ -129,6 +131,64 @@ void MongoDBConfiguration::checkCollection() const
     /// effectively empty collection name, which aborts the process inside the driver.
     if (collection.empty() || collection.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
+}
+
+namespace
+{
+
+/// Throws `ACCESS_DENIED` if `uri` makes the driver authenticate with credentials of the server process. `remedy`
+/// completes the message with the way to use them anyway.
+void throwIfServerCredentials(const mongocxx::uri & uri, std::string_view remedy)
+{
+    /// These mechanisms take the credentials from the connection string: a username and a password. The others take
+    /// them from the server: `MONGODB-OIDC` uses the identity the server runs under (a Kubernetes service account
+    /// token, or a token from the Azure or GCP instance metadata service), `MONGODB-AWS` the AWS credentials of the
+    /// server, `GSSAPI` its Kerberos credentials, and `MONGODB-X509` a client certificate from `tlsCertificateKeyFile`.
+    /// Without a mechanism the driver uses SCRAM with the username from the connection string, or does not
+    /// authenticate. The driver compares mechanism names case-insensitively.
+    static constexpr std::string_view allowed_mechanisms[] = {"SCRAM-SHA-1", "SCRAM-SHA-256", "PLAIN"};
+
+    const String mechanism = uri.auth_mechanism();
+    const bool is_allowed_mechanism = mechanism.empty()
+        || std::ranges::any_of(allowed_mechanisms, [&](std::string_view allowed) { return equalsCaseInsensitive(mechanism, allowed); });
+
+    if (!is_allowed_mechanism)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB authentication mechanism '{}' is not allowed, because it authenticates with "
+            "credentials of the server process. Use SCRAM-SHA-1, SCRAM-SHA-256 or PLAIN with a username and a password "
+            "in the connection string{}.",
+            mechanism, remedy);
+
+    /// The driver stores the deprecated `sslClientCertificateKeyFile` under the canonical name, so this covers both.
+    if (uri.tls_certificate_key_file())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "MongoDB connection option `tlsCertificateKeyFile` is not allowed, because it makes the server present a "
+            "client certificate from its own filesystem. Use SCRAM-SHA-1, SCRAM-SHA-256 or PLAIN with a username and a "
+            "password in the connection string{}.",
+            remedy);
+}
+
+}
+
+void MongoDBConfiguration::checkServerCredentialsForTable(const ContextPtr & context) const
+{
+    if (!context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    throwIfServerCredentials(*uri,
+#if CLICKHOUSE_CLOUD
+        ""
+#else
+        ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
+#endif
+    );
+}
+
+void MongoDBConfiguration::checkServerCredentialsForDictionary() const
+{
+    throwIfServerCredentials(*uri, ", or define the dictionary in the server configuration files");
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -166,6 +226,10 @@ Pipe StorageMongoDB::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
+    /// The only check for a `MongoDB` table and the `mongodb` table function: with the settings of the query, like the
+    /// S3 and Azure storages do, before anything connects. `StorageMongoDB` has no other method that connects.
+    configuration.checkServerCredentialsForTable(context);
+
     storage_snapshot->check(column_names);
 
     Block sample_block;

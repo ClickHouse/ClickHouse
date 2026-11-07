@@ -10,6 +10,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
@@ -57,7 +58,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         Block & sample_block,
         ContextPtr context,
         const std::string & /* default_database */,
-        bool /* created_from_ddl */)
+        bool created_from_ddl)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         auto configuration = std::make_shared<MongoDBConfiguration>();
@@ -113,6 +114,13 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
         configuration->checkHosts(context);
         configuration->checkCollection();
+
+        /// The source of a dictionary created with a DDL query comes from the query, but the dictionary is loaded by
+        /// the server with the global context, after the named collection it refers to may have changed. So no setting
+        /// of a session can permit credentials of the server process here. Dictionaries defined in the server
+        /// configuration files are written by an operator and are not restricted, nor is `clickhouse-local`.
+        if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            configuration->checkServerCredentialsForDictionary();
 
         return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::make_shared<const Block>(sample_block));
     };
