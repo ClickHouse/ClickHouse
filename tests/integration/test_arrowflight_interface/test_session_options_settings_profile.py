@@ -83,9 +83,13 @@ def test_obsolete_setting_in_session_options_is_reported():
     result = client.set_session_options({"multiple_joins_rewriter_version": "2"})
     assert "multiple_joins_rewriter_version" not in result.errors
 
-    assert "'multiple_joins_rewriter_version'" in node.query(
-        "SELECT message FROM system.warnings "
-        "WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %'"
+    assert (
+        node.query(
+            "SELECT count() FROM system.warnings "
+            "WHERE message LIKE 'Queries or settings profiles changed obsolete settings since the server start: %' "
+            "AND message LIKE '%''multiple_joins_rewriter_version''%'"
+        ).strip()
+        == "1"
     )
     assert node.contains_in_log(
         "Obsolete setting `multiple_joins_rewriter_version` is changed"
