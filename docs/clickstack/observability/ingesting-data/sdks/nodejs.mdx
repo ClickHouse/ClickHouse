@@ -23,7 +23,7 @@ Use Node.js **22.15 or later**. Install the SDK in your application:
 npm install @clickhouse/clickstack-node
 ```
 
-The package supports ES modules and CommonJS. npm installs its `@opentelemetry/api` peer dependency automatically.
+The package supports ES modules and CommonJS. npm installs its `@opentelemetry/api` peer dependency automatically. If your application imports that package directly, install `@opentelemetry/api@~1.9.1`; version 1.10 is outside this SDK's supported range.
 
 ## Configure your destination {#configure-destination}
 
@@ -84,14 +84,19 @@ Alternatively, create an instrumentation module and preload it. The environment 
 
 ```javascript
 // instrumentation.mjs
+import { isMainThread } from 'node:worker_threads';
 import { init } from '@clickhouse/clickstack-node';
 
-init();
+if (isMainThread) {
+  init();
+}
 ```
 
 ```shell
 node --import ./instrumentation.mjs server.mjs
 ```
+
+The guard prevents worker threads, such as Pino transport workers, from starting additional SDK instances.
 
 Use either the package's registration entry point or your own instrumentation module. Do not initialize a second SDK in the application. Static ES module imports run before the module body, so calling `init` above static imports in the same file does not guarantee initialization order.
 
@@ -119,9 +124,27 @@ export CLICKSTACK_CAPTURE_HTTP_BODY='true'
 
 Captured bodies can contain personal data and credentials. SDK redaction is best effort; retain collector-side redaction where needed. See the [SDK privacy options](https://github.com/ClickHouse/clickstack-node#privacy) for header capture, body limits, and sanitization.
 
-To customize individual instrumentations, pass the upstream configuration map to `init` in your instrumentation module. Environment variables take precedence over the SDK's endpoint, service name, and API-key options.
+### Initialization options {#initialization-options}
+
+Pass these options to `init` in your instrumentation module:
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `endpoint` | `http://localhost:4318` | Base OTLP HTTP URL; overridden by `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `serviceName` | `unknown_service:` followed by the executable name | Service name; overridden by `OTEL_SERVICE_NAME` or `service.name` in `OTEL_RESOURCE_ATTRIBUTES` |
+| `environment` | Unset | Set `deployment.environment.name`; the same key in `OTEL_RESOURCE_ATTRIBUTES` takes precedence |
+| `apiKey` | Unset | Authorization header value; ignored if `OTEL_EXPORTER_OTLP_HEADERS` is already nonblank, even if it contains only unrelated headers |
+| `httpBodyCapture` | `false` | Capture HTTP bodies; overridden by `CLICKSTACK_CAPTURE_HTTP_BODY` |
+| `instrumentations` | Upstream configuration defaults | Configuration map for `getNodeAutoInstrumentations`; explicit `enabled` values override instrumentation enable/disable environment variables |
+| `additionalInstrumentations` | `[]` | Additional instrumentation instances for libraries outside the default bundle |
+
+Unset or blank environment variables allow the corresponding option to take effect. To disable console capture, include `console` in `OTEL_NODE_DISABLED_INSTRUMENTATIONS`. See the [Node.js SDK reference](https://github.com/ClickHouse/clickstack-node#quick-start) for all defaults.
 
 For explicit process exits or AWS Lambda handlers, see the [SDK lifecycle documentation](https://github.com/ClickHouse/clickstack-node#lifecycle).
+
+## Using the upstream SDK {#using-upstream-sdk}
+
+If your application already configures OpenTelemetry, or needs custom processors or behavior outside the ClickStack SDK's options, use the upstream `NodeSDK` and configure OTLP export for the destination above. Follow the [upstream SDK setup example](https://github.com/ClickHouse/clickstack-node#using-the-upstream-sdk-directly), which explains the additional loader and lifecycle configuration. Do not initialize both SDKs in the same process.
 
 ## Migrating from the HyperDX Node.js SDK {#migration}
 

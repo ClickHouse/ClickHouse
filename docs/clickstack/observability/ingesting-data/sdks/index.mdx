@@ -13,14 +13,15 @@ To have a coding assistant apply these instructions to your application, follow 
 
 | Language or platform | Guide |
 |----------------------|-------|
-| AWS Lambda | [Lambda layers and Collector configuration](/clickstack/observability/ingesting-data/sdks/aws-lambda) |
+| AWS Lambda | [ClickStack Node.js SDK for async handlers, or OpenTelemetry layers](/clickstack/observability/ingesting-data/sdks/aws-lambda) |
 | Browser | [Browser telemetry and session replay](/clickstack/observability/ingesting-data/sdks/browser) |
 | Deno | [Built-in OpenTelemetry support](/clickstack/observability/ingesting-data/sdks/deno) |
 | Elixir | [Erlang/Elixir tracing](/clickstack/observability/ingesting-data/sdks/elixir) |
 | Go | [Go application instrumentation](/clickstack/observability/ingesting-data/sdks/golang) |
 | Java | [Java agent and SDK](/clickstack/observability/ingesting-data/sdks/java) |
-| NestJS | [NestJS application instrumentation](/clickstack/observability/ingesting-data/sdks/nestjs) |
-| Next.js | [Next.js server-side tracing](/clickstack/observability/ingesting-data/sdks/nextjs) |
+| NestJS | [ClickStack Node.js SDK for NestJS](/clickstack/observability/ingesting-data/sdks/nestjs) |
+| Next.js (self-hosted Node.js) | [ClickStack Node.js SDK](/clickstack/observability/ingesting-data/sdks/nextjs#self-hosted-nextjs) |
+| Next.js (Vercel or Edge) | [`@vercel/otel`](/clickstack/observability/ingesting-data/sdks/nextjs#vercel-or-edge) |
 | Node.js | [ClickStack Node.js SDK](/clickstack/observability/ingesting-data/sdks/nodejs) |
 | Python | [Python application instrumentation](/clickstack/observability/ingesting-data/sdks/python) |
 | React Native | [React Native JavaScript-layer tracing](/clickstack/observability/ingesting-data/sdks/react-native) |
@@ -30,8 +31,8 @@ To have a coding assistant apply these instructions to your application, follow 
 
 1. Follow the guide for your language or platform to configure instrumentation.
 2. Choose your destination in that guide:
-   - **ClickHouse Observability:** use your service's managed OTLP endpoint and ingestion API key, available in **Team Settings → Data → Managed Telemetry**.
+   - **Fully managed:** use your service's managed OTLP endpoint and ingestion API key, available in **Team Settings → Data → Managed Telemetry**.
    - **Self-managed:** use your OpenTelemetry Collector's OTLP endpoint and configured ingestion key.
 3. Generate application activity, then verify the expected telemetry in the UI.
 
-The individual guides provide the authentication format and exporter settings for each SDK. Some platforms, such as AWS Lambda, send through a local Collector before forwarding telemetry to the destination.
+The individual guides provide the authentication format and exporter settings for each SDK. The Lambda guide also provides an OpenTelemetry layers option that forwards telemetry through a local Collector.

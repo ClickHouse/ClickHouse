@@ -23,7 +23,7 @@ Install the package in your frontend application:
 npm install @clickhouse/clickstack-browser
 ```
 
-The package uses ES modules. npm installs its OpenTelemetry peer dependencies automatically.
+The package uses ES modules. npm installs its OpenTelemetry peer dependencies automatically. If your application also installs `@opentelemetry/api` directly, use version `~1.9.1` and keep a single copy; version 1.10 is outside this SDK's supported range.
 
 ## Configure your destination {#configure-destination}
 
@@ -78,18 +78,32 @@ Load your application, interact with the page, make a request, and emit a consol
 
 If data is missing, inspect the browser console and network requests to `/v1/traces` and `/v1/logs`. Check the endpoint, authorization header, CORS, and Content Security Policy. For self-managed deployments, confirm that your ClickStack version supports replay and the SDK's standard `session.id` attribute; receiving records alone does not confirm that sessions appear in the UI.
 
-## Session replay and privacy {#session-replay-and-privacy}
+## Initialization options {#initialization-options}
 
-Session replay is enabled by default. Text and input values are masked by default. Set `replay: false` to disable replay while keeping browser telemetry.
+Pass these options to `init`. Use `endpoint` for a shared collector, or provide both signal endpoints when traces and logs have separate destinations.
 
 | Option | Default | Purpose |
 | --- | --- | --- |
+| `endpoint` | Required unless both signal endpoints are set | Base OTLP HTTP URL or same-origin proxy path; the SDK appends the signal paths |
+| `tracesEndpoint` | Unset | Full traces URL, used as supplied instead of the URL derived from `endpoint` |
+| `logsEndpoint` | Unset | Full logs and replay URL, used as supplied instead of the URL derived from `endpoint` |
+| `serviceName` | Required | Set `service.name` on all telemetry |
+| `apiKey` | Unset | Value of the `authorization` header; use the format for your destination above |
+| `traceOrigins` | Unset | Backend origins or regular expressions that receive trace context |
+| `replay` | `true` | Record session replay; `false` keeps browser telemetry but disables replay |
+| `resourceAttributes` | Unset | Additional resource attributes, including replay; `serviceName`, `serviceVersion`, and `environment` take precedence over matching keys |
 | `maskAllText` | `true` | Mask text in the replay |
 | `maskAllInputs` | `true` | Mask input, textarea, and select values |
-| `console` | `'error'` | Capture console events at the selected level; use `false` to disable |
+| `console` | `'error'` | Capture `'error'`, `'warn'`, `'info'` (including `console.log`), or `'debug'` and more severe levels; use `false` to disable |
 | `serviceVersion` | Unset | Identify your application release |
 | `environment` | Unset | Set `deployment.environment.name` |
 | `sanitizeUrl` | Unset | Rewrite recorded URLs, for example to remove query parameters |
+
+For the complete API, see the [browser SDK reference](https://github.com/ClickHouse/clickstack-browser#quick-start).
+
+## Session replay and privacy {#session-replay-and-privacy}
+
+Session replay is enabled by default. Text and input values are masked by default.
 
 Masking does not hide checkbox states, radio states, or attributes such as link URLs and placeholders. Use the `rr-block` class to exclude sensitive elements. URL sanitization does not cover URLs inside replayed page content, stack traces, or console messages. Only capture user information permitted by your privacy policy.
 
@@ -140,7 +154,15 @@ setUser(null);
 startNewSession();
 ```
 
-Uncaught errors and unhandled rejections are captured automatically. Record caught errors, including errors handled by a React error boundary, with `recordException`:
+To attach application metadata to subsequent spans and logs, use `setAttributes`. Each call replaces the previous set; pass `null` to clear it:
+
+```javascript
+import { setAttributes } from '@clickhouse/clickstack-browser';
+
+setAttributes({ 'app.team.name': 'checkout' });
+```
+
+Uncaught errors and unhandled rejections are captured automatically. React error boundaries that report through `console.error` are also captured by default. Use `recordException` for caught errors that are not already logged; recording and logging the same error creates duplicate events:
 
 ```javascript
 import { recordException } from '@clickhouse/clickstack-browser';
@@ -157,6 +179,8 @@ Replace `submitCheckout` with the application operation you want to monitor.
 
 ## Migrating from the HyperDX browser SDK {#migration}
 
-This is not a package-name-only upgrade. `url` becomes `endpoint`, `service` becomes `serviceName`, and `tracePropagationTargets` becomes `traceOrigins`. Text and input masking now default to `true`. Use `setUser` instead of `setGlobalAttributes`, and call `recordException` from your error boundary instead of using `attachToReactErrorBoundary`.
+This is not a package-name-only upgrade. `url` becomes `endpoint`, `service` becomes `serviceName`, and `tracePropagationTargets` becomes `traceOrigins`. Text and input masking now default to `true`. Replace `setGlobalAttributes` with `setUser` for user identity and `setAttributes` for application metadata. React error boundaries that report through `console.error` need no extra hook; use `recordException` when an error is not already logged.
 
 See the [SDK migration guide](https://github.com/ClickHouse/clickstack-browser/blob/main/docs/migration.md) for removed options and attribute changes. For a script-tag installation or an application that already initializes OpenTelemetry, see the [SDK README](https://github.com/ClickHouse/clickstack-browser#readme).
+
+If the ClickStack browser SDK causes a compatibility issue in your application, you can use the [legacy HyperDX browser SDK](https://github.com/hyperdxio/hyperdx-js/tree/main/packages/browser) while investigating it. Restore its configuration and API calls using the migration guide above; the two SDKs are not interchangeable and should not run together.

@@ -11,17 +11,77 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import { ClickStackIntegrates } from '/snippets/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-Use OpenTelemetry Lambda layers to collect telemetry from your function and forward it to ClickHouse Observability.
+For Node.js functions with async handlers, use the ClickStack Node.js SDK. For other runtimes or callback-based handlers, use the OpenTelemetry Lambda layers described below.
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## Set up OpenTelemetry {#set-up-opentelemetry}
+## Node.js async handlers {#nodejs-async-handlers}
+
+Use a Lambda Node.js runtime that meets the SDK's Node.js 22.15 minimum. Install the SDK and include it in your deployment package:
+
+```shell
+npm install @clickhouse/clickstack-node
+```
+
+Set these Lambda environment variables to initialize the SDK before your handler loads and name your service:
+
+```text
+NODE_OPTIONS=--import @clickhouse/clickstack-node/register
+OTEL_SERVICE_NAME=my-lambda-function
+```
+
+Wrap your async handler with `withFlush` so buffered telemetry is exported before the invocation returns:
+
+```javascript
+// index.mjs
+import { withFlush } from '@clickhouse/clickstack-node';
+
+export const handler = withFlush(async (event) => {
+  console.log('request received');
+  return { statusCode: 200, body: 'OK' };
+});
+```
+
+Set the function's handler to `index.handler`. If you bundle the function, keep the SDK and instrumented dependencies external and include them in the deployment package. Do not also enable an auto-instrumentation Lambda layer for this setup.
+
+Set the destination variables below in the Lambda function's environment configuration. The endpoint must be reachable from your function. The SDK ends its flush before the invocation deadline; callback-based handlers are not supported by `withFlush`.
+
+### Configure your destination {#configure-destination}
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+Open **Team Settings → Data → Managed Telemetry** in your service and copy the **OTLP HTTP endpoint** and **API key**. Use the complete HTTPS endpoint, including its port:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_OTEL_ENDPOINT:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+</Tab>
+<Tab title="Self-managed">
+
+Use your collector's OTLP HTTP endpoint and ingestion key. Use `http://` instead of `https://` if your collector does not have TLS configured. For collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-managed).
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT='https://YOUR_COLLECTOR_HOST:4318'
+export OTEL_EXPORTER_OTLP_HEADERS='authorization=YOUR_INGESTION_API_KEY'
+export OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf'
+```
+
+</Tab>
+</Tabs>
+
+## Other runtimes and handlers {#other-runtimes-and-handlers}
 
 Follow the official [Lambda auto-instrumentation instructions](https://opentelemetry.io/docs/platforms/faas/lambda-auto-instrument/) to select layers for your runtime, architecture, and AWS region and configure the instrumentation wrapper.
 
 Add and configure the [OpenTelemetry Collector Lambda layer](https://opentelemetry.io/docs/platforms/faas/lambda-collector/). Keep the application's SDK exporters pointed at the local Collector, as described upstream. Configure the Collector's outgoing connection below.
 
-## Configure your destination {#configure-destination}
+### Configure the Lambda Collector destination {#configure-lambda-collector-destination}
 
 Set `CLICKHOUSE_OTLP_ENDPOINT` and `CLICKHOUSE_INGESTION_API_KEY` in your Lambda function's environment variables. Add the following exporter to your Collector configuration.
 
@@ -43,7 +103,7 @@ exporters:
 </Tab>
 <Tab title="Self-managed">
 
-Set `CLICKHOUSE_OTLP_ENDPOINT` to your collector's OTLP HTTP endpoint and `CLICKHOUSE_INGESTION_API_KEY` to its ingestion key. The endpoint must be reachable from your Lambda function. For destination collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#sending-otel-data-self-configured).
+Set `CLICKHOUSE_OTLP_ENDPOINT` to your collector's OTLP HTTP endpoint and `CLICKHOUSE_INGESTION_API_KEY` to its ingestion key. The endpoint must be reachable from your Lambda function. For destination collector setup, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-managed).
 
 ```yaml
 exporters:
