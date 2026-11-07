@@ -18,6 +18,12 @@ SELECT length(k), g, count() FROM numbers(4) GROUP BY GROUPING SETS ((repeat('xx
 SELECT length(k), g, count() FROM numbers(4) GROUP BY GROUPING SETS ((repeat('xx', 1000000) AS k, number % 2 AS g), (g)) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 SELECT length(k), g, count() FROM numbers(4) GROUP BY ROLLUP(repeat('xx', 1000000) AS k, number % 2 AS g) ORDER BY ALL;
 SELECT g FROM numbers(4) GROUP BY repeat('xx', 1000000), number % 2 AS g ORDER BY g;
+-- Without aggregate functions the key is removed while another key stays.
+SELECT countIf(explain ILIKE '%Keys:%xxxxxxxxxx%') FROM (EXPLAIN actions = 1
+    SELECT count() FROM (SELECT number % 3 AS g, count() FROM numbers(10) GROUP BY repeat('xx', 1000000), g));
+SELECT count() FROM (SELECT number % 3 AS g, count() FROM numbers(10) GROUP BY repeat('xx', 1000000), g);
+SELECT countIf(explain ILIKE '%Keys:%xxxxxxxxxx%') FROM (EXPLAIN actions = 1 SELECT 1 FROM numbers(3) GROUP BY repeat('xx', 1000000));
+SELECT 1 FROM numbers(3) GROUP BY repeat('xx', 1000000);
 SELECT count() FROM numbers(10) WHERE number > 100 GROUP BY repeat('xx', 1000000);
 -- The same as for a smaller constant.
 SELECT count() FROM numbers(10) WHERE number > 100 GROUP BY repeat('xx', 1000000) SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;

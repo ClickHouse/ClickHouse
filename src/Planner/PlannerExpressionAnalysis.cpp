@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <stack>
@@ -148,15 +149,10 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
     return true;
 }
 
-/// A key that is a constant expression the analyzer has not folded, which it does not do for a value of 1 MiB or more.
-/// After aggregation the key is computed again from the expression, so it must read constants only.
-bool isUnfoldedConstantKey(const QueryTreeNodePtr & key, const ActionsDAG::NodeRawConstPtrs & dag_nodes)
+/// A function of constants only. After aggregation such a key is computed again from the expression.
+bool isFunctionOfConstants(const QueryTreeNodePtr & key)
 {
-    if (!key->as<FunctionNode>() || dag_nodes.size() != 1)
-        return false;
-
-    const auto * column_const = dag_nodes[0]->column ? typeid_cast<const ColumnConst *>(dag_nodes[0]->column.get()) : nullptr;
-    if (!column_const || column_const->getDataColumn().isDummy())
+    if (!key->as<FunctionNode>())
         return false;
 
     std::stack<const IQueryTreeNode *> nodes;
@@ -181,6 +177,19 @@ bool isUnfoldedConstantKey(const QueryTreeNodePtr & key, const ActionsDAG::NodeR
     }
 
     return true;
+}
+
+/// A key that is a constant expression the analyzer has not folded, which it does not do for a value of 1 MiB or more.
+bool isUnfoldedConstantKey(const QueryTreeNodePtr & key, const ActionsDAG::NodeRawConstPtrs & dag_nodes)
+{
+    if (dag_nodes.size() != 1)
+        return false;
+
+    const auto * column_const = dag_nodes[0]->column ? typeid_cast<const ColumnConst *>(dag_nodes[0]->column.get()) : nullptr;
+    if (!column_const || column_const->getDataColumn().isDummy())
+        return false;
+
+    return isFunctionOfConstants(key);
 }
 
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
@@ -309,6 +318,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
             /// `GROUPING` is resolved against the full key list, so dropping a constant key here would
             /// lose grouping levels: `GROUP BY CUBE(1, number)` would produce the sets of a single key.
             bool keep_constant_keys = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube();
+            /// Without aggregate functions such a key is removed only when another key stays, so that rows are still grouped.
+            bool remove_unfolded_constant_keys = !keep_constant_keys
+                && (!aggregates_descriptions.empty()
+                    || std::ranges::any_of(query_node.getGroupBy().getNodes(), [](const auto & key) { return !isFunctionOfConstants(key); }));
 
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
@@ -325,7 +338,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                 if (!constant_key && aggregation_is_local && isUnfoldedConstantKey(group_by_key_node, expression_dag_nodes))
                 {
                     group_by_with_constant_keys = true;
-                    if (!keep_constant_keys && !aggregates_descriptions.empty())
+                    if (remove_unfolded_constant_keys)
                         continue;
                 }
 
