@@ -32,6 +32,7 @@
 #include <Common/StringUtils.h>
 
 #include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserQueryWithOutput.h>
 
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
@@ -3192,6 +3193,103 @@ protected:
     }
 };
 
+/// Layer for the function `body`, which is the request body argument of the `url` table function.
+/// In addition to the usual function arguments, it accepts a `SELECT` query with output options, as `ParserQueryWithOutput`
+/// parses them, either bare or in parentheses: `body(SELECT ... FORMAT f)` and `body((SELECT ... FORMAT f))` are
+/// syntactic sugar for `body((SELECT ...), 'f')`, and `body(SELECT ...)` for `body((SELECT ...))`.
+/// `SETTINGS` after `FORMAT` are moved into the `SETTINGS` clause of the query, because a subquery has no output options.
+/// `INTO OUTFILE` is not supported.
+class BodyLayer : public FunctionLayer
+{
+public:
+    explicit BodyLayer(bool allow_function_parameters_) : FunctionLayer("body", allow_function_parameters_) {}
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0 && !tried_query)
+        {
+            tried_query = true;
+
+            auto query_pos = pos;
+            auto query_expected = expected;
+            ASTs arguments;
+            if (parseQueryArgument(query_pos, query_expected, arguments))
+            {
+                pos = query_pos;
+                expected = query_expected;
+                elements = std::move(arguments);
+                /// Arguments are parsed, create the function.
+                state = 2;
+            }
+        }
+
+        return FunctionLayer::parse(pos, expected, action);
+    }
+
+private:
+    /// Parses the query, which must be the only argument, and the closing bracket of the function.
+    static bool parseQueryArgument(IParser::Pos & pos, Expected & expected, ASTs & arguments)
+    {
+        const bool in_parentheses = ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected);
+
+        if (!ParserKeyword(Keyword::SELECT).checkWithoutMoving(pos, expected) && !ParserKeyword(Keyword::WITH).checkWithoutMoving(pos, expected))
+            return false;
+
+        ASTPtr query;
+        if (!ParserQueryWithOutput(pos->end).parse(pos, query, expected))
+            return false;
+
+        if (in_parentheses && !ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return false;
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return false;
+
+        auto * select = query->as<ASTSelectWithUnionQuery>();
+        if (!select || select->out_file)
+            return false;
+
+        /// Without output options, a parenthesized query is a usual subquery argument, leave it to the usual parsing.
+        if (in_parentheses && !select->format_ast && !select->settings_ast)
+            return false;
+
+        ASTPtr format;
+        if (select->format_ast)
+            format = make_intrusive<ASTLiteral>(getIdentifierName(select->format_ast));
+
+        ASTPtr settings = select->settings_ast;
+        ASTQueryWithOutput::resetOutputASTIfExist(*select);
+
+        if (settings)
+        {
+            /// The query tree applies the `SETTINGS` clause of the last `SELECT` to the whole query, also to a `UNION`.
+            auto * last_select = select->list_of_selects->children.back()->as<ASTSelectQuery>();
+            if (!last_select)
+                return false;
+
+            if (auto own_settings = last_select->settings())
+            {
+                auto & target = own_settings->as<ASTSetQuery &>();
+                const auto & source = settings->as<const ASTSetQuery &>();
+                target.changes.insert(target.changes.end(), source.changes.begin(), source.changes.end());
+                target.default_settings.insert(target.default_settings.end(), source.default_settings.begin(), source.default_settings.end());
+                target.query_parameters.insert(target.query_parameters.end(), source.query_parameters.begin(), source.query_parameters.end());
+            }
+            else
+            {
+                last_select->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
+            }
+        }
+
+        arguments = {make_intrusive<ASTSubquery>(std::move(query))};
+        if (format)
+            arguments.push_back(std::move(format));
+        return true;
+    }
+
+    bool tried_query = false;
+};
+
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
@@ -3246,6 +3344,9 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
 
     if (function_name == "tuple")
         return std::make_unique<TupleLayer>();
+
+    if (function_name == "body" && !identifier->as<ASTIdentifier>()->compound())
+        return std::make_unique<BodyLayer>(allow_function_parameters_);
 
     if (function_name_lowercase == "cast")
         return std::make_unique<CastLayer>();
