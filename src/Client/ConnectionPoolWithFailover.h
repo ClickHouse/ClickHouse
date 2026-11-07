@@ -39,7 +39,10 @@ public:
             ConnectionPoolPtrs nested_pools_,
             LoadBalancing load_balancing,
             time_t decrease_error_period_ = DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD,
-            size_t max_error_cap = DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT);
+            size_t max_error_cap = DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT,
+            time_t min_unstable_period_for_pool_ = 0,
+            time_t max_unstable_period_for_pool_ = 0);
+
 
     using Entry = IConnectionPool::Entry;
     using PoolWithFailoverBase<IConnectionPool>::getValidTryResult;
