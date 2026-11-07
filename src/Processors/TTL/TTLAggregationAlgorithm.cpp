@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const SettingsBool group_by_each_block_no_merge;
 }
 
 namespace
@@ -172,7 +173,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /* adaptive_aggregator_freeze_threshold */ 0,
         /* adaptive_aggregator_freeze_threshold_bytes */ 0,
         /* adaptive_aggregator_disable_thaw */ false,
-        /* use_aggregation_memory_tracker */ true);
+        /* use_aggregation_memory_tracker */ true,
+        settings[Setting::group_by_each_block_no_merge]);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
