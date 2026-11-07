@@ -141,15 +141,12 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     data_lake_read_estimate.reset();
 }
 
-std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromDataLakeMetadata() const
+std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCreateDataLakeReadEstimate() const
 {
     /// The initiator assigns the files of this replica, so its own metadata may describe other files.
-    if (distributed_processing)
-        return std::nullopt;
-
-    if (!data_lake_read_estimate)
-        data_lake_read_estimate
-            = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext());
+    if (!data_lake_read_estimate && !distributed_processing)
+        if (auto estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), requiredSourceColumns(), getContext()))
+            data_lake_read_estimate = std::make_shared<const DataLakeReadEstimate>(std::move(*estimate));
     return data_lake_read_estimate;
 }
 
