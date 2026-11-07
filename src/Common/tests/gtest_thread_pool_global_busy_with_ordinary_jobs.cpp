@@ -575,6 +575,102 @@ TEST(ThreadPool, WokenIdleWorkerGivesBackItsSlotBeforeLeavingTheList)
     EXPECT_EQ(jobs_ran, iterations - rejected);
 }
 
+/// A long-lived thread that is going to be rejected because all the workers are busy with finite jobs must not
+/// make a concurrent worker that takes no slot be rejected as if the last slot was taken. The slot of a long-lived
+/// thread used to be taken optimistically before the mutex of the global pool was locked, so a concurrent call saw
+/// no slot left and rejected its worker, which is fatal for the mandatory spawn of an `AsyncLoader` worker. The
+/// race window was small, so it is tried many times.
+TEST(ThreadPool, RejectedLongLivedThreadDoesNotHoldSlotTentatively)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 2;
+    static constexpr size_t iterations = 300;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    size_t rejected = 0;
+    size_t jobs_ran = 0;
+    for (size_t iteration = 0; iteration < iterations; ++iteration)
+    {
+        /// The threads of the previous iteration give their slots back.
+        global_pool.wait();
+
+        /// Takes one of the two threads and one of the two slots.
+        std::atomic<bool> long_lived_started = false;
+        std::atomic<bool> release_long_lived = false;
+        ThreadFromGlobalPool long_lived_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+        {
+            long_lived_started = true;
+            while (!release_long_lived.load())
+            {
+            }
+        });
+        while (!long_lived_started)
+            ;
+
+        /// Takes the other thread with a finite job, so one slot is left, but no worker.
+        std::atomic<bool> ordinary_started = false;
+        std::atomic<bool> release_ordinary = false;
+        global_pool.scheduleOrThrow([&] { ordinary_started = true; while (!release_ordinary.load()) {} });
+        while (!ordinary_started)
+            ;
+
+        /// One thread tries to start another long-lived thread, which has no worker to run on, while this thread
+        /// schedules a worker that takes no slot into a local pool. The latter may wait for the finite job.
+        std::atomic<bool> go = false;
+        std::thread starter([&]
+        {
+            while (!go.load())
+            {
+            }
+            try
+            {
+                ThreadFromGlobalPool thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [] {});
+                thread.join();
+            }
+            catch (const DB::Exception &) // NOLINT(bugprone-empty-catch) Ok: it is expected to be rejected
+            {
+            }
+        });
+
+        std::atomic<size_t> local_job_ran = 0;
+        ThreadPool local_pool(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+        go = true;
+        try
+        {
+            local_pool.scheduleOrThrowOnError([&] { ++local_job_ran; });
+        }
+        catch (const DB::Exception &)
+        {
+            ++rejected;
+        }
+
+        starter.join();
+        release_ordinary = true;
+        const bool finished_in_time = local_pool.waitUntil(std::chrono::steady_clock::now() + std::chrono::seconds(60));
+        release_long_lived = true;
+        long_lived_thread.join();
+        local_pool.wait();
+        EXPECT_TRUE(finished_in_time);
+        jobs_ran += local_job_ran;
+    }
+
+    EXPECT_EQ(rejected, 0) << "a worker that takes no slot must not be rejected because of a long-lived thread that is rejected itself";
+    EXPECT_EQ(jobs_ran, iterations - rejected);
+}
+
 /// A worker of a local pool that finishes its job while a job waits in the queue of the global pool must not
 /// go idle and keep its thread of the global pool: the queued job may be needed by the thread that scheduled
 /// it, which counted on a thread that holds no slot to free up. Here the outer thread schedules the worker of

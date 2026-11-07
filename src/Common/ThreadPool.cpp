@@ -613,8 +613,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
     /// A job that occupies its worker for the worker's whole lifetime must be given one of the
     /// `max_threads` slots right away. Queueing it is not an option: the workers are held by other
     /// such jobs, which never return, so a queued job would never start even though its creator
-    /// already treats its thread as running. Take a slot optimistically and give it back below if it
-    /// turned out not to exist; on any early return the destructor releases it as well.
+    /// already treats its thread as running. The slot is taken under `mutex`, right before the job is
+    /// handed to its worker or queued, see `thread_job_slot` below.
     ///
     /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` or `scheduleReturningThreadOrThrow`
     /// does not take a slot, see below.
@@ -627,28 +627,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         else
             return on_error(fmt::format("all {} threads of the pool are already occupied by long-lived threads", max_threads));
     };
-
-    std::optional<ScopedDecrement> thread_job_slot;
-    if (job_occupies_thread && thread_job_takes_slot)
-    {
-        thread_job_slot.emplace(remaining_thread_job_capacity);
-        if (thread_job_slot->valueAfterDecrement() < 0)
-        {
-            /// The slots left may be held by idle workers of local pools (see `IdleGlobalSlotHolder`). Take one
-            /// back: its worker leaves its pool and frees its thread, and its slot backs the unit we took from
-            /// the counter above, which is released by `thread_job_slot`. The counter is checked again under the
-            /// mutex of the list: a slot may have been given back in the meantime, then nobody has to be evicted.
-            int64_t value_after_decrement = thread_job_slot->valueAfterDecrement();
-            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
-                value_after_decrement = reclaimIdleGlobalSlots(remaining_thread_job_capacity, /* needed= */ 0);
-
-            if (value_after_decrement < 0)
-            {
-                std::lock_guard lock(mutex); // needed to read and reset first_exception.
-                return on_no_slot_left();
-            }
-        }
-    }
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
     // Load the current capacity
@@ -892,6 +870,38 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
                         "consider increasing the `max_thread_pool_size` setting", max_threads));
                 else
                     return on_error(fmt::format("all {} threads of the pool are busy and no new thread can be started", max_threads));
+            }
+        }
+
+        /// Take the slot of a long-lived job. It is taken here, under `mutex`, after the worker is found and
+        /// with no unlock until the job is handed to its worker or queued, so the slot is never held by a job
+        /// that may still be rejected. If it was taken before (it used to be taken optimistically before
+        /// `mutex` was locked), a concurrent call that takes no slot could see the counter at zero, reject its
+        /// worker as if all the threads were held by long-lived ones, and then this job could be rejected too
+        /// because all the workers are busy with finite jobs. A rejection there is fatal for the mandatory spawn
+        /// of a worker in `AsyncLoader`, which only has to wait for a finite job.
+        std::optional<ScopedDecrement> thread_job_slot;
+        if (job_occupies_thread && thread_job_takes_slot)
+        {
+            thread_job_slot.emplace(remaining_thread_job_capacity);
+            int64_t value_after_decrement = thread_job_slot->valueAfterDecrement();
+            if (value_after_decrement < 0)
+            {
+                /// The slots left may be held by idle workers of local pools (see `IdleGlobalSlotHolder`). Take one
+                /// back: its worker leaves its pool and frees its thread, and its slot backs the unit we took from
+                /// the counter above, which is released by `thread_job_slot`. The counter is checked again under the
+                /// mutex of the list: a slot may have been given back in the meantime, then nobody has to be evicted.
+                if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                    value_after_decrement = reclaimIdleGlobalSlots(remaining_thread_job_capacity, /* needed= */ 0);
+
+                if (value_after_decrement < 0)
+                {
+                    new_thread.reset();
+                    /// The idle worker taken for the long-lived job has not been woken yet; give it back.
+                    if (idle_thread_for_job)
+                        pushIdleThreadNoLock(idle_thread_for_job);
+                    return on_no_slot_left();
+                }
             }
         }
 
