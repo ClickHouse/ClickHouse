@@ -1,0 +1,8 @@
+distributed_plan_execute_locally = 1
+in-process plan: an unrelated reader is refused while the plan holds the table's only slot
+distributed_plan_execute_locally = 0
+dispatched plan: the slot outlives the fragment that took it, so an unrelated reader is refused
+parallel replicas
+one statement holding the table's only slot on several replicas is served
+client-sent secondary query, execute locally = 1: served through several fragments
+client-sent secondary query, execute locally = 0: served through several fragments
