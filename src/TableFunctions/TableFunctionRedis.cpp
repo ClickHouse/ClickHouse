@@ -45,6 +45,10 @@ private:
 
     const char * getStorageEngineName() const override { return "Redis"; }
 
+    /// Unlike the `Redis` table engine, the table function does not accept a named collection: its first
+    /// argument is always `host:port`, and a bare identifier there is evaluated as a literal address.
+    std::optional<String> getNamedCollectionReferencedByArguments(const ASTs & /*args*/) const override { return std::nullopt; }
+
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 

@@ -168,6 +168,12 @@ private:
         const QualifiedTableName & name,
         const ASTPtr & ast,
         LoadingStrictnessLevel mode);
+    void loadTableFromMetadataImpl(
+        ContextMutablePtr local_context,
+        const String & file_path,
+        const QualifiedTableName & name,
+        const ASTCreateQuery & query,
+        LoadingStrictnessLevel mode);
 
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);

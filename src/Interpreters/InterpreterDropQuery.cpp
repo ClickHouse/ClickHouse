@@ -13,6 +13,8 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
@@ -79,6 +81,15 @@ namespace FailPoints
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 {
     return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
+}
+
+/// See `StorageDictionary::addNamedCollectionDependencies`: on `DETACH` the registered dependencies are
+/// moved to the detached list along with the other dependencies of the table, and on `DROP` they stay
+/// registered if `dropTable` fails.
+static void addDictionaryNamedCollectionDependencies(const StoragePtr & table)
+{
+    if (const auto * dictionary = typeid_cast<const StorageDictionary *>(table.get()))
+        dictionary->addNamedCollectionDependencies();
 }
 
 
@@ -312,6 +323,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             }
 
+            addDictionaryNamedCollectionDependencies(table);
             context_->onQueryExecutionStarted();
             table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
@@ -319,12 +331,25 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+            /// The detached table cannot be looked up through `DatabaseCatalog` anymore, but the
+            /// `ATTACH` replayed at the next server start still references the named collections it
+            /// uses, so they must not be dropped while it can be attached back.
+            /// This also applies to `DETACH ... PERMANENTLY` until the permanent-detach flag is written:
+            /// `detachTablePermanently` detaches the table first and writes the flag after that, so if
+            /// writing the flag fails, a plain detached table is left, which is attached on restart.
+            NamedCollectionFactory::instance().markDependenciesDetached(table_id);
+
             if (query.permanently)
             {
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-                NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
+                /// A permanently detached table is not loaded at startup, so dropping a collection it
+                /// references cannot break the server start: now that the flag is written, its
+                /// dependencies (including a detached entry left over from an earlier plain detach) are
+                /// simply removed.
+                NamedCollectionFactory::instance().removeDependencies(table_id);
+                NamedCollectionFactory::instance().removeDetachedDependencies(table_id);
             }
             else
             {
@@ -392,6 +417,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
+            addDictionaryNamedCollectionDependencies(table);
             context_->onQueryExecutionStarted();
             table->flushAndShutdown(true);
 
@@ -400,8 +426,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-            NamedCollectionFactory::instance().removeDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
+
+            /// Only after `dropTable` succeeded: when it throws, the metadata of the table survives
+            /// (`Ordinary` even attaches the table back), so it must stay protected.
+            NamedCollectionFactory::instance().removeDependencies(table_id);
+            /// A detached entry left over from an earlier detach of this table: its metadata is gone
+            /// with the drop, so it must not keep blocking `DROP NAMED COLLECTION`.
+            NamedCollectionFactory::instance().removeDetachedDependencies(table_id);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
@@ -877,9 +909,46 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!drop && !truncate)
         database->assertCanBeDetached(true);
 
+    /// The tables of a database that does not have to be empty on detach stay inside it: remember
+    /// their named collection dependencies as detached, like `DETACH TABLE` does.
+    /// Only for databases that can hold ClickHouse tables (e.g. the `Overlay` of `clickhouse-local`).
+    /// The tables of an external database (`MySQL`, `PostgreSQL`, ...) are generated from the remote
+    /// source and register no dependencies of their own, and enumerating them may query the source,
+    /// which would make `DETACH DATABASE` fail when it is unavailable. The dependency of the database
+    /// engine itself is handled below.
+    if (!drop && !truncate && !database->shouldBeEmptyOnDetach() && !database->isExternal())
+    {
+        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        {
+            if (auto table_ptr = iterator->table())
+            {
+                addDictionaryNamedCollectionDependencies(table_ptr);
+                NamedCollectionFactory::instance().markDependenciesDetached(table_ptr->getStorageID());
+            }
+        }
+    }
+
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
+
+    /// Database engines can resolve named collections from their persisted `CREATE DATABASE`
+    /// metadata too. A detached database is absent from `DatabaseCatalog`, but that metadata is
+    /// still replayed by a later `ATTACH DATABASE` or server start.
+    /// Only after `detachDatabase` succeeded: it attaches the database back when it cannot finish -
+    /// a table appeared in it while it was being dropped, or the engine's `drop` threw - and a
+    /// database that is live again must keep its dependency, or `DROP NAMED COLLECTION` would be
+    /// allowed while its `CREATE DATABASE` metadata still references the collection.
+    const StorageID database_id = StorageID::createDatabaseOnly(database_name);
+    if (drop)
+        NamedCollectionFactory::instance().removeDependencies(database_id);
+    else if (!truncate)
+        NamedCollectionFactory::instance().markDependenciesDetached(database_id);
+
+    /// `DROP DATABASE` drops the detached tables of the database too: their entries would otherwise
+    /// keep blocking `DROP NAMED COLLECTION` until the server restart.
+    if (drop)
+        NamedCollectionFactory::instance().removeDetachedDependencies(database_name);
 
     return {};
 }

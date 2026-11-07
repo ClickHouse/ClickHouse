@@ -16,16 +16,19 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/UniqueLock.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -76,6 +79,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
@@ -106,6 +110,8 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
+    extern const char drop_database_fail_before_drop[];
+    extern const char drop_database_fail_before_metadata_removal[];
     extern const char database_catalog_drop_finally_after_notify[];
 }
 
@@ -812,6 +818,11 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         try
         {
+            fiu_do_on(FailPoints::drop_database_fail_before_drop,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to drop the database");
+            });
+
             /// Delete the database.
             db->drop(local_context);
         }
@@ -831,10 +842,26 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         if (!managed_by_shared_catalog)
         {
-            /// Old ClickHouse versions did not store database.sql files
-            /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-            default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
-            default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+            try
+            {
+                fiu_do_on(FailPoints::drop_database_fail_before_metadata_removal,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to remove the metadata of the dropped database");
+                });
+
+                /// Old ClickHouse versions did not store database.sql files
+                /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
+                default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
+                default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+            }
+            catch (...)
+            {
+                /// The database is gone from the catalog, but its `CREATE DATABASE` metadata may survive and
+                /// be replayed by a later `ATTACH DATABASE` or server start, like the one of a detached
+                /// database: keep the named collections it references protected.
+                NamedCollectionFactory::instance().markDependenciesDetached(StorageID::createDatabaseOnly(database_name));
+                throw;
+            }
         }
 
         if (db_uuid != UUIDHelpers::Nil)
@@ -1677,10 +1704,24 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
+        /// The named collections the metadata references. Once the metadata is back in the database, the
+        /// next server start attaches the table, so the collections must be protected even if the attach
+        /// below fails or is cancelled before it registers the dependencies, e.g. while a collection does
+        /// not exist (the drop of the table has removed its earlier entries). Parsed before the move, so
+        /// that a metadata file that cannot be parsed stays in the dropped-table queue.
+        auto restored_metadata = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), db_disk, latest_metadata_dropped_path);
+        std::vector<String> referenced_collections;
+        if (const auto * restored_create = restored_metadata ? restored_metadata->as<ASTCreateQuery>() : nullptr)
+            referenced_collections = getNamedCollectionsReferencedByTableDefinition(*restored_create);
+
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
         /// This maybe throw exception.
         db_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
+
+        for (const auto & collection_name : referenced_collections)
+            NamedCollectionFactory::instance().addDetachedDependency(
+                collection_name, it_dropped_table->table_id.database_name, it_dropped_table->table_id.table_name);
 
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
@@ -1721,7 +1762,12 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(true);
     interpreter.setDontNeedDDLGuard();  /// It's already locked by caller
+    /// The metadata file was moved back into the database above and stays there if the attach fails.
+    interpreter.setKeepDependenciesOfFailedAttach();
     interpreter.execute();
+
+    /// The table is attached and has registered its dependencies as active ones.
+    NamedCollectionFactory::instance().removeDetachedDependencies(dropped_table.table_id);
 
     LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
 }

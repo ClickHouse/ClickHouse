@@ -1,0 +1,7 @@
+--- a failed CREATE TABLE ... UUID leaves a stale dependency ---
+--- DROP of the old collection during an in-flight CREATE reusing the UUID ---
+--- the committed table still protects its collection ---
+0
+1
+1
+0

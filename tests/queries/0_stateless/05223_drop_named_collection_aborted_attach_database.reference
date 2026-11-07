@@ -1,0 +1,12 @@
+--- the attach of the database using the collection fails after the engine resolved it ---
+FAULT_INJECTED
+0
+--- the attach of the database whose table uses the collection fails after the table was loaded ---
+FAULT_INJECTED
+0
+--- both collections are still held by the metadata that will be attached back ---
+--- the databases attach back and still hold them ---
+2
+1
+--- the collections are released once the databases are dropped ---
+0
