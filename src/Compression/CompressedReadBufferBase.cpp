@@ -282,6 +282,21 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
         codec->setExternalDataFlag();
 }
 
+std::optional<CompressedReadBufferBase::CompressedBlock> CompressedReadBufferBase::readCompressedBlock()
+{
+    size_t decompressed_bytes = 0;
+    size_t compressed_with_header = 0;
+    if (readCompressedData(decompressed_bytes, compressed_with_header, /*always_copy=*/false) == 0)
+        return {};
+
+    constexpr UInt8 header_size = ICompressionCodec::getHeaderSize();
+    return CompressedBlock{
+        .method = static_cast<UInt8>(compressed_buffer[0]),
+        .payload = std::string_view(compressed_buffer + header_size, compressed_with_header - header_size),
+        .decompressed_bytes = decompressed_bytes,
+    };
+}
+
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
