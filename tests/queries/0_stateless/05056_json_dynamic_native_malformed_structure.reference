@@ -1,4 +1,5 @@
 object_v3: Version 4 of Object structure serialization is written only into MergeTree data parts and is not allowed in Native format. (INCORRECT_DATA)
+object_v4: Version 5 of Object structure serialization is written only into MergeTree data parts and is not allowed in Native format. (INCORRECT_DATA)
 dynamic_v3: Version 4 of Dynamic structure serialization is written only into MergeTree data parts and is not allowed in Native format. (INCORRECT_DATA)
 dynamic_duplicate_types: Duplicate type Int64 in the list of types of a flattened Dynamic column. (INCORRECT_DATA)
 dynamic_nothing_type: Type Nothing is not allowed in the list of types of a flattened Dynamic column. (INCORRECT_DATA)
