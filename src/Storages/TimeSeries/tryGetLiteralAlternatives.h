@@ -8,8 +8,9 @@
 namespace DB
 {
 
-/// Returns the terms of a regex like `a|b` or `(a|b)|(?:c)` if every term is a plain literal.
-/// A group is allowed only as a whole term, so `(a|b)c` is not a list.
+/// Returns the strings a regex like `a|b`, `(a|b)|(?:c)` or `api-(prod|stg)` matches if it consists only of
+/// plain literals, alternations and groups. A group is expanded with the literals around it, so `api(-server|)`
+/// gives `api-server` and `api`; an expansion of groups to more than 100 strings is not a list.
 std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex);
 
 }
