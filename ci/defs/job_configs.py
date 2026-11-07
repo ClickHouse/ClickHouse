@@ -1942,7 +1942,28 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
     )
-    performance_comparison_with_master_head_jobs = Job.Config(
+    # Separate instrumented run: no timings, comparison, sampling, or PR gate.
+    # Use the same per-test LLVM build as the stateless and integration collectors.
+    performance_coverage_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        command='python3 ./ci/jobs/performance_coverage.py --test-options "{PARAMETER}"',
+        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        # Whole instrumented XML files can exceed six hours even when placed
+        # alone. Allow the balanced collector twelve hours, including export.
+        timeout=12 * 3600,
+        digest_config=None,
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_query_coverage, {batch}/16",
+                requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
+            )
+            for batch in range(1, 17)
+        ],
+    )
+
+    performance_comparison_with_master_head_job = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
@@ -1954,6 +1975,12 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/performance_selection.py",
+                "./ci/jobs/scripts/performance_fixed_tests.json",
+                "./ci/jobs/scripts/coverage_selection.py",
+                "./ci/jobs/scripts/test_selection_config.py",
+                "./ci/jobs/scripts/find_tests.py",
+                "./ci/jobs/performance_coverage_sharding.py",
                 "./ci/jobs/scripts/seaweedfs_service.py",
                 "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
@@ -1968,7 +1995,8 @@ class JobConfigs:
         ),
         timeout=2 * 3600,
         result_name_for_cidb="Tests",
-    ).parametrize(
+    )
+    performance_comparison_with_master_head_jobs = performance_comparison_with_master_head_job.parametrize(
         *[
             Job.ParamSet(
                 parameter=f"amd_release, master_head, {batch}/{total_batches}",
@@ -1987,6 +2015,23 @@ class JobConfigs:
             for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
+    )
+    # Exactly one family is enabled by the PR configuration pre-hook: six selected-test shards,
+    # or eight full-suite shards when explicitly requested by a label.
+    performance_comparison_pr_jobs = performance_comparison_with_master_head_job.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{arch}_release, master_head, {batch}/{total_batches}",
+                runs_on=runner,
+                requires=[artifact],
+            )
+            for arch, runner, artifact in (
+                ("amd", RunnerLabels.FUNC_TESTER_AMD, ArtifactNames.CH_AMD_RELEASE),
+                ("arm", RunnerLabels.FUNC_TESTER_ARM, ArtifactNames.CH_ARM_RELEASE),
+            )
+            for total_batches in (6, 8)
+            for batch in range(1, total_batches + 1)
+        ]
     )
     # The Iceberg configuration: the MergeTree tables of the tests are created as
     # Iceberg tables (`perf.py --table-engine`). In pull requests only when the
