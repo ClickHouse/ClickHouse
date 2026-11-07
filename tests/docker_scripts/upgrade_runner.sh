@@ -1033,6 +1033,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
 # `StorageFileLog` + `The absolute data path should be inside` is expected:
 #       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
+# `StorageFileLog::StorageFileLog` + `neither a regular file, nor a directory` is a `FileLog` table left behind without
+#       its files by an interrupted test (`05318_file_log_one_bad_file`).
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -1124,6 +1126,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
+    | grep -av -e "StorageFileLog::StorageFileLog(.*): Code: 36\. DB::Exception: The path .* neither a regular file, nor a directory" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
