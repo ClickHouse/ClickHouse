@@ -99,9 +99,8 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
     {
         case VolumeLoadBalancing::ROUND_ROBIN:
         {
-            size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
-            size_t index = start_from % disks.size();
-            return disks[index];
+            const size_t turn = last_used.fetch_add(1u, std::memory_order_acq_rel);
+            return disks[turn % disks.size()];
         }
         case VolumeLoadBalancing::LEAST_USED:
         {
