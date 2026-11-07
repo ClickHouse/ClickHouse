@@ -634,28 +634,38 @@ std::optional<Scan::Batch> Scan::nextBatch() const
     if (!has_batch)
         return std::nullopt;
 
+    /// From here, the exported batch is owned by this function until it is handed over to `Batch`. On any exit before
+    /// that, including an exception thrown by `ImportRecordBatch` (e.g. a failed allocation before it adopts `array`),
+    /// release the exported array if it has not been adopted yet and return the batch to the in-flight accounting of
+    /// the scan, so that neither its buffers nor its bytes are leaked.
+    bool transferred = false;
+    SCOPE_EXIT(
+    {
+        if (transferred)
+            return;
+        if (array.release)
+            array.release(&array);
+        ch_lance_release_batch(scan, batch_bytes);
+    });
+
     auto record_batch = arrow::ImportRecordBatch(&array, projected_schema);
     if (!record_batch.ok())
-    {
-        ch_lance_release_batch(scan, batch_bytes);
         throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to import Lance Arrow record batch: {}", record_batch.status().ToString());
-    }
 
     if (static_cast<UInt64>((*record_batch)->num_rows()) != batch_rows)
-    {
-        ch_lance_release_batch(scan, batch_bytes);
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Lance Arrow record batch row count {} differs from FFI row count {}",
             (*record_batch)->num_rows(),
             batch_rows);
-    }
 
-    return Batch{
+    Batch batch{
         .record_batch = std::move(*record_batch),
         .rows = batch_rows,
         .bytes = batch_bytes,
     };
+    transferred = true;
+    return batch;
 }
 
 void Scan::releaseBatch(UInt64 bytes) const noexcept
