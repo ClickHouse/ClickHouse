@@ -21,7 +21,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 
@@ -50,42 +52,55 @@ bool MergePlainMergeTreeTask::executeStep()
         switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
     }
 
-    switch (state)
+    try
     {
-        case State::NEED_PREPARE :
+        switch (state)
         {
-            prepare();
-            state = State::NEED_EXECUTE;
-            return true;
-        }
-        case State::NEED_EXECUTE :
-        {
-            try
+            case State::NEED_PREPARE :
             {
-                if (merge_task->execute())
-                    return true;
-
-                state = State::NEED_FINISH;
+                prepare();
+                state = State::NEED_EXECUTE;
                 return true;
             }
-            catch (...)
+            case State::NEED_EXECUTE :
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__, "Exception is in merge_task.");
-                write_part_log(ExecutionStatus::fromCurrentException("", true));
-                throw;
+                try
+                {
+                    if (merge_task->execute())
+                        return true;
+
+                    state = State::NEED_FINISH;
+                    return true;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__, "Exception is in merge_task.");
+                    write_part_log(ExecutionStatus::fromCurrentException("", true));
+                    throw;
+                }
+            }
+            case State::NEED_FINISH :
+            {
+                finish();
+
+                state = State::SUCCESS;
+                return false;
+            }
+            case State::SUCCESS:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Task with state SUCCESS mustn't be executed again");
             }
         }
-        case State::NEED_FINISH :
-        {
-            finish();
+    }
+    catch (...)
+    {
+        /// ABORTED and PART_IS_TEMPORARILY_LOCKED say nothing about whether the merge can succeed.
+        auto error_code = getCurrentExceptionCode();
+        if (future_part && state != State::SUCCESS
+            && error_code != ErrorCodes::ABORTED && error_code != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+            storage.addMergeFailure(future_part);
 
-            state = State::SUCCESS;
-            return false;
-        }
-        case State::SUCCESS:
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task with state SUCCESS mustn't be executed again");
-        }
+        throw;
     }
 }
 
@@ -189,6 +204,8 @@ void MergePlainMergeTreeTask::finish()
         new_part->loadStatisticsToCache(*prewarm_caches.statistics_cache);
 
     write_part_log({});
+
+    storage.removeMergeFailures(future_part->parts);
 
     StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
