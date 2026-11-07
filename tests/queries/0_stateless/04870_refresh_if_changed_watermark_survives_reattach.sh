@@ -51,22 +51,30 @@ n2=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM $DB.mv")
 # Drop all in-memory refresh state. On reattach the watermark must come back from Keeper, so the
 # next scheduled refreshes keep being skipped. Before the fix the watermark was lost here, and the
 # first post-reattach refresh appended a duplicate row.
+# `last_refresh_time` is the time of the last attempt, restored from Keeper on reattach. Remember the
+# latest pre-detach value: only an attempt strictly newer than it ran after the reattach.
+baseline=$($CLICKHOUSE_CLIENT -q "
+    SELECT toUnixTimestamp(last_refresh_time) FROM system.view_refreshes WHERE database = '$DB' AND view = 'mv'")
 $CLICKHOUSE_CLIENT -q "DETACH DATABASE $DB"
-t0=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now())")
 $CLICKHOUSE_CLIENT -q "ATTACH DATABASE $DB"
 
-# Wait for at least one post-reattach refresh attempt (`last_refresh_time` advances on every
-# attempt, including skipped ones), so the check below is not vacuously green while the reattached
-# view is still loading.
+# Wait for a post-reattach refresh attempt to complete successfully, so the check below is not
+# vacuously green while the reattached view is still loading or the attempt is still running.
+# `last_refresh_time` is set when an attempt starts and again when it ends, so an attempt newer than
+# the baseline while the view is no longer running is a completed post-reattach attempt.
+completed=0
 for _ in {1..120}
 do
-    attempted=$($CLICKHOUSE_CLIENT -q "
+    completed=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM system.view_refreshes
-        WHERE database = '$DB' AND view = 'mv'
-            AND last_refresh_time IS NOT NULL AND toUnixTimestamp(last_refresh_time) >= $t0")
-    [ "$attempted" -ge 1 ] && break
+        WHERE database = '$DB' AND view = 'mv' AND status = 'Scheduled' AND exception = ''
+            AND last_refresh_time IS NOT NULL AND toUnixTimestamp(last_refresh_time) > $baseline")
+    [ "$completed" -ge 1 ] && break
     sleep 0.5
 done
+[ "$completed" -ge 1 ] || $CLICKHOUSE_CLIENT -q "
+    SELECT 'no completed post-reattach refresh', status, last_refresh_time, $baseline, exception
+    FROM system.view_refreshes WHERE database = '$DB' AND view = 'mv'"
 
 n3=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM $DB.mv")
 [ "$n3" = "1" ] && echo "watermark survives reattach: yes" || echo "watermark survives reattach: no ($n3)"
