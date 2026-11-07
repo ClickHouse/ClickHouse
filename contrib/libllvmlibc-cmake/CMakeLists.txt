@@ -1,7 +1,7 @@
 set(LIBLLVMLIBC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libc")
 
 # Only build on supported architectures
-if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
+if (NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_S390X))
     return()
 endif()
 
@@ -158,6 +158,23 @@ elseif (ARCH_AARCH64)
         LIBC_TARGET_CPU_HAS_NEAREST_INT=1
         LIBC_TARGET_CPU_HAS_FULLFP16=1
         LIBC_TARGET_CPU_HAS_FAST_FLOAT16_OPS=1
+    )
+    target_include_directories(libllvmlibc SYSTEM BEFORE
+        PRIVATE $<BUILD_INTERFACE:${LIBLLVMLIBC_SOURCE_DIR}>
+    )
+
+elseif (ARCH_S390X)
+    # Uses LIBC_COPT_PUBLIC_PACKAGING to emit public C symbols directly
+    add_library(libllvmlibc ${SRCS})
+    set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
+    target_compile_definitions(libllvmlibc PRIVATE
+        ${LLVMLIBC_DEFS_COMMON}
+        LIBC_NAMESPACE=${LIBC_NAMESPACE}
+        LIBC_COPT_PUBLIC_PACKAGING=1
+        LIBC_TARGET_CPU_HAS_FMA=1
+        LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1
+        LIBC_TARGET_CPU_HAS_FMA_HALF=1
+        LIBC_TARGET_CPU_HAS_FMA_FLOAT=1
     )
     target_include_directories(libllvmlibc SYSTEM BEFORE
         PRIVATE $<BUILD_INTERFACE:${LIBLLVMLIBC_SOURCE_DIR}>
