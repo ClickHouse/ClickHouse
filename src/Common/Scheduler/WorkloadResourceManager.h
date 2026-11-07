@@ -299,7 +299,7 @@ private:
     class Classifier : public IClassifier
     {
     public:
-        explicit Classifier(const ClassifierSettings & settings_);
+        Classifier(const String & workload_name_, const ClassifierSettings & settings_);
         ~Classifier() override;
 
         /// Implements IClassifier interface
@@ -307,6 +307,7 @@ private:
         bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
         WorkloadSettings getWorkloadSettings(const String & resource_name) const override;
+        const String & getWorkloadName() const override { return workload_name; }
 
         /// Attaches/detaches a specific resource
         /// NOTE: It is called from scheduler threads (possibly multiple)
@@ -320,6 +321,7 @@ private:
         void finalizeResourceStates();
 
     private:
+        const String workload_name;
         const ClassifierSettings settings;
         /// Per-query scheduling context, stamped by get() onto every link this classifier hands out.
         const ResourceSchedulingContextPtr scheduling_context;
