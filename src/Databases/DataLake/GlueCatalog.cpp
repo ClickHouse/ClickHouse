@@ -65,6 +65,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_COMMIT_STATE_UNKNOWN;
     extern const int FAULT_INJECTED;
 }
 
@@ -786,7 +787,13 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
     auto response = glue_client->UpdateTable(request);
 
     if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+    {
+        /// The SDK may have retried an applied request before returning this error.
+        throw DB::Exception(
+            DB::ErrorCodes::ICEBERG_COMMIT_STATE_UNKNOWN,
+            "Iceberg Glue commit outcome is unknown for table {}.{}; written files must be preserved: {}",
+            namespace_name, table_name, response.GetError().GetMessage());
+    }
 
     return true;
 }

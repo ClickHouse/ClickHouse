@@ -220,11 +220,11 @@ private:
 
     /// Generated once per insert so the manifests stay valid across commit retries.
     Int64 snapshot_id = 0;
-    /// The snapshot referencing the written files is committed, so they must never be removed.
-    bool committed = false;
-
-    /// The manifests are written once and reused on commit retries.
+    /// Cleanup is safe before committing or after a confirmed rejection, but not after an unknown outcome or success.
+    bool cleanup_on_abort = true;
+    /// Staged manifests and manifest lists eligible for cleanup when `cleanup_on_abort` is true.
     Strings manifest_entries_in_storage;
+    /// The manifests are written once and reused on commit retries.
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
     std::vector<Int64> manifest_entry_row_counts;
