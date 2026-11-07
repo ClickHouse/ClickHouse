@@ -78,9 +78,10 @@ class FunctionWidthBucket final : public IFunction
     static Float64 calculateRelativeBucket(const Float64 operand, const Float64 low, const Float64 high)
     {
         const Float64 span = high - low;
-    if (!std::isfinite(span))
-        return (operand / 2.0 - low / 2.0) / (high / 2.0 - low / 2.0);
-    return (operand - low) / span;
+        /// Both bounds are finite, so the difference of their halves cannot overflow.
+        if (!isFinite(span))
+            return (operand / 2 - low / 2) / (high / 2 - low / 2);
+        return (operand - low) / span;
     }
 
     template <typename TResultType, typename TCountType>
