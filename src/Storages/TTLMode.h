@@ -10,6 +10,7 @@ enum class TTLMode : uint8_t
     MOVE,
     GROUP_BY,
     RECOMPRESS,
+    CLEAR_INDEX,
 };
 
 }
