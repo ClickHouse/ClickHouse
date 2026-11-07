@@ -59,6 +59,7 @@ private:
     ResourceCost reclaiming = 0; /// Bytes requested for spilling but not yet settled, including requests not yet executing.
     /// Last absolute estimate, including outstanding requests; retained even when larger than `allocated`.
     ResourceCost reclaimable = 0;
+    bool cancel_only_if_pending = false; /// The pending removal is a `cancelPendingAllocation`. Guarded by the queue mutex.
 
     IncreaseRequest increase;
     DecreaseRequest decrease;

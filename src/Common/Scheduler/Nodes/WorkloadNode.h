@@ -11,6 +11,7 @@
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationRateLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Nodes/SpaceShared/PrecedenceAllocation.h>
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
@@ -42,8 +43,8 @@ struct WorkloadNodeTraits<ITimeSharedNode>
     using NodePtr = TimeSharedNodePtr;
 
     // The `scheduler` setting reorders requests by per-query identity, which is only meaningful for
-    // `IOByte` and `CPUNanosecond` leaves; other time-shared leaves (e.g. `QuerySlot` admission)
-    // always run `fifo` regardless of the workload `scheduler` setting.
+    // `IOByte` and `CPUNanosecond` leaves; any other time-shared leaf always runs `fifo` regardless
+    // of the workload `scheduler` setting.
     static SchedulerAlgorithm schedulerFor(const WorkloadSettings & settings_, CostUnit unit)
     {
         if (unit == CostUnit::IOByte || unit == CostUnit::CPUNanosecond)
@@ -227,7 +228,8 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
             event_queue_,
             SchedulerNodeInfo{},
             settings_.getAllocationLimit(unit),
-            settings_.getSoftAllocationLimit(unit));
+            settings_.getSoftAllocationLimit(unit),
+            isEvictable(unit));
         result->basename = "limit";
         result->workload = workload;
         return result;
@@ -239,23 +241,31 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         static_cast<AllocationLimit &>(*node).updateSoftLimit(settings_.getSoftAllocationLimit(unit));
     }
 
-    static bool hasThrottler(const WorkloadSettings &, CostUnit)
+    static bool hasThrottler(const WorkloadSettings & settings_, CostUnit unit)
     {
-        return false;
+        return settings_.hasThrottler(unit);
     }
 
-    static NodePtr makeThrottler(IWorkloadNode *, EventQueue &, const WorkloadSettings &, CostUnit)
+    static NodePtr makeThrottler(IWorkloadNode * workload, EventQueue & event_queue_, const WorkloadSettings & settings_, CostUnit unit)
     {
-        chassert(false);
-        return {};
+        NodePtr result = std::make_shared<AllocationRateLimit>(
+            event_queue_,
+            SchedulerNodeInfo{},
+            settings_.getThrottlerMaxSpeed(unit),
+            settings_.getThrottlerMaxBurst(unit));
+        result->basename = "rate_limit";
+        result->workload = workload;
+        return result;
     }
 
-    static void updateThrottler(const NodePtr &, const WorkloadSettings &, CostUnit)
+    static void updateThrottler(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
-        chassert(false);
+        static_cast<AllocationRateLimit &>(*node).updateConstraints(
+            settings_.getThrottlerMaxSpeed(unit),
+            settings_.getThrottlerMaxBurst(unit));
     }
 
-    static constexpr bool addRawPointerThrottler = false; // There is no throttler for space-shared resources
+    static constexpr bool addRawPointerThrottler = false; // AllocationRateLimit is never stored as a raw pointer in requests or allocations
     static constexpr bool addRawPointerSemaphore = false; // AllocationLimit is never stored as a raw pointer in requests or allocations
     static constexpr bool addRawPointerQueue = true; // ResourceLink holds raw pointer to AllocationQueue - so we need to enforce destruction order here
 };
