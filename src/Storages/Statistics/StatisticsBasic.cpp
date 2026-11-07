@@ -10,8 +10,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorWriteBinary.h>
 #include <Common/FieldVisitorToString.h>
 
 
@@ -173,6 +175,23 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     row_count += other->row_count;
 }
 
+void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    row_count = rows;
+    if (tracks_numeric)
+    {
+        min = min_value;
+        max = max_value;
+    }
+    /// A summary has no byte lengths.
+    tracks_string = false;
+    /// For any other type the default count would count zeros, which a summary does not give.
+    has_default_count = is_nullable;
+    default_count = is_nullable ? null_count : 0;
+    /// A summary has no total of the values.
+    has_sum = false;
+}
+
 void StatisticsBasic::serialize(WriteBuffer & buf)
 {
     writeIntBinary(row_count, buf);
@@ -199,6 +218,25 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(default_count, buf);
     if (has_sum)
         sum_function->serialize(sum_state, buf);
+}
+
+std::optional<UInt64> StatisticsBasic::getSerializedSize() const
+{
+    UInt64 size = sizeof(row_count) + sizeof(UInt8);
+    if (tracks_numeric)
+        size += getFieldBinarySize(min) + getFieldBinarySize(max);
+    if (tracks_string)
+        size += sizeof(string_total_bytes);
+    if (has_default_count)
+        size += sizeof(default_count);
+    if (has_sum)
+    {
+        NullWriteBuffer sum_buf;
+        sum_function->serialize(sum_state, sum_buf);
+        sum_buf.finalize();
+        size += sum_buf.count();
+    }
+    return size;
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -345,6 +383,9 @@ void StatisticsBasic::copyStructureFrom(const IStatistics & other)
     const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
     if (!other_basic)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy the structure of Basic statistics from a different type");
+    /// The flags `isCompatibleWith` compares; a summary built without string lengths (see `build`) differs from its type.
+    tracks_numeric = other_basic->tracks_numeric;
+    tracks_string = other_basic->tracks_string;
     has_default_count = other_basic->has_default_count;
 }
 

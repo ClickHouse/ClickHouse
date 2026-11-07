@@ -102,23 +102,25 @@ mkdir -p "${test_dir}/data/metadata/system" "${test_dir}/tmp" "${test_dir}/user_
 # A persistent `system` database, as a running server leaves behind, so the query log table survives
 # across invocations (the `system` database that clickhouse-local creates on its own is ephemeral).
 echo "ATTACH DATABASE system ENGINE=Ordinary" > "${test_dir}/data/metadata/system.sql"
+# `$CLICKHOUSE_LOCAL` passes `--tmp`, which overrides the `path` from the config file, so the data
+# directory is passed with `--path` explicitly to keep the persisted tables between the invocations.
 make_config query_log true
 # First invocation: produce and persist query log records (the loggers run here).
-${CLICKHOUSE_LOCAL} --config-file "${config}" --log_queries 1 --query "
+${CLICKHOUSE_LOCAL} --config-file "${config}" --path "${test_dir}/data/" --log_queries 1 --query "
     SELECT 1 FORMAT Null;
     SYSTEM FLUSH LOGS query_log;
     SELECT count() >= 1 FROM system.user_query_log;
 "
 # Second invocation: only load the persisted system tables (the loggers are skipped). The current user
 # still sees their own persisted records instead of an empty result.
-${CLICKHOUSE_LOCAL} --config-file "${config}" --only-system-tables --query "
+${CLICKHOUSE_LOCAL} --config-file "${config}" --path "${test_dir}/data/" --only-system-tables --query "
     SELECT count() >= 1, countIf(if(initial_user != '', initial_user, user) != currentUser()) FROM system.user_query_log;
 "
 # But the resolution of the backing table applies only to a configured query log: with the query log
 # section removed, the persisted table is still attached from disk, while `system.user_query_log` must
 # be empty, because the query log is not configured any more.
 make_config_without_query_log
-${CLICKHOUSE_LOCAL} --config-file "${config}" --only-system-tables --query "
+${CLICKHOUSE_LOCAL} --config-file "${config}" --path "${test_dir}/data/" --only-system-tables --query "
     SELECT count() FROM system.user_query_log;
 "
 
