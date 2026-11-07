@@ -241,6 +241,7 @@ void IStorageCluster::read(
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    const Tables external_tables = ClusterProxy::getExternalTablesUsedInQuery(query_to_send, context);
     const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     Pipes pipes;
@@ -308,7 +309,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             new_context,
             /*throttler=*/nullptr,
             scalars,
-            Tables(),
+            external_tables,
             processed_stage,
             nullptr,
             RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)},
