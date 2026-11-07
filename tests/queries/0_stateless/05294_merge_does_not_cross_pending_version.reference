@@ -1,0 +1,10 @@
+--- a merge does not cross a mutation that is paused before registration
+CANNOT_ASSIGN_OPTIMIZE
+between them that is not visible yet
+active parts:	2
+rows:	[0,1]
+--- a merge of parts below a pending update keeps the update applicable
+updated rows before release:	0
+active parts:	1
+updated rows after release:	2000
+active parts:	1

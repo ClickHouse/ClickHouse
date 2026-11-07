@@ -1,3 +1,6 @@
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
@@ -6,9 +9,16 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <iterator>
+#include <limits>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char mt_optimize_pause_after_reservation_snapshot[];
+}
 
 static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
 {
@@ -83,9 +93,13 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_)
     : storage(storage_)
     , merge_mutate_lock(merge_mutate_lock_)
-    , committing_blocks(storage.getCommittingBlocks())
-    , min_update_block(getMinUpdateBlockNumber(committing_blocks))
+    , reservations(storage.getCommittingBlocksSnapshot())
 {
+    /// Test hook between the snapshot and the reads below, for explicit `OPTIMIZE` only: a query thread has a
+    /// query context, the background scheduler does not, and it would consume the one-shot pause on any table.
+    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
+        FailPointInjection::pauseFailPoint(FailPoints::mt_optimize_pause_after_reservation_snapshot);
+
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
     /// merge becomes wrong as soon as that part is active again.
@@ -98,7 +112,8 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
 
     /// The patch parts that a merge applies must be visible to that merge itself, and nothing here
     /// checks their visibility later, so they are taken from the active parts that the transaction sees.
-    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), min_update_block.value_or(std::numeric_limits<Int64>::max()));
+    const Int64 max_patch_version = reservations.minUpdateBlock().value_or(std::numeric_limits<Int64>::max());
+    patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), max_patch_version);
 }
 
 std::expected<void, PreformattedMessage>
@@ -133,6 +148,13 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
         if (left_mutation_version != right_mutation_version)
             return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left.name, right.name));
     }
+
+    /// An allocated version that is not visible yet (mutation before registration, update before its
+    /// patch commit) is a boundary: merging across it records a version its effect never reached.
+    auto [lo, hi] = std::minmax({left.info.getDataVersion(), right.info.getDataVersion()});
+    if (auto reservation = reservations.firstReservationAfter(lo); reservation && reservation->number <= hi)
+        return std::unexpected(PreformattedMessage::create(
+            "Parts {} and {} have an allocated version {} between them that is not visible yet", left.name, right.name, reservation->number));
 
     if (left.info.isPatch())
     {
@@ -187,7 +209,7 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMe
     if (storage.currently_merging_mutating_parts.contains(part->info))
         return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
 
-    if (min_update_block && part->info.getDataVersion() >= *min_update_block)
+    if (auto min_update_block = reservations.minUpdateBlock(); min_update_block && part->info.getDataVersion() >= *min_update_block)
     {
         return std::unexpected(
             PreformattedMessage::create(
@@ -215,8 +237,36 @@ PartsRange MergeTreeMergePredicate::getPatchesToApplyOnMerge(const PartsRange & 
     if (it == patches_by_partition.end() || it->second.empty())
         return {};
 
+    /// A block allocated but not visible yet bounds the patches a merge applies like a registered mutation
+    /// does. Only an attached patch part lands above one: `updateLightweight` waits for lower mutations and
+    /// takes this mutex to plan its read, `ATTACH PART` does neither. Such a patch is left for read time.
     Int64 next_version = storage.getNextMutationVersion(first_part.getDataVersion(), merge_mutate_lock);
+    if (auto reservation = reservations.firstReservationAfter(first_part.getDataVersion()))
+        next_version = next_version == 0 ? reservation->number : std::min(next_version, reservation->number);
+
     return DB::getPatchesToApplyOnMerge(it->second, range, next_version);
+}
+
+std::optional<Int64> MergeTreeMergePredicate::firstPatchNotAppliedAfter(
+    const String & partition_id, Int64 data_version, const MergeTreeData::DataPartsVector & applied) const
+{
+    auto it = patches_by_partition.find(partition_id);
+    if (it == patches_by_partition.end())
+        return std::nullopt;
+
+    std::optional<Int64> result;
+    for (const auto & patch : it->second)
+    {
+        Int64 patch_version = patch.getDataVersion();
+        if (patch_version <= data_version || (result && patch_version >= *result))
+            continue;
+
+        bool is_applied = std::ranges::any_of(applied, [&](const auto & part) { return part->info.getDataVersion() == patch_version; });
+        if (!is_applied)
+            result = patch_version;
+    }
+
+    return result;
 }
 
 }

@@ -2,6 +2,8 @@
 # Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
 # An UPDATE paused after taking its block number, before it is registered, is not skipped by a later mutation or by a merge.
 # Red if v stays 0. no-parallel: global fail points; plain MergeTree only, the replicated paths register differently.
+# `mutate` holds the alter lock until the mutation is registered, so an ALTER cannot register ahead of the paused
+# UPDATE: it times out on the lock. A merge selected meanwhile sees the UPDATE's reservation and nothing above it.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,9 +20,10 @@ function wait_for_mutation()
     echo "timed out waiting for: $1"
 }
 
-function mutation_first()
+function alter_times_out()
 {
-    wait_for_mutation "command LIKE '%DROP COLUMN%' AND (is_done OR notEmpty(parts_postpone_reasons))"
+    # The ALTER cannot take the alter lock while the UPDATE holds it, so it cannot register above the UPDATE.
+    $CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP COLUMN d SETTINGS lock_acquire_timeout = 1" 2>&1 | grep -m1 -o "DEADLOCK_AVOIDED" || echo "the ALTER did not wait for the alter lock"
 }
 
 function merge_first()
@@ -40,8 +43,6 @@ function run_case()
     $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT mt_pause_before_register_mutation"
     $CLICKHOUSE_CLIENT -q "ALTER TABLE t UPDATE v = 1 WHERE 1 SETTINGS mutations_sync = 0" &
     $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT mt_pause_before_register_mutation PAUSE"
-    # Registered through the ALTER path, which does not pause, with a higher block number than the UPDATE.
-    $CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP COLUMN d SETTINGS alter_sync = 0"
     $2
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation"
     wait
@@ -50,9 +51,9 @@ function run_case()
     $CLICKHOUSE_CLIENT -q "SELECT k, v FROM t ORDER BY k"
 }
 
-echo "-- the DROP COLUMN mutation is selected first"
-run_case 1 mutation_first
-echo "-- a merge materializes the DROP COLUMN first"
+echo "-- the DROP COLUMN cannot register above the paused UPDATE"
+run_case 1 alter_times_out
+echo "-- a merge runs while the UPDATE is paused"
 run_case 2 merge_first
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"

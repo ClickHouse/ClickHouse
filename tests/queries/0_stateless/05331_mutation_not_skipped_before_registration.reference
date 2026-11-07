@@ -1,6 +1,7 @@
--- the DROP COLUMN mutation is selected first
+-- the DROP COLUMN cannot register above the paused UPDATE
+DEADLOCK_AVOIDED
 1	1
--- a merge materializes the DROP COLUMN first
+-- a merge runs while the UPDATE is paused
 active parts	1
 1	1
 2	1

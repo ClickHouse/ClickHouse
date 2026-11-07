@@ -174,7 +174,7 @@ private:
     void removeCommittingBlock(CommittingBlock block);
     std::unique_ptr<PlainCommittingBlockHolder> allocateBlockNumber(CommittingBlock::Op op);
     void waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const;
-    CommittingBlocksSet getCommittingBlocks() const;
+    CommittingBlocksSnapshot getCommittingBlocksSnapshot() const;
 
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
@@ -297,10 +297,14 @@ private:
     /// mutation version the result part has to carry so that those mutations are not applied to it a
     /// second time, or `nullopt` when the merge must not run at all. `partition_id` is the partition
     /// of the result part: a pending command scoped to another partition is never applied to it and
-    /// so does not stand in the way. See #111001.
+    /// so does not stand in the way. See #111001. The recorded version stays below the first reservation
+    /// in `reservations` above `sources_data_version` and below `first_unapplied_patch`, the version of
+    /// the first patch part above `sources_data_version` that the merge does not apply.
     std::optional<Int64> getMutationVersionForMergedPart(
         Int64 sources_data_version,
         const String & partition_id,
+        const CommittingBlocksSnapshot & reservations,
+        std::optional<Int64> first_unapplied_patch,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level and the maximum mutation version of the outdated parts in a range

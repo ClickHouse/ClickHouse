@@ -1,0 +1,15 @@
+--- the patch lies between two pending DROP COLUMN mutations
+regular parts:	1
+merged part below the patch:	1
+rows by v:	2	2000
+rows by v after the mutations:	2	2000
+--- the merge applies no patches at all
+regular parts:	1
+merged part below the patch:	1
+rows by v:	2	2000
+rows by v after the mutations:	2	2000
+--- a merge that would materialize a RENAME COLUMN registered above an unapplied patch is refused
+CANNOT_ASSIGN_OPTIMIZE
+would materialize a pending RENAME COLUMN
+rows by v after the mutations:	2	2000
+rows by v, d3 after the merge:	2	7	2000

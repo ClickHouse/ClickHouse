@@ -1,0 +1,8 @@
+--- a merge does not record a DROP COLUMN registered above a pending update
+active parts:	1
+rows by v:	2	2000
+active parts:	1
+--- a merge that would materialize a RENAME COLUMN registered above a pending update is refused
+CANNOT_ASSIGN_OPTIMIZE
+would materialize a pending RENAME COLUMN
+rows by v, w2:	2	7	2000
