@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FieldVisitors.h>
+#include <Common/SessionTimezoneBlockerInThread.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -514,6 +515,7 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
 
 NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
+    SessionTimezoneBlockerInThread session_timezone_blocker;
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
     /// Materialize subcolumns that the partition key expression needs.
     /// The block may contain only parent columns (e.g. a Tuple or JSON column),
