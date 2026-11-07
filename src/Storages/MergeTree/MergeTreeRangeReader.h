@@ -388,6 +388,18 @@ public:
         /// Contains columns with data versions for each column updated by patch parts.
         Block patch_versions_block;
 
+        /// Names of the columns the part does not store whose value is, so far, the one their
+        /// `DEFAULT` expression gave. A column leaves the set when a patch part overwrites it or a
+        /// chain step's action recomputes it. After every pass that applies patches, the ones whose
+        /// `DEFAULT` reads a patched column are evaluated again, so that they see the patched value.
+        /// See `MergeTreeReadersChain::reevaluateDefaultsAfterPatches`.
+        NameSet columns_filled_by_defaults;
+
+        /// For a column of `columns_filled_by_defaults` in some rows of which a patch part wrote a value:
+        /// a `UInt8` column with its name, with 1 in the rows that still hold the value of its `DEFAULT`.
+        /// Only those rows are evaluated again; a column absent here holds its `DEFAULT` in every row.
+        Block rows_filled_by_defaults;
+
         /// Track newly initiated granule ranges during startReadingChain. Does not contain the range started in previous read.
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
