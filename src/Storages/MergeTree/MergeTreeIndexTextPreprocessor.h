@@ -33,11 +33,14 @@ public:
     ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
 
     bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
+    bool isCaseMapping() const { return is_case_mapping; }
 
 private:
     /// True only when the preprocessor is exactly lower/upper applied directly to the index column
     /// (no nested transformations, and not the UTF-8 variants).
     bool is_ascii_lower_or_upper = false;
+    /// True when the preprocessor is exactly lower/upper or their UTF-8 variants applied directly to the index column.
+    bool is_case_mapping = false;
     /// The name of the column on which the index is defined.
     String index_column_name;
     /// The type of the column on which the index is defined.
