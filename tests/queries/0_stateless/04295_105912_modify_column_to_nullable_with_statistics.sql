@@ -17,8 +17,9 @@ SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_105912 SYNC;
 
-CREATE TABLE t_105912 (x UInt8, y UInt8 STATISTICS(tdigest))
-ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_105912 (x UInt8, y UInt8)
+ENGINE = MergeTree ORDER BY x
+SETTINGS auto_statistics_types = 'tdigest';
 
 INSERT INTO t_105912 SELECT number, number FROM numbers(100);
 

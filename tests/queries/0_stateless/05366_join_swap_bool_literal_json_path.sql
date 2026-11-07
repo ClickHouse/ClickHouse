@@ -10,10 +10,12 @@ DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
 CREATE TABLE t1 (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t2 (k UInt64, j JSON) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE t3 (k UInt64 STATISTICS(uniq), a Bool, b Bool STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = '';
+CREATE TABLE t3 (k UInt64, a Bool, b Bool) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'tdigest';
 INSERT INTO t1 SELECT number FROM numbers(1000);
 INSERT INTO t2 SELECT number, if(number % 10 = 0, '{"f":true}', '{"f":false}') FROM numbers(10000);
 INSERT INTO t3 SELECT number, number % 10 = 0, number % 10 = 0 FROM numbers(10000);
+-- `a` is the `Bool` column without statistics.
+ALTER TABLE t3 CLEAR STATISTICS a SETTINGS mutations_sync = 2;
 
 SELECT if(explain ILIKE '%.t1)%', 't1', 't2') FROM (EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false) WHERE explain ILIKE '%ReadFromMergeTree%';
 SELECT if(explain ILIKE '%.t1)%', 't1', 't2') FROM (EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = true) WHERE explain ILIKE '%ReadFromMergeTree%';

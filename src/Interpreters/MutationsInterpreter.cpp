@@ -1388,7 +1388,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
-            /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
+            /// `allow_statistics` gates the statistics DDL. Only
             /// the submitting session's value is meaningful for that, so the gate lives at submission
             /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
             /// asked the background context that executes the mutation, which reads the server-default

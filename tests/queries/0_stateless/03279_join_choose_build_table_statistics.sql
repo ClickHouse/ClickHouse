@@ -36,7 +36,7 @@ WHERE sales.product_id = products.id AND date = '2024-05-07'
 SETTINGS log_comment = '03279_join_choose_build_table_no_stats' FORMAT Null;
 
 SET mutations_sync = 2;
-ALTER TABLE sales ADD STATISTICS date TYPE CountMin;
+ALTER TABLE sales MODIFY SETTING auto_statistics_types = 'countmin';
 ALTER TABLE sales MATERIALIZE STATISTICS date;
 
 SELECT * FROM products, sales

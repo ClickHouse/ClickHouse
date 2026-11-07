@@ -1,6 +1,6 @@
 no auto statistics
 a	UInt64	[]	\N	\N	\N
-b	UInt64	['Basic']	\N	1	1
+b	UInt64	[]	\N	\N	\N
 c	String	[]	\N	\N	\N
 materialized basic, uniq, tdigest
 a	UInt64	['TDigest','Uniq','Basic']	1	1	1

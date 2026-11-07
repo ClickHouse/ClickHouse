@@ -18,10 +18,11 @@ DROP TABLE IF EXISTS t_stats_overflow;
 CREATE TABLE t_stats_overflow
 (
     key UInt64,
-    val UInt64 STATISTICS(countmin, tdigest)
+    val UInt64
 )
 ENGINE = MergeTree
-ORDER BY key;
+ORDER BY key
+SETTINGS auto_statistics_types = 'countmin, tdigest';
 
 -- Insert few rows so row count is small relative to IN clause size
 INSERT INTO t_stats_overflow SELECT number, number % 10 FROM numbers(100);

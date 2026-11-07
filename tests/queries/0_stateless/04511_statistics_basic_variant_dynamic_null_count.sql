@@ -11,11 +11,11 @@ DROP TABLE IF EXISTS t_stats_variant_dynamic_null_count;
 CREATE TABLE t_stats_variant_dynamic_null_count
 (
     id UInt32,
-    v  Variant(UInt32, String) STATISTICS(basic),
-    d  Dynamic                 STATISTICS(basic)
+    v  Variant(UInt32, String),
+    d  Dynamic
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic';
 
 SET materialize_statistics_on_insert = 1;
 

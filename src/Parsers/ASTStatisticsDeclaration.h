@@ -7,21 +7,17 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
-class ASTFunction;
-
-/** name BY columns TYPE typename(args) in create query
+/** The list of columns in `CLEAR STATISTICS` and `MATERIALIZE STATISTICS`.
   */
 class ASTStatisticsDeclaration : public IAST
 {
 public:
     IAST * columns{};
-    IAST * types{};
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Stat"; }
 
     std::vector<String> getColumnNames() const;
-    std::vector<String> getTypeNames() const;
 
     ASTPtr clone() const override;
     void writeJSON(WriteBuffer & out) const override;

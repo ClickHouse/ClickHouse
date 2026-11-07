@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS t_agg_stats;
 -- `auto_statistics_types` defaults to a non-empty value, so MergeTree tables get column statistics
 -- automatically. Disable it to model the case where no statistics are available.
 CREATE TABLE t_agg_no_stats (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE t_agg_stats (id UInt64 STATISTICS(uniq), w UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_agg_stats (id UInt64, w UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'uniq';
 
 INSERT INTO t_agg_no_stats SELECT number, number FROM numbers(1000);
 INSERT INTO t_agg_stats SELECT number, number FROM numbers(100);

@@ -2,7 +2,7 @@
 
 SET optimize_move_to_prewhere = 1;
 SET use_statistics = 1;
--- The statistics are declared in `CREATE TABLE` and built on insert, so the test does not need slow `MATERIALIZE STATISTICS` mutations.
+-- The statistics are defined by `auto_statistics_types` and built on insert, so the test does not need slow `MATERIALIZE STATISTICS` mutations.
 SET materialize_statistics_on_insert = 1;
 
 ------------------------------------------------------------
@@ -13,10 +13,11 @@ DROP TABLE IF EXISTS sc_unused SYNC;
 CREATE TABLE sc_unused
 (
     k   UInt64,
-    val UInt64 STATISTICS(basic)
+    val UInt64
 )
 ENGINE = MergeTree
-ORDER BY k;
+ORDER BY k
+SETTINGS auto_statistics_types = 'basic';
 
 INSERT INTO sc_unused
 SELECT number, number % 100
@@ -41,10 +42,11 @@ DROP TABLE IF EXISTS st_cm_lc SYNC;
 CREATE TABLE st_cm_lc
 (
     k   UInt32,
-    cat LowCardinality(String) STATISTICS(CountMin)
+    cat LowCardinality(String)
 )
 ENGINE = MergeTree
-ORDER BY k;
+ORDER BY k
+SETTINGS auto_statistics_types = 'countmin';
 
 INSERT INTO st_cm_lc
 SELECT number,
@@ -68,13 +70,15 @@ LIMIT 1;
 DROP TABLE IF EXISTS sj_a SYNC;
 DROP TABLE IF EXISTS sj_b SYNC;
 
-CREATE TABLE sj_a (id UInt32 STATISTICS(Uniq), p UInt8)
+CREATE TABLE sj_a (id UInt32, p UInt8)
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS auto_statistics_types = 'uniq';
 
-CREATE TABLE sj_b (id UInt32 STATISTICS(Uniq), t LowCardinality(String))
+CREATE TABLE sj_b (id UInt32, t LowCardinality(String))
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS auto_statistics_types = 'uniq';
 
 INSERT INTO sj_a SELECT number, number % 2 FROM numbers(60000);
 INSERT INTO sj_b SELECT number, if(number % 5 = 0, 'PROMO', 'OTHER') FROM numbers(60000);

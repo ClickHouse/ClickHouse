@@ -34,8 +34,7 @@ SELECT count(), (SELECT countIf(toUnixTimestamp(d) < 1000000000) FROM t_unix_ts_
 
 -- The statistics-based part pruning consults the same claim.
 DROP TABLE IF EXISTS t_unix_ts_statistics;
-CREATE TABLE t_unix_ts_statistics (d Date) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
-ALTER TABLE t_unix_ts_statistics MODIFY COLUMN d Date STATISTICS(basic);
+CREATE TABLE t_unix_ts_statistics (d Date) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic';
 INSERT INTO t_unix_ts_statistics VALUES ('1970-01-02'), ('2000-01-01'), ('2106-02-06'), ('2149-06-05'), ('2149-06-06');
 
 SELECT count(), (SELECT countIf(toUnixTimestamp(d) < 2000000000) FROM t_unix_ts_statistics) FROM t_unix_ts_statistics WHERE toUnixTimestamp(d) < 2000000000;

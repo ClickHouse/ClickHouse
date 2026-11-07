@@ -7,7 +7,7 @@
 SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS t_not_stats;
-CREATE TABLE t_not_stats (c0 Int64 STATISTICS(basic)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_not_stats (c0 Int64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 INSERT INTO t_not_stats VALUES (0), (0);
 INSERT INTO t_not_stats VALUES (-3), (-2), (-1);
 

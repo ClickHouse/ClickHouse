@@ -26,12 +26,11 @@ struct SingleStatisticsDescription
 {
     StatisticsType type;
     ASTPtr ast;
-    bool is_implicit = false;
 
     String getTypeName() const;
 
     SingleStatisticsDescription() = delete;
-    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
+    SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_);
 
     SingleStatisticsDescription(const SingleStatisticsDescription & other) : type{} { *this = other; }
     SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
@@ -46,29 +45,21 @@ struct SingleStatisticsDescription
 
 class ColumnsDescription;
 
+/// Statistics of a column. They are never declared explicitly: they are derived from the
+/// `auto_statistics_types` MergeTree setting for every column whose type supports them.
 struct ColumnStatisticsDescription
 {
     bool operator==(const ColumnStatisticsDescription & other) const;
 
     bool empty() const;
 
-    bool hasExplicitStatistics() const;
-
     bool contains(const String & stat_type) const;
 
     void merge(const ColumnStatisticsDescription & other, const String & column_name, DataTypePtr column_type, bool if_not_exists);
 
-    void assign(const ColumnStatisticsDescription & other);
-
     void clear();
 
-    ASTPtr getAST() const;
-
     String getNameForLogs() const;
-
-    /// get a vector of <column name, statistics desc> pair
-    static std::vector<std::pair<String, ColumnStatisticsDescription>> fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns);
-    static ColumnStatisticsDescription fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type);
 
     using StatisticsTypeDescMap = std::map<StatisticsType, SingleStatisticsDescription>;
     StatisticsTypeDescMap types_to_desc;

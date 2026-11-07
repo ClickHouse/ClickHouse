@@ -5,8 +5,8 @@ SET materialize_statistics_on_insert = 1;
 CREATE TABLE test_table
 (
     id UInt64,
-    v1 String STATISTICS(uniq),
-    v2 UInt64 STATISTICS(tdigest),
+    v1 String,
+    v2 UInt64,
     v3 String
 )
 ENGINE = MergeTree
@@ -63,7 +63,7 @@ SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS test_basic_auto;
 CREATE TABLE test_basic_auto (
-    a Nullable(Int64) STATISTICS(tdigest),     -- explicit tdigest, auto adds basic + uniq
+    a Nullable(Int64),                         -- Nullable numeric, gets basic + uniq
     b Nullable(Float64),                       -- only auto types, gets basic + uniq
     c Int64,                                   -- non-Nullable numeric, gets basic + uniq
     d LowCardinality(Nullable(Int64)),         -- LC(Nullable), gets basic + uniq
@@ -90,7 +90,7 @@ DROP TABLE test_basic_auto;
 -- basic removed from auto_statistics_types → not auto-added
 DROP TABLE IF EXISTS test_basic_auto_off;
 CREATE TABLE test_basic_auto_off (
-    a Nullable(Int64) STATISTICS(tdigest)
+    a Nullable(Int64)
 ) ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS auto_statistics_types = 'uniq';
 INSERT INTO test_basic_auto_off SELECT if(number % 2 = 0, NULL, number) FROM numbers(1000);

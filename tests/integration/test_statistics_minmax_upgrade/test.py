@@ -58,8 +58,9 @@ def test_statistics_minmax_upgrade(start_cluster):
 
     # The table with deprecated `minmax` statistics still attaches and keeps its data.
     assert node.query("SELECT count() FROM t_minmax").strip() == "2000"
-    # The declared `minmax` statistics is preserved in the metadata.
-    assert "STATISTICS(minmax)" in node.query("SHOW CREATE TABLE t_minmax")
+    # The explicit `minmax` statistics declared by the old version is ignored on ATTACH: the
+    # statistics of the table now follow `auto_statistics_types`.
+    assert "STATISTICS" not in node.query("SHOW CREATE TABLE t_minmax")
 
     # The old parts that carry `minmax` statistics are still readable.
     assert (
@@ -70,19 +71,17 @@ def test_statistics_minmax_upgrade(start_cluster):
         == "1000"
     )
 
-    # DETACH / ATTACH must tolerate the deprecated statistics type.
+    # DETACH / ATTACH must tolerate the old parts with the deprecated statistics type.
     node.query("DETACH TABLE t_minmax")
     node.query("ATTACH TABLE t_minmax")
     assert node.query("SELECT count() FROM t_minmax").strip() == "2000"
 
     # An unrelated ALTER on the upgraded table must not be rejected because of the explicit
-    # `minmax` statistics it still carries in its metadata.
+    # `minmax` statistics declared in its old metadata.
     node.query("ALTER TABLE t_minmax COMMENT COLUMN id 'the primary key'")
-    assert "the primary key" in node.query("SHOW CREATE TABLE t_minmax")
-    # The declared `minmax` statistics is still preserved after the unrelated ALTER.
-    assert "STATISTICS(minmax)" in node.query("SHOW CREATE TABLE t_minmax")
-    node.query("ALTER TABLE t_minmax MODIFY COLUMN value Int64 STATISTICS(minmax)")
-    assert "STATISTICS(minmax)" in node.query("SHOW CREATE TABLE t_minmax")
+    create_after = node.query("SHOW CREATE TABLE t_minmax")
+    assert "the primary key" in create_after
+    assert "STATISTICS" not in create_after
     assert node.query("SELECT count() FROM t_minmax").strip() == "2000"
 
     # New inserts and a merge across old and new parts work.
@@ -100,6 +99,15 @@ def test_statistics_minmax_upgrade(start_cluster):
         ).strip()
         == "1000"
     )
+    # The merged part has the statistics of `auto_statistics_types`, not the old `minmax`.
+    merged_stats = node.query(
+        "SELECT arrayStringConcat(arraySort(groupArrayDistinct(arrayJoin(statistics))), ',') "
+        "FROM system.parts_columns "
+        "WHERE database = currentDatabase() AND table = 't_minmax' AND active "
+        "AND column = 'value'"
+    ).strip()
+    assert "Basic" in merged_stats, merged_stats
+    assert "MinMax" not in merged_stats, merged_stats
 
     # A new table created with the current defaults uses `basic` (the replacement), not `minmax`.
     node.query("DROP TABLE IF EXISTS t_default SYNC")

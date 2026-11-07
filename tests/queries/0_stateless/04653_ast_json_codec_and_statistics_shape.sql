@@ -1,15 +1,14 @@
--- The column `CODEC(...)`/`STATISTICS(...)` modifiers and the TTL `RECOMPRESS CODEC(...)` slot are
--- parser-owned shapes: `ParserCodec` and `ParserStatisticsType` always synthesize an `ASTFunction`
--- named `CODEC`/`STATISTICS`, with the matching kind and a non-empty argument list whose elements come
+-- The column `CODEC(...)` modifier and the TTL `RECOMPRESS CODEC(...)` slot are
+-- parser-owned shapes: `ParserCodec` always synthesizes an `ASTFunction`
+-- named `CODEC`, with the matching kind and a non-empty argument list whose elements come
 -- from `ParserIdentifierWithOptionalParameters` (hence functions as well). Consumers rely on exactly
 -- that shape: `CompressionCodecFactory::validateCodecAndGetPreprocessedAST` dereferences
--- `arguments->children` and `ColumnStatisticsDescription::fromStatisticsDescriptionAST` downcasts each
--- entry to `ASTFunction`, so a malformed shape must be rejected at the JSON boundary instead of being
+-- `arguments->children`, so a malformed shape must be rejected at the JSON boundary instead of being
 -- formatted as parser-impossible DDL and failing later.
 
 -- Parser-produced shapes round-trip byte-identically.
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt64 CODEC(LZ4)) ENGINE = MergeTree ORDER BY a'));
-SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt64 CODEC(Delta, ZSTD(1)), b UInt64 STATISTICS(tdigest, uniq)) ENGINE = MergeTree ORDER BY a'));
+SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (a UInt64 CODEC(Delta, ZSTD(1))) ENGINE = MergeTree ORDER BY a'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY COLUMN a UInt64 CODEC(ZSTD(3))'));
 SELECT formatQueryFromJSON(parseQueryToJSON('CREATE TABLE t (d Date, a UInt64) ENGINE = MergeTree ORDER BY a TTL d + toIntervalMonth(1) RECOMPRESS CODEC(ZSTD(6))'));
 
@@ -44,17 +43,6 @@ SELECT formatQueryFromJSON(replace(
 
 -- The `codec` slot must be a function at all.
 SELECT formatQueryFromJSON('{"type":"ColumnDeclaration","name":"a","ephemeral_default":false,"primary_key_specifier":false,"data_type":{"type":"DataType","name":"UInt64"},"codec":{"type":"Literal","value":{"field_type":"UInt64","value":1}}}'); -- { serverError BAD_ARGUMENTS }
-
--- `STATISTICS` entries are downcast to `ASTFunction`, so an identifier entry must be rejected.
-SELECT formatQueryFromJSON(replace(
-    parseQueryToJSON('CREATE TABLE t (a UInt64 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY a'),
-    '{"type":"Function","name":"tdigest","no_empty_args":true}',
-    '{"type":"Identifier","name":"tdigest"}')); -- { serverError BAD_ARGUMENTS }
-
-SELECT formatQueryFromJSON(replace(
-    parseQueryToJSON('CREATE TABLE t (a UInt64 STATISTICS(tdigest)) ENGINE = MergeTree ORDER BY a'),
-    '{"type":"Function","name":"tdigest","no_empty_args":true}',
-    '')); -- { serverError BAD_ARGUMENTS }
 
 -- The TTL `RECOMPRESS` slot carries the same parser-produced `CODEC(...)` shape.
 SELECT formatQueryFromJSON(replace(

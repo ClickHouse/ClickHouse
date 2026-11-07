@@ -167,9 +167,7 @@ public:
     /// Returns true if the storage supports queries with the TTL section.
     virtual bool supportsTTL() const { return false; }
 
-    /// Returns true if the storage supports column statistics. Storages that reject the dedicated
-    /// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` commands must also reject the column-declaration
-    /// spelling `ALTER TABLE ... ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which is gated on this.
+    /// Returns true if the storage supports column statistics.
     virtual bool supportsStatistics() const { return false; }
 
     /// Returns true if the storage supports queries with the PREWHERE section.

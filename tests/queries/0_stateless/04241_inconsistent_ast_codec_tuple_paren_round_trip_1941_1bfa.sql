@@ -41,10 +41,6 @@ SELECT formatQuerySingleLine('CREATE TABLE t (c0 Int CODEC(not((tuple(materializ
 -- fix is gated on `args.size() > 1`.
 SELECT formatQuerySingleLine('CREATE TABLE t (c0 Int CODEC(not(tuple(1)), ZSTD)) ENGINE = Memory');
 
--- Same shape under `STATISTICS` (also sets `allow_operators` = false).
-SELECT formatQuerySingleLine('ALTER TABLE t MODIFY STATISTICS c0 TYPE concatAssumeInjective((1, 2))');
-SELECT formatQuerySingleLine('ALTER TABLE t MODIFY STATISTICS c0 TYPE concatAssumeInjective(tuple(1, 2))');
-
 -- Real `CODEC` declarations must keep their original formatting; the fix
 -- only touches the `parenthesized` flag and leaves the function-call form
 -- as-is.

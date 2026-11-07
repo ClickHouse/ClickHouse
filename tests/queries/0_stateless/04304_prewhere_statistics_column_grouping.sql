@@ -6,11 +6,11 @@ SET allow_reorder_prewhere_conditions = 1; -- CI may inject 0, which would skip 
 
 DROP TABLE IF EXISTS prewhere_stats_group;
 CREATE TABLE prewhere_stats_group (
-    a UInt64 STATISTICS(tdigest, countmin),
-    b UInt64 STATISTICS(countmin)
+    a UInt64,
+    b UInt64
 ) ENGINE = MergeTree ORDER BY tuple()
 -- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
-SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
+SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000, auto_statistics_types = 'tdigest, countmin';
 
 INSERT INTO prewhere_stats_group SELECT number, number % 200 FROM numbers(5000) SETTINGS materialize_statistics_on_insert = 1;
 

@@ -382,11 +382,10 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
-/// `allow_statistics` gates the statistics DDL - whether statistics may be declared on a table -
-/// so only the submitting session's value is meaningful for it, and the gate must be applied
-/// exactly once, here at submission time.
+/// `allow_statistics` gates the statistics DDL, so only the submitting session's value is
+/// meaningful for it, and the gate must be applied exactly once, here at submission time.
 ///
-/// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` carries an `AlterCommand` and is gated by
+/// `ALTER TABLE ... CLEAR STATISTICS` carries an `AlterCommand` and is gated by
 /// `AlterCommands::validate`, but `MATERIALIZE STATISTICS` parses into a `MutationCommands`
 /// segment only, so it is checked here, next to the other submission-time mutation validation.
 /// `MutationsInterpreter` does not check it: it also runs in the background with a context that
@@ -932,10 +931,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS adds statistics like the dedicated ADD STATISTICS command does,
-            /// so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
@@ -949,10 +944,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
-            /// A column-declaration STATISTICS replaces the explicit statistics of the column like the dedicated
-            /// MODIFY STATISTICS command does, so it must not bypass the corresponding access right.
-            if (command.col_decl->as<ASTColumnDeclaration &>().getStatisticsDesc())
-                required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:
@@ -974,16 +965,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
         {
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
-            break;
-        }
-        case ASTAlterCommand::ADD_STATISTICS:
-        {
-            required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
-            break;
-        }
-        case ASTAlterCommand::MODIFY_STATISTICS:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_STATISTICS:

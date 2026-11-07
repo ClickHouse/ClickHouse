@@ -10,8 +10,8 @@ SET async_insert = 0;
 
 DROP TABLE IF EXISTS t_stats_size_gate;
 
-CREATE TABLE t_stats_size_gate (a UInt64 STATISTICS(basic, uniq)) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = '';
+CREATE TABLE t_stats_size_gate (a UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq';
 
 SYSTEM STOP MERGES t_stats_size_gate;
 

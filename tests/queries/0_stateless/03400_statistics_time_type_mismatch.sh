@@ -15,10 +15,11 @@ SET materialize_statistics_on_insert = 1;
 CREATE TABLE t_stats_time_mismatch
 (
     c0 Int8,
-    c1 Int16 STATISTICS(basic, Uniq),
+    c1 Int16,
     c5 Date
 ) ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS auto_statistics_types = 'basic, uniq';
 
 ALTER TABLE t_stats_time_mismatch MODIFY COLUMN c1 Time;
 

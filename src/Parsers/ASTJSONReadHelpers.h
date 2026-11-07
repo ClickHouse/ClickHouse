@@ -156,8 +156,7 @@ public:
     /// matching `ASTFunction::Kind`, a non-empty `arguments` expression list, and every element of that
     /// list produced by `ParserIdentifierWithOptionalParameters` (hence an `ASTFunction` as well).
     /// Consumers rely on exactly that shape: `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`
-    /// dereferences `arguments->children`, and `ColumnStatisticsDescription::fromStatisticsDescriptionAST`
-    /// downcasts each entry to `ASTFunction`. Checking only the outer `ASTFunction` type would let
+    /// dereferences `arguments->children`. Checking only the outer `ASTFunction` type would let
     /// malformed `clickhouse_json` format parser-impossible DDL and reach a later `UNKNOWN_CODEC` /
     /// `UNEXPECTED_AST_STRUCTURE` / null-dereference path instead of failing here with `BAD_ARGUMENTS`.
     /// `function_name` is either `CODEC` or `STATISTICS`. Returns nullptr when the key is absent.

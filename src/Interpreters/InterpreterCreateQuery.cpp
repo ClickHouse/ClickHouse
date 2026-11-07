@@ -135,7 +135,6 @@ namespace Setting
     extern const SettingsBool enable_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_subcolumn_codecs;
-    extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
@@ -581,11 +580,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->setCodec(column.codec->clone());
         }
 
-        if (column.statistics.hasExplicitStatistics())
-        {
-            column_declaration->setStatisticsDesc(column.statistics.getAST());
-        }
-
         if (column.ttl)
         {
             column_declaration->setTTL(column.ttl->clone());
@@ -909,14 +903,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
         }
 
-        if (auto statistics_desc = col_decl.getStatisticsDesc())
-        {
-            if (!skip_checks && !context_->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY, "Create table with statistics is disabled. Turn on allow_statistics");
-
-            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(statistics_desc, column.name, column.type);
-        }
+        /// Statistics can no longer be declared per column: they are collected for all columns according
+        /// to the `auto_statistics_types` MergeTree setting. A declaration in the metadata of an existing
+        /// table or in a backup is ignored, so that such tables can still be loaded and restored.
+        if (col_decl.getStatisticsDesc() && !skip_checks && !is_restore_from_backup)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Explicit declaration of statistics for column {} is not supported. "
+                "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
+                backQuoteIfNeed(column.name));
 
         if (auto ttl = col_decl.getTTL())
             column.ttl = ttl;

@@ -9,13 +9,13 @@ DROP TABLE IF EXISTS t_materialize_ttl_statistics;
 CREATE TABLE t_materialize_ttl_statistics
 (
     d DateTime,
-    x Int32 STATISTICS(basic),
-    m Int32 MATERIALIZED x + 1 STATISTICS(basic),
+    x Int32,
+    m Int32 MATERIALIZED x + 1,
     -- Untouched by the TTL, so the command rewrites only some of the columns and hardlinks the rest.
     s String
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, materialize_ttl_recalculate_only = 0;
+SETTINGS min_bytes_for_wide_part = 0, materialize_ttl_recalculate_only = 0, auto_statistics_types = 'basic';
 
 INSERT INTO t_materialize_ttl_statistics (d, x, s) VALUES ('2000-01-01 00:00:00', 41, 'a');
 SELECT column, estimates.min, estimates.max FROM system.parts_columns

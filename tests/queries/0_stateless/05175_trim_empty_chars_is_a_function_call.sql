@@ -7,17 +7,12 @@ SELECT count() FROM (EXPLAIN AST SELECT trim(TRAILING '' FROM 'x')) WHERE explai
 SELECT formatQuery($$SELECT trim(BOTH '' FROM 'x')$$);
 SELECT formatQuery(formatQuery($$SELECT trim(BOTH '' FROM 'x')$$)) = formatQuery($$SELECT trim(BOTH '' FROM 'x')$$);
 -- Slots that require a function report their own error instead of crashing.
-CREATE TABLE t_stat (c Int64 STATISTICS(trim(BOTH '' FROM 'x'))) ENGINE = MergeTree ORDER BY c; -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_codec (c Int64 CODEC(trim(BOTH '' FROM 'x'))) ENGINE = MergeTree ORDER BY c; -- { serverError UNKNOWN_CODEC }
 CREATE TABLE t_index (c Int64, INDEX i c TYPE trim(BOTH '' FROM 'x')) ENGINE = MergeTree ORDER BY c; -- { serverError INCORRECT_QUERY }
 CREATE TABLE t_auto (c Int64) ENGINE = MergeTree ORDER BY c SETTINGS auto_statistics_types = 'trim(BOTH '''' FROM ''x'')'; -- { serverError INCORRECT_QUERY }
 SELECT * FROM trim(BOTH '' FROM 'x'); -- { serverError UNKNOWN_FUNCTION }
 SELECT 1 SETTINGS max_threads = trim(BOTH '' FROM 'x'); -- { clientError SYNTAX_ERROR }
 CREATE NAMED COLLECTION nc_05175 AS k = trim(BOTH '' FROM 'x'); -- { clientError SYNTAX_ERROR }
-CREATE TABLE t_alter (c Int64) ENGINE = MergeTree ORDER BY c;
-ALTER TABLE t_alter ADD STATISTICS c TYPE trim(BOTH '' FROM 'x'); -- { serverError INCORRECT_QUERY }
-ALTER TABLE t_alter MODIFY COLUMN c Int64 STATISTICS(trim(BOTH '' FROM 'x')); -- { serverError INCORRECT_QUERY }
-DROP TABLE t_alter;
 -- The operand reaches the function's argument checks.
 SELECT trim(BOTH '' FROM 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(trim(BOTH '' FROM CAST('x' AS FixedString(5))));
@@ -34,7 +29,6 @@ SELECT trim(LEADING '' FROM 'foo'), trim(TRAILING '' FROM 'foo'), trim(BOTH '' F
 SELECT trim(LEADING concat('') FROM 'foo'), trim(BOTH concat('') FROM ' foo '), trimLeft('foo', concat(''));
 -- ParserStringLiteral spells an empty trim character five ways: quoted, hex, binary, heredoc and fancy quotes.
 SELECT formatQuery($$SELECT trim(BOTH x'' FROM 'x')$$), formatQuery($$SELECT trim(LEADING b'' FROM 'x')$$), formatQuery($$SELECT trim(TRAILING ‘’ FROM 'x')$$), formatQuery($q$SELECT trim(BOTH $$$$ FROM 'x')$q$);
-CREATE TABLE t_stat_hex (c Int64 STATISTICS(trim(BOTH x'' FROM 'x'))) ENGINE = MergeTree ORDER BY c; -- { serverError INCORRECT_QUERY }
 SELECT trim(BOTH x'' FROM 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(trim(BOTH b'' FROM CAST('ä' AS FixedString(4)))), hex(trim(BOTH b'' FROM CAST('ä' AS FixedString(4))));
 -- Unicode and non-UTF-8 bytes reach the function untouched, and a non-empty character was never folded.
@@ -44,7 +38,7 @@ CREATE DICTIONARY d (k UInt64, v String) PRIMARY KEY k SOURCE(CLICKHOUSE(HOST tr
 SELECT position(create_table_query, 'SOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 TABLE \'x\' DB \'y\'))') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'd';
 DROP DICTIONARY d;
 -- Ordinary spellings of the same slots still parse.
-CREATE TABLE ok (c Int64 STATISTICS(tdigest) CODEC(ZSTD(3)), d Int64 STATISTICS(uniq, minmax) CODEC(NONE), INDEX i c TYPE minmax) ENGINE = MergeTree ORDER BY c SETTINGS auto_statistics_types = 'basic, uniq_v2';
-SELECT position(create_table_query, '`c` Int64 CODEC(ZSTD(3)) STATISTICS(tdigest)') > 0, position(create_table_query, '`d` Int64 CODEC(NONE) STATISTICS(uniq, minmax)') > 0, position(create_table_query, 'INDEX i c TYPE minmax') > 0, position(create_table_query, 'auto_statistics_types = \'basic, uniq_v2\'') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'ok';
+CREATE TABLE ok (c Int64 CODEC(ZSTD(3)), d Int64 CODEC(NONE), INDEX i c TYPE minmax) ENGINE = MergeTree ORDER BY c SETTINGS auto_statistics_types = 'basic, uniq_v2';
+SELECT position(create_table_query, '`c` Int64 CODEC(ZSTD(3))') > 0, position(create_table_query, '`d` Int64 CODEC(NONE)') > 0, position(create_table_query, 'INDEX i c TYPE minmax') > 0, position(create_table_query, 'auto_statistics_types = \'basic, uniq_v2\'') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'ok';
 DROP TABLE ok;
 SELECT 1 SETTINGS max_threads = 4;

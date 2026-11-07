@@ -12,11 +12,11 @@ DROP TABLE IF EXISTS t_stats_merge_regression;
 CREATE TABLE t_stats_merge_regression
 (
     id       UInt32,
-    col      Int32             STATISTICS(basic),  -- non-Nullable: default is 0
-    nullable Nullable(Int32)   STATISTICS(basic)   -- Nullable: default is NULL
+    col      Int32,            -- non-Nullable: default is 0
+    nullable Nullable(Int32)   -- Nullable: default is NULL
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;  -- always write wide parts so statistics files are written
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'basic';  -- always write wide parts so statistics files are written
 
 SET materialize_statistics_on_insert = 1;
 

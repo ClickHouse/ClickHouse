@@ -16,7 +16,7 @@ SELECT count() FROM test WHERE accurateCast(identity(d), 'DateTime') > toDateTim
 779
 -- The same wrapping range on the statistics surface, which has no primary key to prune on.
 drop table if exists test_stat;
-create table test_stat (d Date STATISTICS(basic), v Int64) engine MergeTree order by tuple() settings auto_statistics_types = '';
+create table test_stat (d Date, v Int64) engine MergeTree order by tuple() settings auto_statistics_types = 'basic';
 -- The insert builds the statistics; the runner randomizes `materialize_statistics_on_insert` off.
 insert into test_stat select toDate('2020-01-01') + number * 40, number from numbers(1300) SETTINGS materialize_statistics_on_insert = 1;
 -- The statistics of this part are readable, so the two counts below compare a pruner that ran

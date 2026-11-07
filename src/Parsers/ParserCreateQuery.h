@@ -522,6 +522,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// The list of columns in `CLEAR STATISTICS` and `MATERIALIZE STATISTICS`.
 class ParserStatisticsDeclaration : public IParserBase
 {
 public:
@@ -532,15 +533,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserStatisticsDeclarationWithoutTypes : public IParserBase
-{
-public:
-    ParserStatisticsDeclarationWithoutTypes() = default;
-
-protected:
-    const char * getName() const override { return "statistics declaration"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 
 class ParserConstraintDeclaration : public IParserBase

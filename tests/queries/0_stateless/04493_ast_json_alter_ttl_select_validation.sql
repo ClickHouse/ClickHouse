@@ -33,7 +33,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t UNFREEZE WITH NAME \'
 -- `MATERIALIZE STATISTICS ALL` / `CLEAR STATISTICS ALL` (null declaration) and a plain decl form.
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MATERIALIZE STATISTICS ALL'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS ALL'));
-SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t DROP STATISTICS a'));
+SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t CLEAR STATISTICS a'));
 
 -- `TTL ... TO DISK '<name>'` (mode MOVE).
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY TTL d TO DISK \'fast\''));

@@ -57,9 +57,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_clear_index(Keyword::CLEAR_INDEX);
     ParserKeyword s_materialize_index(Keyword::MATERIALIZE_INDEX);
 
-    ParserKeyword s_add_statistics(Keyword::ADD_STATISTICS);
     ParserKeyword s_drop_statistics(Keyword::DROP_STATISTICS);
-    ParserKeyword s_modify_statistics(Keyword::MODIFY_STATISTICS);
     ParserKeyword s_clear_statistics(Keyword::CLEAR_STATISTICS);
     ParserKeyword s_materialize_statistics(Keyword::MATERIALIZE_STATISTICS);
 
@@ -141,7 +139,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
     ParserIndexDeclaration parser_idx_decl;
     ParserStatisticsDeclaration parser_stat_decl;
-    ParserStatisticsDeclarationWithoutTypes parser_stat_decl_without_types;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(/* require_type = */ false, /* allow_null_modifiers = */ true, /* check_keywords_after_name = */ true);
@@ -394,37 +391,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
-            else if (s_add_statistics.ignore(pos, expected))
-            {
-                if (s_if_not_exists.ignore(pos, expected))
-                    command->if_not_exists = true;
-
-                if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::ADD_STATISTICS;
-            }
-            else if (s_modify_statistics.ignore(pos, expected))
-            {
-                if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::MODIFY_STATISTICS;
-            }
-            else if (s_drop_statistics.ignore(pos, expected))
-            {
-                if (s_if_exists.ignore(pos, expected))
-                    command->if_exists = true;
-
-                if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
-                    return false;
-
-                command->type = ASTAlterCommand::DROP_STATISTICS;
-            }
-            else if (s_clear_statistics.ignore(pos, expected))
+            /// `DROP STATISTICS` is an obsolete synonym of `CLEAR STATISTICS`, kept because older versions
+            /// stored it in the mutation entries: statistics are no longer declared in the table metadata.
+            else if (s_clear_statistics.ignore(pos, expected) || s_drop_statistics.ignore(pos, expected))
             {
                 command->type = ASTAlterCommand::DROP_STATISTICS;
-                command->clear_statistics = true;
                 command->detach = false;
 
                 if (!s_all.ignore(pos, expected))
@@ -432,7 +403,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (s_if_exists.ignore(pos, expected))
                         command->if_exists = true;
 
-                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
                         return false;
 
                     if (s_in_partition.ignore(pos, expected))
@@ -451,7 +422,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (s_if_exists.ignore(pos, expected))
                         command->if_exists = true;
 
-                    if (!parser_stat_decl_without_types.parse(pos, command_statistics_decl, expected))
+                    if (!parser_stat_decl.parse(pos, command_statistics_decl, expected))
                         return false;
 
                     if (s_in_partition.ignore(pos, expected))
@@ -1475,7 +1446,7 @@ These actions are described in detail below.
 ## ADD COLUMN {#add-column}
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
 Adds a new column to the table with the specified `name`, `type`, [`codec`](/reference/statements/create/table/codec) and `default_expr` (see the section [Default expressions](/reference/statements/create/table#default_values)). The modifiers that follow the type can be written in any order, and each of them at most once - see [column description](/reference/statements/create/table#with-explicit-schema).
@@ -1582,10 +1553,10 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
 
@@ -1836,7 +1807,7 @@ For tables that do not store data themselves (such as [Merge](/reference/stateme
         .syntax = R"(
 ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 DROP COLUMN [IF EXISTS] name
 RENAME COLUMN [IF EXISTS] name TO new_name
 CLEAR COLUMN [IF EXISTS] name [IN PARTITION partition_id]
@@ -3139,28 +3110,22 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 
 <CloudNotSupportedBadge/>
 
+Statistics are collected automatically for all columns according to the [`auto_statistics_types`](/reference/settings/merge-tree-settings#auto_statistics_types) MergeTree setting,
+see [Column statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics). They cannot be declared for individual columns.
+
 The following operations are available:
 
--   `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - Adds statistic description to tables metadata.
+-   `ALTER TABLE [db].table CLEAR STATISTICS (ALL | [IF EXISTS] (column list))` - Deletes all statistics objects in all parts for the specified columns. Statistics objects can be rebuilt using `ALTER TABLE MATERIALIZE STATISTICS`, and are rebuilt by merges.
 
--   `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - Modifies statistic description to tables metadata.
-
--   `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - Removes statistics from the metadata of the specified columns and deletes all statistics objects in all parts for the specified columns.
-
--   `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - Deletes all statistics objects in all parts for the specified columns. Statistics objects can be rebuild using `ALTER TABLE MATERIALIZE STATISTICS`.
-
--   `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - Rebuilds the statistic for columns. Implemented as a [mutation](/reference/statements/alter/index#mutations).
-
-The first two commands are lightweight in a sense that they only change metadata or remove files.
-
-Also, they are replicated, syncing statistics metadata via ZooKeeper.
+-   `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - Rebuilds the statistics for columns, for example, after a change of the `auto_statistics_types` setting. Implemented as a [mutation](/reference/statements/alter/index#mutations).
 
 ## Example: {#example}
 
-Adding two statistics types to two columns:
+Collecting `tdigest` statistics in addition to the default ones and building them for the existing parts:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
+ALTER TABLE t1 MODIFY SETTING auto_statistics_types = 'basic, uniq_v2, tdigest';
+ALTER TABLE t1 MATERIALIZE STATISTICS ALL;
 ```
 
 <Note>
@@ -3168,11 +3133,8 @@ Statistic are supported only for [`*MergeTree`](/reference/engines/table-engines
 </Note>
 )DOCS_MD",
         .syntax = R"(
-ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)
-ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)
-ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)
-ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)
-ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
+ALTER TABLE [db].table CLEAR STATISTICS (ALL | [IF EXISTS] (column list)) [IN PARTITION partition_name]
+ALTER TABLE [db].table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list)) [IN PARTITION partition_name]
 )",
         .parent = "ALTER",
         .related = {"ALTER", "CREATE TABLE", "EXPLAIN"},

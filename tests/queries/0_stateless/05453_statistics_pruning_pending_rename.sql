@@ -9,7 +9,7 @@ SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
 
 DROP TABLE IF EXISTS t_05453;
-CREATE TABLE t_05453 (x Int64 STATISTICS(basic), y Int64 STATISTICS(basic)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_05453 (x Int64, y Int64) ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic';
 
 -- Keep the mutation pending: mutations are executed by the merge scheduler.
 SYSTEM STOP MERGES t_05453;

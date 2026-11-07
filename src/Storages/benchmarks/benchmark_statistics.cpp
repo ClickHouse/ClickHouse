@@ -142,7 +142,7 @@ ColumnStatisticsPtr makeStatistics(const std::vector<StatisticsType> & types, co
     ColumnStatisticsDescription description;
     description.data_type = data_type;
     for (auto type : types)
-        description.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+        description.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr));
     return MergeTreeStatisticsFactory::instance().get(description);
 }
 
