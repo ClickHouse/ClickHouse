@@ -49,6 +49,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
@@ -100,6 +101,7 @@ namespace Setting
     extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -731,7 +733,8 @@ static bool isNullConstant(const QueryTreeNodePtr & node)
 static DataTypePtr getLeastSupertypeForInArrayElements(
     const QueryTreeNodes & array_elements,
     const QueryTreeNodePtr & in_first_argument,
-    bool left_is_null)
+    bool left_is_null,
+    bool allow_lossy_numeric_supertype)
 {
     DataTypes arg_types;
     arg_types.reserve(array_elements.size() + 1);
@@ -742,7 +745,7 @@ static DataTypePtr getLeastSupertypeForInArrayElements(
     for (const auto & arg : array_elements)
         arg_types.push_back(arg->getResultType());
 
-    return tryGetLeastSupertype(arg_types);
+    return tryGetLeastSupertype(arg_types, allow_lossy_numeric_supertype);
 }
 
 template <typename CastNodeToType>
@@ -1309,23 +1312,113 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
+static QueryTreeNodePtr buildResolvedFunction(
+    const String & name,
+    QueryTreeNodes arguments,
+    const ContextPtr & context)
+{
+    auto function = std::make_shared<FunctionNode>(name);
+    function->getArguments().getNodes() = std::move(arguments);
+    function->resolveAsFunction(FunctionFactory::instance().get(name, context));
+    return function;
+}
+
+/// Builds one bounded equality node for a heterogeneous numeric pair. The resolver is attached
+/// directly so query-scope aliases cannot replace the internal comparison implementation.
+static QueryTreeNodePtr buildNumericEquality(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    const ContextPtr & context)
+{
+    auto equality = std::make_shared<FunctionNode>("equals");
+    equality->getArguments().getNodes() = {left_argument, right_argument};
+    equality->resolveAsFunction(createExactNumericEqualityFunction(context));
+    return equality;
+}
+
+static QueryTreeNodePtr buildNumericScalarInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    bool compare_nulls,
+    const ContextPtr & context)
+{
+    auto equality = buildNumericEquality(left_argument, right_argument, context);
+    auto default_false = std::make_shared<ConstantNode>(Field{0u});
+    auto equality_or_false = buildResolvedFunction(
+        "ifNull", {std::move(equality), std::move(default_false)}, context);
+
+    QueryTreeNodePtr result = equality_or_false;
+    if (compare_nulls)
+    {
+        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+        auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
+        auto both_are_null = buildResolvedFunction(
+            "and", {std::move(left_is_null), std::move(right_is_null)}, context);
+        result = buildResolvedFunction("or", {std::move(both_are_null), std::move(result)}, context);
+    }
+    else if (isNullableOrLowCardinalityNullable(left_argument->getResultType()))
+    {
+        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+        auto null_value = std::make_shared<ConstantNode>(
+            Field{},
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+        result = buildResolvedFunction(
+            "if", {std::move(left_is_null), std::move(null_value), std::move(result)}, context);
+    }
+
+    if (is_not_in)
+    {
+        result = buildResolvedFunction("not", {std::move(result)}, context);
+    }
+
+    return result;
+}
+
+/// Builds the row-wise equivalent of membership in a heterogeneous numeric value list.
+/// A single array element type cannot preserve every integer, decimal, and floating-point
+/// candidate, while the comparison functions compare each numeric pair accurately.
+static QueryTreeNodePtr buildNumericInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodes & right_arguments,
+    bool is_not_in,
+    bool compare_nulls,
+    const ContextPtr & context)
+{
+    if (right_arguments.empty())
+        return std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
+
+    if (right_arguments.size() == 1)
+        return buildNumericScalarInComparison(
+            left_argument, right_arguments.front(), is_not_in, compare_nulls, context);
+
+    QueryTreeNodes comparisons;
+    comparisons.reserve(right_arguments.size());
+    for (const auto & right_argument : right_arguments)
+        comparisons.push_back(buildNumericScalarInComparison(
+            left_argument, right_argument, is_not_in, compare_nulls, context));
+
+    return buildResolvedFunction(is_not_in ? "and" : "or", std::move(comparisons), context);
+}
+
 /// converts tuple to array with proper type handling
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
-    const QueryTreeNodes & tuple_args,
+    const QueryTreeNodes & array_elements,
     const QueryTreeNodePtr & in_first_argument,
     IdentifierResolveScope & scope,
-    bool expand_single_tuple_value,
     bool compare_nulls)
 {
-    QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
-
     bool left_is_null = isNullConstant(in_first_argument);
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
         [](const auto & arg)
         { return isNullConstant(arg) || isNullableOrLowCardinalityNullable(arg->getResultType()); });
 
-    DataTypePtr common_type = getLeastSupertypeForInArrayElements(array_elements, in_first_argument, left_is_null);
+    DataTypePtr common_type = getLeastSupertypeForInArrayElements(
+        array_elements,
+        in_first_argument,
+        left_is_null,
+        scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype]);
     /// If no supertype exists, keep the old behaviour for non-NULL left-hand side
     /// values and let per-element `CAST` handle or reject the mismatch. For NULL
     /// left-hand side values, let `array` infer the right-hand side type on its own.
@@ -2908,8 +3001,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
-                    /// convert tuple to array and rewrite to has()
-                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value, compare_nulls);
+                    QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(
+                        tuple_args, in_first_argument, scope, expand_single_tuple_value);
+
+                    /// A heterogeneous numeric list with no lossless common type cannot be
+                    /// represented by one array element type without changing membership near
+                    /// precision boundaries. When the lossy numeric setting makes this list
+                    /// eligible, compare every candidate directly instead.
+                    const bool allow_lossy_numeric_supertype
+                        = scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype];
+                    if (allow_lossy_numeric_supertype
+                        && !getLeastSupertypeForInArrayElements(array_elements, in_first_argument, false, false)
+                        && getLeastSupertypeForInArrayElements(array_elements, in_first_argument, false, true))
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        node = buildNumericInComparison(
+                            in_first_argument, array_elements, is_not_in, compare_nulls, scope.context);
+                        return ProjectionNames{proj};
+                    }
+
+                    /// Convert the value list to an array and rewrite to `has`.
+                    QueryTreeNodePtr array_arg = convertTupleToArray(array_elements, in_first_argument, scope, compare_nulls);
                     return buildHasExpression(
                         node,
                         array_arg,
@@ -2953,6 +3065,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
                             right_argument = castNodeToType(right_argument, cast_elements_to, scope);
                         }
+                    }
+
+                    const auto & right_type = non_const_set_candidate->getResultType();
+                    const bool is_number_comparison = isNumber(removeNullable(removeLowCardinality(left_type)))
+                        && isNumber(removeNullable(removeLowCardinality(right_type)));
+                    if (is_number_comparison)
+                    {
+                        node = buildNumericScalarInComparison(
+                            fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
+                        return ProjectionNames{proj};
                     }
 
                     node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);

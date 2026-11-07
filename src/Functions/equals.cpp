@@ -9,6 +9,13 @@ namespace DB
 
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 
+FunctionOverloadResolverPtr createExactNumericEqualityFunction(const ContextPtr & context)
+{
+    ComparisonParams params(context);
+    params.exact_decimal_numeric_equality = true;
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(std::move(params)));
+}
+
 /// Used through `FunctionIsNotDistinctFrom` in `executeArrayLexicographic`; instantiated in isNotDistinctFrom.cpp.
 extern template class FunctionComparison<EqualsOp, NameEquals, true>;
 
