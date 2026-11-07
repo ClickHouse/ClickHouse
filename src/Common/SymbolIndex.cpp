@@ -959,9 +959,7 @@ void collectSymbolsFromMachOImage(
             continue;
 
         SymbolIndex::Symbol symbol;
-        /// On macOS, store absolute virtual addresses (n_value + slide) to avoid
-        /// overlap between symbols from different objects that would have the same
-        /// relative offsets. findSymbol skips the address-to-offset conversion on macOS.
+        /// Stored as runtime addresses for now: the image start is only known after all load commands are read.
         symbol.offset_begin = reinterpret_cast<const void *>(sym.n_value + slide);
         symbol.offset_end = symbol.offset_begin; /// Size will be computed below
         symbol.setNameReference(source_id, str_index);
@@ -989,10 +987,16 @@ void collectSymbolsFromMachOImage(
     if (!local_symbols.empty() && max_addr > min_addr)
         local_symbols.back().offset_end = reinterpret_cast<const void *>(max_addr);
 
-    data.symbols.insert(data.symbols.end(), local_symbols.begin(), local_symbols.end());
-
     if (min_addr < max_addr)
     {
+        /// As on ELF, symbols are offsets relative to the start of their image (its Mach-O header, as
+        /// `__TEXT` maps the file from offset 0), so that they do not depend on the ASLR slide.
+        for (auto & symbol : local_symbols)
+        {
+            symbol.offset_begin = reinterpret_cast<const void *>(uintptr_t(symbol.offset_begin) - min_addr);
+            symbol.offset_end = reinterpret_cast<const void *>(uintptr_t(symbol.offset_end) - min_addr);
+        }
+
         SymbolIndex::Object object;
         object.address_begin = reinterpret_cast<const void *>(min_addr);
         object.address_end = reinterpret_cast<const void *>(max_addr);
@@ -1018,6 +1022,11 @@ void collectSymbolsFromMachOImage(
             {
             }
         }
+
+        if (header->filetype == MH_EXECUTE)
+            data.symbols.insert(data.symbols.end(), local_symbols.begin(), local_symbols.end());
+        else
+            object.symbols = std::move(local_symbols);
 
         data.objects.push_back(std::move(object));
     }
@@ -1089,10 +1098,8 @@ void SymbolIndex::load()
     };
 
     sort_and_deduplicate(data.symbols);
-#if defined(__ELF__)
     for (auto & object : data.objects)
         sort_and_deduplicate(object.symbols);
-#endif
 
 #if defined(__ELF__)
     if (data.has_compact_symbols)
@@ -1124,16 +1131,13 @@ void SymbolIndex::load()
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * offset) const
 {
-#if defined(__ELF__)
     if (!offset)
         return nullptr;
-#endif
     return find(offset, data.symbols);
 }
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbolByAddress(const void * address) const
 {
-#if defined(__ELF__)
     const Object * object = findObject(address);
     if (!object)
         return nullptr;
@@ -1143,9 +1147,6 @@ const SymbolIndex::Symbol * SymbolIndex::findSymbolByAddress(const void * addres
     if (object == thisObject())
         return find(offset, data.symbols);
     return find(offset, object->symbols);
-#else
-    return find(address, data.symbols);
-#endif
 }
 
 std::string_view SymbolIndex::getSymbolName(const Symbol & symbol) const
