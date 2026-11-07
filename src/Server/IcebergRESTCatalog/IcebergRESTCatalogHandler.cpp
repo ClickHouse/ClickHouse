@@ -341,6 +341,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             case IcebergRESTOperation::NamespaceExists:
                 handleNamespaceExists(*warehouse, *match, response);
                 return;
+            case IcebergRESTOperation::DropNamespace:
+                handleDropNamespace(*warehouse, *match, response, *context);
+                return;
             case IcebergRESTOperation::UpdateNamespaceProperties:
                 handleUpdateNamespaceProperties(*warehouse, *match, request, response, *context);
                 return;
@@ -502,16 +505,15 @@ void IcebergRESTCatalogHandler::handleListNamespaces(const IcebergRESTCatalogWar
 void IcebergRESTCatalogHandler::handleLoadNamespace(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const
 {
     const auto ns = splitNamespace(match.path_params.at("namespace"));
-    /// The properties double as the existence check.
-    const auto properties = warehouse.getNamespaceProperties(ns);
-    if (!properties)
+    const auto namespace_state = warehouse.getNamespace(ns);
+    if (!namespace_state)
     {
         sendNoSuchNamespace(response, ns);
         return;
     }
 
     Poco::JSON::Object properties_json;
-    for (const auto & [key, value] : *properties)
+    for (const auto & [key, value] : namespace_state->properties)
         properties_json.set(key, value);
 
     Poco::JSON::Object result;
@@ -526,6 +528,32 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTCatalogWa
         return;
 
     sendNoContent(response);
+}
+
+void IcebergRESTCatalogHandler::handleDropNamespace(
+    const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response, const Context & context) const
+{
+    checkDDLAllowed(context, "drop namespace");
+
+    using DropNamespaceResult = IcebergRESTCatalogWarehouse::DropNamespaceResult;
+    const auto ns = splitNamespace(match.path_params.at("namespace"));
+    switch (warehouse.dropNamespace(ns))
+    {
+        case DropNamespaceResult::Dropped:
+            LOG_INFO(log, "Dropped namespace {}", joinNamespace(ns));
+            sendNoContent(response);
+            return;
+        case DropNamespaceResult::NamespaceMissing:
+            sendNoSuchNamespace(response, ns);
+            return;
+        case DropNamespaceResult::NotEmpty:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "NamespaceNotEmptyException",
+                fmt::format("Namespace {} is not empty", joinNamespace(ns)));
+            return;
+    }
 }
 
 void IcebergRESTCatalogHandler::checkNotReadonly(const Context & context, const String & action)
@@ -784,10 +812,10 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     if (!body)
         return;
 
-    /// The properties double as the existence check.
+    /// The uuid goes to `createTable`, so the table lands in the namespace its location was derived from.
     const auto ns = splitNamespace(match.path_params.at("namespace"));
-    const auto namespace_properties = warehouse.getNamespaceProperties(ns);
-    if (!namespace_properties)
+    const auto namespace_state = warehouse.getNamespace(ns);
+    if (!namespace_state)
     {
         sendNoSuchNamespace(response, ns);
         return;
@@ -822,7 +850,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         if (json->has("location") && !json->isNull("location"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' is not supported, the catalog chooses the table location");
 
-        if (const auto it = namespace_properties->find("location"); it != namespace_properties->end())
+        if (const auto it = namespace_state->properties.find("location"); it != namespace_state->properties.end())
         {
             /// The uuid suffix keeps a dropped and recreated table away from the old files.
             location = fmt::format("{}/{}-{}", stripTrailingSlashes(it->second), name, uuid);
@@ -886,7 +914,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
 
     /// A Keeper exception (timeout, session loss) leaves the file. The node may exist, so deleting could leave a dangling pointer.
     using CreateTableResult = IcebergRESTCatalogWarehouse::CreateTableResult;
-    const auto created = warehouse.createTable(ns, name, pointer);
+    const auto created = warehouse.createTable(ns, namespace_state->uuid, name, pointer);
     if (created != CreateTableResult::Created)
     {
         LOG_INFO(log, "Removing metadata file {} because table {}.{} was not registered", object_key, joinNamespace(ns), name);

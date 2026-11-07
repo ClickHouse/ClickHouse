@@ -53,7 +53,7 @@ DEFAULT_AUTH = ("default", "")
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
 KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
-FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
+FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 2"
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
 
@@ -160,6 +160,16 @@ def update_namespace_properties(
         "POST",
         f"/v1/my_warehouse/namespaces/{namespace}/properties",
         json=body,
+        expected_code=expected_code,
+        auth=auth,
+    )
+
+
+def drop_namespace(name_levels, expected_code=204, auth=None):
+    namespace = "\x1f".join(name_levels)
+    return catalog_request(
+        "DELETE",
+        f"/v1/my_warehouse/namespaces/{namespace}",
         expected_code=expected_code,
         auth=auth,
     )
@@ -302,6 +312,7 @@ def test_config(started_cluster):
         "POST /v1/{prefix}/namespaces",
         "GET /v1/{prefix}/namespaces/{namespace}",
         "HEAD /v1/{prefix}/namespaces/{namespace}",
+        "DELETE /v1/{prefix}/namespaces/{namespace}",
         "POST /v1/{prefix}/namespaces/{namespace}/properties",
         "GET /v1/{prefix}/namespaces/{namespace}/tables",
         "POST /v1/{prefix}/namespaces/{namespace}/tables",
@@ -463,6 +474,41 @@ def test_update_namespace_properties(started_cluster):
         assert_error_shape(response, "BadRequestException")
 
 
+def test_drop_namespace(started_cluster):
+    ns = f"drop_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_namespace([ns, "child"])
+    create_table(f"{ns}\x1fchild", "t")
+
+    response = drop_namespace([ns, "child"], expected_code=409)
+    assert_error_shape(response, "NamespaceNotEmptyException")
+    response = drop_namespace([ns], expected_code=409)
+    assert_error_shape(response, "NamespaceNotEmptyException")
+
+    drop_table(f"{ns}\x1fchild", "t")
+    drop_namespace([ns, "child"])
+    response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}\x1fchild"))
+    assert response.status_code == 404
+    assert list_namespaces(parent=ns) == []
+
+    ns_uuid = get_keeper().get(f"{KEEPER_ROOT}/namespaces/{ns}")[0].decode()
+    drop_namespace([ns])
+    response = drop_namespace([ns], expected_code=404)
+    assert_error_shape(response, "NoSuchNamespaceException")
+    assert [ns] not in list_namespaces()
+    assert not get_keeper().exists(f"{KEEPER_ROOT}/namespaces/{ns}")
+
+    # Parents created implicitly stay until they are dropped explicitly.
+    create_namespace([ns, "a", "b"])
+    # A re-created name gets a new uuid, so a stale property update cannot reach it.
+    assert get_keeper().get(f"{KEEPER_ROOT}/namespaces/{ns}")[0].decode() != ns_uuid
+    drop_namespace([ns, "a", "b"])
+    response = requests.head(catalog_url(f"/v1/my_warehouse/namespaces/{ns}\x1fa"))
+    assert response.status_code == 204
+    drop_namespace([ns, "a"])
+    drop_namespace([ns])
+
+
 def test_malformed_create_namespace(started_cluster):
     for body in [
         None,
@@ -561,7 +607,9 @@ def test_survives_server_restart(started_cluster):
     assert response.status_code == 204, response.text
 
     zk = get_keeper()
-    assert zk.get(f"{KEEPER_ROOT}/namespaces/{ns}")[0] == b'{"owner":"asya"}'
+    ns_path = f"{KEEPER_ROOT}/namespaces/{ns}"
+    ns_uuid = zk.get(ns_path)[0].decode()
+    assert zk.get(f"{ns_path}/{ns_uuid}")[0] == b'{"owner":"asya"}'
 
 
 def test_authentication(started_cluster):
@@ -612,6 +660,8 @@ def test_create_namespace_rejects_readonly(started_cluster):
         response = update_namespace_properties(
             [ns], updates={"owner": "bob"}, auth=(user, ""), expected_code=403
         )
+        assert_error_shape(response, "ForbiddenException")
+        response = drop_namespace([ns], auth=(user, ""), expected_code=403)
         assert_error_shape(response, "ForbiddenException")
     assert load_namespace_properties([ns]) == {}
 
@@ -722,10 +772,17 @@ def test_keeper_layout(started_cluster):
     escaped = ns.replace("-", "%2D")
     parent_path = f"{KEEPER_ROOT}/namespaces/{escaped}"
     child_path = f"{parent_path}/namespaces/eu%2Dwest"
-    assert sorted(zk.get_children(parent_path)) == ["namespaces", "tables"]
-    assert sorted(zk.get_children(child_path)) == ["namespaces", "tables"]
-    assert zk.get(parent_path)[0] == b"{}"
-    assert zk.get(child_path)[0] == b'{"owner":"asya"}'
+    # The uuid is in the path, so a property update cannot target a namespace re-created under the same name.
+    parent_uuid = zk.get(parent_path)[0].decode()
+    child_uuid = zk.get(child_path)[0].decode()
+    assert sorted(zk.get_children(parent_path)) == sorted(
+        ["namespaces", "tables", parent_uuid]
+    )
+    assert sorted(zk.get_children(child_path)) == sorted(
+        ["namespaces", "tables", child_uuid]
+    )
+    assert zk.get(f"{parent_path}/{parent_uuid}")[0] == b"{}"
+    assert zk.get(f"{child_path}/{child_uuid}")[0] == b'{"owner":"asya"}'
 
     # The uuid is in the path, so a commit cannot target a table re-created under the same name.
     table_path = f"{child_path}/tables/my%2Etable"
@@ -988,6 +1045,9 @@ def test_pyiceberg_client(started_cluster):
     catalog.drop_table(f"{ns}.events")
     assert catalog.list_tables(ns) == []
     assert not catalog.table_exists(f"{ns}.events")
+
+    catalog.drop_namespace(ns)
+    assert (ns,) not in catalog.list_namespaces()
 
 
 def test_names_with_slash(started_cluster):
