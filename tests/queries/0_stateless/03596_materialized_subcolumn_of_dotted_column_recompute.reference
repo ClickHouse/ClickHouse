@@ -1,0 +1,28 @@
+alter update	(2)	20	2-{"t.x.a":2}
+lightweight update	(2)	20
+lightweight update, merged	(2)	20
+column ttl	(0)	0
+materialize ttl	(0)	0
+on the fly	(2)	20
+nested member	[7]	1
+nested tuple member	[(5)]	[5]
+json	{"a":2}	2
+ephemeral	2	6
+lambda parameter	[2]
+lambda body	[21,22]
+alias, y updated	4
+alias, t.x updated	6
+name, t.x updated	{"t.x.a":2}-1
+name, y updated	{"t.x.a":2}-2
+alias prefix	[6]
+masked name, inserted	{"t.x.a":7}-1
+masked name, arr updated	{"t.x.a":7}-2
+self alias	3
+full name alias, inserted	10-{"t.x.a":1}
+full name alias, y updated	20-{"t.x.a":1}
+column captured	21	[1]	[31]
+leading dot, y updated	{".t.a":1}-2	[6]
+leading dot, .t updated	{".t.a":3}-2	[6]
+own alias, name	(2)	3
+own alias, column	(2)	3
+enclosing alias, y updated	7
