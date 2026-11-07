@@ -944,10 +944,11 @@ Block ProjectionDescription::calculateByQuery(
 
     ASTPtr query_ast_copy = nullptr;
 
-    /// Only keep required columns
+    /// Only keep required columns. A subcolumn used inside an expression (`j.a + 1`) is not a column of the
+    /// inserted block, so it is taken from its parent column, as it is read from the part by a mutation.
     Block source_block;
     for (const auto & column : required_columns)
-        source_block.insert(block.getByName(column));
+        source_block.insert(block.getColumnOrSubcolumnByName(column));
 
     /// Respect the _row_exists column.
     if (block.has(RowExistsColumn::name))
