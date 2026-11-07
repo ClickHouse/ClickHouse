@@ -33,14 +33,14 @@ DROP TABLE IF EXISTS t_desc_alter;
 
 CREATE TABLE t_desc (v UInt64, k UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY v
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
-INSERT INTO t_desc SELECT number, (1000 - intDiv(number, 128)) * 100 + number % 37 FROM numbers(128000);
+INSERT INTO t_desc SELECT number, (75 - intDiv(number, 128)) * 100 + number % 37 FROM numbers(9600);
 OPTIMIZE TABLE t_desc FINAL;
 
 -- Unique values, so no row equals the boundary of `ORDER BY ... LIMIT` (rows equal to it may be dropped, and then the
 -- cache is not written). The WHERE keeps the read from being narrowed to the granules of the smallest bounds up front.
 CREATE TABLE t_desc_unique (v UInt64, k UInt64, s UInt8, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY v
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
-INSERT INTO t_desc_unique SELECT number, 128000 - number, number % 2 FROM numbers(128000);
+INSERT INTO t_desc_unique SELECT number, 9600 - number, number % 2 FROM numbers(9600);
 OPTIMIZE TABLE t_desc_unique FINAL;
 
 SELECT 'group by, first', arraySort(groupArray((k, c))) FROM (SELECT k, count() c FROM t_desc GROUP BY k LIMIT 7)
@@ -54,10 +54,10 @@ SETTINGS log_comment = '05233_qcc_orderby_2';
 
 SYSTEM FLUSH LOGS query_log;
 
--- The first run selects all 1000 granules; the repeated one hits the cache and selects only those it kept.
+-- The first run selects all 75 granules; the repeated one hits the cache and selects only those it kept.
 SELECT
     splitByChar('_', log_comment)[3] AS arm,
-    anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_1')) = 1000,
+    anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_1')) = 75,
     anyIf(ProfileEvents['QueryConditionCacheHits'], endsWith(log_comment, '_2')) > 0,
     anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_2')) * 10 < anyIf(ProfileEvents['SelectedMarks'], endsWith(log_comment, '_1'))
 FROM system.query_log
@@ -71,7 +71,7 @@ SETTINGS max_block_size = 65409;
 -- the next run: the granules beyond the boundary are not recorded, and the repeated query selects all granules again.
 CREATE TABLE t_desc_alter (v UInt64, k UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY v
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
-INSERT INTO t_desc_alter SELECT number, (1000 - intDiv(number, 128)) * 100 + number % 37 FROM numbers(128000);
+INSERT INTO t_desc_alter SELECT number, (75 - intDiv(number, 128)) * 100 + number % 37 FROM numbers(9600);
 OPTIMIZE TABLE t_desc_alter FINAL;
 ALTER TABLE t_desc_alter ADD COLUMN w UInt8 DEFAULT 1;
 
@@ -84,7 +84,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     'alter',
-    anyIf(ProfileEvents['SelectedMarks'], log_comment = '05233_qcc_alter_1') = 1000,
+    anyIf(ProfileEvents['SelectedMarks'], log_comment = '05233_qcc_alter_1') = 75,
     anyIf(ProfileEvents['SelectedMarks'], log_comment = '05233_qcc_alter_2') = anyIf(ProfileEvents['SelectedMarks'], log_comment = '05233_qcc_alter_1')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
