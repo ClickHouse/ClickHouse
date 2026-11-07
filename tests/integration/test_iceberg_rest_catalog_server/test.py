@@ -860,6 +860,10 @@ def test_table_location(started_cluster):
     assert result["metadata-location"].startswith(explicit_location + "/metadata/")
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
 
+    # Creating the same table again reports the name conflict, not the overlap with its own location.
+    response = create_table(ns, "explicit", location=explicit_location, expected_code=409)
+    assert_error_shape(response, "TableAlreadyExistsException")
+
     # The overlap check covers client-chosen locations too.
     response = create_table(ns, "inside", location=f"{explicit_location}/data", expected_code=400)
     assert_error_shape(response, "BadRequestException")

@@ -360,8 +360,14 @@ std::optional<KeeperIcebergRESTCatalogStore::CreateTableOutcome> KeeperIcebergRE
     for (const auto & escaped_location : existing_table_locations)
     {
         auto existing_location = unescapeForFileName(escaped_location);
-        if (locationsOverlap(table_root, existing_location))
-            return CreateTableOutcome{.result = CreateTableResult::LocationOverlaps, .conflicting_location = std::move(existing_location)};
+        if (!locationsOverlap(table_root, existing_location))
+            continue;
+
+        /// A repeated create of the same table overlaps its own location. The name conflict is reported first, as the REST spec expects.
+        if (zookeeper->exists(table_path))
+            return CreateTableOutcome{.result = CreateTableResult::TableExists, .conflicting_location = {}};
+
+        return CreateTableOutcome{.result = CreateTableResult::LocationOverlaps, .conflicting_location = std::move(existing_location)};
     }
 
     /// Step 3. Write everything in one transaction.
