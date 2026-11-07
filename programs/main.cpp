@@ -14,7 +14,9 @@
 #include "config_tools.h"
 
 #include <unistd.h>
+#include <sched.h>
 
+#include <charconv>
 #include <filesystem>
 #include <iostream>
 #include <new>
@@ -289,6 +291,59 @@ extern "C"
         return "ClickHouse does not allow dynamic library loading";
     }
 }
+#endif
+
+#if USE_JEMALLOC && defined(OS_LINUX) && !defined(USE_MUSL)
+/// A short-lived clickhouse-local process faults in fewer pages with a few shared arenas than with per-CPU ones.
+/// jemalloc reads `je_malloc_conf` at its first allocation, which comes after `.preinit_array`.
+extern "C"
+{
+const char * je_malloc_conf = nullptr;
+}
+
+static void configureJemallocForLocal(int argc, char ** argv, char ** envp)
+{
+    /// NOTE: You cannot have any allocations here
+    if (argc < 1 || !argv || !argv[0])
+        return;
+
+    std::string_view program(argv[0]);
+    if (auto slash = program.rfind('/'); slash != std::string_view::npos)
+        program.remove_prefix(slash + 1);
+    std::string_view first_arg = (argc >= 2 && argv[1]) ? std::string_view(argv[1]) : std::string_view();
+
+    bool is_local = program == "clickhouse-local" || first_arg == "local" || first_arg == "--local";
+    for (const auto & [alias, name] : clickhouse_short_names)
+        is_local = is_local || (name == "local" && program == alias);
+    if (!is_local)
+        return;
+
+    for (char ** env = envp; env && *env; ++env)
+        if (std::string_view(*env).starts_with("MALLOC_CONF="))
+            return;
+
+    /// `cpu_set_t` holds only 1024 CPUs, and `sched_getaffinity` fails with EINVAL when the kernel mask is wider.
+    /// 8192 is the largest `NR_CPUS` of the supported architectures.
+    UInt64 mask[8192 / 64] = {};
+    auto * cpus = reinterpret_cast<cpu_set_t *>(mask);
+    if (0 != sched_getaffinity(0, sizeof(mask), cpus))
+        return;
+    unsigned num_cpus = static_cast<unsigned>(CPU_COUNT_S(sizeof(mask), cpus));
+    if (num_cpus == 0)
+        return;
+    unsigned num_arenas = std::min(std::max((num_cpus + 7) / 8, 2u), num_cpus);
+
+    static char config[64] = "percpu_arena:disabled,narenas:";
+    char * end = config + std::string_view(config).size();
+    auto [ptr, ec] = std::to_chars(end, config + sizeof(config) - 1, num_arenas);
+    if (ec != std::errc())
+        return;
+    *ptr = '\0';
+    je_malloc_conf = config;
+}
+
+__attribute__((section(".preinit_array"), used))
+static void (* const configure_jemalloc_for_local)(int, char **, char **) = configureJemallocForLocal;
 #endif
 
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
