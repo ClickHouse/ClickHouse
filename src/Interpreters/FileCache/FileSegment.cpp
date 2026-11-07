@@ -1,4 +1,5 @@
 #include <Interpreters/FileCache/FileSegment.h>
+#include <base/pathToString.h>
 
 #include <filesystem>
 #include <fcntl.h>
@@ -168,7 +169,7 @@ FileSegment::FileSegment(
             /// the recorded one and discards the broken entry (re-fetching from the source) rather than
             /// raising a server-bug-class error. Asserting the on-disk size here would both re-introduce
             /// the `stat` and turn that discardable inconsistency into an abort in debug/sanitizer builds.
-            chassert(size_in_filename || fs::file_size(getPath()) == size_);
+            chassert(size_in_filename || fs::file_size(pathFromString(getPath())) == size_);
             chassert(queue_iterator);
             chassert(key_metadata.lock());
             break;
@@ -628,15 +629,15 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
 
-        if (fs::exists(file_segment_path))
+        if (fs::exists(pathFromString(file_segment_path)))
         {
             if (downloaded_size == 0)
             {
-                fs::remove(file_segment_path);
+                fs::remove(pathFromString(file_segment_path));
             }
             else if (is_no_space_left_error)
             {
-                const auto file_size = fs::file_size(file_segment_path);
+                const auto file_size = fs::file_size(pathFromString(file_segment_path));
 
                 LOG_TRACE(getLog(), "Failed to write to file: no space left on device "
                           "(file size: {}, downloaded size: {}, reserved size: {})",
@@ -661,7 +662,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         if (downloaded_size == 0)
         {
             std::error_code ec;
-            fs::remove(file_segment_path, ec);
+            fs::remove(pathFromString(file_segment_path), ec);
         }
 
         throw;
@@ -674,7 +675,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         if (downloaded_size == 0)
         {
             std::error_code ec;
-            fs::remove(file_segment_path, ec);
+            fs::remove(pathFromString(file_segment_path), ec);
         }
 
         throw ErrnoException(e.code().value(),
@@ -904,7 +905,7 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     chassert(downloaded_size > 0);
-    chassert(fs::file_size(getPath()) == downloaded_size);
+    chassert(fs::file_size(pathFromString(getPath())) == downloaded_size);
 }
 
 void FileSegment::renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &)
@@ -1037,7 +1038,7 @@ void FileSegment::completePartAndResetDownloader()
 void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key, const FileSegmentGuard::Lock & lock, bool force_shrink_to_downloaded_size)
 {
     chassert(downloaded_size);
-    chassert(fs::file_size(getPath()) > 0);
+    chassert(fs::file_size(pathFromString(getPath())) > 0);
 
     if (downloaded_size == range().size())
     {
@@ -1217,7 +1218,7 @@ void FileSegment::complete(
         case State::DOWNLOADED:
         {
             chassert(current_downloaded_size == range().size());
-            chassert(current_downloaded_size == fs::file_size(getPath()));
+            chassert(current_downloaded_size == fs::file_size(pathFromString(getPath())));
             chassert(!download_data);
             break;
         }
@@ -1235,8 +1236,8 @@ void FileSegment::complete(
         case State::PARTIALLY_DOWNLOADED:
         {
             chassert(current_downloaded_size > 0);
-            chassert(fs::exists(getPath()));
-            chassert(fs::file_size(getPath()) > 0);
+            chassert(fs::exists(pathFromString(getPath())));
+            chassert(fs::file_size(pathFromString(getPath())) > 0);
 
             if (is_last_holder)
             {
@@ -1420,10 +1421,10 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
         if (downloaded_size == 0)
         {
-            if (download_state != State::DOWNLOADING && fs::exists(file_path))
+            if (download_state != State::DOWNLOADING && fs::exists(pathFromString(file_path)))
                 throw_logical("Expected file " + file_path + " not to exist");
         }
-        else if (!fs::exists(file_path))
+        else if (!fs::exists(pathFromString(file_path)))
         {
             throw_logical("Expected file " + file_path + " to exist");
         }
@@ -1438,7 +1439,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         case State::EMPTY:
         {
             chassert(getDownloaderUnlocked(lock).empty());
-            chassert(!fs::exists(getPath()));
+            chassert(!fs::exists(pathFromString(getPath())));
             chassert(!queue_iterator);
             break;
         }
@@ -1459,7 +1460,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             /// debug/sanitizer builds (`FileCache::assertCacheCorrectness` runs right after metadata load).
             if (!size_in_filename)
             {
-                auto file_size = fs::file_size(getPath());
+                auto file_size = fs::file_size(pathFromString(getPath()));
                 UNUSED(file_size);
 
                 chassert(file_size == range().size());
@@ -1476,7 +1477,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             if (downloaded_size)
             {
                 chassert(queue_iterator);
-                chassert(fs::file_size(getPath()) > 0);
+                chassert(fs::file_size(pathFromString(getPath())) > 0);
             }
             break;
         }
@@ -1487,7 +1488,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(reserved_size >= downloaded_size);
             chassert(downloaded_size > 0);
 
-            auto file_size = fs::file_size(getPath());
+            auto file_size = fs::file_size(pathFromString(getPath()));
             UNUSED(file_size);
 
             chassert(file_size > 0);

@@ -90,7 +90,7 @@ KeyMetadata::KeyMetadata(
     if (!origin->weight.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata without user weight");
 
-    chassert(!created_base_directory || fs::exists(getPath()));
+    chassert(!created_base_directory || fs::exists(pathFromString(getPath())));
 }
 
 bool KeyMetadata::checkAccess(const UserID & user_id_) const
@@ -178,7 +178,7 @@ std::error_code KeyMetadata::createBaseDirectory()
         return {};
 
     std::error_code ec;
-    fs::create_directories(getPath(), ec);
+    fs::create_directories(pathFromString(getPath()), ec);
 
     if (!ec)
     {
@@ -1331,14 +1331,15 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     try
     {
-        const auto path = key_metadata->getFileSegmentPath(*file_segment);
+        const String path = key_metadata->getFileSegmentPath(*file_segment);
+        const fs::path fs_path = pathFromString(path);
         if (file_segment->downloaded_size == 0)
         {
-            chassert(!fs::exists(path));
+            chassert(!fs::exists(fs_path));
         }
-        else if (fs::exists(path))
+        else if (fs::exists(fs_path))
         {
-            fs::remove(path);
+            fs::remove(fs_path);
 
             /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
             int flags = file_segment->getFlagsForLocalRead();
@@ -1469,7 +1470,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
             continue;
         }
 
-        const auto & path = key_metadata->getFileSegmentPath(*file_segment);
+        const fs::path path = pathFromString(key_metadata->getFileSegmentPath(*file_segment));
         if (!fs::exists(path))
         {
             LOG_WARNING(
