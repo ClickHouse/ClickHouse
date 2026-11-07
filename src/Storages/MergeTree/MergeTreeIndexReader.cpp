@@ -15,15 +15,15 @@ namespace ErrorCodes
 
 /// Mirrors IMergeTreeDataPart::getFileSizeOrZeroResolved: the on-disk name (original or hashed)
 /// comes from checksums, and a stream with no checksums entry is sized via the storage.
-static size_t getIndexStreamFileSize(
-    const MergeTreeDataPartInfoForReaderPtr & data_part_info,
+size_t getIndexStreamFileSize(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
     const String & stream_name,
     const String & extension)
 {
-    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info->getChecksums()))
-        return data_part_info->getFileSizeOrZero(*actual + extension);
+    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, data_part_info.getChecksums()))
+        return data_part_info.getFileSizeOrZero(*actual + extension);
 
-    const auto & part_storage = *data_part_info->getDataPartStorage();
+    const auto & part_storage = *data_part_info.getDataPartStorage();
     const String file_name = stream_name + extension;
     return part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
 }
@@ -41,7 +41,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     MergeTreeReaderSettings settings,
     bool interruptible_marks_read)
 {
-    auto file_size = getIndexStreamFileSize(data_part_info, stream_name, extension);
+    auto file_size = getIndexStreamFileSize(*data_part_info, stream_name, extension);
 
     if (marks_count == 1)
     {

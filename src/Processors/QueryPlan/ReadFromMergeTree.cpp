@@ -3271,36 +3271,13 @@ ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition
         std::move(filter_dag), std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
 }
 
-void ReadFromMergeTree::buildIndexes(
+void ReadFromMergeTree::buildKeyConditions(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
-    const ActionsDAG * filter_actions_dag_,
-    const MergeTreeData & data,
-    const RangesInDataParts & parts,
-    [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
-    [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
-    const ContextPtr & query_context,
-    const SelectQueryInfo & query_info_,
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
     const StorageMetadataPtr & metadata_snapshot,
-    bool skip_partition_pruning_)
+    const ContextPtr & query_context,
+    bool skip_constant_folding)
 {
-    indexes.reset();
-
-    // Build and check if primary key is used when necessary
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-
-    const auto & settings = query_context->getSettingsRef();
-    const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
-
-    std::optional<ActionsDAG> graphite_final_filter;
-    if (filter_actions_dag_ && query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
-    {
-        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot);
-        filter_actions_dag_ = graphite_final_filter ? &*graphite_final_filter : nullptr;
-    }
-
-    auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context, /* boolean_context */ true);
-    const auto & filter_dag = *filter_dag_ptr;
-
     indexes.emplace(buildPrimaryKeyCondition(filter_dag_ptr, metadata_snapshot, query_context, skip_constant_folding));
 
     {
@@ -3311,24 +3288,34 @@ void ReadFromMergeTree::buildIndexes(
         };
         indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
+}
 
-    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
-
-    indexes->part_values
-        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
+void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
+    ReadFromMergeTree::Indexes & indexes,
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & data_settings,
+    [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+    [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
+    const ContextPtr & query_context,
+    bool is_final,
+    bool skip_constant_folding)
+{
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto & settings = query_context->getSettingsRef();
 
     /// Perform virtual column key analysis only when no corresponding physical columns exist.
     const auto & columns = metadata_snapshot->getColumns();
     if (!columns.has("_part_offset") && !columns.has("_part"))
-        indexes->part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
+        indexes.part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
     if (!columns.has("_part_offset") && !columns.has("_part_starting_offset"))
-        indexes->total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
+        indexes.total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(filter_dag_ptr, metadata_snapshot, skip_constant_folding, query_context);
 
-    indexes->use_skip_indexes = settings[Setting::use_skip_indexes];
-    if (query_info_.isFinal() && !settings[Setting::use_skip_indexes_if_final])
-        indexes->use_skip_indexes = false;
+    indexes.use_skip_indexes = settings[Setting::use_skip_indexes];
+    if (is_final && !settings[Setting::use_skip_indexes_if_final])
+        indexes.use_skip_indexes = false;
 
-    if (!indexes->use_skip_indexes)
+    if (!indexes.use_skip_indexes)
         return;
 
     const auto & all_indexes = metadata_snapshot->getSecondaryIndices();
@@ -3351,7 +3338,7 @@ void ReadFromMergeTree::buildIndexes(
         if (ignored_index_names.contains(index.name))
             continue;
 
-        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data.getSettings());
+        auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, data_settings);
 
         /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
         /// cannot answer queries. Skip them so a filtered query does not throw building the condition.
@@ -3427,18 +3414,57 @@ void ReadFromMergeTree::buildIndexes(
         }
     }
 
-    indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
+    indexes.use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
-                                                    && !indexes->key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
+                                                    && !indexes.key_condition_rpn_template->generateUnsubstituted().hasOnlyConjunctions()
                                                     && MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
-                                                        indexes->key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
+                                                        indexes.key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
-    indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
-                                                        && query_info_.isFinal()
+    indexes.use_skip_indexes_if_final_exact_mode = indexes.use_skip_indexes && !skip_indexes.empty()
+                                                        && is_final
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
                                                         && !areAllSkipIndexColumnsInPrimaryKey(primary_key, skip_indexes);
 
-    indexes->skip_indexes = std::move(skip_indexes);
+    indexes.skip_indexes = std::move(skip_indexes);
+}
+
+void ReadFromMergeTree::buildIndexes(
+    std::optional<ReadFromMergeTree::Indexes> & indexes,
+    const ActionsDAG * filter_actions_dag_,
+    const MergeTreeData & data,
+    const RangesInDataParts & parts,
+    [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+    [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
+    const ContextPtr & query_context,
+    const SelectQueryInfo & query_info_,
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_partition_pruning_)
+{
+    indexes.reset();
+
+    const auto & settings = query_context->getSettingsRef();
+    const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
+
+    std::optional<ActionsDAG> graphite_final_filter;
+    if (filter_actions_dag_ && query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot);
+        filter_actions_dag_ = graphite_final_filter ? &*graphite_final_filter : nullptr;
+    }
+
+    auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context, /* boolean_context */ true);
+    const auto & filter_dag = *filter_dag_ptr;
+
+    buildKeyConditions(indexes, filter_dag_ptr, metadata_snapshot, query_context, skip_constant_folding);
+
+    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
+
+    indexes->part_values
+        = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
+
+    buildOffsetAndSkipIndexConditions(
+        *indexes, filter_dag_ptr, metadata_snapshot, *data.getSettings(), vector_search_parameters, top_k_filter_info, query_context,
+        query_info_.isFinal(), skip_constant_folding);
 }
 
 String SkipIndexOrderCache::makeKey(const IMergeTreeDataPart & part)

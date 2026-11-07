@@ -607,6 +607,26 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         bool skip_partition_pruning_ = false);
 
+    /// Builds the primary-key condition and the RPN template of a filter into `indexes`.
+    static void buildKeyConditions(
+        std::optional<ReadFromMergeTree::Indexes> & indexes,
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & query_context,
+        bool skip_constant_folding);
+
+    /// Builds the offset, skip-index conditions and derived flags into `indexes`; needs `buildKeyConditions` first (reads `key_condition_rpn_template`).
+    static void buildOffsetAndSkipIndexConditions(
+        ReadFromMergeTree::Indexes & indexes,
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeSettings & data_settings,
+        [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+        [[maybe_unused]] const std::optional<TopKFilterInfo> & top_k_filter_info,
+        const ContextPtr & query_context,
+        bool is_final,
+        bool skip_constant_folding);
+
     /// The primary-key condition of `buildIndexes`.
     static ConditionTemplate<KeyCondition>::Ptr buildPrimaryKeyCondition(
         std::shared_ptr<ActionsDAGWithInversionPushDown> filter_dag,

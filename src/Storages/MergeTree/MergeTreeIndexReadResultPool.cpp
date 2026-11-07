@@ -115,7 +115,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns, value_updated_columns, context, part_info->getDataPart().get()); !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index_and_condition.index, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()); !result)
         {
             LOG_TRACE(log, "Cannot use skip index for part {}. Reason: {}", part_info->getPartName(), result.error().text);
             continue;
@@ -200,7 +200,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     break;
                 if (dynamic_skip_index_filter && !dynamic_skip_index_filter(*index_helper))
                     continue;
-                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, value_updated_columns, context, part_info->getDataPart().get()); !can_use)
+                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()); !can_use)
                     continue;
 
                 auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
@@ -257,7 +257,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     /// index file that does not describe the values a read returns, so pruning marks by the running
     /// threshold against it would drop rows the query has to see.
     if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker
-        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns, value_updated_columns, context, part_info->getDataPart().get()))
+        && MergeTreeDataSelectExecutor::canUseIndex(skip_indexes.skip_index_for_top_k_filtering, metadata_snapshot, all_updated_columns, value_updated_columns, context, &part_info->getSecondaryIndexColumnTypes()))
     {
         res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part_info,
