@@ -1,0 +1,60 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "678a858e-00dd-4c0e-9a05-9e012ffe6b09",
+  "location" : "/tmp/iceberg-test-tables/v2/orders",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1647995893471,
+  "last-column-id" : 5,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "order_id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "order_year",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "order_date",
+      "required" : true,
+      "type" : "timestamp"
+    }, {
+      "id" : 4,
+      "name" : "product_name",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 5,
+      "name" : "amount",
+      "required" : true,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "order_year",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

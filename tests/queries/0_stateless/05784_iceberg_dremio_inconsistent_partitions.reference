@@ -1,0 +1,12 @@
+dir0	Nullable(String)
+dir1	Nullable(String)
+EXPR$0	Nullable(Int32)
+EXPR$1	Nullable(Int32)
+EXPR$2	Nullable(Int32)
+3
+sub_1	sub_1_1	42	43	44
+sub_2	sub_2_1	45	46	47
+sub_3	\N	48	49	50
+sub_1	sub_1_1	42	43	44
+sub_3	\N	48	49	50
+45	46	47

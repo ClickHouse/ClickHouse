@@ -1,0 +1,101 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "4ab80d7c-3d96-469d-8ceb-ecc86451fb3a",
+  "location" : "/tmp/iceberg",
+  "last-sequence-number" : 2,
+  "last-updated-ms" : 1642108678833,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "date",
+      "required" : true,
+      "type" : "date"
+    }, {
+      "id" : 3,
+      "name" : "category",
+      "required" : true,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "category",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : 5744820232630381916,
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 1076035514370953264,
+    "timestamp-ms" : 1642108678656,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "6",
+      "added-records" : "600",
+      "added-files-size" : "7201",
+      "changed-partition-count" : "6",
+      "total-records" : "600",
+      "total-files-size" : "7201",
+      "total-data-files" : "6",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/tmp/iceberg/metadata/snap-1076035514370953264-1-6e8187a4-1dfd-4853-b8e6-be816a0fbb65.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 5744820232630381916,
+    "parent-snapshot-id" : 1076035514370953264,
+    "timestamp-ms" : 1642108678833,
+    "summary" : {
+      "operation" : "overwrite",
+      "added-delete-files" : "1",
+      "added-files-size" : "2097",
+      "added-position-deletes" : "6",
+      "changed-partition-count" : "1",
+      "total-records" : "600",
+      "total-files-size" : "9298",
+      "total-data-files" : "6",
+      "total-delete-files" : "1",
+      "total-position-deletes" : "6",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/tmp/iceberg/metadata/snap-5744820232630381916-1-094e557b-6230-40a5-86b1-77ad137018bd.avro",
+    "schema-id" : 0
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1642108678656,
+    "snapshot-id" : 1076035514370953264
+  }, {
+    "timestamp-ms" : 1642108678833,
+    "snapshot-id" : 5744820232630381916
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1642108677633,
+    "metadata-file" : "/tmp/iceberg/metadata/v1.metadata.json"
+  }, {
+    "timestamp-ms" : 1642108678656,
+    "metadata-file" : "/tmp/iceberg/metadata/v2.metadata.json"
+  } ]
+}
