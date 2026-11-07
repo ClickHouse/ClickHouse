@@ -31,7 +31,7 @@ bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
     return true;
 }
 
-/// The bound of a ROWS frame at a row index, cut to the partition; under ROWS every row is its own peer group.
+/// The bound of a ROWS frame at a row index, cut to the partition.
 bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t target_row_index, RowPoint & bound)
 {
     if (target_row_index >= partition.end.row_index_in_partition)
@@ -41,7 +41,6 @@ bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partitio
     chassert(bound.row_index_in_partition <= row_index);
     bound.location = blocks.move(bound.location, row_index - bound.row_index_in_partition);
     bound.row_index_in_partition = row_index;
-    bound.peer_group_index_in_partition = row_index;
     return true;
 }
 
@@ -114,9 +113,17 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
         case WindowFrame::BoundaryType::Unbounded:
             return true;
         case WindowFrame::BoundaryType::Current:
-            if (start.peer_group_index_in_partition != current.peer_group_index_in_partition)
-                start = current;
-            return true;
+            switch (frame.type)
+            {
+                case WindowFrame::FrameType::ROWS:
+                    start = current;
+                    return true;
+                case WindowFrame::FrameType::RANGE:
+                case WindowFrame::FrameType::GROUPS:
+                    if (start.peer_group_index_in_partition != current.peer_group_index_in_partition)
+                        start = current;
+                    return true;
+            }
         case WindowFrame::BoundaryType::Offset:
             switch (frame.type)
             {
