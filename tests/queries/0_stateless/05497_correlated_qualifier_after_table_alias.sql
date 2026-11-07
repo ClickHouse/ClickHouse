@@ -74,6 +74,7 @@ SELECT
     (SELECT toTypeName(squality_alias_scope_wildcard.*) FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
 FROM squality_alias_scope_wildcard
 GROUP BY ROLLUP(squality_alias_scope_wildcard.x)
+HAVING GROUPING(squality_alias_scope_wildcard.x) = 0
 ORDER BY squality_alias_scope_wildcard.x NULLS FIRST;
 
 CREATE TABLE squality_alias_scope_semi_left (x UInt64) ENGINE = Memory;
