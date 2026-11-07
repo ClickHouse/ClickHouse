@@ -496,6 +496,9 @@ UInt64 AdaptiveAggregationSession::SpilledPartition::append(
     partitions.forEachChunk(partition, [&](std::string_view chunk) { bytes += chunk.size(); });
 
     std::lock_guard lock(mutex);
+    if (write_failure)
+        std::rethrow_exception(write_failure);
+
     if (!stream)
     {
         stream = std::make_unique<TemporaryDataBuffer>(scope, reserve_size);
@@ -509,8 +512,16 @@ UInt64 AdaptiveAggregationSession::SpilledPartition::append(
         });
         space_check.beforeAppend(*stream, reserve_size);
     }
-    writeBinaryLittleEndian(bytes, *stream);
-    partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
+    try
+    {
+        writeBinaryLittleEndian(bytes, *stream);
+        partitions.forEachChunk(partition, [&](std::string_view chunk) { stream->write(chunk.data(), chunk.size()); });
+    }
+    catch (...)
+    {
+        write_failure = std::current_exception();
+        throw;
+    }
     record_count += partitions.recordsOf(partition);
     return bytes;
 }
