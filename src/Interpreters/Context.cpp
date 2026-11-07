@@ -4033,7 +4033,8 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
 
 void Context::reportObsoleteSettingChange(const SettingChange & change) const
 {
-    if (Settings::tryGetTierOfBuiltin(change.name) != SettingsTierType::OBSOLETE)
+    /// A `merge_tree_`-prefixed name refers to a `MergeTreeSettings` setting, which has its own tier.
+    if (settingGetTier(change.name) != SettingsTierType::OBSOLETE)
         return;
 
     /// The client refuses obsolete settings on its command line. Besides, it applies the settings of the user's

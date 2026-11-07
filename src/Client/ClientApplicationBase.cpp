@@ -9,6 +9,7 @@
 #include <Common/SignalHandlers.h>
 #include <Client/JWTProvider.h>
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -229,7 +230,15 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     /// Obsolete settings have no effect (or must be defined in the server configuration instead).
     /// Refuse them on the command line, so that they are removed from scripts instead of being silently ignored.
-    if (auto obsolete_settings = cmd_settings->getChangedAndObsoleteNames(); !obsolete_settings.empty())
+    /// With `--allow_merge_tree_settings`, `MergeTree` settings can be specified on the command line as well.
+    std::vector<String> obsolete_settings;
+    for (const auto & name : cmd_settings->getChangedAndObsoleteNames())
+        obsolete_settings.emplace_back(name);
+    for (const auto & change : cmd_merge_tree_settings->changes())
+        if (MergeTreeSettings::tryGetTierOfBuiltin(change.name) == SettingsTierType::OBSOLETE)
+            obsolete_settings.emplace_back(change.name);
+
+    if (!obsolete_settings.empty())
     {
         bool single_element = obsolete_settings.size() == 1;
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
