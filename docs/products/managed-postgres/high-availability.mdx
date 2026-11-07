@@ -35,6 +35,18 @@ Data is replicated to the standby using **asynchronous replication**. This means
 
 With this option, only a primary node is provisioned in your selected size. No standby node is created. Your primary node is still monitored for failures, but recovery may take longer depending on the nature of the problem since there's no replica ready to take over. This configuration is best suited for development environments, testing, or non-critical workloads where some downtime is acceptable.
 
+## Using clickhousectl {#using-clickhousectl}
+
+With [clickhousectl](/concepts/features/interfaces/cli), set the high-availability type with `--ha-type` when you create a service, or change it later with `update`. `none` provisions no standby, `async` one standby with asynchronous replication, and `sync` two standbys with synchronous replication:
+
+```bash
+clickhousectl cloud postgres create --name app-db \
+  --region us-east-1 --size m6gd.large --ha-type sync
+clickhousectl cloud postgres update <postgres-id> --ha-type async
+```
+
+To move the primary role to a standby, for example to test failover, run `clickhousectl cloud postgres switchover <postgres-id>`. It returns once the request is accepted, and the service's `state` and `isPrimary` fields don't show when the switchover has finished, so watch your clients' connections instead. These commands need an API key; OAuth login is read-only.
+
 ## Standbys vs read replicas {#standbys-vs-read-replicas}
 
 Standbys and read replicas serve different purposes in ClickHouse Managed Postgres and are configured separately.

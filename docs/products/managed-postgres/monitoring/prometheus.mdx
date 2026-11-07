@@ -55,6 +55,17 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/prometheus"
 ```
 
+## Using clickhousectl {#using-clickhousectl}
+
+[clickhousectl](/concepts/features/interfaces/cli) calls the same endpoints with your saved credentials (a browser login or an API key), so you don't pass the key yourself:
+
+```bash
+clickhousectl cloud postgres prometheus org
+clickhousectl cloud postgres prometheus service <postgres-id>
+```
+
+Both print the Prometheus text shown below. In JSON mode (with `--json`, or when run by a coding agent) the text comes back as a single JSON string.
+
 ## Sample response {#sample-response}
 
 ```response
