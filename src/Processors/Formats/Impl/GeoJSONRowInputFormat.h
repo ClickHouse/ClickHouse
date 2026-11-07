@@ -12,6 +12,16 @@ namespace DB
 
 class FormatFactory;
 
+/// The discriminators of the types of a `Geometry` column by the name of the type.
+using GeoJSONGeometryDiscriminators = std::unordered_map<String, ColumnVariant::Discriminator>;
+GeoJSONGeometryDiscriminators getGeoJSONGeometryDiscriminators(const DataTypePtr & type);
+
+/// Read and validate a GeoJSON geometry object or a JSON `null`. When `col` is null the geometry is only
+/// validated (and nothing is inserted), so a `geometry` that is not a requested output column is
+/// still checked for structural validity instead of being skipped as generic JSON.
+void readGeoJSONGeometry(
+    ReadBuffer & buf, IColumn * col, const GeoJSONGeometryDiscriminators & geometry_discriminators, const FormatSettings & format_settings);
+
 /// Reads a GeoJSON FeatureCollection, yielding one row per feature.
 /// The output schema is: id String, geometry Geometry, properties JSON.
 class GeoJSONRowInputFormat final : public IRowInputFormat
@@ -32,10 +42,6 @@ protected:
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    /// Read and validate a Feature's `geometry` member. When `col` is null the geometry is only
-    /// validated (and nothing is inserted), so a `geometry` that is not a requested output column is
-    /// still checked for structural validity instead of being skipped as generic JSON.
-    void readGeometry(IColumn * col);
     void validateTopLevelTypeMember(ReadBuffer & buf);
 
     const FormatSettings format_settings;
@@ -48,7 +54,7 @@ private:
     std::optional<size_t> geometry_col_idx;
     std::optional<size_t> properties_col_idx;
 
-    std::unordered_map<String, ColumnVariant::Discriminator> geometry_discriminators;
+    GeoJSONGeometryDiscriminators geometry_discriminators;
 };
 
 class GeoJSONExternalSchemaReader : public IExternalSchemaReader
