@@ -1,3 +1,4 @@
+import os
 import requests
 import time
 import uuid
@@ -9,6 +10,7 @@ from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     DoubleType,
+    IntegerType,
     NestedField,
     StringType,
 )
@@ -16,9 +18,15 @@ from pyiceberg.types import (
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
+from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV, csv_compare
 
 BASE_URL = "http://lakekeeper:8181/catalog"
+# Vended credentials are cached until 60 seconds before they expire, so the ones passed
+# through this proxy stay cached for 10 seconds, well below the default cache TTL.
+PROXY_PORT = 8182
+PROXY_CREDENTIALS_EXPIRE_IN_MS = 70_000
+PROXY_URL = f"http://localhost:{PROXY_PORT}/catalog"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "demo"
 
@@ -113,6 +121,11 @@ def started_cluster():
         minio_ip = cluster.minio_ip
         minio_port = cluster.minio_port
         create_warehouse(cluster, minio_ip, minio_port)
+        start_mock_servers(
+            cluster,
+            os.path.dirname(__file__),
+            [("rest_catalog_proxy.py", "node1", PROXY_PORT, [str(PROXY_CREDENTIALS_EXPIRE_IN_MS)])],
+        )
 
         yield cluster
 
@@ -475,14 +488,216 @@ def test_invalid_auth_header_format(started_cluster):
     assert "Invalid auth header format" in str(err.value)
 
 
+def get_credentials_profile_events(node, query_id):
+    node.query("SYSTEM FLUSH LOGS")
+    result = node.query(
+        "SELECT ProfileEvents['DataLakeRestCatalogCredentialsVended'], "
+        "ProfileEvents['DataLakeRestCatalogCredentialsCacheHits'] "
+        f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    )
+    return tuple(int(value) for value in result.split())
+
+
+def create_int_table(catalog, namespace, table_name, rows=1):
+    if namespace not in catalog.list_namespaces():
+        catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        namespace + (table_name,),
+        schema=Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=False)),
+        properties={"write.metadata.compression-codec": "none"},
+    )
+    table.append(pa.table({"id": pa.array(range(rows), type=pa.int32())}))
+
+
+def test_vended_credentials_cache_disabled(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_disabled_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, db_name,
+        additional_settings={"vended_credentials_cache_ttl": 0},
+    )
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    for attempt in range(2):
+        qid = f"{test_ref}-{attempt}"
+        node.query(query, query_id=qid)
+        vended, hits = get_credentials_profile_events(node, qid)
+        assert vended >= 1 and hits == 0
+
+
+def test_vended_credentials_cache_invalidated_on_table_replace(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_replace_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    catalog.drop_table(namespace + (table_name,))
+    create_int_table(catalog, namespace, table_name, rows=2)
+
+    qid = f"{test_ref}-3"
+    assert node.query(query, query_id=qid).strip() == "2"
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    qid = f"{test_ref}-4"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+
+def test_vended_credentials_cache_cleared_on_auth_change(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_auth_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+        CREATE DATABASE {db_name}
+        ENGINE = DataLakeCatalog('{BASE_URL}')
+        SETTINGS
+            catalog_type = 'rest',
+            warehouse = 'demo',
+            storage_endpoint = 'http://minio1:9001/warehouse-rest',
+            auth_header = 'Authorization: Bearer initial_dummy'
+        """,
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING auth_header = 'Authorization: Bearer altered_dummy'"
+    )
+
+    qid = f"{test_ref}-3"
+    node.query(query, query_id=qid)
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
+def wait_for_credentials_vend(node, query, test_ref, timeout):
+    deadline = time.monotonic() + timeout
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        qid = f"{test_ref}-poll-{attempt}"
+        node.query(query, query_id=qid)
+        vended, _ = get_credentials_profile_events(node, qid)
+        if vended >= 1:
+            return
+        time.sleep(1)
+    assert False, f"Credentials were not vended again within {timeout} seconds"
+
+
+def test_vended_credentials_cache_expires_after_ttl(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_ttl_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, db_name,
+        additional_settings={"vended_credentials_cache_ttl": 10},
+    )
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    wait_for_credentials_vend(node, query, test_ref, timeout=60)
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
+def test_vended_credentials_cache_capped_by_token_expiry(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_expiry_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+        CREATE DATABASE {db_name}
+        ENGINE = DataLakeCatalog('{PROXY_URL}')
+        SETTINGS
+            catalog_type = 'rest',
+            warehouse = 'demo',
+            storage_endpoint = 'http://minio1:9001/warehouse-rest'
+        """,
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    wait_for_credentials_vend(node, query, test_ref, timeout=60)
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
 @pytest.mark.parametrize("depth", [1, 2])
 def test_namespace_writes(started_cluster, depth):
     node = started_cluster.instances["node1"]
     catalog = load_catalog_impl(started_cluster)
-    namespace = (f"writes_{uuid.uuid4().hex}", "raw")[:depth]
+    suffix = uuid.uuid4().hex
+    namespace = (f"writes_{suffix}", "raw")[:depth]
+    # The catalog reports the warehouse root as the location of every namespace, so table names must be unique.
+    table_name = f"events_{suffix}"
     db = "namespace_writes"
-    table = f"{db}.`{'.'.join(namespace)}.events`"
-    identifier = namespace + ("events",)
+    table = f"{db}.`{'.'.join(namespace)}.{table_name}`"
+    identifier = namespace + (table_name,)
     settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
 
     if depth > 1:
@@ -494,7 +709,7 @@ def test_namespace_writes(started_cluster, depth):
             settings=settings,
         )
         assert identifier in catalog.list_tables(namespace)
-        assert "events" in node.query(f"SHOW TABLES FROM {db}")
+        assert table_name in node.query(f"SHOW TABLES FROM {db}")
 
         node.query(f"INSERT INTO {table} VALUES (1)", settings=settings)
         node.query(

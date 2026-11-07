@@ -22,6 +22,7 @@ namespace ErrorCodes
     DECLARE(String, catalog_credential, "", "", 0) \
     DECLARE(Bool, use_unity_catalog_v2, false, "Use the new Unity catalog implementation, which serves both Delta Lake and Iceberg tables. Only for catalog_type = 'unity'", 0) \
     DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0) \
+    DECLARE(UInt64, vended_credentials_cache_ttl, 300, "Maximum cache entry lifetime (in seconds) for vended credentials. '0' disables caching.", 0) \
     DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0) \
     DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0) \
     DECLARE(Bool, oauth_server_use_request_body, true, "Put parameters into request body or query params", 0) \
