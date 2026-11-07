@@ -156,6 +156,7 @@ std::unique_ptr<ORC::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             break;
         }
         case TypeIndex::UInt64: [[fallthrough]];
+        case TypeIndex::MacAddress: [[fallthrough]];
         case TypeIndex::Int64:
         {
             result = ORC::Type::createPrimitiveType(ORC::TypeKind::LONG);

@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message MacNumeric
+{
+    uint64 mac = 1;
+}
+
+message MacText
+{
+    string mac = 1;
+}
