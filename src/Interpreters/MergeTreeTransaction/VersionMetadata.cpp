@@ -172,6 +172,14 @@ void VersionMetadata::setAndStoreCreationCSN(CSN csn)
     updateInfoWithRefreshDataThenStoreAndSetMetadata(update_function);
 }
 
+void VersionMetadata::markCreationRolledBackInMemory() noexcept
+{
+    std::lock_guard lock(version_info_mutex);
+    chassert(version_info.creation_csn == Tx::UnknownCSN || version_info.creation_csn == Tx::NonTransactionalCSN
+        || version_info.creation_csn == Tx::RolledBackCSN);
+    version_info.creation_csn = Tx::RolledBackCSN;
+}
+
 bool VersionMetadata::isCreatedByUncommittedTransaction() const
 {
     auto current_info = getInfo();
