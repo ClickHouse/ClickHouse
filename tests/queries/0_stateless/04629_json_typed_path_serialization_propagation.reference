@@ -1,0 +1,4 @@
+test_no_propagation	[]
+test_with_propagation	['j.s.size','j.t%2Ev.size']
+10	1	1
+10	1	1
