@@ -1,0 +1,8 @@
+CREATE SETTINGS PROFILE ab, c: rejected
+CREATE SETTINGS PROFILE a, bc: not rejected
+CREATE NAMED COLLECTION n AS x = 12: rejected
+CREATE NAMED COLLECTION n AS x1 = 2: not rejected
+DROP ROW POLICY p ON a.bc: rejected
+DROP ROW POLICY p ON ab.c: not rejected
+CREATE QUOTA ab, c: rejected
+CREATE QUOTA a, bc: not rejected

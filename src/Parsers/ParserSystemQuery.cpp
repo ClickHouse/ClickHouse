@@ -47,7 +47,6 @@ namespace ErrorCodes
     }
 
     bool parsed_table = false;
-    bool children_already_added = false;
     if (allow_string_literal)
     {
         ASTPtr ast;
@@ -67,7 +66,6 @@ namespace ErrorCodes
                 res->setTable(name);
             }
             parsed_table = true;
-            children_already_added = true; /// setDatabase/setTable already push to children
         }
     }
 
@@ -82,15 +80,7 @@ namespace ErrorCodes
             return false;
 
     res->cluster = cluster;
-
-    if (!children_already_added)
-    {
-        if (res->database)
-            res->children.push_back(res->database);
-        if (res->table)
-            res->children.push_back(res->table);
-    }
-
+    /// `database` / `table` are attached to `children` once, at the end of `ParserSystemQuery::parseImpl`.
     return true;
 }
 
@@ -1145,12 +1135,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    if (res->database)
-        res->children.push_back(res->database);
-    if (res->table)
-        res->children.push_back(res->table);
-    if (res->query_settings)
-        res->children.push_back(res->query_settings);
+    /// Rebuild `children` from the members in the same order as `ASTSystemQuery::clone` and `readJSON`.
+    /// Some statement types already put a member into `children` while parsing (`setDatabase` / `setTable`,
+    /// `backup_source`, `scheduled_merge_parts`), possibly in a different order. A duplicate or a different
+    /// order would make the tree hash and the structure differ from those of `clone`, so a rewrite rule
+    /// (whose source template is cloned) would not match its own source statement.
+    res->children.clear();
+    for (const auto & child : {res->database, res->table, res->query_settings, res->backup_source, res->scheduled_merge_parts})
+        if (child)
+            res->children.push_back(child);
 
     node = std::move(res);
     return true;

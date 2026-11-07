@@ -39,6 +39,14 @@ public:
 
     ASTPtr clone() const override;
 
+    /// `resource_name` lives in `children`, but `operations` / `or_replace` / `if_not_exists` /
+    /// the `ON CLUSTER` name are plain members. Without folding them into the hash,
+    /// `CREATE RESOURCE r (READ DISK d)` and `CREATE RESOURCE r (WRITE DISK d)` would share one
+    /// tree hash. The rewrite-rule matcher treats an equal tree hash as semantic equality, so a
+    /// rule template for one `CREATE RESOURCE` would over-match another. `unit` is derived from
+    /// `operations` and never emitted by the formatter, so it is deliberately not folded.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateResourceQuery>(clone()); }
 
     String getResourceName() const;

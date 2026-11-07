@@ -2,6 +2,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/forEachNonChildSemanticAST.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -30,8 +31,15 @@ public:
             visitSetQuery(*set_query);
         else
         {
-            if (include_deferred_expressions)
-                visitDeferredExpressions(*ast);
+            /// Some AST classes keep semantic subtrees outside `children` — e.g. `SHOW TABLES
+            /// LIMIT {n:UInt64}` keeps the limit in `ASTShowTablesQuery::limit_length` — so a
+            /// placeholder there would otherwise go undiscovered and never be requested from or
+            /// sent by the client. The walk shares the carrier list with the substitution and
+            /// the rewrite-rule matcher — see `forEachNonChildSemanticAST`.
+            /// Row policy filters and masking policy expressions are the only carriers of these
+            /// two classes, and they are deferred: skip them when asked to.
+            if (include_deferred_expressions || !(ast->as<ASTCreateRowPolicyQuery>() || ast->as<ASTCreateMaskingPolicyQuery>()))
+                forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member) { visit(member); });
 
             for (const auto & child : ast->children)
                 visit(child);
@@ -41,26 +49,6 @@ public:
 private:
     NameToNameMap & query_parameters;
     const bool include_deferred_expressions;
-
-    /// Row policy filters and masking policy expressions are not children, see ASTCreateRowPolicyQuery::filters.
-    void visitDeferredExpressions(const IAST & ast)
-    {
-        if (const auto * create_row_policy_query = ast.as<ASTCreateRowPolicyQuery>())
-        {
-            for (const auto & [_, filter] : create_row_policy_query->filters)
-            {
-                if (filter)
-                    visit(filter);
-            }
-        }
-        else if (const auto * create_masking_policy_query = ast.as<ASTCreateMaskingPolicyQuery>())
-        {
-            if (create_masking_policy_query->update_assignments)
-                visit(create_masking_policy_query->update_assignments);
-            if (create_masking_policy_query->where_condition)
-                visit(create_masking_policy_query->where_condition);
-        }
-    }
 
     void visitQueryParameter(const ASTQueryParameter & query_parameter)
     {

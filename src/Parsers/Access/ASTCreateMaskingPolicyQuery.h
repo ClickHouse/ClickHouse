@@ -46,6 +46,15 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+
+    /// `getID` returns a constant string, and every semantic field — the policy name, the target
+    /// table, the `UPDATE` assignments, the `WHERE` condition, the `TO` roles, the priority — is a
+    /// plain member, not part of `children` (this AST has none). Without folding them into the
+    /// hash, `CREATE MASKING POLICY p1 ON t UPDATE a = 1 TO ALL` and an unrelated masking policy
+    /// DDL would share one tree hash. The rewrite-rule matcher treats an equal tree hash as
+    /// semantic equality, so a rule template for one masking-policy DDL would over-match another.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateMaskingPolicyQuery>(clone()); }
 
     void replaceCurrentUserTag(const String & current_user_name) const;

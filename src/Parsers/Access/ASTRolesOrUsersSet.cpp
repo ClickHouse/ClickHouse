@@ -1,4 +1,5 @@
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -19,6 +20,34 @@ namespace
         else
             ostr << backQuoteIfNeed(name.toString());
     }
+}
+
+void ASTRolesOrUsersSet::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment. Each field is
+    /// produced by the formatter, so it survives the format -> parse round-trip that the debug-build
+    /// AST consistency check requires.
+    hash_state.update(all);
+    hash_state.update(current_user);
+    hash_state.update(except_current_user);
+    /// `id_mode` switches the names between bare names and `ID('uuid')`. The parser takes it from
+    /// the statement it parses, so it is the same after the round-trip.
+    hash_state.update(id_mode);
+
+    /// `formatNameOrID` writes a plain name with `backQuoteIfNeed`, so `'u'` (a string literal) is
+    /// parsed back as `u` (an identifier): fold the names as they are formatted, not their subtrees.
+    auto update_hash_with_names = [&](const ASTUserNamesWithHostPtr & list)
+    {
+        hash_state.update(static_cast<bool>(list));
+        if (!list)
+            return;
+        hash_state.update(list->size());
+        for (const auto & name : *list)
+            name->as<const ASTUserNameWithHost &>().updateTreeHashOfFormattedName(hash_state, ignore_aliases);
+    };
+    update_hash_with_names(names);
+    update_hash_with_names(except_names);
 }
 
 void ASTRolesOrUsersSet::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const

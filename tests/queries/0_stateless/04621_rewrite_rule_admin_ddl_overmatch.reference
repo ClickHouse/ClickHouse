@@ -1,0 +1,25 @@
+drop workload exact: rejected
+drop workload different name: not rejected
+drop workload extra if exists: not rejected
+set role exact: rejected
+set role different role: not rejected
+set role default (different kind): not rejected
+set default role (different kind): not rejected
+check grant exact: rejected
+check grant different object: not rejected
+check grant different access type: not rejected
+move user exact: rejected
+move user different name: not rejected
+move user different storage: not rejected
+move role (different entity type): not rejected
+drop user exact: rejected
+drop user different name: not rejected
+drop user extra if exists: not rejected
+drop role (different entity type): not rejected
+masking policy exact: rejected
+masking policy different update: not rejected
+masking policy extra where: not rejected
+masking policy different priority: not rejected
+masking policy different name: not rejected
+masking policy placeholder in update: rejected at CREATE RULE
+masking policy placeholder in where: rejected at CREATE RULE
