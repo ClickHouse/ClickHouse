@@ -593,7 +593,7 @@ private:
         /// so this connection reads what the remote writes and writes what the remote reads.
         /// The remote checks the job's Avro schema registry URL against its own allowlist, not against this server's.
         Settings wire_settings = job_context->getSettingsCopy();
-        wire_settings[Setting::format_avro_schema_registry_url] = "";
+        wire_settings.set(Setting::format_avro_schema_registry_url, "");
         auto format_settings = getFormatSettings(job_context, wire_settings);
         std::swap(format_settings.native.encode_types_in_binary_format, format_settings.native.decode_types_in_binary_format);
         connection->setFormatSettings(format_settings);

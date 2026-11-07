@@ -363,8 +363,8 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
     Settings new_settings{settings};
 
     /// Cluster table functions should always skip unavailable shards.
-    new_settings[Setting::skip_unavailable_shards] = true;
-    new_settings[Setting::cluster_table_function_pushed_down_filter] = pushed_down_filter;
+    new_settings.set(Setting::skip_unavailable_shards, true);
+    new_settings.set(Setting::cluster_table_function_pushed_down_filter, pushed_down_filter);
 
     /// Strip the initiator-only settings (the query-shaping settings, the result-serialisation
     /// settings, and `database`): they are materialized on the initiator and must not be forwarded

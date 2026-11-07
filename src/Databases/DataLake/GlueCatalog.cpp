@@ -659,7 +659,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
 
     auto resolve_context = DB::Context::createCopy(getContext());
     DB::Settings resolve_settings = resolve_context->getSettingsCopy();
-    resolve_settings[DB::Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
+    resolve_settings.set(DB::Setting::iceberg_list_only_v_prefixed_metadata_files, false);
     resolve_context->setSettings(resolve_settings);
 
     try

@@ -128,7 +128,7 @@ void SelectStreamFactory::createForShardImpl(
             {
                 auto mutable_context = Context::createCopy(context);
                 Settings settings_without_parallel_replicas = mutable_context->getSettingsCopy();
-                settings_without_parallel_replicas[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+                settings_without_parallel_replicas.set(Setting::allow_experimental_parallel_reading_from_replicas, 0);
                 mutable_context->setSettings(settings_without_parallel_replicas);
                 context_without_parallel_replicas = std::move(mutable_context);
             }

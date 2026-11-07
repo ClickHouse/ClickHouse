@@ -27,7 +27,6 @@
 #include <Common/Throttler.h>
 #include <Common/ThrottlerArray.h>
 #include <Common/thread_local_rng.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Common/getMultipleKeysFromConfig.h>
@@ -42,9 +41,12 @@
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Databases/IDatabase.h>
@@ -2506,10 +2508,11 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
 
-    setUserIDWithLock(user_id_, lock);
-
+    /// The user's stored profiles were checked before acquiring the lock.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
+    /// Resolve and publish the settings cache before replacing the principal.
+    setUserIDWithLock(user_id_, lock);
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
     setAuthenticationGrantsWithLock(authentication_grants_, lock);
@@ -2701,6 +2704,23 @@ std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
 
 namespace
 {
+template <typename Apply>
+void withSettingChangeErrorContext(const SettingChange & change, Apply && apply)
+{
+    try
+    {
+        std::forward<Apply>(apply)();
+    }
+    catch (Exception & e)
+    {
+        const auto masked = CoreSettings::renderSecretSettingValue(String(Settings::resolveName(change.name)), change.value);
+        e.addMessage(fmt::format(
+                         "in attempt to set the value of setting '{}' to {}",
+                         change.name, masked ? *masked : BaseSettingsHelpers::formatValueForErrorMessage(change.value)));
+        throw;
+    }
+}
+
 ALWAYS_INLINE inline void
 contextSanityClampSettingsWithLock(const Context & context, Settings & settings, const std::lock_guard<ContextSharedMutex> &)
 {
@@ -2848,6 +2868,53 @@ void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_cons
 
 void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
 {
+    /// `compatibility` depends on inherited constraints, which are not part of the settings snapshot cache key.
+    /// Apply those profiles through the ordinary path, with their constraints installed before their settings.
+    if (!check_constraints && (*settings)[Setting::compatibility].value.empty()
+        && !profiles_info.settings.tryGet(COMPATIBILITY_SETTING_NAME))
+    {
+        /// Profiles are immutable and already include the user and enabled-role generation.
+        const auto type = getApplicationType();
+        const bool sanity_clamp = type == ApplicationType::LOCAL || type == ApplicationType::SERVER;
+        auto cached = profiles_info.tryGetCachedSettings(*settings, sanity_clamp);
+        if (!cached && settings->hasServerOwnedStorage())
+        {
+            /// A published login configuration belongs to the server, not the first login query.
+            MemoryTrackerBlockerInThread guard;
+            Settings resolved(*settings);
+            for (const auto & change : profiles_info.settings)
+            {
+                /// `SettingsProfilesInfo` has already substituted parent profiles.
+                chassert(change.name != "profile");
+                withSettingChangeErrorContext(change, [&]
+                {
+                    resolved.checkShorthandChange(change);
+                    resolved.set(change.name, change.value);
+                    contextSanityClampSettingsWithLock(*this, resolved, lock);
+                });
+            }
+            applySettingsQuirks(resolved);
+            adjustSettingsForMakeDistributedPlan(resolved);
+            /// Profiles can introduce custom values whose allocations belong to a query.
+            /// Apply those through the ordinary path outside the server allocation scope.
+            if (resolved.hasServerOwnedStorage())
+                cached = profiles_info.cacheSettings(*settings, resolved, sanity_clamp);
+        }
+        if (cached)
+        {
+            /// Finish every allocation before committing the profile to this context. In particular,
+            /// custom values copied out of the cache belong to the query, outside the server scope.
+            Settings prepared_settings(*cached);
+            auto prepared_constraints = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+            contextSanityClampSettingsWithLock(*this, prepared_settings, lock);
+            settings->swap(prepared_settings);
+            settings_constraints_and_current_profiles = std::move(prepared_constraints);
+            need_recalculate_access = true;
+            return;
+        }
+    }
+
+    /// Uncached settings are applied after their constraints are installed.
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
     /// Installed first, so that a `compatibility` the profile sets is restricted by the constraints of the profile.
@@ -3990,7 +4057,7 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
 
 void Context::applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock)
 {
-    try
+    withSettingChangeErrorContext(change, [&]
     {
         /// `SET name` with no value only makes sense for a Bool setting, and the parser cannot tell:
         /// it does not know the settings schema. `setSettingWithLock` takes a name and a value, so
@@ -3998,14 +4065,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
         settings->checkShorthandChange(change);
         setSettingWithLock(change.name, change.value, lock);
         contextSanityClampSettingsWithLock(*this, *settings, lock);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format(
-                         "in attempt to set the value of setting '{}' to {}",
-                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
-        throw;
-    }
+    });
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
@@ -4037,18 +4097,11 @@ void Context::setServerSetting(std::string_view name, const Field & value)
 
 void Context::applySettingChange(const SettingChange & change)
 {
-    try
+    withSettingChangeErrorContext(change, [&]
     {
         settings->checkShorthandChange(change);
         setSetting(change.name, change.value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format(
-                         "in attempt to set the value of setting '{}' to {}",
-                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
-        throw;
-    }
+    });
 }
 
 
@@ -4114,7 +4167,7 @@ void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings 
 
 void Context::checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
-    SharedLockGuard lock(mutex);
+    std::lock_guard lock(mutex);
     checkSettingsConstraintsWithLock(profile_elements, source);
 }
 
@@ -4163,7 +4216,7 @@ void Context::checkRemovedSettings(const std::shared_ptr<const IAccessEntity> & 
 
 void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source)
 {
-    SharedLockGuard lock(mutex);
+    std::lock_guard lock(mutex);
     checkSettingsConstraintsWithLock(change, source);
 }
 
@@ -4178,7 +4231,7 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
         return;
     }
 
-    SharedLockGuard lock(mutex);
+    std::lock_guard lock(mutex);
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -4227,7 +4280,7 @@ void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource 
         return;
     }
 
-    SharedLockGuard lock(mutex);
+    std::lock_guard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
@@ -4242,7 +4295,7 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
         return;
     }
 
-    SharedLockGuard lock(mutex);
+    std::lock_guard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
 }
 
@@ -4257,7 +4310,7 @@ void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges 
         return;
     }
 
-    SharedLockGuard lock(mutex);
+    std::lock_guard lock(mutex);
     clampToSettingsConstraintsRejectingInvalidChangesWithLock(changes, source);
 }
 
@@ -4598,15 +4651,16 @@ void Context::makeQueryContext()
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
-    (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
+    makeQueryContext(); // Resets the classifier; rebuilt lazily under the merge workload set below.
+    settings->set(Setting::workload, merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload]);
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
-    (*settings)[Setting::workload]
-        = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
+    makeQueryContext(); // Resets the classifier; rebuilt lazily under the mutation workload set below.
+    settings->set(
+        Setting::workload,
+        merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload]);
 
     /// A mutation runs in the background, from a context built out of the background one rather
     /// than from the query that submitted it, so the normalization in `executeQuery` never sees it
@@ -4615,7 +4669,7 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     /// `UPDATE` expression report an analysis that did not happen. Every context a mutation is
     /// analyzed and executed in comes through here.
     if (!(*settings)[Setting::allow_experimental_analyzer])
-        (*settings)[Setting::allow_experimental_analyzer] = true;
+        settings->set(Setting::allow_experimental_analyzer, true);
 }
 
 void Context::makeSessionContext()

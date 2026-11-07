@@ -42,7 +42,7 @@ TEST(SettingsQuirks, AnExplicitReadMethodIsKept)
     for (const auto & method : {"pread_threadpool", "read", "pread", "mmap", "pread_fake_async", "io_uring"})
     {
         Settings settings;
-        settings[Setting::local_filesystem_read_method] = method;
+        settings.set(Setting::local_filesystem_read_method, method);
         ASSERT_TRUE(settings[Setting::local_filesystem_read_method].changed);
 
         applySettingsQuirks(settings);

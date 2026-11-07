@@ -1,0 +1,12 @@
+5	profile-a
+5	profile-a
+7	profile-b
+7	profile-b
+query-local
+5	profile-a
+constraint enforced
+6	profile-a-v2
+6	profile-a-v2
+7	profile-b
+7	profile-b
+7	profile-b

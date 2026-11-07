@@ -325,7 +325,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TimeRangesTarget)
 TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultTableEngineChoosesInnerEngineFamily)
 {
     Settings query_settings;
-    query_settings[Setting::default_table_engine] = DefaultTableEngine::ReplicatedMergeTree;
+    query_settings.set(Setting::default_table_engine, DefaultTableEngine::ReplicatedMergeTree);
 
     auto definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries", query_settings);
     EXPECT_TRUE(extractInnerEngine(definition, "SAMPLES").starts_with("ReplicatedAggregatingMergeTree ")) << definition;
@@ -334,7 +334,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultTableEngineChoosesInnerEngineFa
     EXPECT_TRUE(extractInnerEngine(definition, "TIME RANGES").starts_with("ReplicatedAggregatingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "METRIC FAMILIES").starts_with("ReplicatedReplacingMergeTree ")) << definition;
 
-    query_settings[Setting::default_table_engine] = DefaultTableEngine::SharedMergeTree;
+    query_settings.set(Setting::default_table_engine, DefaultTableEngine::SharedMergeTree);
     definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries", query_settings);
     EXPECT_TRUE(extractInnerEngine(definition, "SAMPLES").starts_with("SharedAggregatingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "RECENT SAMPLES").starts_with("SharedAggregatingMergeTree ")) << definition;
@@ -348,18 +348,18 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultTableEngineChoosesInnerEngineFa
     EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("ReplacingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "TIME RANGES").starts_with("AggregatingMergeTree ")) << definition;
 
-    query_settings[Setting::default_table_engine] = DefaultTableEngine::MergeTree;
+    query_settings.set(Setting::default_table_engine, DefaultTableEngine::MergeTree);
     definition = normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries SAMPLES ENGINE = SharedAggregatingMergeTree", query_settings);
     EXPECT_TRUE(extractInnerEngine(definition, "SAMPLES").starts_with("SharedAggregatingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "TAGS").starts_with("SharedReplacingMergeTree ")) << definition;
     EXPECT_TRUE(extractInnerEngine(definition, "TIME RANGES").starts_with("SharedAggregatingMergeTree ")) << definition;
 
     /// Only the MergeTree families can be the engines of the inner tables.
-    query_settings[Setting::default_table_engine] = DefaultTableEngine::Memory;
+    query_settings.set(Setting::default_table_engine, DefaultTableEngine::Memory);
     EXPECT_EQ(getExceptionCode([&] { normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries", query_settings); }), ErrorCodes::INCORRECT_QUERY);
 
     /// Without a default engine the inner engines must be declared.
-    query_settings[Setting::default_table_engine] = DefaultTableEngine::None;
+    query_settings.set(Setting::default_table_engine, DefaultTableEngine::None);
     EXPECT_EQ(getExceptionCode([&] { normalizeNewTableWithSettings("CREATE TABLE db.ts ENGINE = TimeSeries", query_settings); }), ErrorCodes::INCORRECT_QUERY);
 }
 

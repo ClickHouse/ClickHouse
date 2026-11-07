@@ -1203,8 +1203,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(want_stateful ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
-    settings_copy[Setting::use_hive_partitioning] = false;
-    settings_copy[Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
+    settings_copy.set(Setting::use_hive_partitioning, false);
+    settings_copy.set(Setting::iceberg_list_only_v_prefixed_metadata_files, false);
     context_copy->setSettings(settings_copy);
 
     applyCatalogSpecificConfiguration(*configuration);

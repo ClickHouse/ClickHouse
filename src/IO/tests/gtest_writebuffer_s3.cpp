@@ -1091,7 +1091,7 @@ protected:
         {
             /// Do not block the main thread awaiting the others task.
             /// This test use the only one thread at all
-            getSettings()[Setting::s3_max_inflight_parts_for_one_file] = 0;
+            getSettings().set(Setting::s3_max_inflight_parts_for_one_file, 0);
             async_policy = std::make_unique<MockS3::SimpleAsyncTasks>();
         }
         else
@@ -1112,7 +1112,7 @@ INSTANTIATE_TEST_SUITE_P(WBS3
 TEST_P(SyncAsync, ExceptionOnHead) {
     setInjectionModel(std::make_shared<MockS3::HeadObjectFailIngection>());
 
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     EXPECT_THROW({
         try {
@@ -1192,8 +1192,8 @@ TEST_P(SyncAsync, ExceptionOnPut) {
 TEST_P(SyncAsync, ExceptionOnCreateMPU) {
     setInjectionModel(std::make_shared<MockS3::CreateMPUFailIngection>());
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts ara ok
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // no single part
+    getSettings().set(Setting::s3_min_upload_part_size, 1); // small parts ara ok
 
     EXPECT_THROW({
         try {
@@ -1253,9 +1253,9 @@ TEST_P(SyncAsync, UploadChecksumAlgorithmSHA256Multipart)
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "SHA256");
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0);
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     auto buffer = getWriteBuffer("checksum_sha256_multipart");
     writeAsOneBlock(*buffer, 10);
@@ -1275,7 +1275,7 @@ TEST_P(SyncAsync, UploadChecksumAlgorithmCRC32Singlepart)
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "CRC32";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "CRC32");
 
     auto buffer = getWriteBuffer("checksum_crc32_singlepart");
     writeAsOneBlock(*buffer, 10);
@@ -1291,9 +1291,9 @@ TEST_F(WBS3Test, CopyDataUploadChecksumAlgorithmCRC32Multipart)
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "CRC32";
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "CRC32");
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0);
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     const String data(10, 'a');
     CreateReadBuffer create_read_buffer = [data]() -> std::unique_ptr<SeekableReadBuffer>
@@ -1326,7 +1326,7 @@ TEST_F(WBS3Test, CopyDataUploadChecksumAlgorithmCRC32Multipart)
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
 {
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "crc32";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "crc32");
 
     S3::S3RequestSettings request_settings;
     request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
@@ -1334,11 +1334,11 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmValidationAndNormalization)
     ASSERT_EQ("CRC32", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
 
     /// `MD5` normalizes to upper case. The FIPS rejection is a runtime check, not a validation one.
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "md5";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "md5");
     request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
     ASSERT_EQ("MD5", request_settings[S3RequestSetting::upload_checksum_algorithm].value);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "MD4");
 
     EXPECT_THROW({
         try
@@ -1372,7 +1372,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
         S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true));
 
     /// S3Express honors an explicit flexible algorithm instead of forcing CRC32.
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "SHA256");
     request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
     ASSERT_EQ(Algorithm::SHA256,
         S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, /* is_s3express_bucket */ true));
@@ -1380,7 +1380,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmDefaults)
     /// S3Express cannot use MD5 (no Content-MD5), so an explicit MD5 is rejected rather than silently upgraded.
     if (!fips)
     {
-        getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+        getSettings().set(Setting::s3_upload_checksum_algorithm, "MD5");
         request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ true);
         EXPECT_THROW({
             try
@@ -1401,7 +1401,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
 {
     S3::S3RequestSettings request_settings;
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD4";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "MD4");
     request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
 
     EXPECT_THROW({
@@ -1419,7 +1419,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmRuntimeValidation)
 
     if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
     {
-        getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+        getSettings().set(Setting::s3_upload_checksum_algorithm, "MD5");
         request_settings.updateFromSettings(getSettings(), /* if_changed */ true, /* validate_settings */ false);
 
         EXPECT_THROW({
@@ -1465,7 +1465,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "SHA256");
 
     auto buffer = getWriteBuffer("checksum_gcs_ignores_setting");
     writeAsOneBlock(*buffer, 10);
@@ -1486,7 +1486,7 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "MD5";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "MD5");
 
     auto buffer = getWriteBuffer("checksum_md5_singlepart");
     writeAsOneBlock(*buffer, 10);
@@ -1508,7 +1508,7 @@ TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
     auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_upload_checksum_algorithm] = "SHA256";
+    getSettings().set(Setting::s3_upload_checksum_algorithm, "SHA256");
 
     auto buffer = getWriteBuffer("s3express_explicit_sha256");
     writeAsOneBlock(*buffer, 10);
@@ -1523,8 +1523,8 @@ TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
 TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUFailIngection>());
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts ara ok
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // no single part
+    getSettings().set(Setting::s3_min_upload_part_size, 1); // small parts ara ok
 
     EXPECT_THROW({
         try {
@@ -1747,8 +1747,8 @@ TEST_P(SyncAsync, DisabledIdempotencyIdIsNotStamped) {
         buffer->finalize();
     }
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // no single part
+    getSettings().set(Setting::s3_min_upload_part_size, 1); // small parts are ok
 
     {
         auto buffer = getWriteBuffer("no_idempotency_id_mpu", {}, ObjectAttributes{{"caller-key", "caller-value"}});
@@ -1858,8 +1858,8 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
     auto injection = std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store);
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     auto buffer = getWriteBuffer("conditional_mpu_lost_response", conditionalCreateWriteSettings());
     buffer->write('A');
@@ -1893,8 +1893,8 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
     auto injection = std::make_shared<MockS3::CompleteMPUPreconditionFailedInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     EXPECT_THROW({
         try {
@@ -1932,8 +1932,8 @@ TEST_P(SyncAsync, MultipartIfMatchCompleteRecoversLostResponse) {
     auto injection = std::make_shared<MockS3::CompleteMPULostResponseThenPreconditionFailed>(client->store);
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     auto buffer = getWriteBuffer("conditional_mpu_if_match", conditionalReplaceWriteSettings());
     buffer->write('A');
@@ -1967,8 +1967,8 @@ TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotMaskForeignObject) {
     auto injection = std::make_shared<MockS3::CompleteMPUPreconditionFailedInjection>();
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     EXPECT_THROW({
         try {
@@ -2003,8 +2003,8 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRecoversNoSuchUploadOnOwnObject) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ true));
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     auto buffer = getWriteBuffer("conditional_mpu_no_such_upload", conditionalCreateWriteSettings());
     buffer->write('A');
@@ -2031,8 +2031,8 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUp
         client->store, /* complete_first_attempt= */ false);
     setInjectionModel(injection);
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     EXPECT_THROW({
         try {
@@ -2065,8 +2065,8 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteRecoversNoSuchUploadOnOwnObject)
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ true));
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     auto buffer = getWriteBuffer("unconditional_mpu_no_such_upload");
     buffer->write('A');
@@ -2094,8 +2094,8 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteDoesNotMaskForeignObjectOnNoSuch
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ false));
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force the multipart path
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
 
     EXPECT_THROW({
         try {
@@ -2127,8 +2127,8 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteDoesNotMaskForeignObjectOnNoSuch
 TEST_P(SyncAsync, CompleteMPURetriesInvalidPart) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUInvalidPartOnceIngection>(/* fail_times= */ 1));
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // no single part
+    getSettings().set(Setting::s3_min_upload_part_size, 1); // small parts are ok
 
     auto buffer = getWriteBuffer("complete_mpu_invalid_part_retry");
     buffer->write('A');
@@ -2153,9 +2153,9 @@ TEST_P(SyncAsync, CompleteMPURetriesInvalidPart) {
 TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUInvalidPartOnceIngection>(/* fail_times= */ 1));
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
-    getSettings()[Setting::s3_check_objects_after_upload] = false;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force multipart
+    getSettings().set(Setting::s3_min_upload_part_size, 1); // small parts are ok
+    getSettings().set(Setting::s3_check_objects_after_upload, false);
 
     S3::S3RequestSettings request_settings;
     request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
@@ -2197,9 +2197,9 @@ TEST_F(WBS3Test, CopyDataToS3FileAbsorbsNoSuchUploadForOwnObject) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ true));
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-    getSettings()[Setting::s3_check_objects_after_upload] = false;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force multipart
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
+    getSettings().set(Setting::s3_check_objects_after_upload, false);
 
     S3::S3RequestSettings request_settings;
     request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
@@ -2243,9 +2243,9 @@ TEST_F(WBS3Test, CopyDataToS3FileDoesNotMaskForeignObjectOnNoSuchUpload) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ false));
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-    getSettings()[Setting::s3_check_objects_after_upload] = false;
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // force multipart
+    getSettings().set(Setting::s3_min_upload_part_size, 1);
+    getSettings().set(Setting::s3_check_objects_after_upload, false);
 
     S3::S3RequestSettings request_settings;
     request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
@@ -2307,7 +2307,7 @@ protected:
 
     S3::S3RequestSettings makeRequestSettings()
     {
-        getSettings()[Setting::s3_check_objects_after_upload] = false;
+        getSettings().set(Setting::s3_check_objects_after_upload, false);
         S3::S3RequestSettings request_settings;
         request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
         return request_settings;
@@ -2486,7 +2486,7 @@ TEST_F(CopyS3FileRoutingTest, RejectedCopyRetriesAsMultipartCopyOnlyIfAllowed)
         const String src_key = allow ? "src_allowed" : "src_disallowed";
         const String dst_key = allow ? "dst_allowed" : "dst_disallowed";
         const String source = putSource(src_key, size);
-        getSettings()[Setting::s3_allow_multipart_copy] = allow;
+        getSettings().set(Setting::s3_allow_multipart_copy, allow);
         setInjectionModel(std::make_shared<MockS3::RejectCopyAndPutInjection>("EntityTooLarge"));
 
         EXPECT_NO_THROW(runWholeCopy(src_key, size, dst_key));
@@ -2510,8 +2510,8 @@ TEST_F(CopyS3FileRoutingTest, RejectedCopyRetriesAsMultipartCopyOnlyIfAllowed)
 TEST_P(SyncAsync, ExceptionOnUploadPart) {
     setInjectionModel(std::make_shared<MockS3::UploadPartFailIngection>());
 
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts ara ok
+    getSettings().set(Setting::s3_max_single_part_upload_size, 0); // no single part
+    getSettings().set(Setting::s3_min_upload_part_size, 1); // small parts ara ok
 
     MockS3::EventCounts counters = {.multiUploadCreate = 1, .multiUploadAbort = 1};
 
@@ -2627,14 +2627,14 @@ TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
 }
 
 TEST_P(SyncAsync, EmptyFile) {
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
     runSimpleScenario(counters, 0);
 }
 
 TEST_P(SyncAsync, ManualNextCalls) {
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     {
         MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
@@ -2693,11 +2693,11 @@ TEST_P(SyncAsync, ManualNextCalls) {
 }
 
 TEST_P(SyncAsync, SmallFileIsOnePutRequest) {
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
-        getSettings()[Setting::s3_min_upload_part_size] = 10;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 1000);
+        getSettings().set(Setting::s3_min_upload_part_size, 10);
 
         MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
 
@@ -2708,8 +2708,8 @@ TEST_P(SyncAsync, SmallFileIsOnePutRequest) {
     }
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
-        getSettings()[Setting::s3_min_upload_part_size] = 1000;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 10);
+        getSettings().set(Setting::s3_min_upload_part_size, 1000);
 
         MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
 
@@ -2721,11 +2721,11 @@ TEST_P(SyncAsync, SmallFileIsOnePutRequest) {
 }
 
 TEST_P(SyncAsync, LittleBiggerFileIsMultiPartUpload) {
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
-        getSettings()[Setting::s3_min_upload_part_size] = 10;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 1000);
+        getSettings().set(Setting::s3_min_upload_part_size, 10);
 
         MockS3::EventCounts counters = {.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + 1);
@@ -2735,8 +2735,8 @@ TEST_P(SyncAsync, LittleBiggerFileIsMultiPartUpload) {
     }
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
-        getSettings()[Setting::s3_min_upload_part_size] = 1000;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 10);
+        getSettings().set(Setting::s3_min_upload_part_size, 1000);
 
         MockS3::EventCounts counters = {.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 1};
 
@@ -2748,11 +2748,11 @@ TEST_P(SyncAsync, LittleBiggerFileIsMultiPartUpload) {
 }
 
 TEST_P(SyncAsync, BiggerFileIsMultiPartUpload) {
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
-        getSettings()[Setting::s3_min_upload_part_size] = 10;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 1000);
+        getSettings().set(Setting::s3_min_upload_part_size, 10);
 
         auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size]);
@@ -2766,8 +2766,8 @@ TEST_P(SyncAsync, BiggerFileIsMultiPartUpload) {
 
     {
         // but not in that case, when s3_min_upload_part_size > s3_max_single_part_upload_size
-        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
-        getSettings()[Setting::s3_min_upload_part_size] = 1000;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 10);
+        getSettings().set(Setting::s3_min_upload_part_size, 1000);
 
         auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size]);
@@ -2781,12 +2781,12 @@ TEST_P(SyncAsync, BiggerFileIsMultiPartUpload) {
 }
 
 TEST_P(SyncAsync, IncreaseUploadBuffer) {
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
-        getSettings()[Setting::s3_min_upload_part_size] = 10;
-        getSettings()[Setting::s3_upload_part_size_multiply_parts_count_threshold] = 1;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 10);
+        getSettings().set(Setting::s3_min_upload_part_size, 10);
+        getSettings().set(Setting::s3_upload_part_size_multiply_parts_count_threshold, 1);
         // parts: 10 20 40 80  160
         // size:  10 30 70 150 310
 
@@ -2798,10 +2798,10 @@ TEST_P(SyncAsync, IncreaseUploadBuffer) {
     }
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
-        getSettings()[Setting::s3_min_upload_part_size] = 10;
-        getSettings()[Setting::s3_upload_part_size_multiply_parts_count_threshold] = 2;
-        getSettings()[Setting::s3_upload_part_size_multiply_factor] = 3;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 10);
+        getSettings().set(Setting::s3_min_upload_part_size, 10);
+        getSettings().set(Setting::s3_upload_part_size_multiply_parts_count_threshold, 2);
+        getSettings().set(Setting::s3_upload_part_size_multiply_factor, 3);
         // parts: 10 10 30 30 90
         // size:  10 20 50 80 170
 
@@ -2814,13 +2814,13 @@ TEST_P(SyncAsync, IncreaseUploadBuffer) {
 }
 
 TEST_P(SyncAsync, IncreaseLimited) {
-    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings().set(Setting::s3_check_objects_after_upload, true);
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
-        getSettings()[Setting::s3_min_upload_part_size] = 10;
-        getSettings()[Setting::s3_upload_part_size_multiply_parts_count_threshold] = 1;
-        getSettings()[Setting::s3_max_upload_part_size] = 45;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 10);
+        getSettings().set(Setting::s3_min_upload_part_size, 10);
+        getSettings().set(Setting::s3_upload_part_size_multiply_parts_count_threshold, 1);
+        getSettings().set(Setting::s3_max_upload_part_size, 45);
         // parts: 10 20 40 45  45  45
         // size:  10 30 70 115 160 205
 
@@ -2833,11 +2833,11 @@ TEST_P(SyncAsync, IncreaseLimited) {
 }
 
 TEST_P(SyncAsync, StrictUploadPartSize) {
-    getSettings()[Setting::s3_check_objects_after_upload] = false;
+    getSettings().set(Setting::s3_check_objects_after_upload, false);
 
     {
-        getSettings()[Setting::s3_max_single_part_upload_size] = 10;
-        getSettings()[Setting::s3_strict_upload_part_size] = 11;
+        getSettings().set(Setting::s3_max_single_part_upload_size, 10);
+        getSettings().set(Setting::s3_strict_upload_part_size, 11);
 
         {
             auto counters = MockS3::EventCounts{.multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 6};

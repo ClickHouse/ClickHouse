@@ -79,14 +79,14 @@ void RemoteInserter::initialize()
     /// and will not consume Log packets.
     ///
     /// So that is why send_logs_level had been disabled here.
-    settings[Setting::send_logs_level] = "none";
+    settings.set(Setting::send_logs_level, "none");
 
     /// The quotas over profile events charge the initiating user with what the remote server reports in
     /// its `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the query
     /// or of the user's profile on the remote server, the same as for `SELECT`. There is no deadlock like
     /// with `send_logs_level` above: the remote server sends the profile events of a secondary `INSERT`
     /// only once, after it has received all the data, when this side is already waiting in `onFinish`.
-    settings[Setting::send_profile_events] = true;
+    settings.set(Setting::send_profile_events, true);
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
