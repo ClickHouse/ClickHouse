@@ -92,6 +92,7 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerCo
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
     , is_ast_level_optimization_allowed(!(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options_.ignore_ast_optimizations))
+    , is_building_cacheable_logical_plan(select_query_options_.build_logical_plan && select_query_options_.cacheable_logical_plan)
     , may_be_serialized_for_remote_execution(select_query_options_.build_logical_plan || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 
@@ -99,6 +100,7 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextP
     : query_context(std::move(query_context_))
     , global_planner_context(planner_context_->global_planner_context)
     , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
+    , is_building_cacheable_logical_plan(planner_context_->is_building_cacheable_logical_plan)
     , may_be_serialized_for_remote_execution(planner_context_->may_be_serialized_for_remote_execution || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 

@@ -14,10 +14,14 @@
 #include <Parsers/IAST_fwd.h>
 #include <Common/ListWithMemoryTracking.h>
 
+#include <Core/UUID.h>
+
 #include <functional>
 #include <list>
+#include <map>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <unordered_map>
 #include <vector>
 
@@ -25,6 +29,9 @@
 
 namespace DB
 {
+
+struct StorageLimits;
+using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class AnalyzeStepsStats;
 struct ExplainFormatSettings;
@@ -163,7 +170,32 @@ public:
     /// Check if already serialized
     bool isSerialized() const;
 
-    void resolveStorages(const ContextPtr & context);
+    /// Storage identities that `resolveStorages` must observe, keyed by `(database, table)`.
+    /// Used by the query plan cache: the entry is validated against a set of resolved storages
+    /// *before* the plan is deserialized, and resolution then looks the same names up again. When
+    /// this map is passed, every resolved leaf must match the identity recorded here, so a plan can
+    /// never execute against a storage that was not validated (e.g. an `Atomic` `DROP`/`CREATE` in
+    /// between). See `materializeCachedQueryPlan`.
+    /// The UUID alone cannot see a same-UUID in-place change (`ALTER TABLE ... MODIFY COLUMN`,
+    /// `ALTER ROW POLICY`) landing between validation and resolution, so the identity also carries
+    /// the semantics fingerprint the caller proved (see `computeQueryPlanCacheSemanticsFingerprint`),
+    /// which resolution re-checks against the snapshot the read is actually bound to.
+    struct ExpectedStorageIdentity
+    {
+        UUID uuid = UUIDHelpers::Nil;
+        UInt64 semantics_fingerprint = 0;
+    };
+    using ExpectedStorageIdentities = std::map<std::pair<String, String>, ExpectedStorageIdentity>;
+
+    /// `enclosing_storage_limits` are the limits of the query that executes the plan, added in front
+    /// of the limits of each resolved read, like the planner does for the reads of a subquery. The
+    /// reads are resolved at `QueryProcessingStage::FetchColumns`, which does not carry the limits
+    /// checked only by the initiator of a query (`min_execution_speed`, `min_execution_speed_bytes`),
+    /// so a caller that executes the plan as the complete query must pass them here.
+    void resolveStorages(
+        const ContextPtr & context,
+        const ExpectedStorageIdentities * expected_identities = nullptr,
+        const StorageLimitsList * enclosing_storage_limits = nullptr);
 
     /// Optimizes the query. With `make_distributed_plan` set, the plan must have been accepted by
     /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it), because set and CTE
