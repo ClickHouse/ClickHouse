@@ -33,6 +33,11 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->isParallelReadingEnabled())
             return nullptr;
 
+        /// A bucketed distributed read reads only its bucket's marks, which are pinned when the pipeline is built,
+        /// while the layers would be split from all local parts.
+        if (reading->getDistributedReadBucketCount() > 0)
+            return nullptr;
+
         /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
         /// LIMIT BY or aggregation) outputs one port per partition, while reading by layers outputs
         /// one port per primary-key range. Both are contracts about which rows go to which output
