@@ -2041,7 +2041,8 @@ void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header)
+    const Block & header,
+    const std::vector<std::pair<String, String>> & key_value_metadata)
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -2066,7 +2067,10 @@ void writeFileFooter(FileWriteState & file,
     ///  >  This should be in the format
     ///  >  <Application> version <App Version> (build <App Build Hash>).
     ///  >  e.g. impala version 1.0 (build 6cf94d29b2b7115df4de2c06e2ab4326d721eb55)
-    meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
+    if (!options.created_by.empty())
+        meta.__set_created_by(options.created_by);
+    else
+        meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {
@@ -2147,6 +2151,16 @@ void writeFileFooter(FileWriteState & file,
             meta.key_value_metadata.push_back(std::move(key_value));
             meta.__isset.key_value_metadata = true;
         }
+    }
+
+    for (const auto & [key, value] : key_value_metadata)
+    {
+        parquet::format::KeyValue key_value;
+        key_value.__set_key(key);
+        key_value.__set_value(value);
+
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

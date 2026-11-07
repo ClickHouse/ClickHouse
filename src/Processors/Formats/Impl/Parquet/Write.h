@@ -82,6 +82,10 @@ struct WriteOptions
     /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
     /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
     bool write_file_logical_type = false;
+
+    /// The value of `created_by` in the metadata of the file. If empty, it is the version and the build of ClickHouse.
+    /// A fixed value makes the file independent of the build, see `MergeTreeDataPartWriterParquet`.
+    String created_by;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
@@ -237,10 +241,12 @@ void finalizeColumnChunkAndWriteFooter(
 
 void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions & options, WriteBuffer & out);
 
+/// `key_value_metadata` is added to the key-value metadata of the file.
 void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header);
+    const Block & header,
+    const std::vector<std::pair<String, String>> & key_value_metadata = {});
 
 }

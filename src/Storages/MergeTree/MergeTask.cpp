@@ -635,6 +635,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
             builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
             builder->withParentPart(global_ctx->parent_part);
+            /// The settings of the projection (e.g. the size of granules) apply to its parts.
+            builder->withProjection(global_ctx->projection);
         }
         else
         {
@@ -2500,7 +2502,9 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection_parts.back()->name);
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-        projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {}, projection);
+        /// The merged projection part inherits the codec of its parent part, see `prepare`.
+        projection_future_part->assign(
+            std::move(projection_parts), /*patch_parts_=*/ {}, projection, global_ctx->new_data_part->default_codec);
         projection_future_part->name = projection->name;
         projection_future_part->path = global_ctx->future_part->path + "/" + projection->name + ".proj/";
         projection_future_part->part_info = MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION;

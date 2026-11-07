@@ -31,7 +31,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"name",                                       std::make_shared<DataTypeString>(), "Name of the data part."},
         {"uuid",                                       std::make_shared<DataTypeUUID>(), "The parts UUID."},
         {"part_type",                                  std::make_shared<DataTypeString>(), "The data part storing format. "
-            "Possible values: Wide — Each column is stored in a separate file in a filesystem, Compact — All columns are stored in one file in a filesystem."},
+            "Possible values: Wide — Each column is stored in a separate file in a filesystem, Compact — All columns are stored in one file in a filesystem, Parquet — All columns are stored in one file in the Parquet format."},
         {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging."},
         {"marks",                                      std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                       std::make_shared<DataTypeUInt64>(), "The number of rows."},

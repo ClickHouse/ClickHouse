@@ -350,6 +350,7 @@
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
+    M(PartsParquet, "Parquet parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(FiberStacks, "Number of currently allocated fiber stacks (fibers are used for asynchronous communication with remote replicas).") \

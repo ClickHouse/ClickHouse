@@ -991,7 +991,7 @@ The columns cache stores deserialized columns from `MergeTree` tables, eliminati
 
 Because entries are keyed by table UUID, the cache is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud); `MergeTree` tables in legacy `Ordinary` databases have a nil UUID and silently ignore this setting.
 
-The cache applies to both wide and compact parts, including the parts of projections.
+The cache applies to wide and compact parts, including the parts of projections, and to parts in `Parquet` format (except the parts of projections). For a part in `Parquet` format, an entry holds a whole column of one row group (the granule of such a part), as for `Parquet` files described below.
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
 
@@ -11550,6 +11550,12 @@ Enable table function `eval`.
 )", EXPERIMENTAL, allow_experimental_eval_table_function, \
         {"26.11", false, false, "Added an alias for setting `allow_experimental_eval_table_function`."}, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
+    DECLARE(Bool, allow_experimental_parquet_parts, false, R"(
+Allow to create, alter, and add projections to `MergeTree` tables with data parts in `Parquet` format, i.e. to set
+the table settings `min_bytes_for_parquet_part`, `min_rows_for_parquet_part`, or `min_level_for_parquet_part`
+(also in the settings of a projection) to a non-zero value. Existing tables keep working without this setting.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `Parquet` format of data parts in `MergeTree` tables."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

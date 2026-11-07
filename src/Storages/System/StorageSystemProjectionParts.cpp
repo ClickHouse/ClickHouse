@@ -23,7 +23,7 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
     ColumnsDescription{
         {"partition",                                   std::make_shared<DataTypeString>(), "The partition name."},
         {"name",                                        std::make_shared<DataTypeString>(), "Name of the data part."},
-        {"part_type",                                   std::make_shared<DataTypeString>(), "The data part storing format. Possible Values: Wide (a file per column) and Compact (a single file for all columns)."},
+        {"part_type",                                   std::make_shared<DataTypeString>(), "The data part storing format. Possible Values: Wide (a file per column), Compact (a single file for all columns), and Parquet (a single file for all columns in the Parquet format)."},
         {"parent_name",                                 std::make_shared<DataTypeString>(), "The name of the source (parent) data part."},
         {"parent_uuid",                                 std::make_shared<DataTypeUUID>(),   "The UUID of the source (parent) data part."},
         {"parent_part_type",                            std::make_shared<DataTypeString>(), "The source (parent) data part storing format."},

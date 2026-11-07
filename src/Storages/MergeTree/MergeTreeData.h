@@ -372,8 +372,21 @@ public:
     /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat
-    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
+    /// `inherited_codec` is the default codec that the part will be written with when it does not come from the
+    /// current settings of the table, e.g. the codec of the parent part that a projection part inherits.
+    MergeTreeDataPartFormat choosePartFormat(
+        size_t bytes_uncompressed,
+        size_t rows_count,
+        UInt32 part_level,
+        ProjectionDescriptionRawPtr projection,
+        const CompressionCodecPtr & inherited_codec = nullptr) const;
+
+    /// Whether the codecs of the table (or of the projection) allow to write its parts in `Parquet` format.
+    /// `inherited_codec` is as in `choosePartFormat`.
+    bool canUseParquetPartFormat(
+        const StorageInMemoryMetadata & table_metadata,
+        ProjectionDescriptionRawPtr projection,
+        const CompressionCodecPtr & inherited_codec = nullptr) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -1213,6 +1226,13 @@ public:
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
+
+    /// Throws if `changes` (of the settings of a table or of a projection) enable data parts in `Parquet` format, which is
+    /// experimental, and the query does not allow it with `allow_experimental_parquet_parts`. Only for a definition or
+    /// an `ALTER` written now: an existing table with such settings must still load and replicate.
+    static void checkParquetPartsAllowed(const SettingsChanges & changes, const ContextPtr & query_context);
+    /// The same for the `WITH SETTINGS` clauses of the projection declarations in `projections` (a list of them, or null).
+    static void checkParquetPartsAllowedInProjections(const IAST * projections, const ContextPtr & query_context);
 
     /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
     /// Only for a definition written now: an existing table with such a column must still load and replicate.

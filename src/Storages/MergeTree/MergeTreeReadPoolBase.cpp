@@ -4,12 +4,14 @@
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Access/ContextAccess.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
@@ -35,6 +37,11 @@ namespace Setting
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsUInt64 columns_cache_max_estimated_bytes_to_write_to_cache;
     extern const SettingsUInt64 columns_cache_max_bytes_to_write_to_cache;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 namespace ErrorCodes
@@ -145,6 +152,7 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
             = std::shared_ptr<std::atomic<size_t>>(budget, &budget->bytes_written);
         settings.columns_cache_writes_disabled
             = std::shared_ptr<std::atomic<bool>>(budget, &budget->writes_disabled);
+        settings.columns_cache_write_budget = budget;
     }
     else
     {
@@ -293,6 +301,36 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
     return data_compressed_size ? data_compressed_size : part.getBytesOnDisk();
 }
 
+/// The column of a `Parquet` part that the reader reads for the offsets of `column_name`, a member of `Nested`
+/// (or its `size0` subcolumn) missing in the part, or null. This follows `MergeTreeReaderParquet::findColumnForOffsetsOfMissingNested`
+/// for one level of `Nested`: the first array of the same `Nested` in the part.
+static const String * findColumnForOffsetsOfMissingNestedInParquetPart(
+    const IMergeTreeDataPart & part, const String & column_name, const ColumnsDescription & storage_columns)
+{
+    if (!(*part.storage.getSettings())[MergeTreeSetting::share_nested_offsets])
+        return nullptr;
+
+    auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    if (!column)
+        return nullptr;
+
+    bool is_array = isArray(column->type);
+    bool is_offsets_subcolumn = isArray(column->getTypeInStorage()) && column->getSubcolumnName() == "size0";
+    if (!is_array && !is_offsets_subcolumn)
+        return nullptr;
+
+    const String name_in_storage = column->getNameInStorage();
+    const String table_name = Nested::extractTableName(name_in_storage);
+    if (table_name == name_in_storage)
+        return nullptr;
+
+    for (const auto & part_column : part.getColumns())
+        if (isArray(part_column.type) && Nested::extractTableName(part_column.name) == table_name)
+            return &part_column.name;
+
+    return nullptr;
+}
+
 /// Uncompressed size of `columns_to_read` in a part: the memory their deserialized data takes,
 /// which is what the columns cache is charged for, so the columns cache write estimate is made
 /// from it and not from the compressed size. With a well-compressing codec the two differ by a
@@ -301,12 +339,41 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
 /// Returns 0 when nothing is known about the columns (they are absent from the part), so that
 /// such a read is not charged for the whole part. The sizes of the columns of a compact part are
 /// not known, so the whole part is charged: an overestimate, which only makes the gate stricter.
-static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
+static size_t getUncompressedSizeOfColumns(
+    const IMergeTreeDataPart & part, const Names & columns_to_read, const ColumnsDescription & storage_columns, const Settings & settings)
 {
     if (part.getType() == MergeTreeDataPartType::Compact)
         return part.getBytesUncompressedOnDisk();
 
     size_t data_uncompressed_size = 0;
+
+    /// The reader of `Parquet` parts reads (and caches) the whole column for a subcolumn, see
+    /// `MergeTreeReaderParquet::fillColumns`, so it is charged for each parent column once.
+    if (part.getType() == MergeTreeDataPartType::Parquet)
+    {
+        NameSet columns_in_storage;
+        auto charge_column = [&](const String & name_in_storage)
+        {
+            if (columns_in_storage.insert(name_in_storage).second)
+                data_uncompressed_size += part.getColumnSize(name_in_storage).data_uncompressed;
+        };
+
+        for (const auto & col_name : columns_to_read)
+        {
+            if (auto column = part.tryGetColumn(col_name))
+            {
+                charge_column(column->getNameInStorage());
+                continue;
+            }
+
+            /// A missing member of `Nested` takes its offsets from an existing sibling, which the reader reads and
+            /// caches as a whole, see `MergeTreeReaderParquet::findColumnForOffsetsOfMissingNested`.
+            if (const String * sibling = findColumnForOffsetsOfMissingNestedInParquetPart(part, col_name, storage_columns))
+                charge_column(*sibling);
+        }
+        return data_uncompressed_size;
+    }
+
     for (const auto & col_name : columns_to_read)
     {
         auto column = part.tryGetColumn(col_name);
@@ -327,13 +394,14 @@ static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, cons
 /// but a query that reads a few marks of a large part should not be charged for the entire part:
 /// that would trip the estimate budget on a tiny read and defeat the cache exactly where it
 /// helps. The caller multiplies this rate by the marks the query selected in the part.
-static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & part, const Names & columns, const Settings & settings)
+static double estimateUncompressedColumnsSizePerMark(
+    const IMergeTreeDataPart & part, const Names & columns, const ColumnsDescription & storage_columns, const Settings & settings)
 {
     const size_t total_marks = part.getMarksCount();
     if (total_marks == 0)
         return 0;
 
-    return static_cast<double>(getUncompressedSizeOfColumns(part, columns, settings)) / static_cast<double>(total_marks);
+    return static_cast<double>(getUncompressedSizeOfColumns(part, columns, storage_columns, settings)) / static_cast<double>(total_marks);
 }
 
 /// Mirror the cache-write eligibility predicate in `IMergeTreeReader::initColumnsCache`: only parts
@@ -341,7 +409,9 @@ static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & 
 /// part - the base part and every patch part - so this has to be evaluated for each of them separately.
 static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
 {
-    return canUseColumnsCacheForPart(part.storage.getStorageID().uuid);
+    /// The reader of `Parquet` parts does not use the cache for projection parts.
+    return !(part.getType() == MergeTreeDataPartType::Parquet && part.isProjectionPart())
+        && canUseColumnsCacheForPart(part.storage.getStorageID().uuid);
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
@@ -593,7 +663,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
         if (all_read_columns.empty())
             return;
 
-        bytes_per_mark += estimateUncompressedColumnsSizePerMark(*part_with_ranges.data_part, all_read_columns, settings);
+        bytes_per_mark += estimateUncompressedColumnsSizePerMark(*part_with_ranges.data_part, all_read_columns, storage_snapshot->metadata->getColumns(), settings);
     }
 
     /// `getAllColumnNames` covers only the main and prewhere columns, which are read
@@ -633,7 +703,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
 
         if (base_part_marks != 0)
             bytes_per_mark
-                += static_cast<double>(getUncompressedSizeOfColumns(patch_part, patch_column_names, settings))
+                += static_cast<double>(getUncompressedSizeOfColumns(patch_part, patch_column_names, storage_snapshot->metadata->getColumns(), settings))
                 / static_cast<double>(base_part_marks);
     }
 

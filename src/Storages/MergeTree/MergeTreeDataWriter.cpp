@@ -1278,7 +1278,28 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
+
+    /// The projection inherits the compression codec chosen for its parent part (passed in by the
+    /// caller) instead of always selecting the size-aware default with a part size of `0`, which
+    /// would pin every projection to `LZ4`. This way a projection of a large `ZSTD(3)` part gets the
+    /// better ratio too, while projections of small parts (and freshly inserted parts) stay on `LZ4`.
+    /// That inheritance is only sound while the parent's codec is a fact. If the parent part lost its
+    /// `default_compression_codec.txt` and the codec was merely recovered from `checksums.txt`
+    /// (`IMergeTreeDataPart::default_codec_is_approximate`), inheriting it would compress this
+    /// projection - written here from scratch - with a guess, and `finalizePartOnDisk` would then
+    /// record that guess in the projection's own codec file as authoritative metadata: a small
+    /// post-flip part whose real default is `LZ4` but which recovers as `ZSTD(1)` would have its
+    /// projection permanently relabelled after one rebuild. Nothing of the parent is reused for the
+    /// projection data, so in that case choose the codec independently, exactly as a fresh write does.
+    if (parent_part->default_codec_is_approximate && !use_selected_codec)
+    {
+        /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected here, matching the
+        /// insert path; `expected_size` is the same upper bound used for the part format below.
+        compression_codec = data.getCompressionCodecForPart(metadata_snapshot, expected_size, {}, time(nullptr)).codec;
+    }
+
+    /// The format of the part depends on the codec it is written with: e.g. a `Parquet` part cannot be encrypted.
+    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection, compression_codec).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
@@ -1379,25 +1400,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, projection_merging_params);
-    }
-
-    /// The projection inherits the compression codec chosen for its parent part (passed in by the
-    /// caller) instead of always selecting the size-aware default with a part size of `0`, which
-    /// would pin every projection to `LZ4`. This way a projection of a large `ZSTD(3)` part gets the
-    /// better ratio too, while projections of small parts (and freshly inserted parts) stay on `LZ4`.
-    /// That inheritance is only sound while the parent's codec is a fact. If the parent part lost its
-    /// `default_compression_codec.txt` and the codec was merely recovered from `checksums.txt`
-    /// (`IMergeTreeDataPart::default_codec_is_approximate`), inheriting it would compress this
-    /// projection - written here from scratch - with a guess, and `finalizePartOnDisk` would then
-    /// record that guess in the projection's own codec file as authoritative metadata: a small
-    /// post-flip part whose real default is `LZ4` but which recovers as `ZSTD(1)` would have its
-    /// projection permanently relabelled after one rebuild. Nothing of the parent is reused for the
-    /// projection data, so in that case choose the codec independently, exactly as a fresh write does.
-    if (parent_part->default_codec_is_approximate && !use_selected_codec)
-    {
-        /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected here, matching the
-        /// insert path; `expected_size` is the same upper bound used for the part format above.
-        compression_codec = data.getCompressionCodecForPart(metadata_snapshot, expected_size, {}, time(nullptr)).codec;
     }
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(

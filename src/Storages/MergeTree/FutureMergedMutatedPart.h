@@ -31,7 +31,13 @@ struct FutureMergedMutatedPart
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
     bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
-    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection);
+    /// `inherited_codec` is the codec that the result is written with if it does not come from the current settings
+    /// of the table, see `MergeTreeData::choosePartFormat`.
+    void assign(
+        MergeTreeData::DataPartsVector parts_,
+        MergeTreeData::DataPartsVector patch_parts_,
+        ProjectionDescriptionRawPtr projection,
+        const CompressionCodecPtr & inherited_codec = nullptr);
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, MergeTreeDataPartFormat future_part_format);
 
     /// Raise the mutation version of the result part above what `assign` derived from the sources.
