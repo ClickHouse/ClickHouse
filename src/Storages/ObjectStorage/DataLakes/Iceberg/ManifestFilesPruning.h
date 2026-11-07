@@ -43,9 +43,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const IcebergSchemaProcessor & schema_processor,
     DB::ContextPtr context);
 
-/// Java and iceberg-rust compute `truncate[W]` of an `int` in 32 bits, so for the lowest values, whose truncated value is below
-/// INT32_MIN, they store it plus 2^32, while `icebergTruncate` returns it as `Int64`. A column promoted to `long` keeps these
-/// values, and no `long` value truncates to one of them.
+/// Java and iceberg-rust compute `truncate[W]` of an `int` in 32 bits: a truncated value below INT32_MIN is stored plus 2^32, while
+/// `icebergTruncate` returns it as `Int64`. A column promoted to `long` keeps these values; no `long` value truncates to one of them.
 struct Int32TruncateWraparound
 {
     size_t tuple_index;
