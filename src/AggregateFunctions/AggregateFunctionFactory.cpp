@@ -3,6 +3,8 @@
 #include <AggregateFunctions/AggregateFunctionVariantAdapter.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionSimpleState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -123,6 +125,26 @@ static DataTypePtr convertVariantArgument(const DataTypePtr & type, const String
     return makeNullable(supertype);
 }
 
+/// Keep the state combinators outside the adapter, so `Aggregator` can unwrap them and call the
+/// adapter's batch methods instead of the per-row methods inherited by the state combinators.
+static AggregateFunctionPtr wrapInternalNulls(
+    const AggregateFunctionPtr & function, const DataTypes & arguments, const Array & parameters)
+{
+    if (const auto * state = typeid_cast<const AggregateFunctionState *>(function.get()))
+    {
+        auto nested = wrapInternalNulls(state->getNestedFunction(), arguments, parameters);
+        return std::make_shared<AggregateFunctionState>(nested, function->getArgumentTypes(), function->getParameters());
+    }
+
+    if (const auto * simple_state = typeid_cast<const AggregateFunctionSimpleState *>(function.get()))
+    {
+        auto nested = wrapInternalNulls(simple_state->getNestedFunction(), arguments, parameters);
+        return std::make_shared<AggregateFunctionSimpleState>(nested, function->getArgumentTypes(), function->getParameters());
+    }
+
+    return std::make_shared<AggregateFunctionInternalNulls>(function, arguments, parameters);
+}
+
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name,
     NullsAction action,
@@ -162,7 +184,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     {
         if (function && !is_window_function && std::any_of(types.begin(), types.end(),
                 [](const auto & type) { return canContainNull(*type) && !type->isNullable(); }))
-            function = std::make_shared<AggregateFunctionInternalNulls>(function, types, params);
+            function = wrapInternalNulls(function, types, params);
         return function;
     };
 

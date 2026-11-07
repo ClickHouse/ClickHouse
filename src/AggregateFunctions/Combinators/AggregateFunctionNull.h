@@ -687,11 +687,49 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        for (size_t i = 0; i < number_of_arguments; ++i)
-            if (has_internal_nulls[i] && columns[i]->isNullAt(row_num))
-                return;
+        if (hasInternalNull(columns, row_num))
+            return;
 
         this->nested_function->add(this->nestedPlace(place), columns, row_num, arena);
+    }
+
+    void addBatch(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        auto filtered_places = filterPlaces(row_begin, row_end, places, place_offset, columns);
+        this->nested_function->addBatch(row_begin, row_end, filtered_places.get(), 0, columns, arena, if_argument_pos);
+    }
+
+    void addBatchWithNonNullPlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        auto filtered_places = filterPlaces(row_begin, row_end, places, place_offset, columns);
+        this->nested_function->addBatch(row_begin, row_end, filtered_places.get(), 0, columns, arena, if_argument_pos);
     }
 
     void addBatchSinglePlace(
@@ -702,30 +740,72 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        std::unique_ptr<UInt8[]> null_map = std::make_unique_for_overwrite<UInt8[]>(row_end);
-        bool has_non_null_row = false;
-
-        for (size_t row = row_begin; row < row_end; ++row)
+        if (!hasInternalNull(columns, row_begin, row_end))
         {
-            bool is_null = false;
-            for (size_t argument = 0; argument < number_of_arguments; ++argument)
-            {
-                if (has_internal_nulls[argument] && columns[argument]->isNullAt(row))
-                {
-                    is_null = true;
-                    break;
-                }
-            }
-
-            null_map[row] = is_null;
-            has_non_null_row |= !is_null;
+            this->nested_function->addBatchSinglePlace(
+                row_begin, row_end, this->nestedPlace(place), columns, arena, if_argument_pos);
+            return;
         }
 
-        if (!has_non_null_row)
-            return;
-
+        auto null_map = makeNullMap(row_begin, row_end, columns, nullptr);
         this->nested_function->addBatchSinglePlaceNotNull(
             row_begin, row_end, this->nestedPlace(place), columns, null_map.get(), arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatchSinglePlaceNotNull(
+                row_begin, row_end, this->nestedPlace(place), columns, null_map, arena, if_argument_pos);
+            return;
+        }
+
+        auto combined_null_map = makeNullMap(row_begin, row_end, columns, null_map);
+        this->nested_function->addBatchSinglePlaceNotNull(
+            row_begin, row_end, this->nestedPlace(place), columns, combined_null_map.get(), arena, if_argument_pos);
+    }
+
+    void addBatchLookupTable8(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (!hasInternalNull(columns, row_begin, row_end))
+        {
+            this->nested_function->addBatchLookupTable8(
+                row_begin, row_end, map, place_offset, std::move(init), key, columns, arena);
+            return;
+        }
+
+        auto filtered_places = std::make_unique_for_overwrite<AggregateDataPtr[]>(row_end);
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            if (hasInternalNull(columns, row))
+            {
+                filtered_places[row] = nullptr;
+                continue;
+            }
+
+            AggregateDataPtr & place = map[key[row]];
+            if (unlikely(!place))
+                init(place);
+            filtered_places[row] = this->nestedPlace(place + place_offset);
+        }
+
+        this->nested_function->addBatch(row_begin, row_end, filtered_places.get(), 0, columns, arena);
     }
 
     void addManyDefaults(
@@ -737,6 +817,51 @@ public:
     }
 
 private:
+    bool hasInternalNull(const IColumn ** columns, size_t row) const
+    {
+        for (size_t argument = 0; argument < number_of_arguments; ++argument)
+            if (has_internal_nulls[argument] && columns[argument]->isNullAt(row))
+                return true;
+        return false;
+    }
+
+    bool hasInternalNull(const IColumn ** columns, size_t row_begin, size_t row_end) const
+    {
+        for (size_t row = row_begin; row < row_end; ++row)
+            if (hasInternalNull(columns, row))
+                return true;
+        return false;
+    }
+
+    std::unique_ptr<AggregateDataPtr[]> filterPlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns) const
+    {
+        auto filtered_places = std::make_unique_for_overwrite<AggregateDataPtr[]>(row_end);
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            filtered_places[row] = !places[row] || hasInternalNull(columns, row)
+                ? nullptr
+                : this->nestedPlace(places[row] + place_offset);
+        }
+        return filtered_places;
+    }
+
+    std::unique_ptr<UInt8[]> makeNullMap(
+        size_t row_begin,
+        size_t row_end,
+        const IColumn ** columns,
+        const UInt8 * null_map) const
+    {
+        auto combined_null_map = std::make_unique_for_overwrite<UInt8[]>(row_end);
+        for (size_t row = row_begin; row < row_end; ++row)
+            combined_null_map[row] = (null_map && null_map[row]) || hasInternalNull(columns, row);
+        return combined_null_map;
+    }
+
     const size_t number_of_arguments;
     VectorWithMemoryTracking<UInt8> has_internal_nulls;
 };
