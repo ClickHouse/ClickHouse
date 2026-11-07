@@ -1,8 +1,6 @@
 #include <Common/Jemalloc.h>
 
-/// Without jemalloc the worker can only measure a cgroup, whose other processes make
-/// a before/after RSS comparison unsuitable for this test.
-#if USE_JEMALLOC
+#if USE_JEMALLOC || defined(OS_LINUX)
 
 #include <gtest/gtest.h>
 
@@ -12,12 +10,15 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SharedMemoryRegion.h>
 #include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
+#include <base/getPageSize.h>
 
 namespace CurrentMetrics
 {
@@ -51,10 +52,15 @@ bool waitForMemoryWorker()
     return true;
 }
 
+#if USE_JEMALLOC
 TEST(MemoryWorker, UnmeasuredMemoryParticipatesInRSSWithoutTrackerCorrection)
 {
-    DB::ThreadStatus thread_status;
+    /// Other tests may have already initialized `MainThreadStatus` on this thread.
+    auto & thread_status = DB::MainThreadStatus::getInstance();
+    const auto original_untracked_memory_limit = thread_status.untracked_memory_limit;
+    SCOPE_EXIT({ thread_status.untracked_memory_limit = original_untracked_memory_limit; });
     thread_status.untracked_memory_limit = 0;
+    DB::CurrentThread::flushUntrackedMemory();
 
     const Int64 original_amount = total_memory_tracker.get();
     const Int64 original_rss = total_memory_tracker.getRSS();
@@ -116,6 +122,92 @@ TEST(MemoryWorker, UnmeasuredMemoryParticipatesInRSSWithoutTrackerCorrection)
         std::ignore = CurrentMemoryTracker::free(allocation);
     EXPECT_EQ(exception_code, DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 }
+#endif
+
+#if defined(OS_LINUX) && !USE_JEMALLOC
+/// Fault in the mapping without dirtying sanitizer shadow pages, whose RSS is unrelated to it.
+[[clang::disable_sanitizer_instrumentation]]
+void touchPages(void * data, size_t size)
+{
+    auto * pages = static_cast<volatile char *>(data);
+    const size_t page_size = getPageSize();
+    for (size_t offset = 0; offset < size; offset += page_size)
+        pages[offset] = 1;
+}
+
+TEST(MemoryWorker, OSSourceCountsMappedRegionsOnce)
+{
+    /// Other tests may have already initialized `MainThreadStatus` on this thread.
+    auto & thread_status = DB::MainThreadStatus::getInstance();
+    const auto original_untracked_memory_limit = thread_status.untracked_memory_limit;
+    SCOPE_EXIT({ thread_status.untracked_memory_limit = original_untracked_memory_limit; });
+    thread_status.untracked_memory_limit = 0;
+    DB::CurrentThread::flushUntrackedMemory();
+
+    const Int64 original_amount = total_memory_tracker.get();
+    const Int64 original_rss = total_memory_tracker.getRSS();
+    const Int64 original_limit = total_memory_tracker.getHardLimit();
+    SCOPE_EXIT({
+        total_memory_tracker.setHardLimit(original_limit);
+        MemoryTracker::updateAllocated(original_amount, false);
+        MemoryTracker::updateRSS(original_rss);
+    });
+    total_memory_tracker.setHardLimit(0);
+
+    constexpr Int64 charge = 128LL << 20;
+    constexpr Int64 tolerance = 16LL << 20;
+    DB::SharedMemoryRegion region(charge);
+
+    DB::MemoryWorkerConfig config;
+    config.rss_update_period_ms = 1;
+    config.use_cgroup = false;
+    config.correct_tracker = true;
+    config.rss_speculative_reserve_ratio = 0;
+    auto worker = std::make_unique<DB::MemoryWorker>(config, nullptr);
+    ASSERT_EQ(worker->getSource(), DB::MemoryWorker::MemoryUsageSource::OS);
+    worker->start();
+    ASSERT_TRUE(waitForMemoryWorker());
+    const Int64 baseline_rss = total_memory_tracker.getRSS();
+    const Int64 baseline_amount = total_memory_tracker.get();
+
+    CurrentMetrics::Increment unmeasured(CurrentMetrics::MemoryTrackingUnmeasured, charge);
+    auto check_charge = [&]
+    {
+        ASSERT_TRUE(waitForMemoryWorker());
+        EXPECT_GE(total_memory_tracker.getRSS(), baseline_rss + charge - tolerance);
+        EXPECT_LE(total_memory_tracker.getRSS(), baseline_rss + charge + tolerance);
+        EXPECT_GE(total_memory_tracker.get(), baseline_amount + charge - tolerance);
+        EXPECT_LE(total_memory_tracker.get(), baseline_amount + charge + tolerance);
+    };
+
+    /// Committed but untouched pages still need their full charge. Touching the same pages
+    /// must not charge them again through process RSS, including tracker correction.
+    check_charge();
+    touchPages(region.data(), region.size());
+    check_charge();
+
+    worker.reset();
+    constexpr Int64 allocation = 4096;
+    total_memory_tracker.setHardLimit(baseline_rss + charge + tolerance);
+    EXPECT_NO_THROW({
+        std::ignore = CurrentMemoryTracker::alloc(allocation);
+        std::ignore = CurrentMemoryTracker::free(allocation);
+    });
+    total_memory_tracker.setHardLimit(baseline_rss + charge / 2);
+    int exception_code = 0;
+    try
+    {
+        std::ignore = CurrentMemoryTracker::alloc(allocation);
+        std::ignore = CurrentMemoryTracker::free(allocation);
+    }
+    catch (const DB::Exception & exception)
+    {
+        exception_code = exception.code();
+    }
+    total_memory_tracker.setHardLimit(0);
+    EXPECT_EQ(exception_code, DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+}
+#endif
 
 }
 

@@ -12,6 +12,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SharedMemoryRegion.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -681,7 +682,11 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 #if HAS_MEMORY_STATISTICS_OS
             if (os_memory_statistics != nullptr)
             {
-                usage.resident = os_memory_statistics->get().resident;
+                /// A touched shared-memory mapping is already in process RSS, unlike jemalloc
+                /// and cgroup `anon`/`rss`. Sum the other mappings in one pass before adding the
+                /// full region charge below. Subtracting from an earlier RSS sample would race
+                /// with page faults and could remove memory that sample never included.
+                usage.resident = SharedMemoryRegion::residentMemoryWithoutRegions(*os_memory_statistics);
                 break;
             }
 #endif
@@ -1002,6 +1007,7 @@ void MemoryWorker::updateResidentMemoryThread()
 
             /// Shared-memory pages charged to the trackers are absent from jemalloc's resident
             /// size, sanitizer allocator statistics, and the cgroup's `anon`/`rss` measurements.
+            /// The OS source explicitly excludes the regions from its RSS sample as well.
             /// Include the same snapshot in both RSS and allocated memory before computing any
             /// headroom. Otherwise `updateRSS` drops these charges on every tick, allowing the
             /// combined footprint to exceed the server limit when tracker correction is disabled
