@@ -2,6 +2,7 @@
 Integration tests that assert Prometheus HTTP handler operations are reflected in
 system.query_log: Query API requests (/api/v1/query and /api/v1/query_range) with
 read_rows/read_bytes and remote-write requests (/write) with written_rows/written_bytes.
+It also checks that a W3C traceparent header puts the request spans in system.opentelemetry_span_log.
 """
 
 import urllib.parse
@@ -90,9 +91,23 @@ node = cluster.add_instance(
     main_configs=[
         "configs/prometheus.xml",
         "configs/config.d/query_log.xml",
+        "configs/config.d/opentelemetry_span_log.xml",
     ],
     user_configs=["configs/allow_experimental_time_series_table.xml"],
     handle_prometheus_remote_write=(9093, "/write"),
+)
+
+# The server's default profile samples every request here.
+node_sampled = cluster.add_instance(
+    "node_sampled",
+    main_configs=[
+        "configs/prometheus.xml",
+        "configs/config.d/opentelemetry_span_log.xml",
+    ],
+    user_configs=[
+        "configs/allow_experimental_time_series_table.xml",
+        "configs/opentelemetry_start_trace_probability.xml",
+    ],
 )
 
 
@@ -109,6 +124,13 @@ def start_cluster():
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         send_test_data_to_node()
+        node.query(
+            "CREATE USER prometheus_traced_user SETTINGS opentelemetry_start_trace_probability = 1"
+        )
+        node.query(
+            "GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO prometheus_traced_user"
+        )
+        node_sampled.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         yield cluster
     finally:
         cluster.shutdown()
@@ -132,6 +154,209 @@ def test_query_api_appears_in_query_log_with_read_rows():
     extract_data_from_http_api_response(response)
 
     assert_query_log_has_finish_for_query_id(query_id)
+
+
+def test_query_api_traceparent_appears_in_opentelemetry_span_log():
+    """
+    A Prometheus Query API request with a W3C traceparent header should record its spans
+    in system.opentelemetry_span_log under the trace id of that header.
+    """
+    trace_id = str(uuid.uuid4())
+    parent_span_id = 123
+    trace_state = "some custom state"
+    traceparent = f"00-{trace_id.replace('-', '')}-{parent_span_id:016x}-01"
+
+    escaped_query = urllib.parse.quote_plus("up", safe="")
+    url = f"http://{node.ip_address}:9093/api/v1/query?query={escaped_query}&time=1753176757.89"
+    response = get_response_to_http_api(
+        url, headers={"traceparent": traceparent, "tracestate": trace_state}
+    )
+    extract_data_from_http_api_response(response)
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler' "
+        f"AND parent_span_id = {parent_span_id} "
+        f"AND attribute['clickhouse.http_status'] = '200'",
+        "1\n",
+    )
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() > 0 FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'query' "
+        f"AND attribute['clickhouse.tracestate'] = '{trace_state}'",
+        "1\n",
+    )
+
+
+def test_remote_write_failure_records_http_status_in_span_log():
+    """
+    A failed remote write with a W3C traceparent header should record the HTTP status
+    that the client got on its PrometheusRequestHandler span.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    protobuf = convert_time_series_to_protobuf([({"job": "test"}, {1753176720.0: 1})])
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, headers={"traceparent": traceparent}
+    )
+    assert response.status_code >= 400
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'] FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        f"{response.status_code}\n",
+    )
+
+
+def test_remote_write_final_flush_failure_recorded_in_span_log():
+    """
+    A failure while finalizing the response should be recorded on the PrometheusRequestHandler span.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": "final_flush_span_test", "job": "test"}, {1753176720.0: 1})]
+    )
+    node.query("SYSTEM ENABLE FAILPOINT prometheus_handler_finalize_throw")
+    try:
+        response = get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            "/write",
+            protobuf,
+            headers={"traceparent": traceparent},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT prometheus_handler_finalize_throw")
+    assert response.status_code == 500
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'], "
+        f"attribute['clickhouse.exception'] LIKE '%Injecting fault while finalizing the Prometheus response%' "
+        f"FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        "500\t1\n",
+    )
+
+
+@pytest.mark.parametrize("bad_param", ["no_such_setting_for_span_test=1", "stacktrace=wat"])
+def test_query_api_setup_failure_records_http_status_in_span_log(bad_param):
+    """
+    A request that fails before the query runs, on a bad parameter, should still
+    record a PrometheusRequestHandler span with the HTTP status that the client got.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    url = f"http://{node.ip_address}:9093/api/v1/query?query=up&{bad_param}"
+    response = get_response_to_http_api(url, headers={"traceparent": traceparent})
+    assert response.status_code >= 400
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'] FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        f"{response.status_code}\n",
+    )
+
+
+def test_query_api_bad_promql_records_exception_in_span_log():
+    """
+    A PromQL error is turned into a 400 response, and its exception should still be
+    recorded on the PrometheusRequestHandler span.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    escaped_query = urllib.parse.quote_plus("sum(", safe="")
+    url = f"http://{node.ip_address}:9093/api/v1/query?query={escaped_query}"
+    response = get_response_to_http_api(url, headers={"traceparent": traceparent})
+    assert response.status_code == 400
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'], attribute['clickhouse.exception'] != '' "
+        f"FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        "400\t1\n",
+    )
+
+
+def request_root_spans_sql(query_id):
+    return (
+        "SELECT count() FROM system.opentelemetry_span_log "
+        "WHERE operation_name = 'PrometheusRequestHandler' AND parent_span_id = 0 "
+        "AND attribute['clickhouse.http_status'] = '200' AND trace_id IN ("
+        "SELECT trace_id FROM system.opentelemetry_span_log "
+        f"WHERE attribute['clickhouse.query_id'] = '{query_id}')"
+    )
+
+
+@pytest.mark.parametrize(
+    "user, url_settings",
+    [
+        ("default", "&opentelemetry_start_trace_probability=1"),
+        ("prometheus_traced_user", ""),
+    ],
+)
+def test_query_api_without_traceparent_sampled_by_request_and_user_settings(
+    user, url_settings
+):
+    """
+    Without a traceparent header, opentelemetry_start_trace_probability from the URL
+    or from the user's settings should decide whether the request is traced.
+    """
+    query_id = f"prometheus-sampling-test-{uuid.uuid4()}"
+    url = f"http://{node.ip_address}:9093/api/v1/query?query=up&time=1753176757.89{url_settings}"
+    response = get_response_to_http_api(
+        url, headers={"X-ClickHouse-User": user, "X-ClickHouse-Query-Id": query_id}
+    )
+    extract_data_from_http_api_response(response)
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(node, request_root_spans_sql(query_id), "1\n")
+
+
+def test_query_api_without_traceparent_request_can_disable_sampling():
+    """
+    A request with opentelemetry_start_trace_probability=0 should not be traced
+    even when the server's default profile samples every request.
+    """
+    query_id = f"prometheus-sampling-test-{uuid.uuid4()}"
+    control_trace_id = str(uuid.uuid4())
+    url = f"http://{node_sampled.ip_address}:9093/api/v1/query?query=up&time=1753176757.89"
+    with requests.Session() as session:
+        session.get(
+            url + "&opentelemetry_start_trace_probability=0",
+            headers={"X-ClickHouse-Query-Id": query_id},
+        ).raise_for_status()
+        # On the same connection, this request starts after the first one has logged its spans.
+        session.get(
+            url,
+            headers={"traceparent": f"00-{control_trace_id.replace('-', '')}-{123:016x}-01"},
+        ).raise_for_status()
+
+    node_sampled.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node_sampled,
+        f"SELECT count() FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{control_trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        "1\n",
+    )
+    assert (
+        node_sampled.query(
+            f"SELECT count() FROM system.opentelemetry_span_log "
+            f"WHERE attribute['clickhouse.query_id'] = '{query_id}'"
+        )
+        == "0\n"
+    )
 
 
 def test_remote_write_appears_in_query_log_with_written_rows():
