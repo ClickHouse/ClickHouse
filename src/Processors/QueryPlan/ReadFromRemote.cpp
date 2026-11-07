@@ -837,6 +837,9 @@ void ReadFromRemote::addLazyPipe(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
+        /// `getManyChecked` above asked the shard about this table.
+        if (!my_table_func_ptr)
+            remote_query_executor->setMainTable(my_shard.main_table ? my_shard.main_table : my_main_table);
         remote_query_executor->setLogger(my_log);
         remote_query_executor->setShardScope({.cluster = my_cluster_name, .shard_num = my_shard.shard_info.shard_num});
         remote_query_executor->setQueryPlanFallbackStage(my_stage);

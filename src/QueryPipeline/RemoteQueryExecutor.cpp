@@ -1458,6 +1458,15 @@ bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
             /// so at this point (a server `Exception` packet) this mode ignores nothing.
             return false;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
+            /// When `main_table` is set, the connection was obtained only after the shard confirmed that it has that
+            /// table (`TablesStatusRequest`, see `ConnectionEstablisher`), so a shard without it is skipped already.
+            /// An error about a missing table or database then normally names another object the query uses there
+            /// (for example a table behind a view, or the table of a non-GLOBAL `IN` subquery), and skipping the shard would
+            /// silently turn an error into a wrong result.
+            if (main_table)
+                return false;
+            /// Nothing was checked in advance, for example when the remote side is a table function itself or runs an
+            /// `INSERT SELECT` of its own: the error is the only way to learn that the table is missing.
             return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
             /// Ignore only an exception that arrived before the shard returned any data; once some data

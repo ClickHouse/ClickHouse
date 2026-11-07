@@ -534,8 +534,10 @@ enum class SkipUnavailableShardsMode : uint8_t
 {
     /// Ignore only connection-related errors.
     UNAVAILABLE = 0,
-    /// Additionally ignore errors caused by a missing table or database on the shard
-    /// (the historical behavior of `skip_unavailable_shards`, and the default).
+    /// Additionally skip a shard on which the target table of the Distributed table, or its database, does not exist
+    /// (the historical behavior of `skip_unavailable_shards`, and the default). On a read this is decided while the
+    /// connection is established (`TablesStatusRequest`), not from an `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` exception
+    /// raised while the shard runs the query, which may refer to any object the query uses.
     UNAVAILABLE_OR_TABLE_MISSING,
     /// Additionally ignore any exception received from the shard before it returned any data block to the initiator.
     /// Note: a shard performing a blocking computation (aggregation, sort, ...) may process rows and fail before
