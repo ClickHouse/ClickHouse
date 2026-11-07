@@ -140,20 +140,21 @@ def test_jbod_load_balancing_least_used_next_disk(start_cluster):
         node.query("DROP TABLE IF EXISTS data_least_used_next_disk SYNC")
 
 
-def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster):
-    def get_parts_on_disks():
-        parts = node.query(
-            """
-        SELECT count(), disk_name
-        FROM system.parts
-        WHERE table = 'data_least_used_detect_background_changes'
-        GROUP BY disk_name
-        ORDER BY disk_name
-        """
-        )
-        parts = [l.split("\t") for l in parts.strip().split("\n")]
-        return parts
+def get_parts_on_disks(table):
+    parts = node.query(
+        f"""
+    SELECT count(), disk_name
+    FROM system.parts
+    WHERE table = '{table}'
+    GROUP BY disk_name
+    ORDER BY disk_name
+    """
+    )
+    parts = [l.split("\t") for l in parts.strip().split("\n")]
+    return parts
 
+
+def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster):
     try:
         node.query(
             """
@@ -175,7 +176,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
         """
         )
-        parts = get_parts_on_disks()
+        parts = get_parts_on_disks("data_least_used_detect_background_changes")
         assert parts == [
             ["4", "jbod2"],
         ]
@@ -189,7 +190,7 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
             INSERT INTO data_least_used_detect_background_changes SELECT * FROM numbers(10);
         """
         )
-        parts = get_parts_on_disks()
+        parts = get_parts_on_disks("data_least_used_detect_background_changes")
         assert parts == [
             # previous INSERT
             ["4", "jbod2"],
