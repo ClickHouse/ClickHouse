@@ -1,0 +1,272 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "2616a276-3184-4474-9edb-5b431f61df2a",
+  "location" : "s3://warehouse/format_v1/sample_orc",
+  "last-updated-ms" : 1697163332200,
+  "last-column-id" : 17,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long",
+      "doc" : "unique id"
+    }, {
+      "id" : 2,
+      "name" : "col_boolean",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "col_short",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "col_byte",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 5,
+      "name" : "col_integer",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 6,
+      "name" : "col_long",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 7,
+      "name" : "col_float",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 8,
+      "name" : "col_double",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 9,
+      "name" : "col_date",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 10,
+      "name" : "col_timestamp",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 11,
+      "name" : "col_timestamp_ntz",
+      "required" : false,
+      "type" : "timestamp"
+    }, {
+      "id" : 12,
+      "name" : "col_char",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 13,
+      "name" : "col_varchar",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 14,
+      "name" : "col_string",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 15,
+      "name" : "col_binary",
+      "required" : false,
+      "type" : "binary"
+    }, {
+      "id" : 16,
+      "name" : "col_decimal",
+      "required" : false,
+      "type" : "decimal(12, 6)"
+    }, {
+      "id" : 17,
+      "name" : "city",
+      "required" : false,
+      "type" : "string"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long",
+      "doc" : "unique id"
+    }, {
+      "id" : 2,
+      "name" : "col_boolean",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 3,
+      "name" : "col_short",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "col_byte",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 5,
+      "name" : "col_integer",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 6,
+      "name" : "col_long",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 7,
+      "name" : "col_float",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 8,
+      "name" : "col_double",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 9,
+      "name" : "col_date",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 10,
+      "name" : "col_timestamp",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 11,
+      "name" : "col_timestamp_ntz",
+      "required" : false,
+      "type" : "timestamp"
+    }, {
+      "id" : 12,
+      "name" : "col_char",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 13,
+      "name" : "col_varchar",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 14,
+      "name" : "col_string",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 15,
+      "name" : "col_binary",
+      "required" : false,
+      "type" : "binary"
+    }, {
+      "id" : 16,
+      "name" : "col_decimal",
+      "required" : false,
+      "type" : "decimal(12, 6)"
+    }, {
+      "id" : 17,
+      "name" : "city",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "partition-spec" : [ {
+    "name" : "col_timestamp_day",
+    "transform" : "day",
+    "source-id" : 10,
+    "field-id" : 1000
+  }, {
+    "name" : "city",
+    "transform" : "identity",
+    "source-id" : 17,
+    "field-id" : 1001
+  }, {
+    "name" : "id_bucket",
+    "transform" : "bucket[2]",
+    "source-id" : 1,
+    "field-id" : 1002
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "col_timestamp_day",
+      "transform" : "day",
+      "source-id" : 10,
+      "field-id" : 1000
+    }, {
+      "name" : "city",
+      "transform" : "identity",
+      "source-id" : 17,
+      "field-id" : 1001
+    }, {
+      "name" : "id_bucket",
+      "transform" : "bucket[2]",
+      "source-id" : 1,
+      "field-id" : 1002
+    } ]
+  } ],
+  "last-partition-id" : 1002,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.format.default" : "orc"
+  },
+  "current-snapshot-id" : 1215171380057117522,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 1215171380057117522,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 1215171380057117522,
+    "timestamp-ms" : 1697163332200,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1697163326616",
+      "added-data-files" : "32",
+      "added-records" : "1000",
+      "added-files-size" : "147351",
+      "changed-partition-count" : "32",
+      "total-records" : "1000",
+      "total-files-size" : "147351",
+      "total-data-files" : "32",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://warehouse/format_v1/sample_orc/metadata/snap-1215171380057117522-1-a997943c-bf7f-4f82-90b6-7f6c0de7b788.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1697163332200,
+    "snapshot-id" : 1215171380057117522
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1697163069173,
+    "metadata-file" : "s3://warehouse/format_v1/sample_orc/metadata/00000-03ce871e-a76c-465b-b259-f92ba9d0a2d3.metadata.json"
+  } ]
+}

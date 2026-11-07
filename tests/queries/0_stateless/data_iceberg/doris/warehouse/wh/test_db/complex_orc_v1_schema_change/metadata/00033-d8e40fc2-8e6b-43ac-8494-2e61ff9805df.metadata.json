@@ -1,0 +1,4062 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "fde824e8-45a5-41ec-8e64-fd3192fb66e2",
+  "location" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change",
+  "last-updated-ms" : 1731478145332,
+  "last-column-id" : 27,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 31,
+    "fields" : [ {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 26,
+      "name" : "col_add",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 27,
+      "name" : "col_add2",
+      "required" : false,
+      "type" : "int"
+    } ]
+  },
+  "current-schema-id" : 31,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "int",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "float",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(12, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "int",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "float",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(12, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 1,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "float",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(12, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "int",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "float",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(12, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 2,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(12, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "int",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "float",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(12, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 3,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "int",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "float",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(12, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 4,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "float",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(12, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 5,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(12, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 6,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 7,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "float"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 8,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(12, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 9,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(20, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 10,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(20, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 11,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(20, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(12, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 12,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 24,
+          "name" : "z",
+          "required" : false,
+          "type" : "decimal(20, 5)"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 13,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 14,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 15,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 16,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 17,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 18,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 19,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 20,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 21,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 22,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 23,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 24,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 25,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 12,
+      "name" : "col_del",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 26,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 27,
+    "fields" : [ {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 28,
+    "fields" : [ {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 29,
+    "fields" : [ {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 30,
+    "fields" : [ {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 26,
+      "name" : "col_add",
+      "required" : false,
+      "type" : "int"
+    } ]
+  }, {
+    "type" : "struct",
+    "schema-id" : 31,
+    "fields" : [ {
+      "id" : 9,
+      "name" : "rename_col8",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 10,
+      "name" : "rename_col9",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 11,
+      "name" : "rename_col10",
+      "required" : false,
+      "type" : "decimal(20, 5)"
+    }, {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "rename_col1",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "long",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "rename_col2",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 14,
+        "element" : "double",
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "rename_col3",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 15,
+        "element" : "decimal(20, 4)",
+        "element-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "rename_col4",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 16,
+        "key" : "int",
+        "value-id" : 17,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "rename_col5",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 18,
+        "key" : "int",
+        "value-id" : 19,
+        "value" : "double",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "rename_col6",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 20,
+        "key" : "int",
+        "value-id" : 21,
+        "value" : "decimal(20, 5)",
+        "value-required" : false
+      }
+    }, {
+      "id" : 8,
+      "name" : "rename_col7",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 25,
+          "name" : "add",
+          "required" : false,
+          "type" : "double"
+        }, {
+          "id" : 22,
+          "name" : "x",
+          "required" : false,
+          "type" : "long"
+        }, {
+          "id" : 23,
+          "name" : "y",
+          "required" : false,
+          "type" : "double"
+        } ]
+      }
+    }, {
+      "id" : 26,
+      "name" : "col_add",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 27,
+      "name" : "col_add2",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.format.default" : "orc",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 3867182191351293650,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 3867182191351293650,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 4131285237157925051,
+    "timestamp-ms" : 1731478142781,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "app-20241113060854-0000",
+      "added-data-files" : "10",
+      "added-records" : "10",
+      "added-files-size" : "19297",
+      "changed-partition-count" : "1",
+      "total-records" : "10",
+      "total-files-size" : "19297",
+      "total-data-files" : "10",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/snap-4131285237157925051-1-1c793663-cdce-423c-aa28-938e11fd3d0d.avro",
+    "schema-id" : 0
+  }, {
+    "snapshot-id" : 3867182191351293650,
+    "parent-snapshot-id" : 4131285237157925051,
+    "timestamp-ms" : 1731478145332,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "app-20241113060854-0000",
+      "added-data-files" : "5",
+      "added-records" : "5",
+      "added-files-size" : "9459",
+      "changed-partition-count" : "1",
+      "total-records" : "15",
+      "total-files-size" : "28756",
+      "total-data-files" : "15",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/snap-3867182191351293650-1-09880983-d14e-47ef-b305-3167179dfa9e.avro",
+    "schema-id" : 31
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1731478142781,
+    "snapshot-id" : 4131285237157925051
+  }, {
+    "timestamp-ms" : 1731478145332,
+    "snapshot-id" : 3867182191351293650
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1731478137536,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00000-66c8805e-40b1-4e90-93b0-d69215a78a37.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478142781,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00001-acf31d2e-feda-4e94-ac1e-bbac7690f7ee.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143053,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00002-350a16ea-cf17-4734-bc50-793b31cb631a.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143128,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00003-e92c7404-ab4c-4860-b6cb-924b5f46c047.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143198,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00004-a631e751-ac06-4b14-99ba-cc114be66e47.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143272,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00005-3be6bbfc-2a13-4b28-bcb4-f2ad81902194.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143337,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00006-7670d106-2373-4fec-9a49-56e17b025fd0.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143408,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00007-3e33bfd0-7b53-41be-a5ec-45a93e3513eb.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143472,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00008-f6b16d8b-66ae-40cb-9ccf-e61ff97f2f68.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143538,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00009-d8aa13f0-ddfb-49cb-b41c-3061a83c5e56.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143598,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00010-37759b8d-f2ec-4a64-a350-6845e9d003d3.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143666,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00011-fc3fa088-754d-4446-9652-1d46d6d4eefa.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143729,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00012-60d78d1d-c984-4bc9-b6e3-816c8fe49bae.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143800,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00013-bb97b975-e431-43d1-976c-f418bfb41f4a.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143888,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00014-d70b0eb9-3512-47cc-8bf4-5b117fc417f6.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478143972,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00015-763d6eb4-e4c3-4773-8756-70698c79c3fb.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144044,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00016-6b1608a1-f55a-478c-a094-78ba8367ded8.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144116,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00017-e6c161e4-e41f-4840-aa48-942906f4030c.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144184,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00018-f5f9c984-96a1-4b02-baa5-e4297ce07540.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144247,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00019-598b30fc-4e0a-432b-9941-13ec5c5c3fdb.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144311,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00020-01cca603-85d7-4666-9c1d-cbeefa558836.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144372,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00021-75f6045d-ade5-4078-ad81-998a67f18663.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144437,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00022-4af59967-37f9-49f9-bcd5-fd2afb8bb3ed.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144491,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00023-54705a94-fae0-4167-97c0-5a15cd27540e.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144541,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00024-c96926dd-4b34-427a-a4a4-e33757bab49a.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144594,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00025-01ac828b-105f-44e3-a441-02b979d32bb2.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144654,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00026-fe0299e7-1a28-4b50-a86c-c4896f0ece71.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144711,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00027-156caae6-5215-4f47-ac29-702338db346a.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144761,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00028-7edfd0de-efde-49ec-a2cb-f17aafa39bfc.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144815,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00029-feccb890-5bef-4d76-8ed1-85aeae7a8bf7.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144867,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00030-ebb9793d-7055-4e5c-a8bc-a5980622eaec.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144919,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00031-db967ad4-f7fd-48d9-9bdc-8d79d7e736f8.metadata.json"
+  }, {
+    "timestamp-ms" : 1731478144973,
+    "metadata-file" : "s3a://warehouse/wh/test_db/complex_orc_v1_schema_change/metadata/00032-8501890c-f602-4271-a5fb-8b65a4acf1ac.metadata.json"
+  } ]
+}

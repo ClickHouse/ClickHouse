@@ -1,0 +1,72 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "6017c966-9be8-42de-a1e0-07ebe6e48abc",
+  "location" : "s3a://warehouse/wh/test_db/tb_ts_ntz_filter",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1721911381076,
+  "last-column-id" : 1,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "ts",
+      "required" : false,
+      "type" : "timestamp"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 8303308691971505234,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 8303308691971505234,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 8303308691971505234,
+    "timestamp-ms" : 1721911381076,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1721911372577",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "435",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "435",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/tb_ts_ntz_filter/metadata/snap-8303308691971505234-1-252f9d2b-59ec-4fc6-91e6-93a6ed370f10.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1721911381076,
+    "snapshot-id" : 8303308691971505234
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1721911380949,
+    "metadata-file" : "s3a://warehouse/wh/test_db/tb_ts_ntz_filter/metadata/00000-4de6065a-f92c-4737-b88d-50a2fe7480e5.metadata.json"
+  } ]
+}

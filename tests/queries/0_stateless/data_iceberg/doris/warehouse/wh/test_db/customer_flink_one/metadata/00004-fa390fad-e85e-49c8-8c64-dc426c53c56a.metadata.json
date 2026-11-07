@@ -1,0 +1,181 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "ec4b83e2-e95e-4d50-97b9-906fd015ca0f",
+  "location" : "s3a://warehouse/wh/test_db/customer_flink_one",
+  "last-sequence-number" : 4,
+  "last-updated-ms" : 1720937595328,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "identifier-field-ids" : [ 1 ],
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "val",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "upsert-enabled" : "true",
+    "write-format" : "parquet",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 242815776607168013,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 242815776607168013,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4365278501475500109,
+    "timestamp-ms" : 1720937593720,
+    "summary" : {
+      "operation" : "overwrite",
+      "flink.operator-id" : "e883208d19e3c34f8aaf2a3168a63337",
+      "flink.job-id" : "62ab4fa4062b850537b7fc60ff211668",
+      "flink.max-committed-checkpoint-id" : "9223372036854775807",
+      "added-data-files" : "1",
+      "added-equality-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "1064",
+      "added-equality-deletes" : "1",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "1064",
+      "total-data-files" : "1",
+      "total-delete-files" : "1",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "1"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/snap-4365278501475500109-1-f4540c46-26c2-41b7-9cd3-999c87fb070d.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 2321614309276707844,
+    "parent-snapshot-id" : 4365278501475500109,
+    "timestamp-ms" : 1720937594228,
+    "summary" : {
+      "operation" : "overwrite",
+      "flink.operator-id" : "e883208d19e3c34f8aaf2a3168a63337",
+      "flink.job-id" : "2ef58bdaa209fbf0b42d82f2bf9e4fe7",
+      "flink.max-committed-checkpoint-id" : "9223372036854775807",
+      "added-data-files" : "1",
+      "added-equality-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "1064",
+      "added-equality-deletes" : "1",
+      "changed-partition-count" : "1",
+      "total-records" : "2",
+      "total-files-size" : "2128",
+      "total-data-files" : "2",
+      "total-delete-files" : "2",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "2"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/snap-2321614309276707844-1-f3e2acf2-fc89-4d6d-8b87-c7445911352a.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 3,
+    "snapshot-id" : 860745450266369282,
+    "parent-snapshot-id" : 2321614309276707844,
+    "timestamp-ms" : 1720937594785,
+    "summary" : {
+      "operation" : "overwrite",
+      "flink.operator-id" : "e883208d19e3c34f8aaf2a3168a63337",
+      "flink.job-id" : "14e5aa30574ebca57311497a2a0a32bd",
+      "flink.max-committed-checkpoint-id" : "9223372036854775807",
+      "added-data-files" : "1",
+      "added-equality-delete-files" : "1",
+      "added-delete-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "1064",
+      "added-equality-deletes" : "1",
+      "changed-partition-count" : "1",
+      "total-records" : "3",
+      "total-files-size" : "3192",
+      "total-data-files" : "3",
+      "total-delete-files" : "3",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "3"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/snap-860745450266369282-1-a3cf6d64-4eec-4d46-ac28-c2e077fcdc99.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 4,
+    "snapshot-id" : 242815776607168013,
+    "parent-snapshot-id" : 860745450266369282,
+    "timestamp-ms" : 1720937595328,
+    "summary" : {
+      "operation" : "overwrite",
+      "flink.operator-id" : "e883208d19e3c34f8aaf2a3168a63337",
+      "flink.job-id" : "7fd0a3ec8d97eda9fa00f5c05b882e55",
+      "flink.max-committed-checkpoint-id" : "9223372036854775807",
+      "added-data-files" : "1",
+      "added-equality-delete-files" : "1",
+      "added-position-delete-files" : "1",
+      "added-delete-files" : "2",
+      "added-records" : "2",
+      "added-files-size" : "2579",
+      "added-position-deletes" : "1",
+      "added-equality-deletes" : "1",
+      "changed-partition-count" : "1",
+      "total-records" : "5",
+      "total-files-size" : "5771",
+      "total-data-files" : "4",
+      "total-delete-files" : "5",
+      "total-position-deletes" : "1",
+      "total-equality-deletes" : "4"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/snap-242815776607168013-1-b8d28274-bac0-4f8d-b131-a188519c0db5.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720937593720,
+    "snapshot-id" : 4365278501475500109
+  }, {
+    "timestamp-ms" : 1720937594228,
+    "snapshot-id" : 2321614309276707844
+  }, {
+    "timestamp-ms" : 1720937594785,
+    "snapshot-id" : 860745450266369282
+  }, {
+    "timestamp-ms" : 1720937595328,
+    "snapshot-id" : 242815776607168013
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720937591297,
+    "metadata-file" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/00000-68325b31-6b63-49ba-b6b9-a33d0dd518f2.metadata.json"
+  }, {
+    "timestamp-ms" : 1720937593720,
+    "metadata-file" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/00001-c93c2cdd-4aae-4c0a-9b52-21278a1a945b.metadata.json"
+  }, {
+    "timestamp-ms" : 1720937594228,
+    "metadata-file" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/00002-c38103a7-237b-4350-aa98-05fe2ad14d16.metadata.json"
+  }, {
+    "timestamp-ms" : 1720937594785,
+    "metadata-file" : "s3a://warehouse/wh/test_db/customer_flink_one/metadata/00003-e81f1bee-dcc4-48cb-8dec-8000e9154d87.metadata.json"
+  } ]
+}

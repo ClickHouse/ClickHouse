@@ -1,0 +1,105 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "ea4ab73e-2942-4103-b445-a4c926236d2c",
+  "location" : "s3a://warehouse/wh/multi_catalog/sanitize_mara",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1720011335240,
+  "last-column-id" : 5,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "MATNR",
+      "required" : false,
+      "type" : "string",
+      "doc" : "Material Number"
+    }, {
+      "id" : 2,
+      "name" : "MTART",
+      "required" : false,
+      "type" : "string",
+      "doc" : "Material type"
+    }, {
+      "id" : 3,
+      "name" : "NTGEW",
+      "required" : false,
+      "type" : "decimal(13, 3)",
+      "doc" : "Net weight"
+    }, {
+      "id" : 4,
+      "name" : "/DSD/SV_CNT_GRP",
+      "required" : false,
+      "type" : "string",
+      "doc" : "Counting Group"
+    }, {
+      "id" : 5,
+      "name" : "/SAPMP/KADP",
+      "required" : false,
+      "type" : "decimal(5, 2)",
+      "doc" : "Cable Diameter Allowance in Percent"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "MATNR",
+      "transform" : "identity",
+      "source-id" : 1,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "hadoop",
+    "write.merge.mode" : "merge-on-read",
+    "write.delete.mode" : "merge-on-read",
+    "write.parquet.compression-codec" : "zstd",
+    "format" : "iceberg/parquet",
+    "write.update.mode" : "merge-on-read"
+  },
+  "current-snapshot-id" : 7980305770712746518,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7980305770712746518,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 7980305770712746518,
+    "timestamp-ms" : 1720011335240,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1719998176718",
+      "added-data-files" : "5",
+      "added-records" : "5",
+      "added-files-size" : "8719",
+      "changed-partition-count" : "5",
+      "total-records" : "5",
+      "total-files-size" : "8719",
+      "total-data-files" : "5",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/multi_catalog/sanitize_mara/metadata/snap-7980305770712746518-1-decdcc6f-83f2-4ad1-bf84-af558adaca7c.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1720011335240,
+    "snapshot-id" : 7980305770712746518
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1720011330466,
+    "metadata-file" : "s3a://warehouse/wh/multi_catalog/sanitize_mara/metadata/00000-1607b07e-8e60-4f89-84be-02029eebb64d.metadata.json"
+  } ]
+}

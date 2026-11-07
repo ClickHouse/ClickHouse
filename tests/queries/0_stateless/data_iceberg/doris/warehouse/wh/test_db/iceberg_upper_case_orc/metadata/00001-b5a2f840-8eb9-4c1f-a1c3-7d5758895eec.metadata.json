@@ -1,0 +1,77 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "b182250e-d425-4898-ad00-11a48e1297ec",
+  "location" : "s3a://warehouse/wh/test_db/iceberg_upper_case_orc",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1721107549459,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "ID",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "NAME",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.format.default" : "orc",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 8279511154741039670,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 8279511154741039670,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 8279511154741039670,
+    "timestamp-ms" : 1721107549459,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1721107539495",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "375",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "375",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/wh/test_db/iceberg_upper_case_orc/metadata/snap-8279511154741039670-1-cda2fd3a-6c5a-4991-b693-748a398920bb.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1721107549459,
+    "snapshot-id" : 8279511154741039670
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1721107549153,
+    "metadata-file" : "s3a://warehouse/wh/test_db/iceberg_upper_case_orc/metadata/00000-4f925166-ee07-4540-b492-24f78f81b94f.metadata.json"
+  } ]
+}
