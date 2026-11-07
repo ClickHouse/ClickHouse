@@ -6,11 +6,9 @@
 -- join of the recursive member must still be counted for the shape of the query, so its count must not
 -- grow with either the iterations or the blocks.
 --
--- The join is reported twice, and not once, because the scalar subquery of the view is also evaluated
--- once outside the per-block builds of the view: that evaluation is a pipeline of its own and is counted
--- apart from the one the view rebuilds. What the case pins is that neither of the two follows the
--- rebuilds - the same query over four and over sixteen blocks reports two either way, while without the
--- deduplication it reports one join per iteration per block.
+-- The join is reported once, as for the same query sent without the view: the same query over four and
+-- over sixteen blocks reports one either way, while without the deduplication it reports one join per
+-- iteration per block.
 --
 -- `max_block_size` and the two `min_insert_block_size_*` settings split the `INSERT` into one block per
 -- row so that the view really is built more than once, which `system.part_log` asserts: every build
