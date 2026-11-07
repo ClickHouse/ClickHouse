@@ -1,0 +1,10 @@
+CASE with Dynamic in a tuple key
+1	1	1
+toString over Dynamic in a serialized plan
+1
+1
+toString in key analysis with a mode from another scope
+1000
+1000
+Array of FixedString against array of Dynamic
+0	1	1	0	0

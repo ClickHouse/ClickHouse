@@ -51,7 +51,7 @@ SELECT (SELECT count() FROM k_lcfsv WHERE has(mapValues(m), toFixedString('V0', 
 SELECT (SELECT count() FROM k_lcfsv WHERE has(mapValues(m), 'LONGCONST')) = (SELECT count() FROM o_lcfsv WHERE has(mapValues(m), 'LONGCONST'));
 SELECT (SELECT count() FROM k_lcfsv WHERE hasAny(mapValues(m), ['V0', 'XYZ'])) = (SELECT count() FROM o_lcfsv WHERE hasAny(mapValues(m), ['V0', 'XYZ']));
 
--- Pin the supertype semantics: the short constant matches after the elements' padding is stripped.
+-- Pin the supertype semantics: the short constant does not match, as the cast keeps the elements' padding.
 SELECT id FROM k_lcfsv WHERE has(mapValues(m), 'V0') ORDER BY id;
 
 -- Pruning is preserved where the index can hash exactly: some stage selects more than zero and

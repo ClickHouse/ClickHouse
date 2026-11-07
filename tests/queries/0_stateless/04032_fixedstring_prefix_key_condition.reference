@@ -81,6 +81,7 @@ FROM test
 WHERE match(CAST(fixed_string_col, 'String'), '^11.')
 ORDER BY text
 SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+plain-11
 plain-110
 plain-11z
 -- Fixed String Liteal tests
@@ -193,6 +194,7 @@ FROM test_string
 WHERE match(string_col, '^11.')
 ORDER BY text
 SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+plain-11
 plain-110
 plain-11z
 SELECT text
@@ -322,6 +324,7 @@ FROM test_lc_fixedstring
 WHERE match(CAST(lc_fs_col, 'String'), '^11.')
 ORDER BY text
 SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+plain-11
 plain-110
 plain-11z
 SELECT text
@@ -355,6 +358,7 @@ FROM test_lc_fixedstring
 WHERE match(CAST(lc_fs_col, 'LowCardinality(String)'), '^11.')
 ORDER BY text
 SETTINGS force_primary_key = 1, max_rows_to_read = 3;
+plain-11
 plain-110
 plain-11z
 DROP TABLE IF EXISTS test_lc_fixedstring;

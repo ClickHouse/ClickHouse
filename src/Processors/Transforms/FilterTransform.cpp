@@ -191,6 +191,11 @@ bool canReplaceColumnWithConstantAfterFilter(
     if (containsFixedString(result_type) && !result_type->equals(*constant_type))
         return false;
 
+    /// An `Enum` is compared with a `FixedString` by its name zero-padded, so distinct enum values (`'a'` and `'a\0'`)
+    /// can be equal to the same constant.
+    if (containsEnum(result_type) && containsFixedString(constant_type))
+        return false;
+
     if (containsDateOrTime(result_type) && containsDateOrTime(constant_type) && !result_type->equals(*constant_type))
         return false;
 

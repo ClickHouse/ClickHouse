@@ -508,6 +508,10 @@ public:
     /// See `IFunctionBase::isExpensive`.
     virtual bool isExpensive() const { return false; }
 
+    /// See `IFunctionBase::updateHash`. The adaptors for `Dynamic` and `Variant` arguments keep the resolver and rebuild
+    /// the function from it for each alternative, so they hash what the resolver captured through this.
+    virtual void updateHash(SipHash &) const {}
+
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
     /// You pass data types with empty DataTypeFunction for lambda arguments.

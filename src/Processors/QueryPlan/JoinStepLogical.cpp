@@ -944,7 +944,15 @@ static void predicateOperandsToCommonType(
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
-        return &dag.addCast(*arg, common_type, {}, nullptr);
+        /// The comparison of `FixedString` with `String` is zero-padded (see `FunctionComparison`): `toFixedString('a', 2) = 'a'`.
+        /// The join keys follow it whatever `cast_fixed_string_to_string_strip_trailing_zeros` is, so the conversion of
+        /// a `FixedString` key to `String` removes the trailing zero bytes, as it always did.
+        /// Such a cast may differ from a `_CAST` written in the query over the same argument, which would get the same
+        /// generated name, and the join keys are looked up by name, so it gets a distinct one.
+        String result_name;
+        if (anyInTypeTree(*arg->result_type, [](const IDataType & type) { return isFixedString(type); }))
+            result_name = fmt::format("_CAST_strip_trailing_zeros({}, '{}')", arg->result_name, common_type->getName());
+        return &dag.addCast(*arg, common_type, std::move(result_name), nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
     };
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);

@@ -202,7 +202,10 @@ void ScatterByPartitionTransform::generateOutputChunks()
         const auto & cast_type = hash_cast_types.empty() ? nullptr : hash_cast_types[i];
         if (cast_type && !cast_type->equals(*hash_input_types[i]))
         {
-            auto casted = castColumn({column, hash_input_types[i], ""}, cast_type);
+            /// The cast types are set only for mismatched `JOIN` keys. The `JOIN` removes the trailing
+            /// zero bytes in the conversion of a `FixedString` key to `String` whatever the setting is,
+            /// so the hash has to do the same for the matching keys to land in the same bucket.
+            auto casted = castColumn({column, hash_input_types[i], ""}, cast_type, nullptr, /*fixed_string_to_string_strip_trailing_zeros=*/ true);
             casted->computeHashInto(0, num_rows, hash.data(), false);
         }
         else

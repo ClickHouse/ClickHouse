@@ -1,3 +1,6 @@
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Common/SipHash.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -18,6 +21,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -36,6 +45,9 @@ public:
         : WithContext(context_), aggregate_function(std::move(aggregate_function_)) {}
 
     String getName() const override { return name; }
+
+    /// The aggregate may capture settings that change its result, see `IAggregateFunction::updateHash`.
+    void updateHash(SipHash & hash) const override { aggregate_function->updateHash(hash); }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -128,7 +140,16 @@ class FunctionInitializeAggregationOverloadResolver final : public IFunctionOver
 public:
     static constexpr auto name = "initializeAggregation";
     static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionInitializeAggregationOverloadResolver>(context_); }
-    explicit FunctionInitializeAggregationOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionInitializeAggregationOverloadResolver(ContextPtr context_)
+        : WithContext(context_)
+        , cast_fixed_string_to_string_strip_trailing_zeros(context_->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
+    {
+    }
+
+    /// The adaptors for `Dynamic` and `Variant` arguments hash the resolver rather than the built function, see
+    /// `IFunctionOverloadResolver::updateHash`. The aggregate built from it captures the conversion mode of
+    /// `FixedString` to `String` of the query, see `IAggregateFunction::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -178,6 +199,8 @@ public:
     }
 
 private:
+    const bool cast_fixed_string_to_string_strip_trailing_zeros;
+
     AggregateFunctionPtr resolveAggregateFunction(const ColumnsWithTypeAndName & arguments) const
     {
         const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());

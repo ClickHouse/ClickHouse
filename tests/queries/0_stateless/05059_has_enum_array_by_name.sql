@@ -42,7 +42,11 @@ SELECT 'indexOfAssumeSorted';
 WITH CAST(['a', 'b', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))') AS e
 SELECT indexOfAssumeSorted(e, 'a'), indexOfAssumeSorted(e, 'c'), indexOfAssumeSorted(e, 'zzz');
 
+-- The cast to the common type `String` keeps the zero padding of a `FixedString`, so only a needle
+-- without padding matches the name.
 SELECT 'a FixedString needle';
+WITH CAST(['a', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))') AS e
+SELECT has(e, toFixedString('a', 1)), has(e, toFixedString('b', 1)), indexOf(e, toFixedString('c', 1));
 WITH CAST(['a', 'c'], 'Array(Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3))') AS e
 SELECT has(e, toFixedString('a', 2)), has(e, toFixedString('b', 2)), indexOf(e, toFixedString('c', 4));
 
