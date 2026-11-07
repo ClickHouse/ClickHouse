@@ -3511,12 +3511,68 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     right_query_plan.addStep(std::move(join_lookup_step));
 }
 
+/// Evaluates each one-sided correlated subquery of `JOIN ON` on its side. Returns whether the right side changed.
+bool decorrelateJoinExpressionSubqueries(
+    const JoinNode & join_node,
+    QueryPlan & left_query_plan,
+    QueryPlan & right_query_plan,
+    const PlannerContextPtr & planner_context,
+    const SelectQueryOptions & select_query_options)
+{
+    if (!join_node.isOnJoinExpression() || !containsCorrelatedSubquery(join_node.getJoinExpression()))
+        return false;
+
+    /// The same visitor as `appendExpression` in `buildJoinStepLogical`, so the subquery names match.
+    ActionsDAG scratch_dag;
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor visitor(planner_context, empty_correlated_columns_set);
+    auto correlated_subtrees = visitor.visit(scratch_dag, join_node.getJoinExpression()).second;
+
+    const auto left_header = left_query_plan.getCurrentHeader();
+    const auto right_header = right_query_plan.getCurrentHeader();
+    auto contains_all = [](const SharedHeader & header, const ColumnIdentifiers & identifiers)
+    {
+        return std::ranges::all_of(identifiers, [&](const auto & identifier) { return header->has(identifier); });
+    };
+
+    bool right_side_changed = false;
+    for (const auto & correlated_subquery : correlated_subtrees.subqueries)
+    {
+        const auto & identifiers = correlated_subquery.correlated_column_identifiers;
+        if (identifiers.empty())
+            continue;
+        /// One subquery node can be reached twice (a shared alias); decorrelate it once.
+        if (left_query_plan.getCurrentHeader()->has(correlated_subquery.action_node_name)
+            || right_query_plan.getCurrentHeader()->has(correlated_subquery.action_node_name))
+            continue;
+
+        if (contains_all(left_header, identifiers))
+        {
+            buildQueryPlanForCorrelatedSubquery(planner_context, left_query_plan, correlated_subquery, select_query_options);
+        }
+        else if (contains_all(right_header, identifiers))
+        {
+            buildQueryPlanForCorrelatedSubquery(planner_context, right_query_plan, correlated_subquery, select_query_options);
+            right_side_changed = true;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries in JOIN ON are supported only if all columns they reference come from one side "
+                "of the JOIN, but the subquery {} references columns of both sides or of an outer query",
+                correlated_subquery.query_tree->formatASTForErrorMessage());
+        }
+    }
+    return right_side_changed;
+}
+
 JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
     const ColumnIdentifierSet & outer_scope_columns,
-    PlannerContextPtr & planner_context)
+    PlannerContextPtr & planner_context,
+    const SelectQueryOptions & select_query_options)
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
     if (left_join_tree_query_plan.stage != QueryProcessingStage::FetchColumns)
@@ -3527,6 +3583,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
+
+    bool right_side_has_decorrelated_subquery = decorrelateJoinExpressionSubqueries(
+        join_node, left_join_tree_query_plan.query_plan, right_join_tree_query_plan.query_plan, planner_context, select_query_options);
 
     auto join_step_logical = buildJoinStepLogical(
         left_join_tree_query_plan.query_plan.getCurrentHeader(),
@@ -3546,9 +3605,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             "Cannot join table {} with the Join engine because a row policy is applied on it",
             prepared_join.storage_join->getStorageID().getNameForLogs());
 
+    /// A lookup into a prepared storage replaces the right-side plan, and with it the decorrelated subquery column.
     bool allow_storage_join = !right_table_has_row_policy
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
-        && right_join_tree_query_plan.useful_sets.empty();
+        && right_join_tree_query_plan.useful_sets.empty()
+        && !right_side_has_decorrelated_subquery;
     if (!allow_storage_join)
         prepared_join = {};
     if (prepared_join)
@@ -3558,7 +3619,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         right_join_tree_query_plan.query_plan = {};
         right_join_tree_query_plan.query_plan.addStep(std::move(join_lookup_step));
     }
-    else
+    else if (!right_side_has_decorrelated_subquery)
     {
         tryMakeDirectJoinWithMergeTree(join_step_logical->getJoinOperator(), right_join_tree_query_plan.query_plan, prepared_join, planner_context);
     }
@@ -4203,7 +4264,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     std::move(left_query_plan),
                     std::move(right_query_plan),
                     table_expressions_outer_scope_columns[i],
-                    planner_context));
+                    planner_context,
+                    select_query_options));
             }
         }
         else if (table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
