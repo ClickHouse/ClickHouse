@@ -258,8 +258,9 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
     static constexpr UInt64 max_steps_per_part = 256;
     Settings probe_settings = settings;
     const UInt64 user_max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps];
-    probe_settings[Setting::merge_tree_generic_exclusion_search_max_steps]
-        = user_max_steps ? std::min(user_max_steps, max_steps_per_part) : max_steps_per_part;
+    probe_settings.set(
+        Setting::merge_tree_generic_exclusion_search_max_steps,
+        user_max_steps ? std::min(user_max_steps, max_steps_per_part) : max_steps_per_part);
 
     /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
     size_t marks = 0;
