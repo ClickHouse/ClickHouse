@@ -364,6 +364,10 @@ struct IMergeTreeIndex
     /// never schedule it for recalculation, otherwise those operations get wedged.
     virtual bool isInert() const { return false; }
 
+    /// Whether the condition of this index can be useful for a filter whose leaf nodes (inputs, constants,
+    /// placeholders) have these result names, decided without building it. Conservative: true if unsure.
+    virtual bool mayBeUsefulForFilter(const NameSet & /*filter_leaf_names*/) const { return true; }
+
     /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
     /// slows down reading it. The blocks of such an index that the part's codec does not compress well
     /// are written with codec `NONE`.

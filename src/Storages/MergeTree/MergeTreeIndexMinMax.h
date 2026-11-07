@@ -86,6 +86,8 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
+    bool mayBeUsefulForFilter(const NameSet & filter_leaf_names) const override;
+
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
     MergeTreeIndexSubstreams getPotentialSubstreams() const override
