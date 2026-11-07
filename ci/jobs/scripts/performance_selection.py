@@ -26,7 +26,7 @@ from ci.jobs.scripts.coverage_selection import (
     timestamp,
     validate_snapshots,
 )
-from ci.jobs.scripts.find_tests import FAILED_TESTS_QUERY, Targeting
+from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.perf import test_discovery
 from ci.jobs.scripts.test_selection_config import (
     INTEGRATION_SELECTION_CONFIG,
@@ -78,6 +78,47 @@ def query_coverage_sql(query):
         WHERE match(raw.test_name, {sql_string(QUERY_ID)})
     )"""
     return query.replace("FROM checks_coverage_lines", "FROM " + source)
+
+
+def previous_failures_query(pr_number, cutoff):
+    # Performance exports query identities, not the bare test names and FAIL
+    # statuses used by the stateless selector. Execution errors have their own
+    # table. Keep the same 30-day window and widespread-failure exclusion, with
+    # whole XML owners as the unit counted by that exclusion.
+    cutoff = sql_string(cutoff)
+    identity = sql_string(r"^([A-Za-z0-9_-]+)(?: #[0-9]+(?:::(?:new|old))?)?$")
+    return f"""
+        WITH failures AS (
+            SELECT commit_sha, check_name, check_start_time,
+                   extract(test_name, {identity}) AS owner
+            FROM checks
+            WHERE pull_request_number = {int(pr_number)}
+              AND check_name LIKE 'Performance Comparison%master_head%'
+              AND check_name NOT LIKE '%iceberg%'
+              AND check_status = 'failure' AND test_status IN ('slower', 'FAIL')
+              AND check_start_time >= toDateTime({cutoff}, 'UTC') - INTERVAL 30 DAY
+              AND check_start_time < toDateTime({cutoff}, 'UTC')
+            UNION ALL
+            SELECT new_sha AS commit_sha,
+                   decodeURLComponent(extractURLParameter(report_url, 'name_1')) AS check_name,
+                   check_start_time, test AS owner
+            FROM perf_run_errors_v1
+            WHERE pr_number = {int(pr_number)} AND baseline_kind = 'master_head'
+              AND arch IN ('amd', 'arm') AND match(test, '^[A-Za-z0-9_-]+$')
+              AND check_start_time >= toDateTime({cutoff}, 'UTC') - INTERVAL 30 DAY
+              AND check_start_time < toDateTime({cutoff}, 'UTC')
+        ), isolated_failures AS (
+            SELECT commit_sha, check_name, max(check_start_time) AS last_failure,
+                   groupUniqArray(owner) AS tests
+            FROM failures WHERE owner != '' AND check_name != ''
+            GROUP BY commit_sha, check_name HAVING length(tests) < 20
+        )
+        SELECT arrayJoin(tests) AS test_name FROM isolated_failures
+        GROUP BY test_name
+        ORDER BY count() * exp(-dateDiff('day', max(last_failure),
+            toDateTime({cutoff}, 'UTC')) / 7.) DESC
+        FORMAT JSONEachRow
+    """
 
 
 def map_lines(source, target):
@@ -142,10 +183,68 @@ def translate_diff(diff, read_source):
 
 
 def manifest_url(job):
-    # Same immutable public layout as the collector's completed-test resume.
+    # The collector's public per-revision layout; a same-SHA retry replaces it.
     branch = urllib.parse.quote(job["head_ref"], safe="/")
     name = re.sub(r"[^a-z0-9]+", "_", job["check_name"].lower()).strip("_")
     return f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/{branch}/{job['commit_sha']}/nightlycoverage/{name}/manifest.json"
+
+
+def coverage_identity(manifest):
+    # A corrected wrapper can finish a collection without changing its inputs.
+    # The workflow SHA binds each manifest to its own successful job below;
+    # compatibility depends on the executable, source inputs and assignment.
+    return (
+        manifest["binary_sha"],
+        manifest["binary_sha256"],
+        manifest["source_identity"],
+        manifest["warm_runs"],
+        manifest["resume_protocol"],
+        manifest["dataset_layout"],
+        manifest["sharding"]["assignment_sha256"],
+    )
+
+
+def coverage_cohort(jobs, read_manifest):
+    """Take the freshest complete set of compatible shards, including retries."""
+    groups, seen_urls, superseded = defaultdict(dict), set(), []
+    for job in sorted(
+        jobs, key=lambda row: timestamp(row["check_start_time"]), reverse=True
+    ):
+        url = manifest_url(job)
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        manifest = read_manifest(url)
+        if (
+            manifest["sha"] != job["commit_sha"]
+            or manifest["check_name"] != job["check_name"]
+        ):
+            raise ValueError("Manifest does not belong to the successful coverage job")
+        if manifest["check_start_time"] != job["check_start_time"]:
+            # Re-running a job at the same SHA replaces its artifact. Never bind
+            # the new manifest to an older successful publication in CIDB.
+            superseded.append(job)
+            continue
+        if not manifest["complete"]:
+            raise ValueError("Successful coverage job has an incomplete manifest")
+        plan = manifest["sharding"]
+        shard = re.search(r", (\d+)/(\d+)\)$", job["check_name"])
+        if (
+            not shard
+            or int(shard[2]) != 16
+            or plan["shards"] != 16
+            or plan["shard"] != int(shard[1])
+            or not 1 <= plan["shard"] <= 16
+        ):
+            raise ValueError("Coverage manifest has an unexpected shard assignment")
+        group = groups[coverage_identity(manifest)]
+        group.setdefault(plan["shard"], (job, manifest))
+        if len(group) == 16:
+            # Descending start time minimizes the age of the oldest shard. A
+            # partial newer collection cannot displace a complete older one.
+            selected = [group[n] for n in range(1, 17)]
+            return [j for j, _ in selected], [m for _, m in selected], superseded
+    raise ValueError("No complete compatible performance coverage within 72 hours")
 
 
 def validate_manifests(manifests, cutoff):
@@ -158,15 +257,7 @@ def validate_manifests(manifests, cutoff):
         if not manifest["complete"] or manifest["warm_runs"] != 1:
             raise ValueError("Incomplete coverage or changed repetition policy")
         plan = manifest["sharding"]
-        identities.add(
-            (
-                manifest["sha"],
-                manifest["binary_sha"],
-                manifest["binary_sha256"],
-                manifest["source_identity"],
-                plan["assignment_sha256"],
-            )
-        )
+        identities.add(coverage_identity(manifest))
         collected = 0
         for name, state in manifest["tests"].items():
             if name in assignment:
@@ -291,34 +382,12 @@ class PerformanceSelection(Targeting):
               AND check_start_time + toIntervalSecond(ceil(check_duration_ms / 1000)) < toDateTime({sql_string(cutoff)}, 'UTC')
             ORDER BY check_start_time DESC FORMAT JSONEachRow
         """)
-        groups = defaultdict(dict)
-        for job in jobs:
-            run = re.search(r"/actions/runs/(\d+)", job["task_url"])
-            if not run:
-                raise ValueError("Coverage job has no workflow run identity")
-            groups[(job["commit_sha"], run[1])].setdefault(job["check_name"], job)
-        complete = [
-            list(group.values()) for group in groups.values() if len(group) == 16
-        ]
-        if not complete:
-            raise ValueError("No complete performance coverage run within 72 hours")
-        jobs = max(
-            complete,
-            key=lambda group: min(timestamp(j["check_start_time"]) for j in group),
-        )
-        manifests = []
-        for job in sorted(jobs, key=lambda row: row["check_name"]):
-            with urllib.request.urlopen(manifest_url(job), timeout=60) as response:
-                manifest = json.load(response)
-            if (
-                manifest["sha"] != job["commit_sha"]
-                or manifest["check_name"] != job["check_name"]
-                or manifest["check_start_time"] != job["check_start_time"]
-            ):
-                raise ValueError(
-                    "Manifest does not belong to the successful coverage job"
-                )
-            manifests.append(manifest)
+
+        def read_manifest(url):
+            with urllib.request.urlopen(url, timeout=60) as response:
+                return json.load(response)
+
+        jobs, manifests, superseded = coverage_cohort(jobs, read_manifest)
         snapshots, tests = validate_manifests(manifests, cutoff)
         rows = self.rows(f"""
             SELECT check_start_time, check_name, test_name, count() AS rows,
@@ -329,6 +398,7 @@ class PerformanceSelection(Targeting):
         validate_phases(rows, manifests)
         self.selection_diagnostics["coverage"] = {
             "jobs": jobs,
+            "superseded_artifacts": superseded,
             "snapshots": snapshots,
             "binary_sha": manifests[0]["binary_sha"],
             "binary_sha256": manifests[0]["binary_sha256"],
@@ -401,12 +471,7 @@ class PerformanceSelection(Targeting):
             {
                 row["test_name"]
                 for row in self.rows(
-                    FAILED_TESTS_QUERY.format(
-                        PR_NUMBER=self.pr_number,
-                        JOB_TYPE="Performance Comparison",
-                        TEST_NAME_PATTERN="^[A-Za-z0-9_]+$",
-                        CUTOFF=self.selection_cutoff(),
-                    )
+                    previous_failures_query(self.pr_number, self.selection_cutoff())
                 )
             }
             & available.keys()
