@@ -1,6 +1,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionAccessCheck.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
@@ -31,11 +32,17 @@ public:
     /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "server_settings", Strings{"name", "value"});
-        return std::make_shared<FunctionGetServerSetting>();
+        return std::make_shared<FunctionGetServerSetting>(context);
     }
 
+    explicit FunctionGetServerSetting(const ContextPtr & context) : access_check(context) {}
+
     String getName() const override { return name; }
+
+    void checkAccessOnBuild() const override
+    {
+        access_check.check(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "server_settings", Strings{"name", "value"});
+    }
 
     bool isDeterministic() const override { return false; }
 
@@ -65,6 +72,8 @@ public:
     }
 
 private:
+    FunctionAccessCheck access_check;
+
     Field getValue(const ColumnsWithTypeAndName & arguments) const
     {
         if (arguments.size() != 1)

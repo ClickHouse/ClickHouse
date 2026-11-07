@@ -3555,6 +3555,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto & cached_function = *function_base_cache;
             if (!cached_function)
                 cached_function = function->build(argument_columns);
+            else
+            {
+                /// The cache is shared by all scopes of the query, but the access rights depend on the settings
+                /// of the scope (for example, `allow_introspection_functions` in the `SETTINGS` of a subquery).
+                /// `build` checks them, so check them also when the cached function is reused.
+                function->checkAccessOnBuild();
+            }
 
             function_base = cached_function;
         }

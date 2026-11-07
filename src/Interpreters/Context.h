@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Access/QueryPrivilegesInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
@@ -600,26 +601,8 @@ public:
         mutable std::mutex mutex;
     };
 
-    struct QueryPrivilegesInfo
-    {
-        QueryPrivilegesInfo() = default;
-
-        QueryPrivilegesInfo(const QueryPrivilegesInfo & rhs)
-        {
-            std::lock_guard<std::mutex> lock(rhs.mutex);
-            used_privileges = rhs.used_privileges;
-            missing_privileges = rhs.missing_privileges;
-        }
-
-        QueryPrivilegesInfo(QueryPrivilegesInfo && rhs) = delete;
-
-        std::unordered_set<std::string> used_privileges TSA_GUARDED_BY(mutex);
-        std::unordered_set<std::string> missing_privileges TSA_GUARDED_BY(mutex);
-
-        mutable std::mutex mutex;
-    };
-
-    using QueryPrivilegesInfoPtr = std::shared_ptr<QueryPrivilegesInfo>;
+    using QueryPrivilegesInfo = DB::QueryPrivilegesInfo;
+    using QueryPrivilegesInfoPtr = DB::QueryPrivilegesInfoPtr;
 
 protected:
     /// Needs to be changed while having const context in factories methods

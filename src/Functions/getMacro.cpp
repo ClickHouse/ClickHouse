@@ -1,6 +1,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionAccessCheck.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -30,6 +31,7 @@ class FunctionGetMacro final : public IFunction
 private:
     MultiVersion<Macros>::Version macros;
     bool is_distributed;
+    FunctionAccessCheck access_check;
 
 public:
     static constexpr auto name = "getMacro";
@@ -37,18 +39,22 @@ public:
     /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context)
     {
-        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros", Strings{"macro", "substitution"});
-        return std::make_shared<FunctionGetMacro>(context->getMacros(), context->isDistributed());
+        return std::make_shared<FunctionGetMacro>(context);
     }
 
-    explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_, bool is_distributed_)
-        : macros(std::move(macros_)), is_distributed(is_distributed_)
+    explicit FunctionGetMacro(const ContextPtr & context)
+        : macros(context->getMacros()), is_distributed(context->isDistributed()), access_check(context)
     {
     }
 
     String getName() const override
     {
         return name;
+    }
+
+    void checkAccessOnBuild() const override
+    {
+        access_check.check(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros", Strings{"macro", "substitution"});
     }
 
     bool isDeterministic() const override { return false; }
