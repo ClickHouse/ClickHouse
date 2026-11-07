@@ -2724,7 +2724,7 @@ ClickHouse applies this setting when the query contains the product of distribut
 Restrictions:
 
 - Only applied for IN and JOIN subqueries.
-- Only if the FROM section uses a distributed table containing more than one shard.
+- Only if the FROM section uses a distributed table containing more than one shard. An `IN` subquery written over a subquery, a view or a CTE that reads a distributed table counts as well once it is pushed down to the shards (see [allow_push_predicate_ast_for_distributed_subqueries](#allow_push_predicate_ast_for_distributed_subqueries)).
 - If the subquery concerns a distributed table containing more than one shard.
 - Not used for a table-valued [remote](/reference/functions/table-functions/remote) function.
 

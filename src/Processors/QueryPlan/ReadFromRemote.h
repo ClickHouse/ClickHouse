@@ -178,6 +178,10 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
+    /// When the filter goes to the shards of a Distributed table: the context whose `distributed_product_mode`
+    /// decides about a non-GLOBAL IN over another Distributed table in it, and on which that table's name is
+    /// resolved. Null leaves such an IN as the text of its subquery.
+    const ContextPtr & distributed_product_mode_context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
     std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
 

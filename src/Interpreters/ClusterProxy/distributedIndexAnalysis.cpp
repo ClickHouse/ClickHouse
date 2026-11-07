@@ -191,11 +191,15 @@ IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logge
 
 ASTPtr getFilterAST(const ActionsDAG & filter_actions_dag, const NameSet & indexes_column_names, ContextMutablePtr & context, Tables * external_tables)
 {
+    /// No `distributed_product_mode` here: the filter goes to replicas of this server's own data, which stand in
+    /// for this server, not to the shards of a Distributed table.
+    ContextPtr no_distributed_product_mode_context;
     ASTPtr predicate = tryBuildAdditionalFilterAST(filter_actions_dag,
         /*projection_names=*/ indexes_column_names,
         /*execution_name_to_projection_query_tree=*/ {},
         /*external_tables=*/ external_tables,
-        context);
+        context,
+        no_distributed_product_mode_context);
     if (!predicate)
         return nullptr;
 

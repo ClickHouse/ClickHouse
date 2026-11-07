@@ -1,0 +1,20 @@
+-- global
+table	10
+subquery	10
+view	10
+cte	10
+view, IN table	10
+view, NOT IN	10
+view, with another conjunct	8
+view, explicit GLOBAL IN	10
+view, explicit GLOBAL IN table	10
+-- prefer_global_in_and_join
+view	10
+-- local
+table	0
+view	0
+-- deny
+view, no push-down	10
+-- allow
+table	10
+view	10
