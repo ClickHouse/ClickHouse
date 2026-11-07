@@ -53,8 +53,10 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns,
-                                          const IColumn::Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const Selector & selector, std::span<const size_t> counts) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const SmallSelector & selector, std::span<const size_t> counts) const override;
+    template <typename SelectorType>
+    VectorWithMemoryTracking<MutableColumnPtr> scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const;
 
     void getExtremes(Field &, Field &, size_t, size_t) const override {}
 

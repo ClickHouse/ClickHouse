@@ -174,17 +174,19 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
-template <Fn<size_t(size_t)> Sharder>
-IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder sharder)
+template <typename Id, Fn<size_t(size_t)> Sharder>
+PaddedPODArray<Id> hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder sharder)
 {
     size_t num_rows = hashes.size();
 
-    IColumn::Selector selector(num_rows);
+    PaddedPODArray<Id> selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(intHashCRC32(hashes[i]));
+        selector[i] = static_cast<Id>(sharder(intHashCRC32(hashes[i])));
     return selector;
 }
 
+/// `Id` is the type of the shard ids: `UInt16` for at most 65536 shards, or `UInt64`.
+template <typename Id>
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);

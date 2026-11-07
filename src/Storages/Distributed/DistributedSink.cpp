@@ -5,6 +5,7 @@
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -769,7 +770,8 @@ DistributedSink::~DistributedSink()
 }
 
 
-IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
+template <typename Id>
+PaddedPODArray<Id> DistributedSink::createSelector(const Block & source_block) const
 {
     storage.checkShardingKeySetsAreBuilt();
     Block current_block_with_sharding_key_expr = source_block;
@@ -777,31 +779,16 @@ IColumn::Selector DistributedSink::createSelector(const Block & source_block) co
 
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
 
-    return StorageDistributed::createSelector(cluster, key_column);
+    return StorageDistributed::createSelector<Id>(cluster, key_column);
 }
 
 
 Blocks DistributedSink::splitBlock(const Block & block)
 {
-    auto selector = createSelector(block);
-
-    /// Split block to num_shard smaller block, using 'selector'.
-
     const size_t num_shards = cluster->getShardsInfo().size();
-    Blocks split_blocks(num_shards);
-
-    for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-        split_blocks[shard_idx] = block.cloneEmpty();
-
-    size_t columns_in_block = block.columns();
-    for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
-    {
-        auto split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
-        for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-            split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
-    }
-
-    return split_blocks;
+    if (num_shards <= 65536)
+        return scatterBlock(block, num_shards, createSelector<UInt16>(block));
+    return scatterBlock(block, num_shards, createSelector(block));
 }
 
 

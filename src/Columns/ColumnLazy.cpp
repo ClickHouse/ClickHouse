@@ -265,7 +265,12 @@ ColumnPtr ColumnLazy::replicate(const Offsets &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method replicate is not supported for {}", getName());
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnLazy::scatter(size_t, const Selector &) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLazy::doScatter(const Selector &, std::span<const size_t>) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLazy::doScatter(const SmallSelector &, std::span<const size_t>) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }

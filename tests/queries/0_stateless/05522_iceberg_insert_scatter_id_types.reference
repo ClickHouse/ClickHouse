@@ -1,0 +1,10 @@
+iceberg_insert_max_partitions = 100
+200	19900	195700	133	490
+1	20
+iceberg_insert_max_partitions = 100000
+200	19900	195700	133	490
+1	20
+101 partitions at iceberg_insert_max_partitions = 100
+Too many partitions per insert operation: 101. The maximum allowed number of partitions is 100
+BAD_ARGUMENTS
+200

@@ -1,5 +1,6 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -134,10 +135,11 @@ bool isOptimizeRowOrderExplicitlySet(const SettingsChanges & settings_changes)
 
 }
 
+template <typename SelectorType>
 void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
-        IColumn::Selector & selector,
+        SelectorType & selector,
         size_t max_parts,
         ContextPtr context)
 {
@@ -148,6 +150,7 @@ void buildScatterSelector(
     size_t num_rows = columns[0]->size();
     size_t partitions_count = 0;
     size_t throw_on_limit = context->getSettingsRef()[Setting::throw_on_max_partitions_per_insert_block];
+    bool ids_fit = true;
 
     for (size_t i = 0; i < num_rows; ++i)
     {
@@ -180,13 +183,23 @@ void buildScatterSelector(
             /// Optimization for common case when there is only one partition - defer selector initialization.
             if (partitions_count == 2)
             {
-                selector = IColumn::Selector(num_rows);
+                selector = SelectorType(num_rows);
                 std::fill(selector.begin(), selector.begin() + i, 0);
+            }
+
+            if constexpr (std::is_same_v<SelectorType, IColumn::SmallSelector>)
+            {
+                /// 16-bit ids cannot name this partition. Keep counting, so that the caller's limit check sees every partition.
+                if (partitions_count > 65536)
+                {
+                    selector.clear();
+                    ids_fit = false;
+                }
             }
         }
 
-        if (partitions_count > 1)
-            selector[i] = it->getMapped();
+        if (partitions_count > 1 && ids_fit)
+            selector[i] = static_cast<typename SelectorType::value_type>(it->getMapped());
     }
     // Checking partitions per insert block again here outside the loop above
     // so we can log the total number of partitions that would have parts created
@@ -201,6 +214,9 @@ void buildScatterSelector(
                          client_info.initial_user, client_info.initial_query_id, partitions_count);
     }
 }
+
+template void buildScatterSelector(const ColumnRawPtrs &, PODArray<size_t> &, IColumn::Selector &, size_t, ContextPtr);
+template void buildScatterSelector(const ColumnRawPtrs &, PODArray<size_t> &, IColumn::SmallSelector &, size_t, ContextPtr);
 
 namespace
 {
@@ -513,12 +529,12 @@ void MergeTreeTemporaryPart::prewarmCaches()
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, PartitionSelector * out_selector)
 {
     /// out_selector is left empty when the block is not split (a single resulting partition);
     /// the caller then knows every row belongs to the only partition.
     if (out_selector)
-        out_selector->clear();
+        out_selector->emplace<IColumn::Selector>();
 
     BlocksWithPartition result;
     if (block.empty() || !block.rows())
@@ -570,21 +586,22 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     }
 
     PODArray<size_t> partition_num_to_first_row;
-    IColumn::Selector selector;
-    buildScatterSelector(partition_columns_raw_ptrs, partition_num_to_first_row, selector, max_parts, context);
+    PartitionSelector selector;
+    /// `buildScatterSelector` throws `TOO_MANY_PARTS` before it writes an id of `max_parts` or more, so every id fits `UInt16`.
+    if (context->getSettingsRef()[Setting::throw_on_max_partitions_per_insert_block] && max_parts >= 1 && max_parts <= 65536)
+        selector.emplace<IColumn::SmallSelector>();
+
+    Blocks blocks = std::visit([&](auto & typed_selector)
+    {
+        buildScatterSelector(partition_columns_raw_ptrs, partition_num_to_first_row, typed_selector, max_parts, context);
+        return scatterBlock(block, partition_num_to_first_row.size(), typed_selector);
+    }, selector);
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
 
     for (size_t i = 0; i < partitions_count; ++i)
-        result.emplace_back(std::make_shared<Block>(block.cloneEmpty()), get_partition(partition_num_to_first_row[i]));
-
-    for (size_t col = 0; col < block.columns(); ++col)
-    {
-        auto scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
-        for (size_t i = 0; i < partitions_count; ++i)
-            result[i].block->getByPosition(col).column = std::move(scattered[i]);
-    }
+        result.emplace_back(std::make_shared<Block>(std::move(blocks[i])), get_partition(partition_num_to_first_row[i]));
 
     for (auto & item : result)
         item.partition_id = item.partition.getID(metadata_snapshot->getPartitionKey().sample_block);

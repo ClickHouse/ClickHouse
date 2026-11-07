@@ -345,22 +345,19 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         short_circuit_eager_argument);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
-                                                      const IColumn::Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
     if (elements_size != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
                         selector.size(), elements_size);
 
-    VectorWithMemoryTracking<size_t> counts;
-    if (captured_columns.empty())
-        counts = countColumnsSizeInSelector(num_columns, selector);
-
+    const size_t num_columns = counts.size();
     VectorWithMemoryTracking<ColumnsWithTypeAndName> captures(num_columns, captured_columns);
 
     for (size_t capture = 0; capture < captured_columns.size(); ++capture)
     {
-        auto parts = captured_columns[capture].column->scatter(num_columns, selector);
+        auto parts = captured_columns[capture].column->scatterWithCounts(selector, counts);
         for (size_t part = 0; part < num_columns; ++part)
             captures[part][capture].column = std::move(parts[part]);
     }
@@ -384,6 +381,16 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_co
     }
 
     return columns;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 size_t ColumnFunction::byteSize() const

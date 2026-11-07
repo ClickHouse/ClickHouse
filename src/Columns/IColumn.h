@@ -664,11 +664,19 @@ public:
     [[nodiscard]] virtual Ptr replicate(const Offsets & offsets) const = 0;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
-      * Selector must contain values from 0 to num_columns - 1.
-      * For default implementation, see scatterImpl.
+      * Selector must contain values from 0 to num_columns - 1. Rows keep their order within each piece.
+      * A `SmallSelector` allows at most 65536 pieces. More pieces are a `LOGICAL_ERROR`.
       */
     using Selector = PaddedPODArray<UInt64>;
-    [[nodiscard]] virtual VectorWithMemoryTracking<MutablePtr> scatter(size_t num_columns, const Selector & selector) const = 0;
+    using SmallSelector = PaddedPODArray<UInt16>;
+    [[nodiscard]] VectorWithMemoryTracking<MutablePtr> scatter(size_t num_columns, const Selector & selector) const;
+    [[nodiscard]] VectorWithMemoryTracking<MutablePtr> scatter(size_t num_columns, const SmallSelector & selector) const;
+
+    /// The same, with the rows per piece counted by the caller. `counts[k]` must be the number of rows with
+    /// `selector[i] == k`, as `countColumnsSizeInSelector` returns it. The result has one piece per element of `counts`.
+    /// Counts that do not sum to the selector size are a `LOGICAL_ERROR`.
+    [[nodiscard]] VectorWithMemoryTracking<MutablePtr> scatterWithCounts(const Selector & selector, std::span<const size_t> counts) const;
+    [[nodiscard]] VectorWithMemoryTracking<MutablePtr> scatterWithCounts(const SmallSelector & selector, std::span<const size_t> counts) const;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -979,6 +987,10 @@ public:
     virtual void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Ptr> & /*source_columns*/) {}
 
 protected:
+    /// Implements `scatter` and `scatterWithCounts`. `counts` holds the rows per piece and sums to the selector size.
+    [[nodiscard]] virtual VectorWithMemoryTracking<MutablePtr> doScatter(const Selector & selector, std::span<const size_t> counts) const = 0;
+    [[nodiscard]] virtual VectorWithMemoryTracking<MutablePtr> doScatter(const SmallSelector & selector, std::span<const size_t> counts) const = 0;
+
     template <typename Compare, typename Sort, typename PartialSort>
     void getPermutationImpl(size_t limit, Permutation & res, Compare compare, Sort full_sort, PartialSort partial_sort) const;
 
@@ -1090,7 +1102,11 @@ private:
     IColumnHelper(const IColumnHelper &) = default;
 
     /// Devirtualize insertFrom.
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const IColumn::Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const IColumn::Selector & selector, std::span<const size_t> counts) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const IColumn::SmallSelector & selector, std::span<const size_t> counts) const override;
+
+    template <typename SelectorType>
+    VectorWithMemoryTracking<MutableColumnPtr> scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;

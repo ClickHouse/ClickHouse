@@ -1,4 +1,5 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
@@ -144,67 +145,64 @@ void MergingAggregatedTransform::addChunk(Columns columns, size_t num_rows, Int3
     if (!grouping_column_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt64 column for __grouping_set, got {}", grouping_column->getName());
 
-    IColumn::Selector selector;
-
-    const auto & grouping_data = grouping_column_typed->getData();
-    UInt64 last_group = grouping_data[0];
-    UInt64 max_group = last_group;
-    for (size_t row = 1; row < num_rows; ++row)
+    auto split_by_group = [&]<typename Selector>(Selector selector)
     {
-        auto group = grouping_data[row];
+        using Id = typename Selector::value_type;
 
-        /// Optimization for equal ranges.
-        if (last_group == group)
-            continue;
+        const auto & grouping_data = grouping_column_typed->getData();
+        UInt64 last_group = grouping_data[0];
+        UInt64 max_group = last_group;
+        for (size_t row = 1; row < num_rows; ++row)
+        {
+            auto group = grouping_data[row];
+
+            /// Optimization for equal ranges.
+            if (last_group == group)
+                continue;
+
+            /// Optimization for single group.
+            if (selector.empty())
+                selector.reserve(num_rows);
+
+            /// Fill the last equal range.
+            selector.resize_fill(row, static_cast<Id>(last_group));
+            last_group = group;
+            max_group = std::max(last_group, max_group);
+        }
+
+        if (max_group >= grouping_sets.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid group number {}. Number of groups {}.", last_group, grouping_sets.size());
 
         /// Optimization for single group.
         if (selector.empty())
-            selector.reserve(num_rows);
+        {
+            grouping_sets[last_group].reordering_key_columns_actions->execute(block);
+            grouping_sets[last_group].bucket_to_chunks[bucket_num].emplace_back(
+                Chunk(block.getColumns(), block.rows()), bucket_num, is_overflows);
+            return;
+        }
 
         /// Fill the last equal range.
-        selector.resize_fill(row, last_group);
-        last_group = group;
-        max_group = std::max(last_group, max_group);
-    }
+        selector.resize_fill(num_rows, static_cast<Id>(last_group));
 
-    if (max_group >= grouping_sets.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid group number {}. Number of groups {}.", last_group, grouping_sets.size());
+        const size_t num_groups = max_group + 1;
+        Blocks split_blocks = scatterBlock(block, num_groups, selector);
 
-    /// Optimization for single group.
-    if (selector.empty())
-    {
-        grouping_sets[last_group].reordering_key_columns_actions->execute(block);
-        grouping_sets[last_group].bucket_to_chunks[bucket_num].emplace_back(
-            Chunk(block.getColumns(), block.rows()), bucket_num, is_overflows);
-        return;
-    }
+        for (size_t group = 0; group < num_groups; ++group)
+        {
+            auto & split_block = split_blocks[group];
+            split_block.info = block.info;
+            grouping_sets[group].reordering_key_columns_actions->execute(split_block);
+            grouping_sets[group].bucket_to_chunks[bucket_num].emplace_back(
+                Chunk(split_block.getColumns(), split_block.rows()), bucket_num, is_overflows);
+        }
+    };
 
-    /// Fill the last equal range.
-    selector.resize_fill(num_rows, last_group);
-
-    const size_t num_groups = max_group + 1;
-    Blocks split_blocks(num_groups);
-
-    for (size_t group_id = 0; group_id < num_groups; ++group_id)
-        split_blocks[group_id] = block.cloneEmpty();
-
-    size_t columns_in_block = block.columns();
-    for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
-    {
-        auto split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
-        for (size_t group_id = 0; group_id < num_groups; ++group_id)
-            split_blocks[group_id].getByPosition(col_idx_in_block).column = std::move(split_columns[group_id]);
-    }
-
-    for (size_t group = 0; group < num_groups; ++group)
-    {
-        auto & split_block = split_blocks[group];
-        split_block.info = block.info;
-        grouping_sets[group].reordering_key_columns_actions->execute(split_block);
-        grouping_sets[group].bucket_to_chunks[bucket_num].emplace_back(
-            Chunk(split_block.getColumns(), split_block.rows()), bucket_num, is_overflows);
-    }
+    if (grouping_sets.size() <= 65536)
+        split_by_group(IColumn::SmallSelector{});
+    else
+        split_by_group(IColumn::Selector{});
 }
 
 void MergingAggregatedTransform::consume(Chunk chunk)

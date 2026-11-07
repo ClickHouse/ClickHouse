@@ -108,7 +108,8 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const Selector & selector, std::span<const size_t> counts) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const SmallSelector & selector, std::span<const size_t> counts) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

@@ -1529,15 +1529,17 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
     return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
+    const size_t num_columns = counts.size();
     VectorWithMemoryTracking<UnorderedMapWithMemoryTracking<String, MutableColumnPtr>> scattered_typed_paths(num_columns);
     for (auto & typed_paths_ : scattered_typed_paths)
         typed_paths_.reserve(typed_paths.size());
 
     for (const auto & [path, column] : typed_paths)
     {
-        auto scattered_columns = column->scatter(num_columns, selector);
+        auto scattered_columns = column->scatterWithCounts(selector, counts);
         for (size_t i = 0; i != num_columns; ++i)
             scattered_typed_paths[i][path] = std::move(scattered_columns[i]);
     }
@@ -1548,17 +1550,27 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_colu
 
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
-        auto scattered_columns = column->scatter(num_columns, selector);
+        auto scattered_columns = column->scatterWithCounts(selector, counts);
         for (size_t i = 0; i != num_columns; ++i)
             scattered_dynamic_paths[i][path] = std::move(scattered_columns[i]);
     }
 
-    auto scattered_shared_data_columns = shared_data->scatter(num_columns, selector);
+    auto scattered_shared_data_columns = shared_data->scatterWithCounts(selector, counts);
     VectorWithMemoryTracking<MutableColumnPtr> result_columns;
     result_columns.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
         result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics));
     return result_columns;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 struct ColumnObject::ComparatorBase

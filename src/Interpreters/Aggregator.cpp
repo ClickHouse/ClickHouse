@@ -16,6 +16,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
@@ -6749,10 +6750,10 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     size_t rows,
     std::vector<AggregatedChunk> & destinations) const
 {
-    size_t num_columns = source.size();
+    static_assert(Method::Data::NUM_BUCKETS <= 65536);
 
     /// Create a 'selector' that will contain bucket index for every row. It will be used to scatter rows to buckets.
-    IColumn::Selector selector(rows);
+    IColumn::SmallSelector selector(rows);
 
     /// Disable cache for simple count aggregation
     if (is_simple_count)
@@ -6773,7 +6774,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
             auto hash = state.getHash(method.data, i, *pool);
             auto bucket = method.data.getBucketFromHash(hash);
 
-            selector[i] = bucket;
+            selector[i] = static_cast<UInt16>(bucket);
         }
     }
     else
@@ -6794,28 +6795,25 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
             auto hash = state.getHash(method.data, i, *pool);
             auto bucket = method.data.getBucketFromHash(hash);
 
-            selector[i] = bucket;
+            selector[i] = static_cast<UInt16>(bucket);
         }
     }
 
-    UInt32 num_buckets = static_cast<UInt32>(destinations.size());
+    size_t num_buckets = destinations.size();
+    auto scattered = scatterColumns(source, num_buckets, selector);
 
-    for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+    for (size_t bucket = 0; bucket < num_buckets; ++bucket)
     {
-        auto scattered_columns = source[column_idx]->scatter(num_buckets, selector);
+        if (scattered.rows[bucket] == 0)
+            continue;
 
-        for (UInt32 bucket = 0, size = num_buckets; bucket < size; ++bucket)
-        {
-            if (!scattered_columns[bucket]->empty())
-            {
-                destinations[bucket].bucket_num = static_cast<Int32>(bucket);
-                destinations[bucket].chunk.addColumn(std::move(scattered_columns[bucket]));
-            }
+        destinations[bucket].bucket_num = static_cast<Int32>(bucket);
 
-            /** Inserted columns of type ColumnAggregateFunction will own states of aggregate functions
-              *  by holding shared_ptr to source column. See ColumnAggregateFunction.h
-              */
-        }
+        /** Inserted columns of type ColumnAggregateFunction will own states of aggregate functions
+          *  by holding shared_ptr to source column. See ColumnAggregateFunction.h
+          */
+        for (auto & column : scattered.pieces[bucket])
+            destinations[bucket].chunk.addColumn(std::move(column));
     }
 }
 

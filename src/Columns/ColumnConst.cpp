@@ -136,19 +136,28 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_columns, const Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
             selector.size(), toString(s));
 
-    VectorWithMemoryTracking<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
-
-    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
+    VectorWithMemoryTracking<MutableColumnPtr> res(counts.size());
+    for (size_t i = 0; i < counts.size(); ++i)
         res[i] = cloneResized(counts[i]);
 
     return res;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 void ColumnConst::popBack(size_t n)

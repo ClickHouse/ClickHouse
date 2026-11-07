@@ -161,7 +161,10 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const Selector & selector, std::span<const size_t> counts) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const SmallSelector & selector, std::span<const size_t> counts) const override;
+    template <typename SelectorType>
+    VectorWithMemoryTracking<MutableColumnPtr> scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const;
 
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, Permutation & res) const override;
