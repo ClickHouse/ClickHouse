@@ -13,6 +13,8 @@
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
 
+#include <algorithm>
+
 namespace CurrentMetrics
 {
     extern const Metric FilteringMarksWithSecondaryKeys;
@@ -630,26 +632,31 @@ MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexRe
 
 ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInDataParts & projection_parts)
 {
-    ProjectionIndexBitmaps bitmaps;
+    /// Fewest rows first, so the intersection becomes empty sooner.
+    std::vector<const RangesInDataPart *> projection_parts_by_rows;
+    projection_parts_by_rows.reserve(projection_parts.size());
     for (const auto & ranges : projection_parts)
+        projection_parts_by_rows.push_back(&ranges);
+    std::ranges::stable_sort(projection_parts_by_rows, {}, [](const RangesInDataPart * ranges) { return ranges->getRowsCount(); });
+
+    ProjectionIndexBitmapPtr projection_index_bitmap;
+    for (const auto * ranges : projection_parts_by_rows)
     {
-        const auto & proj_name = ranges.data_part->name;
+        const auto & proj_name = ranges->data_part->name;
         auto & reader = projection_index_readers.at(proj_name);
-        auto res = reader.read(ranges);
+        auto res = reader.read(*ranges);
 
         /// If any bitmap is incomplete (due to cancellation), the projection index becomes invalid.
         if (!res)
             return nullptr;
 
-        bitmaps.emplace_back(res);
-    }
+        if (projection_index_bitmap)
+            projection_index_bitmap->intersectWith(*res);
+        else
+            projection_index_bitmap = std::move(res);
 
-    ProjectionIndexBitmapPtr projection_index_bitmap;
-    if (!bitmaps.empty())
-    {
-        projection_index_bitmap = std::move(bitmaps[0]);
-        for (size_t i = 1; i < bitmaps.size(); ++i)
-            projection_index_bitmap->intersectWith(*bitmaps[i]);
+        if (projection_index_bitmap->empty())
+            break;
     }
 
     return projection_index_bitmap;
@@ -747,7 +754,10 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
                 }
             }
 
-            if (projection_index_reader)
+            const bool part_excluded_by_skip_indexes = res
+                && std::ranges::find(res->skip_index_read_result->granules_selected, true) == res->skip_index_read_result->granules_selected.end();
+
+            if (projection_index_reader && !part_excluded_by_skip_indexes)
             {
                 auto projection_index_res = projection_index_reader->read(projection_parts);
                 if (projection_index_res)
