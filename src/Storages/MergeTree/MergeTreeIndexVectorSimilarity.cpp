@@ -93,6 +93,10 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
 
+/// Each indexed vector holds 2 * M neighbour slots and ef_construction sizes the candidate lists. Limits as in Lucene.
+constexpr UInt64 max_hnsw_max_connections_per_layer = 512;
+constexpr UInt64 max_hnsw_candidate_list_size_for_construction = 3200;
+
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
 
@@ -694,7 +698,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
     return std::make_shared<MergeTreeIndexVectorSimilarity>(std::move(metadata_snapshot), index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     const bool has_three_args = (args.size() == 3);
@@ -747,6 +751,15 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
+
+        /// Not on ATTACH: an existing table with larger values must still load, so that its index can be dropped.
+        if (!attach)
+        {
+            if (connectivity > max_hnsw_max_connections_per_layer)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Fifth argument (hnsw_max_connections_per_layer) of vector similarity index must not be greater than {}", max_hnsw_max_connections_per_layer);
+            if (expansion_add > max_hnsw_candidate_list_size_for_construction)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Sixth argument (hnsw_candidate_list_size_for_construction) of vector similarity index must not be greater than {}", max_hnsw_candidate_list_size_for_construction);
+        }
     }
 
     /// Check that the index is created on a single column
