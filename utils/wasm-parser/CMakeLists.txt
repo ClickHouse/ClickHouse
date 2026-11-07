@@ -56,6 +56,7 @@ configure_file ("${CH}/src/Common/config.h.in" "${CMAKE_BINARY_DIR}/gen/Common/c
 file (GLOB PARSER_SOURCES CONFIGURE_DEPENDS
     "${CH}/src/Parsers/*.cpp"
     "${CH}/src/Parsers/Access/*.cpp"
+    "${CH}/src/Parsers/WhatIf/*.cpp"
     "${CH}/src/Parsers/Prometheus/CreateQueryTimeSeriesSettings.cpp"
     "${CH}/src/Access/Common/*.cpp"
 )

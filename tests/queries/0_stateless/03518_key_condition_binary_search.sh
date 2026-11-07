@@ -10,7 +10,7 @@ readonly query_prefix=$CLICKHOUSE_DATABASE
 # are only collected for the part of the query the coordinator runs itself.
 # A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner estimate the rows to read first,
 # and that estimate runs the index analysis once more, which changes the counters below.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0 --parallel_replicas_min_number_of_rows_per_replica 0"
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0 --min_marks_per_part_to_load_statistics=0 --parallel_replicas_min_number_of_rows_per_replica 0"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;
