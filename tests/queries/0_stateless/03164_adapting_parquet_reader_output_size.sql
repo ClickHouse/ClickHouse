@@ -3,6 +3,9 @@
 set max_insert_threads=1;
 set schema_inference_make_columns_nullable=0;
 set engine_file_truncate_on_insert=1;
+-- A row group read from the columns cache ignores the block size settings, and a local file becomes
+-- eligible for the cache once it has been unmodified for a few seconds, so the result would depend on timing.
+set use_columns_cache=0;
 
 -- Average string lengths, approximately: 2, 200, 200, 200
 INSERT INTO FUNCTION file(currentDatabase() || '03164_adapting_parquet_reader_output_size.parquet', Parquet, 'short String, long1 String, long2 String, long_low_cardinality String') SELECT number%100, range(cityHash64(number), cityHash64(number)+10), repeat(cityHash64(number)::String, 6+number%10), repeat((number%10)::String, 200+number%10) FROM numbers(10000);

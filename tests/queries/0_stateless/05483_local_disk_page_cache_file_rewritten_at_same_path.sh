@@ -15,6 +15,7 @@ page_cache_max_size: 134217728
 # its file version.
 $CLICKHOUSE_LOCAL --config-file "${CONFIG_FILE}" \
     --use_page_cache_for_local_disks 1 \
+    --use_columns_cache 0 \
     --local_filesystem_read_method pread \
     --multiquery "
 CREATE DATABASE d ENGINE = Atomic;

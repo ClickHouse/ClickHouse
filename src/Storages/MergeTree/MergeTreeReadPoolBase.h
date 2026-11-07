@@ -29,6 +29,8 @@ public:
 
         bool use_uncompressed_cache = false;
         bool use_columns_cache = false;
+        /// Whether `MergeTreeReadPool` rounds its tasks to whole stripes of the columns cache.
+        bool align_tasks_to_columns_cache_stripes = true;
         bool do_not_steal_tasks = false;
         bool use_const_size_tasks_for_remote_reading = false;
 
@@ -108,8 +110,8 @@ protected:
         const RangesInDataPart & part_with_ranges, const MergeTreeReadTaskInfo & read_task_info, const Settings & settings);
 
     /// Charge the staged estimate of this pool against the query-wide budget and disable cache
-    /// writes for the query once the budget is exceeded. Runs once, from `createTask`, so that
-    /// it happens before any task is handed out but after the caller has installed the read
+    /// writes for the query once the budget is exceeded. Runs once, from `getExtras` and `createTask`,
+    /// so that it happens before any reader is created but after the caller has installed the read
     /// ranges refiner (see `setReadRangesRefiner`): a pool that has one cannot be gated on the
     /// estimate at all, because the refiner decides how many of the selected marks are really
     /// read only when a task is cut.

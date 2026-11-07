@@ -25,6 +25,7 @@ def cluster():
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
+                "users.d/no_columns_cache.xml",
             ],
             with_zookeeper=True,
             with_minio=True,
