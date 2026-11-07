@@ -496,6 +496,9 @@ public:
     /// See comment in ExecutableFunctionCapture.
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    /// The captured columns are passed to the lambda function as they are, so a captured `FixedArray` must not be
+    /// converted to `Array`: the types of the captured columns are checked in `ColumnFunction::appendArgument`.
+    bool useDefaultImplementationForFixedArray() const override { return false; }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return return_type; }
     size_t getNumberOfArguments() const override { return capture->captured_types.size(); }
 
