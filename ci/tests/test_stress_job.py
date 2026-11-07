@@ -97,6 +97,34 @@ def test_same_specific_failure_across_replicas_reported_once(tmp_path):
     assert results[0][0].startswith("AST Fuzzer oracle mismatch")
 
 
+def _asan_stderr(column_type):
+    return (
+        "==1234==ERROR: AddressSanitizer: heap-use-after-free on address 0x1\n"
+        f"    #0 0x55b9b8db9bc7 in DB::ColumnVector<{column_type}>::insertRangeFrom("
+        "DB::IColumn const&) src/Columns/ColumnVector.cpp:10:5\n"
+        "    #1 0x55b9b8db9bc8 in DB::Foo::bar() src/Foo.cpp:10:5\n"
+        "SUMMARY: AddressSanitizer: heap-use-after-free src/Columns/ColumnVector.cpp:10:5\n"
+    )
+
+
+def test_same_name_different_qualified_stacks_both_reported(tmp_path):
+    # The STID drops template arguments, so these share a name. The AI triage may pass
+    # a run on a known stack, so the other one must reach it too; sc2 repeats sc1.
+    pairs = [
+        _pair(tmp_path, "main", _UNKNOWN_LOG, _asan_stderr("unsigned long")),
+        _pair(tmp_path, "sc1", _UNKNOWN_LOG, _asan_stderr("unsigned char")),
+        _pair(tmp_path, "sc2", _UNKNOWN_LOG, _asan_stderr("unsigned char")),
+    ]
+
+    results = select_replica_failures(pairs)
+
+    assert len({name for name, _, _ in results}) == 1
+    assert [FuzzerLogParser.qualified_stack(info)[0] for _, info, _ in results] == [
+        "DB::ColumnVector<unsigned long>::insertRangeFrom",
+        "DB::ColumnVector<unsigned char>::insertRangeFrom",
+    ]
+
+
 def test_generic_fatal_used_when_no_specific_failure(tmp_path):
     # No replica has a specific classification: the generic <Fatal> is reported
     # (once) rather than "Unknown error".

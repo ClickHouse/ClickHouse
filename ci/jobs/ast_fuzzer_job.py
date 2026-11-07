@@ -525,6 +525,28 @@ def analyze_job_logs(
     return result
 
 
+def triage_failure(
+    result: Result, job_kind: str, paths: list[Path], repro_hint: str
+) -> None:
+    """Let the AI triage a failed `result` before it is reported, see `ai_fuzz_triage.py`."""
+    if not result.is_failure():
+        return
+    from ci.jobs.scripts.ai_fuzz_triage import triage_and_apply
+
+    failures = [(r.name, r.info) for r in result.results if not r.is_ok()] or [
+        (f"{job_kind} failure", result.info)
+    ]
+    triage_and_apply(
+        result,
+        job_kind=job_kind,
+        failures=failures,
+        evidence_paths=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
+        repro_hint="The tested ClickHouse binary is at `./ci/tmp/clickhouse` "
+        "(already executable). Use `./ci/tmp/clickhouse local` for "
+        "repro attempts. " + repro_hint,
+    )
+
+
 def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
@@ -726,6 +748,19 @@ def run_fuzz_job(check_name: str):
         WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log,
         extra_results,
     )
+
+    # BuzzHouse runs in CI under La Casa del Dolor, which triages its own failures
+    if not buzzhouse:
+        triage_failure(
+            result,
+            "AST Fuzzer",
+            paths,
+            "The failing query is in the terminal block of `fuzzer.log`: "
+            "the text after the last `Fuzzing step <n> out of <m>` marker, "
+            "with the fuzzed AST dump and the exception. Earlier steps ran "
+            "against the same server, so a repro may also need tables from "
+            "`fuzzer.log` context above the failing query.",
+        )
 
     result.complete_job()
 

@@ -25,9 +25,15 @@ import sys
 import tempfile
 import time
 import traceback
-import urllib.parse
 
-from ci.praktika import Secret
+from ci.jobs.scripts.agent import (
+    FALLBACK_MODEL,
+    MODEL,
+    at_capacity,
+    codex_login,
+    refused_as_cyber_risk,
+    repo_from_pr_url,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
@@ -40,32 +46,13 @@ GH_PREFIX = "env -u GH_CONFIG_DIR"
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
 
-# OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
-# via `codex login --with-api-key`.
-OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
-
-MODEL = "gpt-6.1-sol"
-# `gpt-6.1-sol` refuses some reviews with "This content was flagged for possible
-# cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`. When it is
-# at capacity, only the last attempt does: a same-model retry usually recovers.
-FALLBACK_MODEL = "gpt-5.4"
-CYBER_RISK_FLAG = "flagged for possible cybersecurity risk"
-MODEL_AT_CAPACITY = "Selected model is at capacity"
-
 
 def _join_prompt(*sections):
     return "\n\n".join(section.rstrip() for section in sections if section).rstrip() + "\n"
 
 
-def _repo_from_pr_url(pr_url):
-    path_parts = urllib.parse.urlparse(pr_url).path.strip("/").split("/")
-    if len(path_parts) >= 4 and path_parts[2] == "pull":
-        return f"{path_parts[0]}/{path_parts[1]}"
-    return ""
-
-
 def _pr_repository(info):
-    return _repo_from_pr_url(info.pr_url) or info.repo_name
+    return repo_from_pr_url(info.pr_url) or info.repo_name
 
 
 def _pre_review_instructions():
@@ -225,28 +212,15 @@ def _drop_stale_review_file():
 def _run_codex_once(prompt, model):
     """Run a single attempt of `codex login` + `codex exec`.
 
-    Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
-    `OPENAI_API_KEY` directly when invoked — you have to run
-    `codex login --with-api-key` first, which reads the key from stdin and
-    writes it into `auth.json`. `CODEX_HOME` is scoped to a per-attempt
-    temporary directory under `./ci/tmp` (not `/tmp`, which codex refuses
-    to use for helper binaries) so the API key never lands on global runner
-    state.
+    `CODEX_HOME` is scoped to a per-attempt temporary directory under
+    `./ci/tmp` (not `/tmp`, which codex refuses to use for helper binaries)
+    so the API key never lands on global runner state.
 
     The agent's own `gh` calls run as the app authenticated before the job.
     """
     _drop_stale_review_file()
     with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
-        openai_key = Secret.Config(
-            name=OPENAI_KEY_SECRET,
-            type=Secret.Type.AWS_SSM_PARAMETER,
-            region="us-east-1",
-        ).get_value()
-        subprocess.run(
-            ["codex", "login", "--with-api-key"],
-            input=openai_key, text=True, check=True,
-            env={**os.environ, "CODEX_HOME": codex_home},
-        )
+        codex_login(codex_home)
 
         return Result.from_commands_run(
             name="codex review",
@@ -284,10 +258,10 @@ def _run(prompt):
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             result = _run_codex_once(prompt, model)
-            if model != FALLBACK_MODEL and CYBER_RISK_FLAG in result.info:
+            if refused_as_cyber_risk(model, result.info):
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk, switching to {FALLBACK_MODEL}")
                 model = FALLBACK_MODEL
-            elif model != FALLBACK_MODEL and attempt == MAX_ATTEMPTS - 1 and MODEL_AT_CAPACITY in result.info:
+            elif attempt == MAX_ATTEMPTS - 1 and at_capacity(model, result.info):
                 print(f"WARNING: {model} is at capacity, the last attempt uses {FALLBACK_MODEL}")
                 model = FALLBACK_MODEL
             if not result.is_ok():
