@@ -714,7 +714,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getPathForCacheKey());
     auto callback = [this] { return loadIndex(); };
     return index_cache.getOrSet(key, callback);
 }
@@ -725,7 +725,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getPathForCacheKey());
     index_cache.set(key, std::const_pointer_cast<Index>(index));
     index.reset();
 
@@ -738,7 +738,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getPathForCacheKey());
     index_cache->remove(key);
 }
 
@@ -750,7 +750,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -1067,7 +1067,7 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
             String stream_name = stream_name_opt.value_or(full_stream_name);
 
             auto marks_file = index_granularity_info.getMarksFilePath(stream_name);
-            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
+            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string() + getCacheKeySuffix());
             index_mark_cache->remove(key);
         }
     }
@@ -1097,7 +1097,7 @@ void IMergeTreeDataPart::clearCaches()
         /// there is no in-flight write to guard against, and removing the entries is enough.
         if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
-            columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name));
+            columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name) + getCacheKeySuffix());
         }
     }
 
@@ -1109,7 +1109,7 @@ void IMergeTreeDataPart::clearCaches()
         for (const auto & [_, projection_part] : projection_parts)
         {
             if (projection_part->mayStoreColumnsInColumnsCache())
-                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name));
+                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name) + projection_part->getCacheKeySuffix());
         }
     }
 }
@@ -1142,14 +1142,14 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
     if (!columns_cache)
         return false;
 
-    if (mayStoreColumnsInColumnsCache() && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name)))
+    if (mayStoreColumnsInColumnsCache() && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name) + getCacheKeySuffix()))
         return true;
 
     /// The entries of the projection parts are removed with the caches of this part, see `clearCaches`.
     for (const auto & [_, projection_part] : projection_parts)
     {
         if (projection_part->mayStoreColumnsInColumnsCache()
-            && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name)))
+            && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name) + projection_part->getCacheKeySuffix()))
             return true;
     }
     return false;
@@ -1214,6 +1214,25 @@ void IMergeTreeDataPart::removeIfNeeded()
             {
                 LOG_TRACE(storage.log, "Removing unneeded moved part from {}", path);
             }
+        }
+
+        /// The source of a part moved to another disk is removed only when its last reader releases
+        /// it, which can be long after the move. Under `leader_election` this node may have lost the
+        /// lease in between, and the new leader may have taken over with this very copy as the active
+        /// one (it still existed at the takeover scan), so removing it here would leave that leader
+        /// reading a deleted path. Holding the lease again is not enough either: after a
+        /// lose-and-reacquire cycle, the intermediate leader may have removed the other copy as a
+        /// duplicate, and this node's takeover then made this copy active again. The same applies
+        /// to a temporary moving clone, whose deterministic `moving/` path the next leader may be
+        /// using for its own move of the same part. So only the lease holder in the epoch of the
+        /// move may remove it; otherwise the directory is kept and reconciled like any other
+        /// duplicate or stale moving directory when the parts are loaded again.
+        if ((state == MergeTreeDataPartState::DeleteOnDestroy || (is_temp && isMovingPart()))
+            && (!storage.mayMutateSharedStorage()
+                || (move_leadership_epoch && *move_leadership_epoch != storage.currentLeadershipEpoch())))
+        {
+            LOG_WARNING(storage.log, "Keeping part {} at {}: this node does not hold the leader lease in the epoch of its move", name, path);
+            return;
         }
 
         remove();
@@ -1579,9 +1598,31 @@ void IMergeTreeDataPart::removeStatisticsFromCache(StatisticsCache * cache) cons
         cache->remove(StatisticsCache::hash(part_path, column.name));
 }
 
+void IMergeTreeDataPart::setSharedStorageIncarnation(const std::optional<String> & incarnation)
+{
+    shared_storage_incarnation = incarnation;
+    for (const auto & [_, projection_part] : projection_parts)
+        projection_part->setSharedStorageIncarnation(incarnation);
+}
+
+String IMergeTreeDataPart::getCacheKeySuffix() const
+{
+    /// Not taken from the parent part: this is called from the destructor of a projection part (via
+    /// `clearCaches`), which may run after the parent is destroyed.
+    if (!shared_storage_incarnation)
+        return {};
+    return "@" + *shared_storage_incarnation;
+}
+
 String IMergeTreeDataPart::getPathForCacheKey() const
 {
-    return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+    return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart() + getCacheKeySuffix();
+}
+
+String IMergeTreeDataPart::getNameForQueryConditionCache() const
+{
+    String res = isProjectionPart() ? fmt::format("{}:{}", getParentPartName(), name) : name;
+    return res + getCacheKeySuffix();
 }
 
 Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) const
@@ -1922,6 +1963,7 @@ void IMergeTreeDataPart::addProjectionPart(
     /// so build it in the dedicated arena. Scoping here covers every caller (insert, merge,
     /// projection merge, load).
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    projection_part->setSharedStorageIncarnation(shared_storage_incarnation);
     projection_parts[projection_name] = std::move(projection_part);
 }
 
@@ -2123,7 +2165,7 @@ namespace
 {
 
 template <typename Storage>
-void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
+void writeInvalidatedSystemColumnsFileImpl(Storage & storage, bool storage_supports_hard_links, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
     /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
     /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
@@ -2132,7 +2174,22 @@ void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesys
         return;
 
     const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
+
+    /// Whether an existing file must be unlinked before it is rewritten depends on the storage.
+    ///
+    /// A part cloned with hardlinks (`REPLACE PARTITION FROM`, `MOVE PARTITION TO TABLE`, `FREEZE`)
+    /// shares the blobs of this file with the source part, and `WriteMode::Rewrite` retires the blobs
+    /// of the file it replaces without regard to other links to them - it would delete the source
+    /// part's copy. Unlinking first lets the hardlink accounting keep the shared blobs alive; on a local
+    /// disk it likewise keeps the rewrite from going into the shared inode.
+    ///
+    /// Metadata storages with deterministic object keys (`plain`, `plain_rewritable` without `enable_hard_links`) have no hardlinks,
+    /// and there the removal must NOT be issued: it addresses the very same object as the write, so when
+    /// both are queued in one transaction - as they are under a part-storage transaction - the removal
+    /// executes after the blob has been uploaded and deletes it, leaving the part with metadata that
+    /// points at a missing object. `WriteMode::Rewrite` alone replaces the object there.
+    if (storage_supports_hard_links)
+        storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
@@ -2143,17 +2200,17 @@ void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesys
 
 void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    writeInvalidatedSystemColumnsFileImpl(storage, part_dir, columns, settings);
+    writeInvalidatedSystemColumnsFileImpl(storage, storage.supportsHardLinks(), part_dir, columns, settings);
 }
 
 void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    writeInvalidatedSystemColumnsFileImpl(disk, part_dir, columns, settings);
+    writeInvalidatedSystemColumnsFileImpl(disk, disk.supportsHardLinks(), part_dir, columns, settings);
 }
 
-void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
+void IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    writeInvalidatedSystemColumnsFileImpl(transaction, part_dir, columns, settings);
+    writeInvalidatedSystemColumnsFileImpl(transaction, disk.supportsHardLinks(), part_dir, columns, settings);
 }
 
 std::optional<String> IMergeTreeDataPart::getDenseIndexBackingPath() const
@@ -2170,7 +2227,7 @@ std::optional<String> IMergeTreeDataPart::getDenseIndexBackingPath() const
 std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
 {
     if (uuid == UUIDHelpers::Nil)
-        return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+        return getPathForCacheKey();
     return toString(uuid);
 }
 
@@ -2655,7 +2712,11 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
-        writeChecksums(checksums, {});
+        /// Under `leader_election`, a follower must not repair `checksums.txt` on shared object
+        /// storage owned by the current leader. The recomputed `checksums` is still used
+        /// in-memory below; only its persistence is deferred to the leader.
+        if (storage.mayMutateSharedStorage())
+            writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
         bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
@@ -3038,7 +3099,9 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
                 "Cannot rebuild columns.txt of part {}: it stores columns [{}], the list rebuilt from the table metadata is [{}]",
                 name, fmt::join(recorded_columns, ", "), fmt::join(loaded_columns.getNames(), ", "));
 
-        if (!is_readonly_storage)
+        /// Same as for `checksums.txt`: a `leader_election` follower must not write `columns.txt`
+        /// to shared object storage owned by the current leader (`mayMutateSharedStorage`).
+        if (!is_readonly_storage && storage.mayMutateSharedStorage())
             writeColumns(loaded_columns, {});
     }
 
@@ -3380,6 +3443,11 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     if (!maybe_path_in_detached)
         return nullptr;
 
+    return makeCloneAt(*maybe_path_in_detached, disk_transaction);
+}
+
+DataPartStoragePtr IMergeTreeDataPart::makeCloneAt(const String & relative_dir_name, const DiskTransactionPtr & disk_transaction) const
+{
     /// In case of zero-copy replication we copy directory instead of hardlinks
     /// because hardlinks tracking doesn't work for detached parts.
     auto storage_settings = storage.getSettings();
@@ -3394,7 +3462,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     };
     return getDataPartStorage().freeze(
         storage.relative_data_path,
-        *maybe_path_in_detached,
+        relative_dir_name,
         Context::getGlobalContextInstance()->getReadSettings(),
         Context::getGlobalContextInstance()->getWriteSettings(),
         /* save_metadata_callback= */ {},
@@ -3406,7 +3474,8 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
     const String & directory_name,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
-    const std::function<void()> & cancellation_hook) const
+    const std::function<void()> & cancellation_hook,
+    const std::function<bool()> & may_remove_after_failure) const
 {
     if (disk->getName() == getDataPartStorage().getDiskName())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to same disk {}", name, getDataPartStorage().getDiskName());
@@ -3414,7 +3483,7 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook);
+    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log.load(), cancellation_hook, may_remove_after_failure);
 }
 
 IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const

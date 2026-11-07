@@ -33,7 +33,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     size_t file_size_,
     MergeTreeMarksLoaderPtr marks_loader_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-    clockid_t clock_type_)
+    clockid_t clock_type_,
+    String cache_key_suffix_)
     : profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , all_mark_ranges(all_mark_ranges_)
@@ -41,6 +42,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , uncompressed_cache(uncompressed_cache_)
+    , cache_key_suffix(std::move(cache_key_suffix_))
     , settings(settings_)
     , marks_count(marks_count_)
     , file_size(file_size_)
@@ -109,7 +111,7 @@ void MergeTreeReaderStream::init()
     else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
+            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)) + cache_key_suffix,
             [this, estimated_sum_mark_range_bytes, read_settings]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {

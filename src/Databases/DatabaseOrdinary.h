@@ -119,6 +119,9 @@ public:
     /// table before their side effects.
     static bool isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
 
+    /// The same for `leader_election`, which `StorageReplicatedMergeTree` refuses to attach with.
+    static bool hasLeaderElectionAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context);
+
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).

@@ -205,6 +205,9 @@ public:
     virtual std::optional<String> getCacheName() const { return std::nullopt; }
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
+    /// Whether files of this storage can be hardlinked (see `IDisk::supportsHardLinks`). False for
+    /// metadata layouts with deterministic object keys (`plain`, `plain_rewritable`) and write-once disks.
+    virtual bool supportsHardLinks() const = 0;
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
 
@@ -315,6 +318,9 @@ public:
     const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
+    /// If the copy fails, the partially copied directory is removed, unless `may_remove_after_failure`
+    /// is set and returns false (the destination may then belong to someone else, see
+    /// `MergeTreePartsMover::clonePart`).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
         const std::string & to,
         const std::string & dir_path,
@@ -322,7 +328,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         LoggerPtr log,
-        const std::function<void()> & cancellation_hook
+        const std::function<void()> & cancellation_hook,
+        const std::function<bool()> & may_remove_after_failure
         ) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.
