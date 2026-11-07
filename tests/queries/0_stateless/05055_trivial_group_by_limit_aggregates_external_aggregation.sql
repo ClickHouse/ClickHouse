@@ -32,7 +32,8 @@ FROM (SELECT toUInt64(number % 1000) AS k, uniqExact(number) AS u FROM numbers_m
 SELECT min(l), max(l), count()
 FROM (SELECT toUInt64(number % 1000) AS k, length(groupArray(number)) AS l FROM numbers_mt(100000) GROUP BY k LIMIT 5);
 
--- The kept keys were frozen, the tables were flushed to temporary files and re-seeded afterwards.
+-- The kept keys were frozen, and the tables were flushed to temporary files keeping the kept
+-- keys in them.
 SELECT toUInt64(number % 1000) AS k, uniqExact(number) AS u FROM numbers_mt(100000) GROUP BY k LIMIT 5 FORMAT Null
 SETTINGS log_comment = '05055_kept_keys_spill';
 
@@ -41,7 +42,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['AggregationSharedKeptKeysRebuilds'] > 0 AS kept_keys_frozen,
     ProfileEvents['ExternalAggregationWritePart'] > 0 AS spilled,
-    ProfileEvents['AggregationSharedKeptKeysSpillReseeds'] > 0 AS reseeded
+    ProfileEvents['AggregationKeptKeysSpills'] > 0 AS kept_keys
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND log_comment = '05055_kept_keys_spill'

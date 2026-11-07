@@ -72,7 +72,7 @@ namespace ProfileEvents
     extern const Event AggregationTopKKeysEvicted;
     extern const Event AggregationTopKKeysPruned;
     extern const Event AggregationTopKHeapsFrozen;
-    extern const Event AggregationSharedKeptKeysSpillReseeds;
+    extern const Event AggregationKeptKeysSpills;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
@@ -920,6 +920,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     cache_settings.simple_count = is_simple_count;
+    cache_settings.revivable_states = keepsKeysAcrossSpills();
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
     if (params.enable_adaptive_aggregator && params.aggregates_size)
@@ -1151,7 +1152,7 @@ void Aggregator::mergeOnBlockSmall(
                          result.consecutive_keys_cache_stats, \
                          /* no_more_keys= */ false, \
                          row_begin, row_end, \
-                         aggregate_columns_data, key_columns, is_cancelled, result.aggregates_pool);
+                         aggregate_columns_data, key_columns, is_cancelled, keysArena(result));
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -1176,7 +1177,7 @@ void Aggregator::executeImpl(
     /// through a size hint, which does not justify a second copy of its aggregation loops.
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImpl<for_sub_range && !(IS_TWO_LEVEL)>(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
+            executeImpl<for_sub_range && !(IS_TWO_LEVEL)>(*result.NAME, result.aggregates_pool, keysArena(result), row_begin, row_end, key_columns, aggregate_instructions, \
                         result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
 
     if (false) {} // NOLINT
@@ -1188,6 +1189,7 @@ template <bool for_sub_range, typename Method>
 void NO_INLINE Aggregator::executeImpl(
     Method & method,
     Arena * aggregates_pool,
+    Arena * key_arena,
     size_t row_begin,
     size_t row_end,
     ColumnRawPtrs & key_columns,
@@ -1199,7 +1201,12 @@ void NO_INLINE Aggregator::executeImpl(
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+    /// With the admitted keys kept across spills, the `no_more_keys` path revives the null state
+    /// of a found cold cell in place, so its lookups must return table cells, never a per-block
+    /// copy of the mapped value (see `keepsKeysAcrossSpills`) - the consecutive-keys cache makes
+    /// such copies.
+    bool use_cache = !is_simple_count && !(no_more_keys && keepsKeysAcrossSpills())
+        && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     using State = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::State>, typename Method::State>;
     using StateNoCache
@@ -1212,13 +1219,13 @@ void NO_INLINE Aggregator::executeImpl(
     if (use_cache)
     {
         State state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        executeImpl(method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         StateNoCache state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        executeImpl(method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
 
@@ -1228,6 +1235,7 @@ void Aggregator::executeImpl(
     State & state,
     const ColumnRawPtrs & key_columns,
     Arena * aggregates_pool,
+    Arena * key_arena,
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
@@ -1269,7 +1277,7 @@ void Aggregator::executeImpl(
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
         executeImplBatch<prefetch_v, top_k_v>(
-            method, state, key_columns, aggregates_pool, row_begin, row_end,
+            method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end,
             aggregate_instructions, no_more_keys_arg, all_keys_are_const,
             use_compiled_functions, overflow_row);
     };
@@ -1425,6 +1433,7 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
                     state,
                     key_columns,
                     result.aggregates_pool,
+                    keysArena(result),
                     pos,
                     pos + slice,
                     aggregate_instructions,
@@ -1604,6 +1613,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     State & state,
     const ColumnRawPtrs & key_columns,
     Arena * aggregates_pool,
+    Arena *,
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction *,
@@ -1627,6 +1637,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     State & state,
     const ColumnRawPtrs & key_columns,
     Arena * aggregates_pool,
+    Arena * key_arena,
     size_t row_begin,
     size_t row_end,
     AggregateFunctionInstruction * aggregate_instructions,
@@ -1741,7 +1752,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 {
                     const auto add_count = [&](size_t first_row, UInt64 count) ALWAYS_INLINE
                     {
-                        auto emplace_result = state.emplaceKey(method.data, first_row, *aggregates_pool);
+                        auto emplace_result = state.emplaceKey(method.data, first_row, *key_arena);
                         if (emplace_result.isInserted())
                             getInlineCountState(emplace_result.getMapped()) = count;
                         else
@@ -1787,7 +1798,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if (!no_more_keys)
             {
-                auto emplace_result = state.emplaceKey(method.data, 0, *aggregates_pool);
+                auto emplace_result = state.emplaceKey(method.data, 0, *key_arena);
                 if (emplace_result.isInserted())
                     getInlineCountState(emplace_result.getMapped()) = row_end - row_begin;
                 else
@@ -1797,7 +1808,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 auto find_result = state.findKey(method.data, 0, *aggregates_pool);
                 if (find_result.isFound())
-                    getInlineCountState(find_result.getMapped()) = row_end - row_begin;
+                    getInlineCountState(find_result.getMapped()) += row_end - row_begin;
                 else if (overflow_row)
                     getCountState(overflow_row) += row_end - row_begin;
             }
@@ -1825,14 +1836,14 @@ void NO_INLINE Aggregator::executeImplBatch(
                     const size_t want_end = std::min(row_end, i + std::min(prefetch_look_ahead, ring_size - 1) + 1);
                     for (; built_end < want_end; ++built_end)
                     {
-                        const PackedStringRef key = state.getKeyHolder(built_end, *aggregates_pool).key;
+                        const PackedStringRef key = state.getKeyHolder(built_end, *key_arena).key;
                         ring[built_end % ring_size] = key;
                         method.data.prefetchByHash(method.data.hash(key));
                     }
 
                     typename Method::Data::LookupResult it;
                     bool inserted = false;
-                    method.data.emplace(ArenaPackedStringHolder{ring[i % ring_size], *aggregates_pool}, it, inserted);
+                    method.data.emplace(ArenaPackedStringHolder{ring[i % ring_size], *key_arena}, it, inserted);
                     if (inserted)
                         getInlineCountState(it->getMapped()) = 1;
                     else
@@ -1850,7 +1861,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                     if (i + prefetch_look_ahead < row_end)
                     {
-                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *key_arena);
                         method.data.prefetch(std::move(key_holder));
                     }
                 }
@@ -1865,7 +1876,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+                auto emplace_result = state.emplaceKey(method.data, i, *key_arena);
 
                 if constexpr (top_k)
                 {
@@ -1971,7 +1982,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 /// columns hold 1 row, so the look-ahead must not cross that row.
                 if (i + prefetch_look_ahead < key_end)
                 {
-                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *key_arena);
                     method.data.prefetch(std::move(key_holder));
                 }
             }
@@ -1988,7 +1999,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+            auto emplace_result = state.emplaceKey(method.data, i, *key_arena);
 
             if constexpr (top_k)
             {
@@ -2024,7 +2035,17 @@ void NO_INLINE Aggregator::executeImplBatch(
                 emplace_result.setMapped(aggregate_data);
             }
             else
+            {
                 aggregate_data = emplace_result.getMapped();
+                /// A kept key gone cold after a spill. The first touch of a key in a block always
+                /// reaches the table cell, so `setMapped` revives the cell, and any per-block
+                /// cache then carries the revived state.
+                if (aggregate_data == nullptr) [[unlikely]]
+                {
+                    aggregate_data = reviveKeptKey(aggregates_pool, use_compiled_functions);
+                    emplace_result.setMapped(aggregate_data);
+                }
+            }
 
             if constexpr (top_k)
             {
@@ -2070,10 +2091,21 @@ void NO_INLINE Aggregator::executeImplBatch(
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
-            /// Add only if the key already exists.
+            /// Add only if the key already exists. A lookup never persists its key, so its
+            /// serialization scratch goes to the reclaimable state pool, not to `key_arena`,
+            /// which survives the spills (`findKey` does not discard the scratch).
             auto find_result = state.findKey(method.data, i, *aggregates_pool);
             if (find_result.isFound())
+            {
                 aggregate_data = find_result.getMapped();
+                /// A kept key gone cold after a spill. `executeImpl` runs this loop without the
+                /// consecutive-keys cache then, so `getMapped` is the table cell itself.
+                if (aggregate_data == nullptr) [[unlikely]]
+                {
+                    aggregate_data = reviveKeptKey(aggregates_pool, use_compiled_functions);
+                    find_result.getMapped() = aggregate_data;
+                }
+            }
             else
                 aggregate_data = overflow_row;
             places[i] = aggregate_data;
@@ -2671,9 +2703,9 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
-      * With the kept-keys cutoff armed, the spill either abandons the cutoff (before the freeze)
-      * or re-seeds the kept keys into the emptied table (after it); see
-      * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
+      * With a kept-keys cap the spill either abandons the shared cutoff (before the freeze) or
+      * keeps the admitted keys in the table while their states go to disk; see
+      * `spillAllowedUnderKeptKeysCutoff` and `keepsKeysAcrossSpills`.
       */
     if (over_external_threshold
         && result.isTwoLevel()
@@ -2683,7 +2715,6 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
-        reseedKeptKeysAfterSpill(result);
     }
 
     return true;
@@ -2724,10 +2755,15 @@ MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, 
     return tracker;
 }
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size, bool is_final_flush) const
 {
     if (!tmp_data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to temporary file because temporary file is not initialized");
+
+    /// Whether the admitted keys stay in the live table with null states while their flushed
+    /// states go to disk (see `keepsKeysAcrossSpills`). The final flush has no rows left to
+    /// aggregate, so it releases the table wholesale instead.
+    const bool keep_admitted_keys = !is_final_flush && keepsKeysAtSpill();
 
     Stopwatch watch;
     size_t rows = data_variants.size();
@@ -2744,7 +2780,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, out_stream);
+        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, out_stream, keep_admitted_keys);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2752,8 +2788,19 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant");
 
-    /// NOTE Instead of freeing up memory and creating new hash tables and arenas, you can re-use the old ones.
-    data_variants.init(data_variants.type);
+    if (keep_admitted_keys)
+    {
+        /// The table lives on with every admitted key and null states; only the state arenas are
+        /// handed over to the written blocks. The keys are safe because they are materialized in
+        /// `keys_arena`, which stays (see `keysArena`).
+        ProfileEvents::increment(ProfileEvents::AggregationKeptKeysSpills);
+    }
+    else
+    {
+        /// NOTE Instead of freeing up memory and creating new hash tables and arenas, you can re-use the old ones.
+        data_variants.init(data_variants.type);
+        data_variants.keys_arena = nullptr;
+    }
     data_variants.aggregates_pools = Arenas(1, std::make_shared<Arena>());
     data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
     if (params.overflow_row || data_variants.type == AggregatedDataVariants::Type::without_key)
@@ -2799,7 +2846,6 @@ size_t Aggregator::spill(AggregatedDataVariants & data_variants, bool no_more_ke
     if (!data_variants.isTwoLevel())
         data_variants.convertToTwoLevel();
     writeToTemporaryFile(data_variants, before + params.min_free_disk_space);
-    reseedKeptKeysAfterSpill(data_variants);
     size_t after = data_variants.memoryUsage();
     return before > after ? before - after : 0;
 }
@@ -3017,7 +3063,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     Int32 bucket,
     UntruncatedAggregationKeys * untruncated_keys,
     size_t * full_group_count,
-    bool keep_table_buffer) const
+    bool keep_table_buffer,
+    bool keep_unspilled_keys) const
 {
     if (full_group_count)
         *full_group_count = method.data.impls[bucket].size();
@@ -3054,7 +3101,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
         /*max_rows_per_block=*/0,
         allow_having_prefilter,
         allow_having_prefilter ? untruncated_keys : nullptr,
-        keep_table_buffer);
+        keep_table_buffer,
+        keep_unspilled_keys);
     Chunk chunk = std::move(result[0]);
 
     return AggregatedChunk{std::move(chunk), bucket};
@@ -3454,7 +3502,8 @@ template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    TemporaryBlockStreamHolder & out) const
+    TemporaryBlockStreamHolder & out,
+    bool keep_admitted_keys) const
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -3485,7 +3534,16 @@ void Aggregator::writeToTemporaryFileImpl(
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
-        auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket, /*untruncated_keys=*/nullptr, /*full_group_count=*/nullptr);
+        auto agg_chunk = convertOneBucketToChunk(
+            data_variants,
+            method,
+            data_variants.aggregates_pool,
+            false,
+            bucket,
+            /*untruncated_keys=*/nullptr,
+            /*full_group_count=*/nullptr,
+            /*keep_table_buffer=*/false,
+            /*keep_unspilled_keys=*/keep_admitted_keys);
         auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
@@ -3499,9 +3557,12 @@ void Aggregator::writeToTemporaryFileImpl(
         update_max_sizes(block);
     }
 
-    /// Pass ownership of the aggregate functions states:
-    /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
-    data_variants.aggregator = nullptr;
+    /// Pass ownership of the aggregate functions states: they are now owned by the
+    /// ColumnAggregateFunction objects of the written blocks. With the keys kept the conversion
+    /// above nulled every cell, so `data_variants` keeps destroying what it accumulates from here
+    /// on; otherwise it must not destroy anything in the destructor.
+    if (!keep_admitted_keys)
+        data_variants.aggregator = nullptr;
 
     LOG_DEBUG(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, ReadableSize(max_temporary_block_size_bytes));
 }
@@ -3509,52 +3570,37 @@ void Aggregator::writeToTemporaryFileImpl(
 
 bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const
 {
-    if (!params.shared_kept_keys_control)
-        return true;
-
-    /// A rebuild or a re-seed of the kept keys is in flight: those merges re-insert data the
-    /// table already held, so flushing it in the middle of them would drop the rest of the
-    /// rebuild (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). The cutoff must not be
-    /// abandoned here either — the kept keys are already frozen.
+    /// A rebuild of the kept keys is in flight: it re-inserts data the table already held, so
+    /// flushing it in the middle would split what it is supposed to re-insert whole
+    /// (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). With the shared cutoff it must
+    /// not be abandoned here either — the kept keys are already frozen.
     if (result.kept_keys_rebuild_in_progress)
         return false;
 
+    /// A set method's table holds nothing but the admitted keys, which must stay in memory
+    /// anyway while the cap is deciding admission, so a flush could free nothing: refuse it
+    /// instead of resetting the admitted-key count (see `keepsKeysAcrossSpills`). Once the
+    /// stream stopped admitting keys the set is complete and flushing it is a pure win.
+    if (params.aggregates_size == 0 && !params.shared_kept_keys_control && params.max_rows_to_group_by != 0
+        && params.group_by_overflow_mode == OverflowMode::ANY && !no_more_keys)
+        return false;
+
+    if (!params.shared_kept_keys_control)
+        return true;
+
     /// This stream has already stopped admitting keys. Its table may be flushed only once it has
-    /// been rebuilt to the frozen kept keys: then it holds nothing but kept keys, and it is
-    /// re-seeded with them right after the flush, so the remaining rows of those keys keep being
-    /// aggregated (`reseedKeptKeysAfterSpill`). Before the rebuild the table still holds arbitrary
-    /// keys, whose merged values would be undercounted, so the spill is skipped — the very next
-    /// chunk applies the cutoff and unblocks it.
+    /// been rebuilt to the frozen kept keys: then it holds nothing but kept keys, and the flush
+    /// leaves them in it (see `keepsKeysAcrossSpills`), so the remaining rows of those keys keep
+    /// being aggregated. Before the rebuild the table still holds arbitrary keys, whose merged
+    /// values would be undercounted, so the spill is skipped — the very next chunk applies the
+    /// cutoff and unblocks it.
     if (no_more_keys)
-        return result.restricted_to_kept_keys && result.kept_keys_seed != nullptr;
+        return result.restricted_to_kept_keys;
 
     /// Before any freeze, the spill wins by permanently abandoning the cutoff: no rows have been
     /// dropped anywhere yet, `checkLimits` stops capping, and the aggregation completes exactly,
     /// spilling as it would without the optimization.
     return params.shared_kept_keys_control->tryAbandon();
-}
-
-void Aggregator::reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const
-{
-    if (!result.restricted_to_kept_keys || !result.kept_keys_seed)
-        return;
-
-    /// The flush emptied the table while the stream keeps rejecting new keys, so re-insert the
-    /// kept keys with empty aggregate states. Merging an empty state into another is a no-op, so
-    /// the flushed partial states and the ones accumulated from here on add up exactly.
-    /// A copy: `mergeOnBlock` below takes `result` by reference.
-    const ConstBlockPtr seed = result.kept_keys_seed;
-    chassert(seed);
-
-    bool reseed_no_more_keys = false;
-    std::atomic<bool> is_cancelled = false;
-    result.kept_keys_rebuild_in_progress = true;
-    SCOPE_EXIT({ result.kept_keys_rebuild_in_progress = false; });
-    mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, result, reseed_no_more_keys, is_cancelled);
-    /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
-    chassert(!reseed_no_more_keys);
-
-    ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysSpillReseeds);
 }
 
 bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
@@ -3950,8 +3996,11 @@ Aggregator::convertToBlockImpl(
     size_t max_rows_per_block,
     bool,
     UntruncatedAggregationKeys *,
-    bool keep_table_buffer) const
+    bool keep_table_buffer,
+    bool keep_unspilled_keys) const
 {
+    chassert(!keep_unspilled_keys);
+
     if (data.empty())
     {
         auto && out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, final, rows);
@@ -3982,8 +4031,11 @@ Aggregator::convertToBlockImpl(
     size_t max_rows_per_block,
     bool allow_having_prefilter,
     UntruncatedAggregationKeys * untruncated_keys,
-    bool keep_table_buffer) const
+    bool keep_table_buffer,
+    bool keep_unspilled_keys) const
 {
+    chassert(!keep_unspilled_keys || !final);
+
     if (data.empty())
     {
         auto && out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, final, rows);
@@ -4032,8 +4084,11 @@ Aggregator::convertToBlockImpl(
                         out_cols->key_columns[0]->insertDefault();
                         out_count_col->insertValue(getInlineCountState(data.getNullKeyData()));
                         data.hasNullKeyData() = false;
+                        ++rows_in_current_block;
                     }
-                    else
+                    /// With `keep_unspilled_keys` a zero count is the NULL group whose rows were
+                    /// all flushed already: it stays in place with nothing to emit.
+                    else if (!keep_unspilled_keys || getInlineCountState(data.getNullKeyData()) != 0)
                     {
                         out_cols->raw_key_columns[0]->insertDefault();
                         states[rows_in_states].count = getInlineCountState(data.getNullKeyData());
@@ -4041,10 +4096,9 @@ Aggregator::convertToBlockImpl(
 
                         ++rows_in_states;
                         data.getNullKeyData() = nullptr;
-                        data.hasNullKeyData() = false;
+                        data.hasNullKeyData() = keep_unspilled_keys;
+                        ++rows_in_current_block;
                     }
-
-                    ++rows_in_current_block;
                 }
             }
 
@@ -4085,6 +4139,14 @@ Aggregator::convertToBlockImpl(
                 }
             }
 
+            if constexpr (!is_final)
+            {
+                /// With `keep_unspilled_keys` a zero count is a group whose rows were all
+                /// flushed already: it stays in the table with nothing to emit.
+                if (keep_unspilled_keys && getInlineCountState(mapped) == 0)
+                    return;
+            }
+
             if (!out_cols.has_value())
                 init_out_cols();
 
@@ -4101,6 +4163,8 @@ Aggregator::convertToBlockImpl(
             {
                 states[rows_in_states].count = getInlineCountState(mapped);
                 out_cols->aggregate_columns_data[0]->push_back(reinterpret_cast<AggregateDataPtr>(&states[rows_in_states]));
+                if (keep_unspilled_keys)
+                    getInlineCountState(mapped) = 0;
             }
 
             ++rows_in_current_block;
@@ -4136,15 +4200,18 @@ Aggregator::convertToBlockImpl(
         {
             chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
             /// Like the general paths below: the inline count values are copied out (final)
-            /// or rebuilt as arena states (non-final), so the table can be cleared or released.
-            finishConvertedTable(data, keep_table_buffer);
+            /// or rebuilt as arena states (non-final), so the table can be cleared or released -
+            /// unless the keys must stay for the rows still to come (`keep_unspilled_keys`).
+            if (!keep_unspilled_keys)
+                finishConvertedTable(data, keep_table_buffer);
             return chunks;
         }
 
         if (rows_in_current_block)
             chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
 
-        finishConvertedTable(data, keep_table_buffer);
+        if (!keep_unspilled_keys)
+            finishConvertedTable(data, keep_table_buffer);
         return chunks;
     }
 
@@ -4159,11 +4226,12 @@ Aggregator::convertToBlockImpl(
     }
     else
     {
-        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block, max_rows_per_block);
+        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block, max_rows_per_block, keep_unspilled_keys);
     }
 
     /// In order to release memory early.
-    finishConvertedTable(data, keep_table_buffer);
+    if (!keep_unspilled_keys)
+        finishConvertedTable(data, keep_table_buffer);
 
     return res;
 }
@@ -4539,7 +4607,14 @@ Chunks Aggregator::convertToBlockImplFinal(
 
 template <typename Method, typename Table>
 Chunks NO_INLINE
-Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t, bool return_single_block, size_t max_rows_per_block) const
+Aggregator::convertToBlockImplNotFinal(
+    Method & method,
+    Table & data,
+    Arenas & aggregates_pools,
+    size_t,
+    bool return_single_block,
+    size_t max_rows_per_block,
+    bool keep_unspilled_keys) const
 {
     const size_t max_block_size = convertedBlockSize(data.size(), params.max_block_size, max_rows_per_block, return_single_block);
     const bool final = false;
@@ -4555,7 +4630,9 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         {
-            if (data.hasNullKeyData())
+            /// A null `getNullKeyData` under a kept marker is the NULL group whose states were
+            /// flushed already (`keep_unspilled_keys`): it stays in place with nothing to emit.
+            if (data.hasNullKeyData() && data.getNullKeyData() != nullptr)
             {
                 out_cols->raw_key_columns[0]->insertDefault();
 
@@ -4564,7 +4641,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
                 ++rows_in_current_block;
                 data.getNullKeyData() = nullptr;
-                data.hasNullKeyData() = false;
+                data.hasNullKeyData() = keep_unspilled_keys;
             }
         }
 
@@ -4576,6 +4653,12 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
+            /// A null state is a group whose states were flushed by an earlier spill and that got
+            /// no rows since (`keep_unspilled_keys`), or a leftover of a failed state creation:
+            /// nothing to emit either way.
+            if (mapped == nullptr)
+                return;
+
             if (!out_cols.has_value())
                 init_out_cols();
 
@@ -5809,9 +5892,18 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     {
         for (size_t i = row_begin; i < row_end; i++)
         {
-            auto find_result = state.findKey(data, i, *arena_for_keys);
+            /// Not `arena_for_keys`: a lookup never persists its key, so its serialization
+            /// scratch belongs to the reclaimable state pool (`findKey` does not discard it).
+            auto find_result = state.findKey(data, i, *aggregates_pool);
             /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
             AggregateDataPtr value = find_result.isFound() ? find_result.getMapped() : overflow_row;
+            /// A kept key gone cold after a spill. `mergeStreamsImpl` runs this loop without the
+            /// consecutive-keys cache then, so `getMapped` is the table cell itself.
+            if (find_result.isFound() && value == nullptr) [[unlikely]]
+            {
+                value = reviveKeptKey(aggregates_pool);
+                find_result.getMapped() = value;
+            }
             places[i] = value;
         }
     }
@@ -5825,7 +5917,16 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             /// which is always initialized to have at least 1 arena.
             auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
             if (!emplace_result.isInserted())
+            {
                 places[i] = emplace_result.getMapped();
+                /// A kept key gone cold after a spill: the first touch of a key in a block always
+                /// reaches the table cell, so `setMapped` revives the cell.
+                if (places[i] == nullptr) [[unlikely]]
+                {
+                    places[i] = reviveKeptKey(aggregates_pool);
+                    emplace_result.setMapped(places[i]);
+                }
+            }
             else
             {
                 emplace_result.setMapped(nullptr);
@@ -5933,7 +6034,10 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+    /// See the matching condition in `executeImpl`: the `no_more_keys` path may revive the null
+    /// state of a found cold cell in place, so it needs table cells, not cached copies.
+    bool use_cache = !is_simple_count && !(no_more_keys && keepsKeysAcrossSpills())
+        && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     auto merge_count_variant = [&]<typename State>(State & state)
     {
@@ -5945,7 +6049,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         {
             for (size_t row = row_begin; row < row_end; row++)
             {
-                auto find_result = state.findKey(data, row, *arena_for_keys);
+                auto find_result = state.findKey(data, row, *aggregates_pool);
 
                 if (find_result.isFound())
                     getInlineCountState(find_result.getMapped()) += getCountState(other_aggregated_counts[row]);
@@ -6125,7 +6229,8 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
         result.without_key, \
         result.consecutive_keys_cache_stats, \
         no_more_keys, \
-        is_cancelled);
+        is_cancelled, \
+        keysArena(result));
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -6153,9 +6258,9 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
 
     /** Flush data to disk if too much RAM is consumed.
       * Data can only be flushed to disk if a two-level aggregation structure is used.
-      * With the kept-keys cutoff armed, the spill either abandons the cutoff (before the freeze)
-      * or re-seeds the kept keys into the emptied table (after it); see
-      * `spillAllowedUnderKeptKeysCutoff` and `reseedKeptKeysAfterSpill`.
+      * With a kept-keys cap the spill either abandons the shared cutoff (before the freeze) or
+      * keeps the admitted keys in the table while their states go to disk; see
+      * `spillAllowedUnderKeptKeysCutoff` and `keepsKeysAcrossSpills`.
       */
     bool reached_spill_floor = reachedSpillFloor(params.min_bytes_before_external_group_by, result);
     if (params.max_bytes_before_external_group_by
@@ -6167,7 +6272,6 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
         writeToTemporaryFile(result, size);
-        reseedKeptKeysAfterSpill(result);
     }
 
     return true;

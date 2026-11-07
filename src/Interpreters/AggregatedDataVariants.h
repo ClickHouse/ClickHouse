@@ -461,25 +461,26 @@ struct AggregatedDataVariants : private boost::noncopyable
     Type type = Type::EMPTY;
     bool top_k_heap_ever_rejected = false;
 
-    /// The table was rebuilt to the frozen set of kept keys of the trivial `GROUP BY ... LIMIT`
-    /// cutoff (see `ManyAggregatedData::SharedKeptKeys`), so it admits no other key. Only such a
-    /// table may be flushed to a temporary file while the cutoff holds: everything it contains is
-    /// a kept key, and `Aggregator` re-seeds it with the kept keys after the flush so the
-    /// remaining rows of those keys keep being aggregated.
+    /// The table holds nothing but kept keys, under `group_by_overflow_mode = ANY`: either every
+    /// key it admitted counts as kept (a plain `max_rows_to_group_by` cap, or the per-stream
+    /// cutoff of the trivial `GROUP BY ... LIMIT`), or it was rebuilt to the frozen shared set
+    /// (see `ManyAggregatedData::SharedKeptKeys`). Only such a table may be flushed to a
+    /// temporary file while a cutoff holds, and the flush leaves the keys in it with null states
+    /// (see `Aggregator::keepsKeysAcrossSpills`) so the remaining rows of those keys keep being
+    /// aggregated.
     bool restricted_to_kept_keys = false;
 
-    /// The kept keys of the cutoff with empty aggregate states, in the mergeable block layout.
-    /// Set together with `restricted_to_kept_keys`; the `Aggregator` re-seeds the table from it
-    /// after an external-aggregation spill has emptied it. With the shared cutoff this is the
-    /// frozen set shared by all the streams (`ManyAggregatedData::SharedKeptKeys::seed`); on the
-    /// branches that cap every stream on its own it is the stream's own kept key set.
-    ConstBlockPtr kept_keys_seed;
-
-    /// The table is being rebuilt around the kept keys, or re-seeded with them after a flush.
-    /// Those merges only re-insert data the table already held, so an external-aggregation spill
-    /// in the middle of them must be skipped: it would empty the table while the rest of the
-    /// rebuild is merged into it under `no_more_keys`, dropping everything accumulated so far.
+    /// The table is being rebuilt around the kept keys. The rebuild only re-inserts data the
+    /// table already held, so an external-aggregation spill in the middle of it must be skipped:
+    /// it would flush the table while the rest of the rebuild is merged into it under
+    /// `no_more_keys`, splitting the states the rebuild is supposed to re-insert whole.
     bool kept_keys_rebuild_in_progress = false;
+
+    /// The arena the keys are materialized in when they must survive external-aggregation
+    /// spills (see `Aggregator::keepsKeysAcrossSpills`): a spill hands the state arenas
+    /// (`aggregates_pools`) over to the written blocks, while the table and this arena live on.
+    /// Null otherwise - the keys then share `aggregates_pool` with the states.
+    ArenaPtr keys_arena;
 
     AggregatedDataVariants();
     ~AggregatedDataVariants();

@@ -1,11 +1,11 @@
 -- On the branches where the streams do not share one kept key set — a single stream, and
--- `skip_merging`, where the streams hold disjoint keys — every stream caps itself, so its hash
--- table holds nothing but its own kept keys. External aggregation has to stay available there
--- too: the number of kept keys is bounded, but the size of their aggregate states is not
--- (`uniqExact`, `groupArray`, `topK`, the exact quantiles). The stream captures its own kept keys
--- as a seed and the `Aggregator` re-seeds the emptied table with them right after the flush, so
--- the values stay exact and the query spills instead of being forced in memory
--- (see `AggregatingTransform::capturePerStreamKeptKeysSeed`).
+-- `skip_merging`, where the streams hold disjoint keys — every stream caps itself and prunes its
+-- hash table to its own kept keys. External aggregation has to stay available there too: the
+-- number of kept keys is bounded, but the size of their aggregate states is not (`uniqExact`,
+-- `groupArray`, `topK`, the exact quantiles). A flush leaves the kept keys in the table with
+-- null states and writes only the states accumulated since the previous flush, so the values
+-- stay exact and the query spills instead of being forced in memory
+-- (see `Aggregator::keepsKeysAcrossSpills` and `AggregatingTransform::applyPerStreamKeptKeysCutoff`).
 --
 -- `enable_parallel_replicas = 0` is pinned because with parallel replicas the cutoff stays off.
 
@@ -34,8 +34,8 @@ FROM (SELECT toUInt64(number % 1000) AS k, uniqExact(number) AS u FROM numbers(1
 SELECT min(l), max(l), count()
 FROM (SELECT toUInt64(number % 1000) AS k, length(groupArray(number)) AS l FROM numbers(100000) GROUP BY k LIMIT 5);
 
--- The single stream capped itself, flushed its table to a temporary file and re-seeded it with
--- its kept keys afterwards.
+-- The single stream capped itself, pruned its table to the kept keys and flushed it to a
+-- temporary file, keeping the kept keys in it.
 SELECT toUInt64(number % 1000) AS k, uniqExact(number) AS u FROM numbers(100000) GROUP BY k LIMIT 5 FORMAT Null
 SETTINGS log_comment = '05153_single_stream_kept_keys_spill';
 
@@ -44,7 +44,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['AggregationSharedKeptKeysRebuilds'] > 0 AS kept_keys_captured,
     ProfileEvents['ExternalAggregationWritePart'] > 0 AS spilled,
-    ProfileEvents['AggregationSharedKeptKeysSpillReseeds'] > 0 AS reseeded
+    ProfileEvents['AggregationKeptKeysSpills'] > 0 AS kept_keys
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND log_comment = '05153_single_stream_kept_keys_spill'
