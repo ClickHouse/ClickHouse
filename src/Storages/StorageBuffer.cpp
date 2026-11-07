@@ -1,6 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -1500,8 +1501,13 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 std::optional<UInt64> StorageBuffer::totalRows(ContextPtr query_context) const
 {
     std::optional<UInt64> underlying_rows;
-    if (auto destination = getDestinationTable())
-        underlying_rows = destination->totalRows(query_context);
+    /// A destination the user cannot see contributes nothing, as a missing one does.
+    if (destination_id && query_context
+        && query_context->getAccess()->isGranted(AccessType::SHOW_TABLES, destination_id.database_name, destination_id.table_name))
+    {
+        if (auto destination = getDestinationTable())
+            underlying_rows = destination->totalRows(query_context);
+    }
 
     return total_writes.rows + underlying_rows.value_or(0);
 }
