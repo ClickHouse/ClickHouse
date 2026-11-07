@@ -1,4 +1,7 @@
 -- Tags: no-parallel-replicas
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- ^ because we are using query_log
 -- add_minmax_index_for_numeric_columns=0: Different read rows
 

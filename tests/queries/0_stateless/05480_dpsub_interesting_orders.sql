@@ -1,6 +1,8 @@
 -- DPsub with `query_plan_join_order_use_interesting_orders` picks `full_sorting_merge` for joins of inputs sorted by the join key.
 -- The tables are small; the statistics hint below gives the sizes the plans are chosen for.
 
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsub';
 SET query_plan_join_order_use_interesting_orders = 1;

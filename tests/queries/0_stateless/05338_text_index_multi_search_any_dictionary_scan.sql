@@ -4,6 +4,9 @@
 -- needle as LIKE '%needle%' (ILIKE), for a needle inside one token such as 'PointerExc', and that the rows do not change.
 -- Calls with several needles keep reading the column. Every query is compared with use_skip_indexes = 0.
 
+-- Disable force_primary_key_reverse_order: the reference pins the plan and the granule counts, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;

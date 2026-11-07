@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order potentially affecting aggregation-in-order
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (x Int32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t1 VALUES (1), (2), (3);

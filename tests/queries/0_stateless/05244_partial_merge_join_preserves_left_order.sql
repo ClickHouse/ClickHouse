@@ -6,6 +6,8 @@
 -- columns and emits the output in the original row order, instead of re-sorting the left block by
 -- the join key (issues #109216 and #110662).
 
+-- Disable force_primary_key_reverse_order: the reference pins the read type in the sorting key direction
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;

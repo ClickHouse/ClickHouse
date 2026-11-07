@@ -4,6 +4,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t;
     CREATE TABLE t (id UInt32, x UInt32, s String, d Date, tp Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY id

@@ -1,4 +1,7 @@
--- Tags: stateful
+-- Tags: stateful, long
+-- Tag long: scans `test.hits`, which takes more than 180 seconds when the flaky check repeats it under sanitizers
+-- Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, validates index queries sensitive to key direction
+SET force_primary_key_reverse_order = 0;
 SELECT count() FROM test.hits WHERE EventDate = '2014-03-18';
 SELECT count() FROM test.hits WHERE EventDate < '2014-03-18';
 SELECT count() FROM test.hits WHERE EventDate > '2014-03-18';

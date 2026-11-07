@@ -8,6 +8,9 @@
 -- several threads, sorting and partition keys from SHARED paths, parallel replicas. Compared with a Memory table of the
 -- type without SHARED; each line prints the equality flags of the three part variants.
 
+-- Disable force_primary_key_reverse_order: the test checks the physical row order and the granules a key range selects
+SET force_primary_key_reverse_order = 0;
+
 SELECT '-- ranges starting and ending inside the part, to the end, two ranges in one task, scattered rows';
 DROP TABLE IF EXISTS r_w; CREATE TABLE r_w (x UInt64, y UInt8, json JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8)), INDEX y_idx y TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 4, min_compress_block_size = 1; INSERT INTO r_w SELECT number, intDiv(number, 4) % 2, concat('{"a":', toString(number * 10), ',"b":"', repeat('x', number % 7), '","c":', toString(range(number % 4)), if(number % 2 = 0, concat(',"d":', toString(number)), ''), '}') FROM numbers(60);
 DROP TABLE IF EXISTS r_cm; CREATE TABLE r_cm (x UInt64, y UInt8, json JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8)), INDEX y_idx y TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 4, write_marks_for_substreams_in_compact_parts = 1; INSERT INTO r_cm SELECT number, intDiv(number, 4) % 2, concat('{"a":', toString(number * 10), ',"b":"', repeat('x', number % 7), '","c":', toString(range(number % 4)), if(number % 2 = 0, concat(',"d":', toString(number)), ''), '}') FROM numbers(60);

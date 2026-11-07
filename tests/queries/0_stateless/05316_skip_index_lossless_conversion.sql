@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks the exact granule counts of index analysis
+SET force_primary_key_reverse_order = 0;
+
 -- Skip indexes and the primary key look through conversions of the indexed column that cannot change a value
 -- or throw: adding or dropping `LowCardinality`, adding `Nullable` (as `toNullable`, which `join_use_nulls` emits
 -- in pushed-down filters, or as `CAST`), at any depth of `Array`. The same was done for the text index before.

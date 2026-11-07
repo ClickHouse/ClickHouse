@@ -1,4 +1,8 @@
 -- Tags: no-parallel-replicas
+
+-- Disable force_primary_key_reverse_order: Test checks granule counts of a skip index, which depend on the physical row layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- `arrayJoin(col) IN (set)` and `arrayJoin(col) = const` must use the Array bloom filter index,
 -- like `hasAny(col, set)` and `has(col, const)` already do.
 -- Issues: https://github.com/ClickHouse/ClickHouse/issues/109516

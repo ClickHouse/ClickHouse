@@ -6,6 +6,9 @@
 -- key has all its rows beyond the threshold, so `__topKFilter` in the PREWHERE would have emptied it too.
 -- Without that, a repeated `ORDER BY key LIMIT n` read never gets faster (ClickBench Q23 was 4x slower).
 
+-- Disable force_primary_key_reverse_order: the reference pins granule skipping by the primary key, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET serialize_query_plan = 0;
 SET enable_parallel_replicas = 0;
 SET optimize_read_in_order = 0;

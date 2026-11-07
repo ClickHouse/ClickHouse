@@ -1,3 +1,5 @@
+-- Aggregate states stored in Variant column depend on merge order affected by reverse key
+SET force_primary_key_reverse_order = 0;
 SET allow_experimental_variant_type = 1;
 
 DROP TABLE IF EXISTS source;

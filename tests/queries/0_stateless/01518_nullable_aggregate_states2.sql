@@ -1,3 +1,7 @@
+-- Tags: long
+
+-- Disable force_primary_key_reverse_order: reversed key changes AggregatingMergeTree merge order affecting aggregate state results
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS testNullableStates;
 DROP TABLE IF EXISTS testNullableStatesAgg;
 

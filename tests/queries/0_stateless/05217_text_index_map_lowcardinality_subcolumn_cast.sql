@@ -1,6 +1,9 @@
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas -- direct read is not compatible with parallel replicas
 
+-- Disable force_primary_key_reverse_order: the reference pins the plan and the granule counts, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 -- `arrayElement` on a `Map(K, LowCardinality(V))` returns `V`, while the subcolumn `m.key_<key>` is `LowCardinality(V)`.
 -- Hence `optimize_functions_to_subcolumns` rewrites `m['key'] = 'value'` into `_CAST(m.key_<key>, 'V') = 'value'`,
 -- and the text index has to look through the cast: for the `keyValuePairs` index on `m` and for an index on `mapValues(m)`.

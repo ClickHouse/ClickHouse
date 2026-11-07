@@ -1,6 +1,9 @@
 -- The settings `samples_partition_by`, `samples_index_granularity`, `samples_index_granularity_bytes` and their `recent_samples_*`
 -- counterparts define the partition key and the index granularity of the inner samples tables.
 
+-- Disable force_primary_key_reverse_order: Test checks SHOW CREATE output of the inner tables
+SET force_primary_key_reverse_order = 0;
+
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 
