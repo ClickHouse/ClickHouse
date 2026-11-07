@@ -6,7 +6,8 @@ SETTINGS primary_key_lazy_load = 0, remove_empty_parts = 0;
 
 INSERT INTO TABLE t_index_empty_part (c0, c1) VALUES (1, 1);
 
-TRUNCATE t_index_empty_part;
+-- Otherwise the truncated part is kept and loaded as an outdated part on ATTACH.
+TRUNCATE t_index_empty_part SETTINGS truncate_removes_parts_immediately = 1;
 DETACH TABLE t_index_empty_part;
 ATTACH TABLE t_index_empty_part;
 

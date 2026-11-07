@@ -5865,6 +5865,15 @@ Possible values:
 - 0 — Queries will be executed with delay.
 - 1 — Queries will be executed without delay.
 )", 0) \
+    DECLARE(Bool, truncate_removes_parts_immediately, false, R"(
+If enabled, `TRUNCATE` of a non-replicated `MergeTree` table removes the truncated parts from disk at once. Otherwise they become inactive and are removed after `old_parts_lifetime` seconds, like the source parts of a merge, so that running queries and readers with a stale list of parts can still read them. Replicated tables always remove the parts at once.
+
+Possible values:
+
+- 0 - The truncated parts are removed after `old_parts_lifetime` seconds.
+- 1 - The truncated parts are removed at once.
+)", 0, \
+        {"26.11", true, false, "New setting. `TRUNCATE` of a `MergeTree` table keeps the removed parts for `old_parts_lifetime` seconds instead of removing them at once"}) \
     DECLARE(Bool, enable_scalar_subquery_optimization, true, R"(
 If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
 )", 0, \

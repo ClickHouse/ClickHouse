@@ -136,6 +136,7 @@ namespace Setting
     extern const SettingsBool optimize_throw_if_noop;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsBool truncate_removes_parts_immediately;
     extern const SettingsUInt64 max_parts_to_move;
     extern const SettingsUpdateParallelMode update_parallel_mode;
 }
@@ -3661,7 +3662,7 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
 }
 
 
-DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
+DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool remove_covered_parts_immediately)
 {
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
@@ -3733,8 +3734,9 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
              removed_parts.size(), covered_parts.size(), new_parts.size(), transaction.getTID());
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
-    for (auto & part : removed_parts)
-        part->remove_time.store(0, std::memory_order_relaxed);
+    if (remove_covered_parts_immediately)
+        for (auto & part : removed_parts)
+            part->remove_time.store(0, std::memory_order_relaxed);
 
     if (deduplication_log)
         for (const auto & part : removed_parts)
@@ -3769,12 +3771,14 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         Stopwatch watch;
         ProfileEventsScope profile_events_scope;
 
+        const bool remove_parts_immediately = query_context->getSettingsRef()[Setting::truncate_removes_parts_immediately];
+
         auto txn = query_context->getCurrentTransaction();
         if (txn)
         {
             auto data_parts_lock = lockParts();
             auto parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
-            removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
+            removePartsFromWorkingSet(txn.get(), parts_to_remove, /*clear_without_timeout=*/ remove_parts_immediately, data_parts_lock);
             LOG_INFO(log, "Removed {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
         }
         else
@@ -3799,7 +3803,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      transaction.getTID());
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            renameAndCommitEmptyParts(new_data_parts, transaction, remove_parts_immediately);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3868,7 +3872,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          transaction.getTID());
 
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
+                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, /*remove_covered_parts_immediately=*/ true);
 
                 if (detach)
                     clonePartsToDetached(removed_parts, query_context);
@@ -3983,7 +3987,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
+            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, /*remove_covered_parts_immediately=*/ true);
 
             if (detach)
                 clonePartsToDetached(removed_parts, query_context);
