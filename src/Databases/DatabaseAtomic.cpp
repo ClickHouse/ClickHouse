@@ -12,6 +12,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
@@ -762,9 +764,27 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
     /// The `renameInMemory` loop below only notifies the storages, it does not ask them whether the new
-    /// database name is acceptable. Detached tables are not asked: no storage object exists for them here.
+    /// database name is acceptable.
     for (const auto & table : tables)
         table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+
+    /// A detached table, or one that failed to load, has no storage object, but its metadata moves with the
+    /// database, and the next `ATTACH` or startup loads it under the new name.
+    auto check_metadata = [&, current_name = database_name](const String & metadata_path)
+    {
+        auto ast = parseQueryFromMetadata(log, getContext(), getDisk(), metadata_path);
+        const auto & create = ast->as<const ASTCreateQuery &>();
+        StorageObjectStorageQueue::checkCreateQueryCanBeRenamedByDatabaseRename(
+            create, StorageID(current_name, create.getTable(), create.uuid), getUUID(), new_name, getContext());
+    };
+    for (const auto & [_, detached_table] : snapshot_detached_tables)
+        check_metadata(detached_table.metadata_path);
+    /// After `waitDatabaseStarted`, a table in `startup_table` but not in `tables` failed to load.
+    for (const auto & [table_name, _] : startup_table)
+    {
+        if (!tables.contains(table_name))
+            check_metadata(getObjectMetadataPath(table_name));
+    }
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
