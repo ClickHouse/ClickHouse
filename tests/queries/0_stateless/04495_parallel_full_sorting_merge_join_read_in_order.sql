@@ -73,7 +73,7 @@ SELECT 'virtual_row_on',
   = (SELECT (sum(l.a + r.b), count()) FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'hash');
 
 SELECT 'virtual_row_per_block_on',
-    (SELECT (sum(l.a + r.b), count()) FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'parallel_full_sorting_merge', read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1)
+    (SELECT (sum(l.a + r.b), count()) FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'parallel_full_sorting_merge', read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1)
   = (SELECT (sum(l.a + r.b), count()) FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'hash');
 
 -- Row-level check: the two result sets must be identical, not just their aggregates.

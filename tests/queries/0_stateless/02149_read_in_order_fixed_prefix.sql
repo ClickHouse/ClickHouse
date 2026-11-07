@@ -1,4 +1,5 @@
 SET max_threads=0;
+SET read_in_order_use_sliced_pool = 0; -- this test pins the reading thread per part; the setting is randomized by the test runner
 -- Do not lower `max_threads = auto` to the fair share of CPU slots under concurrent queries: the pipeline shape depends on it.
 SET use_concurrency_control_for_max_threads = 0;
 SET optimize_read_in_order=1;

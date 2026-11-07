@@ -1,0 +1,18 @@
+parts	2
+router in pipeline	1
+no filter	65535
+no filter	65534
+no filter	65533
+one row behind an empty part	64535
+parts	8
+one row among interleaved parts	61536
+one row among interleaved parts	61536
+last rows	8171833801931669288
+last rows	8171833801931669288
+whole table	4101524999640386272
+whole table	4101524999640386272
+prewhere	14743443500847628415
+prewhere	14743443500847628415
+announce	1	1
+dense	1	3
+interleaved	1	1
