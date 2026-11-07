@@ -327,7 +327,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     const bool single_string_sort_column = num_sort_columns == 1 && settings.use_top_k_dynamic_filtering_for_single_string_sort_column
-        && isString(removeNullable(sort_column.type));
+        && isString(removeNullable(removeLowCardinality(sort_column.type)));
     const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !isDynamic(sort_column.type)

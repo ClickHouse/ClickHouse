@@ -1,5 +1,6 @@
 #include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -121,6 +122,8 @@ public:
 
     /// The default implementation would convert a sparse argument to a full column on every call.
     bool useDefaultImplementationForSparseColumns() const override { return false; }
+    /// A non-deterministic function would get `LowCardinality` arguments materialized on every call.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -133,7 +136,12 @@ public:
         /// Read before the value, so that a concurrent update can only make `last_checked_version` stale.
         const UInt64 version = threshold_tracker->getVersion();
         auto current_threshold = threshold_tracker->getValue();
-        const auto & argument = arguments[0];
+        ColumnWithTypeAndName argument = arguments[0];
+        if (!typeid_cast<const DataTypeLowCardinality *>(argument.type.get()))
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
 
         /// Rows equal to the threshold can be dropped only while the threshold is backed by rows of the sort this read feeds.
         if (!rows_equal_to_threshold_dropped || threshold_tracker->isSharedByPlanCopies())
@@ -172,6 +180,23 @@ private:
 
     ColumnPtr compare(const ColumnWithTypeAndName & argument, const Field & current_threshold, size_t input_rows_count, Mode mode) const
     {
+        if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(argument.column.get()))
+        {
+            ColumnPtr dictionary = column_low_cardinality->getDictionary().getNestedColumn();
+            ColumnPtr indexes = column_low_cardinality->getIndexesPtr();
+            /// A dictionary shared by many blocks can be much larger than the block: then only the values it uses.
+            if (dictionary->size() > 8 * input_rows_count)
+            {
+                auto used = column_low_cardinality->getMinimalDictionaryEncodedColumn(0, input_rows_count);
+                dictionary = std::move(used.dictionary);
+                indexes = std::move(used.indexes);
+            }
+            auto dictionary_result
+                = compareValues({dictionary, removeLowCardinality(argument.type), argument.name}, current_threshold, dictionary->size(), mode)
+                      ->convertToFullColumnIfConst();
+            return dictionary_result->index(*indexes, 0);
+        }
+
         /// The stored values of a sparse column start with its default value.
         if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(argument.column.get()))
         {
@@ -275,7 +300,7 @@ private:
     }
 
     TopKThresholdTrackerPtr threshold_tracker;
-    /// The type of the threshold value as this function receives it (the default implementation removes LowCardinality).
+    /// The type of the threshold value, without `LowCardinality`, as the values are compared.
     DataTypePtr threshold_type;
     FunctionOverloadResolverPtr compare_function;
     FunctionOverloadResolverPtr better_function;

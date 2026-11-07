@@ -58,15 +58,15 @@ SELECT count() FROM (
     SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 0, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100
 ) WHERE explain LIKE '%__topKFilter%';
 
--- 1e. Not for `LowCardinality(Nullable(String))`.
-SELECT count() FROM (
+-- 1e. Also for `LowCardinality(Nullable(String))`.
+SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT lcn FROM t_topk_string ORDER BY lcn LIMIT 5
     SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 0, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100
 ) WHERE explain LIKE '%__topKFilter%';
 
--- 1f. Not for `LowCardinality(String)`.
-SELECT count() FROM (
+-- 1f. Also for `LowCardinality(String)`.
+SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT lcs FROM t_topk_string ORDER BY lcs LIMIT 5
     SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 0, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100
