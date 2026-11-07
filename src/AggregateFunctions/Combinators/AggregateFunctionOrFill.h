@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -93,6 +94,20 @@ public:
     DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_function);
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        auto nested_state_type = nested_function->getNormalizedStateType();
+        const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested_state_type.get());
+        if (!nested_state)
+            return IAggregateFunction::getNormalizedStateType();
+
+        auto normalized_function = std::make_shared<AggregateFunctionOrFill<UseNull>>(
+            nested_state->getFunction(), nested_state->getArgumentsDataTypes(), nested_state->getParameters());
+
+        return std::make_shared<DataTypeAggregateFunction>(
+            std::move(normalized_function), nested_state->getArgumentsDataTypes(), nested_state->getParameters());
     }
 
     bool isState() const override
