@@ -129,6 +129,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool array_join_use_nulls;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
@@ -3650,7 +3651,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     auto array_join_step = std::make_unique<ArrayJoinStep>(
         plan.getCurrentHeader(),
-        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
+        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft(), settings[Setting::array_join_use_nulls]},
         settings[Setting::enable_unaligned_array_join],
         settings[Setting::max_block_size],
         settings[Setting::enable_lazy_columns_replication]
