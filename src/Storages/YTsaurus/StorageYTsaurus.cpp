@@ -186,7 +186,9 @@ void registerStorageYTsaurus(StorageFactory & factory)
     {
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
-        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
+        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin,
+        /// The settings only the YTsaurus dictionary sources take are rejected by the table engine.
+        .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<YTsaurusSettings, YTsaurusSettings::isDictionaryOnlySetting>,
     },
     Documentation{
         .description = R"DOCS_MD(

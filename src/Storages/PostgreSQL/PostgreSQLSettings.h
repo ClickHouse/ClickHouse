@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -44,8 +45,11 @@ struct PostgreSQLSettings
     /// `context`, except those `settings` resets with `name = DEFAULT`. With `store_into`, add those that differ from the
     /// server's values (of the global context) to its SETTINGS, so that the table keeps them when it is attached again.
     void loadFromQueryContext(const Context & context, const ASTSetQuery * settings = nullptr, ASTStorage * store_into = nullptr);
+    /// Whether `loadFromQueryContext` takes the setting from the query context.
+    static bool isLoadedFromQueryContext(std::string_view name);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<PostgreSQLSettingsImpl> impl;

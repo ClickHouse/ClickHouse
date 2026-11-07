@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/SettingDescription.h>
 #include <Common/SettingsChanges.h>
 
 namespace DB
@@ -34,6 +35,7 @@ struct ElasticsearchSettings
     void loadFromQuery(const ASTSetQuery & settings_def);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
     static void checkCanSet(std::string_view name, const Field & value);
 
