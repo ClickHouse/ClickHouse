@@ -38,6 +38,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
@@ -284,7 +285,9 @@ public:
 
     void check(ContextPtr context) override
     {
-        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+        if (ready_object_storage
+            && (ready_object_storage->getType() == ObjectStorageType::S3
+                || ready_object_storage->getType() == ObjectStorageType::Azure))
             this->checkFormat();
         else
             BaseStorageConfiguration::check(context);
@@ -583,7 +586,11 @@ private:
             }
 
             auto user_files_path = local_context->getUserFilesPath();
-            const auto & table_path = this->getPathForRead().path;
+            /// A relative path is resolved the same way the local object storage resolves the keys of data files:
+            /// relative to `user_files_path` in the server and to the current directory in `clickhouse-local`.
+            String table_path = this->getPathForRead().path;
+            if (std::filesystem::path(table_path).is_relative())
+                table_path = resolvePathRelativelyToBase(table_path, object_storage->getCommonKeyPrefix());
             /// `isUserFilesPath` alone is lexical when no policy is set; `LocalObjectStorage`
             /// uses POSIX I/O, so also require containment after resolving symlinks, otherwise
             /// an in-root symlink such as `<user_files>/escape -> /etc` would pass.
