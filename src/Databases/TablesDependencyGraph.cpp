@@ -414,7 +414,7 @@ void TablesDependencyGraph::removeNode(Node * node)
     chassert(it != nodes.end());
     nodes.erase(it);
 
-    nodes_sorted_by_level_lazy.clear();
+    setNeedRecalculateLevels();
 }
 
 
