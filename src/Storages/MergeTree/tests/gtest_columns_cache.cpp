@@ -600,6 +600,40 @@ TEST(ColumnsCache, AutoResizeYieldsMemoryAndGrowsBack)
     EXPECT_EQ(cache.count(), 0u);
 }
 
+TEST(ColumnsCache, AutoResizeDoesNotCountEntriesStillHeldAsReleased)
+{
+    auto cache = makeCache();
+    cache.setAutoResizeSettings(/*free_memory_ratio=*/ 0.0, /*history_window_ms=*/ 0);
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    for (size_t stripe = 0; stripe < 100; ++stripe)
+        EXPECT_GT(cache.setMany({makeEntry(c, stripe, stripe * 8, stripe * 8 + 8)}, generation), 0u);
+    const size_t full_size = cache.sizeInBytes();
+    ASSERT_EQ(cache.count(), 100u);
+
+    /// A reader holds every entry, as `MergeTreeReaderWide` holds the result of `getMany` for its range,
+    /// and a query shares the column of one of them.
+    auto held = cache.getMany(c.identity, 0, 100);
+    ASSERT_EQ(std::count(held.begin(), held.end(), nullptr), 0);
+    ColumnPtr shared_column = held.at(0)->column;
+
+    /// The usage without the cache reaches the limit: the cache gives up all its entries. That would
+    /// be enough if they were released, but they are held, so nothing is released and the allocation
+    /// over the limit must not be accepted.
+    const size_t limit = 4 * full_size;
+    EXPECT_FALSE(cache.autoResize(static_cast<Int64>(limit + full_size), limit));
+    EXPECT_EQ(cache.count(), 0u);
+
+    /// Once the reader is done, the entries are released, all but the shared column, which is parked
+    /// and released once the query drops it.
+    const size_t shared_column_bytes = shared_column->allocatedBytes();
+    held.clear();
+    EXPECT_FALSE(cache.autoResize(static_cast<Int64>(limit + shared_column_bytes / 2), limit));
+    shared_column.reset();
+    EXPECT_TRUE(cache.autoResize(static_cast<Int64>(limit + shared_column_bytes / 2), limit));
+}
+
 TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
 {
     auto cache = makeCache();

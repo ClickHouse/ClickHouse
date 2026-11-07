@@ -50,6 +50,13 @@ struct OperationInThread
     ~OperationInThread() { --operations_in_thread; }
 };
 
+/// The bytes of the columns of the cache released in this thread: by the destruction of an entry
+/// that was the last holder of its column, or of a parked column. Evicting an entry a reader still
+/// holds, e.g. the result of `getMany`, or whose column a query still shares, releases nothing, so
+/// `autoResize` reports what it actually gave back from this rather than from the decrease of the
+/// weight of the cache.
+thread_local size_t bytes_released_in_thread = 0;
+
 }
 
 size_t getDefaultColumnsCacheSize(size_t physical_server_memory, double size_to_ram_ratio)
@@ -117,6 +124,8 @@ struct ParkedColumns
             std::lock_guard lock(mutex, std::adopt_lock);
             auto in_use_end = std::partition(columns.begin(), columns.end(), [](const ColumnPtr & column) { return column->use_count() > 1; });
             std::move(in_use_end, columns.end(), std::back_inserter(unused));
+            for (const auto & column : unused)
+                bytes_released_in_thread += column->allocatedBytes();
             columns.erase(in_use_end, columns.end());
             count.store(columns.size(), std::memory_order_relaxed);
         }
@@ -161,9 +170,14 @@ ColumnsCacheEntry::~ColumnsCacheEntry()
         return;
 
     if (column->use_count() > 1)
+    {
         parkedColumns().park(std::move(column));
+    }
     else
+    {
+        bytes_released_in_thread += ColumnsCacheWeightFunction{}(*this);
         column.reset();
+    }
 }
 
 std::optional<UUID> getColumnsCacheTableUUIDOfExternalFile(const StorageID & storage_id)
@@ -905,6 +919,8 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
     /// blocker still reaches the global tracker, see `MemoryTracker::free`.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
+    const size_t bytes_released_before = bytes_released_in_thread;
+
     /// Called periodically by `MemoryWorker`, so this is where the columns of evicted entries that
     /// queries no longer hold are released.
     parkedColumns().releaseUnused();
@@ -968,8 +984,11 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         setEffectiveMaxSize(target_size);
     }
 
-    const size_t new_cache_size = sizeInBytes();
-    return memory_usage - std::min(cache_size, memory_usage) + new_cache_size <= memory_limit;
+    /// Only the memory actually released counts: an evicted entry that a reader still holds, or whose
+    /// column a query still shares, leaves the cache but not the memory, and reporting its weight as
+    /// released would let `MemoryTracker` accept an allocation over the limit.
+    const size_t released = bytes_released_in_thread - bytes_released_before;
+    return memory_usage - std::min(released, memory_usage) <= memory_limit;
 }
 
 std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()
