@@ -374,7 +374,7 @@ void TTLTransform::consume(Chunk chunk)
             {
                 ISerialization::StreamFileNameSettings stream_settings;
                 stream_settings.share_nested_offsets = share_nested_offsets;
-                const ISerialization::SubstreamPath offsets_path{ISerialization::Substream::ArraySizes};
+                const ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
                 const auto offsets_stream = ISerialization::getFileNameForStream(column, offsets_path, stream_settings);
 
                 /// Use the same offsets stream as the readers, without materializing the expired column in the part.
