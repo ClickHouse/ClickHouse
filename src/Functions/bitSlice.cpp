@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/CheckedSliceArgument.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
@@ -23,7 +24,7 @@ namespace ErrorCodes
 
 class FunctionBitSlice final : public IFunction
 {
-    const UInt8 word_size = 8;
+    static constexpr UInt8 word_size = 8;
 
 public:
     static constexpr auto name = "bitSlice";
@@ -37,6 +38,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Reject invalid UInt64 arguments without evaluating values masked by NULL.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     String getSignatureString() const override
     {
@@ -59,14 +62,14 @@ public:
 
         if (const auto * column_start_const = checkAndGetColumn<ColumnConst>(column_start.get()))
         {
-            start_const = column_start_const->getInt(0);
+            start_const = CheckedSliceArgument(*column_start_const, "offset").get(0);
         }
 
         if (number_of_arguments == 3)
         {
             column_length = arguments[2].column;
             if (const auto * column_length_const = checkAndGetColumn<ColumnConst>(column_length.get()))
-                length_const = column_length_const->getInt(0);
+                length_const = CheckedSliceArgument(*column_length_const, "length").get(0);
         }
 
 
@@ -133,6 +136,15 @@ public:
         }
 
         return col_res;
+    }
+
+    /// For positive lengths, round up the bit count to whole bytes.
+    /// The conversion to UInt64 also avoids signed overflow for Int64::max().
+    static void calculatePositiveLength(Int64 length, size_t offset_bit, size_t & length_byte, size_t & over_bit)
+    {
+        const UInt64 bit_count = static_cast<UInt64>(length) + offset_bit;
+        length_byte = (bit_count + word_size - 1) / word_size;
+        over_bit = bit_count % word_size;
     }
 
     void writeSliceWithLeftShift(const StringSource::Slice & slice, StringSink & sink, size_t shift_bit, size_t abandon_last_bit = 0) const
@@ -211,10 +223,11 @@ public:
     template <class Source>
     void bitSliceDynamicOffsetUnbounded(Source && src, StringSink && sink, const IColumn & offset_column) const
     {
+        const CheckedSliceArgument start_reader(offset_column, "offset");
         while (!src.isEnd())
         {
             auto row_num = src.rowNum();
-            Int64 start = offset_column.getInt(row_num);
+            Int64 start = start_reader.get(row_num);
             if (start != 0)
             {
                 typename std::decay_t<Source>::Slice slice;
@@ -259,10 +272,7 @@ public:
         size_t over_bit = 0;
         if (length > 0)
         {
-            length_byte = (length + offset_bit) / word_size;
-            over_bit = (length + offset_bit) % word_size;
-            if (over_bit && (length_byte || over_bit > offset_bit)) // begin and end are not in same byte OR there are gaps
-                length_byte++;
+            calculatePositiveLength(length, offset_bit, length_byte, over_bit);
         }
 
         while (!src.isEnd())
@@ -298,10 +308,7 @@ public:
         size_t over_bit = 0;
         if (length > 0)
         {
-            length_byte = (length + offset_bit) / word_size;
-            over_bit = (length + offset_bit) % word_size;
-            if (over_bit && (length_byte || over_bit > offset_bit)) // begin and end are not in same byte OR there are gaps
-                length_byte++;
+            calculatePositiveLength(length, offset_bit, length_byte, over_bit);
         }
 
         while (!src.isEnd())
@@ -330,11 +337,13 @@ public:
     template <class Source>
     void bitSliceDynamicOffsetBounded(Source && src, StringSink && sink, const IColumn & offset_column, const IColumn & length_column) const
     {
+        const CheckedSliceArgument start_reader(offset_column, "offset");
+        const CheckedSliceArgument length_reader(length_column, "length");
         while (!src.isEnd())
         {
             size_t row_num = src.rowNum();
-            Int64 start = offset_column.getInt(row_num);
-            Int64 length = length_column.getInt(row_num);
+            Int64 start = start_reader.get(row_num);
+            Int64 length = length_reader.get(row_num);
 
             if (start && length)
             {
@@ -367,10 +376,7 @@ public:
                 size_t over_bit = 0;
                 if (length > 0)
                 {
-                    length_byte = (length + offset_bit) / word_size;
-                    over_bit = (length + offset_bit) % word_size;
-                    if (over_bit && (length_byte || (over_bit > offset_bit))) // begin and end are not in same byte OR there are gaps
-                        length_byte++;
+                    calculatePositiveLength(length, offset_bit, length_byte, over_bit);
                 }
                 else
                 {
@@ -404,6 +410,7 @@ REGISTER_FUNCTION(BitSlice)
 Returns the starting bit position (1-based indexing).
 - Positive values: count from the beginning of the string.
 - Negative values: count from the end of the string.
+- UInt64 values above Int64::max() are rejected.
 )", {"(U)Int8/16/32/64", "Float*"}},
         {"length", R"(
 Optional. The number of bits to extract.
@@ -411,6 +418,7 @@ Optional. The number of bits to extract.
 - Negative values: extract from the offset to `(string_length - |length|)`.
 - Omitted: extract from offset to end of string.
 - If length is not a multiple of 8, the result is padded with zeros on the right.
+- UInt64 values above Int64::max() are rejected.
 )", {"(U)Int8/16/32/64", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits)", {"String"}};
