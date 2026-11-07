@@ -11,6 +11,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -123,6 +124,8 @@ public:
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
+    /// The value of rows_before_limit_at_least of the output format, if the pipeline is completed with one and has a limit.
+    std::optional<UInt64> tryGetRowsBeforeLimitAtLeast() const;
 
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
