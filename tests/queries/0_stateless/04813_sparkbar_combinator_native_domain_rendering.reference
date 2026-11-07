@@ -1,0 +1,30 @@
+UInt64 near 2^53
+▇█
+Int256 near 2^200
+▇█
+Decimal64 near 2^53
+▇█
+Int64 overflow fallback
+▄█
+Float64 infinity
+▁ ▁
+all result types
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
+▁█
