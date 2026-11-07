@@ -12,6 +12,8 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <memory>
+
 namespace DB
 {
 struct ServerSettings;
@@ -19,6 +21,8 @@ struct ServerSettings;
 
 namespace DB::GPU
 {
+
+class GPUKernelCache;
 
 
 inline void clearDeviceError()
@@ -74,12 +78,18 @@ public:
 
     PinnedMemoryPool & pinnedPool() { return PinnedMemoryPool::instance(); }
 
+    /// The kernels compiled for expressions, which are unloaded with the device, see `GPUExpressionCompiler`.
+    GPUKernelCache & kernelCache() { return *kernel_cache; }
+
 private:
     /// Its pool is taken first, which checks that there is a device; the streams are set once they are made.
     GPUResources gpu_resources;
 
     StreamPtr upload_stream;
     StreamPtr decompression_stream;
+
+    /// Destroyed before the streams and the pool, after the destructor waits for the device.
+    std::unique_ptr<GPUKernelCache> kernel_cache;
 };
 
 }
