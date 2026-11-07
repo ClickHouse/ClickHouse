@@ -8,6 +8,7 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/inplaceBlockConversions.h>
 
 namespace DB
 {
@@ -158,6 +159,8 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
+    result.read_context = context;
+    result.default_expressions_sets = createDefaultExpressionsSets();
     result.use_page_cache_lookahead_for_text_index = settings[Setting::use_page_cache_lookahead_for_text_index];
     return result;
 }
