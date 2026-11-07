@@ -109,7 +109,7 @@ LazyPostingsStats::~LazyPostingsStats()
     auto add = [](ProfileEvents::Event event, size_t value)
     {
         if (value)
-            ProfileEvents::increment(event, value);
+            ProfileEvents::incrementNonAllocating(event, value);
     };
 
     add(ProfileEvents::TextIndexLazyPackedBlocksDecoded, blocks_decoded);

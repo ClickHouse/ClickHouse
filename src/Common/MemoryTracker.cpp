@@ -15,6 +15,7 @@
 #include <Common/PageCache.h>
 #include <Common/IMemoryReleasableCache.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsNonAllocatingEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
 #include <Common/UntrackedMemoryRegistry.h>
@@ -720,8 +721,10 @@ void MemoryTracker::settleDriftOnQueryEnd()
     if (settled == 0)
         return;
 
-    ProfileEvents::increment(ProfileEvents::QueryMemoryDriftSettled);
-    ProfileEvents::increment(ProfileEvents::QueryMemoryDriftSettledBytes, std::abs(settled));
+    /// The query tracker may be destroyed by a different thread, so constructor-time reservations are insufficient.
+    auto & counters = DB::CurrentThread::getProfileEvents();
+    counters.incrementNonAllocating(ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryMemoryDriftSettled>());
+    counters.incrementNonAllocating(ProfileEvents::nonAllocatingEvent<ProfileEvents::QueryMemoryDriftSettledBytes>(), std::abs(settled));
 }
 
 

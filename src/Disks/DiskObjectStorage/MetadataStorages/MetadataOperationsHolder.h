@@ -9,6 +9,11 @@
 #include <deque>
 #include <optional>
 
+namespace ProfileEvents
+{
+class Counters;
+}
+
 namespace DB
 {
 
@@ -20,7 +25,7 @@ namespace DB
 class MetadataOperationsHolder
 {
     /// Returns why the rollback did not complete, if it did not.
-    std::optional<String> rollback(size_t until_pos) noexcept;
+    std::optional<String> rollback(size_t until_pos, ProfileEvents::Counters & counters) noexcept;
 
 public:
     void prependOperation(MetadataOperationPtr && operation);

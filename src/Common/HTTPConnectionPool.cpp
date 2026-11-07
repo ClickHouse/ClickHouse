@@ -952,7 +952,7 @@ public:
     {
         SCOPE_EXIT({
             group->releaseStoredConnections(expired_connections.size());
-            ProfileEvents::increment(getMetrics().expired, expired_connections.size());
+            ProfileEvents::incrementNonAllocating(getMetrics().expired, expired_connections.size());
         });
 
         auto is_soft_limit_reached = group->isSoftLimitReached();
@@ -1063,7 +1063,7 @@ private:
         }
         catch (...)
         {
-            ProfileEvents::increment(getMetrics().errors);
+            ProfileEvents::incrementNonAllocating(getMetrics().errors);
             (*connection).reset();
             throw;
         }
@@ -1074,6 +1074,9 @@ private:
 
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
+        /// Reserve before either connection path can fail; reporting must preserve the original exception.
+        ProfileEvents::preallocate(getMetrics().errors);
+
         /// `Poco::Net::HTTPClientSession::reconnect` uses the proxy only when
         /// `!_proxyConfig.host.empty() && !bypassProxy()`; route that case to
         /// `prepareConnectionViaProxy`, which does not touch the target `HostResolver`. When
@@ -1129,7 +1132,7 @@ private:
         /// pessimize, and retry (return true).
         auto onConnectFailure = [&](ConnectionPtr & failed_connection, HostResolver::Entry & failed_address) -> bool
         {
-            ProfileEvents::increment(getMetrics().errors);
+            ProfileEvents::incrementNonAllocating(getMetrics().errors);
             const bool tcp_connected = failed_connection->isConnectedToPeer();
             (*failed_connection).reset();
             if (tcp_connected)
@@ -1203,7 +1206,7 @@ private:
                 /// a per-address routing problem and would recur on any address. Propagate without
                 /// `setFail`; `setUnused` so the destructor does not record a spurious success.
                 address.setUnused();
-                ProfileEvents::increment(getMetrics().errors);
+                ProfileEvents::incrementNonAllocating(getMetrics().errors);
                 (*connection).reset();
                 throw;
             }
@@ -1225,7 +1228,7 @@ private:
             }
             catch (...)
             {
-                ProfileEvents::increment(getMetrics().errors);
+                ProfileEvents::incrementNonAllocating(getMetrics().errors);
                 /// Post-connect socket setup in `HTTPSession::connect` can also throw
                 /// non-`NetException` errors (`setsockopt` mapped to `Poco::IOException` /
                 /// `Poco::InvalidArgumentException`) after the TCP connect succeeded. Probe as in the
@@ -1248,7 +1251,7 @@ private:
             }
             catch (...)
             {
-                ProfileEvents::increment(getMetrics().errors);
+                ProfileEvents::incrementNonAllocating(getMetrics().errors);
                 (*connection).reset();
                 throw;
             }
@@ -1266,13 +1269,13 @@ private:
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
-            ProfileEvents::increment(getMetrics().expired, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().expired, 1);
             return;
         }
 
         if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered())
         {
-            ProfileEvents::increment(getMetrics().reset, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().reset, 1);
             return;
         }
 
@@ -1280,7 +1283,7 @@ private:
         /// that store connections concurrently cannot overshoot the limit together.
         if (!group->tryReserveStoredConnection())
         {
-            ProfileEvents::increment(getMetrics().reset, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().reset, 1);
             return;
         }
 
@@ -1297,12 +1300,12 @@ private:
                 stored_connections.push(connection_to_store);
             }
 
-            ProfileEvents::increment(getMetrics().preserved, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().preserved, 1);
         }
         catch (...)
         {
             group->releaseStoredConnections(1);
-            ProfileEvents::increment(getMetrics().reset, 1);
+            ProfileEvents::incrementNonAllocating(getMetrics().reset, 1);
             tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
         }
     }

@@ -97,7 +97,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 
         if (-1 == res && errno != EINTR)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
             ErrnoException::throwFromPath(
                 ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, getFileName(), "Cannot read from file {}", getFileName());
         }
@@ -235,7 +235,7 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 
     if (result < 0)
     {
-        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
         ErrnoException::throwFromPath(
             ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, getFileName(), "Cannot poll file {}", getFileName());
     }
