@@ -1,0 +1,105 @@
+no_partitioning
+1	2025-03-02	-50
+1	2025-03-03	0
+1	2025-03-04	1.5
+1	2025-03-05	17
+2	2025-03-03	-1
+2	2025-03-04	42
+partitioned_table
+1	2025-03-02	-50
+1	2025-03-03	0
+1	2025-03-04	1.5
+1	2025-03-05	17
+2	2025-03-03	-1
+2	2025-03-04	42
+partitioning_with_null_value
+1	\N	-50
+2	2025-03-03	-1
+\N	2025-03-03	0
+\N	\N	17
+partition_evolution
+1	2025-03-02	-50
+1	2025-03-03	0
+1	2025-03-04	1.5
+1	2025-03-05	17
+2	2025-03-03	-1
+2	2025-03-04	42
+3	2025-03-11	2
+decimal_partitioning
+3	-5	0	0
+bucket_partitioning
+1	2	3	2025-03-03	61200000000	2025-03-03 00:00:00.000000	2025-03-03 00:00:00.000000	some-string	12151fd2-7586-11e9-8f9e-2a86e4085a59	736F6D652D76617262696E617279
+year_date_partitioning
+1	2025-03-03	0
+2	2024-03-03	0
+3	2025-03-03	0
+year_timestamp_partitioning
+1	2025-03-03 23:00:00.000000	0
+2	2024-03-03 23:52:00.000000	0
+3	2025-03-03 22:00:00.000000	0
+year_timestamptz_partitioning
+1	2025-03-03 23:00:00.000000	0
+2	2024-03-03 23:52:00.000000	0
+3	2025-03-03 22:00:00.000000	0
+month_timestamptz_partitioning
+1	2025-03-03 23:00:00.000000	0
+2	2024-03-03 23:52:00.000000	0
+3	\N	0
+day_timestamptz_partitioning
+1	2025-03-03 23:00:00.000000	0
+2	2024-03-03 23:52:00.000000	0
+3	\N	0
+hour_timestamptz_partitioning
+1	2025-03-03 23:00:00.000000	0
+2	2024-03-03 23:52:00.000000	0
+3	\N	0
+w_clean_expired_metadata
+1	2025-03-03 23:00:00.000000	0
+2	2024-03-03 23:52:00.000000	0
+3	\N	0
+use_iceberg_partition_pruning = 0
+year_date	[1,3]
+year_timestamp	[2]
+year_timestamptz	[1]
+month_timestamptz	[2]
+day_timestamptz	[3]
+hour_timestamptz	[1]
+null_value	[0,17]
+evolution	[-1,2,42]
+decimal	1
+bucket_int	1
+bucket_int_other	0
+bucket_long	1
+bucket_decimal	1
+bucket_date	1
+bucket_time	1
+bucket_timestamp	1
+bucket_timestamptz	1
+bucket_string	1
+bucket_uuid	1
+bucket_varbinary	1
+use_iceberg_partition_pruning = 1
+year_date	[1,3]
+year_timestamp	[2]
+year_timestamptz	[1]
+month_timestamptz	[2]
+day_timestamptz	[3]
+hour_timestamptz	[1]
+null_value	[0,17]
+evolution	[-1,2,42]
+decimal	1
+bucket_int	1
+bucket_int_other	0
+bucket_long	1
+bucket_decimal	1
+bucket_date	1
+bucket_time	1
+bucket_timestamp	1
+bucket_timestamptz	1
+bucket_string	1
+bucket_uuid	1
+bucket_varbinary	1
+identity_partitioning
+false	1	2	2.25	2.375	3	2025-03-03	61200000000	2025-03-03 00:00:00.000000	2025-03-03 00:00:00.000000	some-string	12151fd2-7586-11e9-8f9e-2a86e4085a59	736F6D652D76617262696E617279
+1
+1

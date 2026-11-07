@@ -1,0 +1,80 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "897f46b4-8f87-456b-8133-ccae6ee72af4",
+  "location" : "s3://warehouse/prod/db/refdeletes3",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1743064534021,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "a",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "b",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "root",
+    "write.delete.granularity" : "file",
+    "write.target-file-size-bytes" : "200",
+    "write.delete.mode" : "merge-on-read",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 6838570461092714410,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 6838570461092714410,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 6838570461092714410,
+    "timestamp-ms" : 1743064534021,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1743063334387",
+      "added-data-files" : "6",
+      "added-records" : "16",
+      "added-files-size" : "3641",
+      "changed-partition-count" : "1",
+      "total-records" : "16",
+      "total-files-size" : "3641",
+      "total-data-files" : "6",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3://warehouse/prod/db/refdeletes3/metadata/snap-6838570461092714410-1-06d9558e-cca7-431c-80b5-d0b72456a01b.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1743064534021,
+    "snapshot-id" : 6838570461092714410
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1743064524794,
+    "metadata-file" : "s3://warehouse/prod/db/refdeletes3/metadata/00000-010abc61-a2d0-4532-9550-98cbf2ba4a0c.metadata.json"
+  } ]
+}

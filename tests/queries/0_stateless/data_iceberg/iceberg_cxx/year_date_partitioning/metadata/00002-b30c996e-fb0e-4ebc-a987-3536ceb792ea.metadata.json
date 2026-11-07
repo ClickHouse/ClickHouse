@@ -1,0 +1,141 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "8b918ef2-0b60-4a23-8ce0-47c23d065d52",
+  "location" : "s3a://warehouse/year_date_partitioning",
+  "last-sequence-number" : 2,
+  "last-updated-ms" : 1741259720468,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "c2",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 3,
+      "name" : "c3",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "c2_year",
+      "transform" : "year",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 7253010310290501549,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7253010310290501549,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4795903818150143955,
+    "timestamp-ms" : 1741259707400,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250306_111507_00002_x2kme",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/year_date_partitioning/metadata/snap-4795903818150143955-1-5f08f1b0-2333-494d-9cb0-280b76e6544c.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 7253010310290501549,
+    "parent-snapshot-id" : 4795903818150143955,
+    "timestamp-ms" : 1741259720242,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250306_111518_00004_x2kme",
+      "added-data-files" : "2",
+      "added-records" : "3",
+      "added-files-size" : "1006",
+      "changed-partition-count" : "2",
+      "total-records" : "3",
+      "total-files-size" : "1006",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/year_date_partitioning/metadata/snap-7253010310290501549-1-48510c7c-7855-4273-9170-5de3130502f6.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ {
+    "snapshot-id" : 7253010310290501549,
+    "statistics-path" : "s3a://warehouse/year_date_partitioning/metadata/20250306_111518_00004_x2kme-d61e59c4-6f13-4be8-8d3c-bd2fa0fc81fc.stats",
+    "file-size-in-bytes" : 755,
+    "file-footer-size-in-bytes" : 624,
+    "blob-metadata" : [ {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 7253010310290501549,
+      "sequence-number" : 2,
+      "fields" : [ 1 ],
+      "properties" : {
+        "ndv" : "3"
+      }
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 7253010310290501549,
+      "sequence-number" : 2,
+      "fields" : [ 2 ],
+      "properties" : {
+        "ndv" : "2"
+      }
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 7253010310290501549,
+      "sequence-number" : 2,
+      "fields" : [ 3 ],
+      "properties" : {
+        "ndv" : "1"
+      }
+    } ]
+  } ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1741259707400,
+    "snapshot-id" : 4795903818150143955
+  }, {
+    "timestamp-ms" : 1741259720242,
+    "snapshot-id" : 7253010310290501549
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1741259707400,
+    "metadata-file" : "s3a://warehouse/year_date_partitioning/metadata/00000-6495a31d-92d0-49ff-add4-d8ebfd666d80.metadata.json"
+  }, {
+    "timestamp-ms" : 1741259720242,
+    "metadata-file" : "s3a://warehouse/year_date_partitioning/metadata/00001-4469fb4c-b3ca-472a-9c03-556a53e89851.metadata.json"
+  } ]
+}

@@ -1,0 +1,138 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "922e1205-70ed-4a50-ba2f-d4f8abc495a5",
+  "location" : "s3a://dl-test-maintenance/check/tea-partitioned/v_20240913/iceberg",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1726226925840,
+  "last-column-id" : 13,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "int2col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "int4col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "int8col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 4,
+      "name" : "numericcol",
+      "required" : false,
+      "type" : "decimal(38, 0)"
+    }, {
+      "id" : 5,
+      "name" : "float4col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 6,
+      "name" : "float8col",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "timestamptzcol",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 8,
+      "name" : "timestampcol",
+      "required" : false,
+      "type" : "timestamp"
+    }, {
+      "id" : 9,
+      "name" : "char32col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 10,
+      "name" : "varchar32col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 11,
+      "name" : "uuidcol",
+      "required" : false,
+      "type" : "uuid"
+    }, {
+      "id" : 12,
+      "name" : "intarrcol",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "int",
+        "element-required" : false
+      }
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "timestamptzcol_day",
+      "transform" : "day",
+      "source-id" : 7,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.merge.mode" : "copy-on-write",
+    "gandalf_initial_path" : "s3a://dl-test-maintenance/check/tea-partitioned/v_20240913/",
+    "write.format.default" : "PARQUET",
+    "write.wap.enabled" : "true",
+    "read.parquet.vectorization.enabled" : "false"
+  },
+  "current-snapshot-id" : 2144761731165004944,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 2144761731165004944,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 2144761731165004944,
+    "timestamp-ms" : 1726226925746,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "3",
+      "added-records" : "1",
+      "added-files-size" : "3839",
+      "changed-partition-count" : "2",
+      "total-records" : "1",
+      "total-files-size" : "3839",
+      "total-data-files" : "3",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://dl-test-maintenance/check/tea-partitioned/v_20240913/iceberg/metadata/snap-2144761731165004944-1-b69dcb96-2926-47ff-95b0-14cb64f65c65.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1726226925746,
+    "snapshot-id" : 2144761731165004944
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1726226924414,
+    "metadata-file" : "s3a://dl-test-maintenance/check/tea-partitioned/v_20240913/iceberg/metadata/00000-82ef308d-c11e-43bc-9e37-9827790db4cf.metadata.json"
+  } ]
+}
