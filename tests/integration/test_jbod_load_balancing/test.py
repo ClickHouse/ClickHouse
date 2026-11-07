@@ -202,3 +202,63 @@ def test_jbod_load_balancing_least_used_detect_background_changes(start_cluster)
         node.query(
             "DROP TABLE IF EXISTS data_least_used_detect_background_changes SYNC"
         )
+
+
+def test_jbod_load_balancing_least_used_ttl(start_cluster):
+    # Between two reads of the space of every disk, the volume updates the space of the disk that a
+    # reservation takes. Reloading the config creates the volume anew, so it starts from the space of 100, 200
+    # and 300 MiB. Each insert reserves the 143 MiB of its block, although its compressed part is small. The
+    # first insert takes `jbod3`, which then has 157 MiB left, so the second insert takes `jbod2`.
+    try:
+        node.query("SYSTEM RELOAD CONFIG")
+        node.query(
+            """
+            CREATE TABLE data_least_used_ttl (s String)
+            ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy = 'jbod_least_used_ttl';
+
+            SYSTEM STOP MERGES data_least_used_ttl;
+
+            INSERT INTO data_least_used_ttl SELECT repeat('a', 1000000) FROM numbers(150) SETTINGS max_insert_threads = 1;
+            INSERT INTO data_least_used_ttl SELECT repeat('a', 1000000) FROM numbers(150) SETTINGS max_insert_threads = 1;
+            """
+        )
+        parts = get_parts_on_disks("data_least_used_ttl")
+        assert parts == [
+            ["1", "jbod2"],
+            ["1", "jbod3"],
+        ]
+    finally:
+        node.query("DROP TABLE IF EXISTS data_least_used_ttl SYNC")
+
+
+def test_jbod_load_balancing_least_used_ttl_full_disk(start_cluster):
+    # `jbod3` is filled to 8 KiB free behind the back of the volume, which may still count its old space and
+    # try it first. A reservation tries every disk once, so the insert takes `jbod1` or `jbod2`, whatever
+    # space the volume counts for each disk.
+    disk = "/test_jbod_load_balancing_jbod3"
+    try:
+        node.query(
+            """
+            CREATE TABLE data_least_used_ttl_full_disk (p UInt8)
+            ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy = 'jbod_least_used_ttl';
+            """
+        )
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"fallocate -l $(( $(df --output=avail -B1 {disk} | tail -1) - 8192 )) {disk}/.filler",
+            ]
+        )
+        node.query(
+            "INSERT INTO data_least_used_ttl_full_disk SELECT * FROM numbers(10)"
+        )
+        parts = get_parts_on_disks("data_least_used_ttl_full_disk")
+        assert parts in ([["1", "jbod1"]], [["1", "jbod2"]])
+    finally:
+        node.exec_in_container(["rm", "-f", f"{disk}/.filler"])
+        node.query("DROP TABLE IF EXISTS data_least_used_ttl_full_disk SYNC")
