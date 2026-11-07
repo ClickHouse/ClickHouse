@@ -89,8 +89,6 @@ LEFT JOIN LATERAL (
     SELECT 1 AS x
 ) AS inv ON true; -- { serverError NOT_IMPLEMENTED }
 
-SELECT c.id FROM companies c CROSS JOIN LATERAL (SELECT * FROM invoices i WHERE i.company_id = c.id) AS inv; -- { clientError SYNTAX_ERROR } -- CROSS JOIN LATERAL not supported
-
 -- Test 6: Error case - LATERAL without experimental setting (correlated subquery)
 SELECT '-- Test 6: Error without setting';
 SET allow_experimental_lateral_join = 0;
@@ -124,14 +122,6 @@ FULL JOIN LATERAL (
     SELECT * FROM invoices i
     WHERE i.company_id = c.id
 ) AS inv ON true; -- { serverError NOT_IMPLEMENTED }
-
--- Test 9: Error case - LATERAL with non-trivial ON predicate
-SELECT c.id
-FROM companies c
-LEFT JOIN LATERAL (
-    SELECT * FROM invoices i
-    WHERE i.company_id = c.id
-) AS inv ON inv.amount > 100; -- { serverError NOT_IMPLEMENTED }
 
 -- Test 10: Error case - LATERAL with USING clause
 SELECT c.id

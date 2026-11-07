@@ -27,6 +27,14 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     const JoinNode & join_node,
     const PlannerContextPtr & planner_context);
 
+/// Add the actions of a join expression whose columns are in `left_header` or `right_header` to `dag`.
+const ActionsDAG::Node * appendJoinExpression(
+    ActionsDAG & dag,
+    const QueryTreeNodePtr & expression,
+    const PlannerContextPtr & planner_context,
+    const SharedHeader & left_header,
+    const SharedHeader & right_header);
+
 /// Get label to annotate table in query plan,
 /// it allows to display join order in compact form in EXPLAIN PLAN output.
 String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases);

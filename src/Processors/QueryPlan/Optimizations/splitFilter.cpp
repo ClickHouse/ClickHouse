@@ -20,7 +20,6 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     size_t num_new_nodes = 0;
     for (auto [idx, side]: {std::make_pair(0, JoinTableSide::Left), std::make_pair(1, JoinTableSide::Right)})
     {
-        auto & child_node = *node->children.at(idx);
         const auto & header = side == JoinTableSide::Left ? lhs_header : rhs_header;
         auto filter_dag = join_step->getFilterActions(side, lhs_header, rhs_header);
         if (!filter_dag)
@@ -30,8 +29,9 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(filter_dag->dag), filter_column_name, filter_dag->remove_filter);
         step->setStepDescription("Join filter");
 
-        auto * new_node = &nodes.emplace_back(std::move(child_node));
-        child_node = QueryPlan::Node{std::move(step), {new_node}};
+        /// Keep the child node in place: a `CommonSubplanReferenceStep` refers to a node by its address.
+        auto * filter_node = &nodes.emplace_back(QueryPlan::Node{std::move(step), {node->children.at(idx)}});
+        node->children.at(idx) = filter_node;
         num_new_nodes = std::max<size_t>(num_new_nodes, 2);
     }
     return num_new_nodes;
