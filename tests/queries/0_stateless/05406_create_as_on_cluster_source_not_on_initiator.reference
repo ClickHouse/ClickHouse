@@ -1,0 +1,18 @@
+-- copy_existing_without_grants:
+necessary to have the grant SHOW COLUMNS ON db.src
+-- copy_absent_without_grants:
+necessary to have the grant SHOW COLUMNS ON db_absent.src
+-- copy_own_engine:
+necessary to have the grant SHOW COLUMNS ON db_absent.src
+-- copy_with_show_columns:
+necessary to have the grants SELECT ON db_absent.src, TABLE ENGINE ON *
+-- copy_own_engine_with_show_columns:
+UNKNOWN_DATABASE
+-- copy_own_time_series:
+necessary to have the grants SELECT ON db_absent.src, TABLE ENGINE ON *
+-- copy_with_select:
+necessary to have the grants SELECT ON db_absent.src, TABLE ENGINE ON *
+-- copy_with_every_grant:
+UNKNOWN_DATABASE
+-- copy_without_select:
+necessary to have the grants SELECT ON db_absent.src, TABLE ENGINE ON *
