@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <map>
 #include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -219,6 +220,36 @@ using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
 
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);
+
+struct ResolvedPartitionSpec
+{
+    Poco::JSON::Object::Ptr spec;
+    std::vector<String> partition_columns;
+    DB::DataTypes partition_types;
+};
+
+/// After partition evolution each manifest must be written under the spec its source files used, and after schema evolution
+/// (e.g. widening `decimal(P, S)`) its partition values must be encoded under the schema its source files were written with;
+/// resolve and cache spec info per (spec-id, schema-id).
+class PartitionSpecResolver
+{
+public:
+    PartitionSpecResolver(Poco::JSON::Object::Ptr metadata, IcebergSchemaProcessorPtr schema_processor_, DB::ContextPtr context_);
+
+    const ResolvedPartitionSpec & resolve(Int32 spec_id, Int32 files_schema_id);
+
+    /// Return the schema object for a schema-id from the metadata, else the copy registered from a manifest header. It is the verbatim
+    /// Avro `schema` header of a written manifest, so its data-file bounds resolve under the schema the files were written with.
+    Poco::JSON::Object::Ptr getSchema(Int32 schema_id) const;
+
+private:
+    Poco::JSON::Array::Ptr partitions_specs;
+    Poco::JSON::Array::Ptr schemas;
+    Int32 current_schema_id;
+    IcebergSchemaProcessorPtr schema_processor;
+    DB::ContextPtr context;
+    std::map<std::pair<Int32, Int32>, ResolvedPartitionSpec> resolved_specs;
+};
 }
 
 #endif
