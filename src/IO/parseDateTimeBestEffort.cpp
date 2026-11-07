@@ -606,7 +606,8 @@ ReturnType parseDateTimeBestEffortImpl(
                     if (month)
                         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: month is duplicated");
 
-                    if constexpr (is_us_style)
+                    /// Only numeric day and month are ambiguous. A month name (e.g. 08-Nov-2024) is parsed the same way in both styles.
+                    if (is_us_style && !in.eof() && isNumericASCII(*in.position()))
                     {
                         month = hour_or_day_of_month_or_month;
                         num_digits = readDigits(digits, sizeof(digits), in);
