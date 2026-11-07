@@ -87,13 +87,10 @@ private:
             , unreserved_space(disk->getUnreservedSpace())
         {}
 
+        /// Read-only disks compare below the others, so they are chosen last.
         bool operator<(const DiskWithSize & rhs) const
         {
-            if (disk->isReadOnly())
-                return true;
-            if (rhs.disk->isReadOnly())
-                return false;
-            return unreserved_space < rhs.unreserved_space;
+            return std::pair(!disk->isReadOnly(), unreserved_space) < std::pair(!rhs.disk->isReadOnly(), rhs.unreserved_space);
         }
     };
 
