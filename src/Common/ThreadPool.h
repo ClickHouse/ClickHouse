@@ -314,7 +314,9 @@ private:
     static std::atomic<size_t> & globalQueuedJobs();
 
     mutable std::mutex mutex;
-    std::condition_variable job_finished;
+    /// A finished job frees one slot, so it wakes only one scheduler waiting for a slot.
+    std::condition_variable slot_freed;
+    std::condition_variable all_jobs_finished;
 
     /// Notified when a worker that was neither running a job nor waiting in the idle stack settles:
     /// links itself into the idle stack, takes a queued job, or leaves the pool. Only

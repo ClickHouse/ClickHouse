@@ -15,10 +15,10 @@ namespace DB
 namespace
 {
 
-/// Registered codec families, including the ones that depend on the build options, and the alias `Default`.
-constexpr std::array<std::string_view, 22> codec_family_names
+/// Registered codec families, including the ones that depend on the build options, the alias `Default` and the combinator `FirstApplicable`.
+constexpr std::array<std::string_view, 23> codec_family_names
 {
-    "Default", "NONE", "Multiple",
+    "Default", "NONE", "Multiple", "FirstApplicable",
     "LZ4", "LZ4HC", "ZSTD", "ZSTD_QAT", "DEFLATE_QPL", "ZXC", "GDeflate",
     "Delta", "DoubleDelta", "Gorilla", "FPC", "T64", "GCD", "ALP", "PCO", "SZ3", "Quantized",
     "AES_128_GCM_SIV", "AES_256_GCM_SIV",

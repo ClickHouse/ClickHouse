@@ -407,6 +407,19 @@ def test_read_throttling(policy, mode, setting, value, should_take):
     )
     _, took = elapsed(node, "select * from data", settings=local_read_settings(policy))
     assert_took(took, should_take)
+    if setting == "max_remote_read_network_bandwidth_for_server":
+        assert (
+            node.query(
+                "SELECT value FROM system.server_settings WHERE name = 'max_distributed_cache_read_bandwidth_for_server'"
+            ).strip()
+            == "0"
+        )
+        assert (
+            node.query(
+                "SELECT getServerSetting('max_distributed_cache_read_bandwidth_for_server')"
+            ).strip()
+            == "0"
+        )
 
 
 def test_remote_read_throttling_reload():
@@ -619,6 +632,19 @@ def test_write_throttling(policy, mode, setting, value, should_take):
     )
     _, took = elapsed(node, "insert into data select * from numbers(1e6)")
     assert_took(took, should_take)
+    if setting == "max_remote_write_network_bandwidth_for_server":
+        assert (
+            node.query(
+                "SELECT value FROM system.server_settings WHERE name = 'max_distributed_cache_write_bandwidth_for_server'"
+            ).strip()
+            == "0"
+        )
+        assert (
+            node.query(
+                "SELECT getServerSetting('max_distributed_cache_write_bandwidth_for_server')"
+            ).strip()
+            == "0"
+        )
 
 
 def test_remote_write_throttling_reload():
