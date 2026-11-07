@@ -23,6 +23,8 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Planner/PlannerJoinTree.h>
+
 #include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
@@ -97,6 +99,10 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsUInt64 max_rows_in_distinct;
+    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
@@ -1159,6 +1165,21 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
     }
 }
 
+/// The set of a regular IN ignores the totals of the whole subquery plan (including the
+/// totals of the queries in its join tree), so drop `WITH TOTALS` here as well, recursively:
+/// otherwise the `TotalsHaving` step ends up on the right side of the join built by the decorrelation,
+/// leaks the totals row into the outer query, and fails with `LOGICAL_ERROR`
+/// when the outer query has `WITH TOTALS` itself. `subquery_node` must be resolved.
+static void dropTotalsInSubqueryJoinTree(const QueryTreeNodePtr & subquery_node)
+{
+    for (const auto & table_expression : extractTableExpressions(
+             std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        if (auto * table_expression_query_node = table_expression->as<QueryNode>())
+            table_expression_query_node->setIsGroupByWithTotals(false);
+    }
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
 QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
@@ -1238,6 +1259,355 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
     }
     node = result_node;
     return ProjectionNames{proj};
+}
+
+namespace
+{
+
+/// A set key that a row-wise comparison reproduces: a scalar compared by value. A compound type (`Tuple`,
+/// `Array`, `Map`, `Variant`, ...) is keyed by its packed or hashed bytes, which `equals` does not reproduce.
+bool isScalarSetKeyType(const DataTypePtr & type)
+{
+    WhichDataType which(type);
+    return which.isNumber() || which.isStringOrFixedString() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        || which.isEnum() || which.isUUID() || which.isIPv4() || which.isIPv6();
+}
+
+bool hasLimitClause(const QueryNode & query_node)
+{
+    return query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitByLimit() || query_node.hasLimitBy()
+        || query_node.hasLimitAfter() || query_node.hasLimitUntil();
+}
+
+/// Whether `predicate` holds for a node of the expression, not looking into its subqueries.
+bool hasNodeOutsideSubqueries(const QueryTreeNodePtr & node, const std::function<bool(const QueryTreeNodePtr &)> & predicate)
+{
+    if (predicate(node))
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION
+            && hasNodeOutsideSubqueries(child, predicate))
+            return true;
+    }
+    return false;
+}
+
+bool hasSubqueryWithSettingsChanges(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>(); query_node && query_node->hasSettingsChanges())
+        return true;
+    if (const auto * union_node = node->as<UnionNode>(); union_node && union_node->hasSettingsChanges())
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && hasSubqueryWithSettingsChanges(child))
+            return true;
+    }
+    return false;
+}
+
+QueryTreeNodePtr makeFunctionNode(String function_name, QueryTreeNodes arguments)
+{
+    auto function_node = std::make_shared<FunctionNode>(std::move(function_name));
+    function_node->getArguments().getNodes() = std::move(arguments);
+    return function_node;
+}
+
+[[noreturn]] void throwCorrelatedInNotSupported(std::string_view reason, const QueryTreeNodePtr & in_function_node)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Correlated subqueries are not supported as IN function arguments yet{}, but found in expression: {}",
+        reason,
+        in_function_node->formatASTForErrorMessage());
+}
+
+}
+
+/** Rewrite `x [NOT] IN (Q)` with a correlated `Q` into
+  * `[if(isNull(x), NULL,] [not] exists(SELECT 1 FROM (Q) WHERE x = <the column of Q>) [)]`, which the planner decorrelates.
+  * It returns exactly what the regular IN returns, or throws: the comparison mirrors how `Set::execute` converts the
+  * left value to the key type, and every shape for which the decorrelated subquery would differ from the set is refused.
+  * `unresolved_in_arguments` are the arguments of IN before resolution: the rewrite resolves them again inside the new
+  * subquery, which registers their correlated columns there.
+  */
+ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
+    QueryTreeNodePtr & node,
+    const String & function_name,
+    const QueryTreeNodePtr & in_first_argument,
+    QueryTreeNodePtr in_second_argument,
+    const QueryTreeNodePtr & unresolved_in_arguments,
+    ProjectionNames in_projection_names,
+    IdentifierResolveScope & scope)
+{
+    const bool is_supported_function
+        = function_name == "in" || function_name == "notIn" || function_name == "globalIn" || function_name == "globalNotIn";
+    if (!unresolved_in_arguments || !scope.scope_node->as<QueryNode>() || scope.in_prewhere
+        || in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA || containsCorrelatedSubquery(in_first_argument)
+        || (!is_supported_function && !inFunctionComparesNulls(function_name)))
+        throwCorrelatedInNotSupported("", node);
+
+    if (inFunctionComparesNulls(function_name))
+        throwCorrelatedInNotSupported(" with `transform_null_in` or a function that compares NULLs", node);
+
+    const auto & settings = scope.context->getSettingsRef();
+    if (settings[Setting::max_rows_in_set] || settings[Setting::max_bytes_in_set])
+        throwCorrelatedInNotSupported(" with `max_rows_in_set` or `max_bytes_in_set`", node);
+
+    if (settings[Setting::max_rows_to_group_by] && settings[Setting::group_by_overflow_mode] != OverflowMode::THROW)
+        throwCorrelatedInNotSupported(" with `max_rows_to_group_by` and `group_by_overflow_mode` other than 'throw'", node);
+
+    if (in_first_argument->getResultType()->onlyNull())
+        throwCorrelatedInNotSupported(" when the left argument is NULL", node);
+
+    /// Such a function must not move into another query: `arrayJoin` is matched under any of its names.
+    if (hasNodeOutsideSubqueries(in_first_argument, [](const QueryTreeNodePtr & argument_node)
+        {
+            const auto * function_node = argument_node->as<FunctionNode>();
+            return function_node && (function_node->isAggregateFunction() || function_node->isWindowFunction()
+                || getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin");
+        }))
+        throwCorrelatedInNotSupported(" when the left argument contains an aggregate function, a window function or arrayJoin", node);
+
+    /// The subquery is evaluated once per distinct value of the correlated columns, as for `LATERAL`.
+    if (containsFunctionVolatileInScopeOfQuery(in_first_argument) || containsFunctionVolatileInScopeOfQuery(in_second_argument)
+        || lateralSubqueryHasVolatileHiddenFilter(in_first_argument, scope.context)
+        || lateralSubqueryHasVolatileHiddenFilter(in_second_argument, scope.context))
+        throwCorrelatedInNotSupported(" when the expression contains a function that is non-deterministic within a query, "
+            "or reads a table with such a function in a row policy or `additional_table_filters`", node);
+
+    if (lateralSubqueryReadsOpaqueView(in_first_argument) || lateralSubqueryReadsOpaqueView(in_second_argument))
+        throwCorrelatedInNotSupported(" when the expression reads a view that is not inlined into the query", node);
+
+    /// The checks here read the settings of the current scope, while such a subquery runs with its own.
+    if (hasSubqueryWithSettingsChanges(in_second_argument))
+        throwCorrelatedInNotSupported(" when the subquery has its own SETTINGS clause", node);
+
+    for (const auto & table_expression : extractTableExpressions(
+             std::static_pointer_cast<ITableExpressionNode>(in_second_argument), /*add_array_join=*/ false, /*recursive=*/ true))
+    {
+        const auto * query_node = table_expression->as<QueryNode>();
+        if (!query_node || !query_node->isCorrelated())
+            continue;
+
+        if (hasLimitClause(*query_node))
+            throwCorrelatedInNotSupported(" when the subquery has LIMIT, OFFSET or LIMIT BY", node);
+
+        /// Decorrelation groups by the correlated columns, so an outer row without inner rows gets no row,
+        /// while an aggregation without keys returns one.
+        if (!query_node->hasGroupBy()
+            && (hasAggregateFunctionNodes(query_node->getProjectionNode())
+                || (query_node->hasHaving() && hasAggregateFunctionNodes(query_node->getHaving()))
+                || (query_node->hasOrderBy() && hasAggregateFunctionNodes(query_node->getOrderByNode()))
+                || (query_node->hasQualify() && hasAggregateFunctionNodes(query_node->getQualify()))))
+            throwCorrelatedInNotSupported(" when the subquery aggregates without GROUP BY keys", node);
+    }
+
+    /// The result of the decorrelated subquery is joined to the outer rows by `=` on the correlated columns,
+    /// so an outer row whose correlated value is NULL would get no subquery rows.
+    const auto & correlated_columns = in_second_argument->as<QueryNode>()
+        ? in_second_argument->as<QueryNode &>().getCorrelatedColumns().getNodes()
+        : in_second_argument->as<UnionNode &>().getCorrelatedColumns().getNodes();
+    for (const auto & correlated_column : correlated_columns)
+    {
+        if (isNullableOrLowCardinalityNullable(correlated_column->getResultType()))
+            throwCorrelatedInNotSupported(" when the subquery is correlated by a column that can be NULL", node);
+    }
+
+    const auto subquery_hash = in_second_argument->getTreeHash({.compare_aliases = false});
+
+    const auto original_subquery = in_second_argument;
+    flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
+    const bool is_flattened = in_second_argument != original_subquery;
+
+    validateInColumnsCountMatch(in_first_argument, in_second_argument);
+
+    const NamesAndTypes right_columns = in_second_argument->as<QueryNode>()
+        ? in_second_argument->as<QueryNode &>().getProjectionColumns()
+        : in_second_argument->as<UnionNode &>().computeProjectionColumns();
+    const size_t keys_count = right_columns.size();
+
+    correlated_in_function_to_unresolved_arguments.try_emplace(node, unresolved_in_arguments->clone());
+
+    auto & unresolved_arguments = unresolved_in_arguments->as<ListNode &>().getNodes();
+    const auto unresolved_left = unresolved_arguments.at(0);
+    auto unresolved_subquery = std::move(unresolved_arguments.at(1));
+
+    /// The keys of the set: the whole left value, or the elements of the left tuple for a subquery with several columns.
+    const auto & left_type = in_first_argument->getResultType();
+    DataTypes key_types;
+    QueryTreeNodes resolved_keys;
+    std::function<QueryTreeNodePtr(size_t)> make_unresolved_key;
+    if (keys_count == 1)
+    {
+        key_types = {left_type};
+        resolved_keys = {in_first_argument};
+        make_unresolved_key = [unresolved_left](size_t) { return unresolved_left->clone(); };
+    }
+    else
+    {
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type.get());
+        if (!left_tuple_type || left_tuple_type->getElements().size() != keys_count)
+            throwCorrelatedInNotSupported("", node);
+        key_types = left_tuple_type->getElements();
+
+        const auto * resolved_tuple = in_first_argument->as<FunctionNode>();
+        if (resolved_tuple && resolved_tuple->getFunctionName() == "tuple" && resolved_tuple->getArguments().getNodes().size() == keys_count)
+            resolved_keys = resolved_tuple->getArguments().getNodes();
+        else
+            resolved_keys.assign(keys_count, in_first_argument);
+
+        const auto * unresolved_tuple = unresolved_left->as<FunctionNode>();
+        const bool is_unresolved_tuple = unresolved_tuple && unresolved_tuple->getFunctionName() == "tuple"
+            && unresolved_tuple->getArguments().getNodes().size() == keys_count;
+        make_unresolved_key = [unresolved_left, is_unresolved_tuple](size_t i) -> QueryTreeNodePtr
+        {
+            if (is_unresolved_tuple)
+                return unresolved_left->as<FunctionNode &>().getArguments().getNodes()[i]->clone();
+            return makeFunctionNode("tupleElement", {unresolved_left->clone(), std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1))});
+        };
+    }
+
+    for (size_t i = 0; i < keys_count; ++i)
+    {
+        if (!isScalarSetKeyType(removeNullable(removeLowCardinality(key_types[i])))
+            || !isScalarSetKeyType(removeNullable(removeLowCardinality(right_columns[i].type))))
+            throwCorrelatedInNotSupported(fmt::format(" for a key of type {} compared with {}", key_types[i]->getName(), right_columns[i].type->getName()), node);
+
+        /// The columns of `x` become correlated columns of the new subquery. A NULL in a bare column key never
+        /// matches, but a non-bare key such as `coalesce(r.v, 0)` can have a value for a NULL `r.v`.
+        if (!resolved_keys[i]->as<ColumnNode>() && hasNodeOutsideSubqueries(resolved_keys[i], [](const QueryTreeNodePtr & key_node)
+            {
+                const auto * column_node = key_node->as<ColumnNode>();
+                return column_node && isNullableOrLowCardinalityNullable(column_node->getColumnType());
+            }))
+            throwCorrelatedInNotSupported(" when the left argument is an expression over a column that can be NULL", node);
+    }
+
+    Names column_names;
+    for (size_t i = 0; i < keys_count; ++i)
+        column_names.push_back(fmt::format("__in_column_{}_{}_{}", subquery_hash.low64, subquery_hash.high64, i));
+
+    /// The set does not depend on DISTINCT, unless DISTINCT is limited or followed by a limit.
+    const bool distinct_is_unlimited = !settings[Setting::max_rows_in_distinct] && !settings[Setting::max_bytes_in_distinct];
+    std::function<void(const QueryTreeNodePtr &)> drop_distinct = [&](const QueryTreeNodePtr & subquery)
+    {
+        if (auto * query_node = subquery->as<QueryNode>())
+        {
+            if (distinct_is_unlimited && !hasLimitClause(*query_node))
+                query_node->setIsDistinct(false);
+        }
+        else if (auto * union_node = subquery->as<UnionNode>())
+        {
+            for (const auto & union_query : union_node->getQueries().getNodes())
+                drop_distinct(union_query);
+        }
+    };
+    drop_distinct(unresolved_subquery);
+
+    /// The columns are renamed by overriding the projection names of a query, so a union is wrapped into one.
+    if (unresolved_subquery->as<UnionNode>() || !unresolved_subquery->as<QueryNode &>().getProjectionAliasesToOverride().empty())
+    {
+        auto select_all = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+        select_all->setIsSubquery(true);
+        select_all->getProjection().getNodes().push_back(std::make_shared<MatcherNode>());
+        select_all->getJoinTreeNode() = std::move(unresolved_subquery);
+        unresolved_subquery = std::move(select_all);
+    }
+
+    if (is_flattened)
+    {
+        String array_column_name = fmt::format("__in_array_{}_{}", subquery_hash.low64, subquery_hash.high64);
+        unresolved_subquery->as<QueryNode &>().setProjectionAliasesToOverride({array_column_name});
+
+        auto flattened_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+        flattened_subquery->setIsSubquery(true);
+        flattened_subquery->getProjection().getNodes().push_back(
+            makeFunctionNode("arrayJoin", {std::make_shared<IdentifierNode>(Identifier{array_column_name})}));
+        flattened_subquery->getJoinTreeNode() = std::move(unresolved_subquery);
+        unresolved_subquery = std::move(flattened_subquery);
+    }
+    unresolved_subquery->as<QueryNode &>().setProjectionAliasesToOverride(column_names);
+
+    QueryTreeNodes comparisons;
+    for (size_t i = 0; i < keys_count; ++i)
+    {
+        const auto left_key_type = removeNullable(removeLowCardinality(key_types[i]));
+        const auto right_key_type = removeNullable(removeLowCardinality(right_columns[i].type));
+        const WhichDataType which_right(right_key_type);
+        QueryTreeNodePtr right_value = std::make_shared<IdentifierNode>(Identifier{column_names[i]});
+
+        /// The left value converted to the key type as `Set::execute` does it.
+        auto make_converted_left_key = [&]
+        {
+            return makeFunctionNode("accurateCastOrNull", {make_unresolved_key(i), std::make_shared<ConstantNode>(right_key_type->getName())});
+        };
+
+        if (which_right.isFloat())
+        {
+            /// The set compares floats by their bits: `nan` is a member of a set with `nan`, `-0.` is not of one with `0.`.
+            const String reinterpret_function_name
+                = which_right.isBFloat16() ? "reinterpretAsUInt16" : (which_right.isFloat32() ? "reinterpretAsUInt32" : "reinterpretAsUInt64");
+            auto left_value = left_key_type->getName() == right_key_type->getName() ? make_unresolved_key(i) : make_converted_left_key();
+            comparisons.push_back(makeFunctionNode("equals",
+                {makeFunctionNode(reinterpret_function_name, {std::move(left_value)}),
+                 makeFunctionNode(reinterpret_function_name, {std::move(right_value)})}));
+        }
+        else if (left_key_type->getName() == right_key_type->getName()
+            || (isNativeInteger(left_key_type) && isNativeInteger(right_key_type) && !isBool(left_key_type) && !isBool(right_key_type)))
+        {
+            /// A float on the left goes to the conversion below instead: a comparison merged into a join
+            /// condition compares floats by their bits, so `-0. = 0` would not match there.
+            comparisons.push_back(makeFunctionNode("equals", {make_unresolved_key(i), std::move(right_value)}));
+        }
+        else
+        {
+            auto comparison = makeFunctionNode("equals", {make_converted_left_key(), std::move(right_value)});
+            /// A `DateTime64` with a fraction of a second is not a member of a set of a coarser type.
+            if (isDateTime64(left_key_type) && !isDateTime64(right_key_type))
+                comparison = makeFunctionNode("and",
+                    {std::move(comparison),
+                     makeFunctionNode("equals", {makeFunctionNode("toStartOfSecond", {make_unresolved_key(i)}), make_unresolved_key(i)})});
+            comparisons.push_back(std::move(comparison));
+        }
+    }
+
+    auto exists_body = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+    exists_body->setIsSubquery(true);
+    exists_body->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, std::make_shared<DataTypeUInt64>()));
+    exists_body->getJoinTreeNode() = std::move(unresolved_subquery);
+    exists_body->getWhere() = comparisons.size() == 1 ? std::move(comparisons.front()) : makeFunctionNode("and", std::move(comparisons));
+
+    auto exists_function_node = makeFunctionNode("exists", {std::move(exists_body)});
+    QueryTreeNodePtr result = exists_function_node;
+    if (isNegativeInFunctionName(function_name))
+        result = makeFunctionNode("not", {std::move(result)});
+
+    /// A NULL single key gives NULL, like the regular IN.
+    if (keys_count == 1 && isNullableOrLowCardinalityNullable(left_type))
+        result = makeFunctionNode("if",
+            {makeFunctionNode("isNull", {in_first_argument}),
+             std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())),
+             std::move(result)});
+
+    node = std::move(result);
+    resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    /// The correlated `exists` keeps its node and gets the resolved `SELECT 1 FROM (...) LIMIT 1` as its argument.
+    const auto & resolved_exists_argument = exists_function_node->as<FunctionNode &>().getArguments().getNodes().front();
+    chassert(isCorrelatedQueryOrUnionNode(resolved_exists_argument));
+    dropTotalsInSubqueryJoinTree(resolved_exists_argument);
+
+    auto expected_result_type = FunctionFactory::instance()
+        .get(function_name + "IgnoreSet", scope.context)
+        ->build({ColumnWithTypeAndName{nullptr, left_type, ""}})
+        ->getResultType();
+    if (!expected_result_type->equals(*node->getResultType()))
+        node = buildCastFunction(node, expected_result_type, scope.context);
+
+    return in_projection_names;
 }
 
 QueryTreeNodes QueryAnalyzer::getArrayElementsForInTupleArguments(
@@ -1947,6 +2317,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 allow_niladic_functions
             );
 
+            /// A correlated subquery is rewritten into EXISTS by `resolveInWithCorrelatedSubquery` below:
+            /// moving it into the FROM clause here would lose the registration of its correlated columns.
+            const bool in_second_argument_is_correlated = isCorrelatedQueryOrUnionNode(in_second_argument);
+
             if (in_second_argument->as<QueryNode>())
             {
                 /// An array subquery on the right of IN is the set of its elements (see
@@ -1994,7 +2368,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
             }
 
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
+            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key && !in_second_argument_is_correlated)
             {
                 /// The rewrite below produces a correlated subquery, so it requires the setting.
                 /// Checked here rather than at the gate above, so that the shapes which are not
@@ -2024,17 +2398,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 String unique_column_name
                     = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
 
-                /// The set of a regular IN ignores the totals of the whole subquery plan (including the
-                /// totals of the queries in its join tree), so drop `WITH TOTALS` here as well, recursively:
-                /// otherwise the `TotalsHaving` step ends up on the right side of the join built by the
-                /// decorrelation, leaks the totals row into the outer query, and fails with `LOGICAL_ERROR`
-                /// when the outer query has `WITH TOTALS` itself.
-                for (const auto & table_expression : extractTableExpressions(
-                         std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true))
-                {
-                    if (auto * table_expression_query_node = table_expression->as<QueryNode>())
-                        table_expression_query_node->setIsGroupByWithTotals(false);
-                }
+                dropTotalsInSubqueryJoinTree(subquery_node);
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
@@ -2440,6 +2804,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /// A correlated subquery on the right of IN is rewritten into EXISTS once the arguments are resolved, and the
+    /// rewrite resolves them again inside the new subquery, so it needs them unresolved.
+    QueryTreeNodePtr unresolved_in_arguments;
+    if (is_special_function_in && scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+    {
+        const auto & in_arguments = function_node_ptr->getArguments().getNodes();
+        if (in_arguments.size() == 2)
+        {
+            const auto * right_query_node = in_arguments[1]->as<QueryNode>();
+            if (auto it = correlated_in_function_to_unresolved_arguments.find(function_node_ptr); it != correlated_in_function_to_unresolved_arguments.end())
+                unresolved_in_arguments = it->second->clone();
+            else if ((right_query_node && !right_query_node->isResolved()) || in_arguments[1]->as<UnionNode>())
+                unresolved_in_arguments = function_node_ptr->getArgumentsNode()->clone();
+        }
+    }
+
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
     auto arguments_projection_names = resolveExpressionNodeList(
@@ -2553,7 +2933,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto & in_first_argument = function_in_arguments_nodes[0];
         auto & in_second_argument = function_in_arguments_nodes[1];
-        if (isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[0]) || isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[1]))
+        if (isCorrelatedQueryOrUnionNode(in_first_argument))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
@@ -2577,6 +2957,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
+
+        if (isCorrelatedQueryOrUnionNode(in_second_argument))
+            return resolveInWithCorrelatedSubquery(
+                node,
+                function_name,
+                in_first_argument,
+                in_second_argument,
+                unresolved_in_arguments,
+                {calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names)},
+                scope);
 
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();

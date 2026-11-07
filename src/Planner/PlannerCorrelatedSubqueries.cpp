@@ -1275,8 +1275,8 @@ QueryPlan decorrelateQueryPlan(
           * `optimize_inverse_dictionary_lookup` rewrite turns it into a membership test against a set the pass
           * builds, and the subquery plan then carries the step that builds it.
           *
-          * The analyzer rejects a correlated `IN` argument outright (`Correlated subqueries are not supported
-          * as IN function arguments yet`), so a set source reaching here is not expected to be correlated.
+          * The analyzer rewrites a correlated `IN` argument into `EXISTS` (or rejects it with `Correlated subqueries
+          * are not supported as IN function arguments yet`), so a set source reaching here is not expected to be correlated.
           * Still check it - and the sets nested inside it - rather than rely on that gate: we only rebuild the
           * step over the decorrelated body, so a correlated set source would stay correlated and later be
           * optimized and executed standalone by `addPlansForSets`, hitting a `PLACEHOLDER` logical error
