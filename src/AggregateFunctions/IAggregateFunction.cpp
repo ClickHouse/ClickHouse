@@ -1,6 +1,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
@@ -11,6 +12,11 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+}
+
+void checkMemoryLimitForAggregateFunctionState()
+{
+    CurrentMemoryTracker::check();
 }
 
 DataTypePtr IAggregateFunction::getStateType() const
