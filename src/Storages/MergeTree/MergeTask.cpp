@@ -4,6 +4,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/MergeTree/projectionPartCanFillDefault.h>
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
@@ -1634,10 +1635,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// selected by the projection was re-pointed by ALTER; see projectionPartHasRequiredColumns).
         /// Merging it directly would bake default values into the merged part, so rebuild from the parent
         /// instead. A parent TABLE column the parent part also lacks is a legitimate late-add and does
-        /// not count.
+        /// not count, unless its default cannot be filled from the projection part.
         const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
         const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
         bool projection_part_misses_column = false;
+        /// A missed column whose late-add default cannot be filled from the projection part: merging it
+        /// throws instead of yielding a stale-but-valid part, so it must rebuild in every mode.
+        bool projection_part_default_unfillable = false;
 
         MergeTreeData::DataPartsVector projection_parts;
         size_t parts_with_unloaded_projection = 0;
@@ -1648,11 +1652,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    if (!it->second->tryGetColumn(column.name)
-                        && (part->tryGetColumn(column.name)
-                            || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+                    if (it->second->tryGetColumn(column.name))
+                        continue;
+
+                    /// Drift: the parent part still stores it, or it is not a parent table column.
+                    if (part->tryGetColumn(column.name)
+                        || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                        projection_part_misses_column = true;
+
+                    /// Merging the stale part fills this column from its default, so an unfillable one
+                    /// throws instead. Do not stop at a tolerable miss above: the column it hides may
+                    /// be the unfillable one that has to rebuild even under IGNORE.
+                    if (!projectionPartCanFillDefault(*it->second, *part, projection, parent_table_columns, column.name))
                     {
                         projection_part_misses_column = true;
+                        projection_part_default_unfillable = true;
                         break;
                     }
                 }
@@ -1663,7 +1677,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                 ++parts_with_unloaded_projection;
         }
 
-        if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
+        /// An unfillable default rebuilds in every mode; other misses stay IGNORE-tolerant (stale merge).
+        if (projection_part_misses_column
+            && (projection_part_default_unfillable || mode != DeduplicateMergeProjectionMode::IGNORE))
         {
             LOG_DEBUG(
                 ctx->log,
