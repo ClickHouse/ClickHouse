@@ -44,6 +44,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -314,6 +315,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_aggregating_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_dimensions_outside_sorting_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
@@ -2507,6 +2509,481 @@ static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metad
         "sorting key (ORDER BY), or set 'allow_dimensions_outside_sorting_key = 1' if this is intentional "
         "(for example, when the columns are functionally dependent on the sorting key).",
         boost::algorithm::join(offending_columns, ", "));
+}
+
+namespace
+{
+
+/// Whether merges of `AggregatingMergeTree` aggregate the values of this type: a `SimpleAggregateFunction` or an `AggregateFunction`,
+/// and with `allow_tuple_element_aggregation` a tuple with such an element.
+bool isAggregatedType(const DataTypePtr & type, bool allow_tuple_element_aggregation)
+{
+    if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName())
+        || typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+        return true;
+    /// Merges flatten only the tuples that `Nested::tryGetFlattenableTuple` accepts: an aggregated value of a tuple type, such as
+    /// `SimpleAggregateFunction(sumMap, Tuple(...))`, is aggregated as a whole, as checked above.
+    if (const auto * tuple = Nested::tryGetFlattenableTuple(type); tuple && allow_tuple_element_aggregation)
+        return std::ranges::any_of(tuple->getElements(), [](const auto & element) { return isAggregatedType(element, true); });
+    return false;
+}
+
+using ActionsDAGParents = std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>>;
+
+/// What the second argument `selector` of `tupleElement` selects in `tuple`: an element, by name or by position, or none, so that
+/// `tupleElement` returns its third argument, the default (without it, `tupleElement` throws).
+struct TupleElementSelection
+{
+    enum class Kind : uint8_t
+    {
+        Element,
+        Default,
+        /// The selector is not a constant name or position.
+        Unknown,
+    };
+    Kind kind;
+    /// The name of the element, for `Element`.
+    String name;
+};
+
+TupleElementSelection getTupleElementSelection(const DataTypeTuple & tuple, const ActionsDAG::Node & selector)
+{
+    using Kind = TupleElementSelection::Kind;
+    const auto * column = typeid_cast<const ColumnConst *>(selector.column.get());
+    if (!column)
+        return {Kind::Unknown, {}};
+    const Field field = column->getField();
+    const size_t size = tuple.getElements().size();
+    std::optional<size_t> position;
+    if (field.getType() == Field::Types::String)
+    {
+        position = tuple.tryGetPositionByName(field.safeGet<String>());
+        if (position)
+            ++*position;
+    }
+    else if (field.getType() == Field::Types::UInt64)
+    {
+        if (const UInt64 index = field.safeGet<UInt64>(); index >= 1 && index <= size)
+            position = index;
+    }
+    else if (field.getType() == Field::Types::Int64)
+    {
+        /// A negative position counts from the end, as in `tupleElement(x, -1)`.
+        const Int64 index = field.safeGet<Int64>();
+        const Int64 resolved = index < 0 ? static_cast<Int64>(size) + index + 1 : index;
+        if (resolved >= 1 && resolved <= static_cast<Int64>(size))
+            position = static_cast<size_t>(resolved);
+    }
+    else
+        return {Kind::Unknown, {}};
+
+    if (!position)
+        return {Kind::Default, {}};
+    return {Kind::Element, tuple.getNameByPosition(*position)};
+}
+
+/// For a node that is `tupleElement` with a constant selector, what the selector selects in the tuple, the first argument; for any
+/// other node, nothing.
+std::optional<TupleElementSelection> tryGetTupleElementSelection(const ActionsDAG::Node & node)
+{
+    const bool is_tuple_element = node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+        && node.function_base->getName() == "tupleElement" && (node.children.size() == 2 || node.children.size() == 3)
+        && node.children[1]->type == ActionsDAG::ActionType::COLUMN;
+    if (!is_tuple_element)
+        return std::nullopt;
+
+    using Kind = TupleElementSelection::Kind;
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(node.children[0]->result_type.get());
+    if (!tuple)
+        return TupleElementSelection{Kind::Unknown, {}};
+    auto selection = getTupleElementSelection(*tuple, *node.children[1]);
+    /// Without the default, `tupleElement` throws for a missing element.
+    if (selection.kind == Kind::Default && node.children.size() != 3)
+        selection.kind = Kind::Unknown;
+    return selection;
+}
+
+bool isGetSubcolumnOf(const ActionsDAG::Node & parent, const ActionsDAG::Node & node)
+{
+    return parent.type == ActionsDAG::ActionType::FUNCTION && parent.function_base && parent.function_base->getName() == "getSubcolumn"
+        && parent.children.size() == 2 && parent.children[0] == &node;
+}
+
+bool isTupleConstructor(const ActionsDAG::Node & node)
+{
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.function_base->getName() == "tuple"
+        && typeid_cast<const DataTypeTuple *>(node.result_type.get());
+}
+
+/// Adds the flattened names of the aggregated elements of a value of type `type` with the flattened name `path`, such as `x.a` of
+/// `x`, that merges aggregate: those that are not columns of the sorting key.
+void addAggregatedLeaves(const DataTypePtr & type, const String & path, const NameSet & sorting_key_columns, NameSet & values)
+{
+    if (isAggregatedType(type, false))
+    {
+        /// Merges compare the name of the aggregated value itself with the sorting key: a subcolumn of it, such as `a.size0`, in
+        /// the sorting key does not stop them from aggregating it.
+        if (!sorting_key_columns.contains(path))
+            values.insert(path);
+        return;
+    }
+    if (const auto * tuple = Nested::tryGetFlattenableTuple(type))
+        for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            addAggregatedLeaves(
+                tuple->getElements()[i], Nested::concatenateName(path, tuple->getElementNames()[i]), sorting_key_columns, values);
+}
+
+/// The constant name of the subcolumn that `getSubcolumn` selects, or an empty string.
+String getSubcolumnName(const ActionsDAG::Node & get_subcolumn)
+{
+    const auto * name_column = typeid_cast<const ColumnConst *>(get_subcolumn.children[1]->column.get());
+    if (name_column && name_column->getField().getType() == Field::Types::String)
+        return name_column->getField().safeGet<String>();
+    return {};
+}
+
+/// Finds the aggregated values that a key reads through an input of its expression: it follows the value of the input from node to
+/// node up to the columns of the key. Only a part of the input may reach the key:
+/// - `tupleElement` with a constant selector returns its first argument (an element of it) only when the element exists, and its
+///   third argument, the default, only when it does not, so `c` in `tupleElement(tuple(k), 1, c)` is not read;
+/// - of a tuple constructed by `tuple` around the value, a selection of another element does not read it, as `c` in
+///   `tupleElement(tuple(c, k), 2)` or `getSubcolumn(tuple(c, k), '2')`;
+/// - with `allow_tuple_element_aggregation`, merges flatten a tuple and aggregate its aggregated elements one by one, so a selection
+///   of an element of the input narrows the value to that element, as in `x.b` (`tupleElement(x, 'b')`) or
+///   `tupleElement(tupleElement(tuple(x), 1), 'b')`, which does not read an aggregated `x.a`.
+/// Any other function is taken to compute its result from all its arguments: the key reads all of the value if it reads the result.
+class AggregatedValuesReadByKeyFinder
+{
+public:
+    AggregatedValuesReadByKeyFinder(
+        const KeyDescription & key_, const ActionsDAGParents & parents_, const NameSet & sorting_key_columns_, NameSet & values_)
+        : key(key_), parents(parents_), sorting_key_columns(sorting_key_columns_), values(values_)
+    {
+    }
+
+    /// Adds the aggregated values that the key reads through the column or subcolumn `column` (the input `input` of its expression):
+    /// the column, the aggregated column of a subcolumn such as `a.size0`, or with `allow_tuple_element_aggregation` the
+    /// aggregated elements of a tuple, named by their flattened names, such as `x.v` or `x.1`, also when read through a subcolumn such
+    /// as `x.v.size0`, unless such an element is a column of the sorting key. The elements are named one by one, so that an ALTER that
+    /// makes another element of the tuple aggregated adds a value to the key.
+    void add(const ActionsDAG::Node & input, const NameAndTypePair & column, bool allow_tuple_element_aggregation)
+    {
+        if (column.isSubcolumn())
+        {
+            const auto & type_in_storage = column.getTypeInStorage();
+            if (isAggregatedType(type_in_storage, false))
+            {
+                /// A subcolumn of an aggregated column, such as `a.size0`: merges aggregate the column unless the column itself is a
+                /// column of the sorting key (`ORDER BY a.size0` does not count).
+                follow(input, Value{column.getNameInStorage(), type_in_storage, true});
+                return;
+            }
+            if (!allow_tuple_element_aggregation)
+                return;
+
+            /// A subcolumn of an aggregated element, such as `x.a.size0`, reads the element.
+            const String subcolumn_name = column.getSubcolumnName();
+            for (size_t pos = subcolumn_name.find('.'); pos != String::npos; pos = subcolumn_name.find('.', pos + 1))
+            {
+                const auto element_name = subcolumn_name.substr(0, pos);
+                if (auto type = type_in_storage->tryGetSubcolumnType(element_name); type && isAggregatedType(type, false))
+                {
+                    follow(input, Value{Nested::concatenateName(column.getNameInStorage(), element_name), type, true});
+                    return;
+                }
+            }
+        }
+
+        /// An aggregated column, or with `allow_tuple_element_aggregation` an aggregated element read as a subcolumn, such as `x.a`,
+        /// or a tuple with aggregated elements.
+        if (isAggregatedType(column.type, false) || allow_tuple_element_aggregation)
+            if (auto value = makeValue(column.name, column.type))
+                follow(input, *value);
+    }
+
+private:
+    /// A part of the input that is followed, with its flattened name `path`, such as `x.a`, and its type. It is `whole` when it is an
+    /// aggregated value, also of a tuple type, such as `SimpleAggregateFunction(sumMap, Tuple(...))`, which merges aggregate as a
+    /// whole, or a value computed from the part: then a part of it reads all of it. Otherwise it is a tuple that merges flatten.
+    struct Value
+    {
+        String path;
+        DataTypePtr type;
+        bool whole;
+    };
+
+    /// The value of a part of the input of type `type`, or nothing if merges aggregate nothing in it.
+    static std::optional<Value> makeValue(const String & path, const DataTypePtr & type)
+    {
+        if (isAggregatedType(type, false))
+            return Value{path, type, true};
+        if (Nested::tryGetFlattenableTuple(type) && isAggregatedType(type, true))
+            return Value{path, type, false};
+        return std::nullopt;
+    }
+
+    void follow(const ActionsDAG::Node & input, const Value & value)
+    {
+        visited.clear();
+        visit(input, {}, value);
+    }
+
+    /// Follows the value `value` from the node `node`. `fields` are the names of the elements of the tuples constructed by `tuple`
+    /// around the value that it is in, the outermost last: empty when the node is the value itself.
+    void visit(const ActionsDAG::Node & node, const std::vector<String> & fields, const Value & value)
+    {
+        /// A state seen before adds nothing: the type of the value is determined by its path.
+        if (!visited.emplace(&node, fields, value.path, value.whole).second)
+            return;
+        /// The expression also returns its inputs, so only a column of the key counts. It reads all of the value.
+        if (std::ranges::find(key.column_names, node.result_name) != key.column_names.end())
+        {
+            addAggregatedLeaves(value.type, value.path, sorting_key_columns, values);
+            return;
+        }
+
+        auto it = parents.find(&node);
+        if (it == parents.end())
+            return;
+        for (const auto * parent : it->second)
+            visitParent(node, *parent, fields, value);
+    }
+
+    void visitParent(const ActionsDAG::Node & node, const ActionsDAG::Node & parent, const std::vector<String> & fields, const Value & value)
+    {
+        if (auto selection = tryGetTupleElementSelection(parent))
+        {
+            /// The node is the tuple, the default (the third argument), or both, as in `tupleElement(x, 'missing', x)`.
+            using Kind = TupleElementSelection::Kind;
+            if (selection->kind == Kind::Element && parent.children[0] == &node)
+                visitElement(parent, fields, value, selection->name);
+            else if (selection->kind == Kind::Default && parent.children[2] == &node)
+                visit(parent, fields, value);
+            else if (selection->kind == Kind::Unknown)
+                visitComputed(parent, value);
+            /// Otherwise `tupleElement` does not return the value of the node.
+            return;
+        }
+        if (parent.type == ActionsDAG::ActionType::ALIAS)
+        {
+            visit(parent, fields, value);
+            return;
+        }
+        if (isGetSubcolumnOf(parent, node))
+        {
+            visitSubcolumn(node, parent, fields, value, getSubcolumnName(parent));
+            return;
+        }
+        if (isTupleConstructor(parent))
+        {
+            /// The value is in each element of the constructed tuple that is the node.
+            const auto & tuple = typeid_cast<const DataTypeTuple &>(*parent.result_type);
+            for (size_t i = 0; i < parent.children.size(); ++i)
+            {
+                if (parent.children[i] != &node)
+                    continue;
+                auto outer_fields = fields;
+                outer_fields.push_back(tuple.getNameByPosition(i + 1));
+                visit(parent, outer_fields, value);
+            }
+            return;
+        }
+        visitComputed(parent, value);
+    }
+
+    /// A value computed from the value of the node: the key reads all of the value if it reads the result.
+    void visitComputed(const ActionsDAG::Node & result, const Value & value)
+    {
+        visit(result, {}, Value{value.path, value.type, true});
+    }
+
+    /// `tupleElement` that selects the element `name` of the node.
+    void visitElement(const ActionsDAG::Node & parent, const std::vector<String> & fields, const Value & value, const String & name)
+    {
+        if (!fields.empty())
+        {
+            /// Of a tuple constructed around the value, only the element that the value is in.
+            if (fields.back() == name)
+                visit(parent, std::vector<String>(fields.begin(), fields.end() - 1), value);
+            return;
+        }
+        if (value.whole)
+        {
+            visit(parent, fields, value);
+            return;
+        }
+        const auto * tuple = Nested::tryGetFlattenableTuple(value.type);
+        const auto position = tuple ? tuple->tryGetPositionByName(name) : std::nullopt;
+        if (!position)
+        {
+            visitComputed(parent, value);
+            return;
+        }
+        if (auto element = makeValue(Nested::concatenateName(value.path, name), tuple->getElement(*position)))
+            visit(parent, {}, *element);
+    }
+
+    /// `getSubcolumn` that selects the subcolumn `name` of the node.
+    void visitSubcolumn(
+        const ActionsDAG::Node & node, const ActionsDAG::Node & parent, const std::vector<String> & fields, const Value & value,
+        const String & name)
+    {
+        if (name.empty() || !node.result_type->tryGetSubcolumnType(name))
+        {
+            visitComputed(parent, value);
+            return;
+        }
+
+        /// Of a tuple constructed around the value, only the element that the value is in: the subcolumn `1.a` selects `a` of the
+        /// first element.
+        auto remaining_fields = fields;
+        String rest = name;
+        DataTypePtr type = node.result_type;
+        while (!remaining_fields.empty() && !rest.empty())
+        {
+            const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get());
+            if (!tuple)
+            {
+                visitComputed(parent, value);
+                return;
+            }
+            std::optional<size_t> position;
+            for (size_t i = 0; i < tuple->getElements().size(); ++i)
+            {
+                const auto & element_name = tuple->getNameByPosition(i + 1);
+                if (rest != element_name && !rest.starts_with(element_name + '.'))
+                    continue;
+                /// An element whose name is a prefix of the name of another one, such as `a` and `a.b`, is not told apart.
+                if (position)
+                {
+                    visitComputed(parent, value);
+                    return;
+                }
+                position = i;
+            }
+            if (!position)
+            {
+                visitComputed(parent, value);
+                return;
+            }
+            const auto & element_name = tuple->getNameByPosition(*position + 1);
+            if (element_name != remaining_fields.back())
+                return;
+            rest = rest.size() == element_name.size() ? String{} : rest.substr(element_name.size() + 1);
+            type = tuple->getElement(*position);
+            remaining_fields.pop_back();
+        }
+        if (!remaining_fields.empty() || rest.empty() || value.whole)
+        {
+            visit(parent, remaining_fields, value);
+            return;
+        }
+
+        /// A subcolumn of the value: an element, such as `x.b`, or a subcolumn of an element, such as `x.a.size0`, which reads the
+        /// first aggregated element on its path.
+        for (size_t pos = rest.find('.');; pos = rest.find('.', pos + 1))
+        {
+            const String prefix = rest.substr(0, pos);
+            if (auto prefix_type = value.type->tryGetSubcolumnType(prefix); prefix_type && isAggregatedType(prefix_type, false))
+            {
+                visit(parent, {}, Value{Nested::concatenateName(value.path, prefix), prefix_type, true});
+                return;
+            }
+            if (pos == String::npos)
+                break;
+        }
+        auto subcolumn_type = value.type->tryGetSubcolumnType(rest);
+        if (!subcolumn_type)
+        {
+            visitComputed(parent, value);
+            return;
+        }
+        if (auto element = makeValue(Nested::concatenateName(value.path, rest), subcolumn_type))
+            visit(parent, {}, *element);
+    }
+
+    const KeyDescription & key;
+    const ActionsDAGParents & parents;
+    const NameSet & sorting_key_columns;
+    NameSet & values;
+    std::set<std::tuple<const ActionsDAG::Node *, std::vector<String>, String, bool>> visited;
+};
+
+/// In AggregatingMergeTree, background merges aggregate the `SimpleAggregateFunction` and `AggregateFunction` columns that are not
+/// columns of the sorting key themselves, so a key computed from such a column, from a subcolumn of it or from an aggregated tuple
+/// element, no longer matches a merged row: the rows of the part are not sorted by the sorting key any more, and the row can stay in
+/// a partition that its new value does not belong to, so the primary key and partition pruning skip matching rows (and a merge of
+/// such a part is a logical error in debug builds). Returns such values, each with the key it is used in: a column, or an element of
+/// a tuple by its flattened name.
+Names getAggregatedColumnsInKeys(const StorageInMemoryMetadata & metadata, bool allow_tuple_element_aggregation)
+{
+    /// A column of the sorting key is not aggregated (`allow_suspicious_primary_key` allows a `SimpleAggregateFunction` one).
+    NameSet sorting_key_columns;
+    if (metadata.isSortingKeyDefined())
+        sorting_key_columns.insert(metadata.getSortingKey().column_names.begin(), metadata.getSortingKey().column_names.end());
+
+    Names result;
+    auto add_columns = [&](const KeyDescription & key, std::string_view key_name)
+    {
+        const auto & dag = key.expression->getActionsDAG();
+        ActionsDAGParents parents;
+        for (const auto & node : dag.getNodes())
+            for (const auto * child : node.children)
+                parents[child].push_back(&node);
+
+        for (const auto * input : dag.getInputs())
+        {
+            /// The aggregated values are compared with the columns of the sorting key one by one, below: a column of the sorting
+            /// key that is a subcolumn of one, such as `a.size0`, does not stop merges from aggregating it.
+            const auto column = metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, input->result_name);
+            if (!column)
+                continue;
+            NameSet values;
+            AggregatedValuesReadByKeyFinder(key, parents, sorting_key_columns, values).add(*input, *column, allow_tuple_element_aggregation);
+            for (const auto & value : std::set<String>(values.begin(), values.end()))
+            {
+                auto entry = fmt::format("{} ({} key)", backQuoteIfNeed(value), key_name);
+                if (std::ranges::find(result, entry) == result.end())
+                    result.push_back(std::move(entry));
+            }
+        }
+    };
+
+    if (metadata.isPartitionKeyDefined())
+        add_columns(metadata.getPartitionKey(), "partition");
+    if (metadata.isSortingKeyDefined())
+        add_columns(metadata.getSortingKey(), "sorting");
+    return result;
+}
+
+}
+
+/// Rejects such columns. For an ALTER, only the columns that it adds are rejected, so a table created with the
+/// `allow_aggregating_columns_in_partition_or_order_key` setting still accepts the other ALTERs.
+void MergeTreeData::checkAggregatedColumnsAreNotInKeys(
+    const StorageInMemoryMetadata & metadata, const StorageInMemoryMetadata * old_metadata, bool allow_tuple_element_aggregation)
+{
+    /// A schema that `allow_tuple_element_aggregation` does not support, such as a sorting key of a tuple type, is reported as
+    /// such, rather than by its aggregated elements: allowing aggregated columns in the key would not make it valid.
+    if (allow_tuple_element_aggregation)
+        checkTupleElementAggregationConstraints(metadata);
+
+    Names columns = getAggregatedColumnsInKeys(metadata, allow_tuple_element_aggregation);
+    if (old_metadata)
+        std::erase_if(columns, [old_columns = getAggregatedColumnsInKeys(*old_metadata, allow_tuple_element_aggregation)](const String & column)
+        {
+            return std::ranges::find(old_columns, column) != old_columns.end();
+        });
+
+    if (columns.empty())
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Aggregated column(s) {} of the AggregatingMergeTree table (SimpleAggregateFunction or AggregateFunction values) are used in "
+        "the key. Background merges aggregate them, so the key would not match the merged rows. Use other columns in the key, or set "
+        "'allow_aggregating_columns_in_partition_or_order_key = 1' if this is intentional.",
+        boost::algorithm::join(columns, ", "));
 }
 
 void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const
@@ -7296,6 +7773,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)
         checkLossyCodecOnLowCardinality(new_metadata.columns);
+    /// Both a changed key and a changed type of a column can use an aggregated column in the key.
+    if (!is_secondary_replay && merging_params.mode == MergingParams::Aggregating
+        && !(*alter_effective_settings)[MergeTreeSetting::allow_aggregating_columns_in_partition_or_order_key])
+        checkAggregatedColumnsAreNotInKeys(new_metadata, &old_metadata, merging_params.allow_tuple_element_aggregation);
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);

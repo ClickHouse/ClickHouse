@@ -54,6 +54,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"add_minmax_index_for_numeric_columns", trueOrFalseSetting},
     {"add_minmax_index_for_string_columns", trueOrFalseSetting},
     {"add_minmax_index_for_temporal_columns", trueOrFalseSetting},
+    {"allow_aggregating_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_coalescing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_commit_order_projection", trueOrFalseSetting},
     {"allow_dimensions_outside_sorting_key", trueOrFalseSetting},
