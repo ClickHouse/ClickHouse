@@ -1,0 +1,59 @@
+-- an integer histogram and a float histogram: every element of the stored tuple is an outer array
+float_hist	{'__name__':'float_hist','job':'api'}	[]	['1970-01-01 00:01:40.000']	[1]	[3]	[0]	[0]	[3.25]	[0]	[0]	[5.75]	[0.5]	[[]]	[[]]	[[(0,2.5),(1,2.5)]]	[[(1,0.25)]]	[[]]
+int_hist	{'__name__':'int_hist','job':'api'}	[]	['1970-01-01 00:01:40.000']	[0]	[2]	[3]	[0.001]	[12.5]	[10]	[2]	[0]	[0]	[[(-2,3),(-1,2),(1,3)]]	[[(0,0)]]	[[]]	[[]]	[[]]
+-- a float-only series has empty histograms.* arrays next to its samples
+floats	[('1970-01-01 00:01:40.000',1.5),('1970-01-01 00:01:50.000',2.5)]	[]	[]	[]
+-- a series with float samples and histograms in two buckets: one outer row per bucket with both kinds of its bucket
+mixed	[('1970-01-01 00:01:10.000',1)]	['1970-01-01 00:01:20.000']	[1]	[0.5]
+mixed	[('1970-01-01 00:02:10.000',2)]	['1970-01-01 00:02:05.000','1970-01-01 00:02:20.000']	[2,3]	[1.5,2.5]
+-- subsets of the columns: the samples table alone, with the tags table, with the metric families table
+[]
+[0]
+[1]
+[2,3]
+[10]
+float_hist	[3.25]
+floats	[]
+int_hist	[12.5]
+mixed	[0.5]
+mixed	[1.5,2.5]
+[]	['1970-01-01 00:01:40.000']
+[]	['1970-01-01 00:01:40.000']
+[('1970-01-01 00:01:10.000',1)]	['1970-01-01 00:01:20.000']
+[('1970-01-01 00:01:40.000',1.5),('1970-01-01 00:01:50.000',2.5)]	[]
+[('1970-01-01 00:02:10.000',2)]	['1970-01-01 00:02:05.000','1970-01-01 00:02:20.000']
+[]	
+[]	gaugehistogram
+[]	gaugehistogram
+[]	gaugehistogram
+[]	histogram
+[]	histogram
+[]	histogram
+[0]	gaugehistogram
+[1]	histogram
+[2,3]	histogram
+[10]	
+float_hist	float_hist	gaugehistogram	seconds	Float histogram	[0]
+mixed	mixed	histogram	seconds	Mixed samples	[1]
+mixed	mixed	histogram	seconds	Mixed samples	[2,3]
+-- ARRAY JOIN over the arrays of the group
+float_hist	1970-01-01 00:01:40.000	0
+int_hist	1970-01-01 00:01:40.000	10
+mixed	1970-01-01 00:01:20.000	1
+mixed	1970-01-01 00:02:05.000	2
+mixed	1970-01-01 00:02:20.000	3
+-- two inserts into one bucket make two rows; FINAL merges them: sorted, the greatest count wins for the duplicate timestamp 220
+['1970-01-01 00:03:20.000','1970-01-01 00:03:40.000']	[1,2]
+['1970-01-01 00:03:30.000','1970-01-01 00:03:40.000']	[3,5]
+['1970-01-01 00:03:20.000','1970-01-01 00:03:30.000','1970-01-01 00:03:40.000']	[1,3,5]	[0.5,2.5,4.5]
+[('1970-01-01 00:01:10.000',1)]	[1]
+[('1970-01-01 00:02:10.000',2)]	[2,3]
+7
+6
+-- merging an aggregate state preserves ordering and deduplication, including after serialization
+[(200000,1),(210000,3),(220000,5)]
+[(200000,1),(210000,3),(220000,5)]
+-- a single sorted input array is deduplicated, with the greatest count winning
+[(200000,1),(210000,3),(220000,5)]
+-- disjoint input arrays can each contain duplicate timestamps
+[(80000,1),(125000,2),(140000,3)]

@@ -1,0 +1,7 @@
+-- no limit by default: 3 buckets pass
+-- a limit of 2 rejects 3 buckets and accepts 2; the histogram with 3 buckets stored before stays
+2
+[(100000,3),(102000,2)]
+-- RESET SETTING removes the limit
+0
+3

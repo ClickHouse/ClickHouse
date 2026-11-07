@@ -7,7 +7,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
-#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <DataTypes/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 
@@ -38,6 +38,7 @@ namespace ErrorCodes
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(bucket)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(bucket, 'UTC'), toIntervalHour(5))' is used (with 'timestamp' instead of 'bucket' for tables of version 10 or earlier). Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity, 256, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine. The default is 8192 for tables of version 10 or earlier, which store one sample per row. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity_bytes, 131072, "Sets 'index_granularity_bytes' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity_bytes' from the engine declaration. Ignored for a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero and 'version' to be at least 11", 0) \
+    DECLARE(UInt64, histograms_max_buckets, 0, "The maximum number of buckets (positive and negative together) a single native histogram sample may have; an insert with a bigger histogram is rejected. 0 means no limit, like Prometheus without 'native_histogram_bucket_limit'. Requires 'version' to be at least 12. Can be changed with ALTER TABLE ... MODIFY SETTING, which applies to the inserts started after the change", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for a non-MergeTree engine", 0) \
     DECLARE(UInt64, tags_deduplication_cache_expiration_seconds, 3600, "Time after which an entry of the deduplication cache of the 'tags' table expires, counted from the moment the time series was written. The actual lifetime of an entry is uniformly random in the range [0.8 * expiration_seconds, expiration_seconds], so the time series written together aren't all written again at the same moment. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by 'TRUNCATE TABLE' executed on it or by 'SYSTEM DROP TIME SERIES CACHES'. Used only when the 'tags' table doesn't store 'min_time' and 'max_time', see 'tags_deduplication_cache_size_bytes'. Set to 0 to disable the cache", 0) \
     DECLARE(UInt64, tags_deduplication_cache_size_bytes, 104857600, "Maximum size in bytes of the deduplication cache of the 'tags' table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). The cache is used only when the 'tags' table doesn't store 'min_time' and 'max_time' (tables of version 7 or earlier store them unless 'store_min_time_and_max_time' is disabled), because otherwise every insert changes these columns: the default value is ignored then, and an explicit non-zero value is rejected. Set to 0 to disable the cache, see also 'tags_deduplication_cache_expiration_seconds'", 0) \
@@ -149,6 +150,11 @@ bool TimeSeriesSettings::hasBucketedSamples() const
     return (*this)[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES;
 }
 
+bool TimeSeriesSettings::hasHistogramsInSamples() const
+{
+    return (*this)[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS;
+}
+
 bool TimeSeriesSettings::hasMinTimeAndMaxTimeInTagsTable() const
 {
     return ((*this)[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
@@ -189,6 +195,9 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
     check_setting_requires_version("samples_index_granularity_bytes", TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
     check_setting_requires_version("recent_samples_bucket_step_seconds", TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
     check_setting_requires_version("recent_samples_index_granularity_bytes", TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
+
+    /// The settings of the histograms exist from the version storing them in the samples tables (see TimeSeriesVersion.h).
+    check_setting_requires_version("histograms_max_buckets", TimeSeriesVersion::MIN_WITH_NATIVE_HISTOGRAMS);
 
     auto check_bucket_step = [](const SettingFieldUInt64 & bucket_step, std::string_view setting_name)
     {

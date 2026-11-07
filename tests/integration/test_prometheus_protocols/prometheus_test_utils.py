@@ -189,7 +189,8 @@ def receive_protobuf_from_remote_read(host, port, path, read_request_proto):
 def get_response_to_remote_read(host, port, path, read_request_proto):
     url = f"http://{host}:{port}/{path.strip('/')}"
     print(f"Posting {url}")
-    response = requests.get(
+    # The remote-read protocol uses POST: Prometheus answers 405 to anything else, ClickHouse accepts both.
+    response = requests.post(
         url,
         data=snappy.compress(data=read_request_proto.SerializeToString()),
         headers={

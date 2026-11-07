@@ -1,0 +1,47 @@
+-- the default version stores histograms
+12
+-- the samples tables have the histograms column with the codecs of its subcolumns
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), `histograms` SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp DateTime64(3), flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64)))), `bucket` DateTime64(3) CODEC(Delta, T64, ZSTD(3)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(Delta, T64, ZSTD(3)), CODEC `samples.timestamp` (Delta, T64, ZSTD(3)), CODEC `samples.value` (ALP, ZSTD(3)), CODEC `histograms.timestamp` (Delta, T64, ZSTD(3)), CODEC `histograms.flags` (ZSTD(3)), CODEC `histograms.counter_reset_hint` (ZSTD(3)), CODEC `histograms.schema` (ZSTD(3)), CODEC `histograms.zero_threshold` (ZSTD(3)), CODEC `histograms.sum` (ZSTD(3)), CODEC `histograms.count_int` (T64, ZSTD(3)), CODEC `histograms.zero_count_int` (T64, ZSTD(3)), CODEC `histograms.count_float` (ZSTD(3)), CODEC `histograms.zero_count_float` (ZSTD(3)), CODEC `histograms.positive_int.index` (Delta, ZSTD(3)), CODEC `histograms.positive_int.count` (T64, ZSTD(3)), CODEC `histograms.negative_int.index` (Delta, ZSTD(3)), CODEC `histograms.negative_int.count` (T64, ZSTD(3)), CODEC `histograms.positive_float.index` (Delta, ZSTD(3)), CODEC `histograms.positive_float.count` (ZSTD(3)), CODEC `histograms.negative_float.index` (Delta, ZSTD(3)), CODEC `histograms.negative_float.count` (ZSTD(3)), CODEC `histograms.custom_values` (ZSTD(3))	1
+recentsamples	SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp DateTime64(3), flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64))))		{'count_float':'CODEC(ZSTD(3))','count_int':'CODEC(T64, ZSTD(3))','counter_reset_hint':'CODEC(ZSTD(3))','custom_values':'CODEC(ZSTD(3))','flags':'CODEC(ZSTD(3))','negative_float.count':'CODEC(ZSTD(3))','negative_float.index':'CODEC(Delta(4), ZSTD(3))','negative_int.count':'CODEC(T64, ZSTD(3))','negative_int.index':'CODEC(Delta(4), ZSTD(3))','positive_float.count':'CODEC(ZSTD(3))','positive_float.index':'CODEC(Delta(4), ZSTD(3))','positive_int.count':'CODEC(T64, ZSTD(3))','positive_int.index':'CODEC(Delta(4), ZSTD(3))','schema':'CODEC(ZSTD(3))','sum':'CODEC(ZSTD(3))','timestamp':'CODEC(Delta(8), T64, ZSTD(3))','zero_count_float':'CODEC(ZSTD(3))','zero_count_int':'CODEC(T64, ZSTD(3))','zero_threshold':'CODEC(ZSTD(3))'}
+samples	SimpleAggregateFunction(timeSeriesGroupArrayHistograms, Array(Tuple(timestamp DateTime64(3), flags UInt8, counter_reset_hint UInt8, schema Int8, zero_threshold Float64, sum Float64, count_int Int64, zero_count_int Int64, count_float Float64, zero_count_float Float64, positive_int Array(Tuple(index Int32, count Int64)), negative_int Array(Tuple(index Int32, count Int64)), positive_float Array(Tuple(index Int32, count Float64)), negative_float Array(Tuple(index Int32, count Float64)), custom_values Array(Float64))))		{'count_float':'CODEC(ZSTD(3))','count_int':'CODEC(T64, ZSTD(3))','counter_reset_hint':'CODEC(ZSTD(3))','custom_values':'CODEC(ZSTD(3))','flags':'CODEC(ZSTD(3))','negative_float.count':'CODEC(ZSTD(3))','negative_float.index':'CODEC(Delta(4), ZSTD(3))','negative_int.count':'CODEC(T64, ZSTD(3))','negative_int.index':'CODEC(Delta(4), ZSTD(3))','positive_float.count':'CODEC(ZSTD(3))','positive_float.index':'CODEC(Delta(4), ZSTD(3))','positive_int.count':'CODEC(T64, ZSTD(3))','positive_int.index':'CODEC(Delta(4), ZSTD(3))','schema':'CODEC(ZSTD(3))','sum':'CODEC(ZSTD(3))','timestamp':'CODEC(Delta(8), T64, ZSTD(3))','zero_count_float':'CODEC(ZSTD(3))','zero_count_int':'CODEC(T64, ZSTD(3))','zero_threshold':'CODEC(ZSTD(3))'}
+-- the outer table has the histograms.* columns
+metric_name	String					
+tags	Map(String, String)					
+samples	Array(Tuple(DateTime64(3), Float64))					
+histograms.timestamp	Array(DateTime64(3))					
+histograms.flags	Array(UInt8)					
+histograms.counter_reset_hint	Array(UInt8)					
+histograms.schema	Array(Int8)					
+histograms.zero_threshold	Array(Float64)					
+histograms.sum	Array(Float64)					
+histograms.count_int	Array(Int64)					
+histograms.zero_count_int	Array(Int64)					
+histograms.count_float	Array(Float64)					
+histograms.zero_count_float	Array(Float64)					
+histograms.positive_int	Array(Array(Tuple(index Int32, count Int64)))					
+histograms.negative_int	Array(Array(Tuple(index Int32, count Int64)))					
+histograms.positive_float	Array(Array(Tuple(index Int32, count Float64)))					
+histograms.negative_float	Array(Array(Tuple(index Int32, count Float64)))					
+histograms.custom_values	Array(Array(Float64))					
+metric_family	String					
+type	String					
+unit	String					
+help	String					
+-- a copy keeps the column and the codecs of its subcolumns once
+1
+2
+-- a table of version 11 has neither the column nor the outer columns and rejects the settings of the histograms
+0
+0
+-- a copy pinned to version 11 drops the column, a table of the current version accepts the setting
+0
+10
+-- float samples are written and read as before, histogram samples are written and read through the histograms.* columns
+m	[('1970-01-01 00:01:40.000',1)]
+0	1	[1]
+1	0	[]
+[]
+[1]
+h	[]	['1970-01-01 00:01:40.000']	[1]	[[(0,1)]]
+m	[('1970-01-01 00:01:40.000',1)]	[]	[]	[]
+2

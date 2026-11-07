@@ -680,6 +680,7 @@
                 "reference/functions/aggregate-functions/timeSeriesDerivToGrid",
                 "reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "reference/functions/aggregate-functions/timeSeriesGroupArrayHistograms",
                 "reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
