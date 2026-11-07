@@ -121,6 +121,10 @@ std::vector<String> DiskSelector::findPlainRewritableDisksOverlappingNewDisk(
         return result;
     }
 
+    /// A read-only disk cannot overwrite the metadata of another disk, as in `arePlainRewritableDisksOverlapping`.
+    if (config.getBool(config_prefix + ".read_only", false))
+        return result;
+
     Strings object_storage_config_prefixes;
     if (config.has(config_prefix + ".locations"))
     {
@@ -139,6 +143,9 @@ std::vector<String> DiskSelector::findPlainRewritableDisksOverlappingNewDisk(
         const auto object_storage = ObjectStorageFactory::instance().create(
             disk_name, config, object_storage_config_prefix, context, /* run_access_check = */ false, run_local_paths_check,
             remote_host_filter_check);
+
+        if (object_storage->isReadOnly())
+            continue;
 
         for (const auto & [other_disk_name, other_disk] : disks)
         {

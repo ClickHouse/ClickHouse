@@ -3,6 +3,7 @@
 #include <Disks/IDisk.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -16,6 +17,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_DISK;
+}
+
+namespace FailPoints
+{
+    extern const char custom_disk_registry_pause_before_shutdown[];
 }
 
 static void shutdownDisk(const String & name, const DiskPtr & disk, const LoggerPtr & log)
@@ -282,6 +288,7 @@ void CustomDiskRegistry::run() TSA_NO_THREAD_SAFETY_ANALYSIS
             disks_to_shutdown.pop_front();
 
             lock.unlock();
+            FailPointInjection::pauseFailPoint(FailPoints::custom_disk_registry_pause_before_shutdown);
             finishShutdown(std::move(disk_to_shutdown));
             lock.lock();
             continue;

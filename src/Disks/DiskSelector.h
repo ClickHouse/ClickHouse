@@ -70,7 +70,9 @@ public:
     /// created: a `plain_rewritable` metadata storage loads its metadata in the constructor, which may already write to
     /// the object storage. So only the object storages of the new disk are created here (they do not write anything),
     /// and only if its configuration may give it `plain_rewritable` metadata and some disk in `disks` is a writable
-    /// plain disk. `run_local_paths_check` and `remote_host_filter_check` are as for the creation of the disk itself.
+    /// plain disk. A read-only new disk (the `read_only` setting) or object storage overlaps nothing, because it cannot
+    /// overwrite the metadata of another disk. `run_local_paths_check` and `remote_host_filter_check` are as for the
+    /// creation of the disk itself.
     static std::vector<String> findPlainRewritableDisksOverlappingNewDisk(
         const String & disk_name,
         const Poco::Util::AbstractConfiguration & config,
