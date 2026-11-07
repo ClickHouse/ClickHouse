@@ -12,9 +12,6 @@ namespace DB
   */
 class ParserCreateTokenQuery : public IParserBase
 {
-public:
-    std::map<String, Documentation> getDocumentation() const override;
-
 protected:
     const char * getName() const override { return "CREATE TOKEN query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

@@ -17,8 +17,7 @@
 #    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
-#    include <IO/ReadBufferFromFile.h>
-#    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
+#    include <orc/OrcFile.hh>
 
 #    include <Poco/JSON/Object.h>
 #    include <Poco/JSON/Parser.h>
@@ -123,24 +122,24 @@ void writeOneEmptyBlock(const Block & header, ColumnMapperPtr mapper, const Stri
 
 /// Walk the ORC footer type tree, recording iceberg.required for every path (dotted convention:
 /// t.field, arr.element, m.key, m.value) that carries the attribute.
-void collectRequired(const ORC::Type & type, const String & path, std::map<String, String> & out)
+void collectRequired(const orc::Type & type, const String & path, std::map<String, String> & out)
 {
     if (type.hasAttributeKey("iceberg.required"))
         out[path] = type.getAttributeValue("iceberg.required");
 
     switch (type.getKind())
     {
-        case ORC::TypeKind::STRUCT:
+        case orc::TypeKind::STRUCT:
             for (uint64_t i = 0; i < type.getSubtypeCount(); ++i)
             {
                 const String child = path.empty() ? type.getFieldName(i) : path + "." + type.getFieldName(i);
                 collectRequired(*type.getSubtype(i), child, out);
             }
             break;
-        case ORC::TypeKind::LIST:
+        case orc::TypeKind::LIST:
             collectRequired(*type.getSubtype(0), path + ".element", out);
             break;
-        case ORC::TypeKind::MAP:
+        case orc::TypeKind::MAP:
             collectRequired(*type.getSubtype(0), path + ".key", out);
             collectRequired(*type.getSubtype(1), path + ".value", out);
             break;
@@ -151,9 +150,8 @@ void collectRequired(const ORC::Type & type, const String & path, std::map<Strin
 
 std::map<String, String> readIcebergRequired(const String & path)
 {
-    ReadBufferFromFile in(path);
-    std::atomic<int> is_cancelled{0};
-    auto reader = createORCReader(asORCInputStreamLoadIntoMemory(in, is_cancelled), ORC::ReaderOptions{});
+    orc::ReaderOptions options;
+    auto reader = orc::createReader(orc::readLocalFile(path), options);
     std::map<String, String> out;
     // The root is the file struct; descend into its top-level columns with an empty prefix.
     collectRequired(reader->getType(), "", out);

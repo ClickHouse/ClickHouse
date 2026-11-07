@@ -24,9 +24,6 @@ using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancella
 /// recorded there and reported by the source driving the plan (see `tryGenerate`). On a worker the
 /// state is null and a lost peer is a plain `EXCHANGE_PEER_DISCONNECTED` failure of the task.
 ///
-/// `advisory`: the consumer can do without the data (a runtime filter). A producer lost after the
-/// handshake ends the stream early. A failed connect or handshake still throws.
-///
 /// With `output_is_serialized` the source does not deserialize: it hands every packet on as one row
 /// of a `String` column, for the `StreamingExchangeDeserializingTransform` on every stream behind
 /// it, and only reads the end-of-stream marker itself.
@@ -41,11 +38,9 @@ public:
         UInt16 port_,
         DistributedQueryCancellationPtr cancellation_,
         String auth_token_ = {},
-        bool output_is_serialized_ = false,
-        bool advisory_ = false)
+        bool output_is_serialized_ = false)
         : ISource(output_is_serialized_ ? StreamingExchangeProtocol::packetStreamHeader() : header_)
         , output_is_serialized(output_is_serialized_)
-        , advisory(advisory_)
         , host(std::move(host_))
         , port(port_)
         , query_id(std::move(query_id_))
@@ -68,18 +63,10 @@ public:
     void onUpdatePorts() override;
 
 private:
-    /// Wakes a handshake waiting in `waitForSocket`.
-    void onCancel() noexcept override;
-
     void onStart();
-    /// Handshake steps under one deadline (`HELLO_TIMEOUT_SECONDS` of `handshake_watch`); false if cancelled first.
-    bool connect(const Stopwatch & handshake_watch);
-    bool sendHello(const Stopwatch & handshake_watch);
-    bool receiveHello(const Stopwatch & handshake_watch);
-    /// Waits for `events` on the socket; false once cancelled, `Poco::TimeoutException` naming `what` past the deadline.
-    bool waitForSocket(Int16 events, const Stopwatch & handshake_watch, std::string_view what);
-    /// This source is cancelled, or on the initiator the query is, e.g. by a failure recorded elsewhere.
-    bool isQueryCancelled() const;
+    void connect();
+    void sendHello();
+    void receiveHello();
 
     /// Read as many bytes as we can from the socket without blocking and update position accordingly.
     void readFromSocket(char * buffer, size_t buffer_size, size_t & position);
@@ -89,7 +76,7 @@ private:
     /// Continue reading packet body until it is fully read.
     void tryReadBody();
 
-    /// `readChunk`, except that a lost peer may end the stream instead of throwing (see the class comment).
+    /// `readChunk`, unless the peer went away and the query reports that instead (see the class comment).
     std::optional<Chunk> tryGenerate() override;
 
     /// Read available data from the socket and deserialize a chunk when enough data was read.
@@ -100,7 +87,6 @@ private:
     void sendNoMoreDataNeeded();
 
     const bool output_is_serialized;
-    const bool advisory;
     const String host;
     const UInt16 port;
     const String query_id;
@@ -113,7 +99,6 @@ private:
     bool finished_reading = false;  /// All data has been read from socket.
     bool output_finished = false;   /// Output port is finished, do not need to receive more data.
     bool was_on_start_called = false;
-    bool handshake_completed = false;
 
     enum PacketReceiveState
     {
@@ -141,11 +126,11 @@ private:
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Combines the socket and the output-update wakeup into one fd that the executor polls
     /// while the source waits in `Async`.
-    Epoll wait_events_epoll{EpollNesting::Leaf};
+    Epoll wait_events_epoll;
 #endif
     /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting source
     /// when its output port is updated - in particular closed by a satisfied `LIMIT`
-    /// downstream; drained in `tryGenerate`. Also written by `onCancel` and drained by `waitForSocket`.
+    /// downstream; drained in `tryGenerate`.
     WakeupFd output_update_wakeup;
 
     LoggerPtr log = getLogger("StreamingExchangeSource");

@@ -2,7 +2,6 @@
 
 #include <utility>
 
-#include <base/Decimal.h>
 #include <base/defines.h>
 
 #include <Common/DequeWithMemoryTracking.h>
@@ -29,13 +28,10 @@ namespace DB
 ///       `merge` to be commutative (the recompute and invertible paths combine in time order and do not).
 ///     - if `stack_size == 0`: recompute - keep the in-window values in a deque and recalculate their sum per each grid point,
 ///       this algorithm is faster when the window holds only few buckets
-template <typename SummaryType>
+template <typename TimestampType, typename SummaryType>
 class AggregateFunctionTimeseriesSlidingSum
 {
 public:
-    /// The timestamps with the scale of the grid (see `AggregateFunctionTimeseriesBase`).
-    using GridScaleTimestampType = DateTime64;
-
     /// `SummaryType` is invertible when it can subtract a previously merged value.
     static constexpr bool is_invertible = requires (SummaryType summary, const SummaryType & value)
         { summary.unmerge(value, &value); };
@@ -56,7 +52,7 @@ public:
         }
     }
 
-    void add(SummaryType && value, GridScaleTimestampType timestamp)
+    void add(SummaryType && value, TimestampType timestamp)
     {
         if constexpr (is_invertible)
         {
@@ -77,7 +73,7 @@ public:
         }
     }
 
-    void removeBefore(GridScaleTimestampType cut_off)
+    void removeBefore(TimestampType cut_off)
     {
         if constexpr (is_invertible)
         {
@@ -125,8 +121,7 @@ public:
         }
     }
 
-    /// The reference is valid until the next `add` or `removeBefore`.
-    const SummaryType & getCurrentSum() const
+    SummaryType getCurrentSum() const
     {
         if constexpr (is_invertible)
         {
@@ -134,12 +129,12 @@ public:
         }
         else if (use_two_stacks)
         {
-            current_sum = SummaryType{};
+            SummaryType combined;
             if (!front_stack.empty())
-                current_sum.merge(front_stack.back().combined);
+                combined.merge(front_stack.back().combined);
             if (!back_stack.empty())
-                current_sum.merge(back_stack.back().combined);
-            return current_sum;
+                combined.merge(back_stack.back().combined);
+            return combined;
         }
         else
         {
@@ -158,7 +153,7 @@ public:
 private:
     struct StackEntry
     {
-        GridScaleTimestampType last_timestamp;
+        TimestampType last_timestamp;
         SummaryType single;     /// this value alone
         SummaryType combined;   /// running combine over this stack up to this entry
     };
@@ -168,7 +163,7 @@ private:
     mutable bool current_sum_valid;
     VectorWithMemoryTracking<StackEntry> back_stack;   /// two-stacks: newer values; pushed here
     VectorWithMemoryTracking<StackEntry> front_stack;  /// two-stacks: older values; popped here
-    DequeWithMemoryTracking<std::pair<GridScaleTimestampType, SummaryType>> window;  /// invertible/recompute: in-window values in time order
+    DequeWithMemoryTracking<std::pair<TimestampType, SummaryType>> window;  /// invertible/recompute: in-window values in time order
 };
 
 }

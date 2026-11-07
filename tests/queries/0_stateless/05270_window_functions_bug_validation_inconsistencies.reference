@@ -1,7 +1,0 @@
--- A window function inside PARTITION BY or ORDER BY of an inline window is not rejected during analysis
--- The largest 32-bit offset, 2147483647, is rejected although the message asks for a 32-bit integer; 2147483646 is accepted
-[3,3,3]
--- IGNORE NULLS is silently accepted on functions that do not pick a value, while RESPECT NULLS is rejected for them
-0	1	1	1	0	1	0	1
-1	2	2	2	0	2	0	1
-2	3	3	3	1	0	0	2

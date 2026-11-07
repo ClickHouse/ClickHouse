@@ -126,7 +126,7 @@ std::vector<String> JSONCompactEachRowFormatReader::readHeaderRow()
     return fields;
 }
 
-bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & column_name, size_t /*column_index*/)
+bool JSONCompactEachRowFormatReader::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & column_name)
 {
     skipWhitespaceIfAny(*in);
     return JSONUtils::readField(*in, column, type, serialization, column_name, format_settings, yield_strings);
@@ -266,9 +266,6 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", factory);
-        /// Data in these formats is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
-        /// The `WithNames` flavours pick the extension up from the base format, see getFileExtensionsForFormat.
-        factory.registerFileExtension("json", yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", /*used_for_format_inference=*/ false);
     }
 
     factory.setDocumentation("JSONCompactEachRow", Documentation{

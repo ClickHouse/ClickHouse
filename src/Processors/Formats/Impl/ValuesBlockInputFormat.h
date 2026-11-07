@@ -37,7 +37,7 @@ public:
 
     /// TODO: remove context somehow.
     void setContext(const ContextPtr & context_);
-    void setQueryParameters(const NameToNameMap & parameters) override;
+    void setQueryParameters(const NameToNameMap & parameters);
 
     const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 

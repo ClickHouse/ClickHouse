@@ -32,16 +32,12 @@
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <base/EnumReflection.h>
-#include <Poco/JSON/Array.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Parser.h>
 #include <Compiler.hh>
 #include <DataFile.hh>
 #include <Decoder.hh>
@@ -49,8 +45,6 @@
 #include <NodeImpl.hh>
 #include <Types.hh>
 #include <ValidSchema.hh>
-
-#include <unordered_set>
 
 namespace DB
 {
@@ -599,7 +593,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 auto nested_deserialize = createDeserializeFn(root_node->leafAt(0), target_type);
                 return [nested_deserialize](IColumn & column, avro::Decoder & decoder)
                 {
-                    readUnionIndex(decoder, 1);
+                    decoder.decodeUnionIndex();
                     nested_deserialize(column, decoder);
                     return true;
                 };
@@ -615,7 +609,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-                        if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
+                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
+                        if (union_index == non_null_union_index)
                         {
                             nested_deserialize(col.getNestedColumn(), decoder);
                             col.getNullMapData().push_back(false);
@@ -632,7 +627,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
-                        if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
+                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
+                        if (union_index == non_null_union_index)
                         {
                             nested_deserialize(column, decoder);
                             return true;
@@ -660,8 +656,6 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 std::vector<DeserializeFn> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
 
-                std::unordered_set<ColumnVariant::Discriminator> used_discriminators;
-
                 bool union_has_null = false;
                 for (size_t i = 0; i != root_node->leaves(); ++i)
                 {
@@ -685,18 +679,15 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             variant_type.getName(),
                             variant->getName());
 
-                    used_discriminators.insert(corresponding_discriminator.value());
                     union_index_to_global_discriminator.insert_or_assign(i, std::move(corresponding_discriminator.value()));
                 }
 
-                /// Named branches (records, enums, fixed) with identical structure map to the same variant,
-                /// so compare distinct types, not branches.
-                if (used_discriminators.size() != nested_types.size())
+                if (root_node->leaves() != nested_types.size() + (union_has_null ? 1 : 0))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The number of distinct (non-null) union types in Avro record ({}) does not match the number of types in "
-                        "destination Variant type ({}).",
-                        used_discriminators.size(),
+                        "The number of (non-null) union types in Avro record ({}) does not match the number of types in destination Variant "
+                        "type ({}).",
+                        root_node->leaves() - (union_has_null ? 1 : 0),
                         nested_types.size());
 
                 return [union_has_null,
@@ -705,7 +696,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 {
                     auto & column_variant = assert_cast<ColumnVariant &>(column);
 
-                    const AvroUnionIndex union_index = readUnionIndex(decoder, deserializers.size());
+                    const AvroUnionIndex union_index = decoder.decodeUnionIndex();
                     const auto global_discriminator = discriminators_map.at(union_index);
                     if (union_has_null && global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
                     {
@@ -951,14 +942,6 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         target_type->getName(), avro::toString(root_node->type()), nodeToJSON(root_node));
 }
 
-size_t AvroDeserializer::readUnionIndex(avro::Decoder & decoder, size_t num_branches)
-{
-    size_t index = decoder.decodeUnionIndex();
-    if (index >= num_branches)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary: got {}, the number of branches is {}", index, num_branches);
-    return index;
-}
-
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
 {
     checkStackSize();
@@ -1003,7 +986,12 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [union_skip_fns](avro::Decoder & decoder)
             {
-                union_skip_fns[readUnionIndex(decoder, union_skip_fns.size())](decoder);
+                auto index = decoder.decodeUnionIndex();
+                if (index >= union_skip_fns.size())
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
+                }
+                union_skip_fns[index](decoder);
             };
         }
         case avro::AVRO_NULL:
@@ -1237,7 +1225,7 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
 
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
     : null_as_default(null_as_default_), settings(settings_)
 {
     const auto & schema_root = schema.root();
@@ -1253,7 +1241,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     {
         for (size_t i = 0; i < header.columns(); ++i)
         {
-            if (!column_found[i] && !absent_columns.contains(header.getByPosition(i).name))
+            if (!column_found[i])
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Field {} not found in Avro schema", header.getByPosition(i).name);
             }
@@ -1279,88 +1267,12 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 {
 }
 
-namespace
-{
-
-void collectIcebergFieldIds(const Poco::Dynamic::Var & schema, std::unordered_set<Int64> & field_ids)
-{
-    checkStackSize();
-
-    if (schema.type() == typeid(Poco::JSON::Array::Ptr))
-    {
-        for (const auto & element : *schema.extract<Poco::JSON::Array::Ptr>())
-            collectIcebergFieldIds(element, field_ids);
-    }
-    else if (schema.type() == typeid(Poco::JSON::Object::Ptr))
-    {
-        for (const auto & [key, value] : *schema.extract<Poco::JSON::Object::Ptr>())
-        {
-            if (key == "field-id" || key == "element-id" || key == "key-id" || key == "value-id")
-            {
-                if (value.isInteger())
-                    field_ids.insert(value.convert<Int64>());
-            }
-            else
-                collectIcebergFieldIds(value, field_ids);
-        }
-    }
-}
-
-/// Iceberg reads a field whose id is not in a data file as NULL. Returns the columns of `header` whose
-/// field id is not in the file, if the file identifies all its top-level fields by id.
-NameSet getColumnsAbsentFromIcebergFile(
-    const Block & header, const ColumnMapper & column_mapper, const std::map<std::string, std::vector<uint8_t>> & metadata)
-{
-    auto it = metadata.find("avro.schema");
-    if (it == metadata.end())
-        return {};
-
-    String schema_json(it->second.begin(), it->second.end());
-    if (!schema_json.contains("\"field-id\""))
-        return {};
-
-    Poco::JSON::Parser parser;
-    auto root = parser.parse(schema_json);
-    if (root.type() != typeid(Poco::JSON::Object::Ptr))
-        return {};
-
-    auto fields = root.extract<Poco::JSON::Object::Ptr>()->getArray("fields");
-    if (!fields || fields->size() == 0)
-        return {};
-
-    for (size_t i = 0; i < fields->size(); ++i)
-    {
-        auto field = fields->getObject(static_cast<unsigned>(i));
-        if (!field || !field->has("field-id") || !field->get("field-id").isInteger())
-            return {};
-    }
-
-    std::unordered_set<Int64> file_field_ids;
-    collectIcebergFieldIds(root, file_field_ids);
-
-    NameSet result;
-    const auto & storage_encoding = column_mapper.getStorageColumnEncoding();
-    for (const auto & column : header)
-    {
-        auto field_id = storage_encoding.find(column.name);
-        if (field_id != storage_encoding.end() && !file_field_ids.contains(field_id->second))
-            result.insert(column.name);
-    }
-    return result;
-}
-
-}
-
 void AvroRowInputFormat::readPrefix()
 {
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
         std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
-    NameSet absent_columns;
-    if (column_mapper)
-        absent_columns = getColumnsAbsentFromIcebergFile(output.getHeader(), *column_mapper, file_reader_ptr->metadata());
     deserializer_ptr = std::make_unique<AvroDeserializer>(
-        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings,
-        absent_columns);
+        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
     file_reader_ptr->init();
 }
 
@@ -1373,12 +1285,6 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
         return true;
     }
     return false;
-}
-
-/// A count taken from the block headers is only sound while the library checks every declared count against the payload.
-bool AvroRowInputFormat::supportsCountRows() const
-{
-    return file_reader_ptr && file_reader_ptr->checksDeclaredObjectCount();
 }
 
 size_t AvroRowInputFormat::countRows(size_t max_block_size)
@@ -1707,7 +1613,7 @@ import DataTypeMapping from '/snippets/data-types-matching.mdx';
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
 | `input_format_avro_allow_missing_fields`    | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`         | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
-| `output_format_avro_codec`                  | Compression algorithm for Avro output files. Possible values: `null`, `deflate`, `snappy`, `zstd`, `bzip2`, `xz`.|         |
+| `output_format_avro_codec`                  | Compression algorithm for Avro output files. Possible values: `null`, `deflate`, `snappy`, `zstd`.            |         |
 | `output_format_avro_sync_interval`          | Sync marker frequency in Avro files (in bytes). | `16384` |
 | `output_format_avro_string_column_pattern`  | Regular expression to identify `String` columns for Avro string type mapping. By default, ClickHouse `String` columns are written as Avro `bytes` type.                                 |         |
 | `output_format_avro_rows_in_file`           | Maximum number of rows per Avro output file. When this limit is reached, a new file is created (if the storage system supports file splitting).                                                         | `1`     |
