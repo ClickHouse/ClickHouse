@@ -1,6 +1,9 @@
--- multiSearchAny with more than 255 needles raises an exception, with and without the index
--- 255 needles is accepted by the index
+-- multiSearchAny with more than 255 needles is accepted (Aho-Corasick path), with and without the index
 0
+0
+-- multiSearchAny with 256 needles that include a real match returns the matching rows
+2
+2
 -- valid multiSearchAny uses the index and returns the matching rows
 2
 -- multiMatchAny with allow_hyperscan = 0 raises an exception, with and without the index

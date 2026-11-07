@@ -1,6 +1,5 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 
-#include <limits>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -18,6 +17,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/checkHyperscanRegexp.h>
+#include <Functions/checkMultiSearchAnyAvailability.h>
 #include <Functions/indexHint.h>
 #include <Functions/logical.h>
 
@@ -36,6 +36,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_hyperscan;
+    extern const SettingsBool force_daachorse_for_multi_search;
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool optimize_or_like_chain;
@@ -98,7 +99,7 @@ struct PatternInfo
 {
     std::vector<PatternData> patterns;
 
-    bool canUseMultiSearchAny() const
+    bool canUseMultiSearchAny(bool force_daachorse) const
     {
         if (patterns.empty())
             return false;
@@ -121,14 +122,13 @@ struct PatternInfo
         /// Can use multiSearchAny only if:
         /// 1. All patterns are pure substring matches
         /// 2. All patterns have the same case sensitivity (not mixed)
-        /// 3. The number of needles fits the `multiSearchAny` runtime limit. `MultiSearchImpl`
-        ///    throws `TOO_MANY_ARGUMENTS_FOR_FUNCTION` for constant needle arrays larger than
-        ///    `UInt8::max` (255). Without this guard a default-on rewrite of a long substring
-        ///    `OR LIKE` chain would turn a previously-working query into an exception; instead we
-        ///    fall through to the `multiMatchAny`/combined-`match` path, which has no such cap.
+        /// 3. `multiSearchAny` accepts this many constant needles in this build (`isMultiSearchAnyAvailable`).
+        ///    Without this guard a default-on rewrite of a long substring `OR LIKE` chain would turn a
+        ///    previously-working query into an exception; instead we fall through to the
+        ///    `multiMatchAny`/combined-`match` path.
         return all_substrings
             && !(has_case_sensitive && has_case_insensitive)
-            && patterns.size() <= std::numeric_limits<UInt8>::max();
+            && isMultiSearchAnyAvailable(patterns.size(), force_daachorse);
     }
 
     bool needsCaseInsensitive() const
@@ -437,6 +437,7 @@ public:
         const size_t max_hyperscan_regexp_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_length];
         const size_t max_hyperscan_regexp_total_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_total_length];
         const bool reject_expensive_hyperscan_regexps = context->getSettingsRef()[Setting::reject_expensive_hyperscan_regexps];
+        const bool force_daachorse = context->getSettingsRef()[Setting::force_daachorse_for_multi_search];
         /// Per-target thresholds. Calibrated on `hits`: the `multiSearchAny` (substring) rewrite is
         /// beneficial from ~4 branches, while the `multiMatchAny` (regexp) rewrite only pays off from
         /// ~9 branches — its fixed Vectorscan setup is larger. See the settings' documentation.
@@ -477,7 +478,7 @@ public:
             /// showed the RE2 alternation is consistently slower than the original short-circuit `OR`
             /// across the whole realistic range (still ~1.8x slower at 20 branches), so when neither fast
             /// path applies we keep the original branches — always correct and never a regression.
-            const bool can_use_multi_search = haystack_is_string && info.canUseMultiSearchAny();
+            const bool can_use_multi_search = haystack_is_string && info.canUseMultiSearchAny(force_daachorse);
 
             /// The two rewrite targets have different fixed setup costs, so each has its own minimum
             /// branch count: `multiSearchAny` (substrings) pays off from ~4 branches, `multiMatchAny`
