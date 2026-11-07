@@ -382,7 +382,9 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 if (settings[Setting::validate_mutation_query])
                 {
                     MutationsInterpreter::Settings mutation_settings(false);
-                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                    auto validation_context = Context::createCopy(context);
+                    validation_context->setAnalyzingBackgroundExpressions(true);
+                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, validation_context, mutation_settings).validate();
                 }
                 table->mutate(*mutation_commands, context);
             }
