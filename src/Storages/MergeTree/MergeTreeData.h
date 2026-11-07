@@ -1507,6 +1507,14 @@ public:
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
+    /// Returns the maximum version of a mutation that was removed from the history of mutations of the partition
+    /// (see `finished_mutations_to_keep` and `KILL MUTATION`). The commands of such a mutation are no longer
+    /// in the snapshot of mutations, even for a part of this partition with a lower data version that is still
+    /// active (e.g. the mutation was killed), visible to a transaction, or activated again by a rollback
+    /// of the transaction that removed it. Storages with versions that are global for the table may ignore `partition_id`.
+    /// The default is `std::nullopt`, which means that the removed versions are not tracked.
+    virtual std::optional<Int64> getMaxRemovedMutationVersion(const String & /*partition_id*/) const { return std::nullopt; }
+
     /// Per-partition promoters for streaming reads.
     virtual CursorPromotersMap buildPromoters() = 0;
     void triggerStreamingSubscriptionEnrichment() const;

@@ -11128,6 +11128,11 @@ MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnap
     return queue.getMutationsSnapshot(params);
 }
 
+std::optional<Int64> StorageReplicatedMergeTree::getMaxRemovedMutationVersion(const String & partition_id) const
+{
+    return queue.getMaxRemovedMutationBlockNumber(partition_id);
+}
+
 MutationCounters StorageReplicatedMergeTree::getMutationCounters() const
 {
     return queue.getMutationCounters();

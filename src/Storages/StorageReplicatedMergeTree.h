@@ -969,6 +969,7 @@ private:
         const Strings & replicas, const String & mutation_id, bool only_active = false) const;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
+    std::optional<Int64> getMaxRemovedMutationVersion(const String & partition_id) const override;
 
     void startBackgroundMovesIfNeeded() override;
 
