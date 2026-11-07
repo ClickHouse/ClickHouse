@@ -325,6 +325,11 @@ public:
 
     virtual StoragePtr getTable(const String & name, ContextPtr context) const;
 
+    /// Whether `getTable` of this database, called for a table `name` that `tryGetTable` did not find,
+    /// throws an exception that tells why the table is missing (for example, that the file the name
+    /// refers to does not exist), which is more precise than the caller's own `UNKNOWN_TABLE`.
+    virtual bool canExplainMissingTable(const String & /*name*/, ContextPtr /*context*/) const { return false; }
+
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
     using FilterByNameFunction = std::function<bool(const String &)>;

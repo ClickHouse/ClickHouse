@@ -74,6 +74,30 @@ StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr co
     return result;
 }
 
+StoragePtr DatabaseOverlay::getTable(const String & table_name, ContextPtr context_) const
+{
+    if (auto result = tryGetTable(table_name, context_))
+        return result;
+
+    for (const auto & db : databases)
+    {
+        if (db->canExplainMissingTable(table_name, context_))
+            return db->getTable(table_name, context_);
+    }
+
+    return IDatabase::getTable(table_name, context_);
+}
+
+bool DatabaseOverlay::canExplainMissingTable(const String & table_name, ContextPtr context_) const
+{
+    for (const auto & db : databases)
+    {
+        if (db->canExplainMissingTable(table_name, context_))
+            return true;
+    }
+    return false;
+}
+
 void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
     for (auto & db : databases)

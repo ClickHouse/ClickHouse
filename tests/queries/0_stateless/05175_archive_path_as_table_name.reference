@@ -41,7 +41,7 @@ URL, the file is in the archive: 1
 URL, the file is not in the archive: 0
 Filesystem, the file is in the archive: 1
 Filesystem, the file is not in the archive: 0
-UNKNOWN_TABLE
+FILE_DOESNT_EXIST
 UNKNOWN_TABLE
 -- A glob over the files inside an archive matches a dynamic set, so it is not probed
 Filesystem, a glob over the files in the archive: 1

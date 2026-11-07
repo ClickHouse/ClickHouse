@@ -1,0 +1,13 @@
+--- an existing file is read
+1
+2
+--- a missing file with an extension
+FILE_DOESNT_EXIST
+1
+--- a missing file in a subdirectory, in back quotes, and in a JOIN
+FILE_DOESNT_EXIST
+FILE_DOESNT_EXIST
+FILE_DOESNT_EXIST
+--- a name that is not written as a path is still an unknown table
+UNKNOWN_TABLE
+UNKNOWN_TABLE
