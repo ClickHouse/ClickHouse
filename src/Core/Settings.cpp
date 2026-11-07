@@ -10322,6 +10322,7 @@ Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
 This setting defines the granularity of work distribution across the cluster:
 - `file` — each task processes an entire file.
 - `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups).
+  Formats without internal blocks, such as `CSV`, stay one task per file.
 
 Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.

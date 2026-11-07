@@ -972,8 +972,11 @@ void FormatFactory::registerSplitter(const String & format, BucketSplitterCreato
 
 BucketSplitter FormatFactory::getSplitter(const String & format)
 {
-    auto creator = getCreators(format);
-    return creator.bucket_splitter_creator();
+    /// Only `Parquet` registers a splitter. Calling an empty creator throws `std::bad_function_call`.
+    const auto & splitter_creator = getCreators(format).bucket_splitter_creator;
+    if (!splitter_creator)
+        return {};
+    return splitter_creator();
 }
 
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
