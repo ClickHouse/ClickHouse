@@ -39,6 +39,8 @@ Float64 negative zero
 Enum
 c
 c
+Date32
+2020-01-02
 join_use_nulls = 1
 0	0	0	a0	b0	c0
 2	\N	2	\N	b2	c2

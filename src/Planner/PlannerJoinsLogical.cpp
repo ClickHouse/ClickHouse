@@ -201,10 +201,19 @@ static bool conversionKeepsDefault(const DataTypePtr & from, const DataTypePtr &
     return castColumn({from->createColumnConstWithDefaultValue(1), from, ""}, to)->isDefaultAt(0);
 }
 
-/// Whether the type default is the column default, which `firstNonDefault` and the fill check below compare with; not so for `Enum` and `Date32`.
+/// Whether the type default, which `add_default` inserts, is the column default that `firstNonDefault` skips; not so for `Enum` and `Date32`.
 static bool typeDefaultIsColumnDefault(const DataTypePtr & type)
 {
     return removeLowCardinality(type)->createColumnConstWithDefaultValue(1)->isDefaultAt(0);
+}
+
+/// Whether a join fills a not-matched row with the column default; not so for an `Enum` whose first element is not 0.
+static bool fillIsColumnDefault(const DataTypePtr & type)
+{
+    const auto nested = removeLowCardinality(type);
+    auto column = nested->createColumn();
+    nested->insertDefaultInto(*column);
+    return column->isDefaultAt(0);
 }
 
 static std::unordered_map<String, const ActionsDAG::Node *>
@@ -316,7 +325,8 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             const bool is_merged_key_component = left_args.size() > 1 && index < left_args.size();
             if (is_merged_key_component
                 && removeLowCardinality(arg_type)->canBeInsideNullable() && removeLowCardinality(lhs.getType())->canBeInsideNullable()
-                && typeDefaultIsColumnDefault(arg_type) && typeDefaultIsColumnDefault(lhs.getType()) && typeDefaultIsColumnDefault(result_type)
+                && fillIsColumnDefault(arg_type) && fillIsColumnDefault(lhs.getType())
+                && typeDefaultIsColumnDefault(result_type)
                 && !conversionKeepsDefault(arg_type, result_type))
                 JoinActionRef::transform({arg, lhs}, cast_filled_component);
             else

@@ -32,5 +32,7 @@ SELECT k, 1 / k FROM (SELECT 1.5 AS k) AS f1 FULL JOIN (SELECT -0. AS k) AS f2 U
 SELECT 'Enum';
 SELECT k FROM (SELECT CAST('c' AS Enum8('b' = 2, 'c' = 3)) AS k) AS e1 FULL JOIN (SELECT CAST('c' AS Enum8('b' = 2, 'c' = 3)) AS k) AS e2 USING (k) INNER JOIN (SELECT CAST('c' AS Nullable(String)) AS k) AS e3 USING (k);
 SELECT k FROM (SELECT CAST('b' AS Enum8('z' = 0, 'b' = 2, 'c' = 3)) AS k) AS e1 FULL JOIN (SELECT CAST('c' AS Enum8('z' = 0, 'b' = 2, 'c' = 3)) AS k) AS e2 USING (k) INNER JOIN (SELECT CAST('c' AS Nullable(String)) AS k) AS e3 USING (k);
+SELECT 'Date32';
+SELECT k FROM (SELECT toDate32('2020-01-01') AS k) AS d1 FULL JOIN (SELECT toDate32('2020-01-02') AS k) AS d2 USING (k) INNER JOIN (SELECT CAST(toDate32('2020-01-02') AS Nullable(Date32)) AS k) AS d3 USING (k);
 SELECT 'join_use_nulls = 1';
 SELECT k, t1.k, t2.k, a, b, c FROM t1 FULL JOIN t2 USING (k) INNER JOIN t3 USING (k) ORDER BY c SETTINGS join_use_nulls = 1;
