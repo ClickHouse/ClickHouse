@@ -1,0 +1,38 @@
+CSVWithNames
+id	Nullable(Int64)					
+name	Nullable(String)					
+name_1	Nullable(String)					
+name_2	Nullable(String)					
+1	a	b	c
+TSVWithNames
+id	Nullable(Int64)					
+name	Nullable(String)					
+name_1	Nullable(String)					
+1	a	b
+CSVWithNamesAndTypes
+id	UInt32					
+name	String					
+name_1	String					
+1	a	b
+JSONCompactEachRowWithNames
+id	Nullable(Int64)					
+name	Nullable(String)					
+name_1	Nullable(String)					
+1	a	b
+header detected automatically
+id	Nullable(Int64)					
+name	Nullable(String)					
+name_1	Nullable(String)					
+renamed name collides with a name from the header
+a	Nullable(Int64)					
+a_2	Nullable(Int64)					
+a_1	Nullable(Int64)					
+1	2	3
+names are case-sensitive
+a	Nullable(Int64)					
+A	Nullable(Int64)					
+a_1	Nullable(Int64)					
+explicit structure, matched by name
+b	1	a
+header ignored
+1	a	b
