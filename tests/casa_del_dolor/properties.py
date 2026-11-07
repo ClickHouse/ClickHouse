@@ -103,6 +103,13 @@ SERVER_START_WAIT_SECONDS = 180
 SERVER_SETTLE_SLEEP_SECONDS = 1
 KEEPER_SESSION_EXPIRE_SLEEP_SECONDS = 3
 
+# The ports these services listen on inside the docker network, which is how the server reaches them.
+# The cluster's nginx/redis/mongo/kafka ports are host-side (Kafka's listener there advertises localhost).
+NGINX_INTERNAL_PORT = 80
+REDIS_INTERNAL_PORT = 6379
+MONGO_INTERNAL_PORT = 27017
+KAFKA_INTERNAL_PORT = 19092
+
 
 rocksdb_properties = {
     "rocksdb": {
@@ -1233,7 +1240,7 @@ def add_single_disk(
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = (
-                f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
+                f"http://{cluster.nginx_host}:{NGINX_INTERNAL_PORT}/data{i}/"
             )
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
@@ -1936,7 +1943,7 @@ def modify_server_settings(
         modified = True
         mongo_xml = ET.SubElement(named_collections_xml, "mongo_remote")
         ET.SubElement(mongo_xml, "host").text = cluster.mongo_host
-        ET.SubElement(mongo_xml, "port").text = str(cluster.mongo_port)
+        ET.SubElement(mongo_xml, "port").text = str(MONGO_INTERNAL_PORT)
         ET.SubElement(mongo_xml, "user").text = "root"
         ET.SubElement(mongo_xml, "password").text = mongo_pass
         ET.SubElement(mongo_xml, "database").text = "test"
