@@ -19,6 +19,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Planner/Utils.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -43,6 +44,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Storages/buildQueryTreeForShard.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <Columns/IColumn.h>
@@ -586,23 +588,26 @@ void StorageBuffer::read(
         }
     }
 
-    Pipe pipe_from_buffers;
+    auto make_pipe_from_buffers = [&]
     {
         Pipes pipes_from_buffers;
         pipes_from_buffers.reserve(num_shards);
         for (auto & buf : buffers)
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot, getStorageID()));
 
-        pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
+        Pipe pipe = Pipe::unitePipes(std::move(pipes_from_buffers));
         if (query_info.input_order_info)
         {
             /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
-            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
+            pipe.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<PartialSortingTransform>(header, query_info.input_order_info->sort_description_for_merging, 0);
             });
         }
-    }
+        return pipe;
+    };
+
+    Pipe pipe_from_buffers = make_pipe_from_buffers();
 
     if (pipe_from_buffers.empty())
         return;
@@ -615,21 +620,49 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        /// The buffers plan is united with the table plan in the same process, where nothing
-        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
-        auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
-        buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        auto plan_buffers = [&](const ASTPtr & query, Pipe pipe, bool access_checked)
+        {
+            /// The buffers plan is united with the table plan in the same process, where nothing
+            /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+            auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
+            buffers_select_query_options.is_local_plan_for_distributed_query = true;
 
-        auto storage = std::make_shared<StorageValues>(
-                getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
-                std::move(pipe_from_buffers),
-                storage_snapshot->metadata->virtuals);
+            auto storage = std::make_shared<StorageValues>(
+                    getStorageID(),
+                    storage_snapshot->getAllColumnsDescription(),
+                    std::move(pipe),
+                    storage_snapshot->metadata->virtuals);
+            if (access_checked)
+                storage->setAccessChecked();
 
-        auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
-        interpreter.addStorageLimits(*query_info.storage_limits);
-        buffers_plan = std::move(interpreter).extractQueryPlan();
+            auto interpreter = InterpreterSelectQueryAnalyzer(query, local_context, buffers_select_query_options, storage);
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            return std::move(interpreter).extractQueryPlan();
+        };
+
+        buffers_plan = plan_buffers(query_info.query, std::move(pipe_from_buffers), /*access_checked=*/ false);
+
+        /// `Distributed` plans the query with `ALIAS` columns inlined, so its header may lack the buffers' columns.
+        if (query_plan.isInitialized())
+        {
+            auto has_columns_of = [&](const QueryPlan & plan)
+            {
+                const auto & destination_header = *query_plan.getCurrentHeader();
+                return std::ranges::all_of(*plan.getCurrentHeader(),
+                    [&](const auto & column) { return destination_header.has(column.name); });
+            };
+
+            if (!has_columns_of(buffers_plan))
+            {
+                auto inlined_query_tree = query_info.query_tree->clone();
+                inlineAliasColumns(inlined_query_tree);
+                /// The inlined query names the ALIAS's base columns; the caller checked access on the ALIAS names.
+                auto inlined_buffers_plan = plan_buffers(
+                    queryNodeToSelectQuery(inlined_query_tree), make_pipe_from_buffers(), /*access_checked=*/ true);
+                if (has_columns_of(inlined_buffers_plan))
+                    buffers_plan = std::move(inlined_buffers_plan);
+            }
+        }
     }
     else
     {

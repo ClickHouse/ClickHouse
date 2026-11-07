@@ -54,6 +54,10 @@ public:
     /// While it is not allowed, reading the prepared pipe throws.
     void setPreparedPipeReadAllowed(bool value) { prepared_pipe_read_allowed = value; }
 
+    /// `SELECT` on the table this storage stands for was checked by whoever reads it.
+    void setAccessChecked() { access_checked = true; }
+    bool isAccessChecked() const { return access_checked; }
+
 private:
     Block res_block;
     Pipe prepared_pipe;
@@ -61,6 +65,7 @@ private:
     bool has_prepared_pipe = false;
     bool prepared_pipe_was_read = false;
     bool prepared_pipe_read_allowed = true;
+    bool access_checked = false;
 };
 
 }

@@ -26,6 +26,7 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageValues.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
@@ -586,6 +587,9 @@ NameSet checkAccessRights(
 {
     /// StorageDummy is created on preliminary stage, ignore access check for it.
     if (typeid_cast<const StorageDummy *>(storage.get()))
+        return {};
+
+    if (const auto * values = typeid_cast<const StorageValues *>(storage.get()); values && values->isAccessChecked())
         return {};
 
     if (isInsertedDataOfTableFunction(storage, storage_id, query_context))
