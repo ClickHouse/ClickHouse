@@ -1,0 +1,12 @@
+src	Wide	10000	3
+BACKUP_CREATED
+RESTORED
+dst after restore	Wide	10000	3
+dst after mutation	Wide	9999	3
+data	9999	49995000
+csrc	Compact	10000	2
+BACKUP_CREATED
+RESTORED
+cdst after restore	Compact	10000	2
+cdst after mutation	Compact	9999	2
+data	9999	49995000
