@@ -45,11 +45,13 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
 
 /// Java and iceberg-rust compute `truncate[W]` of an `int` in 32 bits: a truncated value below INT32_MIN is stored plus 2^32, while
 /// `icebergTruncate` returns it as `Int64`. A column promoted to `long` keeps these values; no `long` value truncates to one of them.
+/// For W > 2^30 Java's `(x % W) + W` also overflows and stores the same key for some x that truncate to 0, so it is not `exact`.
 struct Int32TruncateWraparound
 {
     size_t tuple_index;
     Int64 stored;
     Int64 value;
+    bool exact;
 };
 
 std::vector<Int32TruncateWraparound> getInt32TruncateWraparounds(

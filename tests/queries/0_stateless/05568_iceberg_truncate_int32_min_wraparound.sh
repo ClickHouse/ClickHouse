@@ -6,6 +6,8 @@
 # one append of x = -2147483648, -2147483641, -2147483640, -1, 7, 2147483647; it stores 2147483646 for the first two.
 # `promoted`: the same rows, then `x` promoted to `long`, one more append that merges the manifests, and the first
 # snapshot expired.
+# `java_wide`: written by Spark 4.1 with Iceberg 1.11.0, `truncate[1073741825](x)`, x = -2147483648 and 1073741824; Java's
+# 32-bit `(x % W) + W` stores both under 2147483646.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,6 +18,7 @@ rm -rf "${LAKE}"
 mkdir -p "${LAKE}"
 cp -r "${CUR_DIR}/data_minio/iceberg_truncate_int32_wraparound/t" "${LAKE}/t"
 cp -r "${CUR_DIR}/data_minio/iceberg_truncate_int32_wraparound/promoted" "${LAKE}/promoted"
+cp -r "${CUR_DIR}/data_minio/iceberg_truncate_int32_wraparound/java_wide" "${LAKE}/java_wide"
 
 echo '--- ids with partition pruning on and off'
 for predicate in 'x = -2147483648' 'x <= 7' 'x IN (-2147483648, 7)' 'x > 7'; do
@@ -53,6 +56,16 @@ for predicate in 'x = -2147483648' 'x IN (-2147483648, 7)'; do
             (SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${LAKE}/promoted') WHERE ${predicate} ORDER BY id)
                 SETTINGS use_iceberg_partition_pruning = 1),
             (SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${LAKE}/promoted') WHERE ${predicate} ORDER BY id)
+                SETTINGS use_iceberg_partition_pruning = 0)"
+done
+
+echo '--- truncate[1073741825] written by Java'
+for predicate in 'x > 0' 'x = 1073741824' 'x = -2147483648'; do
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT '${predicate}',
+            (SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${LAKE}/java_wide') WHERE ${predicate} ORDER BY id)
+                SETTINGS use_iceberg_partition_pruning = 1),
+            (SELECT groupArray(id) FROM (SELECT id FROM icebergLocal('${LAKE}/java_wide') WHERE ${predicate} ORDER BY id)
                 SETTINGS use_iceberg_partition_pruning = 0)"
 done
 

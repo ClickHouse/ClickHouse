@@ -10,3 +10,7 @@ mf	6	0	1
 --- column promoted to long, adding snapshot expired
 x = -2147483648	[0]	[0]
 x IN (-2147483648, 7)	[0,4]	[0,4]
+--- truncate[1073741825] written by Java
+x > 0	[1]	[1]
+x = 1073741824	[1]	[1]
+x = -2147483648	[0]	[0]

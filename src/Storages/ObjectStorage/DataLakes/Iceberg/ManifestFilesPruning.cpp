@@ -270,7 +270,7 @@ std::vector<Int32TruncateWraparound> getInt32TruncateWraparounds(
         const Int64 signed_width = static_cast<Int64>(width);
         const Int64 value = min_value - ((min_value % signed_width) + signed_width) % signed_width;
         if (value < min_value)
-            result.push_back({static_cast<size_t>(field.tuple_index), value + (Int64{1} << 32), value});
+            result.push_back({static_cast<size_t>(field.tuple_index), value + (Int64{1} << 32), value, width <= (size_t{1} << 30)});
     }
     return result;
 }
@@ -471,17 +471,22 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                     field = convertPartitionValueToType(field, type);
             }
 
+            bool ambiguous_key = false;
             for (const auto & wraparound : int32_truncate_wraparounds)
             {
                 if (wraparound.tuple_index >= index_value.size())
                     continue;
                 auto & field = index_value[wraparound.tuple_index];
                 if (field.getType() == Field::Types::Int64 && field.safeGet<Int64>() == wraparound.stored)
+                {
+                    ambiguous_key |= !wraparound.exact;
                     field = wraparound.value;
+                }
             }
 
-            bool can_be_true = partition_key_condition->mayBeTrueInRange(
-                partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+            bool can_be_true = ambiguous_key
+                || partition_key_condition->mayBeTrueInRange(
+                    partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
 
             if (!can_be_true)
             {
