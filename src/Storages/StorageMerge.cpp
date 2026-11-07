@@ -24,9 +24,13 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
@@ -561,6 +565,117 @@ bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
     const auto & type = column.getTypeInStorage();
     return !type->getCustomSerialization()
         || DataTypeFactory::instance().get(type->getName())->hasSubcolumn(column.getSubcolumnName());
+}
+
+std::pair<DataTypePtr, DataTypePtr> nameTupleElementsByPositionImpl(const DataTypePtr & from, const DataTypePtr & to, bool & renamed)
+{
+    if (from->equals(*to))
+        return {from, to};
+
+    const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get());
+    const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get());
+    if (from_nullable || to_nullable)
+    {
+        const auto & from_nested = from_nullable ? from_nullable->getNestedType() : from;
+        const auto & to_nested = to_nullable ? to_nullable->getNestedType() : to;
+        auto [new_from_nested, new_to_nested] = nameTupleElementsByPositionImpl(from_nested, to_nested, renamed);
+        return {
+            new_from_nested == from_nested ? from : (from_nullable ? std::make_shared<DataTypeNullable>(new_from_nested) : new_from_nested),
+            new_to_nested == to_nested ? to : (to_nullable ? std::make_shared<DataTypeNullable>(new_to_nested) : new_to_nested)};
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        auto [from_nested, to_nested] = nameTupleElementsByPositionImpl(from_array->getNestedType(), to_array->getNestedType(), renamed);
+        return {
+            from_nested == from_array->getNestedType() ? from : std::make_shared<DataTypeArray>(from_nested),
+            to_nested == to_array->getNestedType() ? to : std::make_shared<DataTypeArray>(to_nested)};
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+    {
+        auto [from_key, to_key] = nameTupleElementsByPositionImpl(from_map->getKeyType(), to_map->getKeyType(), renamed);
+        auto [from_value, to_value] = nameTupleElementsByPositionImpl(from_map->getValueType(), to_map->getValueType(), renamed);
+        return {
+            from_key == from_map->getKeyType() && from_value == from_map->getValueType() ? from : std::make_shared<DataTypeMap>(from_key, from_value),
+            to_key == to_map->getKeyType() && to_value == to_map->getValueType() ? to : std::make_shared<DataTypeMap>(to_key, to_value)};
+    }
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tuple || !to_tuple || from_tuple->getElements().empty() || to_tuple->getElements().empty())
+        return {from, to};
+
+    DataTypes from_elements = from_tuple->getElements();
+    DataTypes to_elements = to_tuple->getElements();
+    const auto & to_names = to_tuple->getElementNames();
+
+    std::unordered_map<std::string_view, size_t> from_positions;
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+    {
+        const auto & from_names = from_tuple->getElementNames();
+        from_positions.reserve(from_names.size());
+        for (size_t i = 0; i < from_names.size(); ++i)
+            from_positions.emplace(from_names[i], i);
+    }
+
+    const bool by_name = std::ranges::any_of(to_names, [&](const auto & name) { return from_positions.contains(name); });
+    const bool rename = !from_tuple->hasExplicitNames() && !to_tuple->hasExplicitNames() && from_elements.size() != to_elements.size();
+    if (!by_name && !rename && from_elements.size() != to_elements.size())
+        return {from, to};
+
+    if (by_name)
+    {
+        for (size_t i = 0; i < to_elements.size(); ++i)
+            if (auto it = from_positions.find(to_names[i]); it != from_positions.end())
+                std::tie(from_elements[it->second], to_elements[i])
+                    = nameTupleElementsByPositionImpl(from_elements[it->second], to_elements[i], renamed);
+    }
+    else
+    {
+        for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+            std::tie(from_elements[i], to_elements[i]) = nameTupleElementsByPositionImpl(from_elements[i], to_elements[i], renamed);
+    }
+
+    renamed |= rename;
+    auto rebuild = [&](const DataTypePtr & type, const DataTypeTuple & tuple, const DataTypes & elements) -> DataTypePtr
+    {
+        if (rename)
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        if (elements == tuple.getElements())
+            return type;
+        if (tuple.hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple.getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    };
+    return {rebuild(from, *from_tuple, from_elements), rebuild(to, *to_tuple, to_elements)};
+}
+
+/// Elements of two unnamed tuples are paired by position: missing trailing elements get default values and extra ones
+/// are dropped, as for missing and extra columns. Returns copies of both types in which such tuples are named by position.
+std::optional<std::pair<DataTypePtr, DataTypePtr>> nameTupleElementsByPosition(const DataTypePtr & from, const DataTypePtr & to)
+{
+    bool renamed = false;
+    auto named = nameTupleElementsByPositionImpl(from, to, renamed);
+    if (!renamed)
+        return {};
+    return named;
+}
+
+const ActionsDAG::Node & addCastWithTupleElementsByPosition(
+    ActionsDAG & dag, const ActionsDAG::Node & node, const DataTypePtr & to, ContextPtr context)
+{
+    const auto named = nameTupleElementsByPosition(node.result_type, to);
+    if (!named)
+        return dag.addCast(node, to, {}, context);
+
+    const auto & from_named = dag.addCast(node, named->first, {}, context);
+    const auto & to_named = dag.addCast(from_named, named->second, {}, context);
+    return dag.addCast(to_named, to, {}, context);
 }
 
 }
@@ -2636,8 +2751,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
                 auto [it, inserted] = converted_columns.emplace(name_in_storage, nullptr);
                 if (inserted)
-                    it->second = &extract_subcolumns_dag.addCast(
-                        extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, {}, local_context);
+                    it->second = &addCastWithTupleElementsByPosition(
+                        extract_subcolumns_dag, extract_subcolumns_dag.findInOutputs(name_in_storage), merge_column->type, local_context);
 
                 auto subcolumn_name_type = std::make_shared<DataTypeString>();
                 auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
@@ -2715,6 +2830,29 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             /// Matching by name, but some columns are unneeded.
             converted_columns.push_back(source_elem);
+        }
+    }
+
+    {
+        ActionsDAG tuple_elements_dag(current_step_columns);
+        auto & outputs = tuple_elements_dag.getOutputs();
+        bool has_tuple_elements_by_position = false;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (!nameTupleElementsByPosition(current_step_columns[i].type, converted_columns[i].type))
+                continue;
+
+            const auto & cast_node = addCastWithTupleElementsByPosition(tuple_elements_dag, *outputs[i], converted_columns[i].type, local_context);
+            outputs[i] = &tuple_elements_dag.addAlias(cast_node, current_step_columns[i].name);
+            has_tuple_elements_by_position = true;
+        }
+
+        if (has_tuple_elements_by_position)
+        {
+            auto tuple_elements_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(tuple_elements_dag));
+            tuple_elements_step->setStepDescription("Convert tuples with different numbers of elements to the Merge table types");
+            child.plan.addStep(std::move(tuple_elements_step));
+            current_step_columns = child.plan.getCurrentHeader()->getColumnsWithTypeAndName();
         }
     }
 
