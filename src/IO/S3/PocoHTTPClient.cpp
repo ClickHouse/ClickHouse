@@ -18,6 +18,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
+#include <Common/Silk/FiberScheduler.h>
 #include <base/sleep.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
@@ -144,7 +145,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     bool s3_slow_all_threads_after_network_error_,
     bool s3_slow_all_threads_after_retryable_error_,
     bool enable_s3_requests_logging_,
-    bool for_disk_s3_,
+    HTTPConnectionGroupType group_,
     std::optional<std::string> opt_disk_name_,
     bool s3_use_adaptive_timeouts_,
     const HTTPRequestThrottler & request_throttler_,
@@ -157,7 +158,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
     , s3_slow_all_threads_after_retryable_error(s3_slow_all_threads_after_retryable_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
-    , for_disk_s3(for_disk_s3_)
+    , group(group_)
     , opt_disk_name(opt_disk_name_)
     , request_throttler(request_throttler_)
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
@@ -182,7 +183,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
 
     // Make sure throttlers update DiskS3* profile events if necessary
-    if (for_disk_s3)
+    if (group == HTTPConnectionGroupType::DISK)
     {
         request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
         request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
@@ -249,7 +250,7 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
-    , for_disk_s3(client_configuration.for_disk_s3)
+    , group(client_configuration.group)
     , publish_connection_info(client_configuration.publish_connection_info)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
@@ -265,6 +266,38 @@ PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_c
            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))),
     remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter())
 {
+}
+
+void PocoHTTPClient::RetryRequestSleep(std::chrono::milliseconds sleep_time)
+{
+#if USE_SILK
+    if (Silk::isInsideFiber())
+    {
+        silk::FiberEvent::Future disabled;
+        request_processing_disabled.wait(&disabled);
+        std::ignore = silk::FiberFuture::waitWithTimeout(&disabled, std::chrono::nanoseconds(sleep_time).count());
+        disabled.cancel();
+        disabled.wait();
+        return;
+    }
+#endif
+    Aws::Http::HttpClient::RetryRequestSleep(sleep_time);
+}
+
+void PocoHTTPClient::DisableRequestProcessing()
+{
+    Aws::Http::HttpClient::DisableRequestProcessing();
+#if USE_SILK
+    request_processing_disabled.set();
+#endif
+}
+
+void PocoHTTPClient::EnableRequestProcessing()
+{
+#if USE_SILK
+    request_processing_disabled.reset();
+#endif
+    Aws::Http::HttpClient::EnableRequestProcessing();
 }
 
 std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
@@ -369,7 +402,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
     S3MetricKind kind = getMetricKind(request);
 
     ProfileEvents::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
-    if (for_disk_s3)
+    if (group == HTTPConnectionGroupType::DISK)
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
@@ -383,7 +416,7 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
         static HistogramMetrics::Metric & s3_connect_metric = HistogramMetrics::S3Connect.withLabels({});
         s3_connect_metric.observe(latency);
 
-        if (for_disk_s3)
+        if (group == HTTPConnectionGroupType::DISK)
         {
             static HistogramMetrics::Metric & disk_s3_connect_metric = HistogramMetrics::DiskS3Connect.withLabels({});
             disk_s3_connect_metric.observe(latency);
@@ -423,7 +456,7 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
     HistogramMetrics::observe(
         HistogramMetrics::S3FirstByte, first_byte_label_values, latency);
 
-    if (for_disk_s3)
+    if (group == HTTPConnectionGroupType::DISK)
     {
         HistogramMetrics::observe(
             HistogramMetrics::DiskS3FirstByte, first_byte_label_values, latency);
@@ -579,8 +612,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             if (enable_s3_requests_logging && !proxy_configuration.isEmpty())
                 LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
-
-            auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
 
             /// Reset times, as this may be a next session after a redirect
             connect_time = first_byte_time = 0;
@@ -973,7 +1004,6 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
     if (enable_s3_requests_logging)
         LOG_TEST(log, "Make request to: {}", url.toString());
 
-    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto session = makeHTTPSession(group, url, getCredentialAcquisitionTimeouts(timeouts));
     sendHTTPRequest(*session, request)->finalize();
 
@@ -1013,7 +1043,6 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromADC() const
 {
-    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto result = fetchGCPOAuthToken(
         google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, getCredentialAcquisitionTimeouts(timeouts), group);
     return
