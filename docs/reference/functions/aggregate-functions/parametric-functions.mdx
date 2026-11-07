@@ -93,7 +93,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
 <Note>
-Events that share a timestamp may lay in the sequence in an undefined order affecting the result. A `DateTime64` timestamp orders by its sub-second part too, so only events that share the same tick are ambiguous.
+Events that share a timestamp are matched in the order they reach the function, which is defined only when the input is sorted, for example by `ORDER BY timestamp, id` in a subquery. A `DateTime64` timestamp orders by its sub-second part too, so events share a timestamp only when they share the same tick.
 </Note>
 
 **Arguments**
@@ -178,7 +178,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
 <Note>
-Events that share a timestamp may lay in the sequence in an undefined order affecting the result. A `DateTime64` timestamp orders by its sub-second part too, so only events that share the same tick are ambiguous.
+Events that share a timestamp are matched in the order they reach the function, which is defined only when the input is sorted, for example by `ORDER BY timestamp, id` in a subquery. A `DateTime64` timestamp orders by its sub-second part too, so events share a timestamp only when they share the same tick.
 </Note>
 
 **Syntax**
@@ -235,7 +235,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 Return event timestamps of longest event chains that matched the pattern.
 
 <Note>
-Events that share a timestamp may lay in the sequence in an undefined order affecting the result. A `DateTime64` timestamp orders by its sub-second part too, so only events that share the same tick are ambiguous.
+Events that share a timestamp are matched in the order they reach the function, which is defined only when the input is sorted, for example by `ORDER BY timestamp, id` in a subquery. A `DateTime64` timestamp orders by its sub-second part too, so events share a timestamp only when they share the same tick.
 </Note>
 
 **Syntax**
@@ -697,6 +697,10 @@ _Experimental function, `SET allow_experimental_funnel_functions = 1` to enable 
 ```sql
 sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event1, event2, event3, ...)
 ```
+
+<Note>
+Events that share a timestamp are ordered by the `event_column` value. Events that compare equal on both are matched in the order they reach the function, which is defined only when the input is sorted, for example by `ORDER BY timestamp, id` in a subquery.
+</Note>
 
 **Parameters**
 
