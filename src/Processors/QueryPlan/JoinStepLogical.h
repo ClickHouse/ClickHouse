@@ -224,6 +224,10 @@ public:
     std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
+    /// The list the physical join selects its algorithm from: the planned algorithm first, then the user's list.
+    /// Anything that predicts that selection (such as `predictMergeJoinOutputOrder`) has to read this list.
+    std::vector<JoinAlgorithm> getEffectiveJoinAlgorithms() const;
+
     /// Swap left and right sides
     void swapInputs();
 

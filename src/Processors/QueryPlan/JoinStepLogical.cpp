@@ -2078,7 +2078,10 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
     /// `ie_join` claims a join that has equality keys only when `isIEJoinPreferred` says so (listed first,
     /// with at least two inequality predicates), and it is skipped over otherwise, like `tryAddJoinRuntimeFilter`
     /// does. Any other algorithm is taken as selected: its output order is not exploitable.
-    for (auto algorithm : join_settings.join_algorithms)
+    /// The list includes the planned algorithm, exactly as `buildPhysicalJoin` will select from it: a join the
+    /// join order optimizer planned as `full_sorting_merge` emits sorted output even if the user's list starts
+    /// with an algorithm whose order is not exploitable.
+    for (auto algorithm : getEffectiveJoinAlgorithms())
     {
         switch (algorithm)
         {
@@ -2113,12 +2116,23 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
     return {};
 }
 
+std::vector<JoinAlgorithm> JoinStepLogical::getEffectiveJoinAlgorithms() const
+{
+    auto algorithms = join_settings.join_algorithms;
+    if (planned_algorithm)
+    {
+        std::erase(algorithms, *planned_algorithm);
+        algorithms.insert(algorithms.begin(), *planned_algorithm);
+    }
+    return algorithms;
+}
+
 bool JoinStepLogical::isGraceHashJoinSkipped() const
 {
-    /// Keep this in sync with the `GRACE_HASH` branch of `tryCreateJoin`.
+    /// Keep this in sync with the `GRACE_HASH` branch of `tryCreateJoin`, which sees the effective list.
     return !join_settings.legacy_join_size_limits_trigger_spilling
         && join_settings.getEffectiveMaxBytesBeforeExternalJoin() == 0
-        && join_settings.join_algorithms.size() > 1;
+        && getEffectiveJoinAlgorithms().size() > 1;
 }
 
 bool JoinStepLogical::isGraceHashJoinSupported() const
@@ -3104,11 +3118,7 @@ void JoinStepLogical::buildPhysicalJoin(
 
     /// The planned algorithm goes first, the user's list stays its fallback.
     auto join_settings = join_step->join_settings;
-    if (const auto planned = join_step->planned_algorithm)
-    {
-        std::erase(join_settings.join_algorithms, *planned);
-        join_settings.join_algorithms.insert(join_settings.join_algorithms.begin(), *planned);
-    }
+    join_settings.join_algorithms = join_step->getEffectiveJoinAlgorithms();
 
     UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
     UInt64 join_output_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getJoinOutputCacheKey() : 0;
