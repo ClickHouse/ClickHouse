@@ -59,6 +59,10 @@ public:
     /// if it was applied more than `max_scheduled_local_tasks` in a row.
     constexpr static size_t max_scheduled_local_tasks = 128;
     size_t num_scheduled_local_tasks = 0;
+    /// A single thread polls async tasks only when it takes a task from the queue, so while one is waiting
+    /// the optimization is also skipped once `max_ns_without_async_poll` passed since the last poll.
+    constexpr static UInt64 max_ns_without_async_poll = 10'000'000;
+    UInt64 last_async_poll_ns = 0;
 
     const size_t thread_number;
     const bool profile_processors;
