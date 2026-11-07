@@ -56,6 +56,14 @@ A function configuration contains the following settings:
 
 When `use_shared_memory` is disabled, the command must read arguments from `STDIN` and output the result to `STDOUT`. The command must process arguments iteratively: after processing a chunk of arguments, it must wait for the next chunk. When `use_shared_memory` is enabled, the command implements the [control protocol](#shared-memory-protocol) instead.
 
+<Note>
+With the `TabSeparated` format, ClickHouse escapes special characters in the arguments it sends and unescapes the command output, following the [TabSeparated escaping rules](/reference/formats/TabSeparated/TabSeparated#tabseparated-data-formatting). For example, a backslash in an argument reaches the command as `\\`, and a tab or a line feed as `\t` or `\n`. The command must escape its output in the same way. Otherwise, a backslash in the output, for example in JSON text, is read as the start of an escape sequence, and the result is wrong or fails to parse.
+
+If the command does not escape its output, use one of these formats instead:
+- [`TabSeparatedRaw`](/reference/formats/TabSeparated/TabSeparatedRaw): values are not escaped, so they must not contain tabs or line feeds.
+- [`JSONEachRow`](/reference/formats/JSON/JSONEachRow): strings can contain backslashes, tabs and line feeds. See the [JSON example](#udf-stdin) below.
+</Note>
+
 `shared_memory_size` and `shared_memory_max_size` must not appear in the configuration of a function without `use_shared_memory`, not even with the value `0`: the configuration is rejected if either key is present, because such a function would otherwise silently use the pipes. `use_shared_memory` itself may be written out as `0`.
 
 ### Command termination and exit code {#executable-udf-termination}

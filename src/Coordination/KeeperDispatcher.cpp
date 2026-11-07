@@ -150,12 +150,12 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
+        [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session, int32_t dispatcher_server_id)
         {
             if (dispatcher_old)
                 dispatcher_old->onCommit(request_for_session);
             else
-                dispatcher->onCommit(request_for_session);
+                dispatcher->onCommit(request_for_session, dispatcher_server_id);
         });
 
     bool new_dispatcher_response_thread_started = false;
