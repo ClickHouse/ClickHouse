@@ -12,6 +12,11 @@
 
 #include <gtest/gtest.h>
 
+namespace DB::ErrorCodes
+{
+extern const int CANNOT_READ_ALL_DATA;
+}
+
 TEST(DDSketch, MergeDifferentGammasWithoutSegfault)
 {
     using namespace DB;
@@ -175,7 +180,7 @@ std::string buildPayloadWithBinCount(Float64 bin_count)
     return result;
 }
 
-/// Build a payload with too many bins in the positive store.
+/// Build a payload whose positive store claims more bins than it has.
 std::string buildPayloadWithTooManyBins(UInt64 num_bins)
 {
     std::string result;
@@ -198,7 +203,7 @@ std::string buildPayloadWithTooManyBins(UInt64 num_bins)
     writeVarUInt(num_bins, buf);
     writeVarInt(Int64(0), buf);
     writeVarInt(Int64(1), buf);
-    /// We don't write actual bin data — the read should fail before it gets that far.
+    /// We don't write actual bin data — the read should fail at its end, without allocating the bins first.
 
     buf.finalize();
     return result;
@@ -264,10 +269,19 @@ TEST(DDSketch, CorruptedBinCountNegative)
 
 TEST(DDSketch, TooManyBins)
 {
-    auto data = buildPayloadWithTooManyBins(100000);
+    /// More bins than any store can hold: reserving them up front would throw `std::length_error` before the read reaches the end
+    auto data = buildPayloadWithTooManyBins(std::numeric_limits<UInt64>::max());
     DB::ReadBufferFromString buf(data);
     DB::DDSketchDenseLogarithmic sketch;
-    ASSERT_THROW(sketch.deserialize(buf), DB::Exception);
+    try
+    {
+        sketch.deserialize(buf);
+        FAIL() << "Expected CANNOT_READ_ALL_DATA";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_READ_ALL_DATA) << e.message();
+    }
 }
 
 TEST(DDSketch, CorruptedZeroCountNaN)

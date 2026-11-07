@@ -148,11 +148,12 @@ public:
             // Throw exception if the relative accuracy is too small.
             // This is to avoid the case where the user specifies a relative accuracy that is too small
             // and the sketch is not able to allocate enough memory to satisfy the accuracy requirement.
-            if (relative_accuracy < 1e-6)
+            if (relative_accuracy < Data::min_relative_accuracy) [[unlikely]]
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Aggregate function {} requires relative accuracy parameter with value greater than 1e-6 but is {}",
+                    "Aggregate function {} requires relative accuracy parameter with value at least {} but is {}",
                     getName(),
+                    Data::min_relative_accuracy,
                     relative_accuracy);
         }
         else if constexpr (has_accuracy_parameter)
