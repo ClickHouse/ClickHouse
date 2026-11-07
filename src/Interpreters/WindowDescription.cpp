@@ -2,9 +2,6 @@
 #include <Core/Field.h>
 #include <IO/Operators.h>
 #include <Interpreters/WindowDescription.h>
-#include <Parsers/ASTFunction.h>
-#include <WindowFunctions/IGeneralWindowFunction.h>
-#include <WindowFunctions/WindowFunction.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 
@@ -22,8 +19,6 @@ std::string WindowFunctionDescription::dump() const
     WriteBufferFromOwnString ss;
 
     ss << "window function '" << column_name << "\n";
-    if (function_node)
-        ss << "function node " << function_node->dumpTree() << "\n";
     ss << "aggregate function '" << aggregate_function->getName() << "'\n";
     if (!function_parameters.empty())
     {

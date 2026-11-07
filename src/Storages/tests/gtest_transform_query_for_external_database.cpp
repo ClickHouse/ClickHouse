@@ -290,6 +290,25 @@ static void check(
     }
 }
 
+static void checkNewAnalyzer(
+    const State & state,
+    [[maybe_unused]] size_t table_num,
+    const Names & column_names,
+    const std::string & query,
+    const std::string & expected,
+    const std::string & expected_new = "",
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
+    const NameSet & local_only_columns = {},
+    bool require_dialect_neutral_literals = false,
+    const std::string & additional_filter = "",
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true)
+{
+    SCOPED_TRACE("Analyzer");
+    checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style,
+                        local_only_columns, require_dialect_neutral_literals, additional_filter, limit, allow_limit_push_down);
+}
+
 /// `StorageXDBC` does not know which database is behind the bridge, so it asks for dialect-neutral
 /// literals only: a string that `Regular` escaping writes differently from a standard-conforming
 /// database is filtered by ClickHouse instead of being compared against different bytes remotely.
@@ -760,7 +779,7 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "SELECT sum(column) + 1 FROM table LIMIT 1",
         R"(SELECT "column" FROM "test"."table")");
 
-    check(state, 1, {"column"},
+    checkNewAnalyzer(state, 1, {"column"},
         "SELECT sum(column) OVER () FROM table LIMIT 10",
         R"(SELECT "column" FROM "test"."table")");
 
