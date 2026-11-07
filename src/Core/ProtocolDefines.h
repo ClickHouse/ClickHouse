@@ -85,7 +85,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// the serializer fails closed instead when talking to a peer below version 4.
 /// Version 5 registers the `enable_packed_string_keys_in_aggregation` plan setting. A peer at this version
 /// receives it on every aggregation step whenever the legacy method is requested. An older peer rejects the
-/// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
+/// unknown name (the binary reader of the step settings of that time throws), so towards such a peer the name is
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
 /// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
@@ -148,6 +148,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 also adds the `hash_join_layout` plan setting, written only towards a peer at this version or above.
 /// A peer below it picks the layout of a hash join itself. That can change only the speed, the memory use and the
 /// order of rows.
+/// Version 21 also writes the step settings (`QueryPlanSerializationSettings`) by name with the values as strings,
+/// as `Settings` are sent in the native protocol, instead of the binary encoding of each value. A reader skips a
+/// name it does not know, unless the setting is declared `IMPORTANT`. The binary encoding is no longer supported
+/// at all, so a peer below this version can neither send nor receive a plan (see the constant below).
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -161,6 +165,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///
 /// Last bumped for release 26.11.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+/// The oldest query-plan serialization version that can be written or read. Below it, the step settings were
+/// encoded in a binary form that is not supported anymore. A plan is not serialized for such a peer, and a plan
+/// from such a peer is not deserialized.
+static constexpr auto DBMS_MIN_SUPPORTED_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -185,7 +193,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOUR
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
 /// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
-/// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
+/// written, because the reader of an older peer throws on an unknown name; that peer then runs the
 /// aggregation with its own two-level decision.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a

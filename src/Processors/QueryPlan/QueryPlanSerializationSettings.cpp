@@ -149,13 +149,14 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out) const
+void QueryPlanSerializationSettings::write(WriteBuffer & out) const
 {
-    impl->writeChangedBinary(out);
+    impl->write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
 }
-void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
+
+void QueryPlanSerializationSettings::read(ReadBuffer & in)
 {
-    impl->readBinary(in);
+    impl->read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
 }
 
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)

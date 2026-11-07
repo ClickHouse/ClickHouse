@@ -325,12 +325,6 @@ public:
     /// Read settings from a buffer
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
 
-    /// Write only changed settings in binary format
-    void writeChangedBinary(WriteBuffer & out) const;
-
-    /// Read settings in binary format
-    void readBinary(ReadBuffer & in);
-
     /// Copy settings with HOT_RELOAD flag from `new_settings` into `this`.
     /// Leave other settings unchanged.
     void updateHotReloadableSettings(const BaseSettings & new_settings);
@@ -787,53 +781,6 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
 
     /// Empty string is a marker of the end of settings.
     BaseSettingsHelpers::writeString(std::string_view{}, out);
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::writeChangedBinary(WriteBuffer & out) const
-{
-    const auto & accessor = Traits::Accessor::instance();
-
-    size_t num_settings = 0;
-    for (auto it = this->begin(); it != this->end(); ++it)
-        ++num_settings;
-
-    writeVarUInt(num_settings, out);
-
-    for (const auto & field : *this)
-    {
-        BaseSettingsHelpers::writeString(field.getName(), out);
-        using Flags = BaseSettingsHelpers::Flags;
-        Flags flags{};
-        BaseSettingsHelpers::writeFlags(flags, out);
-        accessor.writeBinary(*this, field.index, out);
-    }
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
-{
-    const auto & accessor = Traits::Accessor::instance();
-
-    size_t num_settings = 0;
-    readVarUInt(num_settings, in);
-
-    if (num_settings > MAX_SETTINGS_IN_A_SEQUENCE)
-        BaseSettingsHelpers::throwTooManySettings("settings");
-
-    for (size_t i = 0; i < num_settings; ++i)
-    {
-        String read_name = BaseSettingsHelpers::readName(in);
-        std::string_view name = TTraits::resolveName(read_name);
-        size_t index = accessor.find(name);
-
-        std::ignore = BaseSettingsHelpers::readFlags(in);
-
-        if (index == static_cast<size_t>(-1))
-            BaseSettingsHelpers::throwSettingNotFound(name);
-
-        accessor.readBinary(*this, index, in);
-    }
 }
 
 template <typename TTraits>
