@@ -9,9 +9,15 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ProtocolDefines.h>
+#include <Common/ProfileEvents.h>
 #include <base/types.h>
 #include <fmt/format.h>
 #include <IO/ReadHelpers.h>
+
+namespace ProfileEvents
+{
+    extern const Event DistributedPlanTaskStartBytes;
+}
 
 namespace DB
 {
@@ -103,14 +109,19 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
             {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
         });
 
-    auto task_serializer = [task_description] (WriteBuffer & buf)
+    size_t task_bytes = 0;
+    auto task_serializer = [&task_description, &task_bytes] (WriteBuffer & buf)
     {
+        const size_t bytes_before = buf.count();
         serializeTask(task_description, buf);
+        task_bytes = buf.count() - bytes_before;
     };
 
     try
     {
-        return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
+        auto response = doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanTaskStartBytes, task_bytes);
+        return response;
     }
     catch (...)
     {
