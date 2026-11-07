@@ -84,6 +84,10 @@ void assertOffsetsAreUnique(const Map & map, UInt64 first_key, UInt64 last_key)
 template <typename Map>
 void fillUnderBucketLocks(Map & map, size_t num_threads, UInt64 keys_per_thread, bool same_keys_in_every_thread)
 {
+    /// As the build of `parallel_hash` join does: the buckets of a `TwoLevelHashTable` must not grow together.
+    if constexpr (requires { map.disableGroupedGrowth(); })
+        map.disableGroupedGrowth();
+
     std::vector<std::mutex> bucket_mutexes(Map::NUM_BUCKETS);
     std::vector<std::thread> threads;
     threads.reserve(num_threads);
