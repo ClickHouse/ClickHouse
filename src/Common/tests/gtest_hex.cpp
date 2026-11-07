@@ -1,9 +1,12 @@
 #include <Common/Hex.h>
 #include <base/Decimal_fwd.h>
 #include <base/extended_types.h>
+#include <base/scope_guard.h>
 #include <base/types.h>
 #include <city.h>
 
+#include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -298,9 +301,10 @@ struct DefaultHexTrait
 {
     static void skipIfUnsupported() { }
 
-    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    template <typename Case>
+    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size, Case c)
     {
-        TargetSpecific::Default::encodeHexStringImpl(dst, src, size, heks::lower);
+        TargetSpecific::Default::encodeHexStringImpl(dst, src, size, c);
     }
 
     static void decodeString(uint8_t * dst, const uint8_t * src, size_t size)
@@ -329,9 +333,10 @@ struct X86V3HexTrait
             GTEST_SKIP() << "x86_64_v3 (AVX2) not supported on this host";
     }
 
-    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    template <typename Case>
+    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size, Case c)
     {
-        TargetSpecific::x86_64_v3::encodeHexStringImpl(dst, src, size, heks::lower);
+        TargetSpecific::x86_64_v3::encodeHexStringImpl(dst, src, size, c);
     }
 
     static void decodeString(uint8_t * dst, const uint8_t * src, size_t size)
@@ -350,9 +355,139 @@ struct X86V3HexTrait
     }
 };
 
+/// The `x86_64_v4` and `x86_64_icelake` targets have only string code: integers use the `x86_64_v3` code there,
+/// as in the dispatchers of `Hex.cpp`.
+struct X86V4HexTrait : X86V3HexTrait
+{
+    static void skipIfUnsupported()
+    {
+        if (!DB::isArchSupported(DB::TargetArch::x86_64_v4))
+            GTEST_SKIP() << "x86_64_v4 (AVX-512) not supported on this host";
+    }
+
+    template <typename Case>
+    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+    {
+        TargetSpecific::x86_64_v4::encodeHexStringImpl(dst, src, size, c);
+    }
+
+    static void decodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    {
+        TargetSpecific::x86_64_v4::decodeHexStringImpl(dst, src, size);
+    }
+};
+
+struct X86IcelakeHexTrait : X86V3HexTrait
+{
+    static void skipIfUnsupported()
+    {
+        if (!DB::isArchSupported(DB::TargetArch::x86_64_icelake))
+            GTEST_SKIP() << "x86_64_icelake (AVX-512 VBMI) not supported on this host";
+    }
+
+    template <typename Case>
+    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+    {
+        TargetSpecific::x86_64_icelake::encodeHexStringImpl(dst, src, size, c);
+    }
+
+    static void decodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    {
+        TargetSpecific::x86_64_icelake::decodeHexStringImpl(dst, src, size);
+    }
+};
+
 #endif
 
+#if USE_ARM_MULTITARGET_CODE
+
+struct ArmSveHexTrait : DefaultHexTrait
+{
+    static void skipIfUnsupported()
+    {
+        if (!DB::isArchSupported(DB::TargetArch::ARM_SVE))
+            GTEST_SKIP() << "ARM_SVE not supported on this host";
+    }
+
+    template <typename Case>
+    static void encodeString(uint8_t * dst, const uint8_t * src, size_t size, Case c)
+    {
+        TargetSpecific::ARM_SVE::encodeHexStringImpl(dst, src, size, c);
+    }
+
+    static void decodeString(uint8_t * dst, const uint8_t * src, size_t size)
+    {
+        TargetSpecific::ARM_SVE::decodeHexStringImpl(dst, src, size);
+    }
+};
+
+#endif
+
+/// Byte-at-a-time reference encoder, independent of `heks`.
+std::string referenceHexString(const uint8_t * src, size_t size, bool upper)
+{
+    const char * digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+    std::string res;
+    res.reserve(size * 2);
+    for (size_t i = 0; i < size; ++i)
+    {
+        res += digits[src[i] >> 4];
+        res += digits[src[i] & 0xf];
+    }
+    return res;
+}
+
 } // namespace
+
+
+/// Encode and decode one buffer size through one implementation and compare it with the byte-at-a-time
+/// reference: lower and upper case, plus upper-case at every third digit, which falls on both the high and
+/// the low digit of a byte. Each buffer starts one byte into its allocation, so it is unaligned. The inputs
+/// are allocated with their exact size, so that ASan catches a read past the end, and the guard bytes after
+/// each output must stay untouched.
+template <typename Trait>
+void checkHexStringRoundtrip(size_t size)
+{
+    SCOPED_TRACE("size=" + std::to_string(size));
+
+    constexpr size_t guard = 64;
+    constexpr uint8_t sentinel = 0xa5;
+    auto as_string = [](const uint8_t * p, size_t n) { return std::string(reinterpret_cast<const char *>(p), n); };
+    auto guard_intact = [](const uint8_t * end) { return std::all_of(end, end + guard, [](uint8_t b) { return b == sentinel; }); };
+
+    std::vector<uint8_t> original_buf(1 + size);
+    const uint8_t * original = original_buf.data() + 1;
+    for (size_t i = 0; i < size; ++i)
+        original_buf[1 + i] = static_cast<uint8_t>(i * 37 + 13);
+
+    std::vector<uint8_t> lower_buf(1 + size * 2 + guard, sentinel);
+    uint8_t * lower = lower_buf.data() + 1;
+    Trait::encodeString(lower, original, size, heks::lower);
+    ASSERT_EQ(referenceHexString(original, size, false), as_string(lower, size * 2));
+    ASSERT_TRUE(guard_intact(lower + size * 2));
+
+    std::vector<uint8_t> upper_buf(1 + size * 2 + guard, sentinel);
+    uint8_t * upper = upper_buf.data() + 1;
+    Trait::encodeString(upper, original, size, heks::upper);
+    ASSERT_EQ(referenceHexString(original, size, true), as_string(upper, size * 2));
+    ASSERT_TRUE(guard_intact(upper + size * 2));
+
+    std::string mixed = as_string(lower, size * 2);
+    for (size_t i = 0; i < mixed.size(); i += 3)
+        mixed[i] = static_cast<char>(upper[i]);
+
+    for (const std::string & encoded : {as_string(lower, size * 2), as_string(upper, size * 2), mixed})
+    {
+        std::vector<uint8_t> input_buf(1 + size * 2);
+        memcpy(input_buf.data() + 1, encoded.data(), size * 2);
+
+        std::vector<uint8_t> decoded_buf(1 + size + guard, sentinel);
+        uint8_t * decoded = decoded_buf.data() + 1;
+        Trait::decodeString(decoded, input_buf.data() + 1, size);
+        ASSERT_EQ(as_string(original, size), as_string(decoded, size)) << "decoding " << encoded;
+        ASSERT_TRUE(guard_intact(decoded + size));
+    }
+}
 
 
 template <typename T>
@@ -366,6 +501,11 @@ using HexImplementations = ::testing::Types<
     DefaultHexTrait
 #if USE_X86_64_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
     , X86V3HexTrait
+    , X86V4HexTrait
+    , X86IcelakeHexTrait
+#endif
+#if USE_ARM_MULTITARGET_CODE
+    , ArmSveHexTrait
 #endif
     >;
 
@@ -374,22 +514,9 @@ TYPED_TEST_SUITE(HexMultiArchTest, HexImplementations);
 
 TYPED_TEST(HexMultiArchTest, StringEncodeDecodeRoundtrip)
 {
-    for (size_t size : {0, 1, 7, 15, 16, 17, 31, 32, 33, 64, 100})
-    {
-        SCOPED_TRACE("size=" + std::to_string(size));
-
-        std::vector<uint8_t> original(size);
-        for (size_t i = 0; i < size; ++i)
-            original[i] = static_cast<uint8_t>(i * 37 + 13);
-
-        std::vector<uint8_t> encoded(size * 2);
-        TypeParam::encodeString(encoded.data(), original.data(), size);
-
-        std::vector<uint8_t> decoded(size);
-        TypeParam::decodeString(decoded.data(), encoded.data(), size);
-
-        ASSERT_EQ(original, decoded);
-    }
+    /// Every size up to 200 covers each short-input path, whole 64-byte AVX-512 blocks and the overlapping tails.
+    for (size_t size = 0; size <= 200; ++size)
+        checkHexStringRoundtrip<TypeParam>(size);
 }
 
 TYPED_TEST(HexMultiArchTest, IntegralUInt64)
@@ -438,3 +565,48 @@ TYPED_TEST(HexMultiArchTest, EncodeHex16LE)
     /// Output should be hex(high64) followed by hex(low64), both MSB-first.
     ASSERT_EQ("0123456789abcdeffedcba9876543210", std::string_view(reinterpret_cast<const char *>(hex_buf), 32));
 }
+
+
+/// SVE instructions produce the same result at every vector length, but the number of loop iterations
+/// and the tails depend on the length the thread runs with. Run the `ARM_SVE` code at every vector
+/// length the hardware supports and compare it against the byte-at-a-time reference, so a bug in the
+/// VL-dependent part cannot hide behind the one vector length the host happened to boot with.
+#if USE_ARM_MULTITARGET_CODE && defined(__linux__)
+
+#    include <sys/prctl.h>
+
+TEST(HexSveVectorLengths, AllVectorLengths)
+{
+    ArmSveHexTrait::skipIfUnsupported();
+
+    /// `prctl` takes and returns the vector length in bytes. The scope guard restores the original
+    /// length even when an assertion below fails.
+    const int original_vl = prctl(PR_SVE_GET_VL);
+    ASSERT_GT(original_vl, 0);
+    SCOPE_EXIT({ [[maybe_unused]] int restore_vl = prctl(PR_SVE_SET_VL, original_vl); });
+
+    size_t previous_vl = 0;
+    for (int requested_vl = 16; requested_vl <= 256; requested_vl += 16) /// 128 to 2048 bits
+    {
+        errno = 0;
+        const int vl = prctl(PR_SVE_SET_VL, requested_vl);
+        const int saved_errno = errno;
+        ASSERT_GT(vl, 0) << "prctl(PR_SVE_SET_VL) failed: " << strerror(saved_errno);
+        const size_t vl_bytes = static_cast<size_t>(vl & PR_SVE_VL_LEN_MASK);
+        if (vl_bytes == previous_vl)
+            continue; /// The hardware caps the request at its maximum vector length.
+        previous_vl = vl_bytes;
+
+        SCOPED_TRACE("SVE vector length = " + std::to_string(vl_bytes * 8) + " bits");
+
+        /// Sizes around the boundaries of the SVE loop, which starts at 32 bytes and steps by the
+        /// vector length, plus the short-input paths below it.
+        for (size_t size : {0, 1, 2, 3, 4, 7, 15, 16, 31, 32, 33, 63, 64, 65})
+            checkHexStringRoundtrip<ArmSveHexTrait>(size);
+        for (size_t k : {1, 2})
+            for (size_t delta : {vl_bytes * k + 31, vl_bytes * k + 32, vl_bytes * k + 33})
+                checkHexStringRoundtrip<ArmSveHexTrait>(delta);
+    }
+}
+
+#endif
