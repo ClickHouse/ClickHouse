@@ -22,6 +22,7 @@
 #include <unordered_set>
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/replaceNegativeZeros.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -2544,6 +2545,9 @@ bool Aggregator::executeOnBlock(Columns columns,
             }
         }
     }
+
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, materialized_columns);
 
     prepareAggregateInstructions(columns, aggregate_columns, materialized_columns, aggregate_functions_instructions, nested_columns_holder);
     block_columns_scope.reset();

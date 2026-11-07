@@ -210,6 +210,8 @@ private:
     struct HashedKeyColumns
     {
         ColumnRawPtrs columns;
+        /// Owns the key columns with negative zeros replaced.
+        Columns holder;
         /// Owns `null_map` when it combines several `Nullable` key columns.
         ColumnPtr null_map_holder;
         ConstNullMapPtr null_map = nullptr;

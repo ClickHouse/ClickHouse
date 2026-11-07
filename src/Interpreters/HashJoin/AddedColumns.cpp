@@ -1,5 +1,6 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <DataTypes/NullableUtils.h>
+#include <Columns/replaceNegativeZeros.h>
 
 namespace DB
 {
@@ -15,10 +16,12 @@ JoinOnKeyColumns::JoinOnKeyColumns(
           : JoinCommon::materializeColumns(block.getSourceBlock(), key_names))
     , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
     , null_map(nullptr)
-    , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
     , join_mask_column(JoinCommon::getColumnAsMask(block.getSourceBlock(), cond_column_name))
     , key_sizes(key_sizes_)
 {
+    /// Hash tables compare floating point keys bitwise, but `-0.` is equal to `0.`.
+    replaceNegativeZeros(key_columns, materialized_keys_holder);
+    null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 }
 
 namespace
