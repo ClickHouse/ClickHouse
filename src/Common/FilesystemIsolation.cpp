@@ -772,7 +772,16 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     if (mode == FilesystemIsolationMode::Disabled)
         return rememberStatus(mode, {});
 
-    if (const size_t threads = countThreads(); threads != 1)
+#if defined(THREAD_SANITIZER)
+    /// The runtime of the thread sanitizer starts its own background thread in the child of every `fork`, even if the
+    /// parent did not have one, as in the process that `--daemon` forks, and there is no way to stop it then. It is
+    /// not a thread of the server, and it does not prevent entering a new mount namespace. A user namespace cannot be
+    /// entered with it, which `probeNamespaces` finds out, as its child has the same thread.
+    constexpr size_t max_threads = 2;
+#else
+    constexpr size_t max_threads = 1;
+#endif
+    if (const size_t threads = countThreads(); threads > max_threads)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "The filesystem must be isolated when the process has a single thread, but it has {}", threads);
