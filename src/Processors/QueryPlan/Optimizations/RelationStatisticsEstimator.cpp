@@ -79,9 +79,10 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
             *total_number_of_distinct_values *= static_cast<Float64>(key_number_of_distinct_values);
     }
 
+    /// A keyless aggregation returns at most one row, even when the size of its input is unknown.
     if (total_number_of_distinct_values && input_stats.estimated_rows)
         total_number_of_distinct_values = std::min(*total_number_of_distinct_values, Float64(*input_stats.estimated_rows));
-    else
+    else if (!aggregator_params.keys.empty())
         total_number_of_distinct_values = input_stats.estimated_rows;
 
     if (total_number_of_distinct_values)
@@ -353,7 +354,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
-        return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+        RelationStats stats{.estimated_rows = estimated_rows, .table_name = table_display_name, .source = RowEstimateSource::Statistics};
+        /// Without statistics a filter leaves the row count unknown; an empty table stays at 0 rows.
+        if (estimated_rows != 0 && !getConditionsToEstimate(*reading, filter).empty())
+        {
+            stats.estimated_rows.reset();
+            stats.imprecise_estimate = true;
+        }
+        return stats;
     }
 
     /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
