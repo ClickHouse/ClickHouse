@@ -11,6 +11,7 @@ SET flatten_nested = 1;
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS u;
 DROP TABLE IF EXISTS v;
+DROP TABLE IF EXISTS w;
 DROP DICTIONARY IF EXISTS d;
 
 CREATE TABLE t (val UInt64) ENGINE = Memory;
@@ -23,6 +24,16 @@ SELECT (SELECT t.* FROM t AS c LIMIT 1) FROM u SETTINGS analyzer_compatibility_p
 SELECT (SELECT t.* FROM t AS c LIMIT 1) FROM u SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
 SELECT (SELECT x.* FROM t AS c LIMIT 1) FROM (SELECT t AS x FROM u) SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 SELECT (SELECT t.* FROM t AS c ORDER BY val LIMIT 1) FROM u SETTINGS analyzer_alias_hides_table_name = 0, analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+
+SELECT 'exact column before nested prefix';
+-- A column `t` takes precedence over the `Nested` prefix reconstructed from `t.val`, as in normal resolution.
+-- The scalar `w.t` cannot be expanded by a matcher, so it is no competing reading for `t.*`.
+CREATE TABLE w (t UInt64, `t.val` Array(UInt64)) ENGINE = Memory;
+INSERT INTO w VALUES (1, [100]);
+SELECT (SELECT t.* FROM t AS c ORDER BY val LIMIT 1) FROM w SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT (SELECT t.* FROM t AS c ORDER BY val LIMIT 1) FROM w SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+SELECT (SELECT t.* FROM t AS c ORDER BY val LIMIT 1) FROM w SETTINGS analyzer_alias_hides_table_name = 0;
+DROP TABLE w;
 
 SELECT 'unused storage alias';
 CREATE DICTIONARY d (key UInt64, value UInt64) PRIMARY KEY key SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);

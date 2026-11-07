@@ -764,16 +764,18 @@ bool tableExpressionDataCanReconstructNestedPrefix(
 }
 
 /// Returns true if `identifier_view` names a column or a subcolumn of a column of the table expression, or
-/// a `Nested` value reconstructed from its columns, that gives the identifier of `identifier_lookup` a reading,
-/// see `readingIsUsableForLookup`. Only declared types are inspected, so no `ALIAS` column is resolved.
+/// a `Nested` value reconstructed from its columns (only when there is no such column or subcolumn), that gives
+/// the identifier of `identifier_lookup` a reading, see `readingIsUsableForLookup`. Only declared types are inspected, so no `ALIAS` column is resolved.
 bool tableExpressionDataCanReadIdentifier(
     const AnalysisTableExpressionData & table_expression_data,
     IdentifierView identifier_view,
     const IdentifierLookup & identifier_lookup,
     const ContextPtr & context)
 {
-    if (readingIsUsableForLookup(tryGetDeclaredColumnOrSubcolumnType(table_expression_data, identifier_view.getFullName()), identifier_lookup))
-        return true;
+    /// As in `tryResolveIdentifierFromStorage`, a column or a subcolumn takes precedence over a reconstructed
+    /// `Nested` prefix: if one exists, it alone decides whether there is a reading.
+    if (auto type = tryGetDeclaredColumnOrSubcolumnType(table_expression_data, identifier_view.getFullName()))
+        return readingIsUsableForLookup(type, identifier_lookup);
 
     return tableExpressionDataCanReconstructNestedPrefix(table_expression_data, identifier_view, context);
 }
