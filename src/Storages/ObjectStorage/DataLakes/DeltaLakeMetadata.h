@@ -40,6 +40,8 @@ public:
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
+    bool hasColumnMapping() const { return has_column_mapping; }
+
     bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
@@ -87,6 +89,7 @@ private:
     NamesAndTypesList schema;
     DeltaLakePartitionColumns partition_columns;
     ObjectStoragePtr object_storage;
+    bool has_column_mapping = false;
 
     Strings getDataFiles(const ActionsDAG *) const { return data_files; }
 };
