@@ -189,10 +189,20 @@ void pullUpTupleElementDefaultsInAlterQuery(
         if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
             share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
-        auto has_nested = [&](const String & name)
+        auto has_nested_in = [](const NameSet & column_names, const String & name)
         {
             const String prefix = name + ".";
-            return std::ranges::any_of(result.column_names, [&](const String & column_name) { return column_name.starts_with(prefix); });
+            return std::ranges::any_of(column_names, [&](const String & column_name) { return column_name.starts_with(prefix); });
+        };
+        auto has_nested = [&](const String & name) { return has_nested_in(result.column_names, name); };
+
+        /// `AlterCommands::prepare` ignores a conditional command (`IF EXISTS`, `IF NOT EXISTS`) by checking
+        /// whether its column exists in the table before the query, not after the preceding commands.
+        /// `AlterCommand::apply` then checks once more against the columns so far, as done below.
+        const NameSet initial_column_names = result.column_names;
+        auto existed_initially = [&](const String & name)
+        {
+            return initial_column_names.contains(name) || (share_nested_offsets && has_nested_in(initial_column_names, name));
         };
 
         for (size_t i = 0; i < commands.size(); ++i)
@@ -205,7 +215,8 @@ void pullUpTupleElementDefaultsInAlterQuery(
                 /// `share_nested_offsets`, the `Nested` group) exists, otherwise each existing flattened column.
                 const auto & col_decl = command.col_decl->as<const ASTColumnDeclaration &>();
                 if (command.if_not_exists
-                    && (result.column_names.contains(col_decl.name) || (share_nested_offsets && has_nested(col_decl.name))))
+                    && (existed_initially(col_decl.name) || result.column_names.contains(col_decl.name)
+                        || (share_nested_offsets && has_nested(col_decl.name))))
                     continue;
 
                 /// With `IF NOT EXISTS`, the names which exist already are not added, which keeps the set unchanged.
@@ -213,9 +224,15 @@ void pullUpTupleElementDefaultsInAlterQuery(
             }
             else if (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition)
             {
+                /// `DROP COLUMN IF EXISTS` is skipped if the column did not exist before the query, and
+                /// `AlterCommand::apply` skips it if there is no column with exactly this name so far
+                /// (a flattened `Nested` group is not such a column).
+                const String name = getIdentifierName(command.column);
+                if (command.if_exists && (!existed_initially(name) || !result.column_names.contains(name)))
+                    continue;
+
                 /// As `ColumnsDescription::remove`: the column with exactly this name, otherwise the whole
                 /// flattened `Nested` group with this name.
-                const String name = getIdentifierName(command.column);
                 if (!result.column_names.erase(name))
                 {
                     const String prefix = name + ".";
@@ -224,10 +241,13 @@ void pullUpTupleElementDefaultsInAlterQuery(
             }
             else if (command.type == ASTAlterCommand::RENAME_COLUMN)
             {
-                /// `RENAME COLUMN IF EXISTS` of an absent column is a no-op and must not invent the target.
-                /// Without `IF EXISTS`, such a rename fails the query anyway.
+                /// `RENAME COLUMN IF EXISTS` of a column which did not exist before the query, or does not
+                /// exist so far, is a no-op and must not invent the target. Without `IF EXISTS`, a rename
+                /// of an absent column fails the query anyway.
                 const String from = getIdentifierName(command.column);
                 const String to = getIdentifierName(command.rename_to);
+                if (command.if_exists && !existed_initially(from))
+                    continue;
                 if (result.column_names.erase(from))
                 {
                     result.column_names.insert(to);
