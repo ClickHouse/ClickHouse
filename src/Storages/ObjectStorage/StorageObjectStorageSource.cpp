@@ -1363,7 +1363,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
     ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
-    bool prefetch_input_format)
+    bool prefetch_input_format,
+    std::atomic_bool * iterator_consumed)
 {
     ObjectInfoPtr object_info;
     /// Replaced by `format_filter_info_tracking_best_values` of the TopK key for a file that uses the key.
@@ -1425,6 +1426,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     while (true)
     {
         object_info = file_iterator->next(processor);
+
+        if (iterator_consumed)
+            iterator_consumed->store(true, std::memory_order_relaxed);
 
         if (!object_info || object_info->getPath().empty())
             return {};
