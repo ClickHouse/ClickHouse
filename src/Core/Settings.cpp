@@ -3499,6 +3499,17 @@ Possible values:
 - 1 — Throwing an exception is enabled.
 - 0 — Throwing an exception is disabled.
 )", 0) \
+    DECLARE(Bool, alter_partitions_throw_if_noop, false, R"(
+Enables or disables throwing an exception if an [`ALTER TABLE ... DROP PARTITION`](/reference/statements/alter/partition#drop-partitionpart) or [`ALTER TABLE ... DETACH PARTITION`](/reference/statements/alter/partition#detach-partitionpart) query for a `MergeTree`-family table matches no parts.
+
+By default, such a query returns successfully and does nothing, for example when the partition expression is written in a different format than the partition key (`20190101` instead of `201901` for `PARTITION BY toYYYYMM(date)`). With this setting enabled, the query throws an exception that contains the computed partition ID. `DROP PARTITION ALL` and `DETACH PARTITION ALL` never throw. For `ReplicatedMergeTree` tables, the parts visible on the replica that executes the query are checked.
+
+Possible values:
+
+- 1 - Throwing an exception is enabled.
+- 0 - Throwing an exception is disabled.
+)", 0, \
+        {"26.11", false, false, "New setting"}) \
     DECLARE(Bool, optimize_dry_run_check_part, true, R"(
 When enabled, `OPTIMIZE ... DRY RUN` validates the resulting merged part using `checkDataPart`. If the check fails, an exception is thrown.
 )", 0, \

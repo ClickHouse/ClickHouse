@@ -285,6 +285,7 @@ namespace Setting
     extern const SettingsBool allow_minmax_index_for_json;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
+    extern const SettingsBool alter_partitions_throw_if_noop;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -448,6 +449,7 @@ namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
     extern const int NOT_IMPLEMENTED;
+    extern const int PARTITION_DOESNT_EXIST;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
     extern const int DUPLICATE_DATA_PART;
@@ -10409,6 +10411,23 @@ Pipe MergeTreeData::alterPartition(
                 else
                 {
                     checkPartitionCanBeDropped(command.partition, query_context);
+
+                    /// A partition expression in the wrong format (e.g. `20190101` instead of `201901` for `toYYYYMM`)
+                    /// silently matches nothing. Optionally report it instead of doing nothing.
+                    /// For `ReplicatedMergeTree` this checks the parts visible on the current replica,
+                    /// the same way as `MOVE PARTITION ... TO DISK` does.
+                    const auto * partition_ast = command.partition->as<ASTPartition>();
+                    if (query_context->getSettingsRef()[Setting::alter_partitions_throw_if_noop] && !(partition_ast && partition_ast->all))
+                    {
+                        String partition_id = getPartitionIDFromQuery(command.partition, query_context);
+                        if (getVisibleDataPartsVectorInPartition(query_context, partition_id).empty())
+                            throw Exception(ErrorCodes::PARTITION_DOESNT_EXIST,
+                                "There are no parts in partition with ID '{}', nothing to {}. "
+                                "Check that the partition expression is correct, the IDs of existing partitions "
+                                "are in the `partition_id` column of `system.parts`",
+                                partition_id, command.detach ? "detach" : "drop");
+                    }
+
                     dropPartition(command.partition, command.detach, query_context);
                 }
             }
