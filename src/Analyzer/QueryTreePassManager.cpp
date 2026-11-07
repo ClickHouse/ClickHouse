@@ -54,6 +54,7 @@
 #include <Analyzer/Passes/PruneArrayJoinColumnsPass.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/RegexpFunctionRewritePass.h>
+#include <Analyzer/Passes/RemoveRedundantSemiJoinPass.h>
 #include <Analyzer/Passes/RemoveUnusedProjectionColumnsPass.h>
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
@@ -364,6 +365,7 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
+    manager.addPass(std::make_unique<RemoveRedundantSemiJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
