@@ -231,6 +231,9 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
         const String & path = decoded.getPath();
         if (hasDotSegment(path) || path.contains("//"))
             return {};
+        /// `url` expands `{}` and splits `|` failover across the whole URI, but the subject escapes them only in the path.
+        if ((decoded.getScheme() + decoded.getAuthority() + decoded.getRawQuery()).find_first_of("{}|") != String::npos)
+            return {};
         if (source == AccessTypeObjects::Source::S3)
         {
             /// `S3::URI` decodes the path once, as the subject does, but folds a query into the key, where `?`

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # Tag no-fasttest: requires S3 and Azure
+# Tag no-replicated-database: without enable_read_write_grants, replicated access storage drops grant filters
 
 # A source grant filter must only authorize the location the storage accesses: a location the
 # normalization used for the check would change (dot segments, empty segments, escapes, a fragment)
-# needs the grant on the whole source, and a glob character must match the filter both as written and escaped.
+# or that is expanded outside its path needs the grant on the whole source, and a glob character
+# must match the filter both as written and escaped.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -99,6 +101,8 @@ echo "s3 glob against an exact filter: $(check 'READ ON S3' "SELECT * FROM s3('$
 echo "s3 escaped wildcard against an exact filter: $(check 'READ ON S3' "SELECT * FROM s3('$s3/exact/report%3Fcsv', 'CSV')")"
 echo "url failover against an exact filter: $(check 'READ ON URL' "SELECT * FROM url('$s3/exact/report|csv', 'CSV')")"
 echo "azure glob against an exact filter: $(check 'READ ON AZURE' "SELECT * FROM $(azure_table "$db/exact/report*csv")")"
+echo "url failover in the query: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/a.tsv?x|$s3/other/a.tsv', 'TSV')")"
+echo "url glob in the query: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/a.tsv?{x,y}', 'TSV')")"
 
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON S3 TO $user"
 echo "s3 dot segment with the whole-source grant: $(check 'READ ON S3' "SELECT * FROM s3('$s3/other/../test/a.tsv', 'TSV')")"
