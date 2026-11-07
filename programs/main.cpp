@@ -294,10 +294,8 @@ extern "C"
 #endif
 
 #if USE_JEMALLOC && defined(OS_LINUX) && !defined(USE_MUSL)
-/// clickhouse-local usually runs one query in a fresh process. With per-CPU arenas, memory freed on one CPU is
-/// reused only by allocations from the same arena, so every arena faults in its own pages; one arena per 8 CPUs
-/// (at least two) lets threads reuse what others freed. jemalloc reads `je_malloc_conf` at its first allocation,
-/// after `.preinit_array`; an explicit `MALLOC_CONF` keeps the defaults.
+/// A short-lived clickhouse-local process faults in fewer pages with a few shared arenas than with per-CPU ones.
+/// jemalloc reads `je_malloc_conf` at its first allocation, which comes after `.preinit_array`.
 extern "C"
 {
 const char * je_malloc_conf = nullptr;
