@@ -1,0 +1,10 @@
+<test>
+    <!-- Two parts: the main read has one stream per part, and the 30 rows lie in many granules of both parts. -->
+    <create_query>CREATE TABLE lazy_mat_few_parts ENGINE = MergeTree PARTITION BY intHash32(WatchID) % 2 ORDER BY (CounterID, EventDate, intHash32(UserID)) EMPTY AS SELECT * FROM test.hits</create_query>
+    <fill_query>INSERT INTO lazy_mat_few_parts SELECT * FROM test.hits WHERE CounterID = 792887 SETTINGS max_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 2, 'lazy_materialization_few_parts: expected 2 active parts') FROM system.parts WHERE database = currentDatabase() AND table = 'lazy_mat_few_parts' AND active</fill_query>
+
+    <query>SELECT * FROM lazy_mat_few_parts ORDER BY WatchID LIMIT 30 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lazy_mat_few_parts</drop_query>
+</test>
