@@ -1,0 +1,23 @@
+-- oracle: operator on the cross product
+6	34
+-- inner, both orientations
+6
+6
+6
+6
+-- semi / anti, both orientations
+4
+6
+1
+2
+-- multiple keys: LEFT ANTI JOIN builds a single filter on the key tuple
+1
+2
+-- Nullable and LowCardinality wrappers
+6
+6
+6
+6
+-- the runtime filter is built and applied on the normalized keys
+Filter column: RF1(trimRight(y, \'\\0\'), CAST(x AS String))
+BuildRuntimeFilter (Build runtime join filter on _CAST(x, \'String\'_String))

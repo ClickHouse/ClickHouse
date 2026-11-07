@@ -8,6 +8,7 @@
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
@@ -190,6 +191,11 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     {
         auto [op, lhs, rhs] = predicate.asBinaryPredicate();
         if (op != JoinConditionOperator::Equals)
+            return 0;
+
+        /// `IN` casts the probe key to the type of the set, so `toFixedString('a', 3) IN ('a\0\0')` is false
+        /// while the JOIN matches these keys.
+        if (!JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
             return 0;
 
         if (lhs.fromLeft() && rhs.fromRight())
