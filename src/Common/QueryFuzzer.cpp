@@ -3109,6 +3109,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
     static const Strings posting_list_codecs = {"none", "bitpacking", "pfor"};
+    static const Strings dictionary_block_encodings = {"none", "frontcoding_v1", "frontcoding_v2"};
     /// vector_similarity index parameters (positional):
     ///   ('hnsw', distance, M, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction)
     static const Strings vector_similarity_distances = {"L2Distance", "cosineDistance"};
@@ -3188,6 +3189,11 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                 if (fuzz_rand() % 5 == 0)
                     value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2));
             }
+            else if (param_id->name() == "dictionary_block_encoding")
+            {
+                if (fuzz_rand() % 5 == 0)
+                    value_ast = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, dictionary_block_encodings));
+            }
             else if (param_id->name() == "dictionary_block_size" || param_id->name() == "posting_list_block_size")
             {
                 if (fuzz_rand() % 5 == 0)
@@ -3220,7 +3226,9 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                     makeASTFunction("equals", make_intrusive<ASTIdentifier>(name), make_intrusive<ASTLiteral>(std::move(value))));
         };
         add_missing_param("dictionary_block_size", UInt64(fuzz_rand() % 2048 + 1));
-        add_missing_param("dictionary_block_frontcoding_compression", UInt64(fuzz_rand() % 2));
+        /// The deprecated `dictionary_block_frontcoding_compression` cannot be combined with `dictionary_block_encoding`.
+        if (!seen_params.contains("dictionary_block_frontcoding_compression"))
+            add_missing_param("dictionary_block_encoding", String(pickRandomly(fuzz_rand, dictionary_block_encodings)));
         add_missing_param("posting_list_block_size", UInt64(fuzz_rand() % 2048 + 1));
         add_missing_param("posting_list_codec", String(pickRandomly(fuzz_rand, posting_list_codecs)));
         /// `support_phrase_search = 1` requires the `allow_experimental_text_index_phrase_search` MergeTree setting.

@@ -44,11 +44,11 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/MergeTree/TextIndexDictionaryBlockCodec.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <base/EnumReflection.h>
-#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
 #include <base/PackedStringRef.h>
@@ -89,6 +89,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsNonZeroUInt64 text_index_dictionary_block_size;
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
+    extern const MergeTreeSettingsTextIndexDictionaryBlockEncoding text_index_dictionary_block_encoding;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
     extern const MergeTreeSettingsMergeTreeTextIndexSerializationVersion text_index_serialization_version;
@@ -107,6 +108,7 @@ namespace Setting
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithDictionaryEncoding) == 3);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::None) == 0);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::Bitpacking) == 1);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
@@ -442,94 +444,6 @@ MergeTreeIndexSubstream getSubstream(const IMergeTreeIndex & index, MergeTreeInd
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' has no substream of type {}", magic_enum::enum_name(type));
 
     return *it;
-}
-
-ColumnPtr deserializeTokensRaw(ReadBuffer & istr, size_t num_tokens)
-{
-    auto tokens_column = ColumnString::create();
-    tokens_column->reserve(num_tokens);
-
-    auto serialization_string = SerializationString::create();
-    serialization_string->deserializeBinaryBulk(*tokens_column, istr, num_tokens, 0.0);
-
-    return tokens_column;
-}
-
-ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
-{
-    auto tokens_column = ColumnString::create();
-
-    if (num_tokens != 0)
-    {
-        tokens_column->reserve(num_tokens);
-        ColumnString::Chars & data = tokens_column->getChars();
-        ColumnString::Offsets & offsets = tokens_column->getOffsets();
-
-        /// Avoiding calling resize in a loop improves the performance.
-        /// The average length of words in English language is 4.7 characters, rounded up to the next power of 2.
-        data.resize(roundUpToPowerOfTwoOrZero(num_tokens * 8));
-
-        size_t offset = 0;
-
-        /// Read the first token
-        {
-            UInt64 first_token_size = 0;
-            readVarUInt(first_token_size, istr);
-            /// Prevent a corrupt or malicious .dct file from allocating huge amounts of memory
-            if (first_token_size > SerializationString::MAX_STRING_SIZE)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: first token size ({}) exceeds the maximum ({})", first_token_size, SerializationString::MAX_STRING_SIZE);
-            offset += first_token_size;
-            if (offset > data.size())
-                data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
-            istr.readStrict(reinterpret_cast<char *>(data.data()), first_token_size);
-            offsets.push_back(offset);
-        }
-
-        size_t previous_token_offset = 0;
-        for (size_t i = 1; i < num_tokens; ++i)
-        {
-            const UInt64 data_offset = offset;
-
-            UInt64 lcp = 0;
-            readVarUInt(lcp, istr);
-            UInt64 data_size = 0;
-            readVarUInt(data_size, istr);
-
-            /// Reject a corrupted or malicious `.dct`: an out-of-range `lcp` or an overflowing `lcp + data_size` would wrap `offset`, skip the resize, and cause an out-of-bounds write below.
-            const UInt64 previous_token_size = data_offset - previous_token_offset;
-            if (lcp > previous_token_size)
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted text index dictionary: front-coding longest common prefix ({}) exceeds the previous token size ({})",
-                    lcp, previous_token_size);
-
-            UInt64 token_size = 0;
-            UInt64 next_offset = 0;
-            if (common::addOverflow(lcp, data_size, token_size) || common::addOverflow<UInt64>(offset, token_size, next_offset))
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted text index dictionary: front-coding token size overflows (lcp = {}, data_size = {})",
-                    lcp, data_size);
-
-            if (token_size > SerializationString::MAX_STRING_SIZE)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: front-coding token size ({}) exceeds the maximum ({})", token_size, SerializationString::MAX_STRING_SIZE);
-
-            offset = next_offset;
-
-            if (offset > data.size())
-                data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
-
-            std::memcpy(&data[data_offset], &data[previous_token_offset], lcp);
-            istr.readStrict(reinterpret_cast<char *>(&data[data_offset + lcp]), data_size);
-
-            offsets.push_back(offset);
-            previous_token_offset = data_offset;
-        }
-
-        data.resize_exact(offset);
-    }
-
-    return tokens_column;
 }
 
 using DictionaryBlockRanges = std::vector<std::pair<size_t, size_t>>;
@@ -1117,85 +1031,28 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
 namespace
 {
 
-size_t computeCommonPrefixLength(const std::string_view lhs, const std::string_view rhs)
-{
-    size_t common_prefix_length = 0;
-    size_t max_length = std::min(lhs.size(), rhs.size());
-
-    while (common_prefix_length < max_length && lhs[common_prefix_length] == rhs[common_prefix_length])
-        ++common_prefix_length;
-
-    return common_prefix_length;
-}
-
-template <typename TokenGetter>
-void serializeTokensRaw(
-    const TokenGetter & token_getter,
-    WriteBuffer & ostr,
-    size_t block_begin,
-    size_t block_end)
-{
-    /// Write tokens the same as in SerializationString::serializeBinaryBulk
-    /// to be able to read them later with SerializationString::deserializeBinaryBulk.
-
-    for (size_t i = block_begin; i < block_end; ++i)
-    {
-        auto current_token = token_getter(i);
-        TextIndexSerialization::checkTokenSize(current_token.size());
-        writeVarUInt(current_token.size(), ostr);
-        ostr.write(current_token.data(), current_token.size());
-    }
-}
-
-/*
- * The front coding implementation is based on the idea from following papers.
- * 1. https://doi.org/10.1109/Innovate-Data.2017.9
- * 2. https://doi.org/10.1145/3448016.345279
- */
-template <typename TokenGetter>
-void serializeTokensFrontCoding(
-    const TokenGetter & token_getter,
-    WriteBuffer & ostr,
-    size_t block_begin,
-    size_t block_end)
-{
-    const auto & first_token = token_getter(block_begin);
-    TextIndexSerialization::checkTokenSize(first_token.size());
-    writeVarUInt(first_token.size(), ostr);
-    ostr.write(first_token.data(), first_token.size());
-
-    std::string_view previous_token = first_token;
-    for (size_t i = block_begin + 1; i < block_end; ++i)
-    {
-        auto current_token = token_getter(i);
-        TextIndexSerialization::checkTokenSize(current_token.size());
-        auto lcp = computeCommonPrefixLength(previous_token, current_token);
-        writeVarUInt(lcp, ostr);
-        writeVarUInt(current_token.size() - lcp, ostr);
-        ostr.write(current_token.data() + lcp, current_token.size() - lcp);
-        previous_token = current_token;
-    }
-}
-
 template <typename TokenGetter>
 void serializeTokensImpl(
     const TokenGetter & token_getter,
     WriteBuffer & ostr,
-    TextIndexSerialization::TokensFormat format,
+    TextIndexDictionaryBlockEncoding encoding,
     size_t block_begin,
     size_t block_end)
 {
     size_t num_tokens_in_block = block_end - block_begin;
-    writeVarUInt(static_cast<UInt64>(format), ostr);
+    writeVarUInt(static_cast<UInt64>(encoding), ostr);
     writeVarUInt(num_tokens_in_block, ostr);
 
-    switch (format)
+    switch (encoding)
     {
-        case TextIndexSerialization::TokensFormat::RawStrings:
-            serializeTokensRaw(token_getter, ostr, block_begin, block_end);
+        case TextIndexDictionaryBlockEncoding::None:
+            TextIndexDictionaryBlockCodec::serializeRaw(token_getter, ostr, block_begin, block_end);
             break;
-        case TextIndexSerialization::TokensFormat::FrontCodedStrings:
-            serializeTokensFrontCoding(token_getter, ostr, block_begin, block_end);
+        case TextIndexDictionaryBlockEncoding::FrontCodingV1:
+            TextIndexDictionaryBlockCodec::serializeFrontCodingV1(token_getter, ostr, block_begin, block_end);
+            break;
+        case TextIndexDictionaryBlockEncoding::FrontCodingV2:
+            TextIndexDictionaryBlockCodec::serializeFrontCodingV2(token_getter, ostr, block_begin, block_end);
             break;
     }
 }
@@ -1330,12 +1187,12 @@ void TextIndexSerialization::checkTokenSize(size_t token_size)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 }
 
-void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
+void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TextIndexDictionaryBlockEncoding encoding)
 {
     serializeTokensImpl(
         [&](size_t i) { return tokens.getDataAt(i); },
         ostr,
-        format,
+        encoding,
         /*block_begin=*/ 0,
         /*block_end=*/ tokens.size());
 }
@@ -1418,7 +1275,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions))
+    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithDictionaryEncoding))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1466,7 +1323,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
 
-    auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
+    auto tokens = TextIndexDictionaryBlockCodec::deserializeRaw(istr, num_sparse_index_tokens);
     auto offsets = ColumnUInt64::create();
 
     auto serialization_number = SerializationNumber<UInt64>::create();
@@ -1629,10 +1486,12 @@ std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffe
 
     switch (tokens_format)
     {
-        case static_cast<UInt64>(TokensFormat::RawStrings):
-            return {deserializeTokensRaw(istr, num_tokens), tokens_format};
-        case static_cast<UInt64>(TokensFormat::FrontCodedStrings):
-            return {deserializeTokensFrontCoding(istr, num_tokens), tokens_format};
+        case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::None):
+            return {TextIndexDictionaryBlockCodec::deserializeRaw(istr, num_tokens), tokens_format};
+        case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1):
+            return {TextIndexDictionaryBlockCodec::deserializeFrontCodingV1(istr, num_tokens), tokens_format};
+        case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV2):
+            return {TextIndexDictionaryBlockCodec::deserializeFrontCodingV2(istr, num_tokens), tokens_format};
         default:
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
     }
@@ -1700,10 +1559,6 @@ static DictionarySparseIndex serializeTokensAndPostings(
     auto & sparse_index_offsets_data = sparse_index_offsets->getData();
     sparse_index_offsets_data.reserve(num_blocks);
 
-    auto tokens_format = params.dictionary_block_frontcoding_compression
-        ? TextIndexSerialization::TokensFormat::FrontCodedStrings
-        : TextIndexSerialization::TokensFormat::RawStrings;
-
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
         size_t block_begin = block_idx * params.dictionary_block_size;
@@ -1724,7 +1579,7 @@ static DictionarySparseIndex serializeTokensAndPostings(
         serializeTokensImpl(
             [&](size_t i) { return sorted_tokens[i].token; },
             dictionary_stream.compressed_hashing,
-            tokens_format,
+            params.dictionary_block_encoding,
             block_begin,
             block_end);
 
@@ -2489,6 +2344,7 @@ static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
+static const String ARGUMENT_DICTIONARY_BLOCK_ENCODING = "dictionary_block_encoding";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
@@ -2557,6 +2413,31 @@ std::pair<String, ASTPtr> parseNamedArgument(const ASTFunction * ast_equal_funct
     return {key_identifier->name(), arguments->children[1]};
 }
 
+TextIndexDictionaryBlockEncoding extractDictionaryBlockEncoding(std::unordered_map<String, ASTPtr> & options, const MergeTreeSettings & settings)
+{
+    auto encoding = extractFieldOption<String>(options, ARGUMENT_DICTIONARY_BLOCK_ENCODING);
+    auto frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION);
+
+    if (encoding && frontcoding_compression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index arguments '{}' and '{}' cannot be specified together",
+            ARGUMENT_DICTIONARY_BLOCK_ENCODING, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION);
+
+    if (encoding)
+        return SettingFieldTextIndexDictionaryBlockEncodingTraits::fromString(*encoding);
+
+    if (!frontcoding_compression)
+    {
+        if (settings[MergeTreeSetting::text_index_dictionary_block_encoding].changed)
+            return settings[MergeTreeSetting::text_index_dictionary_block_encoding];
+        frontcoding_compression = settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression];
+    }
+
+    if (*frontcoding_compression > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, *frontcoding_compression);
+
+    return *frontcoding_compression ? TextIndexDictionaryBlockEncoding::FrontCodingV1 : TextIndexDictionaryBlockEncoding::None;
+}
+
 std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & arguments)
 {
     std::unordered_map<String, ASTPtr> options;
@@ -2590,8 +2471,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
 
-    UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
-        .value_or(settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression]);
+    auto dictionary_block_encoding = extractDictionaryBlockEncoding(options, settings);
 
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
@@ -2608,7 +2488,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     /// If the setting contradicts the index features on the current version, the index features take precedence.
     using enum MergeTreeTextIndexSerializationVersion;
     MergeTreeTextIndexSerializationVersion min_version = V0_Initial;
-    MergeTreeTextIndexSerializationVersion max_version = V2_WithPositions;
+    MergeTreeTextIndexSerializationVersion max_version = V3_WithDictionaryEncoding;
 
     if (has_codec)
         min_version = V1_WithCodec;
@@ -2619,9 +2499,13 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
     MergeTreeTextIndexSerializationVersion serialization_version = std::clamp(version_setting, min_version, max_version);
 
+    /// The encoding changes only the layout, so it is downgraded to keep parts readable by older servers.
+    if (dictionary_block_encoding == TextIndexDictionaryBlockEncoding::FrontCodingV2 && serialization_version < V3_WithDictionaryEncoding)
+        dictionary_block_encoding = TextIndexDictionaryBlockEncoding::FrontCodingV1;
+
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
-        dictionary_block_frontcoding_compression,
+        dictionary_block_encoding,
         posting_list_block_size,
         enable_positions,
         static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
@@ -2650,11 +2534,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (dictionary_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_DICTIONARY_BLOCK_SIZE, dictionary_block_size);
 
-    UInt64 dictionary_block_use_fc_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
-        .value_or(settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression]);
-
-    if (dictionary_block_use_fc_compression > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, dictionary_block_use_fc_compression);
+    extractDictionaryBlockEncoding(options, settings);
 
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
