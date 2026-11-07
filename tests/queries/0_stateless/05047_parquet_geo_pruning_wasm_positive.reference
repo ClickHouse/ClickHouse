@@ -1,0 +1,13 @@
+=== south texas (expect ids 1, 2) ===
+1
+2
+=== south texas pruning count ===
+ParquetPrunedRowGroups: 1 (increment)
+=== atlantic (expect no rows) ===
+=== atlantic pruning count ===
+ParquetPrunedRowGroups: 2 (increment)
+=== atlantic, push-down disabled (expect all 4 rows) ===
+1
+2
+3
+4

@@ -1,0 +1,18 @@
+geometry polygon const	Parts: 1 | Granules: 1
+geometry polygon const	Granules: 1/1
+geometry point const	Parts: 1 | Granules: 1
+geometry point const	Granules: 1/1
+geometry point const	0
+lenient geometry sibling	Parts: 1 | Granules: 1
+lenient geometry sibling	Granules: 1/1
+strict geometry sibling	Parts: 1 | Granules: 1
+strict geometry sibling	Granules: 1/1
+dynamic polygon const	Parts: 1 | Granules: 1
+dynamic polygon const	Granules: 1/1
+lenient dynamic sibling	Parts: 1 | Granules: 1
+lenient dynamic sibling	Granules: 1/1
+strict dynamic sibling	Parts: 1 | Granules: 1
+strict dynamic sibling	Granules: 1/1
+accepted sibling	Parts: 0 | Granules: 0
+accepted sibling	Granules: 1/1
+accepted sibling	Granules: 0/1
