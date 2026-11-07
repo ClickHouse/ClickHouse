@@ -33,4 +33,9 @@ void wrapPerArmConstructionSettings(
 /// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting.
 bool hasConstructionSettings(const IAST & ast);
 
+/// Throw if a query stored by `CREATE HANDLER` / `ALTER HANDLER` keeps construction settings that cannot be
+/// materialized: with two query-level `SETTINGS` clauses (`SELECT ... SETTINGS a FORMAT TSV SETTINGS b`), see
+/// `wrapNestedConstructionSettings`.
+void checkStoredQueryConstructionSettings(const IAST & query);
+
 }

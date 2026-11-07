@@ -40,10 +40,12 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
@@ -1882,6 +1884,9 @@ bool hasConstructionSettings(const IAST & ast)
     return false;
 }
 
+static void wrapStoredQueryConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks);
+
 /// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
 /// `limit` / `offset` / `page`) that a nested (sub)query carries in its OWN `SETTINGS` clause, by
 /// wrapping that subquery as a derived table — the same way the top-level query is handled by
@@ -1948,6 +1953,27 @@ void wrapNestedConstructionSettings(
         /// `DELETE WHERE id IN (SELECT … SETTINGS limit = …)` — keep getting their nested construction
         /// settings materialized as before (otherwise `limit`/`offset` would be stripped downstream and
         /// the mutation would run uncapped).
+        return;
+    }
+    if (auto * create_handler = ast->as<ASTCreateHandlerQuery>())
+    {
+        /// A handler stores its query and runs it later as a top-level query, so the query's own `SETTINGS`
+        /// clause gets the top-level scope, as for a query sent directly.
+        if (create_handler->query)
+        {
+            ASTPtr query = create_handler->query;
+            wrapStoredQueryConstructionSettings(query, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (query != create_handler->query)
+            {
+                for (auto & child : create_handler->children)
+                    if (child == create_handler->query)
+                    {
+                        child = query;
+                        break;
+                    }
+                create_handler->query = query;
+            }
+        }
         return;
     }
 
@@ -2124,6 +2150,18 @@ void wrapPerArmConstructionSettings(
     wrapPerArmConstructionSettingsImpl(ast, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
+static void wrapTopLevelQuery(
+    ASTPtr & ast,
+    const String & select_expr,
+    const String & filter_expr,
+    const String & order_expr,
+    Float64 limit_setting,
+    Float64 offset_setting,
+    const String & implicit_table,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks);
+
 /// Apply the query-construction settings (`select`/`filter`/`order`/`sort`) by wrapping the parsed
 /// query AST as a derived table, and translate the `page` setting into `limit`/`offset`. The
 /// wrapping is composed from AST nodes (never by concatenating query text), so a trailing `;`, a
@@ -2230,10 +2268,38 @@ static void applyQueryConstructionSettings(
     if (order_expr.empty() && !sort_expr.empty())
         order_expr = convertSortToOrderBy(sort_expr);
 
+    wrapTopLevelQuery(ast, select_expr, filter_expr, order_expr, limit_setting, offset_setting,
+        settings[Setting::implicit_table_at_top_level], max_query_size, max_parser_depth, max_parser_backtracks);
+
+    /// The `limit` / `offset` settings are now materialized as the outer query's `LIMIT`/`OFFSET`.
+    /// Clear them so the downstream interpreter / analyzer does not apply them a second time (which
+    /// would otherwise double-cap the result and re-introduce the combining behavior we just removed).
+    if (limit_setting != 0 || offset_setting != 0)
+    {
+        context->setSetting("limit", Field(static_cast<Float64>(0)));
+        context->setSetting("offset", Field(static_cast<Float64>(0)));
+    }
+}
+
+/// Wrap the top-level `SELECT` / `UNION` `ast` as the derived table of the outer query that materializes the
+/// construction settings; its top-level-only output options and query-level `SETTINGS` clause go to the outer query.
+static void wrapTopLevelQuery(
+    ASTPtr & ast,
+    const String & select_expr,
+    const String & filter_expr,
+    const String & order_expr,
+    Float64 limit_setting,
+    Float64 offset_setting,
+    const String & implicit_table,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
+{
+    auto * base_select = ast->as<ASTSelectWithUnionQuery>();
+
     /// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and the `INTO OUTFILE` compression options are
     /// top-level-only output options; detach them from the base and re-attach them to the outer
-    /// query, so they shape the final (wrapped) result. The base `SETTINGS` were already applied
-    /// to the context above.
+    /// query, so they shape the final (wrapped) result.
     ASTPtr base_out_file = base_select->out_file;
     ASTPtr base_format = base_select->format_ast;
     ASTPtr base_settings = base_select->settings_ast;
@@ -2404,7 +2470,7 @@ static void applyQueryConstructionSettings(
     /// no-op for the outer wrapper (which now has a `FROM`) and still covers any FROM-less arm that is
     /// not a plain `ASTSelectQuery` (e.g. a nested parenthesized union), matching the analyzer, whose
     /// multi-arm path builds each arm as a non-subquery regardless.
-    if (const String & implicit_table = settings[Setting::implicit_table_at_top_level]; !implicit_table.empty())
+    if (!implicit_table.empty())
     {
         ASTPtr tables_template;
         for (auto & select_child : base_select->list_of_selects->children)
@@ -2448,14 +2514,105 @@ static void applyQueryConstructionSettings(
     outer_union.setIsOutfileTruncate(base_outfile_truncate);
 
     ast = std::move(outer_union_ast);
+}
 
-    /// The `limit` / `offset` settings are now materialized as the outer query's `LIMIT`/`OFFSET`.
-    /// Clear them so the downstream interpreter / analyzer does not apply them a second time (which
-    /// would otherwise double-cap the result and re-introduce the combining behavior we just removed).
-    if (limit_setting != 0 || offset_setting != 0)
+/// The query-level `SETTINGS` clauses of a top-level query: the trailing one (after `FORMAT`) and the last arm's.
+static std::pair<const ASTSetQuery *, const ASTSetQuery *> getQueryLevelSettingsClauses(const ASTSelectWithUnionQuery & select_union)
+{
+    const auto * trailing = select_union.settings_ast ? select_union.settings_ast->as<ASTSetQuery>() : nullptr;
+    const ASTSetQuery * arm = nullptr;
+    if (select_union.list_of_selects && !select_union.list_of_selects->children.empty())
+        if (const auto * last_select = select_union.list_of_selects->children.back()->as<ASTSelectQuery>())
+            if (ASTPtr arm_settings = last_select->settings())
+                arm = arm_settings->as<ASTSetQuery>();
+    return {trailing, arm};
+}
+
+/// Materialize the construction settings of a query that is stored now and run later as a top-level query (the
+/// query of `CREATE HANDLER` / `ALTER HANDLER`): those of its own `SETTINGS` clause the way
+/// `applyQueryConstructionSettings` applies them to a query sent directly, then those of its subqueries. `EXPLAIN`
+/// and `EXECUTE AS` run their statement as a top-level query, so the statement is handled the same way.
+static void wrapStoredQueryConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    if (auto * explain_query = ast->as<ASTExplainQuery>())
     {
-        context->setSetting("limit", Field(static_cast<Float64>(0)));
-        context->setSetting("offset", Field(static_cast<Float64>(0)));
+        if (ASTPtr explained = explain_query->getExplainedQuery())
+        {
+            ASTPtr wrapped = explained;
+            wrapStoredQueryConstructionSettings(wrapped, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (wrapped != explained)
+                explain_query->replaceExplainedQuery(wrapped);
+        }
+        return;
+    }
+
+    if (auto * execute_as = ast->as<ASTExecuteAsQuery>())
+    {
+        if (ASTPtr statement = execute_as->subquery)
+        {
+            wrapStoredQueryConstructionSettings(statement, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (statement != execute_as->subquery)
+            {
+                for (auto & child : execute_as->children)
+                    if (child == execute_as->subquery)
+                    {
+                        child = statement;
+                        break;
+                    }
+                execute_as->subquery = statement;
+            }
+        }
+        return;
+    }
+
+    if (const auto * select_union = ast->as<ASTSelectWithUnionQuery>())
+    {
+        auto [trailing, arm] = getQueryLevelSettingsClauses(*select_union);
+        if (trailing && arm)
+        {
+            /// One outer clause cannot keep how two query-level clauses are applied (their order, the scope of their
+            /// query parameters), so they stay as written: `checkStoredQueryConstructionSettings` rejects construction
+            /// settings in them. Only the subqueries are materialized.
+            for (auto & child : ast->children)
+                wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+            return;
+        }
+        if (const auto * settings = trailing ? trailing : arm)
+        {
+            ASTPtr copy = settings->clone();
+            ConstructionSettings cs;
+            takeConstructionSettingsFromSetQuery(copy->as<ASTSetQuery &>(), cs);
+            if (!cs.empty())
+                wrapTopLevelQuery(ast, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+                    /* implicit_table= */ {}, max_query_size, max_parser_depth, max_parser_backtracks);
+        }
+    }
+
+    wrapNestedConstructionSettings(ast, max_query_size, max_parser_depth, max_parser_backtracks);
+}
+
+void checkStoredQueryConstructionSettings(const IAST & ast)
+{
+    if (const auto * explain_query = ast.as<ASTExplainQuery>())
+    {
+        if (const auto & explained = explain_query->getExplainedQuery())
+            checkStoredQueryConstructionSettings(*explained);
+        return;
+    }
+    if (const auto * execute_as = ast.as<ASTExecuteAsQuery>())
+    {
+        if (execute_as->subquery)
+            checkStoredQueryConstructionSettings(*execute_as->subquery);
+        return;
+    }
+    if (const auto * select_union = ast.as<ASTSelectWithUnionQuery>())
+    {
+        auto [trailing, arm] = getQueryLevelSettingsClauses(*select_union);
+        if (trailing && arm && (hasConstructionSettings(*trailing) || hasConstructionSettings(*arm)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in a stored query "
+                "cannot be combined with a second `SETTINGS` clause after `FORMAT`. Put the settings into one clause.");
     }
 }
 

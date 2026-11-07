@@ -1,0 +1,30 @@
+-- limit
+1
+-- ALTER, filter
+2
+-- page
+3
+-- select, filter, order
+30
+20
+-- UNION with query-level SETTINGS
+1
+2
+-- FORMAT stays on the outer query
+{"a":1}
+-- a query-level setting stays on the outer query
+1#
+-- query parameter inside a filter
+2
+-- the request shapes the result of the definition
+1
+2
+2
+-- EXECUTE AS, query parameter inside a filter
+2
+-- EXPLAIN
+filtered
+-- a second SETTINGS clause
+rejected
+-- IF NOT EXISTS on an existing handler stays a no-op
+noop

@@ -1,5 +1,6 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/QueryKindUnderReadonly.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
@@ -335,6 +336,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
             "with INSERT ... SELECT.",
             create.handler_name);
     }
+
+    checkStoredQueryConstructionSettings(*create.query);
 
     auto handler = std::make_shared<SQLDefinedHandler>();
     handler->name = create.handler_name;
