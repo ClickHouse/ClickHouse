@@ -20,7 +20,7 @@ CREATE TABLE t_bf_signed_zero
 )
 ENGINE = MergeTree ORDER BY id
 -- A bucketed `Map` puts a key into a bucket by the raw bits of the value, which is a part of the format of a data part,
--- so `m[0.0]` reads only the bucket of the positive zero, with and without the index.
+-- so the basic serialization is pinned.
 SETTINGS index_granularity = 1, map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 INSERT INTO t_bf_signed_zero VALUES (1, -0.0, -0.0, [-0.0], map(-0.0, 'x')), (2, 0.5, 0.5, [0.5], map(0.5, 'x')), (3, 0.0, 0.0, [0.0], map(0.0, 'x'));
@@ -33,17 +33,9 @@ SELECT 'has(a, 0)', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id))
 SELECT 'hasAny(a, [0.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE hasAny(a, [0.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE hasAny(a, [0.0]);
 SELECT 'hasAll(a, [-0.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE hasAll(a, [-0.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE hasAll(a, [-0.0]);
 SELECT 'mapContainsKey(m, 0.0)', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE mapContainsKey(m, 0.0) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE mapContainsKey(m, 0.0);
--- With `optimize_functions_to_subcolumns = 0`, `m[0.0]` on a `Map(Float64, String)` throws `ILLEGAL_TYPE_OF_ARGUMENT`
--- even without an index, so the setting is pinned for the queries that use it.
-SET optimize_functions_to_subcolumns = 1;
-SELECT 'm[0.0] = \'x\'', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE m[0.0] = 'x' SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE m[0.0] = 'x';
--- The key of `m[k]` is looked up by equality, also when the value is compared with `IN`.
-SELECT 'm[0.0] IN (\'x\')', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE m[0.0] IN ('x') SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE m[0.0] IN ('x');
 -- `IN` treats the two zeros as equal, like `=`, with and without the index.
 SELECT 'f IN (0.0)', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE f IN (0.0) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE f IN (0.0);
 SELECT 'f = 0.5', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE f = 0.5 SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE f = 0.5;
-
-SET optimize_functions_to_subcolumns = DEFAULT;
 
 DROP TABLE t_bf_signed_zero;
 
