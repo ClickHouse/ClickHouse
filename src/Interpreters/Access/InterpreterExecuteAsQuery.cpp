@@ -19,6 +19,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace Setting
+{
+    extern const SettingsString filter;
+}
+
 namespace
 {
     /// Creates another query context to execute a query as another user.
@@ -74,6 +79,16 @@ namespace
         auto changed_settings = context->getSettingsRef().changes();
         new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         new_context->applySettingsChanges(changed_settings);
+
+        /// The request's HTTP `filter` applies to the statement too, checked against the target user's constraints.
+        if (const String & http_filter = context->getHTTPCombinedFilter(); !http_filter.empty())
+        {
+            const String & target_filter = new_context->getSettingsRef()[Setting::filter].value;
+            SettingsChanges filter_change;
+            filter_change.setSetting("filter", target_filter.empty() ? http_filter : "(" + target_filter + ") AND " + http_filter);
+            new_context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
+            new_context->setHTTPCombinedFilter(http_filter);
+        }
 
         return new_context;
     }

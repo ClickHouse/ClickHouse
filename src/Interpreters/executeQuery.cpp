@@ -44,6 +44,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
@@ -1950,6 +1951,11 @@ void wrapNestedConstructionSettings(
         /// the mutation would run uncapped).
         return;
     }
+
+    /// `EXECUTE AS` runs the text of its statement through `executeQuery`, which applies the statement's
+    /// construction settings itself.
+    if (ast->as<ASTExecuteAsQuery>())
+        return;
 
     /// Bottom-up: handle inner-most subqueries before their parents.
     for (auto & child : ast->children)
