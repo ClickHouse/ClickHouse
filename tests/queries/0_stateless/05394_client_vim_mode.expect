@@ -2,7 +2,8 @@
 
 # Editing with the `--vim` keymap of the client. Every query is edited so that its result differs
 # from any text displayed while typing it, so that matching the result checks the edit.
-# Escape is followed by a pause longer than the escape delay, so that it is not read as Meta.
+# Escape is followed by a pause much longer than the escape delay of the vim mode (10 ms), so that it
+# is not read as Meta. The pause is short, so that the test fits into the time limit of the fast test.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -27,7 +28,7 @@ expect_after {
 
 proc escape {} {
     send -- "\033"
-    sleep 0.3
+    sleep 0.1
 }
 
 # Ctrl-J submits the query: Enter inserts a new line in the vim mode.
@@ -1020,6 +1021,22 @@ send -- "ggci(42900"
 escape
 submit
 expect "42907"
+expect ":) "
+
+send -- "SELECT (43000 // it's a comment\r+ 234) + 7"
+escape
+send -- "ggci(43100"
+escape
+submit
+expect "43107"
+expect ":) "
+
+send -- "SELECT (43200 /* outer /* inner */ it's still a comment */\r+ 234) + 7"
+escape
+send -- "ggci(43300"
+escape
+submit
+expect "43307"
 expect ":) "
 
 send -- "\4"

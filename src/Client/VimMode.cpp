@@ -431,18 +431,30 @@ static std::vector<bool> quotedPositions(const std::u32string & text)
             quoted[i] = true;
             quote = c;
         }
-        else if ((c == '-' && next == '-') || (c == '#' && (next == ' ' || next == '!')))
+        else if ((c == '-' && next == '-') || (c == '/' && next == '/') || (c == '#' && (next == ' ' || next == '!')))
         {
-            /* A line comment, up to the end of the line. */
+            /* A line comment, up to the end of the line, with the same rules as the `Lexer`. */
             while (i + 1 < length && text[i + 1] != '\n')
                 ++i;
         }
         else if (c == '/' && next == '*')
         {
-            /* A block comment, up to its end. */
-            for (i += 2; i < length && !(text[i] == '*' && i + 1 < length && text[i + 1] == '/'); ++i)
-                ;
-            ++i;
+            /* A block comment, up to its end. Like in the `Lexer`, block comments nest. */
+            size_t nesting_level = 1;
+            for (i += 2; i + 1 < length; ++i)
+            {
+                if (text[i] == '/' && text[i + 1] == '*')
+                {
+                    ++nesting_level;
+                    ++i;
+                }
+                else if (text[i] == '*' && text[i + 1] == '/')
+                {
+                    ++i;
+                    if (--nesting_level == 0)
+                        break;
+                }
+            }
         }
     }
     return quoted;
