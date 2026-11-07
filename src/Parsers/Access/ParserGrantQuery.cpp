@@ -374,6 +374,15 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `SHOW ROW POLICIES`
       - `SHOW SETTINGS PROFILES`
       - `SHOW USERS`
+  - [`AI FUNCTIONS`](#ai-functions)
+    - `aiClassify`
+    - `aiEmbed`
+    - `aiExtract`
+    - `aiFilter`
+    - `aiGenerate`
+    - `aiRedact`
+    - `aiSimilarity`
+    - `aiTranslate`
   - [`ALTER`](#alter)
     - `ALTER DATABASE`
       - `ALTER DATABASE SETTINGS`
@@ -841,6 +850,25 @@ Allows using [introspection](/concepts/features/performance/troubleshoot/samplin
   - `addressToLineWithInlines`. Level: `GLOBAL`
   - `addressToSymbol`. Level: `GLOBAL`
   - `demangle`. Level: `GLOBAL`
+
+### AI FUNCTIONS {#ai-functions}
+
+Allows using [AI functions](/reference/functions/regular-functions/ai-functions). Calling an AI function also requires the `NAMED COLLECTION` privilege on the selected credentials.
+
+- `AI FUNCTIONS`. Level: `GROUP`
+  - `aiClassify`. Level: `GLOBAL`
+  - `aiEmbed`. Level: `GLOBAL`
+  - `aiExtract`. Level: `GLOBAL`
+  - `aiFilter`. Level: `GLOBAL`
+  - `aiGenerate`. Level: `GLOBAL`
+  - `aiRedact`. Level: `GLOBAL`
+  - `aiSimilarity`. Level: `GLOBAL`
+  - `aiTranslate`. Level: `GLOBAL`
+
+Examples:
+
+- `GRANT AI FUNCTIONS ON *.* TO john`
+- `GRANT aiGenerate, aiClassify ON *.* TO john`
 
 ### SOURCES {#sources}
 
