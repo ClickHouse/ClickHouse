@@ -3,16 +3,19 @@
 #include <Server/StatelessWorker/StatelessWorkerProtocol.h>
 #include <IO/Progress.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTracingContext.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <base/types.h>
 #include <base/defines.h>
 
 #include <atomic>
+#include <deque>
 #include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -65,8 +68,10 @@ public:
         UInt64 count TSA_GUARDED_BY(mutex) = 0;
     };
 
-    Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path, const TaskCollectors & collectors);
+    /// Ignores a task cancelled before its start arrived.
+    Result startTask(const String & unique_task_id, DistributedQueryTaskDescription task, const String & unique_temp_file_path, const TaskCollectors & collectors);
     TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
+    /// Remembers an unknown id: the coordinator sends the starts of a stage concurrently, so a cancel can overtake a start.
     Result cancelTask(const String & task_id);
     Result forgetTask(const String & task_id);
 
@@ -89,6 +94,20 @@ private:
         std::optional<TaskFailure> failure TSA_GUARDED_BY(mutex);
     };
 
+    /// Not guarded by `tasks_mutex`: the task sets it, and `shutdown` holds that mutex while it waits for the tasks.
+    class LogsQueueSlot
+    {
+    public:
+        void set(InternalTextLogsQueuePtr logs_queue_);
+        InternalTextLogsQueuePtr get() const;
+
+    private:
+        mutable std::mutex mutex;
+        InternalTextLogsQueuePtr logs_queue TSA_GUARDED_BY(mutex);
+    };
+
+    using TaskPromisePtr = std::shared_ptr<std::promise<std::optional<TaskFailure>>>;
+
     struct TaskState
     {
         /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
@@ -98,17 +117,31 @@ private:
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.
         TaskCollectors collectors;
-        /// Created only when logs are collected; drained by `getStatus`.
-        InternalTextLogsQueuePtr logs_queue;
+        /// Filled by the task's setup only when logs are collected; drained by `getStatus`.
+        std::shared_ptr<LogsQueueSlot> logs_queue = std::make_shared<LogsQueueSlot>();
         /// Lines handed to status replies so far.
         std::shared_ptr<ForwardedLogsCounter> forwarded_logs = std::make_shared<ForwardedLogsCounter>();
     };
 
     using TaskStatePtr = std::shared_ptr<TaskState>;
 
+    /// The query context and the rest of what a task needs besides its description.
+    struct TaskSetup;
+
+    static TaskSetup setupTask(const String & unique_task_id, const DistributedQueryTaskDescription & task_description,
+        const String & unique_temp_file_path, const TaskCollectors & collectors, const OpenTelemetry::TracingContext & trace_context);
+
+    /// Schedules a registered task in `thread_pool`; `trace_context_` is the dispatch request's.
+    void scheduleTask(const String & unique_task_id, TaskStatePtr task_state, TaskPromisePtr task_promise,
+        DistributedQueryTaskDescription task_description_, const String & unique_temp_file_path, OpenTelemetry::TracingContext trace_context_);
+
     ThreadPool thread_pool;
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);
+    /// Ids cancelled before their start arrived. Bounded: past the cap the oldest is dropped.
+    static constexpr size_t MAX_CANCELLED_BEFORE_START = 1000;
+    std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
+    std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
     std::mutex tasks_mutex;
 };
 

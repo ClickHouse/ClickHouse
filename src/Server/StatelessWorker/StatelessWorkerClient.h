@@ -8,10 +8,17 @@ namespace DB
 {
 
 struct DistributedQueryTaskDescription;
+struct DistributedQueryTask;
+struct ExchangeStreamSources;
 
 /// `collectors` names what the worker should collect for the task (the `collect` URL parameter of
 /// the `start` request); the worker appends only their payloads to status replies.
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context);
+
+/// Sends `start` with `stage_description`, the fields shared by the tasks of a stage, and this task's `task` and `stream_sources`.
+String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & stage_description,
+    const DistributedQueryTask & task, const ExchangeStreamSources & stream_sources, const String & unique_temp_file_path,
+    const TaskCollectors & collectors, const ContextPtr & context);
 
 /// `for_cleanup` uses short HTTP timeouts and no retries so best-effort cleanup cannot block for the
 /// normal multi-minute request budget when a worker is slow or unreachable.

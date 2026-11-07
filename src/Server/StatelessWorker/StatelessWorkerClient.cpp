@@ -92,20 +92,29 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
+    return sendTask(endpoint_uri, unique_task_id, task_description, task_description.task, task_description.exchange_stream_sources,
+        unique_temp_file_path, collectors, context);
+}
+
+String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & stage_description,
+    const DistributedQueryTask & task, const ExchangeStreamSources & stream_sources, const String & unique_temp_file_path,
+    const TaskCollectors & collectors, const ContextPtr & context)
+{
     /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
     const Poco::URI uri(endpoint_uri);
     OpenTelemetry::SpanHolder span(
         "StatelessWorkerClient::sendTask",
         OpenTelemetry::SpanKind::CLIENT,
         {
-            {"clickhouse.distributed.task_id", task_description.task.task_id},
-            {"clickhouse.initial_query_id", task_description.initial_query_id},
+            {"clickhouse.distributed.task_id", task.task_id},
+            {"clickhouse.initial_query_id", stage_description.initial_query_id},
             {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
         });
 
-    auto task_serializer = [task_description] (WriteBuffer & buf)
+    /// By reference: `doSendTask` writes the body before it returns.
+    auto task_serializer = [&] (WriteBuffer & buf)
     {
-        serializeTask(task_description, buf);
+        serializeTask(stage_description, task, stream_sources, buf);
     };
 
     try
