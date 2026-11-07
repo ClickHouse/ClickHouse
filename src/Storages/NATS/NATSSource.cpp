@@ -276,8 +276,10 @@ Chunk NATSSource::generateImpl()
                 }
                 else
                 {
-                    virtual_columns[2]->insertDefault();
-                    virtual_columns[3]->insertDefault();
+                    /// A good message can hold many rows, so these two columns need one
+                    /// NULL per row, same as `_subject` and `_table` above.
+                    virtual_columns[2]->insertManyDefaults(new_rows);
+                    virtual_columns[3]->insertManyDefaults(new_rows);
                 }
             }
 
