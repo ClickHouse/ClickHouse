@@ -68,10 +68,14 @@ ASTPtr CompressionCodecMultiple::getCodecDescription() const
 ASTPtr CompressionCodecMultiple::getFullCodecDescription() const
 {
     auto description = getCodecDescription();
+    boost::intrusive_ptr<ASTFunction> codec;
     /// A single nested `Multiple` still contributes one argument to `CODEC`.
     if (codecs->size() == 1)
-        return makeASTFunction("CODEC", description);
-    return makeASTFunction("CODEC", std::move(description->children));
+        codec = makeASTFunction("CODEC", description);
+    else
+        codec = makeASTFunction("CODEC", std::move(description->children));
+    codec->setKind(ASTFunction::Kind::CODEC);
+    return codec;
 }
 
 uint8_t CompressionCodecMultiple::getMethodByte() const

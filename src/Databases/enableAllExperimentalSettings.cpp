@@ -56,7 +56,6 @@ const std::vector<std::string> & allExperimentalSettingNames()
         "allow_database_unity_catalog",
         "allow_database_glue_catalog",
         "allow_database_iceberg",
-        "allow_delta_kernel_rs",
         "allow_experimental_ytsaurus_table_function",
         "allow_experimental_eval_table_function",
         "allow_experimental_ytsaurus_table_engine",

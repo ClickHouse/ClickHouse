@@ -4825,7 +4825,6 @@ String replaySettingsPrelude(
     /// Read only when a `DeltaLake*` table is created; a `DataLakeCatalog` database's tables are not replayed.
     static const std::set<std::string_view> delta_lake_settings = {
         "allow_delta_lake_create_table",
-        "allow_delta_kernel_rs",
         "allow_experimental_delta_lake_writes",
     };
     /// The CREATE-statement feature that reads each shared gate. A gate with no carrier here is never emitted,
@@ -4912,7 +4911,7 @@ String replaySettingsPrelude(
     std::set<String> dump_specific_names;
     for (const auto & [name, value] : dump_specific)
         dump_specific_names.insert(name);
-    /// The name the source server knows the gate by: a renamed gate such as `allow_delta_kernel_rs` keeps its old name.
+    /// The name the source server knows the gate by: a renamed gate keeps its old name.
     /// Only non-obsolete names are known, so an obsolete gate is never emitted, even when a statement does not parse.
     auto server_spelling = [&settings_known_to_server](const String & name) -> std::optional<String>
     {
