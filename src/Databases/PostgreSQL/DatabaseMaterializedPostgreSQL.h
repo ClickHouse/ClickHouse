@@ -66,6 +66,8 @@ public:
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
+    void checkTableCanBeDetachedPermanently(ContextPtr context, const String & table_name) override;
+
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void dropTable(ContextPtr local_context, const String & name, bool sync) override;
@@ -92,6 +94,12 @@ private:
     ASTPtr createAlterSettingsQuery(const SettingsChanges & new_settings);
 
     String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
+
+    /// Throws if the replication has not started yet (see `synchronization_started`).
+    void checkSynchronizationStarted(const String & table_name) const;
+
+    /// Throws if `table_name` is not replicated, or if detaching it permanently would leave no replicated tables.
+    void checkCanDetachTablePermanently(const String & table_name) const TSA_REQUIRES(tables_mutex);
 
     /// Adds the change of `materialized_postgresql_unmaterialized_tables_list` to persist `unmaterialized_published_tables`
     /// (except `except`) together with `materialized_postgresql_tables_list`, if there is anything to persist or to clear.
@@ -124,6 +132,12 @@ private:
     /// them directly (see `tryGetTable` and `getTableForRead`).
     bool replication_stopped TSA_GUARDED_BY(tables_mutex) = false;
 
+    /// Tables that passed `checkTableCanBeDetachedPermanently`, and are being detached permanently. They do not count
+    /// as remaining replicated tables, so that concurrent detaches of the last two tables cannot both pass the check.
+    /// An entry is removed by `detachTablePermanently`. If the detach fails before reaching it, the entry stays until
+    /// the next detach of this table, and only makes the check stricter.
+    std::set<String> tables_detaching_permanently TSA_GUARDED_BY(tables_mutex);
+
     /// The tables of a whole-schema database that are in the publication but are not replicated, because they
     /// do not have nested tables (for example, their initial snapshot has failed). They are not in
     /// `materialized_tables`, but `getTablesForBackup` must not silently omit them.
@@ -133,6 +147,12 @@ private:
 
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
+
+    /// Set once `startSynchronization` has started the replication handler. Until then, `startSynchronization` holds
+    /// `handler_mutex` while it drops and creates nested tables, which takes their DDL guards. A query that holds the
+    /// DDL guard of a table (`ATTACH TABLE`, `DETACH TABLE ... PERMANENTLY`) must not wait for `handler_mutex` then,
+    /// otherwise the two would wait for each other. See `checkSynchronizationStarted`.
+    std::atomic<bool> synchronization_started = false;
 
     LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };
