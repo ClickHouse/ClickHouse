@@ -126,6 +126,11 @@ public:
         serialization_hints = hints;
     }
 
+    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override
+    {
+        column_mapper = column_mapper_;
+    }
+
     size_t getApproxBytesReadForChunk() const override { return last_approx_bytes_read_for_chunk; }
 
     String getName() const final { return "ParallelParsingBlockInputFormat"; }
@@ -213,6 +218,7 @@ private:
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
     SerializationInfoByName serialization_hints{{}};
+    ColumnMapperPtr column_mapper;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;

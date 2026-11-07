@@ -72,6 +72,12 @@ protected:
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result
 
+    /// Under parallel parsing, only the first segment normally has the prefix (e.g. the `CSVWithNames`
+    /// header): later segments start with `total_rows` set by `setRowsReadBefore` and skip `readPrefix`.
+    /// A format whose segmentation engine repeats the prefix in every segment returns true here, so
+    /// `readPrefix` is called once per segment.
+    virtual bool everySegmentHasPrefix() const { return false; }
+
     /// Skip data until next row.
     /// This is intended for text streams, that allow skipping of errors.
     /// By default - throws not implemented exception.
@@ -103,6 +109,7 @@ private:
 
     size_t total_rows = 0;
     size_t num_errors = 0;
+    bool prefix_read = false;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;

@@ -14,6 +14,9 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
 
     try
     {
+        /// Created once per stream: an engine may keep state across segments (e.g. Avro caches the file header).
+        auto file_segmentation_engine = file_segmentation_engine_creator(format_settings);
+
         while (!parsing_finished)
         {
             const auto segmentator_unit_number = segmentator_ticket_number % processing_units.size();
@@ -33,7 +36,6 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             unit.segment.resize(0);
 
             size_t segment_start = getDataOffsetMaybeCompressed(*in);
-            auto file_segmentation_engine = file_segmentation_engine_creator(format_settings);
             auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
 
             unit.original_segment_size = getDataOffsetMaybeCompressed(*in) - segment_start;
@@ -78,6 +80,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
+        input_format->setColumnMapper(column_mapper);
 
         InternalParser parser(input_format);
 
