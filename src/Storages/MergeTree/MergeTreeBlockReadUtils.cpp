@@ -1,4 +1,13 @@
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -21,6 +30,8 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <algorithm>
+#include <array>
+#include <memory>
 #include <unordered_set>
 
 
@@ -120,18 +131,24 @@ bool injectRequiredColumnsRecursively(
         {
             /// Resolved against the serialization the part holds for the column - which it always does, the column
             /// comes from its own list - instead of a newly built one.
-            if (!column_in_storage->isSubcolumn()
-                || column_in_part->type->tryGetSubcolumnType(
-                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
+            std::optional<String> source_of_subcolumn;
+            if (column_in_storage->isSubcolumn())
+                source_of_subcolumn = column_in_part->type->tryGetSubcolumnType(
+                        column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part))
+                    ? getSourceOfSubcolumnInPart(storage_snapshot, *column_in_storage, column_in_part->type, alter_conversions)
+                    : column_in_storage->getNameInStorage();
+
+            if (!source_of_subcolumn)
             {
                 add_column(column_name);
                 return true;
             }
 
             /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
-            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
-            /// subcolumn extracted from it, instead of being filled from the storage-type default.
-            add_column(column_in_storage->getNameInStorage());
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or has another one under its name (a changed `JSON` type). Read the parent
+            /// (or its path with the subcolumn) to convert it and extract the subcolumn; the subcolumn too, as a default may use it.
+            add_column(column_name);
+            add_column(*source_of_subcolumn);
             return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part)
@@ -141,6 +158,18 @@ bool injectRequiredColumnsRecursively(
             /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
             return true;
+        }
+        else if (!column_in_part && column_in_storage->isSubcolumn()
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
+        {
+            /// The part omitted the column: its source is filled from the default the part recorded, as the column is.
+            auto type_in_part = tryGetColumnTypeInPart(data_part_info_for_reader, column_name_in_part);
+            if (auto source = getSourceOfSubcolumnInPart(storage_snapshot, *column_in_storage, type_in_part, alter_conversions))
+            {
+                add_column(column_name);
+                add_column(*source);
+                return false;
+            }
         }
     }
 
@@ -171,6 +200,399 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+using Substream = ISerialization::Substream;
+
+bool isObjectPathSubstream(const Substream & substream)
+{
+    switch (substream.type)
+    {
+        case Substream::ObjectTypedPath:
+        case Substream::ObjectTypedSharedDataPath:
+        case Substream::ObjectDynamicPath:
+        case Substream::ObjectSubObject:
+        case Substream::ObjectCombinedPath:
+        case Substream::ObjectDistinctPaths:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// The type that a substream of a subcolumn path descends into from @type, or null when it is not tracked.
+const IDataType * getTypeOfSubstream(const IDataType * type, const Substream & substream)
+{
+    if (!type)
+        return nullptr;
+
+    switch (substream.type)
+    {
+        case Substream::ArrayElements:
+            if (const auto * array = typeid_cast<const DataTypeArray *>(type))
+                return array->getNestedType().get();
+            /// A `Map` is serialized as its nested `Array(Tuple(keys, values))`.
+            if (const auto * map = typeid_cast<const DataTypeMap *>(type))
+                return getTypeOfSubstream(map->getNestedType().get(), substream);
+            return nullptr;
+        case Substream::NullableElements:
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type))
+                return nullable->getNestedType().get();
+            return nullptr;
+        case Substream::TupleElement:
+            if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type))
+                if (auto position = tuple->tryGetPositionByName(substream.name_of_substream))
+                    return tuple->getElement(*position).get();
+            return nullptr;
+        case Substream::ObjectTypedPath:
+        case Substream::ObjectTypedSharedDataPath:
+            if (const auto * object = typeid_cast<const DataTypeObject *>(type))
+                if (auto it = object->getTypedPaths().find(substream.object_path_name); it != object->getTypedPaths().end())
+                    return it->second.get();
+            return nullptr;
+        default:
+            return nullptr;
+    }
+}
+
+/// Whether a substream of @path is read from an object or from a type that `getTypeOfSubstream` does not track.
+bool mayPassObject(const IDataType * type, const ISerialization::SubstreamPath & path)
+{
+    for (const auto & substream : path)
+    {
+        if (!type || isObject(*type))
+            return true;
+        type = getTypeOfSubstream(type, substream);
+    }
+    return false;
+}
+
+bool hasTypedPathUnder(const DataTypeObject & type, const String & path)
+{
+    String prefix = path + ".";
+    return std::ranges::any_of(type.getTypedPaths(), [&](const auto & typed_path) { return typed_path.first.starts_with(prefix); });
+}
+
+/// Whether converting an object @in_part to @in_storage keeps the value of the path @substream reads: the same skip rules and
+/// typed paths on the path, its prefixes and, for a value that includes them, the paths under it, except @hinted_path.
+bool objectPathValueIsKept(
+    const IDataType * in_storage, const IDataType * in_part, const Substream & substream, std::string_view hinted_path = {})
+{
+    const auto * object_in_storage = typeid_cast<const DataTypeObject *>(in_storage);
+    const auto * object_in_part = typeid_cast<const DataTypeObject *>(in_part);
+    if (!object_in_storage || !object_in_part || object_in_storage->getPathsToSkip() != object_in_part->getPathsToSkip()
+        || object_in_storage->getPathRegexpsToSkip() != object_in_part->getPathRegexpsToSkip())
+        return false;
+
+    const auto & typed_paths_in_storage = object_in_storage->getTypedPaths();
+    const auto & typed_paths_in_part = object_in_part->getTypedPaths();
+    auto typed_path_is_kept = [&](const String & typed_path)
+    {
+        auto it_in_storage = typed_paths_in_storage.find(typed_path);
+        auto it_in_part = typed_paths_in_part.find(typed_path);
+        if (typed_path == hinted_path || (it_in_storage == typed_paths_in_storage.end() && it_in_part == typed_paths_in_part.end()))
+            return true;
+        return it_in_storage != typed_paths_in_storage.end() && it_in_part != typed_paths_in_part.end()
+            && it_in_storage->second->equals(*it_in_part->second);
+    };
+
+    std::optional<String> path;
+    bool value_includes_paths_under = true;
+    if (substream.type == Substream::ObjectSubObject)
+        path = DataTypeObject::tryGetPrefixedSubcolumn(substream.name_of_substream, DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX);
+    else if (substream.type == Substream::ObjectCombinedPath)
+        path = DataTypeObject::tryGetPrefixedSubcolumn(substream.name_of_substream, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX);
+    else if (substream.type != Substream::ObjectDistinctPaths)
+    {
+        path = substream.object_path_name;
+        value_includes_paths_under = false;
+    }
+
+    /// The distinct paths depend on all paths.
+    if (!path)
+        return std::ranges::all_of(typed_paths_in_storage, [&](const auto & typed_path) { return typed_path_is_kept(typed_path.first); })
+            && std::ranges::all_of(typed_paths_in_part, [&](const auto & typed_path) { return typed_path_is_kept(typed_path.first); });
+
+    for (size_t pos = path->find('.'); pos != String::npos; pos = path->find('.', pos + 1))
+        if (!typed_path_is_kept(path->substr(0, pos)))
+            return false;
+
+    if (!typed_path_is_kept(*path))
+        return false;
+
+    if (!value_includes_paths_under)
+        return true;
+
+    String prefix = *path + ".";
+    auto is_kept_under_path = [&](const auto & typed_path) { return !typed_path.first.starts_with(prefix) || typed_path_is_kept(typed_path.first); };
+    return std::ranges::all_of(typed_paths_in_storage, is_kept_under_path) && std::ranges::all_of(typed_paths_in_part, is_kept_under_path);
+}
+
+bool isTypedPathSubstream(const Substream & substream)
+{
+    return substream.type == Substream::ObjectTypedPath || substream.type == Substream::ObjectTypedSharedDataPath;
+}
+
+/// `Dynamic` infers `JSON` for an object, and a `Variant` tries each of its variants.
+bool canHoldObjectValue(const DataTypePtr & type)
+{
+    auto nested_type = removeNullable(removeLowCardinality(type));
+    if (DataTypeObject::canParseObjectValue(nested_type) || isDynamic(nested_type))
+        return true;
+
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(nested_type.get());
+    return variant_type && std::ranges::any_of(variant_type->getVariants(), canHoldObjectValue);
+}
+
+/// A type hint of a path that the part stores as a dynamic path or with another type hint, read as a whole: it is applied
+/// by casting the path's value, which is how type hints are documented to apply to old parts. Hints of the types that can
+/// hold an object are not, on either side, because a part stores an object as separate paths, not as the value of the path.
+bool isTypeHintCastOfPath(
+    const IDataType * object_in_storage,
+    const IDataType * object_in_part,
+    const Substream & substream_in_storage,
+    const Substream & substream_in_part)
+{
+    bool is_typed_path_in_part = isTypedPathSubstream(substream_in_part);
+    if (!isTypedPathSubstream(substream_in_storage) || (!is_typed_path_in_part && substream_in_part.type != Substream::ObjectDynamicPath)
+        || substream_in_storage.object_path_name != substream_in_part.object_path_name)
+        return false;
+
+    const auto & path = substream_in_storage.object_path_name;
+    if (!objectPathValueIsKept(object_in_storage, object_in_part, substream_in_part, path))
+        return false;
+
+    /// `objectPathValueIsKept` has checked that both are objects.
+    const auto & typed_object_in_storage = typeid_cast<const DataTypeObject &>(*object_in_storage);
+    const auto & typed_object_in_part = typeid_cast<const DataTypeObject &>(*object_in_part);
+    auto hinted_type = typed_object_in_storage.getTypedPaths().find(path);
+    if (hinted_type == typed_object_in_storage.getTypedPaths().end() || hasTypedPathUnder(typed_object_in_storage, path)
+        || hasTypedPathUnder(typed_object_in_part, path) || canHoldObjectValue(hinted_type->second))
+        return false;
+
+    if (!is_typed_path_in_part)
+        return true;
+
+    auto type_in_part = typed_object_in_part.getTypedPaths().find(path);
+    return type_in_part != typed_object_in_part.getTypedPaths().end() && !canHoldObjectValue(type_in_part->second);
+}
+
+/// The typed path with @subcolumn in its value when that value is cast to the hint (see `isTypeHintCastOfPath`). The path's object
+/// is the column or an element of its `Array` / `Map` / `Tuple` wrappers.
+std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    const auto & type_in_storage = subcolumn.getTypeInStorage();
+    const auto & subcolumn_name = subcolumn.getSubcolumnName();
+    auto info_in_storage = type_in_storage->tryGetSubcolumnInfo(subcolumn_name);
+    if (!info_in_storage)
+        return std::nullopt;
+
+    const auto & substreams_in_storage = info_in_storage->substreams_path;
+    const IDataType * owner_in_storage = type_in_storage.get();
+    size_t depth = 0;
+    for (; depth < substreams_in_storage.size(); ++depth)
+    {
+        const auto & substream = substreams_in_storage[depth];
+        if (substream.type != Substream::ArrayElements && substream.type != Substream::TupleElement)
+            break;
+
+        owner_in_storage = getTypeOfSubstream(owner_in_storage, substream);
+        if (!owner_in_storage)
+            return std::nullopt;
+    }
+
+    if (depth + 1 >= substreams_in_storage.size() || !isTypedPathSubstream(substreams_in_storage[depth])
+        || !typeid_cast<const DataTypeObject *>(owner_in_storage))
+        return std::nullopt;
+
+    auto is_name_of_typed_path = [&](const String & name)
+    {
+        auto info = type_in_storage->tryGetSubcolumnInfo(name);
+        return info && info->substreams_path.size() == depth + 1
+            && std::equal(
+                   info->substreams_path.begin(), info->substreams_path.end(), substreams_in_storage.begin(), ISerialization::isSameSubstream);
+    };
+
+    std::optional<String> path;
+    for (size_t pos = subcolumn_name.find('.'); pos != String::npos && !path; pos = subcolumn_name.find('.', pos + 1))
+        if (is_name_of_typed_path(subcolumn_name.substr(0, pos)))
+            path = subcolumn_name.substr(0, pos);
+
+    if (!path)
+        return std::nullopt;
+
+    auto info_in_part = column_type_in_part->tryGetSubcolumnInfo(*path);
+    if (!info_in_part || info_in_part->substreams_path.size() != depth + 1)
+        return std::nullopt;
+
+    const auto & substreams_in_part = info_in_part->substreams_path;
+    const IDataType * owner_in_part = column_type_in_part.get();
+    for (size_t i = 0; i < depth; ++i)
+    {
+        if (!ISerialization::isSameSubstream(substreams_in_storage[i], substreams_in_part[i]))
+            return std::nullopt;
+
+        owner_in_part = getTypeOfSubstream(owner_in_part, substreams_in_part[i]);
+    }
+
+    if (!isTypeHintCastOfPath(owner_in_storage, owner_in_part, substreams_in_storage[depth], substreams_in_part[depth]))
+        return std::nullopt;
+
+    if (!type_in_storage->getSubcolumnType(*path)->tryGetSubcolumnType(subcolumn_name.substr(path->size() + 1)))
+        return std::nullopt;
+
+    return Nested::concatenateName(subcolumn.getNameInStorage(), *path);
+}
+
+/// `IDataType::equals`, which is linear in the typed paths of a `JSON` type. Parts with the same columns share their types
+/// and a query shares the table's, so a thread keeps its last results, keyed by the owners of the types as `std::owner_less`.
+bool equalsTypeInPart(const DataTypePtr & type_in_storage, const DataTypePtr & type_in_part)
+{
+    struct Comparison
+    {
+        std::weak_ptr<const IDataType> type_in_storage;
+        std::weak_ptr<const IDataType> type_in_part;
+        bool equals = false;
+    };
+    thread_local std::array<Comparison, 8> comparisons;
+    thread_local size_t next_comparison = 0;
+
+    auto is_owned_by = [](const DataTypePtr & type, const std::weak_ptr<const IDataType> & owner)
+    { return !type.owner_before(owner) && !owner.owner_before(type); };
+
+    for (const auto & comparison : comparisons)
+        if (is_owned_by(type_in_storage, comparison.type_in_storage) && is_owned_by(type_in_part, comparison.type_in_part))
+            return comparison.equals;
+
+    bool equals = type_in_storage->equals(*type_in_part);
+    comparisons[next_comparison++ % comparisons.size()] = {type_in_storage, type_in_part, equals};
+    return equals;
+}
+
+/// Whether the subcolumn of the column converted from @column_type_in_part can differ from the converted one read from the part.
+bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    const auto & type_in_storage = subcolumn.getTypeInStorage();
+    if (!subcolumn.isSubcolumn() || equalsTypeInPart(type_in_storage, column_type_in_part))
+        return false;
+
+    auto has_object = [](const IDataType & type) { return anyInTypeTree(type, [](const IDataType & nested) { return isObject(nested); }); };
+    if (!has_object(*type_in_storage) && !has_object(*column_type_in_part))
+        return false;
+
+    auto info_in_storage = type_in_storage->tryGetSubcolumnInfo(subcolumn.getSubcolumnName());
+    if (!info_in_storage)
+        return false;
+
+    /// Reading the subcolumn missing from the part with the type in the table could read the part's streams of another type.
+    auto info_in_part = column_type_in_part->tryGetSubcolumnInfo(subcolumn.getSubcolumnName());
+    if (!info_in_part)
+        return true;
+
+    const auto & path_in_storage = info_in_storage->substreams_path;
+    const auto & path_in_part = info_in_part->substreams_path;
+    if (path_in_storage.empty() || path_in_part.empty())
+        return true;
+
+    /// The conversion casts a value that no object holds or is in, as the read of the subcolumn does.
+    const auto & type_of_subcolumn_in_storage = *info_in_storage->data.type;
+    const auto & type_of_subcolumn_in_part = *info_in_part->data.type;
+    if (!mayPassObject(type_in_storage.get(), path_in_storage) && !mayPassObject(column_type_in_part.get(), path_in_part)
+        && !has_object(type_of_subcolumn_in_storage) && !has_object(type_of_subcolumn_in_part))
+        return false;
+
+    if (path_in_storage.size() != path_in_part.size())
+        return true;
+
+    const IDataType * type_of_substream_in_storage = type_in_storage.get();
+    const IDataType * type_of_substream_in_part = column_type_in_part.get();
+    size_t last = path_in_storage.size() - 1;
+    for (size_t i = 0; i <= last; ++i)
+    {
+        if (i == last
+            && isTypeHintCastOfPath(type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i], path_in_part[i]))
+            return false;
+
+        if (!ISerialization::isSameSubstream(path_in_storage[i], path_in_part[i]))
+            return true;
+
+        if (isObjectPathSubstream(path_in_storage[i])
+            && !objectPathValueIsKept(type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i]))
+            return true;
+
+        type_of_substream_in_storage = getTypeOfSubstream(type_of_substream_in_storage, path_in_storage[i]);
+        type_of_substream_in_part = getTypeOfSubstream(type_of_substream_in_part, path_in_part[i]);
+    }
+
+    /// The same path in both: a cast of the value is not the conversion of the column unless the types are the same.
+    return !type_of_subcolumn_in_storage.equals(type_of_subcolumn_in_part);
+}
+
+std::optional<String> getSourceOfSubcolumnForType(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    if (!isSubcolumnChangedByConversion(subcolumn, column_type_in_part))
+        return std::nullopt;
+
+    if (auto cast_path = tryGetCastPathOfSubcolumn(subcolumn, column_type_in_part))
+        return cast_path;
+
+    return subcolumn.getNameInStorage();
+}
+
+}
+
+DataTypePtr tryGetColumnTypeInPart(const IMergeTreeDataPartInfoForReader & data_part_info_for_reader, const String & name_in_part)
+{
+    if (auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetPhysical(name_in_part))
+        return column_in_part->type;
+
+    const auto * missing = data_part_info_for_reader.getSerializationInfos().getMissingColumnInfo(name_in_part);
+    return missing && !missing->type_name.empty() ? DataTypeFactory::instance().get(missing->type_name) : nullptr;
+}
+
+std::optional<String> getSourceOfSubcolumnInPart(
+    const StorageSnapshotPtr & storage_snapshot,
+    const NameAndTypePair & subcolumn,
+    const DataTypePtr & column_type_in_part,
+    const AlterConversionsPtr & alter_conversions)
+{
+    if (!subcolumn.isSubcolumn())
+        return std::nullopt;
+
+    auto source = column_type_in_part ? getSourceOfSubcolumnForType(subcolumn, column_type_in_part) : std::nullopt;
+    const auto & column_name = subcolumn.getNameInStorage();
+    for (const auto & patch : alter_conversions ? alter_conversions->getAllPatches() : PatchPartsForReader{})
+    {
+        if (source == column_name)
+            break;
+
+        auto column_name_in_patch = column_name;
+        const auto & patch_alter_conversions = patch.part->getAlterConversions();
+        if (patch_alter_conversions && patch_alter_conversions->isColumnRenamed(column_name_in_patch))
+            column_name_in_patch = patch_alter_conversions->getColumnOldName(column_name_in_patch);
+
+        auto column_in_patch = patch.part->getColumnsDescription().tryGetPhysical(column_name_in_patch);
+        if (!column_in_patch)
+            continue;
+
+        auto source_in_patch = getSourceOfSubcolumnForType(subcolumn, column_in_patch->type);
+        if (!source || source_in_patch == column_name)
+            source = std::move(source_in_patch);
+    }
+
+    /// A path is read by its name, which another column of the table can have.
+    if (source && *source != column_name)
+    {
+        auto source_in_storage = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), *source);
+        if (!source_in_storage || source_in_storage->getNameInStorage() != column_name)
+            source = column_name;
+    }
+
+    const auto & metadata = storage_snapshot->metadata;
+    if (source
+        && (std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+            || std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name)))
+        return std::nullopt;
+
+    return source;
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
@@ -434,6 +856,16 @@ void addPatchPartsColumns(
             if (!patch_part_columns.hasPhysical(column_name_in_patch))
                 continue;
 
+            /// A patch of another type extracts the subcolumn from its source after conversions, so it reads the source too.
+            /// Applied before conversions it cannot, and the part extracts the subcolumn from the patched source instead.
+            const auto & type_in_patch = patch_part_columns.getPhysical(column_name_in_patch).type;
+            if (auto source = getSourceOfSubcolumnInPart(storage_snapshot, column_in_storage, type_in_patch, nullptr))
+            {
+                if (!patch_parts[i].perform_alter_conversions)
+                    continue;
+                patch_columns_to_read_set.insert(*source);
+            }
+
             /// Add requested column name, not the column name in patch, for correct query analysis and applying patches.
             /// This column name will be translated to the column name in patch in MergeTree reader.
             patch_columns_to_read_set.insert(column_name);
@@ -499,7 +931,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
-    auto add_step = [&](const PrewhereExprStep & step)
+    auto add_step = [&](const PrewhereExprStep & step, bool is_on_fly_mutation_step)
     {
         /// Computation results from previous steps might be used in the current step as well. In such a case these
         /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
@@ -523,6 +955,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
 
         const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
+        const size_t num_required_columns = step_column_names.size();
 
         /// If part has non-adaptive granularity we always have to read at least one column
         /// because we cannot determine the correct size of the last granule without reading data.
@@ -535,9 +968,17 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
         Names columns_to_read_in_step;
-        for (const auto & name : step_column_names)
+        for (size_t i = 0; i < step_column_names.size(); ++i)
         {
-            if (columns_from_previous_steps.emplace(name).second)
+            const auto & name = step_column_names[i];
+            /// An on-fly mutation ends with a projection to its own columns, so a column injected here to fill or extract
+            /// another one does not reach the next steps, which read it again if they need it.
+            if (is_on_fly_mutation_step && i >= num_required_columns)
+            {
+                if (!columns_from_previous_steps.contains(name))
+                    columns_to_read_in_step.push_back(name);
+            }
+            else if (columns_from_previous_steps.emplace(name).second)
                 columns_to_read_in_step.push_back(name);
         }
 
@@ -552,7 +993,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     };
 
     for (const auto & step : mutation_steps)
-        add_step(*step);
+        add_step(*step, /*is_on_fly_mutation_step=*/ step->actions != nullptr);
 
     if (prewhere_info || row_level_filter || !index_read_tasks.empty())
     {
@@ -566,7 +1007,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             reader_settings.read_ahead_prewhere_columns);
 
         for (const auto & step : prewhere_actions.steps)
-            add_step(*step);
+            add_step(*step, /*is_on_fly_mutation_step=*/ false);
     }
 
     /// Remove columns read in prewehere from the list of columns to read.

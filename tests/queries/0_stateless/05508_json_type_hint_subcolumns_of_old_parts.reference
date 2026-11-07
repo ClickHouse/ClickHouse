@@ -1,0 +1,257 @@
+issue 123339
+1	3	1	{'k1':1,'k2':2}
+2	1	0	{'k3':3}
+3	0	1	{}
+2
+4
+1	3	1	{'k1':1,'k2':2}
+2	1	0	{'k3':3}
+3	0	1	{}
+2
+4
+wide
+1	2	2	0	2
+2	5	5	0	0
+1	42	42
+2	12345	12345
+1
+1
+1	2
+compact
+1	2	2	0	2
+2	5	5	0	0
+1	42	42
+2	12345	12345
+1
+1
+omitted
+1	1	0
+2	1	0
+1	0	{"a":"0"}
+2	0	{"a":"0"}
+pending modify
+1	2
+2	5
+1	42
+2	12345
+1	8
+2	11
+1	{"a":42}
+2	{"a":12345}
+mutation
+1	42
+2	12345
+array
+1	[2,1]
+2	[]
+1	['42','7']
+2	[]
+single stream
+1	2	42
+2	5	12345
+hint removed
+1	\N	0
+2	\N	1
+1	\N	0
+2	\N	1
+typed hint changed
+{"k":1}
+{"k":1}
+hint added
+1	42	1	{"d":1}	1
+2	str	0	{}	\N
+\N
+\N
+1	\N
+hints that can hold an object
+1	JSON	{"k":1,"l":2}	\N
+2	Int64	42	42
+3	None	\N	\N
+1	JSON	{"k":1,"l":2}	\N
+2	Int64	42	42
+3	None	\N	\N
+1	Map(String, UInt32)	{'k':1,'l':2}	\N
+2	String	s	s
+3	None	\N	\N
+1	Map(String, UInt32)	{'k':1,'l':2}	\N
+2	String	s	s
+3	None	\N	\N
+1	{"k":1}	7
+2	s	1
+1	{"k":1}	7
+2	s	1
+patch before alter
+1	3
+2	5
+1	777
+2	12345
+patch before alter, part merged without it
+1	777
+2	12345
+1	3
+2	5
+1	3
+2	5
+1	{"a":"777"}
+2	{"a":"12345"}
+patch after alter
+1	4
+2	5
+1	xyz7
+2	12345
+patch after a pending mutation
+1	2	{"a":"abcdefgh"}	8
+2	5	{"a":"12345"}	5
+1	2
+1	2	7
+2	5	5
+hint added, subcolumns from the cast path
+1	2	2	0	3
+2	1	1	1	0
+3	0	0	1	0
+1	2	2	0	3
+2	1	1	1	0
+3	0	0	1	0
+2
+2
+1
+1
+1	2
+2	1
+1	2	2	0	3
+2	1	1	1	0
+3	0	0	1	0
+1	3
+2	1
+structured hint added in array
+1	[{'k':1}]
+2	[{'k':2,'l':3},{}]
+1	[{'k':1}]
+2	[{'k':2,'l':3},{}]
+1	[(1)]
+2	[(2),(0)]
+1	[(1)]
+2	[(2),(0)]
+nested member
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['777']	[3]
+2	['12345']	[5]
+parent read by an earlier step
+1	2
+2	5
+2	0
+omitted, patch before alter
+1	3	3
+2	1	1
+1	3
+2	1
+1	777
+2	0
+4
+omitted, patch after alter
+1	4	4
+2	1	1
+1	4
+2	1
+1	xyz7
+2	0
+column added after the part, patch in the old type
+1	3	3
+2	0	0
+1	3
+2	0
+1	777
+2	
+1	3	777
+2	0	
+1	7	7
+2	0	0
+1	7
+2	0
+1	{"k":1}
+2	
+1	7	{"k":1}
+2	0	
+column added after the part with a default, patch in the old type
+1	3	3
+2	1	1
+1	3
+2	1
+1	777
+2	5
+1	3	777
+2	1	5
+1	7	7
+2	8	8
+1	7
+2	8
+1	{"k":1}
+2	{"x":22}
+1	7	{"k":1}
+2	8	{"x":22}
+text index fallback
+101	5950
+101	5950
+101	5950
+101	5950
+101	5950
+default of another column over a subcolumn
+1	{"k":1}
+2	{}
+1	{"k":1}
+2	{}
+subcolumns from the cast path read only the path
+3	3
+7	7
+7
+7	7
+7
+a scalar member next to a JSON member is read and cast as stored
+0	0
+1	7
+2	14
+0	['0']
+1	['7']
+2	['14']
+2	2
+2	2
+the source of a subcolumn a pending mutation reads stays readable
+1	2	42
+2	5	12345
+2	12345
+1	2	42
+2	5	12345
+a source read again after a pending mutation gets the patches written before it
+1	8	abcdefgh
+2	5	12345
+1	8	abcdefgh
+1	8	abcdefgh
+1	8	abcdefgh
+2	5	12345
+1	8	abcdefgh
+a subcolumn passed between pending mutations gets the patches written between them
+1	2	2	42
+2	5	3	abc
+a subcolumn passed between pending mutations gets the patches of an older type written between them
+1	2	2	['1','2']
+2	2	3	['7','8','9']
+2	2	3
+1	2	2	['1','2']
+2	2	3	['7','8','9']
+a subcolumn of a path is not read from another column named as the path
+2	999999
+2	999999
+05508_read_cast_path_added	1
+05508_read_cast_path_array	1
+05508_read_cast_path_changed	1
+05508_read_cast_path_map	1
+05508_read_cast_path_tuple	1
+05508_read_scalar_sibling	1
+05508_read_scalar_sibling_map	1

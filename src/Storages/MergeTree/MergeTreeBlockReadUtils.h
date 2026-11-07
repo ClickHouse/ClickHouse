@@ -18,6 +18,19 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+/// The type of the column @name_in_part in the part, or the type the part recorded for it when it omitted the column.
+DataTypePtr tryGetColumnTypeInPart(const IMergeTreeDataPartInfoForReader & data_part_info_for_reader, const String & name_in_part);
+
+/// The column to read and convert to extract the subcolumn from, when the subcolumn read from the part (its column of type
+/// @column_type_in_part, null if absent) or from its patch parts can differ: the column, or its typed path whose value is cast
+/// to the hint. Nothing when the subcolumn is read as stored, as a key subcolumn always is: the part is sorted and indexed by it.
+/// A part of a `JSON` column resolves any name as one of its paths: not the same subcolumn when the conversion changes them.
+std::optional<String> getSourceOfSubcolumnInPart(
+    const StorageSnapshotPtr & storage_snapshot,
+    const NameAndTypePair & subcolumn,
+    const DataTypePtr & column_type_in_part,
+    const AlterConversionsPtr & alter_conversions);
+
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);

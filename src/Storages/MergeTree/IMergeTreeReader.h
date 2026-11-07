@@ -83,6 +83,12 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    /// Re-extracts the subcolumns whose sources, named in @patched_columns, were patched after `evaluateMissingDefaults`.
+    void extractSubcolumnsOfPatchedSources(Columns & res_columns, const NameSet & patched_columns) const;
+
+    /// The columns that subcolumns are extracted from (see `getSourceOfRequiredSubcolumn`).
+    NameSet getSourcesOfSubcolumns() const;
+
     /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
     bool mayEvaluateMissingDefaults() const;
 
@@ -178,6 +184,8 @@ protected:
     const ColumnsDescription & part_columns;
     /// Actual column names and types of columns in part, which may differ from table metadata.
     NamesAndTypes columns_to_read;
+    /// The column a subcolumn is extracted from (see `getSourceOfRequiredSubcolumn`), one entry per element of `columns_to_read`.
+    std::vector<std::optional<String>> sources_of_subcolumns;
     /// Actual serialization of columns in part.
     Serializations serializations;
     SerializationByName serializations_of_full_columns;
@@ -225,6 +233,12 @@ protected:
 
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
+
+    /// Returns true if the subcolumn at @pos is not read from the part but extracted from its converted column or a path of it.
+    bool isSubcolumnExtractedFromConvertedColumn(size_t pos) const;
+
+    /// The path of its column that the subcolumn at @pos is extracted from, or null.
+    const String * tryGetCastPathOfSubcolumn(size_t pos, const NameAndTypePair & requested_column) const;
 
     /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
     /// building a serialization of it when the part already holds one.
@@ -315,7 +329,13 @@ private:
 
     /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
     /// enumeration of its parent.
-    ColumnAndSerializationInPart getColumnAndSerializationInPart(const NameAndTypePair & required_column) const;
+    ColumnAndSerializationInPart getColumnAndSerializationInPart(
+        const NameAndTypePair & required_column, bool extracted_from_converted_column = false) const;
+
+    /// The column the subcolumn is extracted from after conversion: kept in the part, or its recorded default if omitted.
+    std::optional<String> getSourceOfRequiredSubcolumn(const NameAndTypePair & required_column) const;
+
+    ColumnPtr extractSubcolumnFromSource(size_t pos, const NameAndTypePair & requested_column, ColumnWithTypeAndName source) const;
 
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
