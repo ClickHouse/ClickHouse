@@ -31,6 +31,7 @@
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -143,6 +144,11 @@ void forEachNode(const IAST & node, const std::function<void(const IAST &)> & vi
     visit(node);
     for (const auto & child : node.children)
         forEachNode(*child, visit, skip);
+    /// A TTL's GROUP BY keys and SET assignments are not in its `children`.
+    if (const auto * ttl = node.as<ASTTTLElement>())
+        for (const auto * parts : {&ttl->group_by_key, &ttl->group_by_assignments})
+            for (const auto & part : *parts)
+                forEachNode(*part, visit, skip);
 }
 
 /// Sends `query`, calling `handle_block` for each received `Data` packet, in order.
@@ -375,7 +381,7 @@ struct TableInfo
     NamedCollectionDependencies named_collections;
     /// Materialized view only: replay may reach a check that `allow_materialized_view_with_bad_select` relaxes.
     bool needs_bad_select_gate = false;
-    /// Typing settings set right before this CREATE, so its stored expressions get the types they have on the source.
+    /// Typing settings, and the analyzer gates they need, set right before this CREATE, so it analyzes as on the source.
     std::vector<std::pair<String, bool>> typing_settings;
     /// The user a view runs as (`DEFINER`). A user is not in any database, so the dump does not create it.
     std::optional<String> definer;
@@ -4937,6 +4943,13 @@ String replaySettingsPrelude(
     for (const auto & [name, value] : dump_specific)
         if (const auto spelling = server_spelling(name); spelling && is_needed(name))
             res += "SET " + *spelling + " = " + value + ";\n";
+    /// A stored CREATE can be longer than the default limit; the `;` counts too.
+    size_t longest = 0;
+    for (const auto & create_query : create_queries)
+        longest = std::max(longest, create_query.size() + 1);
+    if (longest > DBMS_DEFAULT_MAX_QUERY_SIZE)
+        if (const auto spelling = server_spelling("max_query_size"))
+            res += "SET " + *spelling + " = " + std::to_string(longest) + ";\n";
     res += "\n";
     return res;
 }
@@ -5790,9 +5803,21 @@ void markTypingSettings(
             if (storage->ttl_table)
                 for (const auto & child : storage->ttl_table->children)
                     if (const auto * element = child->as<ASTTTLElement>())
+                    {
                         for (const auto & part : {element->ttl(), element->where()})
                             if (part)
                                 add(part.get(), part->formatWithSecretsOneLine(), storage_expressions);
+                        /// A GROUP BY TTL aggregates its SET expressions over its keys, so it is probed as that query.
+                        String keys;
+                        String outputs;
+                        for (const auto & key : element->group_by_key)
+                            keys += (keys.empty() ? "" : ", ") + key->formatWithSecretsOneLine();
+                        for (const auto & assignment : element->group_by_assignments)
+                            if (const auto * set = assignment->as<ASTAssignment>())
+                                outputs += ", " + set->expression()->formatWithSecretsOneLine();
+                        if (!keys.empty())
+                            add(element, "SELECT " + keys + outputs + " FROM " + storage_relation + " GROUP BY " + keys, projection_probes);
+                    }
             /// An engine argument such as a sharding key or the columns to sum.
             if (storage->engine && storage->engine->arguments)
                 for (const auto & argument : storage->engine->arguments->children)
@@ -5838,26 +5863,46 @@ void markTypingSettings(
         for (const auto & name : carried)
             if (const auto session_value = session_values.find(name); session_value != session_values.end())
                 values.emplace_back(name, session_value->second);
-        auto analyzes_with = [&](const std::vector<String> & probes, size_t mask)
+        const SettingsChanges gates_on = {{"allow_suspicious_types_in_group_by", Field(true)},
+            {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
+        SettingsChanges gates_off = gates_on;
+        for (auto & gate : gates_off)
+            gate.value = Field(false);
+        auto analyzes_with = [&](const std::vector<String> & probes, size_t mask, const SettingsChanges & gates)
         {
-            SettingsChanges changes = {{"allow_suspicious_types_in_group_by", Field(true)},
-                {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
+            SettingsChanges changes = gates;
             for (size_t i = 0; i < values.size(); ++i)
                 changes.setSetting(values[i].first, Field(((mask >> i) & 1) != 0));
             return std::all_of(probes.begin(), probes.end(), [&](const String & probe) { return analyzes_on_source(probe, changes); });
         };
         /// The combination, with the fewest settings on, under which every probe analyzes.
-        auto find_combination = [&](const std::vector<String> & probes) -> std::optional<size_t>
+        auto find_combination = [&](const std::vector<String> & probes, const SettingsChanges & gates) -> std::optional<size_t>
         {
             for (size_t ones = 0; ones <= values.size(); ++ones)
                 for (size_t mask = 0; mask < (size_t{1} << values.size()); ++mask)
-                    if (static_cast<size_t>(std::popcount(mask)) == ones && analyzes_with(probes, mask))
+                    if (static_cast<size_t>(std::popcount(mask)) == ones && analyzes_with(probes, mask, gates))
                         return mask;
             return std::nullopt;
         };
+        /// The analyzer gates are tried off first; a combination that needs one also sets it right before the CREATE.
         std::optional<size_t> mask;
+        std::vector<String> gates_needed;
         if (can_probe && !session_probes.empty())
-            mask = find_combination(session_probes);
+        {
+            mask = find_combination(session_probes, gates_off);
+            if (!mask)
+            {
+                mask = find_combination(session_probes, gates_on);
+                if (mask)
+                    for (const auto & gate : gates_on)
+                    {
+                        SettingsChanges changes = gates_on;
+                        changes.setSetting(gate.name, Field(false));
+                        if (!analyzes_with(session_probes, *mask, changes))
+                            gates_needed.push_back(gate.name);
+                    }
+            }
+        }
         if (mask)
             for (size_t i = 0; i < values.size(); ++i)
                 values[i].second = ((*mask >> i) & 1) != 0;
@@ -5867,16 +5912,17 @@ void markTypingSettings(
         size_t default_mask = 0;
         for (size_t i = 0; i < values.size(); ++i)
             default_mask |= size_t{default_values.at(values[i].first)} << i;
-        if (can_probe && !storage_probes.empty() && !analyzes_with(storage_probes, default_mask))
-        {
-            err << "Warning: the storage expressions of " << table_relation;
-            if (const auto storage_mask = find_combination(storage_probes))
+        /// Only an answer is a proof: a probe that was not sent fails under every combination.
+        if (can_probe && !storage_probes.empty() && !analyzes_with(storage_probes, default_mask, gates_on))
+            if (const auto storage_mask = find_combination(storage_probes, gates_on))
+            {
+                err << "Warning: the storage expressions of " << table_relation;
                 for (size_t i = 0; i < values.size(); ++i)
                     err << (i ? ", " : " also need ") << values[i].first << " = " << ((*storage_mask >> i) & 1);
-            else
-                err << " do not analyze with the default typing settings";
-            err << " in the replaying server's settings profile.\n";
-        }
+                err << " in the replaying server's settings profile.\n";
+            }
+        for (const auto & gate : gates_needed)
+            values.emplace_back(gate, true);
         table.typing_settings = std::move(values);
     }
 }

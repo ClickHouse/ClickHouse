@@ -1,0 +1,3 @@
+Warning: the storage expressions of d.t also need allow_lossy_numeric_supertype = 1 in the replaying server's settings profile.
+SET allow_lossy_numeric_supertype = 1;
+replay rc=0 
