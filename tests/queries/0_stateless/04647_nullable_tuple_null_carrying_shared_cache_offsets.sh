@@ -10,6 +10,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # computing its own offsets from the unfiltered row count, so it reads shifted values (and trips
 # `ColumnVariant::validateState` in debug and sanitizer builds).
 #
+# The inserted elements are cast explicitly instead of relying on `tuple(number)`, because with
+# `enable_named_columns_in_function_tuple` the analyzer derives the element name from the bare
+# identifier, and inserting such a named tuple into a differently named tuple column is rejected by
+# `allow_named_tuple_conversion_with_extra_source_fields_on_insert`. The stored values are the same.
+#
 # `clickhouse-local` is used because the whole-part fast path has to be off and every range must land in
 # the same block, which needs a fixed reader configuration rather than a server's runtime one.
 
@@ -33,7 +38,7 @@ CREATE TABLE t (id UInt64, tup Nullable(Tuple(v Variant(UInt64))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0;
-INSERT INTO t SELECT number, number % 2 ? NULL : tuple(number) FROM numbers(12);
+INSERT INTO t SELECT number, number % 2 ? NULL : tuple(number::Variant(UInt64)) FROM numbers(12);
 SELECT id, tup.v, tup FROM t ORDER BY id;
 SELECT id, tup, tup.v FROM t ORDER BY id;
 SELECT id, tup.v, tup, tup.v.UInt64 FROM t ORDER BY id;
@@ -47,7 +52,7 @@ CREATE TABLE t (id UInt64, tup Nullable(Tuple(v Variant(UInt64))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0;
-INSERT INTO t SELECT number, number % 2 ? NULL : tuple(number) FROM numbers(40);
+INSERT INTO t SELECT number, number % 2 ? NULL : tuple(number::Variant(UInt64)) FROM numbers(40);
 SELECT sum(tup.v.UInt64), count(tup), countIf(tup IS NULL) FROM t;
 SELECT id, tup.v, tup FROM t WHERE id % 8 = 4 ORDER BY id;
 SELECT id, tup.v, tup FROM t PREWHERE id % 4 >= 1 ORDER BY id LIMIT 8;
