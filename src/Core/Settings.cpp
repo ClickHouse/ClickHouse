@@ -11364,12 +11364,12 @@ Filter left side by set of JOIN keys collected from the right side at runtime.
         {"26.2", false, true, "Enabled this optimization"}, \
         {"25.10", false, false, "New setting"}) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
+Maximum number of elements in runtime filter that are stored as is in a set. When this threshold is exceeded, it switches to a dense bitset for native integer keys whose range fits one, and to a bloom filter otherwise.
 )", 0, \
         {"26.9", 10000, 10000, "The JOIN runtime filters became a Production tier feature."}, \
         {"25.10", 10000, 10000, "New setting"}) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
-Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting). A dense bitset that replaces the bloom filter for native integer keys in a narrow range takes up to 16 times this size, more if hash table statistics predict more keys, and never more than 32 MiB.
 )", 0, \
         {"26.9", 512_KiB, 512_KiB, "The JOIN runtime filters became a Production tier feature."}, \
         {"25.10", 512_KiB, 512_KiB, "New setting"}) \

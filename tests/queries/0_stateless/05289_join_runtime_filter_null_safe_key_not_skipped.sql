@@ -7,9 +7,10 @@ DROP TABLE IF EXISTS t_rf_nse_left;
 DROP TABLE IF EXISTS t_rf_nse_right;
 CREATE TABLE t_rf_nse_left (a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_rf_nse_right (a UInt64, b Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_rf_nse_left SELECT number, 0 FROM numbers(100000);
+-- The keys are spread over a range wider than a dense bitset covers, so the runtime filter on `a` is a Bloom filter.
+INSERT INTO t_rf_nse_left SELECT number * 1000000, 0 FROM numbers(100000);
 -- Many distinct pairs, but only 50000 distinct values of `a`.
-INSERT INTO t_rf_nse_right SELECT number % 50000, intDiv(number, 50000) FROM numbers(2000000);
+INSERT INTO t_rf_nse_right SELECT (number % 50000) * 1000000, intDiv(number, 50000) FROM numbers(2000000);
 
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash', collect_hash_table_stats_during_joins = 1,
@@ -29,6 +30,10 @@ SELECT ProfileEvents['RuntimeFiltersCreated'], ProfileEvents['RuntimeFilterBloom
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE '%SELECT count() FROM t_rf_nse_left %JOIN t_rf_nse_right%' AND query NOT LIKE '%query_log%'
 ORDER BY event_time_microseconds;
+
+SELECT sum(ProfileEvents['RuntimeFilterDenseBitsetsBuilt'])
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE '%SELECT count() FROM t_rf_nse_left %JOIN t_rf_nse_right%' AND query NOT LIKE '%query_log%';
 
 DROP TABLE t_rf_nse_left;
 DROP TABLE t_rf_nse_right;

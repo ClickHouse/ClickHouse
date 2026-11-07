@@ -17,8 +17,9 @@ CREATE TABLE rf_build (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE rf_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 
 -- Exceed exact_values_limit (10000) so a real bloom filter is built.
-INSERT INTO rf_build SELECT number FROM numbers(50000);
-INSERT INTO rf_probe SELECT number + 45000 FROM numbers(50000);
+-- The keys are spread over a range wider than a dense bitset covers, so the runtime filter is a Bloom filter.
+INSERT INTO rf_build SELECT number * 1000000 FROM numbers(50000);
+INSERT INTO rf_probe SELECT (number + 45000) * 1000000 FROM numbers(50000);
 
 -- Warm up `HashTablesStatistics` so a size hint exists for the next runs.
 SELECT count() FROM rf_probe l INNER JOIN rf_build r ON l.k = r.k FORMAT Null;

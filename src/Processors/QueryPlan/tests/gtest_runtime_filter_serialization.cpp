@@ -374,7 +374,11 @@ TEST(RuntimeFilterSerialization, OnlyATransportedPartialBoundsTheKeyBytes)
             /*distinct_keys_hint_matches_filter_key_=*/false);
         if (transported)
             filter.boundExactSetByKeyBytes();
-        filter.insert(makeColumn(0, 2000));
+        /// Spread wider than a dense bitset covers, so that the local filter leaves the exact set for a bloom filter.
+        auto keys = ColumnUInt64::create();
+        for (UInt64 i = 0; i < 2000; ++i)
+            keys->insertValue(i * 1000);
+        filter.insert(std::move(keys));
         return serializeToString(filter);
     };
     /// A local filter keeps the buffer bound, so it changes to a bloom filter.
