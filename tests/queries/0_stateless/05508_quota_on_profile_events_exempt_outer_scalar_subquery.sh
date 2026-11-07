@@ -33,10 +33,10 @@ do
     ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 100 year MAX SelectedRows = 1, SelectedParts = 1 TO ${U}"
     # The first query is allowed and is charged with what its scalar subquery reads (1000 rows of `t_05508`), and with the
     # row of `system.one` it reads itself.
-    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" -q "${QUERY}"
+    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" --use_statistics_for_sum_avg_aggregation 0 -q "${QUERY}"
     ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedRows'], profile_events['SelectedParts'] FROM system.quotas_usage WHERE quota_name = '${Q}'"
     # The quota is exhausted, so the following one is rejected.
-    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" -q "${QUERY}" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
+    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" --use_statistics_for_sum_avg_aggregation 0 -q "${QUERY}" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
 done
 
 cleanup
