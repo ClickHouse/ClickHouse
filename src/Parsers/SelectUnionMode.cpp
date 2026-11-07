@@ -1,14 +1,8 @@
 #include <Parsers/SelectUnionMode.h>
-#include <Common/Exception.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 const char * toString(SelectUnionMode mode)
 {
@@ -31,31 +25,8 @@ const char * toString(SelectUnionMode mode)
         case SelectUnionMode::INTERSECT_ALL:
             return "INTERSECT_ALL";
         case SelectUnionMode::INTERSECT_DISTINCT:
-            return "INTERSECT_DISTINCT";
+            return "INTERSECT_DEFAULT";
     }
-}
-
-SelectUnionMode parseSelectUnionMode(const std::string & str)
-{
-    if (str == "UNION_DEFAULT")
-        return SelectUnionMode::UNION_DEFAULT;
-    if (str == "UNION_ALL")
-        return SelectUnionMode::UNION_ALL;
-    if (str == "UNION_DISTINCT")
-        return SelectUnionMode::UNION_DISTINCT;
-    if (str == "EXCEPT_DEFAULT")
-        return SelectUnionMode::EXCEPT_DEFAULT;
-    if (str == "EXCEPT_ALL")
-        return SelectUnionMode::EXCEPT_ALL;
-    if (str == "EXCEPT_DISTINCT")
-        return SelectUnionMode::EXCEPT_DISTINCT;
-    if (str == "INTERSECT_DEFAULT")
-        return SelectUnionMode::INTERSECT_DEFAULT;
-    if (str == "INTERSECT_ALL")
-        return SelectUnionMode::INTERSECT_ALL;
-    if (str == "INTERSECT_DISTINCT")
-        return SelectUnionMode::INTERSECT_DISTINCT;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SelectUnionMode: '{}'", str);
 }
 
 }

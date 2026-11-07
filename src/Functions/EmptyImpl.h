@@ -5,11 +5,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Field.h>
-
-#include <optional>
 
 
 namespace DB
@@ -26,20 +23,8 @@ struct EmptyImpl
 {
     /// If the function will return constant value for FixedString data type.
     static constexpr auto is_fixed_to_constant = false;
-    static constexpr auto is_volume_reducing = true;
 
     static constexpr bool has_information_about_monotonicity = true;
-
-    /// Only the sizes or the bytes of these values are read.
-    static std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments)
-    {
-        if (arguments.size() != 1)
-            return {};
-        const WhichDataType which(removeLowCardinalityAndNullable(arguments[0].type));
-        if (which.isStringOrFixedString() || which.isArray() || which.isMap() || which.isUUID() || which.isIPv4() || which.isIPv6())
-            return false;
-        return {};
-    }
 
     /// For String type, the empty string '' is the minimum value in lexicographic order.
     /// empty(s) = 1 iff s == ''. The function is constant (and thus monotone) on any

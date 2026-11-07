@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Examples/clickhouse_examples.h>
 
 
 /// How to test:
@@ -14,9 +13,6 @@
 
 
 using namespace DB;
-
-namespace
-{
 
 std::map<TokenType, const char *> hilite =
 {
@@ -65,9 +61,8 @@ std::map<TokenType, const char *> hilite =
     {TokenType::ErrorMaxQuerySizeExceeded, "\033[0;41m"},
 };
 
-}
 
-int mainEntryExampleLexer(int, char **)
+int main(int, char **)
 {
     String query;
     ReadBufferFromFileDescriptor in(STDIN_FILENO);

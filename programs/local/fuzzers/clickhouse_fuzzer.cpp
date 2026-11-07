@@ -1,31 +1,63 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
 #include <base/defines.h>
-#include <base/sanitizer_options.h>
 
 #include <Client/ClientBase.h>
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
-#include <Common/StackTrace.h>
-#include <Common/StackTraceServiceSignal.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
-#include <Common/ThreadStatus.h>
 
 #include <boost/algorithm/string/split.hpp>
 
+#if defined(SANITIZE_COVERAGE)
+#    include <Common/Coverage.h>
+#endif
 
-#include <csignal>
-#include <ctime>
-#include <pthread.h>
-#include <poll.h>
 #include <unistd.h>
 
 #include <new>
 #include <string_view>
 
-#include "config.h"
+#ifdef SANITIZER
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+extern "C" {
+#ifdef ADDRESS_SANITIZER
+const char * __asan_default_options()
+{
+    return "halt_on_error=1 abort_on_error=1";
+}
+const char * __lsan_default_options()
+{
+    return "max_allocation_size_mb=32768";
+}
+#endif
+
+#ifdef MEMORY_SANITIZER
+const char * __msan_default_options()
+{
+    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
+}
+#endif
+
+#ifdef THREAD_SANITIZER
+const char * __tsan_default_options()
+{
+    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
+}
+#endif
+
+#ifdef UNDEFINED_BEHAVIOR_SANITIZER
+const char * __ubsan_default_options()
+{
+    return "print_stacktrace=1 max_allocation_size_mb=32768";
+}
+#endif
+}
+#pragma clang diagnostic pop
+#endif
 
 int mainEntryClickHouseLocal(int argc, char ** argv);
 
@@ -36,24 +68,30 @@ using MainFunc = int (*)(int, char**);
 
 }
 
-/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create,
-/// or messages that do not mean anything to the user.
-#if USE_JEMALLOC
+/// Prevent messages from JeMalloc in the release build.
+/// Some of these messages are non-actionable for the users, such as:
+/// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
+#if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
+#elif USE_JEMALLOC
+#include <unordered_set>
+/// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
 extern "C" void (*je_malloc_message)(void *, const char * s);
-static __attribute__((constructor(0))) void init_je_malloc_message()
+__attribute__((constructor(0))) void init_je_malloc_message()
 {
     je_malloc_message = [](void *, const char * str)
     {
-        /// NOTE: You cannot have any allocations here
+        using namespace std::literals;
+        static const std::unordered_set<std::string_view> ignore_messages{
+            "<jemalloc>: background thread creation failed (11)\n"sv};
 
         std::string_view message_view{str};
-        if (message_view == "<jemalloc>: background thread creation failed (11)\n")
-            return;
-        if (message_view == "<jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.\n")
+        if (ignore_messages.contains(message_view))
             return;
 
 #    if defined(SYS_write)
-        syscall(SYS_write, STDERR_FILENO, message_view.data(), message_view.size());
+        syscall(SYS_write, 2 /*stderr*/, message_view.data(), message_view.size());
 #    else
         write(STDERR_FILENO, message_view.data(), message_view.size());
 #    endif
@@ -64,7 +102,7 @@ static __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-static __attribute__((constructor(202))) void init_ssl()
+__attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -76,7 +114,7 @@ static __attribute__((constructor(202))) void init_ssl()
 /// class C { C() { assert(inside_main); } };
 bool inside_main = false;
 
-static int clickhouseMain(int argc_, char ** argv_)
+int clickhouseMain(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
@@ -102,10 +140,14 @@ static int clickhouseMain(int argc_, char ** argv_)
 
     int exit_code = mainEntryClickHouseLocal(argc_, argv_);
 
+#if defined(SANITIZE_COVERAGE)
+    dumpCoverage();
+#endif
+
     return exit_code;
 }
 
-static bool isMerge(int argc, const char * const * argv)
+bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -131,172 +173,8 @@ std::atomic<FuzzerState> state{FuzzerState::NONE};
 String query;
 
 std::optional<std::thread> runner;
-pthread_t runner_thread_id{};
-struct sigaction original_sigalrm_action{};
-struct sigaction original_sigusr1_action{};
-
 String clickhouse{"clickhouse"};
 std::vector<char *> clickhouse_args{clickhouse.data()};
-
-extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv);
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
-/// Signal-safe stderr print helper.
-static void signalSafeWrite(const char * msg)
-{
-    (void)write(STDERR_FILENO, msg, __builtin_strlen(msg));
-}
-
-/// The stack of the runner thread, captured by its SIGUSR1 handler. The handler
-/// only records the frame addresses: symbolizing a multi-gigabyte binary takes
-/// many seconds, and while a thread is inside a signal handler it cannot run
-/// anything else - a symbolizing runner could not take the next input, so the
-/// dump made the next input time out. The main thread symbolizes and prints the
-/// frames after libfuzzer's timeout is certain.
-static StackTrace runner_stack_trace{NoCapture{}};
-
-/// Flag set by the SIGUSR1 handler on the runner thread after capturing its stack.
-static std::atomic<bool> runner_stack_captured{false};
-
-/// Forward a signal to the handler that was installed before ours.
-static void forwardToOriginalHandler(const struct sigaction & original, int sig, siginfo_t * info, void * ctx)
-{
-    /// `glibc` defines `sa_sigaction`/`sa_handler` as recursive macros expanding
-    /// to `__sigaction_handler.sa_sigaction`/`__sigaction_handler.sa_handler`,
-    /// which trips `-Wdisabled-macro-expansion` on aarch64.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-    if (original.sa_flags & SA_SIGINFO)
-    {
-        if (original.sa_sigaction)
-            original.sa_sigaction(sig, info, ctx);
-    }
-    else if (original.sa_handler != SIG_IGN
-          && original.sa_handler != SIG_DFL)
-    {
-        original.sa_handler(sig);
-    }
-#pragma clang diagnostic pop
-}
-
-/// `CLOCK_REALTIME` nanoseconds at the start of the running `LLVMFuzzerTestOneInput`,
-/// 0 while none is running. libfuzzer times a unit with `system_clock`, the same clock.
-std::atomic<int64_t> iteration_start_ns{0};
-
-/// The thread that calls `LLVMFuzzerTestOneInput`. libfuzzer handles SIGALRM only there.
-std::atomic<pthread_t> fuzzing_thread{};
-
-/// libfuzzer's `-timeout=N` value, parsed in `LLVMFuzzerInitialize`; 1200 s is libfuzzer's default.
-std::atomic<int64_t> unit_timeout_sec{1200};
-
-/// Set by the first runner-stack dump of an iteration so that later alarms do not repeat it.
-/// Reset at the start of every `LLVMFuzzerTestOneInput` call.
-std::atomic<bool> dump_started{false};
-
-static int64_t realtimeNs()
-{
-    struct timespec ts;
-    (void)clock_gettime(CLOCK_REALTIME, &ts);
-    return static_cast<int64_t>(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
-}
-
-/// SIGUSR1 reaches this process from two senders which mean opposite things:
-///
-///  * `fuzzerSigalrmHandler` below `pthread_kill`s the runner thread so that it
-///    prints the stack of the query that is stuck. A thread-directed signal is
-///    reported as `SI_TKILL`, and only this one is ours.
-///  * the CI harness (`tests/fuzz/runner.py`) `kill`s the whole process to ask
-///    libfuzzer to stop a corpus merge which ran out of its time budget. That is
-///    a process-directed signal, reported as `SI_USER`, and it has to reach
-///    libfuzzer's own graceful-exit handler: a merge ignores `-max_total_time`
-///    and SIGUSR1 is the only way to interrupt it. Swallowing it costs the whole
-///    run — the harness `SIGKILL`s the merge and throws away the hour it spent.
-static void fuzzerSigusr1Handler(int sig, siginfo_t * info, void * ctx)
-{
-    if (info && info->si_code == SI_TKILL)
-    {
-        /// The same async-signal-safe capture of the interrupted code that
-        /// `system.stack_trace` uses for other threads.
-        runner_stack_trace = StackTrace(*reinterpret_cast<const ucontext_t *>(ctx));
-        runner_stack_captured.store(true, std::memory_order_release);
-        return;
-    }
-
-    forwardToOriginalHandler(original_sigusr1_action, sig, info, ctx);
-}
-
-static inline void signal_safe_sleep_ms(int ms)
-{
-     (void)poll(nullptr, 0, ms);
-}
-
-/// Dump the runner's stack (via SIGUSR1) only for the alarm on which libfuzzer's `AlarmCallback`
-/// exits: on the fuzzing thread, inside `LLVMFuzzerTestOneInput`, `-timeout` after its start.
-static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
-{
-    int64_t start = iteration_start_ns.load(std::memory_order_acquire);
-    if (start != 0
-        && pthread_equal(pthread_self(), fuzzing_thread.load(std::memory_order_acquire))
-        && realtimeNs() - start >= unit_timeout_sec.load(std::memory_order_acquire) * 1'000'000'000)
-    {
-        bool expected = false;
-        if (dump_started.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
-        {
-            signalSafeWrite("[fuzzer] SIGALRM handler: sending SIGUSR1 to runner thread\n");
-
-            runner_stack_captured.store(false, std::memory_order_release);
-            int rc = pthread_kill(runner_thread_id, SIGUSR1);
-
-            if (rc != 0)
-            {
-                signalSafeWrite("[fuzzer] pthread_kill failed with error ");
-                /// Signal-safe integer-to-string for small error codes.
-                char err_buf[16];
-                int pos = 14;
-                err_buf[15] = '\0';
-                err_buf[14] = '\n';
-                int tmp = rc;
-                do
-                {
-                    err_buf[--pos] = '0' + (tmp % 10);
-                    tmp /= 10;
-                } while (tmp > 0 && pos > 0);
-                signalSafeWrite(err_buf + pos);
-            }
-
-            /// Wait for the runner thread to capture its stack, yielding CPU.
-            constexpr int max_iterations = 3000;
-            int i = 0;
-            for (; i < max_iterations && !runner_stack_captured.load(std::memory_order_acquire); ++i)
-                signal_safe_sleep_ms(1);
-
-            if (i == max_iterations)
-            {
-                signalSafeWrite("[fuzzer] Timed out waiting for runner thread stack trace\n");
-            }
-            else
-            {
-                /// Symbolization allocates, which is not async-signal-safe. The
-                /// main thread is blocked in `LLVMFuzzerTestOneInput` waiting for
-                /// the runner, not inside the allocator, and libfuzzer's own
-                /// handler symbolizes the main-thread stack right after this in
-                /// the same way before it calls `_Exit`.
-                signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
-                runner_stack_trace.toStringEveryLine([](std::string_view line)
-                {
-                    (void)write(STDERR_FILENO, line.data(), line.size());
-                    signalSafeWrite("\n");
-                });
-                signalSafeWrite("=== End runner thread stack trace ===\n\n");
-            }
-        }
-    }
-
-    /// Forward to libfuzzer's original SIGALRM handler. If this is a real
-    /// timeout it will print the main-thread stack and `_Exit`; otherwise it
-    /// returns and the wrapper stays installed for the next periodic alarm.
-    forwardToOriginalHandler(original_sigalrm_action, sig, info, ctx);
-}
 
 extern "C"
 int LLVMFuzzerInitialize(const int *argc, char ***argv)
@@ -308,31 +186,19 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
     // Initialize as a main thread
     DB::MainThreadStatus::getInstance();
 
-    // Collect clickhouse arguments and pick up libfuzzer's `-timeout=N` so
-    // the SIGALRM wrapper can match libfuzzer's own timeout condition exactly.
+    // Collect clickhouse arguments
     bool ignore = false;
     for (int i = 1; i < *argc; ++i)
         if (ignore)
             clickhouse_args.push_back((*argv)[i]);
         else
-        {
-            std::string_view arg{(*argv)[i]};
-            std::string_view flag{arg.begin(), std::ranges::find(arg, '=')};
-            if (flag == "-ignore_remaining_args")
+            if (std::string_view arg{(*argv)[i]}; arg.substr(0, arg.find('=')) == "-ignore_remaining_args")
                 ignore = true;
-            else if (flag == "-timeout" && flag.size() < arg.size())
-            {
-                int64_t t = std::atoi(arg.data() + flag.size() + 1);
-                if (t > 0)
-                    unit_timeout_sec.store(t, std::memory_order_release);
-            }
-        }
 
     {
         // Start clickhouse local
         std::unique_lock lock(mutex);
         runner = std::thread(clickhouseMain, clickhouse_args.size(), clickhouse_args.data());
-        runner_thread_id = runner->native_handle();
         if (!cv.wait_for(lock, std::chrono::seconds(30), []{ return state == FuzzerState::WAITING_FOR_INPUT; }))
             abort();
     }
@@ -357,62 +223,14 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
 extern "C"
 int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
-    iteration_start_ns.store(realtimeNs(), std::memory_order_release);
-    dump_started.store(false, std::memory_order_release);
-
-    /// Install our SIGALRM and SIGUSR1 forwarders on the first call, after
-    /// libfuzzer has already set up its own handlers (which we save as the
-    /// originals). It has to be done here and not in `LLVMFuzzerInitialize`:
-    /// libfuzzer calls `SetSignalHandler` *after* `LLVMFuzzerInitialize`, and
-    /// its `SetSigaction` silently keeps an already installed handler instead of
-    /// replacing it, so a handler installed earlier disables libfuzzer's own
-    /// handling of that signal for good.
-    static bool handlers_installed = false;
-    if (!handlers_installed)
-    {
-        fuzzing_thread.store(pthread_self(), std::memory_order_release);
-
-        /// `glibc` defines `sa_sigaction` as a recursive macro
-        /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
-        /// which trips `-Wdisabled-macro-expansion`.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-        struct sigaction alrm = {};
-        alrm.sa_sigaction = fuzzerSigalrmHandler;
-        alrm.sa_flags = SA_SIGINFO;
-        sigaction(SIGALRM, &alrm, &original_sigalrm_action);
-
-        struct sigaction usr1 = {};
-        usr1.sa_sigaction = fuzzerSigusr1Handler;
-        usr1.sa_flags = SA_SIGINFO;
-        /// `StackTrace(const ucontext_t &)` shares one thread-local unwind-fault recovery
-        /// (`asynchronous_stack_unwinding` and its `sigjmp_buf`) with the query profiler,
-        /// `system.stack_trace` and the `SIGTSTP` stack dumper. Block their signals while
-        /// this handler runs, so none of them can nest and clobber that state.
-        sigemptyset(&usr1.sa_mask);
-        sigaddset(&usr1.sa_mask, SIGUSR2);
-        sigaddset(&usr1.sa_mask, DB::STACK_TRACE_SERVICE_SIGNAL);
-        sigaddset(&usr1.sa_mask, SIGTSTP);
-        sigaction(SIGUSR1, &usr1, &original_sigusr1_action);
-#pragma clang diagnostic pop
-        handlers_installed = true;
-    }
-
     {
         std::unique_lock lock(mutex);
         cv.wait(lock, []{ return state == FuzzerState::WAITING_FOR_INPUT; });
         query = {reinterpret_cast<const char *>(data), size};
         state = FuzzerState::DATA_READY;
-        cv.notify_one();
-
-        /// Wait for the runner to finish processing, so that libfuzzer's
-        /// SIGALRM fires while we are inside the callback (RunningUserCallback=true).
-        /// This way the timeout mechanism works correctly, and our handler
-        /// can dump the runner thread's stack before libfuzzer exits.
-        cv.wait(lock, []{ return state == FuzzerState::WAITING_FOR_INPUT || state == FuzzerState::FINISHED; });
     }
+    cv.notify_one();
 
-    iteration_start_ns.store(0, std::memory_order_release);
     return 0;
 }
 
@@ -420,18 +238,6 @@ void DB::ClientBase::runLibFuzzer()
 {
     // Initialize thread_status
     ThreadStatus thread_status;
-
-    /// Block SIGALRM on the runner thread so libfuzzer's periodic timer
-    /// signal is only delivered to the libfuzzer main thread. Without this,
-    /// SIGALRM can land on the runner — it then runs `fuzzerSigalrmHandler`
-    /// and `pthread_kill`'s SIGUSR1 to itself, so the slow runner-stack dump
-    /// runs concurrently with the one the main thread is already doing.
-    {
-        sigset_t set;
-        sigemptyset(&set);
-        sigaddset(&set, SIGALRM);
-        (void)pthread_sigmask(SIG_BLOCK, &set, nullptr);
-    }
 
     {
         std::lock_guard lock(mutex);
@@ -447,27 +253,7 @@ void DB::ClientBase::runLibFuzzer()
             if (state == FuzzerState::FINISHED)
                 break;
 
-            try
-            {
-                processQueryText(query);
-            }
-            catch (const Exception &)
-            {
-                /// Normal query errors (syntax, runtime, etc.) — ignore, same as
-                /// interactive mode in runInteractive. The bulk of query exceptions
-                /// are already caught inside executeMultiQuery and never reach here.
-            }
-            catch (...)
-            {
-                /// Non-DB exception indicates a real bug. Log it and abort so that
-                /// libfuzzer registers a crash with a meaningful message.
-                /// (We can't rely on std::terminate because the stack is already
-                /// unwound by then, losing the exception info.)
-                signalSafeWrite("[fuzzer] Non-DB::Exception caught in runner thread: ");
-                signalSafeWrite(getCurrentExceptionMessage(true).c_str());
-                signalSafeWrite("\n");
-                abort();
-            }
+            processQueryText(query);
             state = FuzzerState::WAITING_FOR_INPUT;
         }
         cv.notify_one();
