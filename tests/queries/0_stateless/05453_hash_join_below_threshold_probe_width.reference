@@ -1,0 +1,16 @@
+serial layout below threshold	4	1
+Algorithm: SpillingHashJoin(HashJoin)
+spilling serial layout below threshold	4	1
+parallel layout	4	4
+explicit serial layout	1	1
+resize disabled	1	1
+Algorithm: SpillingHashJoin(HashJoin)
+spilling resize disabled	1	1
+serial layout from cached stats	4	1
+limit by default join	1
+300	268300517865934087
+1000	1080294199748678623
+1500	5709480782390011754
+1000	6879937819667658287
+1000	6879937819667658287
+false

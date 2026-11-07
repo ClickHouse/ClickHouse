@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsHashJoinLayout hash_join_layout;
+    extern const SettingsBool join_probe_resize_to_max_threads;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -1210,10 +1211,17 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
     table_join->setRowStoreEnabled(enable_row_store);
 
-    const auto build_layout
-        = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold)
-        ? HashJoinBuildLayout::twoLevel(params.max_threads)
-        : HashJoinBuildLayout::oneBucket(1);
+    const bool parallel_layout
+        = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold);
+    auto build_layout = parallel_layout ? HashJoinBuildLayout::twoLevel(params.max_threads) : HashJoinBuildLayout::oneBucket(1);
+
+    /// A small right table makes the threshold choose the serial layout, but says nothing about the size of the probe side.
+    /// `parallel` is asked only to tell the kinds that can have a parallel layout from the ones that always build one part.
+    if (params.join_probe_resize_to_max_threads && !parallel_layout && params.hash_join_layout == HashJoinLayout::AUTO
+        && table_join->preferParallelHashLayout(HashJoinLayout::PARALLEL, params.rhs_size_estimation, params.parallel_hash_join_threshold))
+    {
+        build_layout = build_layout.withWideProbe();
+    }
 
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -1334,6 +1342,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     join_output_key_hash = 0;
     parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
     hash_join_layout = settings[Setting::hash_join_layout];
+    join_probe_resize_to_max_threads = settings[Setting::join_probe_resize_to_max_threads];
     enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
@@ -1368,6 +1377,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     join_output_key_hash = join_output_key_hash_;
     parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
     hash_join_layout = join_settings.hash_join_layout;
+    join_probe_resize_to_max_threads = join_settings.join_probe_resize_to_max_threads;
     enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 

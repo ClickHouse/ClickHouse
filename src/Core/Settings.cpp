@@ -10398,6 +10398,12 @@ Some joins always build one part, whatever the value:
 - each per-shard join of `query_plan_join_shard_by_pk_ranges`.
 )", 0, \
         {"26.11", "auto", "auto", "New setting to force the layout of a hash join. `auto` keeps choosing it with `parallel_hash_join_threshold`."}) \
+    DECLARE(Bool, join_probe_resize_to_max_threads, true, R"(
+When `parallel_hash_join_threshold` selects the serial layout of a hash join, allow the probe side to use up to `max_threads` streams, as it would with the parallel layout.
+This can improve joins with a large probe input, but adds processors and scheduling overhead for small probe inputs. It can also change row order and which matching row is selected by `ANY` joins when these depend on processing order.
+Disable this setting to keep the stream count of the probe input without changing the layout of the hash table. With `hash_join_layout = 'serial'` the stream count is kept whatever this setting is.
+)", 0, \
+        {"26.11", false, true, "Preserve probe parallelism when the build-size threshold selects the serial layout of a hash join."}) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 

@@ -148,6 +148,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 also adds the `hash_join_layout` plan setting, written only towards a peer at this version or above.
 /// A peer below it picks the layout of a hash join itself. That can change only the speed, the memory use and the
 /// order of rows.
+/// Version 21 also adds the `join_probe_resize_to_max_threads` plan setting, written only towards a peer at this version or
+/// above. A peer below it keeps the stream count of the probe side, which changes only the speed and the order of rows.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -246,6 +248,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_B
 /// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
 /// `JoinSettings::updatePlanSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT = 21;
+/// First query-plan serialization version that carries the `join_probe_resize_to_max_threads` plan setting. Gates writing it in
+/// `JoinSettings::updatePlanSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_RESIZE = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

@@ -252,6 +252,7 @@ struct JoinAlgorithmParams
 
     UInt64 parallel_hash_join_threshold;
     HashJoinLayout hash_join_layout;
+    bool join_probe_resize_to_max_threads;
 
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;

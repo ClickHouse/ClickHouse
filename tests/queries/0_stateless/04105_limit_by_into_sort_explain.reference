@@ -285,10 +285,13 @@ INSERT INTO test_join_a SELECT number % 100, number FROM numbers(10000);
 INSERT INTO test_join_a SELECT number % 100, number FROM numbers(10000);
 INSERT INTO test_join_b SELECT number % 100, number FROM numbers(10000);
 INSERT INTO test_join_b SELECT number % 100, number FROM numbers(10000);
+-- `05453_hash_join_below_threshold_probe_width` covers the widened join-to-sort pipeline;
+-- keep the stream count of the probe input here.
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
-ORDER BY k, v LIMIT 2, 3 BY k;
+ORDER BY k, v LIMIT 2, 3 BY k
+SETTINGS join_probe_resize_to_max_threads = 0;
 (Expression)
 ExpressionTransform
   (LimitBy)

@@ -83,6 +83,8 @@ struct HashJoinBuildLayout
     bool two_level;
     size_t num_build_streams;
     size_t num_slots;
+    /// Asks the pipeline to widen a narrow probe side to `max_threads` streams, as the parallel layout always does.
+    bool widen_probe = false;
 
     /// One-bucket maps behind one slot, whatever the number of build streams.
     static HashJoinBuildLayout oneBucket(size_t num_build_streams) { return {false, std::max<size_t>(1, num_build_streams), 1}; }
@@ -92,6 +94,13 @@ struct HashJoinBuildLayout
     {
         const size_t streams = std::max<size_t>(1, num_build_streams);
         return {true, streams, std::min<size_t>(std::bit_ceil(streams), NUM_HASH_TABLE_BUCKETS)};
+    }
+
+    HashJoinBuildLayout withWideProbe() const
+    {
+        HashJoinBuildLayout layout = *this;
+        layout.widen_probe = true;
+        return layout;
     }
 };
 
@@ -218,6 +227,8 @@ public:
 
     /// The left side is streamed through once, each row emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
+
+    bool resizeProbeSideToMaxStreams() const override { return build_layout.widen_probe; }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,

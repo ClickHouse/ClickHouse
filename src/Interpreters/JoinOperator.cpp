@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsHashJoinLayout hash_join_layout;
+    extern const SettingsBool join_probe_resize_to_max_threads;
 
     extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
@@ -117,6 +118,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
     extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
     extern const QueryPlanSerializationSettingsHashJoinLayout hash_join_layout;
+    extern const QueryPlanSerializationSettingsBool join_probe_resize_to_max_threads;
 
     extern const QueryPlanSerializationSettingsBool joined_block_split_single_row;
     extern const QueryPlanSerializationSettingsBool parallel_non_joined_rows_processing;
@@ -194,6 +196,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     max_size_to_preallocate_for_joins = query_settings[Setting::max_size_to_preallocate_for_joins];
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
     hash_join_layout = query_settings[Setting::hash_join_layout];
+    join_probe_resize_to_max_threads = query_settings[Setting::join_probe_resize_to_max_threads];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
@@ -251,6 +254,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     parallel_hash_join_threshold = settings[QueryPlanSerializationSetting::parallel_hash_join_threshold];
     /// An older initiator does not write the name, so its plans get `auto`.
     hash_join_layout = settings[QueryPlanSerializationSetting::hash_join_layout];
+    join_probe_resize_to_max_threads = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_RESIZE
+        && settings[QueryPlanSerializationSetting::join_probe_resize_to_max_threads];
 
     joined_block_split_single_row = settings[QueryPlanSerializationSetting::joined_block_split_single_row];
     parallel_non_joined_rows_processing = settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing];
@@ -495,6 +500,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// the memory use and the order of rows, so the plan is not refused.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT)
         settings[QueryPlanSerializationSetting::hash_join_layout] = hash_join_layout;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_RESIZE)
+        settings[QueryPlanSerializationSetting::join_probe_resize_to_max_threads] = join_probe_resize_to_max_threads;
 
     settings[QueryPlanSerializationSetting::joined_block_split_single_row] = joined_block_split_single_row;
     settings[QueryPlanSerializationSetting::parallel_non_joined_rows_processing] = parallel_non_joined_rows_processing;
