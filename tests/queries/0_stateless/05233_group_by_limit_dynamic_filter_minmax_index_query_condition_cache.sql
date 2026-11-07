@@ -30,6 +30,9 @@ SET max_block_size = 128;
 DROP TABLE IF EXISTS t_desc;
 DROP TABLE IF EXISTS t_desc_unique;
 DROP TABLE IF EXISTS t_desc_alter;
+DROP TABLE IF EXISTS t_join_desc;
+DROP TABLE IF EXISTS t_join_asc;
+DROP TABLE IF EXISTS j_join;
 
 CREATE TABLE t_desc (v UInt64, k UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY v
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
@@ -91,6 +94,30 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_da
     AND log_comment IN ('05233_qcc_alter_1', '05233_qcc_alter_2')
 SETTINGS max_block_size = 65409;
 
+-- A grouping key computed by `joinGet` changes with the `Join` table, and with it the number of groups per value of the
+-- ranked column, so the boundary of one run does not hold for the next: nothing is recorded, and after the `Join`
+-- table changes the repeated query still returns seven groups of 128 rows, whether the ranked column descends or ascends.
+CREATE TABLE j_join (b UInt64, g UInt64) ENGINE = Join(ANY, LEFT, b);
+INSERT INTO j_join SELECT number, number FROM numbers(128);
+
+CREATE TABLE t_join_desc (id UInt64, k UInt64, b UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_join_desc SELECT number, 75 - intDiv(number, 128), number % 128 FROM numbers(9600) SETTINGS max_block_size = 65409, max_insert_threads = 1;
+
+CREATE TABLE t_join_asc (id UInt64, k UInt64, b UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_join_asc SELECT number, 1 + intDiv(number, 128), number % 128 FROM numbers(9600) SETTINGS max_block_size = 65409, max_insert_threads = 1;
+
+SELECT 'join desc, first', count(), sum(c) FROM (SELECT k, joinGet('j_join', 'g', b) AS g, count() AS c FROM t_join_desc GROUP BY k, g LIMIT 7);
+SELECT 'join asc, first', count(), sum(c) FROM (SELECT k, joinGet('j_join', 'g', b) AS g, count() AS c FROM t_join_asc GROUP BY k, g LIMIT 7);
+TRUNCATE TABLE j_join;
+INSERT INTO j_join SELECT number, 0 FROM numbers(128);
+SELECT 'join desc, repeated', count(), sum(c) FROM (SELECT k, joinGet('j_join', 'g', b) AS g, count() AS c FROM t_join_desc GROUP BY k, g LIMIT 7);
+SELECT 'join asc, repeated', count(), sum(c) FROM (SELECT k, joinGet('j_join', 'g', b) AS g, count() AS c FROM t_join_asc GROUP BY k, g LIMIT 7);
+
 DROP TABLE t_desc;
 DROP TABLE t_desc_unique;
 DROP TABLE t_desc_alter;
+DROP TABLE t_join_desc;
+DROP TABLE t_join_asc;
+DROP TABLE j_join;
