@@ -3279,6 +3279,22 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
         }
+
+        /// The result of `INSERT ... RETURNING` may have left `output_format` alive with a pending
+        /// footer. Flush it here, while `query_interrupt_handler` is still armed, as
+        /// `processOrdinaryQuery` does in `receiveResultAndResetOutputOnException`: otherwise the
+        /// outer `resetOutput` in `processParsedSingleQuery` would flush it after the handler is
+        /// stopped, and a Ctrl+C could no longer interrupt that flush to a stuck sink.
+        try
+        {
+            resetOutput();
+        }
+        catch (...)
+        {
+            /// Ok: preserve the original exception. `resetOutput` records its own output error
+            /// in `client_exception` when appropriate.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         throw;
     }
 }
@@ -3536,6 +3552,15 @@ void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_m
 
         /// Check if server send Log packet
         receiveLogsAndProfileEvents(parsed_query);
+
+        /// `receiveLogsAndProfileEvents` may have cancelled the query itself (a Ctrl+C while the
+        /// result of `INSERT ... RETURNING` was being received). The server has been sent `Cancel`
+        /// then, so no more `Data` must follow: stop reading the input and drain the response.
+        if (cancelled)
+        {
+            executor.cancel();
+            return;
+        }
 
         /// Check if server send Exception packet
         auto packet_type = connection->checkPacket(0);
