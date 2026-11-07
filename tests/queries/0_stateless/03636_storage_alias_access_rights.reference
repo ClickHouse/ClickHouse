@@ -2,28 +2,26 @@ Test SELECT without permission
 ACCESS_DENIED
 Test INSERT without permission
 ACCESS_DENIED
-Test SELECT with permission
+Test SELECT with alias permission only
 3
 Test INSERT still fails
 ACCESS_DENIED
-Test INSERT with permission
+Test INSERT with alias permission only
 4
 Test TRUNCATE without permission
 ACCESS_DENIED
-Test TRUNCATE with permission
+Test TRUNCATE with alias permission only
 0
 Test OPTIMIZE without permission
 ACCESS_DENIED
-Test OPTIMIZE with permission
+Test OPTIMIZE with alias permission only
 Test CHECK TABLE without permission
 ACCESS_DENIED
 Test CHECK TABLE with alias permission only
-ACCESS_DENIED
-Test CHECK TABLE with both alias and target permission
 1
 Test ALTER without permission
 ACCESS_DENIED
-Test ALTER with permission
+Test ALTER with alias permission only
 1
 Test DROP alias without permission
 ACCESS_DENIED

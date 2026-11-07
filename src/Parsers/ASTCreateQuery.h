@@ -180,7 +180,11 @@ public:
 
     NameToNameMap getQueryParameters() const;
 
-    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
+    /// Whether the engine of this CREATE is the `Alias` table engine. `Alias` tables always run with
+    /// definer rights, so they carry a `SQL SECURITY` clause like a view does.
+    bool isAliasEngine() const;
+
+    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view || isAliasEngine(); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 

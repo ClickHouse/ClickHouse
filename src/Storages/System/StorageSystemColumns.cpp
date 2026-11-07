@@ -2,7 +2,6 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageAlias.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
@@ -152,8 +151,6 @@ protected:
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-            const auto * alias = storage->as<StorageAlias>();
-            NameSet chain_granted;
 
             {
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
@@ -167,28 +164,10 @@ protected:
                 const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
-                if (alias)
-                {
-                    Names all_columns;
-                    all_columns.reserve(columns.size());
-                    for (const auto & column : columns)
-                        all_columns.push_back(column.name);
-                    chain_granted = alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, all_columns);
-                }
-
                 const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[22];
                 bool can_expose_any_column_metadata = !needs_column_metadata;
-                if (needs_column_metadata)
-                {
-                    for (const auto & column : columns)
-                    {
-                        if (!alias || chain_granted.contains(column.name))
-                        {
-                            can_expose_any_column_metadata = true;
-                            break;
-                        }
-                    }
-                }
+                if (needs_column_metadata && !columns.empty())
+                    can_expose_any_column_metadata = true;
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (can_expose_any_column_metadata && (columns_mask[7] || columns_mask[8] || columns_mask[9]))
@@ -224,9 +203,6 @@ protected:
             {
                 ++position;
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
-                    continue;
-
-                if (alias && !chain_granted.contains(column.name))
                     continue;
 
                 size_t src_index = 0;

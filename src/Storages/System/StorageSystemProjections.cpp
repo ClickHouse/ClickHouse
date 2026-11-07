@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
@@ -118,10 +117,6 @@ protected:
 
                 const auto table = tables_it.table();
                 if (!table)
-                    continue;
-
-                if (const auto * alias = table->as<StorageAlias>();
-                    alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
                     continue;
 
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);

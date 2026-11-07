@@ -54,7 +54,6 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
@@ -1134,12 +1133,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         StoragePtr as_storage = resolveStorageProxyLoading(
             DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
-        /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
-        /// target that describing the target requires.
-        if (const auto * alias = as_storage->as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
-                            StorageID{as_database_name, create.as_table}.getNameForLogs());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -2109,6 +2102,31 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// replay on a secondary replica runs under `SECONDARY_CREATE`, so both stay exempt.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
         checkXGBoostLayoutIsAllowed(create, getContext());
+
+    /// An `Alias` table always runs with definer rights: it forwards every operation to its target under
+    /// the definer's context, so the invoker only needs rights on the alias itself. Synthesize a
+    /// `SQL SECURITY DEFINER DEFINER = CURRENT_USER` clause when none was written, and reject any other
+    /// mode. This runs only for a genuine `CREATE`: a stored definition without the clause is a legacy
+    /// alias that must stay loadable and is rejected at use time instead, and a stored clause already
+    /// carries a concrete definer that is replayed as-is.
+    if (create.isAliasEngine() && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        if (!create.sql_security)
+        {
+            auto alias_sql_security = make_intrusive<ASTSQLSecurity>();
+            alias_sql_security->type = SQLSecurityType::DEFINER;
+            alias_sql_security->is_definer_current_user = true;
+            create.set(create.sql_security, std::move(alias_sql_security));
+        }
+        else
+        {
+            auto & alias_sql_security = create.sql_security->as<ASTSQLSecurity &>();
+            if (!alias_sql_security.type)
+                alias_sql_security.type = SQLSecurityType::DEFINER;
+            if (alias_sql_security.type != SQLSecurityType::DEFINER)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The Alias table engine only supports SQL SECURITY DEFINER");
+        }
+    }
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
