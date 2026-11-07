@@ -278,6 +278,9 @@ TEST_PROTOCOLS = {
     "ssh": ("CLICKHOUSE_PORT_SSH", 9022),
     "webterminal": ("CLICKHOUSE_PORT_HTTP", 8123),
 }
+# How long `prepare_protocols` waits for the ports. Above the longest listener pause of the random
+# disruptor of the Stress test: the pause, then the `SYSTEM START LISTEN` with its retries.
+PROTOCOL_PORT_WAIT_SECONDS = 120
 PROTOCOL_CLIENT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "protocol_client.py")
 # The `ssh` protocol runs the tests as this user, authenticated by `config/ssh_user_ed25519_key`.
 SSH_TEST_USER = "clickhouse_test_ssh"
@@ -6260,16 +6263,23 @@ def prepare_protocols(args):
         raise ConfigException(
             f"Unknown protocols {unknown} in --protocols, available: {', '.join(TEST_PROTOCOLS)}"
         )
+    # Retried until a deadline: the Stress test stops listeners for a few seconds on purpose
+    # (`SYSTEM STOP LISTEN` in its random disruptor), also while its workers start.
+    deadline = monotonic() + PROTOCOL_PORT_WAIT_SECONDS
     for protocol in args.protocols:
         env_name, default_port = TEST_PROTOCOLS[protocol]
         port = int(os.environ.get(env_name) or default_port)
-        try:
-            socket.create_connection((args.tcp_host, port), timeout=30).close()
-        except OSError as e:
-            raise ConfigException(
-                f"The server does not accept connections on port {port} ({env_name}) for the "
-                f"protocol {protocol} from --protocols: {e}"
-            ) from e
+        while True:
+            try:
+                socket.create_connection((args.tcp_host, port), timeout=30).close()
+                break
+            except OSError as e:
+                if monotonic() >= deadline:
+                    raise ConfigException(
+                        f"The server does not accept connections on port {port} ({env_name}) for the "
+                        f"protocol {protocol} from --protocols: {e}"
+                    ) from e
+                sleep(1)
 
     if "ssh" in args.protocols:
         key_path = os.path.join(os.path.dirname(PROTOCOL_CLIENT), "config", "ssh_user_ed25519_key.pub")
