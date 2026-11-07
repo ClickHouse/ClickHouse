@@ -97,6 +97,10 @@ public:
     /// `DEFAULT` gave, and ordered reads and merges rely on that order, so it keeps that value.
     NameSet getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const;
 
+    /// Whether `name`, or the column `name` is a subcolumn of, is read by the sorting key. Such a column keeps
+    /// the value its `DEFAULT` gave, see `getDefaultsDependingOn`.
+    bool isSortingKeyColumn(const String & name) const;
+
     /// Returns the columns absent in `block` whose `DEFAULT` the expressions of `columns` read, directly or
     /// through another such column, and the absent parents with a `DEFAULT` of the subcolumns of `columns`, ordered so that
     /// a column goes after the ones its expression reads. `evaluateDefaults` would evaluate them anew for each column it is called for.
@@ -391,6 +395,8 @@ private:
         std::unordered_map<String, std::vector<String>> missing_readers;
         /// The names in storage of the columns above and of the columns their expressions read.
         std::unordered_map<String, String> names_in_storage;
+        /// The names in storage of the columns the sorting key reads.
+        NameSet sorting_key_columns;
 
         String getNameInStorage(const String & name) const;
     };

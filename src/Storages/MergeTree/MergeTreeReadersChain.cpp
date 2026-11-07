@@ -730,6 +730,8 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     /// A candidate added this way gets a new value too, so the candidates that read it, directly or not, are evaluated
     /// again as well: with `w DEFAULT y` also requested, `w` must take the new value of `y`. This repeats until
     /// no more candidates are added.
+    /// A sort-key column is never added this way, even if it reads such a missing column: it keeps the value its `DEFAULT`
+    /// gave, as the rows of the part are sorted by it (see `IMergeTreeReader::getDefaultsDependingOn`).
     NameSet candidate_names;
     for (const auto & candidate : candidates)
         candidate_names.insert(candidate.name);
@@ -741,7 +743,7 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     std::vector<std::pair<NameAndTypePair, NameSet>> missing_inputs_of_candidates;
     for (const auto & candidate : candidates)
     {
-        if (names_to_evaluate.contains(candidate.name))
+        if (names_to_evaluate.contains(candidate.name) || reader.isSortingKeyColumn(candidate.name))
             continue;
 
         NameSet missing_inputs;

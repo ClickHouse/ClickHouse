@@ -440,7 +440,7 @@ const IMergeTreeReader::DefaultExpressionsGraph & IMergeTreeReader::getDefaultEx
         return it->second;
     };
 
-    NameSet sorting_key_columns;
+    auto & sorting_key_columns = graph->sorting_key_columns;
     for (const auto & name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
         sorting_key_columns.insert(add_name_in_storage(name));
 
@@ -482,6 +482,12 @@ const IMergeTreeReader::DefaultExpressionsGraph & IMergeTreeReader::getDefaultEx
 
     default_expressions_graph = std::move(graph);
     return *default_expressions_graph;
+}
+
+bool IMergeTreeReader::isSortingKeyColumn(const String & name) const
+{
+    const auto & graph = getDefaultExpressionsGraph();
+    return graph.sorting_key_columns.contains(graph.getNameInStorage(name));
 }
 
 NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const
