@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -1038,7 +1039,26 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Throws for some row values: parsing a String date, a delta that does not fit `Int64`, or scaling the delta to ticks.
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// A NULL argument returns NULL before `getReturnTypeImpl` checks the arity.
+        if (arguments.size() < 2)
+            return false;
+
+        const auto from_type = removeLowCardinalityAndNullable(arguments[0].type);
+        const auto delta_type = removeLowCardinalityAndNullable(arguments[1].type);
+        if (isString(from_type) || isUInt64(delta_type) || isFloat(delta_type))
+            return true;
+
+        constexpr bool sub_second = std::is_base_of_v<AddNanosecondsImpl, Transform> || std::is_base_of_v<AddMicrosecondsImpl, Transform>
+            || std::is_base_of_v<AddMillisecondsImpl, Transform>;
+        constexpr bool seconds = std::is_base_of_v<AddSecondsImpl, Transform>;
+        const bool from_ticks = isDateTime64(from_type) || isTime64(from_type);
+        return (sub_second && (from_ticks || isInt64(delta_type))) || (seconds && from_ticks);
+    }
+
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     /// Documentation-only — adds/subtracts the integer/float `delta` of the
     /// given interval unit (encoded in `Transform`) to/from a date or
