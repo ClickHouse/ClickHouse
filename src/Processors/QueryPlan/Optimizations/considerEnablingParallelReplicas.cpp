@@ -1237,7 +1237,9 @@ static bool decideAtBoundary(
     if (const auto stats = stats_cache.getStats(single_replica_plan_boundary_hash))
     {
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;
-        if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
+        if (static_cast<double>(std::max<size_t>(stats->total_rows_to_read, rows_to_read))
+            > static_cast<double>(std::min<size_t>(stats->total_rows_to_read, rows_to_read))
+                * static_cast<double>(optimization_settings.automatic_parallel_replicas_statistics_drift_ratio))
         {
             /// Statistics are recollected only with the replicas plan; the call with it counts the event.
             if (!plan_with_parallel_replicas)
