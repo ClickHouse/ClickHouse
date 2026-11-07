@@ -919,6 +919,141 @@ def test_policy_on_distributed_table_via_role():
     node.query("DROP ROW POLICY 'role1_data_dist' ON dist_tbl")
 
 
+def test_initial_user_current_roles_on_secret_less_shard():
+    # Over a cluster without a secret, node2 filters the rows of the initial user with the roles that
+    # are active on the initiator: a role known on node2 but not granted there applies as it is, and a
+    # role unknown on node2 refuses the read.
+    try:
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP TABLE IF EXISTS t_roles;
+                CREATE TABLE t_roles (svc String) ENGINE = MergeTree ORDER BY svc;
+                INSERT INTO t_roles VALUES ('narrow'), ('secret');
+                CREATE ROLE OR REPLACE r_narrow;
+                CREATE ROLE OR REPLACE r_all;
+                CREATE ROW POLICY OR REPLACE p_narrow ON t_roles USING svc = 'narrow' TO r_narrow;
+                CREATE ROW POLICY OR REPLACE p_all ON t_roles USING 1 TO r_all;
+                CREATE USER OR REPLACE u_roles;
+                CREATE TABLE t_roles_secret AS t_roles ENGINE = Distributed(test_secret_cluster_node2, default, t_roles);
+                """
+            )
+        node.query(
+            """
+            CREATE TABLE t_roles_dist AS t_roles ENGINE = Distributed(test_local_cluster, default, t_roles);
+            CREATE TABLE t_roles_chain AS t_roles ENGINE = Distributed(test_cluster_two_shards_same_node, default, t_roles_secret);
+            CREATE ROLE OR REPLACE r_local;
+            CREATE ROW POLICY OR REPLACE p_local ON t_roles USING 1 TO r_local;
+            GRANT SELECT ON t_roles TO r_narrow, r_all, r_local;
+            GRANT SELECT ON t_roles_dist TO r_narrow, r_all, r_local;
+            GRANT SELECT ON t_roles_secret TO r_narrow, r_all, r_local;
+            GRANT SELECT ON t_roles_chain TO r_narrow, r_all, r_local;
+            GRANT r_narrow, r_all, r_local TO u_roles;
+            """
+        )
+        node2.query("GRANT r_all TO u_roles; GRANT SELECT ON t_roles TO r_all")
+
+        def read_as(role):
+            return f"SET ROLE {role}; SELECT svc FROM t_roles_dist ORDER BY svc"
+
+        assert node.query(read_as("r_narrow"), user="u_roles") == TSV(
+            [["narrow"], ["narrow"]]
+        )
+        assert node.query(read_as("r_all"), user="u_roles") == TSV(
+            [["narrow"], ["narrow"], ["secret"], ["secret"]]
+        )
+
+        error = node.query_and_get_error(read_as("r_local"), user="u_roles")
+        assert "ACCESS_DENIED" in error
+        assert "Not all of the initiator's current roles are known on this node" in error
+
+        # The second hop goes to node2 under the secret, which gets no role list from a node that received
+        # it secret-less: node2 applies the own roles of u_roles there instead of refusing unknown r_local.
+        assert node.query(
+            "SET ROLE r_local; SELECT svc FROM t_roles_chain ORDER BY svc SETTINGS prefer_localhost_replica = 0",
+            user="u_roles",
+        ) == TSV([["narrow"], ["narrow"], ["secret"], ["secret"]])
+    finally:
+        node.query("DROP TABLE IF EXISTS t_roles_dist")
+        node.query("DROP TABLE IF EXISTS t_roles_chain")
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP TABLE IF EXISTS t_roles_secret;
+                DROP ROW POLICY IF EXISTS p_narrow, p_all, p_local ON t_roles;
+                DROP TABLE IF EXISTS t_roles;
+                DROP USER IF EXISTS u_roles;
+                DROP ROLE IF EXISTS r_narrow, r_all, r_local;
+                """
+            )
+
+
+def test_initial_user_current_roles_relay_follows_server_setting():
+    # node2 -> node -> node2 without a secret. node relays the roles active on node2 only if it applies
+    # them itself, so once its server profile sets push_external_roles_in_interserver_queries = 0, node2
+    # filters by the default roles of u_relay too, although the query sets the setting to 1.
+    opt_out_path = "/etc/clickhouse-server/users.d/no_push_external_roles.xml"
+    opted_out = False
+    read = (
+        "SET ROLE r_narrow; SELECT svc FROM t_relay_chain ORDER BY svc "
+        "SETTINGS push_external_roles_in_interserver_queries = 1, prefer_localhost_replica = 0"
+    )
+    try:
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP TABLE IF EXISTS t_relay;
+                CREATE TABLE t_relay (svc String) ENGINE = MergeTree ORDER BY svc;
+                INSERT INTO t_relay VALUES ('narrow'), ('secret');
+                CREATE ROLE OR REPLACE r_narrow;
+                CREATE ROLE OR REPLACE r_all;
+                CREATE ROW POLICY OR REPLACE p_narrow ON t_relay USING svc = 'narrow' TO r_narrow;
+                CREATE ROW POLICY OR REPLACE p_all ON t_relay USING 1 TO r_all;
+                GRANT SELECT ON t_relay TO r_narrow, r_all;
+                CREATE USER OR REPLACE u_relay;
+                GRANT r_narrow, r_all TO u_relay;
+                """
+            )
+        node.query(
+            "CREATE TABLE t_relay_dist AS t_relay ENGINE = Distributed(test_local_cluster, default, t_relay)"
+        )
+        node2.query(
+            """
+            CREATE TABLE t_relay_chain AS t_relay ENGINE = Distributed(test_cluster_two_shards_same_node, default, t_relay_dist);
+            GRANT SELECT ON t_relay_chain TO r_narrow;
+            """
+        )
+
+        assert node2.query(read, user="u_relay") == TSV([["narrow"]] * 4)
+
+        node.replace_config(
+            opt_out_path,
+            "<clickhouse><profiles><default><push_external_roles_in_interserver_queries>0"
+            "</push_external_roles_in_interserver_queries></default></profiles></clickhouse>",
+        )
+        opted_out = True
+        node.restart_clickhouse()
+
+        assert node2.query(read, user="u_relay") == TSV(
+            [["narrow"]] * 4 + [["secret"]] * 4
+        )
+    finally:
+        if opted_out:
+            node.exec_in_container(["rm", "-f", opt_out_path])
+            node.restart_clickhouse()
+        node.query("DROP TABLE IF EXISTS t_relay_dist")
+        node2.query("DROP TABLE IF EXISTS t_relay_chain")
+        for current_node in nodes:
+            current_node.query(
+                """
+                DROP ROW POLICY IF EXISTS p_narrow, p_all ON t_relay;
+                DROP TABLE IF EXISTS t_relay;
+                DROP USER IF EXISTS u_relay;
+                DROP ROLE IF EXISTS r_narrow, r_all;
+                """
+            )
+
+
 def test_row_policy_filter_with_subquery():
     copy_policy_xml("no_filters.xml")
     assert node.query("SHOW POLICIES") == ""
