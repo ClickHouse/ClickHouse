@@ -151,7 +151,7 @@ INSERT INTO tab VALUES
 
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick brown');
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick brown') SETTINGS use_skip_indexes = 0;
-SELECT '-- adjacent across elements';
+SELECT '-- a phrase does not span elements';
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox');
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick fox');
@@ -169,7 +169,7 @@ CREATE TABLE tab
 ENGINE = MergeTree()
 ORDER BY (id);
 
--- A NULL element yields no token, so it leaves no position.
+-- A NULL element yields no token, and a phrase still does not span the elements around it.
 INSERT INTO tab VALUES (1, ['quick brown', NULL, 'fox']), (2, ['brown quick', NULL, 'fox']);
 
 SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(tags, 'quick brown') ORDER BY id);
@@ -193,7 +193,8 @@ SETTINGS allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab VALUES (1, ['quick brown', 'fox']), (2, ['zz']);
 
--- Positions restart for every element, so the index must not answer a phrase spanning two of them.
+-- A phrase does not span two elements, with or without the index.
+SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'quick brown') SETTINGS query_plan_direct_read_from_text_index = 1, text_index_hint_max_selectivity = 1.;
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS query_plan_direct_read_from_text_index = 1, text_index_hint_max_selectivity = 1.;
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT groupArray(id) FROM tab WHERE hasPhrase(tags, 'brown fox') SETTINGS use_skip_indexes = 0;
