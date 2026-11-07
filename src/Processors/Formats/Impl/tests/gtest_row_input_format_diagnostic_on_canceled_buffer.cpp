@@ -1,10 +1,16 @@
 #include <gtest/gtest.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Processors/Formats/Impl/CSVRowInputFormat.h>
+#include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 using namespace DB;
 
@@ -43,6 +49,54 @@ private:
 
     std::string payload;
     bool served = false;
+};
+
+/// Keep allocated capacity larger than the readable chunk, as for a short final file buffer.
+class ReadBufferWithSpareCapacity : public ReadBuffer
+{
+public:
+    explicit ReadBufferWithSpareCapacity(std::string input) : ReadBuffer(nullptr, 0), storage(std::move(input))
+    {
+        const size_t valid_size = storage.size();
+        storage.resize(valid_size + 64, '#');
+        BufferBase::set(storage.data(), storage.size(), 0);
+        buffer().resize(valid_size);
+    }
+
+private:
+    bool nextImpl() override { return false; }
+    std::string storage;
+};
+
+/// Some sources replace their backing storage when an EOF probe is repeated.
+class EOFReallocatingReadBuffer : public ReadBuffer
+{
+public:
+    explicit EOFReallocatingReadBuffer(std::string input, size_t reallocate_on_probe_)
+        : ReadBuffer(nullptr, 0)
+        , data(std::move(input))
+        , reallocate_on_probe(reallocate_on_probe_)
+    {
+        BufferBase::set(data.data(), data.size(), 0);
+    }
+
+    size_t eof_probes = 0;
+
+private:
+    bool nextImpl() override
+    {
+        ++eof_probes;
+        if (eof_probes >= reallocate_on_probe)
+        {
+            std::string replacement(data.size() + 64, '#');
+            data.swap(replacement);
+            BufferBase::set(data.data(), data.size(), data.size());
+        }
+        return false;
+    }
+
+    std::string data;
+    const size_t reallocate_on_probe;
 };
 
 }
@@ -113,4 +167,163 @@ TEST(RowInputFormatDiagnostics, CanceledBufferDoesNotAbortWithAllowErrors)
 
     /// Must throw a regular exception, not abort the process.
     EXPECT_THROW(format.read(), Exception);
+}
+
+/// The final invalid row must have the same per-column diagnostic with or without
+/// a terminating newline. Test both formats and a preceding valid row.
+TEST(RowInputFormatDiagnostics, InvalidLastRowWithoutTrailingNewline)
+{
+    Block header;
+    header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "id"});
+    header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "name"});
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    RowInputFormatParams params;
+    params.max_block_size_rows = 100;
+    FormatSettings format_settings;
+
+    for (bool csv : {false, true})
+    {
+        for (bool preceding_row : {false, true})
+        {
+            for (bool trailing_newline : {false, true})
+            {
+                std::string payload;
+                if (preceding_row)
+                    payload = csv ? "1,Alice\n" : "1\tAlice\n";
+                payload += csv ? "x,Bob" : "x\tBob";
+                if (trailing_newline)
+                    payload += '\n';
+
+                auto check_payload = [&](ReadBuffer & buf)
+                {
+                    SCOPED_TRACE(::testing::Message()
+                        << (csv ? "CSV" : "TSV")
+                        << " preceding_row=" << preceding_row
+                        << " trailing_newline=" << trailing_newline
+                        << " buffer_size=" << buf.buffer().size());
+                    auto check_diagnostic = [&](auto & format)
+                    {
+                        try
+                        {
+                            format.read();
+                            ADD_FAILURE() << "Expected a parse error for " << payload;
+                        }
+                        catch (const Exception & e)
+                        {
+                            const auto & message = e.message();
+                            EXPECT_NE(message.find(preceding_row ? "Row 2" : "Row 1"), std::string::npos);
+                            EXPECT_NE(message.find("Column 0"), std::string::npos);
+                            EXPECT_NE(message.find("type: UInt8"), std::string::npos);
+                            EXPECT_EQ(message.find("Could not print diagnostic info"), std::string::npos);
+                        }
+                    };
+
+                    if (csv)
+                    {
+                        CSVRowInputFormat format(shared_header, buf, params, false, false, format_settings);
+                        check_diagnostic(format);
+                    }
+                    else
+                    {
+                        TabSeparatedRowInputFormat format(shared_header, buf, params, false, false, false, format_settings);
+                        check_diagnostic(format);
+                    }
+                };
+
+                ReadBufferFromString buf(payload);
+                check_payload(buf);
+                if (!trailing_newline)
+                {
+                    ReadBufferWithSpareCapacity spare_buf(payload);
+                    check_payload(spare_buf);
+                }
+            }
+        }
+    }
+}
+
+/// Replay-time EOF checks must never reach the exhausted source: it may free
+/// the storage holding the saved post-EOF position and buffer snapshots.
+TEST(RowInputFormatDiagnostics, ReplayDoesNotReprobeSourceEOF)
+{
+    EOFReallocatingReadBuffer source(std::string(128, 'x'), 2);
+    PeekableReadBuffer buf(source);
+
+    auto * const original_begin = buf.buffer().begin();
+    const size_t original_size = buf.buffer().size();
+    buf.position() = buf.buffer().end();
+    ASSERT_TRUE(buf.eof());
+    ASSERT_EQ(source.eof_probes, 1U);
+
+    ASSERT_TRUE(buf.beginDiagnosticReplay(original_begin, original_size));
+    auto * const replay_begin = buf.internalBuffer().begin();
+    buf.buffer() = ReadBuffer::Buffer(replay_begin, replay_begin + original_size);
+    buf.position() = buf.buffer().end();
+
+    EXPECT_TRUE(buf.eof());
+    buf.endDiagnosticReplay();
+
+    EXPECT_EQ(source.eof_probes, 1U);
+    EXPECT_EQ(buf.count(), original_size);
+
+    /// Normal reads after replay may probe EOF and update the source buffer.
+    EXPECT_TRUE(buf.eof());
+    EXPECT_EQ(source.eof_probes, 2U);
+}
+
+/// Error skipping must remain safe if EOF invalidates the underlying window.
+TEST(RowInputFormatDiagnostics, AllowErrorsWithEOFBackingStorageChange)
+{
+    Block header;
+    header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "id"});
+    header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "name"});
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    EOFReallocatingReadBuffer source("1\tAlice\nbad\tBob", 1);
+    RowInputFormatParams params;
+    params.max_block_size_rows = 100;
+    params.allow_errors_num = 10;
+    params.allow_errors_ratio = 1.0;
+
+    FormatSettings format_settings;
+    TabSeparatedRowInputFormat format(shared_header, source, params, false, false, false, format_settings);
+    const auto result = format.read();
+
+    EXPECT_EQ(result.getNumRows(), 1U);
+    EXPECT_GE(source.eof_probes, 1U);
+}
+
+/// JSONCompactEachRow uses a plain ReadBuffer. A diagnostic replay must not
+/// probe EOF a third time and invalidate the retained input window.
+TEST(RowInputFormatDiagnostics, JSONCompactReplayDoesNotReprobeSourceEOF)
+{
+    Block header;
+    header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "id"});
+    header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "name"});
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    /// The closing ']' is missing. Parsing probes EOF once, the diagnostic
+    /// entry probes it again, and the third probe would replace the storage.
+    EOFReallocatingReadBuffer source("[1, \"Alice\"", 3);
+    RowInputFormatParams params;
+    params.max_block_size_rows = 100;
+    FormatSettings format_settings;
+    JSONCompactEachRowRowInputFormat format(shared_header, source, params, false, false, false, format_settings);
+
+    try
+    {
+        format.read();
+        FAIL() << "Expected a parse error for the incomplete JSONCompact row";
+    }
+    catch (const Exception & e)
+    {
+        const auto & message = e.message();
+        EXPECT_NE(message.find("Row 1"), std::string::npos);
+        EXPECT_NE(message.find("Column 0"), std::string::npos);
+        EXPECT_NE(message.find("type: UInt8"), std::string::npos);
+        EXPECT_NE(message.find("Unexpected end of file"), std::string::npos);
+    }
+
+    EXPECT_EQ(source.eof_probes, 2U);
 }

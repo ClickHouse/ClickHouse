@@ -92,6 +92,79 @@ bool PeekableReadBuffer::peekNext()
     return sub_buf->next();
 }
 
+bool PeekableReadBuffer::beginDiagnosticReplay(Position begin, size_t size)
+{
+    if (checkpoint || !size || isDiagnosticReplayActive())
+        return false;
+
+    if (peeked_size)
+    {
+        if (!currentlyReadFromOwnMemory())
+            return false;
+
+        /// The bytes already live in our own buffer, so just fence off EOF probes.
+        diagnostic_saved_bytes = bytes;
+        setDiagnosticReplayActive(true);
+        return true;
+    }
+
+    if (sub_buf->internalBuffer().begin() != begin
+        || sub_buf->internalBuffer().size() < size)
+        return false;
+
+    const Buffer saved_working_buffer = working_buffer;
+    const Buffer saved_internal_buffer = internal_buffer;
+    auto * const saved_position = pos;
+
+    /// After a failed EOF probe the source window is empty, but its old storage
+    /// can still be retained. Copy it before replay so checkpoints remain valid.
+    BufferBase::set(sub_buf->buffer().begin(), sub_buf->buffer().size(), sub_buf->offset());
+    try
+    {
+        resizeOwnMemoryIfNecessary(size);
+    }
+    catch (...)
+    {
+        working_buffer = saved_working_buffer;
+        internal_buffer = saved_internal_buffer;
+        pos = saved_position;
+        throw;
+    }
+
+    memcpy(getMemoryData(), begin, size);
+    peeked_size = size;
+    BufferBase::set(getMemoryData(), size, size);
+
+    diagnostic_saved_working_buffer.emplace(saved_working_buffer);
+    diagnostic_saved_internal_buffer.emplace(saved_internal_buffer);
+    diagnostic_saved_position = saved_position;
+    diagnostic_saved_bytes = bytes;
+    setDiagnosticReplayActive(true);
+    return true;
+}
+
+void PeekableReadBuffer::endDiagnosticReplay()
+{
+    if (!isDiagnosticReplayActive())
+        return;
+
+    setDiagnosticReplayActive(false);
+    bytes = diagnostic_saved_bytes;
+
+    /// When already reading from owned memory we did not need another copy.
+    if (!diagnostic_saved_working_buffer)
+        return;
+
+    chassert(!checkpoint);
+    peeked_size = 0;
+    checkpoint_in_own_memory = false;
+    working_buffer = *diagnostic_saved_working_buffer;
+    internal_buffer = *diagnostic_saved_internal_buffer;
+    pos = diagnostic_saved_position;
+    diagnostic_saved_working_buffer.reset();
+    diagnostic_saved_internal_buffer.reset();
+}
+
 void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 {
     checkStateCorrect();
@@ -162,6 +235,14 @@ bool PeekableReadBuffer::nextImpl()
     ///        if some pointers were invalidated.
 
     checkStateCorrect();
+
+    /// Diagnostic parsing must not probe a source that was already at EOF:
+    /// doing so can replace the backing storage of the saved buffer snapshots.
+    if (isDiagnosticReplayActive())
+        return false;
+
+    const bool reading_from_own_memory = !useSubbufferOnly();
+    const Buffer sub_internal_before = sub_buf->internalBuffer();
     bool res = false;
     bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
@@ -182,11 +263,23 @@ bool PeekableReadBuffer::nextImpl()
         }
         else
         {
-            /// All copied data have been read from own memory, continue reading from sub_buf
-            peeked_size = 0;
+            /// All copied data have been read from own memory, continue reading from sub_buf.
+            /// Keep the owned bytes if the source is at EOF: they may be needed for diagnostics.
             res = sub_buf->hasPendingData() || sub_buf->next();
+            if (res)
+                peeked_size = 0;
         }
     }
+
+    /// An EOF probe must not discard the last window while it is still valid:
+    /// diagnostics may need it for a malformed final row. The sub-buffer can
+    /// replace its storage on EOF, so retain the window only if it still owns
+    /// the same backing memory, or if our own memory holds the last bytes.
+    if (!res && !checkpoint
+        && (reading_from_own_memory
+            || (sub_buf->internalBuffer().begin() == sub_internal_before.begin()
+                && sub_buf->internalBuffer().end() == sub_internal_before.end())))
+        return false;
 
     /// Switch to reading from sub_buf (or just update it if already switched)
     setWorkingBuffer(sub_buf->buffer(), sub_buf->offset());

@@ -87,6 +87,11 @@ public:
     /// This data will be lost after destruction of peekable buffer.
     bool hasUnreadData() const;
 
+    /// Copy a retained last window into own memory for diagnostic replay after EOF.
+    /// Never requests more bytes from the exhausted source.
+    bool beginDiagnosticReplay(Position begin, size_t size);
+    void endDiagnosticReplay();
+
     const ReadBuffer & getSubBuffer() const { return *sub_buf; }
 
 private:
@@ -115,6 +120,11 @@ private:
 
     ReadBuffer * sub_buf;
     size_t peeked_size = 0;
+
+    std::optional<Buffer> diagnostic_saved_working_buffer;
+    std::optional<Buffer> diagnostic_saved_internal_buffer;
+    Position diagnostic_saved_position = nullptr;
+    size_t diagnostic_saved_bytes = 0;
     std::optional<Position> checkpoint = std::nullopt;
     bool checkpoint_in_own_memory = false;
 

@@ -158,7 +158,11 @@ bool JSONCompactEachRowFormatReader::parseFieldDelimiterWithDiagnosticInfo(Write
     }
     catch (const DB::Exception &)
     {
-        if (*in->position() == ']')
+        if (in->eof())
+        {
+            out << "ERROR: Unexpected end of file. ',' expected between columns.\n";
+        }
+        else if (*in->position() == ']')
         {
             out << "ERROR: Closing parenthesis (']') found where comma is expected."
                    " It's like your file has less columns than expected.\n"
