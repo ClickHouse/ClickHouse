@@ -4771,6 +4771,12 @@ A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL, \
         {"26.7", 0, 0, "New setting to reserve memory for specific workload before starting a query."}) \
+    DECLARE(Int32, memory_eviction_score, 0, R"(
+Used in workload scheduling. Sets the order in which the queries of a workload give up memory under memory pressure. When the workload must evict a query, the query with the highest `memory_eviction_score` is evicted first; among equal scores, the query with the largest reservation goes first. A reservation's size is its current allocation plus any pending increase, minus memory it has already been asked to spill. When the workload is above its soft memory limit, the same order picks which query with reclaimable memory is asked to spill first. When several queries compete to grow their reservations, the query with the lower score grows first. A query whose own reservation cannot fit within the workload limit is stopped regardless of score. A negative value makes a query less likely to be evicted.
+A value of `0` (the default) means the score does not influence the order.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New setting to control the eviction order of query memory reservations when a workload is under memory pressure."}) \
     DECLARE(UInt64, min_bytes_to_spill, 64_MiB, R"(
 Used in workload scheduling.
 The minimum amount of bytes to spill.
