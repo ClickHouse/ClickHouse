@@ -1,14 +1,14 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
-#include <DataTypes/DataTypeEnum.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/TypeTree.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -196,56 +196,47 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     return json_info;
 }
 
+ColumnPtr createMissingJSONPathColumn(const DataTypePtr & key_expression_type)
+{
+    auto column = key_expression_type->createColumn();
+    column->insertDefault();
+    return column;
+}
+
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field,
-    const DataTypePtr & value_type)
+    const DataTypePtr & value_type,
+    const ContextPtr & context)
 {
     /// Types that can contain NULL (Dynamic, Nullable, LowCardinality(Nullable), Variant)
     /// store NULL for missing paths — always safe to skip.
     if (canContainNull(*key_expression_type))
         return true;
 
-    /// Non-nullable type: missing path produces the type's default value.
-    /// If comparing to the default, we cannot safely skip the granule.
-    /// An `Enum` constant keeps its labels in its own type and the comparison uses the label rather
-    /// than the underlying number, so it has to be converted with that type.
-    DataTypePtr unwrapped_value_type;
-    const IDataTypeEnum * enum_source = nullptr;
-    if (value_type)
-    {
-        unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
-
-        /// A `Variant` or `Dynamic` constant hides its active alternative, so an `Enum` cannot be ruled out.
-        const WhichDataType which_value(unwrapped_value_type);
-        if (which_value.isVariant() || which_value.isDynamic())
-            return false;
-
-        enum_source = dynamic_cast<const IDataTypeEnum *>(unwrapped_value_type.get());
-
-        /// Only the outermost type reaches the conversion below: `convertFieldToType` recurses into the
-        /// elements of a composite without theirs, so a nested `Enum` label, or an alternative that may
-        /// hold one, is absent from the converted value.
-        /// The outermost type is not in question here: an `Enum` there is the `enum_source`, and a
-        /// `Variant` or `Dynamic` there was ruled out above. Only what is below it is lost.
-        bool nested_source_type_lost = false;
-        const size_t num_children = unwrapped_value_type->getNumberOfChildren();
-        for (size_t i = 0; i < num_children && !nested_source_type_lost; ++i)
-        {
-            nested_source_type_lost = anyInTypeTree(*unwrapped_value_type->getChild(i), [](const IDataType & nested)
-            {
-                const WhichDataType which_nested(nested);
-                return which_nested.isEnum() || which_nested.isVariant() || which_nested.isDynamic();
-            });
-        }
-        if (nested_source_type_lost)
-            return false;
-    }
-    auto converted = convertFieldToType(value_field, *key_expression_type, enum_source);
-    if (converted == key_expression_type->getDefault())
+    if (!value_type)
         return false;
 
-    return true;
+    /// A `Variant` or `Dynamic` constant reaches index analysis as a bare `Field` that no longer names
+    /// the alternative it came from, so its value cannot be put back into that type to be compared.
+    const auto unwrapped_value_type = removeLowCardinalityAndNullable(value_type);
+    const bool alternative_not_recoverable = anyInTypeTree(*unwrapped_value_type, [](const IDataType & type)
+    {
+        const WhichDataType which(type);
+        return which.isVariant() || which.isDynamic();
+    });
+    if (alternative_not_recoverable)
+        return false;
+
+    /// The granule may be skipped only when the comparison does not hold on what a missing path reads.
+    ColumnsWithTypeAndName arguments{
+        {createMissingJSONPathColumn(key_expression_type), key_expression_type, "key"},
+        {value_type->createColumnConst(1, value_field), value_type, "value"}};
+
+    auto equals = FunctionFactory::instance().get("equals", context)->build(arguments);
+    auto result = equals->execute(arguments, equals->getResultType(), 1, /*dry_run=*/false);
+
+    return !result->getBool(0);
 }
 
 }
