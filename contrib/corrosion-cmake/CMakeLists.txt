@@ -144,6 +144,20 @@ if (CMAKE_OSX_DEPLOYMENT_TARGET)
     set(RUST_CFLAGS "${RUST_CFLAGS} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
+# `-fwhole-program-vtables` only matters for C++ and is only accepted together with `-flto`. Some crates
+# (e.g. `blake3`) append `-fno-lto` to `CFLAGS` in their build scripts, which makes clang reject it.
+# It also implies `-fsplit-lto-unit`, and `lld` rejects a ThinLTO link that mixes split and non-split
+# bitcode ("inconsistent LTO Unit splitting"), so keep `-fsplit-lto-unit`, which is accepted with `-fno-lto`.
+string(REPLACE "-fwhole-program-vtables" "-fsplit-lto-unit" RUST_CFLAGS "${RUST_CFLAGS}")
+
+# Some crates (e.g. `lance-linalg`) compile their SIMD kernels with `-march=native`, which picks the build
+# host's CPU and fails when cross-compiling. For the baseline x86-64 level no `-march` is passed above,
+# so pin it explicitly (`CFLAGS` go after the flags set by the build scripts and take precedence).
+if (ARCH_AMD64 AND X86_ARCH_LEVEL EQUAL 1)
+    set(RUST_CFLAGS "${RUST_CFLAGS} -march=x86-64")
+    set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -march=x86-64")
+endif()
+
 get_target_property(CXX_PUBLIC_DEFS cxx INTERFACE_COMPILE_DEFINITIONS)
 if (CXX_PUBLIC_DEFS)
     list(TRANSFORM CXX_PUBLIC_DEFS PREPEND "-D")
