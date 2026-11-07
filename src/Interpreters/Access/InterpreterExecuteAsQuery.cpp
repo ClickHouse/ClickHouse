@@ -19,6 +19,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace Setting
+{
+    extern const SettingsString filter;
+}
+
 namespace
 {
     /// Creates another query context to execute a query as another user.
@@ -34,9 +39,6 @@ namespace
         /// including one stored in a SQL-defined HTTP handler, where the parameters were validated at
         /// CREATE HANDLER time and bound from the request - fails with UNKNOWN_QUERY_PARAMETER.
         new_context->setQueryParameters(context->getQueryParameters());
-
-        /// The HTTP `filter` parameters of the request shape the statement's result, as for a statement sent directly.
-        new_context->setHTTPCombinedFilter(context->getHTTPCombinedFilter());
 
         /// An empty current database cannot be copied over: `setCurrentDatabase` rejects an empty name,
         /// and it cannot happen for a query anyway - the server refuses to start with an empty
@@ -77,6 +79,17 @@ namespace
         auto changed_settings = context->getSettingsRef().changes();
         new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         new_context->applySettingsChanges(changed_settings);
+
+        /// The HTTP `filter` parameters of the request shape the statement's result, as for a statement sent
+        /// directly, and are checked against the target user's `filter` constraint like `HTTPHandler` does.
+        if (const String & http_filter = context->getHTTPCombinedFilter(); !http_filter.empty())
+        {
+            const String & target_filter = new_context->getSettingsRef()[Setting::filter].value;
+            SettingsChanges filter_change;
+            filter_change.setSetting("filter", target_filter.empty() ? http_filter : "(" + target_filter + ") AND " + http_filter);
+            new_context->checkSettingsConstraints(filter_change, SettingSource::QUERY);
+            new_context->setHTTPCombinedFilter(http_filter);
+        }
 
         return new_context;
     }
