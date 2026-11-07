@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the drop of the metric name `__name__` by range functions and math functions over many series.
+        A selector with one metric name (`drop_metric`) can't give two series with the same tags after the drop,
+        so it needs no GROUP BY with the duplicate series check. The same selector written as a regular expression
+        (`{__name__=~"drop_metric"}`) keeps the check and is the control: it must not change.
+    -->
+
+    <create_query>CREATE TABLE promql_drop_metric_name_ts ENGINE = TimeSeries</create_query>
+
+    <!-- 100000 series of one metric, one sample every 15s over [1000000, 1000600). -->
+    <fill_query>
+        INSERT INTO promql_drop_metric_name_ts (metric_name, tags, samples)
+        SELECT
+            'drop_metric',
+            map('instance', toString(number), 'job', toString(number % 10)),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), toFloat64(number % 1000 + step)), range(40))
+        FROM numbers_mt(100000)
+    </fill_query>
+
+    <!-- one metric name -->
+    <query>SELECT * FROM prometheusQuery('promql_drop_metric_name_ts', 'sum(rate(drop_metric[5m]))', 1000585) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_drop_metric_name_ts', 'sum by (job) (rate(drop_metric[5m]))', 1000585) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_drop_metric_name_ts', 'sum(rate(drop_metric[1m]))', 1000060, 1000585, 15) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_drop_metric_name_ts', 'sum(abs(drop_metric))', 1000585) FORMAT Null</query>
+
+    <!-- the same selector as a regular expression (control) -->
+    <query>SELECT * FROM prometheusQuery('promql_drop_metric_name_ts', 'sum(rate({{__name__=~"drop_metric"}}[5m]))', 1000585) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_drop_metric_name_ts</drop_query>
+</test>
