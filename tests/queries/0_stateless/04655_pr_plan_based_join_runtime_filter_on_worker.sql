@@ -17,7 +17,6 @@ CREATE TABLE rf_build (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_gr
 INSERT INTO rf_probe SELECT number FROM numbers(300_000);
 INSERT INTO rf_build SELECT number FROM numbers(10_000);   -- 10000 of the 300000 probe keys match
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Functions/IFunction.h>
+#include <DataTypes/IDataType.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -50,6 +52,25 @@ public:
 
     String getName() const override { return function->getName(); }
 
+    bool isEqual(const IFunctionBase & rhs) const override
+    {
+        const auto * other = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&rhs);
+        if (!other)
+            return false;
+        if (function.get() != other->function.get())
+            return false;
+        if (!result_type->equals(*other->result_type))
+            return false;
+        if (arguments.size() != other->arguments.size())
+            return false;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (!arguments[i]->equals(*other->arguments[i]))
+                return false;
+        }
+        return true;
+    }
+
     void updateHash(SipHash & hash) const override { function->updateHash(hash); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
@@ -92,6 +113,8 @@ public:
 
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
 
+    bool isExpensive() const override { return function->isExpensive(); }
+
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
     ComparisonOrderDomain getComparisonOrderDomain() const override
@@ -105,7 +128,10 @@ public:
 
     bool isServerConstant() const override  { return function->isServerConstant(); }
 
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    {
+        return function->isShortCircuitForArgumentTypes(settings, arguments);
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
@@ -147,6 +173,7 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
     bool isInjective(const ColumnsWithTypeAndName & columns) const override { return function->isInjective(columns); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
+    bool isExpensive() const override { return function->isExpensive(); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }

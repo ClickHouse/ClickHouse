@@ -9,7 +9,14 @@
 # generating a second one.
 cp $SRC/tests/fuzz/*.dict $OUT/
 cp $SRC/tests/fuzz/*.options $OUT/
-cp $SRC/tests/fuzz/dictionaries/*.dict $OUT/
+
+# Preserve committed target-specific seeds before adding generated SQL corpora.
+mkdir -p "$BIN/tests/fuzz"
+for corpus in "$SRC"/tests/fuzz/*_fuzzer.in; do
+    if [ -d "$corpus" ]; then
+        cp -r "$corpus" "$BIN/tests/fuzz/"
+    fi
+done
 
 # prepare corpus dirs
 mkdir -p $BIN/tests/fuzz/lexer_fuzzer.in/

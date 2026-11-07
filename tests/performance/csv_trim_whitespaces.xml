@@ -24,4 +24,24 @@
 
     <query>SELECT max(n) FROM file('test_csv_trim_whitespaces.csv', CSV, 's String, n Int32') SETTINGS input_format_csv_trim_whitespaces = 0 FORMAT Null</query>
     <query>SELECT max(n) FROM file('test_csv_trim_whitespaces.csv', CSV, 's String, n Int32') SETTINGS input_format_csv_trim_whitespaces = 1 FORMAT Null</query>
+
+    <!--
+        `input_format_csv_missing_nullable_as_empty_string = 1` had a similar per-field contention bug:
+        `removeLowCardinalityAndNullable(type)` was called for every empty field of a Nullable column,
+        returning a `DataTypePtr` by value and causing the same shared refcount contention as above.
+        The fix precomputes the flag once per column in `setDataTypes`.
+
+        The second query is the control: with the setting off, the check was short-circuited away.
+        The two should cost about the same; a gap between them means the per-field type check has
+        become thread-shared again.
+    -->
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_csv_missing_nullable_as_empty_string.csv', CSV, 'a1 Nullable(Int32), a2 Nullable(Int32), a3 Nullable(Int32), a4 Nullable(Int32), a5 Nullable(Int32), a6 Nullable(Int32), a7 Nullable(Int32), a8 Nullable(Int32)')
+        SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+        FROM numbers(10000000)
+        SETTINGS engine_file_truncate_on_insert = 1, format_csv_null_representation = ''
+    ]]></fill_query>
+
+    <query>SELECT count(a1)+count(a2)+count(a3)+count(a4)+count(a5)+count(a6)+count(a7)+count(a8) FROM file('test_csv_missing_nullable_as_empty_string.csv', CSV, 'a1 Nullable(Int32), a2 Nullable(Int32), a3 Nullable(Int32), a4 Nullable(Int32), a5 Nullable(Int32), a6 Nullable(Int32), a7 Nullable(Int32), a8 Nullable(Int32)') SETTINGS input_format_csv_missing_nullable_as_empty_string = 0 FORMAT Null</query>
+    <query>SELECT count(a1)+count(a2)+count(a3)+count(a4)+count(a5)+count(a6)+count(a7)+count(a8) FROM file('test_csv_missing_nullable_as_empty_string.csv', CSV, 'a1 Nullable(Int32), a2 Nullable(Int32), a3 Nullable(Int32), a4 Nullable(Int32), a5 Nullable(Int32), a6 Nullable(Int32), a7 Nullable(Int32), a8 Nullable(Int32)') SETTINGS input_format_csv_missing_nullable_as_empty_string = 1 FORMAT Null</query>
 </test>
