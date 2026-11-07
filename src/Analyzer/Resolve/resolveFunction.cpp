@@ -2541,6 +2541,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
+    /// Remember an explicit top-level `NULL` before argument resolution can cast it to the
+    /// element type of a complex left operand, where it becomes indistinguishable from a default.
+    bool in_rhs_has_explicit_null = false;
+    if (is_special_function_in)
+    {
+        const auto & in_arguments = function_node_ptr->getArguments().getNodes();
+        if (in_arguments.size() == 2)
+        {
+            if (const auto * rhs_tuple = in_arguments[1]->as<FunctionNode>();
+                rhs_tuple && rhs_tuple->getFunctionName() == "tuple")
+                in_rhs_has_explicit_null = std::any_of(
+                    rhs_tuple->getArguments().getNodes().begin(),
+                    rhs_tuple->getArguments().getNodes().end(),
+                    isNullConstant);
+        }
+    }
+
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
     auto arguments_projection_names = resolveExpressionNodeList(
@@ -3024,8 +3041,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// Preserve top-level `NULL` membership before complex values are cast to a
                     /// common array element type. `Array` and `Map` cannot be wrapped in `Nullable`,
                     /// so that conversion would otherwise turn the `NULL` into a default value.
-                    const bool source_has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
-                        [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
+                    const bool source_has_null = in_rhs_has_explicit_null
+                        || std::any_of(tuple_args.begin(), tuple_args.end(),
+                            [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
 
                     /// convert tuple to array and rewrite to has()
                     QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value, compare_nulls);
