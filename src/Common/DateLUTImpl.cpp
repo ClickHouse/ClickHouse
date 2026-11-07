@@ -457,6 +457,15 @@ DateLUTImpl::Time DateLUTImpl::timezoneOffsetOutOfRange(Time t) const
     return cctz_time_zone->lookup(std::chrono::system_clock::from_time_t(t)).offset;
 }
 
+DateLUTImpl::Time DateLUTImpl::timezoneOffsetAtLocalTimeOutOfRange(Time t) const
+{
+    t = std::clamp(t, min_representable_time, max_representable_time);
+    const cctz::civil_second local = cctz::civil_second{1970, 1, 1, 0, 0, 0} + t;
+    return t - makeDateTimeOutOfRange(
+        local.year(), static_cast<UInt8>(local.month()), static_cast<UInt8>(local.day()),
+        static_cast<UInt8>(local.hour()), static_cast<UInt8>(local.minute()), static_cast<UInt8>(local.second()));
+}
+
 DateLUTImpl::Time DateLUTImpl::addDaysOutOfRange(Time t, Int64 delta) const
 {
     /// Keep the same wall-clock time of day, but on the day that is `delta` days away.
