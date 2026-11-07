@@ -2,12 +2,6 @@
 #include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
-#include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
-#include <llvm/DebugInfo/DWARF/DWARFDebugRnglists.h>
-#include <llvm/DebugInfo/DWARF/DWARFDebugRangeList.h>
-#include <llvm/BinaryFormat/Dwarf.h>
-
-#include <Common/Hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -29,6 +23,14 @@
 #include <IO/WithFileName.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
+
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/PODArray.h>
+#include <base/scope_guard.h>
+
+#include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -136,158 +138,571 @@ static size_t getColumnIdx(const std::string & name)
     return it->second;
 }
 
-DWARFBlockInputFormat::UnitState::UnitState(llvm::DWARFUnit * u)
-    : dwarf_unit(u), end_offset(dwarf_unit->getNextUnitOffset())
-    , offset(dwarf_unit->getOffset() + dwarf_unit->getHeaderSize())
-{
-    /// This call is not thread safe, so we do it during initialization.
-    abbrevs = dwarf_unit->getAbbreviations();
-    if (abbrevs == nullptr)
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Couldn't find abbreviation set for unit at offset {}", dwarf_unit->getOffset());
+static_assert(COL_COUNT == 16);
+static_assert(CH_DWARF_COL_OFFSET == (1u << COL_OFFSET));
+static_assert(CH_DWARF_COL_SIZE == (1u << COL_SIZE));
+static_assert(CH_DWARF_COL_TAG == (1u << COL_TAG));
+static_assert(CH_DWARF_COL_UNIT_NAME == (1u << COL_UNIT_NAME));
+static_assert(CH_DWARF_COL_UNIT_OFFSET == (1u << COL_UNIT_OFFSET));
+static_assert(CH_DWARF_COL_ANCESTOR_TAGS == (1u << COL_ANCESTOR_TAGS));
+static_assert(CH_DWARF_COL_ANCESTOR_OFFSETS == (1u << COL_ANCESTOR_OFFSETS));
+static_assert(CH_DWARF_COL_NAME == (1u << COL_NAME));
+static_assert(CH_DWARF_COL_LINKAGE_NAME == (1u << COL_LINKAGE_NAME));
+static_assert(CH_DWARF_COL_DECL_FILE == (1u << COL_DECL_FILE));
+static_assert(CH_DWARF_COL_DECL_LINE == (1u << COL_DECL_LINE));
+static_assert(CH_DWARF_COL_RANGES == (1u << COL_RANGES));
+static_assert(CH_DWARF_COL_ATTR_NAME == (1u << COL_ATTR_NAME));
+static_assert(CH_DWARF_COL_ATTR_FORM == (1u << COL_ATTR_FORM));
+static_assert(CH_DWARF_COL_ATTR_INT == (1u << COL_ATTR_INT));
+static_assert(CH_DWARF_COL_ATTR_STR == (1u << COL_ATTR_STR));
 
-    /// This call initializes some data structures inside DWARFUnit that are needed for parsing attributes.
-    auto err = u->tryExtractDIEsIfNeeded(/*CUDieOnly*/ true);
-    if (err)
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse compilation unit entry: {}", llvm::toString(std::move(err)));
+namespace
+{
+
+/// Rows per chunk, as in the previous parser.
+constexpr size_t MAX_ROWS_PER_CHUNK = 65536;
+/// Entries of each tag/attribute/form name table; the value is the index into the table.
+constexpr size_t NAME_TABLE_SIZE = 65536;
+/// The first allocation of any sink is at least this big, to avoid a chain of tiny reallocations.
+constexpr size_t MIN_SINK_BYTES = 4096;
+/// A sanity bound for one reservation request; real allocations are limited by the memory tracker.
+constexpr size_t MAX_SINK_BYTES = size_t(1) << 46;
+
+/// Element width of every sink, as required by dwarf_rust.h.
+constexpr std::array<uint32_t, CH_DWARF_SINK_COUNT> SINK_ELEM_SIZE = {
+    8, /// OFFSET
+    4, /// SIZE
+    2, /// TAG
+    2, /// ANCESTOR_TAGS
+    8, /// ANCESTOR_OFFSETS
+    8, /// ANCESTOR_ARRAY_OFFSETS
+    1, /// NAME_CHARS
+    8, /// NAME_OFFSETS
+    1, /// LINKAGE_NAME_CHARS
+    8, /// LINKAGE_NAME_OFFSETS
+    1, /// DECL_FILE_CHARS
+    8, /// DECL_FILE_OFFSETS
+    4, /// DECL_LINE
+    8, /// RANGES_START
+    8, /// RANGES_END
+    8, /// RANGES_OFFSETS
+    2, /// ATTR_NAME
+    2, /// ATTR_FORM
+    8, /// ATTR_INT
+    1, /// ATTR_STR_CHARS
+    8, /// ATTR_STR_OFFSETS
+    8, /// ATTR_OFFSETS
+};
+
+/// A type-erased handle to the `PaddedPODArray` of a ClickHouse column that backs one Rust sink.
+struct SinkBinding
+{
+    void * array = nullptr;
+    uint32_t elem_size = 0;
+
+    bool isActive() const { return array != nullptr; }
+};
+
+template <typename T>
+SinkBinding bindArray(PaddedPODArray<T> & array)
+{
+    return SinkBinding{&array, static_cast<uint32_t>(sizeof(T))};
 }
 
-static llvm::StringRef removePrefix(llvm::StringRef s, size_t prefix_len)
+template <typename Func>
+void visitArray(const SinkBinding & binding, Func && func)
 {
-    if (s.size() >= prefix_len)
-        s = llvm::StringRef(s.data() + prefix_len, s.size() - prefix_len);
-    return s;
+    switch (binding.elem_size)
+    {
+        case 1:
+            func(*static_cast<PaddedPODArray<UInt8> *>(binding.array));
+            return;
+        case 2:
+            func(*static_cast<PaddedPODArray<UInt16> *>(binding.array));
+            return;
+        case 4:
+            func(*static_cast<PaddedPODArray<UInt32> *>(binding.array));
+            return;
+        case 8:
+            func(*static_cast<PaddedPODArray<UInt64> *>(binding.array));
+            return;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DWARF sink element size {}", binding.elem_size);
+    }
 }
 
-template <typename C>
-static void append(C & col, llvm::StringRef s)
+/// Describes a freshly created (empty) array to Rust.
+void describeEmptySink(const SinkBinding & binding, ChDwarfSink & sink)
 {
-    col->insertData(s.data(), s.size());
+    visitArray(binding, [&](auto & array)
+    {
+        if (!array.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A DWARF sink must start empty");
+        sink.data = array.capacity() ? reinterpret_cast<uint8_t *>(array.data()) : nullptr;
+        sink.len = 0;
+        sink.cap = array.capacity();
+        sink.elem_size = binding.elem_size;
+        sink.reserved = 0;
+    });
+}
+
+/// Grows the array to at least `min_cap` elements (geometrically, `PODArray` rounds the allocation up to a
+/// power of two), keeping the `sink.len` elements Rust has initialized so far, and refreshes the descriptor.
+void growSink(const SinkBinding & binding, ChDwarfSink & sink, size_t min_cap)
+{
+    if (!binding.isActive())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser asked to reserve space in a sink that is not part of the projection");
+    if (sink.elem_size != binding.elem_size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "The DWARF parser changed the element size of a sink from {} to {}", binding.elem_size, sink.elem_size);
+
+    visitArray(binding, [&](auto & array)
+    {
+        if (sink.len > array.capacity() || sink.cap != array.capacity())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The DWARF parser passed an inconsistent sink descriptor: len {}, cap {}, actual cap {}",
+                sink.len,
+                sink.cap,
+                array.capacity());
+
+        if (min_cap > array.capacity())
+        {
+            const size_t wanted = std::max(min_cap, MIN_SINK_BYTES / binding.elem_size);
+            if (wanted > MAX_SINK_BYTES / binding.elem_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser asked for an unreasonable sink capacity of {} elements", wanted);
+
+            /// `PODArray` only preserves the elements up to `size()`, so expose what Rust has written.
+            array.resize_assume_reserved(sink.len);
+            array.reserve(wanted);
+        }
+
+        sink.data = array.capacity() ? reinterpret_cast<uint8_t *>(array.data()) : nullptr;
+        sink.cap = array.capacity();
+    });
+}
+
+/// Makes the array's size equal to the number of elements Rust has initialized.
+void commitSink(const SinkBinding & binding, const ChDwarfSink & sink)
+{
+    if (sink.elem_size != binding.elem_size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "The DWARF parser changed the element size of a sink from {} to {}", binding.elem_size, sink.elem_size);
+
+    visitArray(binding, [&](auto & array)
+    {
+        const uint8_t * expected_data = array.capacity() ? reinterpret_cast<const uint8_t *>(array.data()) : nullptr;
+        if (sink.len > array.capacity() || sink.cap != array.capacity() || sink.data != expected_data)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The DWARF parser returned an inconsistent sink descriptor: len {}, cap {}, actual cap {}",
+                sink.len,
+                sink.cap,
+                array.capacity());
+
+        array.resize_assume_reserved(sink.len);
+    });
+}
+
+/// State shared with the C callbacks of one Rust call. Callbacks must not throw across the FFI boundary,
+/// so they store the first exception here and report a failure status; the caller rethrows it.
+struct RustCallbackContext
+{
+    explicit RustCallbackContext(const std::atomic<int> & is_stopped_) : is_stopped(is_stopped_) {}
+
+    const std::atomic<int> & is_stopped;
+    std::exception_ptr exception;
+
+    /// Output arrays of one chunk, by sink id; inactive sinks have no array.
+    std::array<SinkBinding, CH_DWARF_SINK_COUNT> sinks;
+
+    /// Output arrays of a name table.
+    SinkBinding name_chars;
+    SinkBinding name_offsets;
+};
+
+struct ErrorBuffer
+{
+    char data[CH_DWARF_ERROR_BUF_SIZE] = {};
+
+    const char * message()
+    {
+        data[CH_DWARF_ERROR_BUF_SIZE - 1] = '\0';
+        return data[0] ? data : "no error message";
+    }
+};
+
+}
+
+extern "C"
+{
+
+static int32_t chDwarfReserveBatch(
+    void * opaque, ChDwarfBatchSinks * sinks, const ChDwarfReserveRequest * requests, size_t request_count) noexcept
+{
+    auto & context = *static_cast<RustCallbackContext *>(opaque);
+    try
+    {
+        for (size_t i = 0; i < request_count; ++i)
+        {
+            const ChDwarfReserveRequest & request = requests[i];
+            if (request.sink_id >= CH_DWARF_SINK_COUNT)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser asked to reserve space in unknown sink {}", request.sink_id);
+            growSink(context.sinks[request.sink_id], sinks->sinks[request.sink_id], request.min_cap);
+        }
+        return CH_DWARF_RESERVE_OK;
+    }
+    catch (...)
+    {
+        if (!context.exception)
+            context.exception = std::current_exception();
+        return CH_DWARF_RESERVE_FAILED;
+    }
+}
+
+static int32_t chDwarfReserveNameTable(void * opaque, ChDwarfStringSink * sink, size_t min_chars_cap, size_t min_offsets_cap) noexcept
+{
+    auto & context = *static_cast<RustCallbackContext *>(opaque);
+    try
+    {
+        growSink(context.name_chars, sink->chars, min_chars_cap);
+        growSink(context.name_offsets, sink->offsets, min_offsets_cap);
+        return CH_DWARF_RESERVE_OK;
+    }
+    catch (...)
+    {
+        if (!context.exception)
+            context.exception = std::current_exception();
+        return CH_DWARF_RESERVE_FAILED;
+    }
+}
+
+static int32_t chDwarfCancel(void * opaque) noexcept
+{
+    auto & context = *static_cast<RustCallbackContext *>(opaque);
+    if (context.is_stopped.load())
+        return CH_DWARF_CANCEL_STOP;
+
+    try
+    {
+        /// Rust allocates only a bounded amount of scratch memory itself; this is where its work is
+        /// accounted against the query's memory limit and where the limit exception is raised.
+        CurrentMemoryTracker::check();
+    }
+    catch (...)
+    {
+        if (!context.exception)
+            context.exception = std::current_exception();
+        return CH_DWARF_CANCEL_FAILED;
+    }
+    return CH_DWARF_CANCEL_CONTINUE;
+}
+
+}
+
+namespace
+{
+
+/// Converts a failed Rust status into an exception. The first exception stored by a callback is the root
+/// cause of any callback failure, so it takes precedence over the generic status.
+[[noreturn]] void throwDwarfStatus(int32_t status, ErrorBuffer & error, const RustCallbackContext * context)
+{
+    if (context && context->exception)
+        std::rethrow_exception(context->exception);
+
+    switch (status)
+    {
+        case CH_DWARF_ERR_ELF:
+        case CH_DWARF_ERR_MISSING_REQUIRED_SECTION:
+            throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "{}", error.message());
+        case CH_DWARF_ERR_DWARF:
+        case CH_DWARF_ERR_MISSING_AUX_SECTION:
+            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "{}", error.message());
+        case CH_DWARF_ERR_CALLBACK:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser reported a callback failure, but no callback failed: {}", error.message());
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser failed with status {}: {}", status, error.message());
+    }
+}
+
+/// Builds a `ColumnUnique` with the 65536 names of tags/attributes/forms, produced by Rust in a single call.
+ColumnPtr makeNameDictionary(int32_t kind)
+{
+    auto names = ColumnString::create();
+
+    const std::atomic<int> never_stopped{0};
+    RustCallbackContext context(never_stopped);
+    context.name_chars = bindArray(names->getChars());
+    context.name_offsets = bindArray(names->getOffsets());
+
+    ChDwarfStringSink sink{};
+    describeEmptySink(context.name_chars, sink.chars);
+    describeEmptySink(context.name_offsets, sink.offsets);
+
+    ErrorBuffer error;
+    int32_t status = ch_dwarf_write_name_table(kind, &sink, chDwarfReserveNameTable, &context, error.data);
+    if (status != CH_DWARF_OK)
+        throwDwarfStatus(status, error, &context);
+
+    commitSink(context.name_chars, sink.chars);
+    commitSink(context.name_offsets, sink.offsets);
+    if (names->size() != NAME_TABLE_SIZE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser produced {} names instead of {}", names->size(), NAME_TABLE_SIZE);
+    if (names->getOffsets().back() != names->getChars().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser produced an inconsistent name table");
+
+    return ColumnUnique<ColumnString>::create(std::move(names), /*is_nullable*/ false);
+}
+
+const ColumnPtr & getSharedNameDictionary(int32_t kind)
+{
+    switch (kind)
+    {
+        case CH_DWARF_NAME_TABLE_TAG:
+        {
+            static const ColumnPtr dict = [] {
+                MemoryTrackerBlockerInThread blocker;
+                return makeNameDictionary(CH_DWARF_NAME_TABLE_TAG);
+            }();
+            return dict;
+        }
+        case CH_DWARF_NAME_TABLE_ATTR:
+        {
+            static const ColumnPtr dict = [] {
+                MemoryTrackerBlockerInThread blocker;
+                return makeNameDictionary(CH_DWARF_NAME_TABLE_ATTR);
+            }();
+            return dict;
+        }
+        case CH_DWARF_NAME_TABLE_FORM:
+        {
+            static const ColumnPtr dict = [] {
+                MemoryTrackerBlockerInThread blocker;
+                return makeNameDictionary(CH_DWARF_NAME_TABLE_FORM);
+            }();
+            return dict;
+        }
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DWARF name table kind {}", kind);
+    }
+}
+
+/// Converts a plain string column to `LowCardinality(String)` in bulk, fast-pathing empty strings
+/// (which always map to dictionary index 0) and consecutive duplicate strings (such as `decl_file`).
+MutableColumnPtr makeLowCardinalityString(const ColumnString & full_column)
+{
+    auto holder = ColumnString::create();
+    holder->insertDefault();
+    auto unique = ColumnUnique<ColumnString>::create(std::move(holder), /*is_nullable*/ false);
+    const auto & chars = full_column.getChars();
+    const auto & offsets = full_column.getOffsets();
+    const size_t n = offsets.size();
+
+    if (chars.empty())
+    {
+        auto positions_zero = ColumnVector<UInt16>::create(n, static_cast<UInt16>(0));
+        return ColumnLowCardinality::create(MutableColumnPtr(std::move(unique)), MutableColumnPtr(std::move(positions_zero)), /*is_shared=*/false);
+    }
+
+    auto positions_u16 = ColumnVector<UInt16>::create(n);
+    auto & pos16 = positions_u16->getData();
+    const char * prev_ptr = nullptr;
+    size_t prev_len = 0;
+    size_t prev_idx = 0;
+    size_t prev_off = 0;
+
+    for (size_t i = 0; i < n; ++i)
+    {
+        const size_t end_off = offsets[i];
+        const size_t len = end_off - prev_off;
+        size_t idx = 0;
+        if (len != 0)
+        {
+            const char * ptr = reinterpret_cast<const char *>(chars.data() + prev_off);
+            if (prev_ptr != nullptr && len == prev_len && memcmp(ptr, prev_ptr, len) == 0)
+            {
+                idx = prev_idx;
+            }
+            else
+            {
+                idx = unique->uniqueInsertData(ptr, len);
+                prev_ptr = ptr;
+                prev_len = len;
+                prev_idx = idx;
+            }
+            if (unlikely(idx > UINT16_MAX))
+            {
+                auto result = ColumnLowCardinality::create(
+                    MutableColumnPtr(ColumnUnique<ColumnString>::create(ColumnString::create()->cloneResized(1), /*is_nullable*/ false)),
+                    MutableColumnPtr(ColumnVector<UInt16>::create()),
+                    /*is_shared=*/false);
+                result->insertRangeFromFullColumn(full_column, 0, full_column.size());
+                return result;
+            }
+        }
+        pos16[i] = static_cast<UInt16>(idx);
+        prev_off = end_off;
+    }
+
+    return ColumnLowCardinality::create(MutableColumnPtr(std::move(unique)), MutableColumnPtr(std::move(positions_u16)), /*is_shared=*/false);
+}
+
 }
 
 DWARFBlockInputFormat::DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t num_threads_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), num_threads(num_threads_)
 {
-    auto tag_names = ColumnString::create();
-    constexpr std::string_view DW_TAG_ = "DW_TAG_";
-    tag_names->insertDefault();
-    for (uint32_t tag = 1; tag <= UINT16_MAX; ++tag)
-    {
-        auto name = removePrefix(llvm::dwarf::TagString(tag), DW_TAG_.size());
-        if (name.empty())
-        {
-            /// ColumnUnique requires values to be unique, even unused ones.
-            append(tag_names, "unknown: " + std::to_string(tag));
-        }
-        else
-        {
-            append(tag_names, name);
-        }
-    }
-    tag_dict_column = ColumnUnique<ColumnString>::create(std::move(tag_names), /*is_nullable*/ false);
-
-    auto attr_names = ColumnString::create();
-    constexpr std::string_view DW_AT_ = "DW_AT_";
-    attr_names->insertDefault();
-    for (uint32_t attr = 1; attr <= UINT16_MAX; ++attr)
-    {
-        auto name = removePrefix(llvm::dwarf::AttributeString(attr), DW_AT_.size());
-        if (name.empty())
-            append(attr_names, "unknown: " + std::to_string(attr));
-        else
-            append(attr_names, name);
-    }
-    attr_name_dict_column = ColumnUnique<ColumnString>::create(std::move(attr_names), /*is_nullable*/ false);
-
-    auto attr_forms = ColumnString::create();
-    constexpr std::string_view DW_FORM_ = "DW_FORM_";
-    attr_forms->insertDefault();
-    for (uint32_t form = 1; form <= UINT16_MAX; ++form)
-    {
-        auto name = removePrefix(llvm::dwarf::FormEncodingString(form), DW_FORM_.size());
-        if (name.empty())
-            append(attr_forms, "unknown: " + std::to_string(form));
-        else
-            append(attr_forms, name);
-    }
-    attr_form_dict_column = ColumnUnique<ColumnString>::create(std::move(attr_forms), /*is_nullable*/ false);
-
     /// Reject unknown column names up front instead of failing in the middle of parsing.
     for (const std::string & name : getPort().getHeader().getNames())
-        getColumnIdx(name);
+    {
+        size_t idx = getColumnIdx(name);
+        output_columns.push_back(idx);
+        need[idx] = true;
+    }
+
+    if (need[COL_TAG] || need[COL_ANCESTOR_TAGS])
+        tag_dict_column = getSharedNameDictionary(CH_DWARF_NAME_TABLE_TAG);
+    if (need[COL_ATTR_NAME])
+        attr_name_dict_column = getSharedNameDictionary(CH_DWARF_NAME_TABLE_ATTR);
+    if (need[COL_ATTR_FORM])
+        attr_form_dict_column = getSharedNameDictionary(CH_DWARF_NAME_TABLE_FORM);
+    for (size_t i = 0; i < COL_COUNT; ++i)
+    {
+        if (need[i])
+            projection.column_mask |= 1u << i;
+    }
+    const bool need_ancestors = need[COL_ANCESTOR_TAGS] || need[COL_ANCESTOR_OFFSETS];
+    const bool need_attrs = need[COL_ATTR_NAME] || need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR];
+    projection.need_ancestor_offsets_vec = need_ancestors ? 1 : 0;
+    projection.need_attr_offsets_vec = need_attrs ? 1 : 0;
+
+    sink_active[CH_DWARF_SINK_OFFSET] = need[COL_OFFSET];
+    sink_active[CH_DWARF_SINK_SIZE] = need[COL_SIZE];
+    sink_active[CH_DWARF_SINK_TAG] = need[COL_TAG];
+    sink_active[CH_DWARF_SINK_ANCESTOR_TAGS] = need[COL_ANCESTOR_TAGS];
+    sink_active[CH_DWARF_SINK_ANCESTOR_OFFSETS] = need[COL_ANCESTOR_OFFSETS];
+    sink_active[CH_DWARF_SINK_ANCESTOR_ARRAY_OFFSETS] = need_ancestors;
+    sink_active[CH_DWARF_SINK_NAME_CHARS] = sink_active[CH_DWARF_SINK_NAME_OFFSETS] = need[COL_NAME];
+    sink_active[CH_DWARF_SINK_LINKAGE_NAME_CHARS] = sink_active[CH_DWARF_SINK_LINKAGE_NAME_OFFSETS] = need[COL_LINKAGE_NAME];
+    sink_active[CH_DWARF_SINK_DECL_FILE_CHARS] = sink_active[CH_DWARF_SINK_DECL_FILE_OFFSETS] = need[COL_DECL_FILE];
+    sink_active[CH_DWARF_SINK_DECL_LINE] = need[COL_DECL_LINE];
+    sink_active[CH_DWARF_SINK_RANGES_START] = sink_active[CH_DWARF_SINK_RANGES_END] = sink_active[CH_DWARF_SINK_RANGES_OFFSETS]
+        = need[COL_RANGES];
+    sink_active[CH_DWARF_SINK_ATTR_NAME] = need[COL_ATTR_NAME];
+    sink_active[CH_DWARF_SINK_ATTR_FORM] = need[COL_ATTR_FORM];
+    sink_active[CH_DWARF_SINK_ATTR_INT] = need[COL_ATTR_INT];
+    sink_active[CH_DWARF_SINK_ATTR_STR_CHARS] = sink_active[CH_DWARF_SINK_ATTR_STR_OFFSETS] = need[COL_ATTR_STR];
+    sink_active[CH_DWARF_SINK_ATTR_OFFSETS] = need_attrs;
 }
 
 DWARFBlockInputFormat::~DWARFBlockInputFormat()
 {
     stopThreads();
+    releaseState();
 }
 
-void DWARFBlockInputFormat::initELF()
+void DWARFBlockInputFormat::onCancel() noexcept
 {
-    /// If it's a local file, mmap it.
+    {
+        /// Taking the mutex orders the flag with the waiters' predicate checks, so that no wake-up is lost.
+        std::lock_guard lock(mutex);
+        is_stopped = 1;
+    }
+    deliver_chunk.notify_all();
+    wake_up_threads.notify_all();
+}
+
+bool DWARFBlockInputFormat::loadInput()
+{
+    /// If it's a local file, mmap it. The ReadBuffer does not expose its descriptor, so (like the previous
+    /// parser) we map a dedicated read-only view of the whole file by its path.
     if (ReadBufferFromFileBase * file_in = dynamic_cast<ReadBufferFromFileBase *>(in))
     {
         size_t offset = 0;
         if (file_in->isRegularLocalFile(&offset) && offset == 0)
         {
-            elf.emplace(file_in->getFileName());
-            return;
+            mapped_file.emplace(file_in->getFileName(), 0);
+            input_data = reinterpret_cast<const uint8_t *>(mapped_file->getData());
+            input_size = mapped_file->getLength();
+            return true;
         }
     }
 
-    /// If can't mmap, read the entire file into memory.
-    /// We could read just the .debug_* sections, but typically they take up most of the binary anyway (60% for clickhouse debug build).
+    /// If can't mmap, read the entire input into memory. It is never resized after this point.
     {
         auto buf = WriteBufferFromVector<PODArray<char>>(file_contents);
         copyData(*in, buf, is_stopped);
+        buf.finalize();
     }
-    elf.emplace(file_contents.data(), file_contents.size(), "<input>");
+    if (is_stopped)
+    {
+        PODArray<char> empty;
+        file_contents.swap(empty);
+        return false;
+    }
+    input_data = reinterpret_cast<const uint8_t *>(file_contents.data());
+    input_size = file_contents.size();
+    return true;
 }
 
 void DWARFBlockInputFormat::initializeIfNeeded()
 {
-    if (elf.has_value())
+    if (initialized || is_stopped)
         return;
 
     LOG_DEBUG(getLogger("DWARF"), "Opening ELF");
-    initELF();
-    if (is_stopped)
-        return;
 
-    auto info_section = elf->findSectionByName(".debug_info");
-    if (!info_section.has_value())
-        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "No .debug_info section");
-    auto abbrev_section = elf->findSectionByName(".debug_abbrev");
-    if (!abbrev_section.has_value())
-        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "No .debug_abbrev section");
-    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", static_cast<double>(abbrev_section->size()) * 1. / (1 << 20), static_cast<double>(info_section->size()) * 1. / (1 << 20));
+    bool opened = false;
+    SCOPE_EXIT({
+        if (!opened)
+            releaseState();
+    });
 
-    /// (The StringRef points into Elf's mmap of the whole file, or into file_contents.)
-    extractor.emplace(llvm::StringRef(info_section->begin(), info_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
+    if (!loadInput())
+        return; /// Cancelled while reading the input; the caller sees `is_stopped`.
 
-    if (auto line_section = elf->findSectionByName(".debug_line"))
-        debug_line_extractor.emplace(llvm::StringRef(line_section->begin(), line_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
-    if (auto addr_section = elf->findSectionByName(".debug_addr"))
-        debug_addr_section.emplace(addr_section->begin(), addr_section->size());
-    if (auto rnglists_section = elf->findSectionByName(".debug_rnglists"))
-        debug_rnglists_extractor.emplace(llvm::StringRef(rnglists_section->begin(), rnglists_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
-    if (auto ranges_section = elf->findSectionByName(".debug_ranges"))
-        debug_ranges_extractor.emplace(llvm::StringRef(ranges_section->begin(), ranges_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
+    ErrorBuffer error;
+    {
+        ChDwarfOptions options{};
+        ChDwarfFile * raw_file = nullptr;
+        int32_t status = ch_dwarf_file_open(input_data, input_size, &options, &raw_file, error.data);
+        file.reset(raw_file); /// Owned from here on, even on error.
+        if (status != CH_DWARF_OK)
+            throwDwarfStatus(status, error, nullptr);
+        if (!file)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser returned no file handle");
+    }
+    CurrentMemoryTracker::check();
 
-    llvm::StringMap<std::unique_ptr<llvm::MemoryBuffer>> sections;
-    elf->iterateSections([&](const Elf::Section & section, size_t /*idx*/)
-        {
-            std::string name = section.name();
-            std::string name_without_dot = name.starts_with(".") ? name.substr(1) : name;
-            sections.try_emplace(name_without_dot, llvm::MemoryBuffer::getMemBuffer(
-                llvm::StringRef(section.begin(), section.size()), /*BufferName*/ name, /*RequiresNullTerminator*/ false));
-            return false;
-        });
-    dwarf_context = llvm::DWARFContext::create(sections, /*AddrSize*/ 8);
+    size_t unit_count = 0;
+    {
+        int32_t status = ch_dwarf_file_unit_count(file.get(), &unit_count);
+        if (status != CH_DWARF_OK)
+            throwDwarfStatus(status, error, nullptr);
+    }
 
-    for (std::unique_ptr<llvm::DWARFUnit> & unit : dwarf_context->info_section_units())
-        units_queue.emplace_back(unit.get());
+    for (size_t i = 0; i < unit_count; ++i)
+    {
+        UnitState unit;
+        ChDwarfUnit * raw_unit = nullptr;
+        uint64_t unit_offset = 0;
+        int32_t status = ch_dwarf_unit_open(file.get(), i, &raw_unit, &unit_offset, error.data);
+        unit.handle.reset(raw_unit); /// Owned from here on, even on error.
+        if (status != CH_DWARF_OK)
+            throwDwarfStatus(status, error, nullptr);
+        if (!unit.handle)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser returned no unit handle");
+        CurrentMemoryTracker::check();
+
+        unit.unit_offset = unit_offset;
+        units_queue.push_back(std::move(unit));
+    }
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
+
+    /// From here on the destructor/`resetParser` own the cleanup, after joining the workers.
+    initialized = true;
+    opened = true;
 
     runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
     for (size_t i = 0; i < num_threads; ++i)
@@ -310,20 +725,25 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
                         lock.unlock();
 
-                        size_t offset_before = unit.offset;
-                        Chunk chunk = parseEntries(unit);
-                        size_t offset_after = unit.offset;
+                        ChunkResult result = parseChunk(unit);
 
                         lock.lock();
 
                         --units_in_progress;
-                        if (chunk)
+                        if (result.chunk)
                         {
-                            delivery_queue.emplace_back(std::move(chunk), offset_after - offset_before);
+                            delivery_queue.emplace_back(std::move(result.chunk), result.bytes_advanced);
                             deliver_chunk.notify_one();
                         }
-                        if (!unit.eof())
+                        if (!result.finished)
+                        {
                             units_queue.push_front(std::move(unit));
+                        }
+                        else
+                        {
+                            /// The last unit may complete without a final chunk, and `read` must notice.
+                            deliver_chunk.notify_all();
+                        }
                     }
                 }
                 catch (...)
@@ -346,71 +766,27 @@ void DWARFBlockInputFormat::stopThreads()
         runner->waitForAllToFinishAndRethrowFirstError();
 }
 
-static inline void throwIfError(llvm::Error & e, const char * what)
+void DWARFBlockInputFormat::releaseState()
 {
-    if (!e)
-        return;
-    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse {}: {}", what, llvm::toString(std::move(e)));
-}
-
-llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
-    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
-    const UnitState & unit) const
-{
-    auto val = llvm::DWARFFormValue::createFromSValue(
-        attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
-    if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
-            "Failed to parse attribute {} of form {} at offset {}",
-                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
-    return val;
-}
-
-void DWARFBlockInputFormat::skipAttribute(
-    const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
-    const UnitState & unit) const
-{
-    if (attr.Form == llvm::dwarf::DW_FORM_strx3)
+    /// Destruction order: workers are already joined; free the unit handles, then the file handle,
+    /// and only then the bytes they point into.
+    delivery_queue.clear();
+    units_queue.clear();
+    file.reset();
+    mapped_file.reset();
     {
-        /// DWARFFormValue::skipValue() fails on DW_FORM_strx3 because the `switch` statement is
-        /// missing this form for some reason. Maybe it's a bug in llvm.
-        /// Use extractValue() to work around.
-        parseAttribute(attr, offset, unit);
+        PODArray<char> empty;
+        file_contents.swap(empty);
     }
-    else
-    {
-        if (!llvm::DWARFFormValue::skipValue(
-            attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
-                    "Failed to skip attribute {} of form {} at offset {}",
-                    llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
-    }
+    input_data = nullptr;
+    input_size = 0;
 }
 
-uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const llvm::DWARFFormValue & val, const UnitState & unit)
+DWARFBlockInputFormat::ChunkResult DWARFBlockInputFormat::parseChunk(UnitState & unit)
 {
-    if (val.getForm() == llvm::dwarf::DW_FORM_addr)
-        return val.getRawUValue();
-    if (val.getForm() == llvm::dwarf::DW_FORM_addrx ||
-        (val.getForm() >= llvm::dwarf::DW_FORM_addrx1 &&
-         val.getForm() <= llvm::dwarf::DW_FORM_addrx4))
-        return fetchFromDebugAddr(unit.debug_addr_base, val.getRawUValue());
-    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Form {} for {} is not supported",
-        llvm::dwarf::FormEncodingString(val.getForm()).operator std::string_view(),
-        llvm::dwarf::AttributeString(attr).operator std::string_view());
-}
+    RustCallbackContext context(is_stopped);
 
-Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
-{
-    const auto & header = getPort().getHeader();
-    std::array<bool, COL_COUNT> need{};
-    for (const std::string & name : header.getNames())
-        need[getColumnIdx(name)] = true;
-
-    /// For parallel arrays, we nominate one of them to be responsible for populating the offsets vector.
-    need[COL_ATTR_NAME] = need[COL_ATTR_NAME] || need[COL_ATTR_FORM] || need[COL_ATTR_INT] || need[COL_ATTR_STR];
-    need[COL_ANCESTOR_TAGS] = need[COL_ANCESTOR_TAGS] || need[COL_ANCESTOR_OFFSETS];
-
+    /// Fresh empty column buffers; Rust appends to the arrays of the ones the projection needs.
     auto col_offset = ColumnVector<UInt64>::create();
     auto col_size = ColumnVector<UInt32>::create();
     auto col_tag = ColumnVector<UInt16>::create();
@@ -419,7 +795,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto col_ancestor_array_offsets = ColumnVector<UInt64>::create();
     auto col_name = ColumnString::create();
     auto col_linkage_name = ColumnString::create();
-    ColumnIndex col_decl_file;
+    auto col_decl_file = ColumnString::create(); /// full strings, converted to LowCardinality below
     auto col_decl_line = ColumnVector<UInt32>::create();
     auto col_ranges_start = ColumnVector<UInt64>::create();
     auto col_ranges_end = ColumnVector<UInt64>::create();
@@ -427,344 +803,161 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
     auto col_attr_name = ColumnVector<UInt16>::create();
     auto col_attr_form = ColumnVector<UInt16>::create();
     auto col_attr_int = ColumnVector<UInt64>::create();
-    auto col_attr_str = ColumnLowCardinality::create(
-        MutableColumnPtr(ColumnUnique<ColumnString>::create(ColumnString::create()->cloneResized(1), /*is_nullable*/ false)),
-        MutableColumnPtr(ColumnVector<UInt16>::create()),
-        /*is_shared=*/false);
+    auto col_attr_str = ColumnString::create(); /// full strings, converted to LowCardinality below
     auto col_attr_offsets = ColumnVector<UInt64>::create();
-    size_t num_rows = 0;
-    auto err = llvm::Error::success();
 
-    while (num_rows < 65536)
+    auto bind = [&](ChDwarfSinkId id, auto & array)
     {
-        ++num_rows;
-        uint64_t die_offset = unit.offset;
-        if (need[COL_OFFSET])
-            col_offset->insertValue(die_offset);
-        if (need[COL_ANCESTOR_TAGS])
+        if (sink_active[id])
+            context.sinks[id] = bindArray(array);
+    };
+    bind(CH_DWARF_SINK_OFFSET, col_offset->getData());
+    bind(CH_DWARF_SINK_SIZE, col_size->getData());
+    bind(CH_DWARF_SINK_TAG, col_tag->getData());
+    bind(CH_DWARF_SINK_ANCESTOR_TAGS, col_ancestor_tags->getData());
+    bind(CH_DWARF_SINK_ANCESTOR_OFFSETS, col_ancestor_dwarf_offsets->getData());
+    bind(CH_DWARF_SINK_ANCESTOR_ARRAY_OFFSETS, col_ancestor_array_offsets->getData());
+    bind(CH_DWARF_SINK_NAME_CHARS, col_name->getChars());
+    bind(CH_DWARF_SINK_NAME_OFFSETS, col_name->getOffsets());
+    bind(CH_DWARF_SINK_LINKAGE_NAME_CHARS, col_linkage_name->getChars());
+    bind(CH_DWARF_SINK_LINKAGE_NAME_OFFSETS, col_linkage_name->getOffsets());
+    bind(CH_DWARF_SINK_DECL_FILE_CHARS, col_decl_file->getChars());
+    bind(CH_DWARF_SINK_DECL_FILE_OFFSETS, col_decl_file->getOffsets());
+    bind(CH_DWARF_SINK_DECL_LINE, col_decl_line->getData());
+    bind(CH_DWARF_SINK_RANGES_START, col_ranges_start->getData());
+    bind(CH_DWARF_SINK_RANGES_END, col_ranges_end->getData());
+    bind(CH_DWARF_SINK_RANGES_OFFSETS, col_ranges_offsets->getData());
+    bind(CH_DWARF_SINK_ATTR_NAME, col_attr_name->getData());
+    bind(CH_DWARF_SINK_ATTR_FORM, col_attr_form->getData());
+    bind(CH_DWARF_SINK_ATTR_INT, col_attr_int->getData());
+    bind(CH_DWARF_SINK_ATTR_STR_CHARS, col_attr_str->getChars());
+    bind(CH_DWARF_SINK_ATTR_STR_OFFSETS, col_attr_str->getOffsets());
+    bind(CH_DWARF_SINK_ATTR_OFFSETS, col_attr_offsets->getData());
+
+    ChDwarfBatchSinks sinks{};
+    for (size_t id = 0; id < CH_DWARF_SINK_COUNT; ++id)
+    {
+        if (sink_active[id])
         {
-            for (size_t i = unit.stack.size() - 1; i != UINT64_MAX; --i)
-            {
-                col_ancestor_tags->insertValue(unit.stack[i].tag);
-                if (need[COL_ANCESTOR_OFFSETS])
-                    col_ancestor_dwarf_offsets->insertValue(unit.stack[i].offset);
-            }
-            col_ancestor_array_offsets->insertValue(col_ancestor_tags->size());
-        }
-
-        uint64_t abbrev_code = extractor->getULEB128(&unit.offset, &err);
-        throwIfError(err, "DIE header");
-
-        if (abbrev_code == 0)
-        {
-            if (need[COL_SIZE])
-                col_size->insertValue(static_cast<UInt32>(unit.offset - die_offset));
-            if (need[COL_TAG])
-                col_tag->insertValue(0); // "null"
-
-            if (need[COL_NAME]) col_name->insertDefault();
-            if (need[COL_LINKAGE_NAME]) col_linkage_name->insertDefault();
-            if (need[COL_DECL_FILE]) col_decl_file.insertIndex(0);
-            if (need[COL_DECL_LINE]) col_decl_line->insertDefault();
-            if (need[COL_RANGES]) col_ranges_offsets->insertValue(col_ranges_start->size());
-            if (need[COL_ATTR_NAME]) col_attr_offsets->insertValue(col_attr_name->size());
-
-            if (unit.stack.empty())
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Stack underflow");
-            unit.stack.pop_back();
-        }
-        else
-        {
-            const llvm::DWARFAbbreviationDeclaration * abbrev = unit.abbrevs->getAbbreviationDeclaration(static_cast<uint32_t>(abbrev_code));
-            if (abbrev == nullptr || abbrev_code > UINT32_MAX)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Abbrev code in DIE header is out of bounds: {}, offset {}", abbrev_code, unit.offset);
-
-            auto tag = abbrev->getTag();
-            if (need[COL_TAG])
-                col_tag->insertValue(tag);
-
-            if (tag == llvm::dwarf::DW_TAG_compile_unit)
-            {
-                /// Pre-parse DW_AT_addr_base and DW_AT_rnglists_base because other attributes may
-                /// rely on them. (Why couldn't DWARF just promise that these attributes must appear
-                /// before any attributes that depend on them?)
-                uint64_t offset = unit.offset;
-                std::optional<llvm::DWARFFormValue> low_pc;
-                for (auto attr : abbrev->attributes())
-                {
-                    if (attr.Attr == llvm::dwarf::DW_AT_addr_base ||
-                        attr.Attr == llvm::dwarf::DW_AT_rnglists_base)
-                    {
-                        auto val = parseAttribute(attr, &offset, unit);
-                        if (attr.Attr == llvm::dwarf::DW_AT_addr_base)
-                            unit.debug_addr_base = val.getRawUValue();
-                        else
-                            unit.rnglists_base = val.getRawUValue();
-                    }
-                    else if (attr.Attr == llvm::dwarf::DW_AT_low_pc)
-                        low_pc = parseAttribute(attr, &offset, unit);
-                    else
-                        skipAttribute(attr, &offset, unit);
-                }
-                /// May use addr_base.
-                if (low_pc.has_value())
-                    unit.base_address = parseAddress(llvm::dwarf::DW_AT_low_pc, *low_pc, unit);
-            }
-
-            bool need_name = need[COL_NAME];
-            bool need_linkage_name = need[COL_LINKAGE_NAME];
-            bool need_decl_file = need[COL_DECL_FILE];
-            bool need_decl_line = need[COL_DECL_LINE];
-
-            /// Address ranges can be encoded in the following ways:
-            ///  * DW_AT_ranges - list of ranges; points to other sections, nontrivial to parse;
-            ///                   DW_AT_low_pc may also be present, used as base address during parsing
-            ///  * [DW_AT_low_pc, DW_AT_high_pc) if DW_AT_high_pc has form "address"
-            ///  * [DW_AT_low_pc, DW_AT_low_pc + DW_AT_high_pc) if DW_AT_high_pc has form "constant"
-            ///  * [DW_AT_low_pc, DW_AT_low_pc + 1) if DW_AT_high_pc is absent
-            bool need_ranges = need[COL_RANGES];
-            std::optional<UInt64> ranges;
-            bool ranges_rnglistx = false; // `ranges` has an extra indirection through offsets table
-            std::optional<UInt64> low_pc;
-            std::optional<UInt64> high_pc;
-            bool relative_high_pc = false;
-
-            for (auto attr : abbrev->attributes())
-            {
-                auto val = parseAttribute(attr, &unit.offset, unit);
-
-                if (need[COL_ATTR_NAME])
-                    col_attr_name->insertValue(attr.Attr);
-                /// Note that in case of DW_FORM_implicit_const val.getForm() is different from attr.Form.
-                /// Not sure which one would be more useful in the attr_form column. Guessing attr.Form for now.
-                if (need[COL_ATTR_FORM])
-                    col_attr_form->insertValue(attr.Form);
-
-                if (attr.Attr == llvm::dwarf::DW_AT_stmt_list && unit.filename_table == nullptr)
-                {
-                    /// We expect that this attribute appears before any attributes that point into the filename table.
-                    auto offset = val.getAsSectionOffset();
-                    if (offset.has_value())
-                        parseFilenameTable(unit, offset.value());
-                }
-
-                switch (val.getForm()) // (may be different from attr.Form because of DW_FORM_indirect)
-                {
-                    /// A 64-bit value.
-                    case llvm::dwarf::DW_FORM_data2:
-                    case llvm::dwarf::DW_FORM_data4:
-                    case llvm::dwarf::DW_FORM_data8:
-                    case llvm::dwarf::DW_FORM_data1:
-                    case llvm::dwarf::DW_FORM_sdata:
-                    case llvm::dwarf::DW_FORM_udata:
-                    case llvm::dwarf::DW_FORM_data16:
-                    case llvm::dwarf::DW_FORM_flag:
-                    case llvm::dwarf::DW_FORM_flag_present:
-                    case llvm::dwarf::DW_FORM_loclistx: // points to .debug_loclists
-                    case llvm::dwarf::DW_FORM_rnglistx: // points to .debug_rnglists
-                    case llvm::dwarf::DW_FORM_sec_offset: // points to some other section, depending on attr.Attr
-                    case llvm::dwarf::DW_FORM_implicit_const:
-                        if (need[COL_ATTR_INT]) col_attr_int->insertValue(val.getRawUValue());
-
-                        if (attr.Attr == llvm::dwarf::DW_AT_decl_line && std::exchange(need_decl_line, false))
-                            col_decl_line->insertValue(static_cast<UInt32>(val.getRawUValue()));
-
-                        if (attr.Attr == llvm::dwarf::DW_AT_high_pc)
-                        {
-                            high_pc = val.getRawUValue();
-                            relative_high_pc = true;
-                        }
-
-                        if (attr.Attr == llvm::dwarf::DW_AT_ranges)
-                        {
-                            ranges = val.getRawUValue();
-                            ranges_rnglistx = val.getForm() == llvm::dwarf::DW_FORM_rnglistx;
-                        }
-
-                        /// Some attribute values are indices into lookup tables that we can stringify usefully.
-                        if ((attr.Attr == llvm::dwarf::DW_AT_decl_file || attr.Attr == llvm::dwarf::DW_AT_call_file) &&
-                            val.getRawUValue() < unit.filename_table_size) // filename
-                        {
-                            UInt64 idx = val.getRawUValue() + 1;
-                            if (attr.Attr == llvm::dwarf::DW_AT_decl_file && std::exchange(need_decl_file, false))
-                                col_decl_file.insertIndex(idx);
-
-                            if (need[COL_ATTR_STR])
-                            {
-                                auto data = unit.filename_table->getDataAt(idx);
-                                col_attr_str->insertData(data.data(), data.size());
-                            }
-                        }
-                        else if (need[COL_ATTR_STR])
-                        {
-                            static constexpr std::string_view DW_LANG_ = "DW_LANG_";
-                            static constexpr std::string_view DW_ATE_ = "DW_ATE_";
-                            if (attr.Attr == llvm::dwarf::DW_AT_language) // programming language
-                                append(col_attr_str, removePrefix(llvm::dwarf::LanguageString(static_cast<uint32_t>(val.getRawUValue())),
-                                    DW_LANG_.size()));
-                            else if (attr.Attr == llvm::dwarf::DW_AT_encoding) // primitive type
-                                append(col_attr_str, removePrefix(llvm::dwarf::AttributeEncodingString(static_cast<uint32_t>(val.getRawUValue())),
-                                    DW_ATE_.size()));
-                            else
-                                col_attr_str->insertDefault();
-                        }
-                        break;
-
-                    /// An address, i.e. just a 64-bit value.
-                    /// May have indirection to .debug_addr section.
-                    case llvm::dwarf::DW_FORM_addr:
-                    case llvm::dwarf::DW_FORM_addrx:
-                    case llvm::dwarf::DW_FORM_addrx1:
-                    case llvm::dwarf::DW_FORM_addrx2:
-                    case llvm::dwarf::DW_FORM_addrx3:
-                    case llvm::dwarf::DW_FORM_addrx4:
-                    case llvm::dwarf::DW_FORM_GNU_addr_index:
-                    case llvm::dwarf::DW_FORM_LLVM_addrx_offset:
-                        if (need[COL_ATTR_INT]) col_attr_int->insertValue(val.getAsAddress().value_or(0));
-                        if (need[COL_ATTR_STR]) col_attr_str->insertDefault();
-
-                        if (need_ranges && (attr.Attr == llvm::dwarf::DW_AT_low_pc || attr.Attr == llvm::dwarf::DW_AT_high_pc))
-                        {
-                            UInt64 addr = parseAddress(attr.Attr, val, unit);
-                            if (attr.Attr == llvm::dwarf::DW_AT_low_pc)
-                                low_pc = addr;
-                            else
-                                high_pc = addr;
-                        }
-
-                        break;
-
-                    /// A byte string.
-                    case llvm::dwarf::DW_FORM_block2:
-                    case llvm::dwarf::DW_FORM_block4:
-                    case llvm::dwarf::DW_FORM_block:
-                    case llvm::dwarf::DW_FORM_block1:
-                    case llvm::dwarf::DW_FORM_exprloc: // DWARF expression
-                    {
-                        auto slice = val.getAsBlock().value_or(llvm::ArrayRef<uint8_t>());
-                        if (need[COL_ATTR_STR]) col_attr_str->insertData(reinterpret_cast<const char *>(slice.data()), slice.size());
-                        if (need[COL_ATTR_INT]) col_attr_int->insertDefault();
-                        break;
-                    }
-
-                    /// A text string.
-                    /// May have indirection to .debug_str or .debug_line_str.
-                    case llvm::dwarf::DW_FORM_string:
-                    case llvm::dwarf::DW_FORM_strp:
-                    case llvm::dwarf::DW_FORM_strx:
-                    case llvm::dwarf::DW_FORM_strp_sup:
-                    case llvm::dwarf::DW_FORM_line_strp:
-                    case llvm::dwarf::DW_FORM_strx1:
-                    case llvm::dwarf::DW_FORM_strx2:
-                    case llvm::dwarf::DW_FORM_strx3:
-                    case llvm::dwarf::DW_FORM_strx4:
-                    case llvm::dwarf::DW_FORM_GNU_str_index:
-                    case llvm::dwarf::DW_FORM_GNU_strp_alt:
-                    {
-                        auto res = val.getAsCString();
-                        if (auto e = res.takeError())
-                            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
-                                "Error parsing string attribute: {}", llvm::toString(std::move(e)));
-                        size_t len = strlen(*res);
-
-                        if (attr.Attr == llvm::dwarf::DW_AT_name)
-                        {
-                            if (std::exchange(need_name, false))
-                                col_name->insertData(*res, len);
-                            if (tag == llvm::dwarf::DW_TAG_compile_unit)
-                                unit.unit_name = *res;
-                        }
-                        if (attr.Attr == llvm::dwarf::DW_AT_linkage_name && std::exchange(need_linkage_name, false))
-                            col_linkage_name->insertData(*res, len);
-
-                        if (need[COL_ATTR_STR]) col_attr_str->insertData(*res, len);
-                        if (need[COL_ATTR_INT]) col_attr_int->insertDefault();
-                        break;
-                    }
-
-                    /// Offset of another entry in .debug_info.
-                    case llvm::dwarf::DW_FORM_ref_addr:
-                    case llvm::dwarf::DW_FORM_ref1:
-                    case llvm::dwarf::DW_FORM_ref2:
-                    case llvm::dwarf::DW_FORM_ref4:
-                    case llvm::dwarf::DW_FORM_ref8:
-                    case llvm::dwarf::DW_FORM_ref_udata:
-                    case llvm::dwarf::DW_FORM_ref_sup4:
-                    case llvm::dwarf::DW_FORM_ref_sig8:
-                    case llvm::dwarf::DW_FORM_ref_sup8:
-                    case llvm::dwarf::DW_FORM_GNU_ref_alt:
-                        // If the offset is relative to the current unit, we convert it to be relative to the .debug_info
-                        // section start. This seems more convenient for the user (e.g. for JOINs), but it's
-                        // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
-                        if (need[COL_ATTR_INT])
-                        {
-                            uint64_t ref = 0;
-                            if (std::optional<uint64_t> offset = val.getAsRelativeReference())
-                                ref = val.getUnit()->getOffset() + *offset;
-                            else if (offset = val.getAsDebugInfoReference(); offset)
-                                ref = *offset;
-                            else
-                                ref = 0;
-
-                            col_attr_int->insertValue(ref);
-                        }
-                        if (need[COL_ATTR_STR]) col_attr_str->insertDefault();
-                        break;
-
-                    default:
-                        if (need[COL_ATTR_INT]) col_attr_int->insertDefault();
-                        if (need[COL_ATTR_STR]) col_attr_str->insertDefault();
-                }
-            }
-
-            if (need[COL_SIZE])
-                col_size->insertValue(static_cast<UInt32>(unit.offset - die_offset));
-            if (need[COL_ATTR_NAME])
-                col_attr_offsets->insertValue(col_attr_name->size());
-
-            if (need_name) col_name->insertDefault();
-            if (need_linkage_name) col_linkage_name->insertDefault();
-            if (need_decl_file) col_decl_file.insertIndex(0);
-            if (need_decl_line) col_decl_line->insertDefault();
-
-            if (need_ranges)
-            {
-                if (ranges.has_value())
-                    parseRanges(*ranges, ranges_rnglistx, unit, col_ranges_start, col_ranges_end);
-                else if (low_pc.has_value())
-                {
-                    UInt64 high = 0;
-                    if (!high_pc.has_value())
-                        high = *low_pc + 1;
-                    else if (relative_high_pc)
-                        high = *low_pc + *high_pc ;
-                    else
-                        high = *high_pc;
-                    col_ranges_start->insertValue(*low_pc);
-                    col_ranges_end->insertValue(high);
-                }
-            }
-            if (need[COL_RANGES]) col_ranges_offsets->insertValue(col_ranges_start->size());
-
-            if (abbrev->hasChildren())
-                unit.stack.push_back(StackEntry{.offset = die_offset, .tag = tag});
-        }
-
-        if (unit.stack.empty())
-        {
-            if (!unit.eof())
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Unexpected end of DIE tree at offset {} != {}", unit.offset, unit.end_offset);
-            break;
+            if (context.sinks[id].elem_size != SINK_ELEM_SIZE[id])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected element size of DWARF sink {}", id);
+            describeEmptySink(context.sinks[id], sinks.sinks[id]);
         }
     }
+
+    ChDwarfProgress progress{};
+    ErrorBuffer error;
+    int32_t status = ch_dwarf_unit_parse_chunk(
+        file.get(),
+        unit.handle.get(),
+        &projection,
+        &sinks,
+        chDwarfReserveBatch,
+        chDwarfCancel,
+        &context,
+        MAX_ROWS_PER_CHUNK,
+        &progress,
+        error.data);
+
+    if (status == CH_DWARF_CANCELLED)
+    {
+        /// The partially filled batch is discarded together with the local columns.
+        if (!is_stopped)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser reported cancellation, but the read was not cancelled");
+        ChunkResult cancelled;
+        cancelled.finished = true;
+        return cancelled;
+    }
+    if (status != CH_DWARF_CHUNK_READY && status != CH_DWARF_UNIT_DONE)
+        throwDwarfStatus(status, error, &context);
+    if (context.exception)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A DWARF parser callback failed, but the parser reported success");
+
+    const bool unit_done = status == CH_DWARF_UNIT_DONE;
+    const size_t num_rows = progress.rows;
+    if (progress.unit_done != (unit_done ? 1u : 0u))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser returned an inconsistent unit completion flag");
+    if (num_rows > MAX_ROWS_PER_CHUNK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser returned {} rows, more than {}", num_rows, MAX_ROWS_PER_CHUNK);
+    if (num_rows == 0 && !unit_done)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser made no progress");
+
+    /// Rust only keeps the unit name valid until the next call on this unit, so copy it.
+    if (progress.unit_name_ptr)
+        unit.unit_name.assign(reinterpret_cast<const char *>(progress.unit_name_ptr), progress.unit_name_len);
+
+    ChunkResult result;
+    result.bytes_advanced = progress.bytes_advanced;
+    result.finished = unit_done;
+    if (num_rows == 0)
+        return result;
+
+    /// Adopt what Rust initialized, then check that the parallel buffers are consistent.
+    for (size_t id = 0; id < CH_DWARF_SINK_COUNT; ++id)
+    {
+        if (sink_active[id])
+            commitSink(context.sinks[id], sinks.sinks[id]);
+        else if (sinks.sinks[id].len != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser wrote to DWARF sink {}, which is not part of the projection", id);
+    }
+
+    auto expect_size = [&](ChDwarfSinkId id, size_t expected)
+    {
+        if (sink_active[id] && sinks.sinks[id].len != expected)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "The DWARF parser returned {} elements in sink {}, expected {}",
+                sinks.sinks[id].len,
+                static_cast<int>(id),
+                expected);
+    };
+    for (ChDwarfSinkId id :
+         {CH_DWARF_SINK_OFFSET,
+          CH_DWARF_SINK_SIZE,
+          CH_DWARF_SINK_TAG,
+          CH_DWARF_SINK_ANCESTOR_ARRAY_OFFSETS,
+          CH_DWARF_SINK_NAME_OFFSETS,
+          CH_DWARF_SINK_LINKAGE_NAME_OFFSETS,
+          CH_DWARF_SINK_DECL_FILE_OFFSETS,
+          CH_DWARF_SINK_DECL_LINE,
+          CH_DWARF_SINK_RANGES_OFFSETS,
+          CH_DWARF_SINK_ATTR_OFFSETS})
+        expect_size(id, num_rows);
+
+    if (sink_active[CH_DWARF_SINK_ANCESTOR_ARRAY_OFFSETS])
+    {
+        size_t count = col_ancestor_array_offsets->getData().back();
+        expect_size(CH_DWARF_SINK_ANCESTOR_TAGS, count);
+        expect_size(CH_DWARF_SINK_ANCESTOR_OFFSETS, count);
+    }
+    if (sink_active[CH_DWARF_SINK_RANGES_OFFSETS])
+    {
+        size_t count = col_ranges_offsets->getData().back();
+        expect_size(CH_DWARF_SINK_RANGES_START, count);
+        expect_size(CH_DWARF_SINK_RANGES_END, count);
+    }
+    if (sink_active[CH_DWARF_SINK_ATTR_OFFSETS])
+    {
+        size_t count = col_attr_offsets->getData().back();
+        expect_size(CH_DWARF_SINK_ATTR_NAME, count);
+        expect_size(CH_DWARF_SINK_ATTR_FORM, count);
+        expect_size(CH_DWARF_SINK_ATTR_INT, count);
+        expect_size(CH_DWARF_SINK_ATTR_STR_OFFSETS, count);
+    }
+    expect_size(CH_DWARF_SINK_NAME_CHARS, sink_active[CH_DWARF_SINK_NAME_CHARS] ? col_name->getOffsets().back() : 0);
+    expect_size(CH_DWARF_SINK_LINKAGE_NAME_CHARS, sink_active[CH_DWARF_SINK_LINKAGE_NAME_CHARS] ? col_linkage_name->getOffsets().back() : 0);
+    expect_size(CH_DWARF_SINK_DECL_FILE_CHARS, sink_active[CH_DWARF_SINK_DECL_FILE_CHARS] ? col_decl_file->getOffsets().back() : 0);
+    expect_size(CH_DWARF_SINK_ATTR_STR_CHARS, sink_active[CH_DWARF_SINK_ATTR_STR_CHARS] ? col_attr_str->getOffsets().back() : 0);
 
     ColumnPtr immutable_attr_offsets = std::move(col_attr_offsets);
     ColumnPtr immutable_ancestor_array_offsets = std::move(col_ancestor_array_offsets);
 
+    const auto & header = getPort().getHeader();
     Columns cols;
-    for (const std::string & name : header.getNames())
+    cols.reserve(output_columns.size());
+    for (size_t column_idx : output_columns)
     {
-        switch (getColumnIdx(name))
+        switch (column_idx)
         {
             case COL_OFFSET:
                 cols.push_back(std::exchange(col_offset, nullptr));
@@ -791,7 +984,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             {
                 auto dict = ColumnVector<UInt64>::create();
                 dict->insertDefault();
-                dict->insertValue(unit.dwarf_unit->getOffset());
+                dict->insertValue(unit.unit_offset);
                 auto index = ColumnVector<UInt8>::create();
                 index->insert(1);
                 auto indices = index->replicate({num_rows});
@@ -800,8 +993,9 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 break;
             }
             case COL_ANCESTOR_TAGS:
-                cols.push_back(ColumnArray::create(ColumnLowCardinality::create(
-                    tag_dict_column, std::exchange(col_ancestor_tags, nullptr), /*is_shared*/ true), immutable_ancestor_array_offsets));
+                cols.push_back(ColumnArray::create(
+                    ColumnLowCardinality::create(tag_dict_column, std::exchange(col_ancestor_tags, nullptr), /*is_shared*/ true),
+                    immutable_ancestor_array_offsets));
                 break;
             case COL_ANCESTOR_OFFSETS:
                 cols.push_back(ColumnArray::create(std::exchange(col_ancestor_dwarf_offsets, nullptr), immutable_ancestor_array_offsets));
@@ -813,37 +1007,31 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                 cols.push_back(std::exchange(col_linkage_name, nullptr));
                 break;
             case COL_DECL_FILE:
-            {
-                /// A unit without DW_AT_stmt_list has no filename table; use a minimal dictionary instead of null.
-                ColumnPtr filename_table = unit.filename_table;
-                if (filename_table == nullptr)
-                {
-                    auto dict = ColumnString::create();
-                    dict->insertDefault();
-                    filename_table = ColumnUnique<ColumnString>::create(std::move(dict), /*is_nullable*/ false);
-                }
-                cols.push_back(ColumnLowCardinality::create(filename_table, col_decl_file.detachIndexes(), /*is_shared*/ true));
+                cols.push_back(makeLowCardinalityString(*col_decl_file));
                 break;
-            }
             case COL_DECL_LINE:
                 cols.push_back(std::exchange(col_decl_line, nullptr));
                 break;
             case COL_RANGES:
-                cols.push_back(ColumnArray::create(ColumnTuple::create(Columns{std::exchange(col_ranges_start, nullptr), std::exchange(col_ranges_end, nullptr)}), std::exchange(col_ranges_offsets, nullptr)));
+                cols.push_back(ColumnArray::create(
+                    ColumnTuple::create(Columns{std::exchange(col_ranges_start, nullptr), std::exchange(col_ranges_end, nullptr)}),
+                    std::exchange(col_ranges_offsets, nullptr)));
                 break;
             case COL_ATTR_NAME:
-                cols.push_back(ColumnArray::create(ColumnLowCardinality::create(
-                    attr_name_dict_column, std::exchange(col_attr_name, nullptr), /*is_shared*/ true), immutable_attr_offsets));
+                cols.push_back(ColumnArray::create(
+                    ColumnLowCardinality::create(attr_name_dict_column, std::exchange(col_attr_name, nullptr), /*is_shared*/ true),
+                    immutable_attr_offsets));
                 break;
             case COL_ATTR_FORM:
-                cols.push_back(ColumnArray::create(ColumnLowCardinality::create(
-                    attr_form_dict_column, std::exchange(col_attr_form, nullptr), /*is_shared*/ true), immutable_attr_offsets));
+                cols.push_back(ColumnArray::create(
+                    ColumnLowCardinality::create(attr_form_dict_column, std::exchange(col_attr_form, nullptr), /*is_shared*/ true),
+                    immutable_attr_offsets));
                 break;
             case COL_ATTR_INT:
                 cols.push_back(ColumnArray::create(std::exchange(col_attr_int, nullptr), immutable_attr_offsets));
                 break;
             case COL_ATTR_STR:
-                cols.push_back(ColumnArray::create(std::exchange(col_attr_str, nullptr), immutable_attr_offsets));
+                cols.push_back(ColumnArray::create(makeLowCardinalityString(*col_attr_str), immutable_attr_offsets));
                 break;
 
             default:
@@ -853,137 +1041,16 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
     /// The requested header may declare types other than the ones produced above.
     const auto & native_types = getColumnTypes();
-    size_t pos = 0;
-    for (const std::string & name : header.getNames())
+    const auto names = header.getNames();
+    for (size_t pos = 0; pos < names.size(); ++pos)
     {
-        ColumnWithTypeAndName column(cols[pos], native_types[getColumnIdx(name)], name);
-        castColumnToRequestedType(column, header.getByName(name).type);
+        ColumnWithTypeAndName column(cols[pos], native_types[output_columns[pos]], names[pos]);
+        castColumnToRequestedType(column, header.getByName(names[pos]).type);
         cols[pos] = std::move(column.column);
-        ++pos;
     }
 
-    return Chunk(std::move(cols), num_rows);
-}
-
-void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset)
-{
-    if (!debug_line_extractor.has_value())
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "There are DW_AT_stmt_list but no .debug_line section");
-
-    llvm::DWARFDebugLine::Prologue prologue;
-    auto error = prologue.parse(*debug_line_extractor, &offset, /*RecoverableErrorHandler*/ [&](auto e)
-        {
-            if (++seen_debug_line_warnings < 10)
-                LOG_INFO(getLogger("DWARF"), "Parsing error: {}", llvm::toString(std::move(e)));
-        }, *dwarf_context, unit.dwarf_unit);
-
-    if (error)
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Failed to parse .debug_line unit prologue: {}", llvm::toString(std::move(error)));
-
-    auto col = ColumnString::create();
-    col->insertDefault();
-    /// DWARF v5 changed file indexes from 1-based to 0-based.
-    if (prologue.getVersion() <= 4)
-        append(col, "<invalid>");
-    for (const auto & entry : prologue.FileNames)
-    {
-        auto val = entry.Name.getAsCString();
-        const char * c_str = nullptr;
-        if (llvm::Error e = val.takeError())
-        {
-            c_str = "<error>";
-            llvm::consumeError(std::move(e));
-        }
-        else
-            c_str = *val;
-        col->insertData(c_str, strlen(c_str));
-    }
-    unit.filename_table_size = col->size() - 1;
-    unit.filename_table = ColumnUnique<ColumnString>::create(std::move(col), /*is_nullable*/ false);
-}
-
-uint64_t DWARFBlockInputFormat::fetchFromDebugAddr(uint64_t addr_base, uint64_t idx) const
-{
-    if (!debug_addr_section.has_value())
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing .debug_addr section.");
-    if (addr_base == UINT64_MAX)
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_addr_base");
-    uint64_t section_size = debug_addr_section->size();
-    if (addr_base > section_size || idx >= (section_size - addr_base) / 8)
-        throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: addr_base {}, idx {} vs {}.", addr_base, idx, section_size);
-    uint64_t offset = addr_base + idx * 8;
-    uint64_t res = 0;
-    memcpy(&res, debug_addr_section->data() + offset, 8);
-    return res;
-}
-
-void DWARFBlockInputFormat::parseRanges(
-    uint64_t offset, bool form_rnglistx, const UnitState & unit, const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
-    const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const
-{
-    std::optional<llvm::object::SectionedAddress> base_addr;
-    if (unit.base_address != UINT64_MAX)
-        base_addr = llvm::object::SectionedAddress{.Address = unit.base_address};
-
-    llvm::DWARFAddressRangesVector ranges;
-
-    if (unit.dwarf_unit->getFormParams().Version < 5)
-    {
-        if (!debug_ranges_extractor.has_value())
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing .debug_ranges section");
-
-        llvm::DWARFDebugRangeList list;
-        auto err = list.extract(*debug_ranges_extractor, &offset);
-        if (err)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Error parsing .debug_ranges list: {}", llvm::toString(std::move(err)));
-
-        ranges = list.getAbsoluteRanges(base_addr);
-    }
-    else
-    {
-        if (!debug_rnglists_extractor.has_value())
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing .debug_rnglists section");
-
-        if (form_rnglistx)
-        {
-            /// Fetch offset from a table.
-            if (unit.rnglists_base == UINT64_MAX)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Missing DW_AT_rnglists_base");
-            uint64_t entry_size = unit.dwarf_unit->getFormParams().getDwarfOffsetByteSize();
-            uint64_t section_size = debug_rnglists_extractor->size();
-            if (entry_size == 0 || unit.rnglists_base > section_size
-                || offset >= (section_size - unit.rnglists_base) / entry_size)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx offset out of bounds: rnglists_base {}, idx {} vs {}", unit.rnglists_base, offset, section_size);
-            uint64_t lists_offset = unit.rnglists_base + offset * entry_size;
-
-            uint64_t list_entry = 0;
-            memcpy(&list_entry, debug_rnglists_extractor->getData().data() + lists_offset, entry_size);
-
-            /// The offset read from the table is untrusted; the subtraction also stops rnglists_base + list_entry from wrapping.
-            if (list_entry > section_size - unit.rnglists_base)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "DW_FORM_rnglistx points out of bounds: rnglists_base {}, entry {} vs {}", unit.rnglists_base, list_entry, section_size);
-            offset = unit.rnglists_base + list_entry;
-        }
-
-        llvm::DWARFDebugRnglist list;
-        auto err = list.extract(*debug_rnglists_extractor, /*HeaderOffset, essentially unused*/ 0, &offset,
-            ".debug_rnglists", "rnglists");
-        if (err)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Error parsing .debug_rnglists list: {}", llvm::toString(std::move(err)));
-
-        auto lookup_addr = [&](uint32_t idx) -> std::optional<llvm::object::SectionedAddress>
-            {
-                uint64_t addr = fetchFromDebugAddr(unit.debug_addr_base, idx);
-                return llvm::object::SectionedAddress{.Address = addr};
-            };
-        ranges = list.getAbsoluteRanges(base_addr, /*AddressByteSize*/ 8, lookup_addr);
-    }
-
-    for (const llvm::DWARFAddressRange & r : ranges)
-    {
-        col_ranges_start->insertValue(r.LowPC);
-        col_ranges_end->insertValue(r.HighPC);
-    }
+    result.chunk = Chunk(std::move(cols), num_rows);
+    return result;
 }
 
 Chunk DWARFBlockInputFormat::read()
@@ -1029,13 +1096,12 @@ void DWARFBlockInputFormat::resetParser()
     stopThreads();
 
     runner.reset();
+    releaseState();
     background_exception = nullptr;
     is_stopped = false;
-    units_queue.clear();
-    delivery_queue.clear();
     units_in_progress = 0;
-    elf.reset();
-    extractor.reset();
+    approx_bytes_read_for_chunk = 0;
+    initialized = false;
 
     IInputFormat::resetParser();
 }
@@ -1088,10 +1154,10 @@ void registerInputFormatDWARF(FormatFactory & factory)
 
 ## Description {#description}
 
-The `DWARF` format parses DWARF debug symbols from an ELF file (executable, library, or object file).
+The `DWARF` format parses DWARF (versions 2–5) debug symbols from an ELF64 little-endian binary that contains a program header table (such as an executable, shared library, or separate debug file; relocatable `.o` and `.dwo` object files without program headers are not supported).
 It is similar to `dwarfdump`, but much faster (hundreds of MB/s) and supporting SQL.
 It produces one row for each Debug Information Entry (DIE) in the `.debug_info` section
-and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree.
+and includes "null"-entries that the DWARF encoding uses to terminate lists of children in the tree. Malformed unit headers, unclosed DIE trees, and out-of-bounds section references are rejected with a parsing exception.
 
 <Info>
 `.debug_info` consists of *units*, which correspond to compilation units:

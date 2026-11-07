@@ -857,6 +857,14 @@ if (TARGET ch_contrib::avrocpp)
     target_link_libraries(dbms PRIVATE ch_contrib::avrocpp)
 endif ()
 
+if (TARGET ch_rust::dwarf)
+    target_link_libraries(dbms PRIVATE ch_rust::dwarf)
+    set_source_files_properties(
+        Processors/Formats/Impl/DWARFBlockInputFormat.cpp
+        PROPERTIES INCLUDE_DIRECTORIES "${ClickHouse_SOURCE_DIR}/rust/workspace/dwarf/include"
+    )
+endif ()
+
 set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
 

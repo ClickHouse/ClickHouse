@@ -6,6 +6,8 @@
 #include <IO/ReadHelpers.h>
 
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -198,23 +200,31 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
             assertChar('\n', in);
         }
 
-        String structure;
-        readStringUntilNewlineInto(structure, in);
-        assertChar('\n', in);
-
-        ColumnsDescription description = parseColumnsListFromString(structure, getContext());
-        auto columns_info = description.getOrdinary();
-
         Block header;
-        for (const auto & info : columns_info)
+        if (format == "DWARF" && size >= 4 && memcmp(data, "\x7f""ELF", 4) == 0)
         {
-            ColumnWithTypeAndName column;
-            column.name = info.name;
-            column.type = info.type;
-            column.column = column.type->createColumn();
-            header.insert(std::move(column));
+            auto schema_reader = FormatFactory::instance().getSchemaReader(format, in, getContext());
+            for (const auto & col : schema_reader->readSchema())
+                header.insert(ColumnWithTypeAndName(col.type->createColumn(), col.type, col.name));
         }
+        else
+        {
+            String structure;
+            readStringUntilNewlineInto(structure, in);
+            assertChar('\n', in);
 
+            ColumnsDescription description = parseColumnsListFromString(structure, getContext());
+            auto columns_info = description.getOrdinary();
+
+            for (const auto & info : columns_info)
+            {
+                ColumnWithTypeAndName column;
+                column.name = info.name;
+                column.type = info.type;
+                column.column = column.type->createColumn();
+                header.insert(std::move(column));
+            }
+        }
         InputFormatPtr input_format = getContext()->getInputFormat(format, in, header, 13 /* small block size */);
 
         QueryPipeline pipeline(Pipe(std::move(input_format)));

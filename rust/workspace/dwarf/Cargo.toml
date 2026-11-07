@@ -1,0 +1,14 @@
+[package]
+edition = "2021"
+name = "_ch_rust_dwarf"
+version = "0.1.0"
+
+[dependencies]
+gimli = { version = "=0.33.0", default-features = false, features = ["read"] }
+object = { version = "=0.39.1", default-features = false, features = ["read_core", "elf", "std"] }
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[lints.rust]
+unsafe_code = "deny"
