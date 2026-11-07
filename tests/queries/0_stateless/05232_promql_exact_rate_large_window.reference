@@ -1,0 +1,6 @@
+rate
+10001	1
+rate with a reset every other sample
+10001	0.5
+delta
+10001	30000
