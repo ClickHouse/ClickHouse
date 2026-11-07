@@ -632,7 +632,11 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
             /// Nothing under `.hoodie/` is a data file of the table.
             if (key.starts_with(table_path) && std::string_view(key).substr(table_path.size()).starts_with(".hoodie/"))
                 return false;
-            return key.ends_with(data_file_suffix) || parseLogFileName(object.getFileName());
+            /// A partition metafile (`.hoodie_partition_metadata.<format>`, or a leftover temporary
+            /// `.hoodie_partition_metadata_<uuid>.<format>`) has the base file suffix but holds no table rows.
+            if (object.getFileName().starts_with(".hoodie_partition_metadata"))
+                return false;
+            return key.ends_with(data_file_suffix);
         });
 
     using Partition = std::string;
