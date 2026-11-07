@@ -66,6 +66,33 @@ ${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/store2" \
     -q "DROP DATABASE fsdb2;
         SELECT count() FROM system.databases WHERE name = 'fsdb2'" 2>&1 | grep -o -m1 -E '^[0-9]+$|STD_EXCEPTION'
 
+# A table another object depends on is probed on every start, and the answer only decides what is logged. A probe
+# that cannot stat the path must not stop the start either: first the table's own file, then the whole directory.
+echo "--- a dictionary reads a table of the database ---"
+mkdir -p "${WORKING_FOLDER}/dict"
+printf '1,a\n2,b\n' > "${WORKING_FOLDER}/dict/data.csv"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/store3" \
+    -q "CREATE DATABASE fsdb3 ENGINE = Filesystem('${WORKING_FOLDER}/dict');
+        CREATE DATABASE db3 ENGINE = Atomic;
+        CREATE DICTIONARY db3.d (c1 UInt64, c2 String) PRIMARY KEY c1
+            SOURCE(CLICKHOUSE(DB 'fsdb3' TABLE 'data.csv')) LAYOUT(FLAT()) LIFETIME(0);
+        SELECT dictGet('db3.d', 'c2', toUInt64(2))"
+rm "${WORKING_FOLDER}/dict/data.csv"
+ln -s "${WORKING_FOLDER}/dict/data.csv" "${WORKING_FOLDER}/dict/data.csv"
+
+echo "--- the table's file is a symlink to itself: the next start still loads ---"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/store3" \
+    -q "SELECT name FROM system.databases WHERE name = 'fsdb3'" 2>&1 | grep -o -E '^fsdb3$|STD_EXCEPTION'
+rm -rf "${WORKING_FOLDER}/dict"
+ln -s "${WORKING_FOLDER}/dict" "${WORKING_FOLDER}/dict"
+
+echo "--- the directory is a symlink to itself: the next start still loads, and both databases drop ---"
+${CLICKHOUSE_LOCAL} --path "${WORKING_FOLDER}/store3" \
+    -q "SELECT name FROM system.databases WHERE name = 'fsdb3';
+        DROP DATABASE db3;
+        DROP DATABASE fsdb3;
+        SELECT count() FROM system.databases WHERE name IN ('db3', 'fsdb3')" 2>&1 | grep -o -E '^fsdb3$|^[0-9]+$|STD_EXCEPTION'
+
 # On a server a path stat fails on is refused the same way. A component over NAME_MAX makes stat fail without
 # creating anything that a concurrent test globbing user_files could trip over.
 LONG_NAME=$(printf '%*s' 300 '' | tr ' ' a)

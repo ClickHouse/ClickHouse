@@ -229,7 +229,18 @@ void TablesLoader::removeUnresolvableDependencies()
         if (metadata.parsed_tables.contains(table_id.getQualifiedName()))
             return false;
 
-        if (DatabaseCatalog::instance().isTableExist(table_id, global_context))
+        /// isTableExist can throw when a database cannot reach its data. Only the log message below depends on the answer.
+        bool table_exists = false;
+        try
+        {
+            table_exists = DatabaseCatalog::instance().isTableExist(table_id, global_context);
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Cannot check whether {} exists: {}", table_id, getCurrentExceptionMessage(/* with_stacktrace */ false));
+        }
+
+        if (table_exists)
         {
             /// Table exists and it's already loaded
         }
