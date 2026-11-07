@@ -289,26 +289,6 @@ bool ASTStorage::isExtendedStorageDefinition() const
     return partition_by || primary_key || order_by || unique_key || sample_by || settings;
 }
 
-
-class ASTColumnsElement : public IAST
-{
-public:
-    String prefix;
-    IAST * elem{};
-
-    String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
-
-    ASTPtr clone() const override;
-
-    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
-    {
-        f(&elem, nullptr);
-    }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-};
-
 ASTPtr ASTColumnsElement::clone() const
 {
     auto res = make_intrusive<ASTColumnsElement>();

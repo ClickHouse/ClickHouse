@@ -1994,6 +1994,29 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || dictionary_p.parse(pos, node, expected);
 }
 
+bool ParserProjectionSelectElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword index_keyword(Keyword::INDEX);
+
+    /// `INDEX` is not a reserved word: a column named `index` may be selected in a projection, e.g.
+    /// `SELECT index, x` or `SELECT index + 1`. If the element is not a valid index declaration, rewind
+    /// to before the keyword and parse it as an expression. This is required for backward compatibility:
+    /// the formatter writes such identifiers unquoted, so the metadata of existing tables contains them
+    /// as bare `index`, and those tables must still load.
+    /// No valid expression is also a valid index declaration, because a declaration requires `TYPE`, so
+    /// trying the declaration first never changes the meaning of an expression.
+    auto begin = pos;
+    if (index_keyword.ignore(pos, expected))
+    {
+        ParserIndexDeclaration index_parser;
+        if (index_parser.parse(pos, node, expected))
+            return true;
+        pos = begin;
+    }
+
+    return expression_parser.parse(pos, node, expected);
+}
+
 std::map<String, Documentation> ParserCreateQuery::getDocumentation() const
 {
     std::map<String, Documentation> documentation;

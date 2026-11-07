@@ -7,11 +7,13 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Common/typeid_cast.h>
 
 
@@ -44,6 +46,7 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
+    CLONE(Expression::SKIP_INDICES);
     CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
@@ -94,9 +97,31 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
         ostr << s.nl_or_ws;
     }
 
-    ostr << indent_str << "SELECT";
+    /// `SELECT` expressions and `INDEX` declarations live in separate slots, but the user writes them
+    /// as one comma-separated list, so they are merged back into a single `ASTExpressionList` for
+    /// formatting.
+    ASTExpressionList list;
+    for (const auto & column : select()->children)
+    {
+        auto elem = make_intrusive<ASTColumnsElement>();
+        elem->prefix = "";
+        elem->set(elem->elem, column->clone());
+        list.children.push_back(elem);
+    }
 
-    s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+    if (skipIndices())
+    {
+        for (const auto & index : skipIndices()->children)
+        {
+            auto elem = make_intrusive<ASTColumnsElement>();
+            elem->prefix = "INDEX";
+            elem->set(elem->elem, index->clone());
+            list.children.push_back(elem);
+        }
+    }
+
+    ostr << indent_str << "SELECT";
+    s.one_line ? list.format(ostr, s, state, frame) : list.formatImplMultiline(ostr, s, state, frame);
 
     if (where())
     {
@@ -216,6 +241,7 @@ void ASTProjectionSelectQuery::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "ProjectionSelectQuery");
     w.writeChild("with", with());
     w.writeChild("select", select());
+    w.writeChild("skip_indices", skipIndices());
     w.writeChild("where", where());
     w.writeChild("group_by", groupBy());
     w.writeChild("order_by", orderBy());
@@ -250,6 +276,22 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
     if (!select_child->as<ASTExpressionList>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTExpressionList for 'select' during AST JSON deserialization");
     setExpression(Expression::SELECT, std::move(select_child));
+
+    /// `ParserProjectionSelectQuery` fills `skip_indices` only with `ASTIndexDeclaration` elements and only
+    /// when there is at least one. The slot is not an expression (an index `TYPE` such as `minmax` is a
+    /// function without `arguments`), so it is not screened; each `ASTIndexDeclaration::readJSON` screens
+    /// its own expression.
+    if (auto skip_indices = r.readChildOfType<ASTExpressionList>("skip_indices"))
+    {
+        if (skip_indices->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Empty 'skip_indices' during AST JSON deserialization");
+        for (const auto & index : skip_indices->children)
+            if (!index->as<ASTIndexDeclaration>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expected IndexDeclaration elements in 'skip_indices' during AST JSON deserialization");
+        setExpression(Expression::SKIP_INDICES, std::move(skip_indices));
+    }
 
     /// `WHERE` must be inserted between `SELECT` and `GROUP BY` to match the canonical child order
     /// produced by `ParserProjectionSelectQuery` (see the ordering comment in `clone`).
