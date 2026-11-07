@@ -11,6 +11,8 @@
 #include <memory>
 #include <mutex>
 
+class MemoryTracker;
+
 namespace DB
 {
 
@@ -58,6 +60,7 @@ private:
     /// Concurrency control related
     SlotAllocationPtr cpu_slots;
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeUntil()
+
     std::unique_ptr<ThreadPool> pool;
 
     /// Flag that checks that initializeExecution was called.

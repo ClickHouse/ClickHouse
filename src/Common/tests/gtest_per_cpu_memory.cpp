@@ -370,31 +370,32 @@ TEST(PerCPUMemory, RepeatedAllocFreePairsDoNotDrift)
     EXPECT_EQ(total_memory_tracker.get() - before, 0);
 }
 
-/// Switching the tracker parent must give the switched scope its own per-CPU contribution and
-/// restore the previous one afterwards.
-TEST(PerCPUMemory, SwitcherPreservesPerCpuState)
+/// Switching the tracker parent must report the deferred bytes to the previous parent and release
+/// their per-CPU contribution, so the switched scope starts with an empty buffer.
+TEST(PerCPUMemory, SwitcherFlushesPerCpuState)
 {
     resetTrackers();
 
     auto & thread = CurrentThread::get();
-    thread.per_cpu_untracked_memory.contributed = 64 * 1024;
-    thread.per_cpu_untracked_memory.contributed_on_cpu = 0;
+    const Int64 deferred = 4 * PerCPUMemory::DEFAULT_THREAD_BUFFER;
+    std::ignore = CurrentMemoryTracker::allocNoThrow(deferred);
 
     MemoryTracker other{VariableContext::Process};
     {
         MemoryTrackerSwitcher switcher(&other);
 
+        EXPECT_EQ(thread.untracked_memory.load(), 0);
         EXPECT_EQ(thread.per_cpu_untracked_memory.contributed, 0);
-        EXPECT_EQ(thread.per_cpu_untracked_memory.contributed_on_cpu, -1);
+        EXPECT_EQ(thread.memory_tracker.get(), deferred);
 
         std::ignore = CurrentMemoryTracker::allocNoThrow(2 * 1024);
     }
 
-    EXPECT_EQ(thread.per_cpu_untracked_memory.contributed, 64 * 1024);
-    EXPECT_EQ(thread.per_cpu_untracked_memory.contributed_on_cpu, 0);
+    EXPECT_EQ(thread.untracked_memory.load(), 0);
+    EXPECT_EQ(thread.per_cpu_untracked_memory.contributed, 0);
+    EXPECT_EQ(other.get(), 2 * 1024);
 
-    /// Clear the synthetic contribution so it is not backed out of a real counter later.
-    thread.per_cpu_untracked_memory = {};
+    std::ignore = CurrentMemoryTracker::free(deferred + 2 * 1024);
     resetTrackers();
 }
 

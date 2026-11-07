@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- The oversized value is clamped to the memory of the machine, so every pipeline worker
+         reserves that amount. Raise the server-wide limit far above the physical memory, otherwise
+         the queries of this test - and everything else on this server - would be rejected with
+         `MEMORY_LIMIT_EXCEEDED` by their own reservation. The ratio is set at startup on purpose:
+         a reload only ever lowers the hard limit immediately. -->
+    <max_server_memory_usage>0</max_server_memory_usage>
+    <max_server_memory_usage_to_ram_ratio>1000</max_server_memory_usage_to_ram_ratio>
+    <additional_memory_tracking_per_thread>8388608</additional_memory_tracking_per_thread>
+</clickhouse>
