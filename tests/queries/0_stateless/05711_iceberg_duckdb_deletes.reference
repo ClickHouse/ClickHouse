@@ -35,16 +35,12 @@ e	2025-01-05
 equality_deletes	a
 equality_deletes	d
 equality_deletes	e
-equality_delete_cross_partition
-0	999	p0-k999
-1	100	p1-k100
-1	888	p1-k888
-equality_delete_extra_column
+equality_delete_cross_partition rejected
+equality_delete_extra_column rejected
+equality_delete_extra_column before the delete
 1	a
+2	b
 3	c
-2
-a
-c
 legacy_bare_deletion_vector
 1	legacy
 3	legacy

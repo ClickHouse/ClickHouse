@@ -97,7 +97,8 @@ SELECT * FROM icebergLocal('$MERCH', SETTINGS iceberg_metadata_file_path = 'meta
 # The first v3 snapshot assigns `first_row_id` 0 to the data file: the stored values are read as they are, and the
 # missing ones are inherited (`first_row_id` + position, and the data sequence number 1).
 # Time travel to the snapshot before the upgrade: no `first_row_id` again.
-# ClickHouse returns the values stored in the data file when there is no `first_row_id`.
+# Bug https://github.com/ClickHouse/ClickHouse/issues/130021: the values stored in the data file are returned when there
+# is no `first_row_id`.
 LINEAGE='data/persistent/row_lineage_stored_columns/warehouse/default/row_lineage_stored_columns'
 $CLICKHOUSE_LOCAL -q "
 SELECT 'row_lineage_stored_columns';

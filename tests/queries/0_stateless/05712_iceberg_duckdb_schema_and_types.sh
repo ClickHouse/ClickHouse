@@ -36,7 +36,8 @@ SELECT 'add_columns_with_defaults_in_struct';
 SELECT x.col1, x.col_boolean, x.col_integer, x.col_long, x.col_float, x.col_double, x.col_decimal, x.col_date, x.col_time, x.col_timestamp, x.col_timestamptz, x.col_string, x.col_uuid, hex(x.col_fixed), hex(x.col_binary)
 FROM (SELECT a AS x FROM $STRUCT_DEFAULTS) ORDER BY x.col_boolean;
 "
-# Reading a subcolumn of the struct directly: fails with `NOT_FOUND_COLUMN_IN_BLOCK` for the data file
+# Reading a subcolumn of the struct directly. Bug https://github.com/ClickHouse/ClickHouse/issues/128304:
+# fails with `NOT_FOUND_COLUMN_IN_BLOCK` for the data file
 # whose struct has only 'col1', even for 'col1' itself.
 $CLICKHOUSE_LOCAL -q "SELECT a.col1 FROM $STRUCT_DEFAULTS"
 
@@ -61,7 +62,7 @@ SELECT * FROM icebergLocal('data/persistent/column_mapping/warehouse/default.db/
 # v3: a and b are mapped; v3.1: b is removed from the name mapping; v3.2: the name mapping is empty;
 # v4: b is removed from the schema, but not from the name mapping; v4.1: b is removed from both;
 # v7: b is removed and added again with a different field id.
-# ClickHouse ignores the name mapping: the columns removed from it are read by name.
+# Bug https://github.com/ClickHouse/ClickHouse/issues/130019: the name mapping is ignored, the columns removed from it are read by name.
 echo 'name_mapping'
 for v in 3 3.1 3.2 4 4.1 7
 do
@@ -87,7 +88,8 @@ error_code "SELECT id FROM $ISSUE1270 WHERE notEmpty(metadata.profiles) FORMAT N
 
 # One data file matches the schema, the other one has a different nested type for the column `payload`
 # (a struct instead of a list, a map instead of a struct, ...).
-# ClickHouse reads the map of `map_to_struct` as a struct by the field id of its value, instead of refusing it.
+# Bug https://github.com/ClickHouse/ClickHouse/issues/130020: the map of `map_to_struct` is read as a struct by the field id of
+# its value, instead of refusing it.
 echo 'mapping_failures'
 for t in struct_to_list struct_to_map list_to_struct list_to_map map_to_struct map_to_list struct_child list_element map_value
 do

@@ -57,17 +57,18 @@ SELECT substring(_path, 17, 16), name FROM $P ORDER BY ALL;
 
 # An equality delete on key = 100 in partition part = 0 must not delete (part = 1, key = 100).
 # An equality delete on a table partitioned by bucket(val), projecting only a non-key column.
-# Bug metadata-file-names: `vfinal.metadata.json`.
-# The current snapshot id 9876543210123456789 is larger than the maximum of Int64; DuckDB reads these tables.
-CROSS="icebergLocal('data/persistent/equality_delete_cross_partition/warehouse/ns/t', SETTINGS iceberg_metadata_file_path = 'metadata/vfinal.metadata.json')"
-EXTRA="icebergLocal('data/persistent/equality_delete_extra_column/warehouse/ns/t', SETTINGS iceberg_metadata_file_path = 'metadata/vfinal.metadata.json')"
+# The snapshot with the equality delete has the id 9876543210123456789, which does not fit the type `long`
+# that the Iceberg spec requires, so the metadata (`vfinal.metadata.json`) is invalid and has to be refused.
+# DuckDB accepts it. Bugs metadata-file-names and metadata-validation
+# (https://github.com/ClickHouse/ClickHouse/issues/130002, now POCO_EXCEPTION "Out of range: Value too large").
+for t in equality_delete_cross_partition equality_delete_extra_column
+do
+    echo "$t $(rejected "SELECT * FROM icebergLocal('data/persistent/$t/warehouse/ns/t', SETTINGS iceberg_metadata_file_path = 'metadata/vfinal.metadata.json')")"
+done
+# The table before the equality delete is valid.
 $CLICKHOUSE_LOCAL -q "
-SELECT 'equality_delete_cross_partition';
-SELECT part, key, val FROM $CROSS ORDER BY part, key;
-SELECT 'equality_delete_extra_column';
-SELECT id, val FROM $EXTRA ORDER BY id;
-SELECT count() FROM $EXTRA;
-SELECT val FROM $EXTRA ORDER BY val;
+SELECT 'equality_delete_extra_column before the delete';
+SELECT id, val FROM icebergLocal('data/persistent/equality_delete_extra_column/warehouse/ns/t', SETTINGS iceberg_metadata_file_path = 'metadata/00001-55453390-51ec-4023-a1fa-290a9ae468fa.metadata.json') ORDER BY id;
 "
 
 # A v3 table upgraded from v2: a carried-forward v2 data manifest and a v3 deletion vector written
