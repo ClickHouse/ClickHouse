@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <IO/ReadBuffer.h>
@@ -422,6 +423,19 @@ void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDesc
         ColumnDescription column_with_codec(column.name, column.type, column_in_metadata->codec, {});
         attachQuantizeSerializationIfNeeded(column_with_codec);
     }
+}
+
+DataTypePtr removeQuantizeSerializations(const DataTypePtr & type)
+{
+    const bool has_quantize_serialization = anyInTypeTree(*type, [](const IDataType & node)
+    {
+        const auto * serialization = node.getCustomSerialization();
+        return serialization && typeid(*serialization) == typeid(SerializationQuantizedVector);
+    });
+    if (!has_quantize_serialization)
+        return type;
+    /// The serialization is not part of the name, so this is the type a stored definition parses back to.
+    return DataTypeFactory::instance().get(type->getName());
 }
 
 void ColumnsDescription::add(ColumnDescription column, const String & after_column, bool first, bool add_subcolumns)
