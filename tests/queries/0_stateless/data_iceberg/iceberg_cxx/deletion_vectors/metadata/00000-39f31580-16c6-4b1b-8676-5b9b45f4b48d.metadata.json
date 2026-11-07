@@ -1,0 +1,90 @@
+{
+    "format-version": 3,
+    "table-uuid": "05b4edff-134e-4053-8e26-059b04147d26",
+    "location": "s3a://warehouse/deletion_vectors",
+    "last-sequence-number": 1,
+    "last-updated-ms": 1777893277710,
+    "last-column-id": 2,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "c1",
+                    "required": false,
+                    "type": "int"
+                },
+                {
+                    "id": 2,
+                    "name": "c2",
+                    "required": false,
+                    "type": "int"
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": []
+        }
+    ],
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "write.format.default": "PARQUET"
+    },
+    "current-snapshot-id": 4848311183447800628,
+    "next-row-id": 0,
+    "refs": {
+        "main": {
+            "snapshot-id": 4848311183447800628,
+            "type": "branch"
+        }
+    },
+    "snapshots": [
+        {
+            "sequence-number": 1,
+            "snapshot-id": 4848311183447800628,
+            "timestamp-ms": 1777893277710,
+            "summary": {
+                "operation": "append",
+                "trino_query_id": "20260504_111437_00008_8gkte",
+                "trino_user": "trino",
+                "changed-partition-count": "0",
+                "total-records": "0",
+                "total-files-size": "0",
+                "total-data-files": "0",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+                "engine-version": "480",
+                "engine-name": "trino",
+                "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+            },
+            "manifest-list": "s3a://warehouse/deletion_vectors/metadata/snap-4848311183447800628-1-de213226-a15e-415b-b2ad-38b1ced345ba.avro",
+            "schema-id": 0,
+            "first-row-id": 0,
+            "added-rows": 0
+        }
+    ],
+    "statistics": [],
+    "partition-statistics": [],
+    "snapshot-log": [
+        {
+            "timestamp-ms": 1777893277710,
+            "snapshot-id": 4848311183447800628
+        }
+    ],
+    "metadata-log": []
+}

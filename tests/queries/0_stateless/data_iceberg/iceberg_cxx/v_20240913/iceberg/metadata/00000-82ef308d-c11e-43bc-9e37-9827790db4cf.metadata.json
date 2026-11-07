@@ -1,0 +1,107 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "922e1205-70ed-4a50-ba2f-d4f8abc495a5",
+  "location" : "s3a://dl-test-maintenance/check/tea-partitioned/v_20240913/iceberg",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1726226924414,
+  "last-column-id" : 13,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "int2col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "int4col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "int8col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 4,
+      "name" : "numericcol",
+      "required" : false,
+      "type" : "decimal(38, 0)"
+    }, {
+      "id" : 5,
+      "name" : "float4col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 6,
+      "name" : "float8col",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "timestamptzcol",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 8,
+      "name" : "timestampcol",
+      "required" : false,
+      "type" : "timestamp"
+    }, {
+      "id" : 9,
+      "name" : "char32col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 10,
+      "name" : "varchar32col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 11,
+      "name" : "uuidcol",
+      "required" : false,
+      "type" : "uuid"
+    }, {
+      "id" : 12,
+      "name" : "intarrcol",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 13,
+        "element" : "int",
+        "element-required" : false
+      }
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "timestamptzcol_day",
+      "transform" : "day",
+      "source-id" : 7,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.merge.mode" : "copy-on-write",
+    "write.format.default" : "PARQUET",
+    "write.wap.enabled" : "true",
+    "read.parquet.vectorization.enabled" : "false"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

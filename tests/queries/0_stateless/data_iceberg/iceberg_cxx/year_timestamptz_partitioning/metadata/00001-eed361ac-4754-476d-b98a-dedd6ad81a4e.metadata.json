@@ -1,0 +1,108 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "2479ead3-4436-4678-b5a3-a20ecba85a7c",
+  "location" : "s3a://warehouse/year_timestamptz_partitioning",
+  "last-sequence-number" : 2,
+  "last-updated-ms" : 1741271672412,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "c2",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 3,
+      "name" : "c3",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "c2_year",
+      "transform" : "year",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 4099093144421395716,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 4099093144421395716,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 267584900874813174,
+    "timestamp-ms" : 1741271666654,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250306_130051_00012_x2kme",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/year_timestamptz_partitioning/metadata/snap-267584900874813174-1-862659b5-df97-4ee6-ba72-aa49ab61d161.avro",
+    "schema-id" : 0
+  }, {
+    "sequence-number" : 2,
+    "snapshot-id" : 4099093144421395716,
+    "parent-snapshot-id" : 267584900874813174,
+    "timestamp-ms" : 1741271672412,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250306_130057_00013_x2kme",
+      "added-data-files" : "2",
+      "added-records" : "3",
+      "added-files-size" : "1025",
+      "changed-partition-count" : "2",
+      "total-records" : "3",
+      "total-files-size" : "1025",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://warehouse/year_timestamptz_partitioning/metadata/snap-4099093144421395716-1-26969caf-f1a0-41ee-8ec9-8b442ed19ecc.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1741271666654,
+    "snapshot-id" : 267584900874813174
+  }, {
+    "timestamp-ms" : 1741271672412,
+    "snapshot-id" : 4099093144421395716
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1741271666654,
+    "metadata-file" : "s3a://warehouse/year_timestamptz_partitioning/metadata/00000-6bdcdd0d-45c3-482f-a35d-07adcd10c53c.metadata.json"
+  } ]
+}

@@ -1,0 +1,86 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "539c5186-4975-49eb-b2f6-9bce8171b366",
+  "location" : "s3a://warehouse/hour_timestamptz_partitioning",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1741898836699,
+  "last-column-id" : 3,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c1",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "c2",
+      "required" : false,
+      "type" : "timestamptz"
+    }, {
+      "id" : 3,
+      "name" : "c3",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "c2_hour",
+      "transform" : "hour",
+      "source-id" : 2,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.format.default" : "PARQUET",
+    "write.parquet.compression-codec" : "zstd",
+    "commit.retry.num-retries" : "4"
+  },
+  "current-snapshot-id" : 4359693665907534249,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 4359693665907534249,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4359693665907534249,
+    "timestamp-ms" : 1741898836699,
+    "summary" : {
+      "operation" : "append",
+      "trino_query_id" : "20250313_204716_00009_z8hj2",
+      "trino_user" : "trino",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0",
+      "engine-version" : "471",
+      "engine-name" : "trino",
+      "iceberg-version" : "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+    },
+    "manifest-list" : "s3a://warehouse/hour_timestamptz_partitioning/metadata/snap-4359693665907534249-1-cd736996-684a-42d8-8052-edf22a4315ba.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1741898836699,
+    "snapshot-id" : 4359693665907534249
+  } ],
+  "metadata-log" : [ ]
+}
