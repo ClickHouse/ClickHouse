@@ -49,6 +49,9 @@ namespace DB
         {
             if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
                 return;
+            /// An `Alias` forwards the refresh only to a target that is already materialized, so materialize the
+            /// whole chain of lazy-load targets first.
+            loadLazyTargetsOfAliasesAndViews(storage);
             resolveStorageProxyLoading(storage)->updateExternalDynamicMetadataIfExists(context);
         }
 

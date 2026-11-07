@@ -13,6 +13,8 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <TableFunctions/ITableFunction.h>
@@ -234,6 +236,33 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     }
 }
 
+namespace
+{
+
+/// Whether the columns described for `table` can change by refreshing its external metadata. A materialized view
+/// exposes its own declared columns, also through `Alias` tables, whose metadata is the metadata of their target.
+/// The view forwards the refresh to its target under its `SQL SECURITY` context, which requires the definer to exist,
+/// and describing the stored columns must not depend on that.
+bool describedColumnsDependOnExternalMetadata(StoragePtr table)
+{
+    /// The bound only guards against a cycle, which the catalog does not prevent for a replaced `Alias` target.
+    constexpr size_t max_depth = 64;
+    for (size_t depth = 0; table && depth < max_depth; ++depth)
+    {
+        /// Does not load a lazy-load stand-in: it forwards the refresh only to a table that is already materialized.
+        table = resolveStorageProxy(table);
+        if (typeid_cast<const StorageMaterializedView *>(table.get()))
+            return false;
+        const auto * alias = typeid_cast<const StorageAlias *>(table.get());
+        if (!alias)
+            return true;
+        table = alias->tryGetTargetTable();
+    }
+    return true;
+}
+
+}
+
 void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression, bool temporary)
 {
     auto query_context = getContext();
@@ -255,7 +284,8 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     }
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
-    table->updateExternalDynamicMetadataIfExists(query_context);
+    if (describedColumnsDependOnExternalMetadata(table))
+        table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
     const auto & column_descriptions = metadata_snapshot->getColumns();
