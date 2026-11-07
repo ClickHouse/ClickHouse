@@ -1655,13 +1655,16 @@ void SingleValueDataGenericWithColumn::set(const SingleValueDataBase & other, Ar
 
 bool SingleValueDataGenericWithColumn::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
+    /// Same direction as `getSmallestIndex`, so that a NULL element is never the minimum and `min` does not depend on the block layout.
+    static constexpr int nan_null_direction_hint = 1;
+
     if (!has())
     {
         set(column, row_num, arena);
         return true;
     }
 
-    if (column.compareAt(row_num, 0, *value, -1) < 0)
+    if (column.compareAt(row_num, 0, *value, nan_null_direction_hint) < 0)
     {
         set(column, row_num, arena);
         return true;
@@ -1671,8 +1674,10 @@ bool SingleValueDataGenericWithColumn::setIfSmaller(const IColumn & column, size
 
 bool SingleValueDataGenericWithColumn::setIfSmaller(const SingleValueDataBase & other, Arena *)
 {
+    static constexpr int nan_null_direction_hint = 1;
+
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) < 0))
+    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, nan_null_direction_hint) < 0))
     {
         value = to.value;
         return true;
@@ -1709,8 +1714,10 @@ bool SingleValueDataGenericWithColumn::setIfGreater(const SingleValueDataBase & 
 
 bool SingleValueDataGenericWithColumn::wouldSetIfSmaller(const SingleValueDataBase & other) const
 {
+    static constexpr int nan_null_direction_hint = 1;
+
     auto const & to = assert_cast<const Self &>(other);
-    return to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) < 0);
+    return to.has() && (!has() || to.value->compareAt(0, 0, *value, nan_null_direction_hint) < 0);
 }
 
 bool SingleValueDataGenericWithColumn::wouldSetIfGreater(const SingleValueDataBase & other) const
