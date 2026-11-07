@@ -136,16 +136,10 @@ void MongoDBConfiguration::checkCollection() const
 namespace
 {
 
-/// Throws `ACCESS_DENIED` if `uri` makes the driver authenticate with credentials of the server process. `remedy`
-/// completes the message with the way to use them anyway.
 void throwIfServerCredentials(const mongocxx::uri & uri, std::string_view remedy)
 {
-    /// These mechanisms take the credentials from the connection string: a username and a password. The others take
-    /// them from the server: `MONGODB-OIDC` uses the identity the server runs under (a Kubernetes service account
-    /// token, or a token from the Azure or GCP instance metadata service), `MONGODB-AWS` the AWS credentials of the
-    /// server, `GSSAPI` its Kerberos credentials, and `MONGODB-X509` a client certificate from `tlsCertificateKeyFile`.
-    /// Without a mechanism the driver uses SCRAM with the username from the connection string, or does not
-    /// authenticate. The driver compares mechanism names case-insensitively.
+    /// Only these take the credentials from the connection string; `MONGODB-OIDC`, `MONGODB-AWS`, `GSSAPI` and
+    /// `MONGODB-X509` use the server's. Without a mechanism the driver uses SCRAM or no authentication. Names are case-insensitive.
     static constexpr std::string_view allowed_mechanisms[] = {"SCRAM-SHA-1", "SCRAM-SHA-256", "PLAIN"};
 
     const String mechanism = uri.auth_mechanism();
@@ -226,8 +220,7 @@ Pipe StorageMongoDB::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    /// The only check for a `MongoDB` table and the `mongodb` table function: with the settings of the query, like the
-    /// S3 and Azure storages do, before anything connects. `StorageMongoDB` has no other method that connects.
+    /// Checked per read, with the query's settings: a table created with `mongodb(...)` is built with the global context.
     configuration.checkServerCredentialsForTable(context);
 
     storage_snapshot->check(column_names);

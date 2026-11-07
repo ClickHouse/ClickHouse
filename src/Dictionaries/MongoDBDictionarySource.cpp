@@ -115,10 +115,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         configuration->checkHosts(context);
         configuration->checkCollection();
 
-        /// The source of a dictionary created with a DDL query comes from the query, but the dictionary is loaded by
-        /// the server with the global context, after the named collection it refers to may have changed. So no setting
-        /// of a session can permit credentials of the server process here. Dictionaries defined in the server
-        /// configuration files are written by an operator and are not restricted, nor is `clickhouse-local`.
+        /// A DDL dictionary is loaded by the server with the global context, so no session setting can permit server credentials here.
         if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
             configuration->checkServerCredentialsForDictionary();
 

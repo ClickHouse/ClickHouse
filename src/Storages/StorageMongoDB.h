@@ -86,10 +86,6 @@ struct MongoDBConfiguration
     void checkHosts(const ContextPtr & context) const;
     void checkCollection() const;
 
-    /// Both throw `ACCESS_DENIED` if the connection string makes the driver authenticate with credentials of the server
-    /// process: an authentication mechanism that takes them from its environment, or a client certificate file from
-    /// its filesystem. For a table or the table function, only while `context` restricts server credentials (see
-    /// `Context::shouldRestrictUserQueryS3Credentials`); for a dictionary created with a DDL query, always.
     void checkServerCredentialsForTable(const ContextPtr & context) const;
     void checkServerCredentialsForDictionary() const;
 
