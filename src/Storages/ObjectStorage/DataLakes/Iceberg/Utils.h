@@ -114,7 +114,10 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
 Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
 
-std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+/// Maps a ClickHouse type to an Iceberg JSON type. `timestamp_ns` / `timestamptz_ns`
+/// require `format_version` >= 3; lower versions throw instead of writing v3 types
+/// into v1/v2 metadata.
+std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter, UInt64 format_version);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields

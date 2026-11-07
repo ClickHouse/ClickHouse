@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Core/UUID.h>
 #include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -106,6 +107,19 @@ std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view conte
 
 namespace
 {
+
+/// Iceberg Appendix D stores `timestamp` / `timestamptz` as microseconds and
+/// `timestamp_ns` / `timestamptz_ns` as nanoseconds. Both are an 8-byte
+/// little-endian int64. The ClickHouse type's scale is that unit.
+std::optional<Field> deserializeDateTime64FromBinaryRepr(const String & str, const IDataType & type)
+{
+    if (str.size() != sizeof(Int64))
+        return std::nullopt;
+
+    const Int64 unscaled = unalignedLoadLittleEndian<Int64>(str.data());
+    const UInt32 scale = getDecimalScale(type);
+    return DecimalField<DateTime64>(DateTime64(unscaled), scale);
+}
 
 /// Iceberg store decimal values as unscaled value with two's-complement big-endian binary
 /// using the minimum number of bytes for the value
@@ -218,6 +232,10 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
     const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding)
 {
     auto non_nullable_type = removeNullable(expected_type);
+    /// `DateTime64` is a decimal carrier, but Iceberg timestamps are 8-byte little-endian Int64
+    /// (Appendix D), not the decimal two's-complement big-endian encoding.
+    if (WhichDataType(non_nullable_type).isDateTime64())
+        return deserializeDateTime64FromBinaryRepr(str, *non_nullable_type);
     if (WhichDataType(non_nullable_type).isDecimal())
         return deserializeDecimalFromBinaryRepr(str, *non_nullable_type, lower_bound, compensate_rounding);
     if (non_nullable_type->getTypeId() == TypeIndex::Variant)

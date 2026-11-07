@@ -1,0 +1,15 @@
+create_v2: requires format version 3
+create_default: requires format version 3
+create_v1: requires format version 3
+create_nested_v2: requires format version 3
+describe_v3:
+ts	DateTime64(9)
+value	DateTime64(9)
+id	Int32
+select_v3: 2020-01-02 03:04:05.123456789	2021-02-03 04:05:06.987654321	1
+prune_v3: 1
+describe_tz: ts	DateTime64(9, 'UTC')
+partitioned: 2020-01-02 03:04:05.123456789	7
+alter_add_v2: requires format version 3
+alter_modify_v2: requires format version 3
+alter_add_v3: ts_ns	Nullable(DateTime64(9))
