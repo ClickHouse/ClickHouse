@@ -1,0 +1,51 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>128</value>
+                <value>256</value>
+                <value>512</value>
+            </values>
+        </substitution>
+    </substitutions>
+    <drop_query>DROP TABLE IF EXISTS bench_review_rotated_{n}</drop_query>
+    <create_query>CREATE TABLE bench_review_rotated_{n} (id UInt64,p Polygon) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO bench_review_rotated_{n} WITH [(0.,0.),(0.,8.),(3. * {n} + 4,8.),(3. * {n} + 4,0.)] AS exterior, arrayRotateLeft(exterior, toInt64(number % 4)) AS shifted SELECT number, [arrayPushBack(shifted,shifted[1]), [(3. * number + 1,1.),(3. * number + 2,1.),(3. * number + 2,2.),(3. * number + 1,2.),(3. * number + 1,1.)]] FROM numbers({n})</fill_query>
+    <query>SELECT groupPolygonIntersection(p) FROM bench_review_rotated_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersectionMerge(s) FROM (SELECT groupPolygonIntersectionState(p) AS s FROM bench_review_rotated_{n} GROUP BY intDiv(id,32)) FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_rotated_{n}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_rotated_reverse_{n}</drop_query>
+    <create_query>CREATE TABLE bench_review_rotated_reverse_{n} (id UInt64,p Polygon) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO bench_review_rotated_reverse_{n} WITH [(0.,0.),(0.,8.),(3. * {n} + 4,8.),(3. * {n} + 4,0.)] AS exterior, arrayRotateLeft(exterior, toInt64(number % 4)) AS shifted SELECT number, [arrayPushBack(shifted,shifted[1]), [(3. * number + 1,1.),(3. * number + 2,1.),(3. * number + 2,2.),(3. * number + 1,2.),(3. * number + 1,1.)]] FROM numbers({n}) ORDER BY number DESC</fill_query>
+    <query>SELECT groupPolygonIntersection(p) FROM bench_review_rotated_reverse_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_rotated_reverse_{n}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_rotated_shuffle_{n}</drop_query>
+    <create_query>CREATE TABLE bench_review_rotated_shuffle_{n} (id UInt64,p Polygon) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO bench_review_rotated_shuffle_{n} WITH [(0.,0.),(0.,8.),(3. * {n} + 4,8.),(3. * {n} + 4,0.)] AS exterior, arrayRotateLeft(exterior, toInt64(number % 4)) AS shifted SELECT number, [arrayPushBack(shifted,shifted[1]), [(3. * number + 1,1.),(3. * number + 2,1.),(3. * number + 2,2.),(3. * number + 1,2.),(3. * number + 1,1.)]] FROM numbers({n}) ORDER BY cityHash64(number)</fill_query>
+    <query>SELECT groupPolygonIntersection(p) FROM bench_review_rotated_shuffle_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_rotated_shuffle_{n}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_overlap_holes_{n}</drop_query>
+    <create_query>CREATE TABLE bench_review_overlap_holes_{n} (id UInt64,p Polygon) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO bench_review_overlap_holes_{n} SELECT number, [[(0.,0.),(0.,8.),(toFloat64({n}) + 5,8.),(toFloat64({n}) + 5,0.),(0.,0.)],[(number + 1.,1. + number % 2),(number + 3.,1. + number % 2),(number + 3.,4. + number % 2),(number + 1.,4. + number % 2),(number + 1.,1. + number % 2)]] FROM numbers({n})</fill_query>
+    <query>SELECT groupPolygonIntersection(p) FROM bench_review_overlap_holes_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersectionMerge(s) FROM (SELECT groupPolygonIntersectionState(p) AS s FROM bench_review_overlap_holes_{n} GROUP BY intDiv(id,32)) FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_overlap_holes_{n}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_controlled_groups_{n}</drop_query>
+    <create_query>CREATE TABLE bench_review_controlled_groups_{n} (g UInt64,p Polygon) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO bench_review_controlled_groups_{n} WITH toFloat64(intDiv(number,64)) AS x SELECT number % 64,[[(x,0.),(x,2.),(x+2,2.),(x+2,0.),(x,0.)]] FROM numbers(64 * {n})</fill_query>
+    <query>SELECT g, groupPolygonUnion(p) FROM bench_review_controlled_groups_{n} GROUP BY g FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_controlled_groups_{n}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_corner_{n}</drop_query>
+    <create_query>CREATE TABLE bench_review_corner_{n} (id UInt64,p Polygon) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO bench_review_corner_{n} WITH toFloat64(number) AS x SELECT number,[[(x,x),(x,x+1),(x+1,x+1),(x+1,x),(x,x)]] FROM numbers({n})</fill_query>
+    <query>SELECT groupPolygonUnion(p) FROM bench_review_corner_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonUnionMerge(s) FROM (SELECT groupPolygonUnionState(p) AS s FROM bench_review_corner_{n} GROUP BY intDiv(id,32)) FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_corner_{n}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_edge_{n}</drop_query>
+    <create_query>CREATE TABLE bench_review_edge_{n} (id UInt64,p Polygon) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO bench_review_edge_{n} WITH toFloat64(number) AS x SELECT number,[[(x,0.),(x,0.+1),(x+1,0.+1),(x+1,0.),(x,0.)]] FROM numbers({n})</fill_query>
+    <query>SELECT groupPolygonUnion(p) FROM bench_review_edge_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonUnionMerge(s) FROM (SELECT groupPolygonUnionState(p) AS s FROM bench_review_edge_{n} GROUP BY intDiv(id,32)) FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_edge_{n}</drop_query>
+</test>

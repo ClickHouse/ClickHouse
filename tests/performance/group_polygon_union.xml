@@ -1,0 +1,17 @@
+<test>
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union</drop_query>
+
+    <create_query>CREATE TABLE bench_polygon_union (poly Polygon, group_id UInt32) ENGINE = Memory</create_query>
+
+    <fill_query>
+        INSERT INTO bench_polygon_union SELECT
+            [[(toFloat64(number), 0.), (toFloat64(number + 2), 0.), (toFloat64(number + 2), 2.), (toFloat64(number), 2.), (toFloat64(number), 0.)]],
+            number % 64
+        FROM numbers(20000)
+    </fill_query>
+
+    <query>SELECT groupPolygonUnion(poly) FROM bench_polygon_union FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT group_id, groupPolygonUnion(poly) FROM bench_polygon_union GROUP BY group_id FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_union</drop_query>
+</test>

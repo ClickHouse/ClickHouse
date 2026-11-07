@@ -1,0 +1,10 @@
+const_convex_hull_point
+POLYGON((3 4,3 4,3 4,3 4))
+const_convex_hull_polygon
+25
+const_union_polygon
+16
+const_intersect_polygon
+16
+const_convex_hull_state_merge
+1

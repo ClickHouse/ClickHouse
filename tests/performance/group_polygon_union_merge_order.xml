@@ -1,0 +1,24 @@
+<test>
+    <drop_query>DROP TABLE IF EXISTS bench_review_merge_order</drop_query>
+    <create_query>CREATE TABLE bench_review_merge_order (id UInt64, p Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_review_merge_order
+        SELECT number, [[(3. * number, 0.), (3. * number, 1.), (3. * number + 1, 1.),
+            (3. * number + 1, 0.), (3. * number, 0.)]] FROM numbers(4096)
+    </fill_query>
+    <query>
+        SELECT groupPolygonUnionMerge(s) FROM
+        (
+            SELECT intDiv(id, 32) AS part, groupPolygonUnionState(p) AS s
+            FROM bench_review_merge_order GROUP BY part ORDER BY part
+        ) FORMAT Null SETTINGS max_threads = 1
+    </query>
+    <query>
+        SELECT groupPolygonUnionMerge(s) FROM
+        (
+            SELECT intDiv(id, 32) AS part, groupPolygonUnionState(p) AS s
+            FROM bench_review_merge_order GROUP BY part ORDER BY cityHash64(part)
+        ) FORMAT Null SETTINGS max_threads = 1
+    </query>
+    <drop_query>DROP TABLE IF EXISTS bench_review_merge_order</drop_query>
+</test>
