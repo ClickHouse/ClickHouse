@@ -39,6 +39,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
@@ -1231,6 +1232,14 @@ static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & t) { return isTuple(t) || isDynamic(t) || isVariant(t); });
 }
 
+/// `String`/`FixedString` comparison zero-pads. Their common join key is `String`, which does not.
+static bool stringAndFixedStringComparisonDiffersAsJoinKey(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeNullable(recursiveRemoveLowCardinality(left_type));
+    const auto right = removeNullable(recursiveRemoveLowCardinality(right_type));
+    return (isString(left) && isFixedString(right)) || (isFixedString(left) && isString(right));
+}
+
 /// An inequality between the two tables that the IEJoin operator can use as one of its two key
 /// conditions, or std::nullopt when the condition has a different shape or compares operands the
 /// operator cannot handle. Pure: the caller commits the condition by casting its operands.
@@ -1249,6 +1258,8 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
     const auto & lhs_type = lhs.getType();
     const auto & rhs_type = rhs.getType();
     if (hasIEJoinIncompatibleComparison(lhs_type) || hasIEJoinIncompatibleComparison(rhs_type))
+        return {};
+    if (stringAndFixedStringComparisonDiffersAsJoinKey(lhs_type, rhs_type))
         return {};
     if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
         return {};
@@ -1552,6 +1563,63 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     return description;
 }
 
+static bool isCrossSideEquality(const JoinActionRef & condition)
+{
+    auto [op, lhs, rhs] = condition.asBinaryPredicate();
+    return (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
+        && ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()));
+}
+
+static bool canConvertKeyOperandsToCommonType(
+    JoinConditionOperator op, const DataTypePtr & left_type, const DataTypePtr & right_type, bool allow_dynamic_type_in_join_keys)
+{
+    if (!allow_dynamic_type_in_join_keys && (hasDynamicType(left_type) || hasDynamicType(right_type)))
+        return false;
+    if (left_type->equals(*right_type) || tryGetLeastSupertype(DataTypes{left_type, right_type}))
+        return true;
+    return op == JoinConditionOperator::Equals && JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type) != nullptr;
+}
+
+static bool hasAlgorithmForMixedEqualityJoin(const JoinOperator & join_operator, const JoinSettings & join_settings)
+{
+    const bool has_single_side_condition = std::ranges::any_of(join_operator.expression, [](const JoinActionRef & condition)
+    {
+        return !isCrossSideEquality(condition) && (condition.fromLeft() || condition.fromNone() || condition.fromRight());
+    });
+    const bool has_mixed_join_expression = !canPushDownFromOn(join_operator);
+    const auto kind = join_operator.kind;
+    const auto strictness = join_operator.strictness;
+    const bool can_run_grace_hash = join_settings.canRunGraceHash() && strictness != JoinStrictness::Asof
+        && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
+
+    return std::ranges::any_of(join_settings.join_algorithms, [&](JoinAlgorithm algorithm)
+    {
+        switch (algorithm)
+        {
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::DEFAULT:
+                return true;
+            case JoinAlgorithm::GRACE_HASH:
+                return can_run_grace_hash;
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+            case JoinAlgorithm::AUTO:
+                /// Their hash fallback is unreachable for a mixed expression unless hash or grace hash is explicitly enabled.
+                return !has_mixed_join_expression;
+            case JoinAlgorithm::PARTIAL_MERGE:
+                return !has_mixed_join_expression && MergeJoin::isSupported(kind, strictness);
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
+                return !has_mixed_join_expression && !has_single_side_condition
+                    && FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness);
+            case JoinAlgorithm::IE_JOIN:
+            case JoinAlgorithm::DIRECT:
+                return false;
+        }
+        return false;
+    });
+}
+
+/// `ie_join` listed first claims two inequalities, unless demoting an equality key to `equals` would change the result.
 bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings)
 {
     const auto & join_algorithms = join_settings.join_algorithms;
@@ -1560,6 +1628,32 @@ bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & 
 
     if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
         return false;
+
+    if (hasAlgorithmForMixedEqualityJoin(join_operator, join_settings))
+    {
+        bool scalar_comparison_differs_from_join_key = false;
+        bool all_equality_keys_valid = true;
+        for (const auto & condition : join_operator.expression)
+        {
+            if (!isCrossSideEquality(condition))
+                continue;
+
+            auto [op, lhs, rhs] = condition.asBinaryPredicate();
+            if (!canConvertKeyOperandsToCommonType(op, lhs.getType(), rhs.getType(), join_settings.allow_dynamic_type_in_join_keys))
+            {
+                all_equality_keys_valid = false;
+                break;
+            }
+
+            if (JoinCommon::keyMatchesValuesEqualsRejects(lhs.getType())
+                || JoinCommon::keyMatchesValuesEqualsRejects(rhs.getType())
+                || stringAndFixedStringComparisonDiffersAsJoinKey(lhs.getType(), rhs.getType()))
+                scalar_comparison_differs_from_join_key = true;
+        }
+
+        if (scalar_comparison_differs_from_join_key && all_equality_keys_valid)
+            return false;
+    }
 
     size_t inequality_conditions = 0;
     for (const auto & condition : join_operator.expression)
