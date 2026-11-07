@@ -1,0 +1,4 @@
+1
+2
+t_delta	TTL d + toIntervalDay(1) RECOMPRESS CODEC(Delta) SETTINGS
+t_zxc	TTL d + toIntervalDay(1) RECOMPRESS CODEC(ZXC) SETTINGS
