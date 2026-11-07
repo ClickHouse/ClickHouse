@@ -155,6 +155,12 @@ protected:
     const FormatSettings format_settings;
 
 private:
+    /// `out` when the service packets are counted as `FramingServiceBytes` (it is the socket buffer, so
+    /// its `count()` is what `NetworkSendBytes` sees), null behind a compression or buffering wrapper: the
+    /// compressed size of one packet is not observable (gzip, brotli do not flush per packet), and the
+    /// uncompressed input must not be subtracted from compressed traffic, so nothing is counted.
+    const WriteBuffer * service_bytes_out = nullptr;
+
     void extractAndWritePayload(FramedPacketKind kind);
     void pumpLogs();
     void pumpProfileEvents(bool force);

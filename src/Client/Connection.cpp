@@ -70,6 +70,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionReconnectCount;
     extern const Event DistributedConnectionConnectCount;
+    extern const Event NativeProtocolDataReceiveBytes;
 }
 
 namespace DB
@@ -1522,6 +1523,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
         UInt64 packet_type = 0;
+        last_input_packet_start = in->count() + in->chunkFramingBytes();
         readVarUInt(packet_type, *in);
 
         last_input_packet_type.emplace(packet_type);
@@ -1541,6 +1543,7 @@ UInt64 Connection::receivePacketType()
     ensureConnected();
 
     UInt64 type = 0;
+    last_input_packet_start = in->count() + in->chunkFramingBytes();
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
 }
@@ -1560,12 +1563,14 @@ Packet Connection::receivePacket()
         ensureConnected();
 
         Packet res;
+        size_t packet_start = in->count() + in->chunkFramingBytes();
 
         /// Have we already read packet type?
         if (last_input_packet_type)
         {
             res.type = *last_input_packet_type;
             last_input_packet_type.reset();
+            packet_start = last_input_packet_start;
         }
         else
         {
@@ -1578,6 +1583,11 @@ Packet Connection::receivePacket()
             case Protocol::Server::Totals:
             case Protocol::Server::Extremes:
                 res.block = receiveData();
+                /// Only a block with rows is query data for the client's IO meter, not the other packets of the server.
+                /// The chunk framing of the packet counts too.
+                if (res.block.rows() > 0)
+                    ProfileEvents::increment(ProfileEvents::NativeProtocolDataReceiveBytes,
+                        in->count() + in->chunkFramingBytes() - packet_start);
                 return res;
 
             case Protocol::Server::Exception:
