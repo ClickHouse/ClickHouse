@@ -3687,7 +3687,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 std::move(result_block),
                 settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown],
                 size_limits_for_set,
-                isEmptySetForConstantValue(second_argument_constant_column, second_argument_constant_type));
+                isEmptySetForConstantValue(second_argument_constant_column, second_argument_constant_type),
+                in_rhs_has_explicit_null);
 
             /// Create constant set column for constant folding
 
