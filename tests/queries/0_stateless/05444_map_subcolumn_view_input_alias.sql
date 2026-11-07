@@ -4,7 +4,12 @@ DROP VIEW IF EXISTS v_where_alias;
 DROP VIEW IF EXISTS v_subcolumn_alias;
 DROP VIEW IF EXISTS v_null_subcolumn_alias;
 DROP VIEW IF EXISTS v_direct;
+DROP VIEW IF EXISTS v_dotted;
+DROP VIEW IF EXISTS v_dotted_quoted;
+DROP VIEW IF EXISTS v_dotted_alias_qualified;
+DROP VIEW IF EXISTS v_dotted_table_qualified;
 DROP TABLE IF EXISTS t;
+DROP TABLE IF EXISTS t_dotted;
 
 CREATE TABLE t (x Map(String, String), y Map(String, String)) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
@@ -67,3 +72,40 @@ DROP VIEW v_subcolumn_alias;
 DROP VIEW v_null_subcolumn_alias;
 DROP VIEW v_direct;
 DROP TABLE t;
+
+CREATE TABLE t_dotted (m Map(String, String), `x.m` Map(String, String), `t_dotted.m` Map(String, String))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+INSERT INTO t_dotted VALUES ({'k':'ordinary'}, {'k':'dotted'}, {'k':'table_dotted'});
+CREATE VIEW v_dotted SQL SECURITY INVOKER AS SELECT x.m AS attrs FROM t_dotted;
+CREATE VIEW v_dotted_quoted SQL SECURITY INVOKER AS SELECT `x.m` AS attrs FROM t_dotted;
+CREATE VIEW v_dotted_alias_qualified SQL SECURITY INVOKER AS SELECT x.m AS attrs FROM t_dotted AS x;
+CREATE VIEW v_dotted_table_qualified SQL SECURITY INVOKER AS SELECT t_dotted.m AS attrs FROM t_dotted;
+
+SELECT attrs['k'], toTypeName(attrs['k']) FROM v_dotted SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT attrs['k'], toTypeName(attrs['k']) FROM v_dotted SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT attrs['k'], toTypeName(attrs['k']) FROM v_dotted_quoted SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT attrs['k'], toTypeName(attrs['k']) FROM v_dotted_quoted SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT attrs.key_k, toTypeName(attrs.key_k) FROM v_dotted SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() > 0
+FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT attrs['k'] FROM v_dotted SETTINGS optimize_functions_to_subcolumns = 1
+)
+WHERE explain ILIKE '%Output: x.m.key_k%';
+
+-- Qualified names can also match a stored dotted name; preserve the analyzer's binding.
+SELECT
+    (SELECT attrs['k'] FROM v_dotted_alias_qualified SETTINGS optimize_functions_to_subcolumns = 0)
+        = (SELECT attrs['k'] FROM v_dotted_alias_qualified SETTINGS optimize_functions_to_subcolumns = 1),
+    toTypeName((SELECT attrs['k'] FROM v_dotted_alias_qualified SETTINGS optimize_functions_to_subcolumns = 1));
+SELECT
+    (SELECT attrs['k'] FROM v_dotted_table_qualified SETTINGS optimize_functions_to_subcolumns = 0)
+        = (SELECT attrs['k'] FROM v_dotted_table_qualified SETTINGS optimize_functions_to_subcolumns = 1),
+    toTypeName((SELECT attrs['k'] FROM v_dotted_table_qualified SETTINGS optimize_functions_to_subcolumns = 1));
+
+DROP VIEW v_dotted;
+DROP VIEW v_dotted_quoted;
+DROP VIEW v_dotted_alias_qualified;
+DROP VIEW v_dotted_table_qualified;
+DROP TABLE t_dotted;
