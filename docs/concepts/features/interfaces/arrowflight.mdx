@@ -128,7 +128,7 @@ Sessions allow setting persistent ClickHouse settings via the `SetSessionOptions
 | `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false` | If `true`, poll descriptors are cancelled after being consumed by `PollFlightInfo`. |
 | `arrowflight.max_prepared_statements_per_user` | `100` | Maximum number of open prepared statements per user. Set to `0` to disable the limit. |
 | `arrowflight.prepared_statements_lifetime_seconds` | `-1` | Prepared statement lifetime mode. `> 0`: use this value as lifetime and refresh expiration on each request for both session-bound and session-less statements. `0`: disable automatic expiration. `-1`: for session-bound statements, use session timeout as lifetime and refresh it on each request; session-less statements do not expire automatically. |
-| `enable_arrow_close_session` | `true` | Allow clients to close sessions via the `x-clickhouse-session-close` header and the [CloseSession](#closesession) `DoAction`. When set to `false`, the header is ignored and `CloseSession` returns `NOT_CLOSABLE` without releasing the session. |
+| `enable_arrow_close_session` | `true` | Allow clients to close sessions via the `x-clickhouse-session-close` header and the [CloseSession](#closesession) `DoAction`. When set to `false`, the header is ignored and `CloseSession` returns `NOT_CLOSEABLE` without releasing the session. |
 | `default_session_timeout` | `60` | Default session timeout in seconds. Also controls Bearer token expiration. |
 | `max_session_timeout` | `3600` | Maximum allowed session timeout in seconds. |
 
@@ -286,7 +286,7 @@ Closes the session identified by the `x-clickhouse-session-id` header via the Fl
 The response is a `CloseSessionResult` with one of these statuses:
 
 - `CLOSED`: the session was closed, or no named session was in use (in which case the action succeeds as a no-op).
-- `NOT_CLOSABLE`: session closing is disabled because `enable_arrow_close_session` is `false` in the server config.
+- `NOT_CLOSEABLE`: session closing is disabled because `enable_arrow_close_session` is `false` in the server config.
 
 The named session is released when the `CloseSession` RPC completes, the same way as `x-clickhouse-session-close`. When a session is closed, prepared statements created in that session are released (see [ClosePreparedStatement](#closepreparedstatement)). A later request that reuses the same `x-clickhouse-session-id` creates a new named session.
 
