@@ -1028,10 +1028,12 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
     if (match_params.empty())
         return;
 
-    /// Prometheus reads the samples in [now - 5m, now] (its default lookback delta).
+    /// Prometheus reads the samples in [now - lookback delta, now], 5 minutes by default.
     constexpr UInt32 time_scale = 3;
     const DateTime64 now{std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()};
-    const Decimal64 lookback_delta{5 * 60 * 1000};
+    const auto & settings = getContext()->getSettingsRef();
+    const Decimal64 lookback_delta = convertSecondsSettingToTimeSeriesDuration(
+        "promql_lookback_delta", settings[Setting::promql_lookback_delta], time_scale).value_or(Decimal64{5 * 60 * 1000});
 
     /// The newest sample of each series, skipping the series whose newest sample is a stale marker, sorted by metric name.
     auto sql_query = makeASTSelectLatestSamples(time_series_storage->getStorageID(), match_params, now, lookback_delta, time_scale)
