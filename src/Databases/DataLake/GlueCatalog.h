@@ -4,6 +4,8 @@
 #if USE_AWS_S3 && USE_AVRO
 
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/glue/model/Column.h>
+#include <aws/glue/model/TableInput.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Object.h>
@@ -77,7 +79,7 @@ public:
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
-    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot, Poco::JSON::Object::Ptr new_metadata) const override;
 
     bool updateSchema(
         const String & namespace_name,
@@ -103,17 +105,49 @@ public:
         const String & column_name,
         const String & glue_column_type);
 
+    /// Converts top-level Iceberg fields to Glue columns with Hive types and `iceberg.field.*` parameters.
+    static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
+
+    /// Selects the `schemas` entry referenced by `current-schema-id`, or the top-level v1 `schema` when there is no `schemas`.
+    static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
+
     using FieldTypes = std::unordered_map<String, String>;
 
     static FieldTypes getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object);
 
     static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
 
-private:
-    struct FieldTypesWeightFunction
+    struct EarlyAccessLocation
     {
-        size_t operator()(const FieldTypes & field_types) const;
+        String storage_endpoint;
+        String bucket_name;
+        String path;  /// Path within bucket, without the trailing slash
     };
+
+    /// Splits `location` of any S3 scheme (`s3://`, `s3a://`, ...) into bucket and path, and builds the URL for the
+    /// object storage client: `location` itself, or `storage_endpoint` with the bucket like `DatabaseDataLake::getStorageEndpointForTable`.
+    static EarlyAccessLocation resolveEarlyAccessLocation(const String & location, const String & storage_endpoint, DB::S3UriStyle uri_style);
+
+private:
+    struct CachedSchema
+    {
+        FieldTypes field_types;
+        DB::NamesAndTypesList columns;
+    };
+
+    struct CachedSchemaWeightFunction
+    {
+        size_t operator()(const CachedSchema & schema) const;
+    };
+
+    /// Updates `metadata_location` and columns while preserving the rest of the Glue `TableInput`.
+    /// Columns are replaced from `new_schema` if given, otherwise filled from `new_metadata` only when Glue has none.
+    Aws::Glue::Model::TableInput buildUpdatedTableInput(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        const Poco::JSON::Object::Ptr & new_schema,
+        const Poco::JSON::Object::Ptr & new_metadata) const;
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
@@ -143,7 +177,10 @@ private:
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
-    mutable DB::CacheBase<String, FieldTypes, std::hash<String>, FieldTypesWeightFunction> current_schema_field_types;
+    Poco::JSON::Object::Ptr loadMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const;
+    std::shared_ptr<CachedSchema> getCachedSchema(const String & metadata_uri, const TableMetadata & table_metadata) const;
+
+    mutable DB::CacheBase<String, CachedSchema, std::hash<String>, CachedSchemaWeightFunction> current_schema;
 };
 
 }
