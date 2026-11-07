@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -801,7 +802,17 @@ void generateManifestFile(
                     case Field::Types::UInt64:
                         return avro::GenericDatum(partition_values[i].safeGet<Int64>());
                     case Field::Types::String:
-                        return avro::GenericDatum(partition_values[i].safeGet<String>());
+                    {
+                        const auto & value = partition_values[i].safeGet<String>();
+                        /// Avro strings must be UTF-8.
+                        if (value_schema->type() == avro::AVRO_STRING
+                            && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+                            throw Exception(
+                                ErrorCodes::INCORRECT_DATA,
+                                "Cannot write a partition value that is not valid UTF-8 into Iceberg partition column '{}'",
+                                partition_columns[i]);
+                        return avro::GenericDatum(value);
+                    }
                     case Field::Types::Float64:
                         return avro::GenericDatum(partition_values[i].safeGet<Float64>());
                     case Field::Types::Decimal32:
