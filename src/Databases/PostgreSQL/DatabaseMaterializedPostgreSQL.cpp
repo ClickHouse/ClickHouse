@@ -475,6 +475,8 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     /// If there is no query context then we need to attach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        std::lock_guard attach_detach_lock(attach_detach_mutex);
+
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
 
@@ -543,6 +545,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
     /// If there is no query context then we need to detach internal storage from atomic database.
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
+        std::lock_guard attach_detach_lock(attach_detach_mutex);
+
         StoragePtr table_to_delete;
         SettingsChanges new_settings;
         {
