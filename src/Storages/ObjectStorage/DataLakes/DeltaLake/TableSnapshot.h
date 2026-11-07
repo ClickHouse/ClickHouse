@@ -110,6 +110,7 @@ private:
         /// Partition columns list (not stored in read schema)
         DB::Names partition_columns;
         std::unordered_set<String> timestamp_ntz_paths;
+        DB::NameSet binary_columns;
     };
     mutable std::optional<SchemaInfo> schema;
 
