@@ -7751,16 +7751,19 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     }
 }
 
-void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
+void StorageReplicatedMergeTree::dropPartsNoWaitNoThrow(const Strings & part_names)
 {
-    assertNotReadonly();
-    if (!is_leader)
-        throw Exception(ErrorCodes::NOT_A_LEADER, "DROP PART cannot be done on this replica because it is not a leader");
+    for (const auto & part_name : part_names)
+    {
+        assertNotReadonly();
+        if (!is_leader)
+            throw Exception(ErrorCodes::NOT_A_LEADER, "DROP PART cannot be done on this replica because it is not a leader");
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
-    LogEntry entry;
+        zkutil::ZooKeeperPtr zookeeper = getZooKeeperAndAssertNotReadonly();
+        LogEntry entry;
 
-    dropPartImpl(zookeeper, part_name, entry, /*detach=*/ false, /*throw_if_noop=*/ false);
+        dropPartImpl(zookeeper, part_name, entry, /*detach=*/ false, /*throw_if_noop=*/ false);
+    }
 }
 
 void StorageReplicatedMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)

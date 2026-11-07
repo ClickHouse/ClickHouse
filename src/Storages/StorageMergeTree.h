@@ -327,7 +327,7 @@ private:
     size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_fail_point = false);
 
     // Partition helpers
-    void dropPartNoWaitNoThrow(const String & part_name) override;
+    void dropPartsNoWaitNoThrow(const Strings & part_names) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
     void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr context);
