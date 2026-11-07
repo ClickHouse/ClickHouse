@@ -43,6 +43,12 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Common/assert_cast.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Core/DecimalFunctions.h>
+#include <Parsers/ASTLiteral.h>
+#include <base/arithmeticOverflow.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -1442,6 +1448,364 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     }
 
     return {};
+}
+
+namespace
+{
+
+/// The result of the structural analysis of a rows-TTL expression: the single date/time column the
+/// expression shifts and the total constant shift in seconds. The analysis only accepts the shape
+/// `column`, or `column` plus/minus constant intervals of fixed length (week/day/hour/minute/second),
+/// so the expression is provably `column + offset_seconds` and nothing else.
+struct TTLShiftedColumn
+{
+    String column_name;
+    Int64 offset_seconds = 0;
+    /// Day/week intervals are only a fixed number of seconds in a time zone with a fixed offset
+    /// (`addDays` preserves the local wall-clock time across DST transitions otherwise).
+    bool has_day_or_week_interval = false;
+    /// Hour/minute/second intervals change the result type of a `Date`/`Date32` expression, so they
+    /// are only accepted for `DateTime`/`DateTime64` columns.
+    bool has_sub_day_interval = false;
+    /// The smallest and the largest offset of the column among all intermediate results of the expression
+    /// (the column itself, i.e. 0, included): `(column + a) + b` evaluates `column`, `column + a` and
+    /// `column + a + b`. The arithmetic is exact only while every intermediate result stays within the
+    /// domain of its type, see `isTTLShiftWithinDomain`.
+    Int64 min_partial_offset = 0;
+    Int64 max_partial_offset = 0;
+};
+
+/// Recognize a constant fixed-length interval: `toIntervalDay(N)` etc. with a literal integer argument.
+/// Calendar-dependent units (month, quarter, year) and sub-second units are rejected: the former are
+/// not a constant number of seconds, the latter cannot be represented in the parts' TTL timestamps.
+std::optional<TTLShiftedColumn> tryAnalyzeIntervalConstant(const ASTPtr & node)
+{
+    const auto * func = node->as<ASTFunction>();
+    if (!func || !func->arguments || func->arguments->children.size() != 1)
+        return {};
+
+    Int64 multiplier = 0;
+    bool day_or_week = false;
+    if (func->name == "toIntervalSecond")
+        multiplier = 1;
+    else if (func->name == "toIntervalMinute")
+        multiplier = 60;
+    else if (func->name == "toIntervalHour")
+        multiplier = 3600;
+    else if (func->name == "toIntervalDay")
+    {
+        multiplier = 86400;
+        day_or_week = true;
+    }
+    else if (func->name == "toIntervalWeek")
+    {
+        multiplier = 7 * 86400;
+        day_or_week = true;
+    }
+    else
+        return {};
+
+    const auto * literal = func->arguments->children.front()->as<ASTLiteral>();
+    if (!literal)
+        return {};
+
+    Int64 value = 0;
+    if (literal->value.getType() == Field::Types::UInt64)
+    {
+        UInt64 unsigned_value = literal->value.safeGet<UInt64>();
+        if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return {};
+        value = static_cast<Int64>(unsigned_value);
+    }
+    else if (literal->value.getType() == Field::Types::Int64)
+        value = literal->value.safeGet<Int64>();
+    else
+        return {};
+
+    TTLShiftedColumn result;
+    if (common::mulOverflow(value, multiplier, result.offset_seconds))
+        return {};
+    result.has_day_or_week_interval = day_or_week;
+    result.has_sub_day_interval = !day_or_week;
+    result.min_partial_offset = std::min<Int64>(0, result.offset_seconds);
+    result.max_partial_offset = std::max<Int64>(0, result.offset_seconds);
+    return result;
+}
+
+/// Structurally decompose a rows-TTL expression into `column + constant seconds`. Returns std::nullopt
+/// for any other shape (several columns, non-literal intervals, calendar-dependent units, arbitrary
+/// functions), in which case the caller must fall back to a regular `MATERIALIZE TTL` rewrite.
+std::optional<TTLShiftedColumn> tryAnalyzeTTLShift(const ASTPtr & node)
+{
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        TTLShiftedColumn result;
+        result.column_name = identifier->name();
+        return result;
+    }
+
+    const auto * func = node->as<ASTFunction>();
+    if (!func || (func->name != "plus" && func->name != "minus") || !func->arguments || func->arguments->children.size() != 2)
+        return {};
+
+    const bool is_minus = func->name == "minus";
+    const auto & lhs = func->arguments->children[0];
+    const auto & rhs = func->arguments->children[1];
+
+    /// `<subtree> + interval`, `<subtree> - interval`, or `interval + <subtree>`.
+    std::optional<TTLShiftedColumn> interval = tryAnalyzeIntervalConstant(rhs);
+    ASTPtr subtree = lhs;
+    if (!interval && !is_minus)
+    {
+        interval = tryAnalyzeIntervalConstant(lhs);
+        subtree = rhs;
+    }
+    if (!interval)
+        return {};
+
+    auto result = tryAnalyzeTTLShift(subtree);
+    if (!result)
+        return {};
+
+    Int64 shift = interval->offset_seconds;
+    if (is_minus && common::subOverflow(Int64(0), interval->offset_seconds, shift))
+        return {};
+    if (common::addOverflow(result->offset_seconds, shift, result->offset_seconds))
+        return {};
+
+    result->has_day_or_week_interval |= interval->has_day_or_week_interval;
+    result->has_sub_day_interval |= interval->has_sub_day_interval;
+    result->min_partial_offset = std::min(result->min_partial_offset, result->offset_seconds);
+    result->max_partial_offset = std::max(result->max_partial_offset, result->offset_seconds);
+    return result;
+}
+
+/// Whether `column + offset` is computed exactly - without saturation or wrap-around - for every
+/// intermediate result of both expressions and for every row of a part whose stored old TTL timestamps
+/// lie in `[old_ttl_min, old_ttl_max]`.
+///
+/// The date/time arithmetic is only a plain addition of seconds inside the domain of its type: `DateTime`
+/// and `Date` wrap around, `DateTime64` ticks overflow `Int64`, and day/week arithmetic outside the lookup
+/// table saturates at the boundary of the representable calendar (`DateLUTImpl::addDaysOutOfRange`). So the
+/// stored timestamps are not necessarily `column + old offset`, and the new TTL is not necessarily that
+/// plus the delta. `window_low` and `window_high` (exclusive) bound a range of seconds where the arithmetic
+/// of the column type is exact, with every saturation boundary and every wrap-around point outside of it.
+///
+/// The column values are reconstructed from the stored timestamps as if the old expression were exact.
+/// If it was not for some row, the reconstruction leaves the window for that row: when the last inexact
+/// step of its evaluation saturated, the reconstructed result of that step is the saturation boundary;
+/// when it wrapped around, the reconstructed input of that step is off by a whole period of the type.
+/// Intermediate results are monotonic in the column value, so checking the bounds of the part suffices.
+bool isTTLShiftWithinDomain(
+    const TTLShiftedColumn & old_shift, const TTLShiftedColumn & new_shift,
+    time_t old_ttl_min, time_t old_ttl_max, Int64 window_low, Int64 window_high)
+{
+    Int64 column_min = 0;
+    Int64 column_max = 0;
+    if (common::subOverflow(static_cast<Int64>(old_ttl_min), old_shift.offset_seconds, column_min)
+        || common::subOverflow(static_cast<Int64>(old_ttl_max), old_shift.offset_seconds, column_max))
+        return false;
+
+    for (const auto * shift : {&old_shift, &new_shift})
+    {
+        Int64 lowest = 0;
+        Int64 highest = 0;
+        if (common::addOverflow(column_min, shift->min_partial_offset, lowest)
+            || common::addOverflow(column_max, shift->max_partial_offset, highest))
+            return false;
+
+        if (lowest <= window_low || highest >= window_high)
+            return false;
+    }
+
+    return true;
+}
+
+/// See the comment on the exported `tryComputeConstantTTLDelta` in the header: this is the same proof,
+/// with the old rows TTL already parsed.
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const ASTPtr & old_expression_ast, const TTLDescription & new_ttl, const DateLUTImpl & date_lut,
+    time_t old_ttl_min, time_t old_ttl_max)
+{
+    if (!new_ttl.expression_ast)
+        return {};
+
+    /// The optimization is only sound when `new_ttl(row) - old_ttl(row)` is the same constant for every
+    /// possible row, so we require both expressions to have a provable shape: the same single date/time
+    /// column shifted by constant fixed-length intervals. Everything else - other columns (which make
+    /// the delta row-dependent, e.g. `if(id = 0, ...)`), calendar month/year intervals, non-literal
+    /// intervals, arbitrary functions - is rejected here, falling back to a regular rewrite.
+    auto old_shift = tryAnalyzeTTLShift(old_expression_ast);
+    auto new_shift = tryAnalyzeTTLShift(new_ttl.expression_ast);
+    if (!old_shift || !new_shift || old_shift->column_name != new_shift->column_name)
+        return {};
+
+    /// The shifted identifier must be the one and only source column of the new expression, which is the
+    /// one built and validated against the current table structure. This also rejects an ALIAS column,
+    /// whose analyzed source columns would carry the underlying names instead. The old expression shifts
+    /// an identifier of the same name, so both read that same column - and if the name does not resolve
+    /// to a column of the table at all (the old expression may name one that has been dropped since the
+    /// part was written), it cannot equal the new expression's source column and is rejected right here,
+    /// without the old expression ever being resolved or evaluated.
+    /// `expression_source_columns` and not `expression_columns`: the latter describes the *built*
+    /// expression's inputs, whose type is the one the built actions read the column as, which is not
+    /// necessarily the type the table declares (`DateTime + INTERVAL DAY` reads its argument as
+    /// `DateTime64`). What has to be reasoned about here - and what the part must physically store - is
+    /// the column as the table declares it.
+    if (new_ttl.expression_source_columns.size() != 1
+        || new_ttl.expression_source_columns.front().name != new_shift->column_name)
+        return {};
+
+    const auto & column_type = new_ttl.expression_source_columns.front().type;
+
+    /// The range of the lookup table, `[DATE_LUT_MIN_YEAR, DATE_LUT_MAX_YEAR]`, in seconds since the epoch
+    /// in UTC, narrowed by a day on both ends so that it stays inside the table in every time zone. Day
+    /// and week arithmetic is exact within it in a time zone with a fixed offset; the representable
+    /// calendar, where `addDaysOutOfRange` saturates, is wider.
+    static_assert(DATE_LUT_MIN_YEAR == 1900 && DATE_LUT_MAX_YEAR == 2299);
+    constexpr Int64 lut_window_low = -2208988800LL + 86400;  /// 1900-01-02 00:00:00 UTC
+    constexpr Int64 lut_window_high = 10413792000LL - 86400; /// 2299-12-31 00:00:00 UTC
+
+    Int64 window_low = lut_window_low;
+    Int64 window_high = lut_window_high;
+
+    WhichDataType which(column_type);
+    if (which.isDate())
+    {
+        /// `Date` stores an `UInt16` day number, which wraps around.
+        window_low = std::max<Int64>(window_low, 86400);
+        window_high = std::min<Int64>(window_high, static_cast<Int64>(DATE_LUT_MAX_DAY_NUM - 1) * 86400);
+    }
+    else if (which.isDateTime())
+    {
+        /// `DateTime` stores an `UInt32` number of seconds, which wraps around.
+        window_low = std::max<Int64>(window_low, 0);
+        window_high = std::min<Int64>(window_high, DATE_LUT_MAX);
+    }
+    else if (which.isDateTime64())
+    {
+        /// `DateTime64` stores an `Int64` number of ticks, which overflows for a large scale.
+        const Int64 ticks_per_second = DecimalUtils::scaleMultiplier<Int64>(
+            assert_cast<const DataTypeDateTime64 &>(*column_type).getScale());
+        window_low = std::max<Int64>(window_low, std::numeric_limits<Int64>::min() / ticks_per_second);
+        window_high = std::min<Int64>(window_high, std::numeric_limits<Int64>::max() / ticks_per_second);
+    }
+
+    if (which.isDate() || which.isDate32())
+    {
+        /// Hour/minute/second intervals turn a `Date` expression into a `DateTime` one, whose time zone
+        /// depends on the evaluation context; do not try to reason about that.
+        if (old_shift->has_sub_day_interval || new_shift->has_sub_day_interval)
+            return {};
+
+        /// A `Date` TTL stores `fromDayNum(date + N)` in the current time zone, so consecutive days are
+        /// a fixed 86400 seconds apart only when that time zone has a fixed offset from UTC.
+        if (!date_lut.hasFixedOffset())
+            return {};
+    }
+    else if (which.isDateTime() || which.isDateTime64())
+    {
+        /// `addDays`/`addWeeks` preserve the local wall-clock time, so they add a fixed number of
+        /// seconds only in a time zone with a fixed offset from UTC. Hour/minute/second intervals
+        /// always add a fixed number of seconds regardless of the time zone.
+        if (old_shift->has_day_or_week_interval || new_shift->has_day_or_week_interval)
+        {
+            const auto & time_zone = which.isDateTime()
+                ? assert_cast<const DataTypeDateTime &>(*column_type).getTimeZone()
+                : assert_cast<const DataTypeDateTime64 &>(*column_type).getTimeZone();
+            if (!time_zone.hasFixedOffset())
+                return {};
+        }
+    }
+    else
+        return {};
+
+    if (!isTTLShiftWithinDomain(*old_shift, *new_shift, old_ttl_min, old_ttl_max, window_low, window_high))
+        return {};
+
+    Int64 delta = 0;
+    if (common::subOverflow(new_shift->offset_seconds, old_shift->offset_seconds, delta))
+        return {};
+
+    /// A `DateTime64` with a fractional scale is converted to the stored whole-second timestamps by
+    /// dividing its ticks, which truncates toward zero: down for a positive value and up for a negative
+    /// one. Adding a whole number of seconds commutes with that truncation only when the exact value stays
+    /// on the same side of zero, so e.g. `-1.5` stored as `-1` shifted by `2` is `0.5`, stored as `0`, not
+    /// `1`. A stored timestamp `s >= 1` means the exact value is at least `s`, and `s <= -1` means it is at
+    /// most `s`, so requiring the old and the shifted bounds to be on the same strict side of zero proves
+    /// the shift for every row. A stored `0` may come from either side and is never shifted.
+    if (which.isDateTime64() && assert_cast<const DataTypeDateTime64 &>(*column_type).getScale() > 0)
+    {
+        Int64 shifted_min = 0;
+        Int64 shifted_max = 0;
+        if (common::addOverflow(static_cast<Int64>(old_ttl_min), delta, shifted_min)
+            || common::addOverflow(static_cast<Int64>(old_ttl_max), delta, shifted_max))
+            return {};
+
+        const bool all_positive = old_ttl_min >= 1 && shifted_min >= 1;
+        const bool all_negative = old_ttl_max <= -1 && shifted_max <= -1;
+        if (!all_positive && !all_negative)
+            return {};
+    }
+
+    return delta;
+}
+
+}
+
+String getRowsTTLExpressionFingerprint(const TTLDescription & rows_ttl)
+{
+    if (!rows_ttl.expression_ast)
+        return {};
+
+    /// Only an expression the fast path could ever accept is recorded. The fingerprint exists solely so a
+    /// later `MATERIALIZE TTL` can prove a constant shift against it, which means parsing it back, and
+    /// restricting it to that shape - an identifier plus constant fixed-length intervals - keeps the
+    /// recorded string trivially round-trippable. A fingerprint that does not parse then means a `ttl.txt`
+    /// saying something no server wrote, rather than an expression whose formatting is not reparseable.
+    if (!tryAnalyzeTTLShift(rows_ttl.expression_ast))
+        return {};
+
+    /// Formatted rather than `result_column` (the expression's `getColumnName`), which writes identifiers
+    /// raw: a column name that needs quoting (``TTL `create time` + INTERVAL 1 DAY``) would not round-trip.
+    return rows_ttl.expression_ast->formatWithSecretsOneLine();
+}
+
+String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl, const DateLUTImpl & date_lut)
+{
+    if (rows_ttl.expression_source_columns.size() == 1)
+    {
+        const auto & type = rows_ttl.expression_source_columns.front().type;
+        WhichDataType which(type);
+        if (which.isDateTime())
+            return assert_cast<const DataTypeDateTime &>(*type).getTimeZone().getTimeZone();
+        if (which.isDateTime64())
+            return assert_cast<const DataTypeDateTime64 &>(*type).getTimeZone().getTimeZone();
+    }
+
+    return date_lut.getTimeZone();
+}
+
+std::optional<time_t> tryComputeConstantTTLDelta(
+    const String & old_ttl_expression, const TTLDescription & new_ttl, const DateLUTImpl & date_lut,
+    time_t old_ttl_min, time_t old_ttl_max)
+{
+    if (old_ttl_expression.empty())
+        return {};
+
+    /// The stored fingerprint is a rows-TTL expression that a ClickHouse server wrote with
+    /// `getRowsTTLExpressionFingerprint`, so it parses by construction; a parse failure means the part's
+    /// `ttl.txt` says something we did not write, which is worth escalating rather than silently
+    /// downgrading to a rewrite. Only the *shape* of the parsed expression is then inspected - it is
+    /// never resolved against the table's columns nor evaluated - so an expression that is no longer
+    /// valid for the current table structure is not an error here, it is simply not a shift of the new
+    /// TTL and yields `std::nullopt`.
+    ParserExpression parser;
+    ASTPtr old_expression_ast = parseQuery(
+        parser, old_ttl_expression.data(), old_ttl_expression.data() + old_ttl_expression.size(),
+        "rows TTL expression fingerprint", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    return tryComputeConstantTTLDelta(old_expression_ast, new_ttl, date_lut, old_ttl_min, old_ttl_max);
 }
 
 TTLDescription TTLDescription::getTTLFromAST(

@@ -1,0 +1,6 @@
+A row whose TTL timestamp is exactly the epoch must still be dropped by MODIFY TTL
+2
+2100-01-01 00:00:00
+A row whose TTL timestamp shifts onto the epoch must not be dropped by MODIFY TTL
+1
+2100-01-01 00:00:00
