@@ -108,6 +108,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
+    extern const DatabaseDataLakeSettingsString google_service_account_key;
+    extern const DatabaseDataLakeSettingsString disk;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
 }
@@ -255,6 +257,31 @@ void DatabaseDataLake::validateSettings()
             ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
             "Please specify 'SETTINGS warehouse=<warehouse_name>' in the CREATE DATABASE query");
     }
+
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        && settings[DatabaseDataLakeSetting::disk].changed)
+    {
+        /// The Google credentials of a BigLake catalog are also the credentials of its tables' data files, and they
+        /// reach the tables through `StorageS3Configuration::fromAST` only (see `applyCatalogSpecificConfiguration`).
+        /// A table built on a disk takes the disk's own credentials instead (`fromDisk`), so the user-supplied
+        /// credentials would silently apply to the catalog but not to the data. Refuse the combination.
+        const bool has_google_credentials = !settings[DatabaseDataLakeSetting::google_service_account_key].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_id].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_client_secret].value.empty()
+            || !settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.empty();
+        /// Only new databases are refused: a database that already exists in the metadata must still load at
+        /// server startup, so it keeps the previous behavior (the data files are read with the credentials of the disk).
+        if (has_google_credentials && is_loading_from_existing_metadata)
+            LOG_WARNING(log, "The `disk` setting of a BigLake catalog is combined with Google credentials: the data files "
+                "are read with the credentials of the disk, not with the credentials of the catalog");
+        else if (has_google_credentials)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `disk` setting cannot be combined with `google_service_account_key` or the Google ADC credentials "
+                "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token) of a BigLake catalog: "
+                "the data files of a table on a disk are read with the credentials of the disk, not with the "
+                "credentials of the catalog");
+    }
 }
 
 void DatabaseDataLake::initialize() const
@@ -357,6 +384,7 @@ void DatabaseDataLake::initialize() const
             std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
             std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
+            std::string google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
             {
@@ -375,6 +403,7 @@ void DatabaseDataLake::initialize() const
                 google_adc_client_secret,
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
+                google_service_account_key,
                 Context::getGlobalContextInstance(),
                 allow_server_credentials_in_user_queries);
             break;
@@ -894,7 +923,8 @@ void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageCon
         s3_configuration->setInitializationAsBigLake(
             biglake_catalog.getGoogleADCClientId(),
             biglake_catalog.getGoogleADCClientSecret(),
-            biglake_catalog.getGoogleADCRefreshToken()
+            biglake_catalog.getGoogleADCRefreshToken(),
+            biglake_catalog.getGoogleServiceAccountKey()
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
