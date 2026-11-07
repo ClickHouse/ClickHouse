@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/setThreadName.h>
 
 #include <base/types.h>
 
@@ -10,6 +11,7 @@
 #include <chrono>
 #include <deque>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <condition_variable>
 
@@ -98,6 +100,18 @@ public:
 
     /// Wait for single event (if not available) and process it
     void process();
+
+    /// Runs `loop` as the scheduler thread attached to this queue.
+    /// The scheduler thread must never throw: the thread would stop, and every queued request and every thread
+    /// waiting for an event to be processed would wait forever. So an exception terminates the server.
+    /// MemoryTracker does not throw in this thread (memory is still accounted).
+    /// Sets `started` once the thread is attached, before running `loop`.
+    void runSchedulerThread(ThreadName name, std::promise<void> & started, const std::function<void()> & loop) noexcept;
+
+    /// Waits until a scheduler thread is started by `runSchedulerThread`.
+    /// If the thread finishes before that (e.g. its initialization in the thread pool failed), `started` is broken
+    /// and nobody would ever process events, so the server terminates.
+    static void waitSchedulerThreadStarted(std::future<void> & started) noexcept;
 
     /// Returns current time point
     TimePoint now();

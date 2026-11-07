@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -11,6 +12,7 @@
 #include <unordered_map>
 #include <memory>
 #include <atomic>
+#include <future>
 
 
 namespace DB
@@ -63,7 +65,13 @@ public:
     void start(ThreadName name)
     {
         if (!scheduler.joinable())
-            scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
+        {
+            // Only the thread owns the promise: if it finishes without running `schedulerThread`, the promise is broken
+            auto started = std::make_shared<std::promise<void>>();
+            auto started_future = started->get_future();
+            scheduler = ThreadFromGlobalPool([this, name, my_started = std::move(started)] { schedulerThread(name, *my_started); });
+            EventQueue::waitSchedulerThreadStarted(started_future);
+        }
     }
 
     /// Joins scheduler threads and execute every pending request iff graceful
@@ -76,6 +84,9 @@ public:
             scheduler.join();
             if (graceful)
             {
+                // Callbacks run in the current thread, which must not throw either (see `EventQueue::runSchedulerThread`)
+                LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
@@ -224,23 +235,23 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(ThreadName name)
+    void schedulerThread(ThreadName name, std::promise<void> & started)
     {
-        DB::setThreadName(name);
-        EventQueue::SchedulerThread scheduler_thread(&events);
-
-        while (!stop_flag.load())
+        events.runSchedulerThread(name, started, [this]
         {
-            // Dequeue and execute single request
-            auto [request, _] = dequeueRequest();
-            if (request)
-                request->execute();
-            else // No more requests -- block until any event happens
-                events.process();
+            while (!stop_flag.load())
+            {
+                // Dequeue and execute single request
+                auto [request, _] = dequeueRequest();
+                if (request)
+                    request->execute();
+                else // No more requests -- block until any event happens
+                    events.process();
 
-            // Process all events before dequeuing to ensure fair competition
-            while (events.tryProcess()) {}
-        }
+                // Process all events before dequeuing to ensure fair competition
+                while (events.tryProcess()) {}
+            }
+        });
     }
 
     Resource * current = nullptr; // round-robin pointer

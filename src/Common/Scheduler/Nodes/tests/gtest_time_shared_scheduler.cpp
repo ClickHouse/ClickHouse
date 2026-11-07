@@ -6,10 +6,15 @@
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/randomSeed.h>
 
 #include <barrier>
 #include <future>
+#include <stdexcept>
+#include <thread>
 #include <pcg_random.hpp>
 
 using namespace DB;
@@ -258,4 +263,67 @@ TEST(SchedulerTimeShared, Cancel)
     consumer2.join();
 
     EXPECT_TRUE(fc1->getInflights().first == 0);
+}
+
+TEST(SchedulerTimeShared, ExceptionInSchedulerThreadTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+    {
+        TimeSharedScheduler scheduler;
+        scheduler.start(ThreadName::TEST_SCHEDULER);
+        scheduler.event_queue.enqueue([] { throw std::runtime_error("Test exception in the scheduler thread"); });
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+    }, "Test exception in the scheduler thread");
+}
+
+/// The scheduler thread finishes without starting the scheduler loop, so its startup promise is broken
+TEST(SchedulerTimeShared, BrokenSchedulerThreadStartupTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+    {
+        std::future<void> started;
+        {
+            std::promise<void> promise;
+            started = promise.get_future();
+        }
+        EventQueue::waitSchedulerThreadStarted(started);
+    }, "Scheduler thread failed to start");
+}
+
+/// The injected allocation failure does not happen in sanitizer builds: the thread starts and the test fails to die
+#if !defined(SANITIZER)
+TEST(SchedulerTimeShared, SchedulerThreadStartupFailureTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+    {
+        // Every allocation hits the server memory limit, except in this thread. The pool thread fails
+        // while it initializes `ThreadStatus` (before the scheduler loop starts), and nobody would ever process events.
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
+        // Initialize the thread-local storage of a pool thread first: the scheduler reuses this idle thread,
+        // so its first allocation is in `ThreadStatus`
+        ThreadFromGlobalPool([] {}).join();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+        total_memory_tracker.setHardLimit(1);
+        TimeSharedScheduler scheduler;
+        scheduler.start(ThreadName::TEST_SCHEDULER);
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+    }, "Scheduler thread failed to start");
+}
+#endif
+
+TEST(SchedulerTimeShared, MemoryTrackerDoesNotThrowInSchedulerThread)
+{
+    ResourceTest t;
+    std::promise<bool> blocked;
+    t.scheduler.event_queue.enqueue([&]
+    {
+        blocked.set_value(LockMemoryExceptionInThread::isBlocked(VariableContext::Global, /* fault_injection = */ true));
+    });
+    EXPECT_TRUE(blocked.get_future().get());
 }
