@@ -544,6 +544,7 @@ static bool functionNameNeedsQuoting(const String & name, const ASTPtr & argumen
 
 /// A compound name (`db.view(...)`) is written part by part: one quoted `db.view` token parses back as a one-part name.
 /// A keyword part is quoted: `1 IN partition.pv(1)` does not parse.
+/// A part may contain dots, so a dot splits only between non-empty parts: an empty quoted identifier does not parse.
 static void writeFunctionName(
     WriteBuffer & ostr, const IAST::FormatSettings & settings, const String & name, bool is_compound_name, const ASTPtr & arguments)
 {
@@ -554,17 +555,22 @@ static void writeFunctionName(
     }
 
     const auto & keywords = getKeyWordSet();
-    std::string_view rest = name;
-    while (true)
+    auto write_part = [&](size_t begin, size_t end)
     {
-        const size_t dot = rest.find('.');
-        const String part(rest.substr(0, dot));
+        const String part = name.substr(begin, end - begin);
         settings.writeIdentifier(ostr, part, /*ambiguous=*/keywords.contains(Poco::toUpper(part)));
-        if (dot == std::string_view::npos)
-            break;
+    };
+
+    size_t begin = 0;
+    for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
+    {
+        if (dot == begin || dot + 1 == name.size())
+            continue;
+        write_part(begin, dot);
         ostr << '.';
-        rest.remove_prefix(dot + 1);
+        begin = dot + 1;
     }
+    write_part(begin, name.size());
 }
 
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
