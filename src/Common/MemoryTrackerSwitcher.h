@@ -2,18 +2,24 @@
 
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemoryThreadState.h>
+#include <optional>
 
 namespace DB
 {
 
 struct MemoryTrackerSwitcher
 {
-    explicit MemoryTrackerSwitcher(MemoryTracker * new_tracker);
+    explicit MemoryTrackerSwitcher(MemoryTracker * new_tracker, std::optional<Int64> untracked_memory_limit = {});
     ~MemoryTrackerSwitcher();
+
+    /// Restore the previous scope. A reset switcher can be reused without allocating a new guard.
+    void reset();
+    void switchTo(MemoryTracker * new_tracker, std::optional<Int64> untracked_memory_limit = {});
 
 private:
     MemoryTracker * prev_memory_tracker_parent = nullptr;
     Int64 prev_untracked_memory = 0;
+    Int64 prev_untracked_memory_limit = 0;
     VariableContext prev_untracked_memory_blocker_level = VariableContext::Max;
     /// The per-CPU contribution accounts for the same un-flushed bytes as untracked_memory,
     /// so it must be saved/restored together with it; otherwise allocations in the switched

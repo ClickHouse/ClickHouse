@@ -40,7 +40,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_early_memory_limit():
+@pytest.mark.parametrize("http_method", ["GET", "POST"])
+def test_early_memory_limit(http_method):
     instance.restart_clickhouse()
 
     instance.query("DROP USER IF EXISTS Alex")
@@ -56,7 +57,9 @@ def test_early_memory_limit():
     server_ip = cluster.get_instance_ip("instance")
     # Note, we cannot use output_format_parallel_formatting since it uses separate threads with default max_untracked_memory=4Mi
     endpoint = "'http://{}:8123/?query=SELECT+1&user=Alex&output_format_parallel_formatting=0'".format(server_ip)
-    retry(lambda: "(total) memory limit exceeded" in instance.exec_in_container(["bash", "-c", f"curl {endpoint}"]))
+    body_option = "--data ''" if http_method == "POST" else ""
+    curl = f"curl --max-time 10 --request {http_method} {body_option} {endpoint}"
+    retry(lambda: "(total) memory limit exceeded" in instance.exec_in_container(["bash", "-c", curl]))
 
     instance.replace_in_config(
         "/etc/clickhouse-server/config.d/server.yaml",
@@ -65,7 +68,7 @@ def test_early_memory_limit():
     )
     retry(lambda: instance.query("system reload config", user="default"))
 
-    retry(lambda: "(total) memory limit exceeded" not in instance.exec_in_container(["bash", "-c", f"curl {endpoint}"]))
+    retry(lambda: "(total) memory limit exceeded" not in instance.exec_in_container(["bash", "-c", curl]))
     retry(lambda: instance.query("select 1", user="default"))
 
     retry(lambda: "(total) memory limit exceeded" in instance.query_and_get_error("select 1", user="Bob"))
