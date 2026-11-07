@@ -102,6 +102,9 @@ public:
     /// With `object_storage_write_atomically` the data is written to a temporary file which is then renamed.
     bool supportsAtomicWrite() const override { return true; }
 
+    /// Every tag comes out of `makeETag`, which never returns an empty string.
+    bool alwaysReportsETag() const override { return true; }
+
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
     ObjectStoragePtr cloneImpl() const override;

@@ -329,6 +329,73 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
     EXPECT_EQ(object_storage->reads, 12);
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, RefreshWithoutETagsObservesChangedFileLists)
+{
+    /// `ETag` is an optional response header. Two missing tags compare equal, but they say nothing
+    /// about whether the object is the same, so a refresh must not reuse a cached directory on them.
+    class StorageWithoutETags : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+
+        void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
+        {
+            LocalObjectStorage::listObjects(path, children, max_keys);
+            for (const auto & child : children)
+                child->metadata->etag.clear();
+        }
+
+        ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override
+        {
+            auto metadata = LocalObjectStorage::getObjectMetadata(path, with_tags);
+            metadata.etag.clear();
+            return metadata;
+        }
+
+        std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override
+        {
+            auto metadata = LocalObjectStorage::tryGetObjectMetadata(path, with_tags);
+            if (metadata)
+                metadata->etag.clear();
+            return metadata;
+        }
+    };
+
+    auto writer = getMetadataStorage("RefreshWithoutETagsObservesChangedFileLists");
+    auto create_file = [&](const std::string & path)
+    {
+        auto tx = writer->createTransaction();
+        auto remote_path = tx->generateObjectKeyForPath(path).serialize();
+        auto size = writeObject(getObjectStorage("RefreshWithoutETagsObservesChangedFileLists"), remote_path, "data");
+        tx->createMetadataFile(path, {StoredObject(remote_path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    create_file("A/first");
+
+    auto object_storage = std::make_shared<StorageWithoutETags>(LocalObjectStorageSettings(
+        "reader", getObjectStorage("RefreshWithoutETagsObservesChangedFileLists")->getCommonKeyPrefix(), false));
+    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "", hard_links_enabled);
+    EXPECT_EQ(reader.listDirectory("A"), std::vector<std::string>({"first"}));
+
+    /// The directory keeps its name, only its files change.
+    create_file("A/second");
+    reader.refresh(0);
+    EXPECT_EQ(sorted(reader.listDirectory("A")), std::vector<std::string>({"first", "second"}));
+
+    {
+        auto tx = writer->createTransaction();
+        tx->unlinkFile("A/first", /*if_exists=*/ false, /*should_remove_objects=*/ true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+    reader.refresh(0);
+    EXPECT_EQ(reader.listDirectory("A"), std::vector<std::string>({"second"}));
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
 {
     auto metadata = getMetadataStorage("Ls");
