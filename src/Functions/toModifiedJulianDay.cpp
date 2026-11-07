@@ -16,10 +16,11 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
+        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ExecutableFunctionToModifiedJulianDay final : public IExecutableFunction
+    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -100,18 +101,10 @@ namespace DB
         {
             return true;
         }
-
-        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-        /// row references it, so the throwing variant must not be executed on the whole dictionary -
-        /// the empty string is not a date and it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override
-        {
-            return nullOnErrors;
-        }
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class FunctionBaseToModifiedJulianDay final : public IFunctionBase
+    class FunctionBaseToModifiedJulianDay : public IFunctionBase
     {
     public:
         explicit FunctionBaseToModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -142,7 +135,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return !nullOnErrors;
+            return true;
         }
 
         bool hasInformationAboutMonotonicity() const override
@@ -152,9 +145,6 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            /// The OrNull variant maps multiple invalid inputs to NULL, breaking monotonicity.
-            if constexpr (nullOnErrors)
-                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
@@ -164,7 +154,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ToModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
+    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -186,13 +176,23 @@ namespace DB
             return std::make_unique<FunctionBaseToModifiedJulianDay<Name, ToDataType, nullOnErrors>>(argument_types, return_type);
         }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            const String to = ToDataType{}.getName();
+            if (!isStringOrFixedString(arguments[0]))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
+                    getName());
+            }
+
+            DataTypePtr base_type = std::make_shared<ToDataType>();
             if constexpr (nullOnErrors)
-                return "(StringOrFixedString) -> Nullable(" + to + ")";
+            {
+                return std::make_shared<DataTypeNullable>(base_type);
+            }
             else
-                return "(StringOrFixedString) -> " + to;
+            {
+                return base_type;
+            }
         }
 
         size_t getNumberOfArguments() const override
@@ -202,7 +202,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return !nullOnErrors;
+            return true;
         }
     };
 
@@ -264,12 +264,12 @@ SELECT toModifiedJulianDayOrNull('2020-01-01');
 SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         )",
             R"(
-┌─toModifiedJulianDayOrNull('2020-01-01')─┐
-│                                   58849 │
-└─────────────────────────────────────────┘
-┌─toModifiedJulianDayOrNull('0000-00-00')─┐
-│                                    ᴺᵁᴸᴸ │
-└─────────────────────────────────────────┘
+┌─toModifiedJu⋯020-01-01')─┐
+│                    58849 │
+└──────────────────────────┘
+┌─toModifiedJu⋯000-00-00')─┐
+│                     ᴺᵁᴸᴸ │
+└──────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};

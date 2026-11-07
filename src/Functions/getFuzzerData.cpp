@@ -2,7 +2,6 @@
 
 #if USE_FUZZING_MODE
 
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -15,7 +14,7 @@ namespace DB
 namespace
 {
 
-class FunctionGetFuzzerData final : public IFunction
+class FunctionGetFuzzerData : public IFunction
 {
     inline static String fuzz_data;
 
@@ -28,9 +27,9 @@ public:
 
     inline size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> String";
+        return std::make_shared<DataTypeString>();
     }
 
     inline bool isDeterministic() const override { return false; }
