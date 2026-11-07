@@ -10441,7 +10441,7 @@ An `INSERT` into a partitioned Iceberg table writes one manifest file for all th
 and PyIceberg, instead of one manifest file per partition. This holds per insert stream: every stream commits its own
 snapshot with its own manifest, so an `INSERT` writes exactly one manifest only with `max_insert_threads = 1`.
 `OPTIMIZE TABLE ... MANIFEST` then also merges manifests of different partitions into one.
-`ALTER TABLE ... DROP PARTITION` cannot drop a partition whose manifest is shared with other partitions.
+`ALTER TABLE ... DROP PARTITION` rewrites a manifest that is shared with other partitions, when it drops one of its partitions.
 )", 0, \
         {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, iceberg_compaction_max_rows_in_data_file, std::numeric_limits<UInt64>::max(), R"(
