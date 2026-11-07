@@ -2338,8 +2338,21 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     StorageListWithLocks res;
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
+    /// Before `applyFilters`, the filters already pushed down to this step exclude tables too: every child applies them.
+    std::optional<ActionsDAG> pushed_down_filters_dag;
+    const ActionsDAG * filter_dag = filter_actions_dag.get();
+    if (!filter_dag && !pushed_down_filters.empty())
+    {
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        for (const auto & filter_info : pushed_down_filters)
+            filter_nodes.push_back(&filter_info.actions.findInOutputs(filter_info.column_name));
+        pushed_down_filters_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes);
+        if (pushed_down_filters_dag)
+            filter_dag = &*pushed_down_filters_dag;
+    }
+
     std::function<bool(const String&,const String&)> table_filter;
-    if (filter_actions_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
+    if (filter_dag && merge_storage_snapshot->metadata->isVirtualColumn("_database") && merge_storage_snapshot->metadata->isVirtualColumn("_table"))
     {
         auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
         Block sample_block = {
@@ -2347,7 +2360,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(lc_string_type, "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), &sample_block, query_context);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
