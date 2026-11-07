@@ -1,0 +1,74 @@
+match	[1]
+match, no index	[1]
+match, whole token	[3]
+match, whole token, no index	[3]
+regexp	[2]
+regexp, no index	[2]
+match, alternation	[1,2]
+match, alternation, no index	[1,2]
+match, case-insensitive	[1,5]
+match, case-insensitive, no index	[1,5]
+match, regexp	[1]
+match, regexp, no index	[1]
+match, short	[1,11,12]
+match, short, no index	[1,11,12]
+match, scan disabled	[1]
+match, scan disabled, no index	[1]
+not	[2,3,4,5,6,7,8,9,10,11,12,13]
+not, no index	[2,3,4,5,6,7,8,9,10,11,12,13]
+or	[1,3]
+or, no index	[1,3]
+select list	1
+select list, no index	1
+The call is answered by the index alone, so it is not evaluated
+match	1	0
+match, alternation	0	1
+Other column types
+LowCardinality	[1]
+LowCardinality, no index	[1]
+Nullable	[1]
+Nullable, no index	[1]
+Nullable, not	[2,3,5,6,7,9,10,11,13]
+Nullable, not, no index	[2,3,5,6,7,9,10,11,13]
+LowCardinality(Nullable)	[1]
+LowCardinality(Nullable), no index	[1]
+LowCardinality(Nullable), not	[2,3,5,6,7,9,10,11,13]
+LowCardinality(Nullable), not, no index	[2,3,5,6,7,9,10,11,13]
+FixedString	[1]
+FixedString, no index	[1]
+array, match	[5]
+array, match, no index	[5]
+array, regexp	[5]
+array, regexp, no index	[5]
+array, alternation	[5,7]
+array, alternation, no index	[5,7]
+array, case-insensitive	[8]
+array, case-insensitive, no index	[8]
+array, invalid, no row evaluated	0
+array, invalid, no row evaluated, no index	0
+array, match	1	0
+lower	[2]
+lower, no index	[2]
+Fallbacks
+overflow	1000
+overflow, no index	1000
+no index in part	[1,3]
+no index in part, no index	[1,3]
+ss_array_alternation	0
+ss_array_ci	0
+ss_array_match	1
+ss_array_regexp	0
+ss_fixed	1
+ss_lc	1
+ss_lc_nullable	0
+ss_lower	0
+ss_match	1
+ss_match_alternation	0
+ss_match_ci	0
+ss_match_regexp	0
+ss_match_scan_off	0
+ss_match_short	0
+ss_match_word	1
+ss_nullable	0
+ss_regexp	1
+overflow, the scan gave up	1
