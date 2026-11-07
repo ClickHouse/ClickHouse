@@ -19,3 +19,13 @@ allowed
 --- READ and WRITE ON FILE grant the Filesystem engine
 allowed
 1
+--- on the cluster, a session value does not lift the other checks either
+denied: READ ON FILE
+denied: SELECT, INSERT ON db.dst
+denied: WRITE ON S3
+--- nor does a value in the query lift the checks of a database
+denied: READ ON FILE
+denied: SELECT, INSERT ON db.dst
+--- a value in the query lifts the export settings of a table, as every host replaces its engine by Null
+allowed
+Null

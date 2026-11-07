@@ -364,6 +364,10 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     AccessRightsElements required_access;
     AccessRights required_access_rights;
 
+    /// Every host replaces the engine of a table, but under `ON CLUSTER` only a value in the query reaches every host.
+    const bool replace_external_engines_to_null = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+        && (mode != Mode::CHECK_ACCESS_ONLY
+            || restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr);
     /// Under `ON CLUSTER` each host decides the skip itself, and an older one creates the database, so none is skipped here.
     auto is_database_skipped = [&](const ASTPtr & create_database_query)
     {
@@ -391,8 +395,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 const bool database_exists_so_nothing_is_created
                     = (mode != Mode::CHECK_ACCESS_ONLY) && DatabaseCatalog::instance().isDatabaseExist(database_name);
 
-                if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
-                    && !database_exists_so_nothing_is_created && database_info.create_database_query)
+                if (!database_skipped && !database_exists_so_nothing_is_created && database_info.create_database_query)
                 {
                     const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
                     if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
@@ -480,13 +483,13 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             /// nothing, so settings that send the data elsewhere are authorized here, as for `CREATE`.
             /// An external engine replaced by `Null` sends nothing, but temporary tables keep their engine.
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
-                && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
+                && (is_temporary || !replace_external_engines_to_null))
                 required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
             /// A skipped database creates none of its tables, so their targets are never written to.
             const auto database_it = database_infos.find(table_name.database);
             const bool database_skipped = (database_it != database_infos.end())
-                && !getSkippedDatabaseEngine(database_it->second.create_database_query, context).empty();
+                && is_database_skipped(database_it->second.create_database_query);
 
             /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing; targets are authorized here.
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist && create.targets && !database_skipped)
