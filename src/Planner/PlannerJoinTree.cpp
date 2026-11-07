@@ -4085,7 +4085,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "NATURAL JOIN is not supported with LATERAL");
 
-                /// Reject USING expressions — LATERAL JOIN only supports ON true or no ON clause
+                /// Reject USING: LATERAL JOIN matches on the correlated columns and on the ON expression.
                 if (join_node.isUsingJoinExpression())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "LATERAL JOIN does not support USING clause");
@@ -4094,18 +4094,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 /// which pairs every left row with the rows of the subquery evaluated for it.
                 QueryTreeNodePtr lateral_join_on_expression;
                 if (join_node.isOnJoinExpression())
-                {
-                    const auto * constant_node = join_node.getJoinExpression()->as<ConstantNode>();
-                    bool is_constant_true = false;
-                    if (constant_node)
-                    {
-                        const auto & value = constant_node->getValue();
-                        /// Accept any numeric/boolean constant that is truthy (e.g. ON true, ON 1)
-                        is_constant_true = !value.isNull() && value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() != 0;
-                    }
-                    if (!is_constant_true)
-                        lateral_join_on_expression = join_node.getJoinExpression();
-                }
+                    lateral_join_on_expression = join_node.getJoinExpression();
 
                 /// Reject unsupported join kinds: only INNER and LEFT are supported
                 auto lateral_kind = join_node.getKind();

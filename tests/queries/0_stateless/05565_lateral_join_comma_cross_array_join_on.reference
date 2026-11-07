@@ -113,6 +113,12 @@ SELECT o.id FROM outer_t AS o CROSS JOIN LATERAL (SELECT name FROM inner_t AS i 
 2	\N
 3	\N
 4	\N
+1	x
+1	y
+2	z
+3	\N
+4	x
+4	y
 1	y
 2	\N
 3	\N

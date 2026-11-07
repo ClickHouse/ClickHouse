@@ -84,6 +84,10 @@ SELECT o.id, s.name FROM outer_t AS o LEFT JOIN LATERAL (SELECT name FROM inner_
 ORDER BY ALL SETTINGS join_use_nulls = 1;
 SELECT o.id, s.name FROM outer_t AS o LEFT JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id = o.owner) AS s ON 1 = 0
 ORDER BY ALL SETTINGS join_use_nulls = 1;
+SELECT o.id, s.name FROM outer_t AS o LEFT JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id = o.owner) AS s ON 1
+ORDER BY ALL SETTINGS join_use_nulls = 1;
+SELECT o.id FROM outer_t AS o LEFT JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id = o.owner) AS s ON 256; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT o.id FROM outer_t AS o LEFT JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id = o.owner) AS s ON 'abc'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT o.id, s.name FROM outer_t AS o INNER JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id = o.owner) AS s ON false
 ORDER BY ALL;
 SELECT o.id, s.name FROM outer_t AS o LEFT JOIN LATERAL (SELECT name FROM inner_t AS i WHERE i.id = o.owner) AS s
