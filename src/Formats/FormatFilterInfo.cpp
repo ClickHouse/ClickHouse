@@ -123,6 +123,15 @@ UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
     return hash.get64();
 }
 
+UInt64 queryConditionCacheHashForFiles(UInt64 condition_dag_hash, const Settings & settings)
+{
+    SipHash hash;
+    hash.update(condition_dag_hash);
+    hash.update(queryConditionCacheSettingsSalt(settings));
+    hash.update(fileFormatPruningSettingsSalt(settings));
+    return hash.get64();
+}
+
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
 {
     chassert(storage_encoding.empty());
@@ -188,10 +197,7 @@ std::optional<size_t> FormatFilterInfo::computeConditionHash(
     if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
         return {};
 
-    const auto & settings = context->getSettingsRef();
-    return queryConditionCacheHash(
-        filter_actions_dag.getHash(),
-        queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
+    return queryConditionCacheHashForFiles(filter_actions_dag.getHash(), context->getSettingsRef());
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;
