@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-D="${CLICKHOUSE_TMP}/05556r"
+D="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Build three OCF files with a *fixed* sync marker so the payload can be made to contain it on purpose.
 python3 - "$D" <<'PY'
@@ -86,7 +86,7 @@ PY
 check() {
     local file="$1" seq par seq_rc par_rc
     seq=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=0 FORMAT TSV"); seq_rc=$?
-    par=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT TSV"); par_rc=$?
+    par=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, max_parsing_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT TSV"); par_rc=$?
     # Both reads must succeed and return rows, otherwise two empty outputs would hash equal and falsely pass.
     if [ "$seq_rc" -ne 0 ] || [ "$par_rc" -ne 0 ] || [ -z "$seq" ]; then
         echo "QUERY FAILED (seq_rc=$seq_rc par_rc=$par_rc)"; return
@@ -98,11 +98,12 @@ check() {
 # different error, and never a crash. The exit status cannot tell a signal apart, as `clickhouse-local` exits
 # with the error code modulo 256 (`AVRO_EXCEPTION` = 748 gives 236), so assert the exception text instead.
 # Asserting the exact message also makes the too-long varint case fail unless the length guard, not the
-# subsequent truncation, is what rejects it.
+# subsequent truncation, is what rejects it. `ParallelParsingBlockInputFormat` in the stack proves that the
+# parallel path, not a sequential fallback, rejected the file.
 expect_error() {
     local file="$1" expected="$2" out rc
-    out=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT Null" 2>&1); rc=$?
-    if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -F "$expected" | grep -qF "(AVRO_EXCEPTION)"; then echo "OK"; else echo "NOT REJECTED (rc=$rc)"; fi
+    out=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, max_parsing_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT Null" 2>&1); rc=$?
+    if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -F "$expected" | grep -F "(AVRO_EXCEPTION)" | grep -qF "ParallelParsingBlockInputFormat"; then echo "OK"; else echo "NOT REJECTED (rc=$rc)"; fi
 }
 
 echo -n "marker-in-payload: "; check "${D}_marker.avro"
