@@ -36,6 +36,13 @@ size_t roundDownToMultiple(size_t num, size_t multiple)
     return (num / multiple) * multiple;
 }
 
+/// A replica returns a part with its own patch parts and on-the-fly mutations applied, so it may read a snapshot part
+/// only if its overlay is known to equal the snapshot replica's (replicas older than protocol 10 do not send it).
+bool canReadWithSnapshotOverlay(bool snapshot_known, UInt64 snapshot_hash, bool announced_known, UInt64 announced_hash)
+{
+    return snapshot_known && announced_known && snapshot_hash == announced_hash;
+}
+
 size_t
 takeFromRange(const MarkRange & range, size_t min_marks_per_request, size_t & current_marks_amount, RangesInDataPartDescription & result)
 {
@@ -338,6 +345,10 @@ private:
 
     std::unordered_map<std::string, std::unordered_set<size_t>> part_visibility; /// part_name -> set of replicas announced that part
 
+    /// Read overlay hashes of the snapshot parts; a missing entry means 0.
+    bool snapshot_read_overlay_known{false};
+    std::unordered_map<std::string, UInt64> snapshot_read_overlay_hashes;
+
     /// We order parts from biggest (= oldest) to newest and steal from newest. Because we assume
     /// that they're gonna be merged soon anyway and for them we should already expect worse cache hit.
     struct BiggerPartsFirst
@@ -429,15 +440,41 @@ DefaultCoordinator::~DefaultCoordinator()
 
 void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement announcement)
 {
+    const bool announced_read_overlay_known = announcement.replica_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_OVERLAY;
+    size_t skipped_parts = 0;
+    String skipped_part_example;
+
     for (const auto & part : announcement.description)
     {
+        if (state_initialized)
+        {
+            auto it = snapshot_read_overlay_hashes.find(part.getPartOrProjectionName());
+            const UInt64 snapshot_hash = it == snapshot_read_overlay_hashes.end() ? 0 : it->second;
+            if (!canReadWithSnapshotOverlay(
+                    snapshot_read_overlay_known, snapshot_hash, announced_read_overlay_known, part.read_overlay_hash))
+            {
+                if (skipped_parts++ == 0)
+                    skipped_part_example = part.getPartOrProjectionName();
+                continue;
+            }
+        }
+
         /// We don't really care here if this part will be included into the working set or not
         part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
     }
 
+    if (skipped_parts)
+        LOG_DEBUG(log, "Replica {} will not read {} parts (e.g. {}): its patch parts or on-the-fly mutations for them "
+                  "differ from the snapshot replica or are unknown", announcement.replica_num, skipped_parts, skipped_part_example);
+
     /// If state is already initialized - just register availabitily info and leave
     if (state_initialized)
         return;
+
+    snapshot_read_overlay_known = announced_read_overlay_known;
+    for (const auto & part : announcement.description)
+        if (part.read_overlay_hash != 0)
+            snapshot_read_overlay_hashes.emplace(part.getPartOrProjectionName(), part.read_overlay_hash);
 
     {
         /// To speedup search for adjacent parts
@@ -1004,6 +1041,7 @@ public:
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
     bool state_initialized{false};
+    bool snapshot_read_overlay_known{false};
 
     LoggerPtr log;
 };
@@ -1036,6 +1074,12 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 
     size_t new_rows_to_read = 0;
 
+    const bool announced_read_overlay_known = announcement.replica_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_OVERLAY;
+    if (!state_initialized)
+        snapshot_read_overlay_known = announced_read_overlay_known;
+    size_t skipped_parts = 0;
+    String skipped_part_example;
+
     /// To get rid of duplicates
     for (auto && part: announcement.description)
     {
@@ -1044,7 +1088,11 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
         {
-            the_same_it->replicas.insert(announcement.replica_num);
+            if (canReadWithSnapshotOverlay(
+                    snapshot_read_overlay_known, the_same_it->description.read_overlay_hash, announced_read_overlay_known, part.read_overlay_hash))
+                the_same_it->replicas.insert(announcement.replica_num);
+            else if (skipped_parts++ == 0)
+                skipped_part_example = part.getPartOrProjectionName();
             continue;
         }
 
@@ -1080,6 +1128,10 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         auto & ranges = inserted_it->description.ranges;
         std::sort(ranges.begin(), ranges.end());
     }
+
+    if (skipped_parts)
+        LOG_DEBUG(log, "Replica {} will not read {} parts (e.g. {}): its patch parts or on-the-fly mutations for them "
+                  "differ from the snapshot replica or are unknown", announcement.replica_num, skipped_parts, skipped_part_example);
 
 #ifndef NDEBUG
     /// Double check that there are no intersecting parts
