@@ -1,0 +1,131 @@
+{
+    "format-version": 3,
+    "table-uuid": "7efb89c1-1933-49f5-903d-98893d7cba02",
+    "location": "file://FILEPATH",
+    "last-sequence-number": 1,
+    "last-updated-ms": 1785367028959,
+    "last-column-id": 6,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "num",
+                    "required": false,
+                    "type": "int"
+                },
+                {
+                    "id": 2,
+                    "name": "name",
+                    "required": false,
+                    "type": "string"
+                },
+                {
+                    "id": 3,
+                    "name": "geometryrow",
+                    "required": false,
+                    "type": {
+                        "type": "struct",
+                        "fields": [
+                            {
+                                "id": 4,
+                                "name": "geom1",
+                                "required": false,
+                                "type": "geometry"
+                            },
+                            {
+                                "id": 5,
+                                "name": "geom2",
+                                "required": false,
+                                "type": "geometry"
+                            },
+                            {
+                                "id": 6,
+                                "name": "flag",
+                                "required": false,
+                                "type": "boolean"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": []
+        }
+    ],
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "write.format.default": "PARQUET",
+        "write.delete.mode": "merge-on-read",
+        "write.metadata.previous-versions-max": "100",
+        "write.parquet.compression-codec": "ZSTD",
+        "write.metadata.metrics.max-inferred-column-defaults": "100",
+        "write.metadata.delete-after-commit.enabled": "false",
+        "commit.retry.num-retries": "4",
+        "write.update.mode": "merge-on-read",
+        "read.split.target-size": "134217728"
+    },
+    "current-snapshot-id": 2380371745138416374,
+    "next-row-id": 2,
+    "refs": {
+        "main": {
+            "snapshot-id": 2380371745138416374,
+            "type": "branch"
+        }
+    },
+    "snapshots": [
+        {
+            "sequence-number": 1,
+            "snapshot-id": 2380371745138416374,
+            "timestamp-ms": 1785367028959,
+            "summary": {
+                "operation": "append",
+                "presto_query_id": "20260729_231708_00031_xn4xu",
+                "added-data-files": "1",
+                "added-records": "2",
+                "added-files-size": "981",
+                "changed-partition-count": "1",
+                "total-records": "2",
+                "total-files-size": "981",
+                "total-data-files": "1",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+                "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+            },
+            "manifest-list": "file://FILEPATH/metadata/snap.avro",
+            "schema-id": 0,
+            "first-row-id": 0,
+            "added-rows": 2
+        }
+    ],
+    "statistics": [],
+    "partition-statistics": [],
+    "snapshot-log": [
+        {
+            "timestamp-ms": 1785367028959,
+            "snapshot-id": 2380371745138416374
+        }
+    ],
+    "metadata-log": [
+        {
+            "timestamp-ms": 1785367017840,
+            "metadata-file": "file://FILEPATH/metadata/00000-b730a4cc-aa33-4a72-8c31-53093b6c76e5.metadata.json"
+        }
+    ]
+}

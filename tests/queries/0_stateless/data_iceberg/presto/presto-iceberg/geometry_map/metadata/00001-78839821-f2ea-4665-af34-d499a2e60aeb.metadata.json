@@ -1,0 +1,110 @@
+{
+    "format-version": 3,
+    "table-uuid": "276d170c-c6ea-46c7-80bb-176063e4507d",
+    "location": "file://FILEPATH",
+    "last-sequence-number": 1,
+    "last-updated-ms": 1785949494195,
+    "last-column-id": 4,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "name",
+                    "required": false,
+                    "type": "string"
+                },
+                {
+                    "id": 2,
+                    "name": "mapgeometry",
+                    "required": false,
+                    "type": {
+                        "type": "map",
+                        "key-id": 3,
+                        "key": "string",
+                        "value-id": 4,
+                        "value": "geometry",
+                        "value-required": false
+                    }
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": []
+        }
+    ],
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "write.format.default": "PARQUET",
+        "write.delete.mode": "merge-on-read",
+        "write.metadata.previous-versions-max": "100",
+        "write.parquet.compression-codec": "ZSTD",
+        "write.metadata.metrics.max-inferred-column-defaults": "100",
+        "write.metadata.delete-after-commit.enabled": "false",
+        "commit.retry.num-retries": "4",
+        "write.update.mode": "merge-on-read",
+        "read.split.target-size": "134217728"
+    },
+    "current-snapshot-id": 4808384341822999608,
+    "next-row-id": 1,
+    "refs": {
+        "main": {
+            "snapshot-id": 4808384341822999608,
+            "type": "branch"
+        }
+    },
+    "snapshots": [
+        {
+            "sequence-number": 1,
+            "snapshot-id": 4808384341822999608,
+            "timestamp-ms": 1785949494195,
+            "summary": {
+                "operation": "append",
+                "presto_query_id": "20260805_170454_00018_j86ga",
+                "added-data-files": "1",
+                "added-records": "1",
+                "added-files-size": "699",
+                "changed-partition-count": "1",
+                "total-records": "1",
+                "total-files-size": "699",
+                "total-data-files": "1",
+                "total-delete-files": "0",
+                "total-position-deletes": "0",
+                "total-equality-deletes": "0",
+                "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+            },
+            "manifest-list": "file://FILEPATH/metadata/snap.avro",
+            "schema-id": 0,
+            "first-row-id": 0,
+            "added-rows": 1
+        }
+    ],
+    "statistics": [],
+    "partition-statistics": [],
+    "snapshot-log": [
+        {
+            "timestamp-ms": 1785949494195,
+            "snapshot-id": 4808384341822999608
+        }
+    ],
+    "metadata-log": [
+        {
+            "timestamp-ms": 1785949436415,
+            "metadata-file": "file://FILEPATH/metadata/00000-25b0f2cb-1e44-4338-8923-0039a9303a0b.metadata.json"
+        }
+    ]
+}
