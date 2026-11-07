@@ -67,6 +67,10 @@ TARGETS = {
         loader="lib64/ld64.so.2",
         library_path="/lib64",
     ),
+    BuildTypes.RISCV64: Target(
+        qemu="qemu-riscv64-static",
+        sysroot="contrib/sysroot/linux-riscv64",
+    ),
 }
 
 
