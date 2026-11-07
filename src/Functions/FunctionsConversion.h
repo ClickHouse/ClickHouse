@@ -3286,6 +3286,12 @@ struct ConvertImpl
             auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
             auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
+            /// `accurateCast` and `accurateCastOrNull` reject a value the target kind does not hold exactly.
+            constexpr bool is_accurate = is_any_of<Additions, AccurateConvertStrategyAdditions, AccurateOrNullConvertStrategyAdditions>;
+            ColumnUInt8::MutablePtr col_null_map_to;
+            if constexpr (is_accurate)
+                col_null_map_to = ColumnUInt8::create(calc_num_rows, false);
+
             /// interval_conversions[i] holds the factor between kind i and kind i-1,
             /// so every boundary crossing between kinds i-1 and i uses interval_conversions[i]
             if (from_position < to_position)
@@ -3293,15 +3299,43 @@ struct ConvertImpl
                 for (int i = from_position + 1; i <= to_position; ++i)
                     conversion_factor *= interval_conversions[i];
                 for (size_t row = 0; row < calc_num_rows; ++row)
-                    res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
+                {
+                    const Int64 value = arguments[0].column->getInt(row);
+                    res_data[row] = value / conversion_factor;
+                    if constexpr (is_accurate)
+                        col_null_map_to->getData()[row] = value % conversion_factor != 0;
+                }
             }
             else
             {
                 for (int i = from_position; i > to_position; --i)
                     conversion_factor *= interval_conversions[i];
                 for (size_t row = 0; row < calc_num_rows; ++row)
-                    res_data[row] = arguments[0].column->getInt(row) * conversion_factor;
+                {
+                    const Int64 value = arguments[0].column->getInt(row);
+                    if constexpr (is_accurate)
+                        col_null_map_to->getData()[row] = common::mulOverflow(value, conversion_factor, res_data[row]);
+                    else
+                        res_data[row] = value * conversion_factor;
+                }
             }
+
+            if constexpr (is_accurate)
+            {
+                for (size_t row = 0; row < calc_num_rows; ++row)
+                {
+                    if (!col_null_map_to->getData()[row])
+                        continue;
+                    if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value in column {} cannot be exactly converted into type {}",
+                            named_from.column->getName(), result_type->getName());
+                    else
+                        res_data[row] = 0;
+                }
+            }
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                res_col = ColumnNullable::create(std::move(res_col), std::move(col_null_map_to));
 
             if (is_const)
                 res_col = ColumnConst::create(std::move(res_col), input_rows_count);
