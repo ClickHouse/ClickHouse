@@ -18,6 +18,7 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Core/ProtocolDefines.h>
 #include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/MergeTree/ColumnsCache.h>
@@ -37,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 namespace Setting
@@ -172,9 +174,16 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
         format_filter_info = std::make_shared<FormatFilterInfo>();
 }
 
-void ParquetV3BlockInputFormat::initializeIfNeeded()
+void ParquetV3BlockInputFormat::prefetch()
 {
-    if (!reader)
+    if (need_only_count)
+        return;
+    readFileFooterIfNeeded();
+}
+
+void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
+{
+    if (!reader && !reader_with_footer)
     {
         format_filter_info->initKeyConditionOnce(getPort().getHeader());
         parser_shared_resources->initOnce([&]
@@ -205,28 +214,39 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 parser_shared_resources->opaque = ext;
             });
 
+        auto new_reader = std::make_unique<Parquet::ReadManager>();
+        new_reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        footer_cache_key = getMetadataCacheKey();
+        if (footer_cache_key)
+        {
+            std::tie(footer_cache_cell, footer_cache_hit) = metadata_cache->getOrSetMetadata(
+                *footer_cache_key, [&] { return readFileFooter(new_reader->reader.prefetcher); });
+            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks);
+            if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+            {
+                metadata_cache_cell = footer_cache_cell;
+                metadata_cache_key = *footer_cache_key;
+            }
+        }
+        else
+        {
+            new_reader->reader.setFileFooter(readFileFooter(new_reader->reader.prefetcher));
+        }
+
+        std::lock_guard lock(reader_mutex);
+        reader_with_footer = std::move(new_reader);
+    }
+}
+
+void ParquetV3BlockInputFormat::initializeIfNeeded()
+{
+    if (!reader)
+    {
+        readFileFooterIfNeeded();
+
         {
             std::lock_guard lock(reader_mutex);
-            reader.emplace();
-            reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            auto cache_key = getMetadataCacheKey();
-            ParquetMetadataCache::MappedPtr cache_cell;
-            bool cache_hit = false;
-            if (cache_key)
-            {
-                std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(
-                    *cache_key, [&] { return readFileFooter(reader->reader.prefetcher); });
-                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
-                if (cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
-                {
-                    metadata_cache_cell = cache_cell;
-                    metadata_cache_key = *cache_key;
-                }
-            }
-            else
-            {
-                reader->reader.setFileFooter(readFileFooter(reader->reader.prefetcher));
-            }
+            reader = std::move(reader_with_footer);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
             if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition)
             {
@@ -245,20 +265,26 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 }
                 reader->reader.max_key_condition_column_ranges_bytes = kept_statistics.remainingBytes();
             }
-            reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+            reader->init(parser_shared_resources, rowGroupSelection());
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
-            if (cache_hit)
-                metadata_cache->addColumnChunks(*cache_key, cache_cell, reader->reader.getColumnChunks());
+            if (footer_cache_hit)
+                metadata_cache->addColumnChunks(*footer_cache_key, footer_cache_cell, reader->reader.getColumnChunks());
+            footer_cache_cell.reset();
         }
     }
 }
 
+static std::optional<ParquetMetadataCacheKey> makeMetadataCacheKey(const RelativePathWithMetadata & object)
+{
+    if (!object.metadata.has_value())
+        return std::nullopt;
+    return ParquetMetadataCache::createKey(object.getPath(), object.metadata->getContentCacheToken().value_or(object.metadata->etag));
+}
+
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
-    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(
-            object_with_metadata->getPath(),
-            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
+    if (metadata_cache && object_with_metadata.has_value())
+        return makeMetadataCacheKey(*object_with_metadata);
     return std::nullopt;
 }
 
@@ -393,10 +419,30 @@ Chunk ParquetV3BlockInputFormat::read()
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         auto footer = getFileFooter(temp_prefetcher);
 
+        size_t num_rows = size_t(footer->metadata.num_rows);
+        size_t first_row = 0;
+        if (const auto selected_row_groups = Parquet::Reader::selectRowGroups(*footer, rowGroupSelection(), nullptr))
+        {
+            num_rows = 0;
+            std::optional<size_t> first_selected_row;
+            size_t row = 0;
+            for (size_t row_group_idx = 0; row_group_idx < footer->metadata.row_groups.size(); ++row_group_idx)
+            {
+                const size_t row_group_rows = size_t(footer->metadata.row_groups[row_group_idx].num_rows);
+                if (selected_row_groups->contains(row_group_idx))
+                {
+                    if (!first_selected_row)
+                        first_selected_row = row;
+                    num_rows += row_group_rows;
+                }
+                row += row_group_rows;
+            }
+            first_row = first_selected_row.value_or(0);
+        }
 
-        auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
+        auto chunk = getChunkForCount(num_rows);
         if (format_filter_info && format_filter_info->need_row_numbers)
-            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(first_row));
 
         reported_count = true;
         return chunk;
@@ -463,6 +509,19 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
         && reader->reader.format_filter_info->top_k_filter->filter_rows && reader->reader.top_k_column_is_read;
 }
 
+Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
+{
+    if (!buckets_to_read)
+        return std::monostate{};
+    if (buckets_to_read->byte_range)
+    {
+        if (!buckets_to_read->row_group_ids.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet file bucket has both row group ids and a byte range");
+        return Parquet::RowGroupByteRange{buckets_to_read->byte_range->first, buckets_to_read->byte_range->second};
+    }
+    return std::unordered_set<UInt64>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
+}
+
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     if (reader)
@@ -491,6 +550,7 @@ void ParquetV3BlockInputFormat::resetReadBuffer()
         std::lock_guard lock(reader_mutex);
         if (reader)
             reader->shutdownTasks();
+        reader_with_footer.reset();
     }
     IInputFormat::resetReadBuffer();
 }
@@ -500,6 +560,10 @@ void ParquetV3BlockInputFormat::resetParser()
     {
         std::lock_guard lock(reader_mutex);
         reader.reset();
+        reader_with_footer.reset();
+        footer_cache_key.reset();
+        footer_cache_cell.reset();
+        footer_cache_hit = false;
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
         metadata_cache_key.reset();
@@ -537,14 +601,32 @@ std::optional<size_t> NativeParquetSchemaReader::readNumberOrRows()
     return size_t(file_footer->metadata.num_rows);
 }
 
-void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
+void ParquetFileBucketInfo::serialize(WriteBuffer & buffer, size_t protocol_version) const
 {
+    if (byte_range.has_value() && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Byte range buckets of Parquet files are supported since cluster processing protocol version {}, got: {}. "
+            "Disable `cluster_table_function_split_by_split_offsets` until all servers of the cluster are upgraded",
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE,
+            protocol_version);
+
     writeVarUInt(row_group_ids.size(), buffer);
     for (auto chunk : row_group_ids)
         writeVarUInt(chunk, buffer);
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE)
+    {
+        writeVarUInt(byte_range.has_value() ? 1 : 0, buffer);
+        if (byte_range.has_value())
+        {
+            writeVarUInt(byte_range->first, buffer);
+            writeVarUInt(byte_range->second, buffer);
+        }
+    }
 }
 
-void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
+void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_version)
 {
     size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
@@ -556,6 +638,21 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
         readVarUInt(bucket, buffer);
         row_group_ids[i] = bucket;
     }
+
+    byte_range.reset();
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE)
+    {
+        UInt64 has_range = 0;
+        readVarUInt(has_range, buffer);
+        if (has_range)
+        {
+            UInt64 offset = 0;
+            UInt64 length = 0;
+            readVarUInt(offset, buffer);
+            readVarUInt(length, buffer);
+            byte_range.emplace(offset, length);
+        }
+    }
 }
 
 String ParquetFileBucketInfo::getIdentifier() const
@@ -563,6 +660,8 @@ String ParquetFileBucketInfo::getIdentifier() const
     String result;
     for (auto chunk : row_group_ids)
         result += "_" + std::to_string(chunk);
+    if (byte_range.has_value())
+        result += "_b" + std::to_string(byte_range->first) + "_" + std::to_string(byte_range->second);
     return result;
 }
 
@@ -571,8 +670,15 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 {
 }
 
+ParquetFileBucketInfo::ParquetFileBucketInfo(UInt64 offset, UInt64 length)
+    : byte_range(std::make_pair(offset, length))
+{
+}
+
 std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
 {
+    if (byte_range)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot filter a byte range bucket of a Parquet file by row groups");
     if (matching_row_groups.empty())
         return nullptr;
     if (row_group_ids.empty())
@@ -593,12 +699,30 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(
+    size_t bucket_size,
+    ReadBuffer & buf,
+    const RelativePathWithMetadata & object,
+    const FormatSettings & format_settings_,
+    const ContextPtr & context)
 {
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
+    auto read_footer = [&] { return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size); };
+
+    ParquetMetadataCachePtr metadata_cache;
+    if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        metadata_cache = context->tryGetParquetMetadataCache();
+    std::optional<ParquetMetadataCacheKey> cache_key;
+    if (metadata_cache && object.metadata && object.metadata->getContentCacheToken())
+        cache_key = makeMetadataCacheKey(object);
+
+    std::shared_ptr<const Parquet::FileFooter> footer;
+    if (cache_key)
+        footer = metadata_cache->getOrSetMetadata(*cache_key, read_footer).first->footer;
+    else
+        footer = read_footer();
     std::vector<size_t> bucket_sizes;
     for (const auto & row_group : footer->metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
@@ -628,6 +752,29 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     {
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
     }
+    return result;
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets_)
+{
+    std::vector<UInt64> split_offsets = split_offsets_;
+    std::sort(split_offsets.begin(), split_offsets.end());
+    split_offsets.erase(std::unique(split_offsets.begin(), split_offsets.end()), split_offsets.end());
+    if (file_size == 0 || split_offsets.empty() || split_offsets.back() >= file_size)
+        return {};
+
+    std::vector<FileBucketInfoPtr> result;
+    UInt64 bucket_begin = 0;
+    for (size_t i = 1; i < split_offsets.size(); ++i)
+    {
+        const UInt64 row_group_end = i + 1 < split_offsets.size() ? split_offsets[i + 1] : file_size;
+        if (row_group_end - bucket_begin > bucket_size)
+        {
+            result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, split_offsets[i] - bucket_begin));
+            bucket_begin = split_offsets[i];
+        }
+    }
+    result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket_begin, std::numeric_limits<UInt64>::max() - bucket_begin));
     return result;
 }
 
@@ -818,12 +965,13 @@ On write, such a `Tuple` (with element names being a non-empty subset of the `FI
 
 ## Geo types (GeoParquet) {#geo-types}
 
-ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification and the Parquet [`GEOMETRY` and `GEOGRAPHY` logical types](https://github.com/apache/parquet-format/blob/master/Geospatial.md). Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read for GeoParquet). GeoParquet uses a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS, while the logical types annotate the column itself, and the column chunk metadata contains `GeospatialStatistics` (a bounding box and the list of geometry types) instead of min/max statistics. A file can have both.
+ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification and the Parquet [`GEOMETRY` and `GEOGRAPHY` logical types](https://github.com/apache/parquet-format/blob/master/Geospatial.md). Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read for GeoParquet). On read, the native (GeoArrow) encodings of GeoParquet 1.1 (`point`, `linestring`, `polygon`, `multipoint`, `multilinestring` and `multipolygon`), which store the coordinates in nested lists of `struct<x: double, y: double>`, are also supported. GeoParquet uses a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS, while the logical types annotate the column itself, and the column chunk metadata contains `GeospatialStatistics` (a bounding box and the list of geometry types) instead of min/max statistics. A file can have both.
 
 ### Read behavior {#read}
 
 On read, geometry columns are mapped to the corresponding ClickHouse [geo data types](/reference/data-types/geo):
 * A column declared as `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` is read into the matching ClickHouse geo type.
+* A column with a native (GeoArrow) encoding is read into the geo type that matches the encoding, e.g. `polygon` into `Polygon`. A NULL geometry is read as the default value of the type (an empty array or the point `(0, 0)`), the same as for WKB.
 * A column with multiple or unknown geometry types is read into the [`Geometry`](/reference/data-types/geo#geometry) type, which is a `Variant` over all supported geo types.
 * For a column with the `GEOMETRY` or `GEOGRAPHY` logical type, the geometry type is taken from the GeoParquet metadata if the file has it. Otherwise, if the `GeospatialStatistics` of all column chunks list the same single 2D geometry type, the column is read into the matching geo type, and into `Geometry` otherwise. If a geo type is requested explicitly, the values are decoded directly into that type.
 * ClickHouse has no separate type for geography, so `GEOGRAPHY` columns are read into the same geo types as `GEOMETRY` (the coordinates are longitude and latitude), and the edge interpolation algorithm (the `algorithm` parameter) is not represented. The CRS (the `crs` parameter, `OGC:CRS84` by default) is not represented either. Geometries with Z or M coordinates are not supported.
