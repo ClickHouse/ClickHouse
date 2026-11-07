@@ -42,7 +42,7 @@ public:
 
     bool canSkipAnyMark() const override;
 
-    bool canSkipAnyMarkBesidesTopKPrimaryKey() const override;
+    bool canSkipAnyMarkBesidesTopKThreshold() const override;
 
     size_t getResultColumnCount() const override { return 1; }
 

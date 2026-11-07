@@ -247,7 +247,7 @@ public:
     /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
     /// See Issue #104781.
     /// With `prewhere_filters_by_top_k_threshold`, the PREWHERE holds the `__topKFilter` of the read as a conjunct, and
-    /// the marks skipped by the primary key against the same top-K threshold do not count.
+    /// the marks skipped against the same top-K threshold do not count.
     bool readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const;
 
     /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
