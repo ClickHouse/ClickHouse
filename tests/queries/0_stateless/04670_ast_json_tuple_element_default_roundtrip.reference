@@ -1,0 +1,4 @@
+CREATE TABLE t (`c` Tuple(a UInt8 DEFAULT 1, s String DEFAULT \'Hello\')) ENGINE = Memory
+ALTER TABLE t (ADD COLUMN `c` Tuple(a UInt8, s String DEFAULT \'Hello\'))
+ALTER TABLE t (MODIFY COLUMN `c` Tuple(a UInt8, n Tuple(b UInt8 DEFAULT 5)))
+CREATE TABLE t (`x` String, `c` Tuple(a UInt8, s String DEFAULT concat(x, \'!\'))) ENGINE = Memory
