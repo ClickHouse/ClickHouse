@@ -1410,8 +1410,9 @@ IcebergMetadata::IcebergMetadataLogEntries IcebergMetadata::getMetadataLogEntrie
         const auto & snapshot = snapshot_it->second;
         if (snapshot->has(f_schema_id))
             record.latest_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        if (snapshot->has(f_metadata_sequence_number))
-            record.latest_sequence_number = snapshot->getValue<Int64>(f_metadata_sequence_number);
+        record.latest_sequence_number = snapshot->has(f_metadata_sequence_number)
+            ? snapshot->getValue<Int64>(f_metadata_sequence_number)
+            : 0;
     };
 
     IcebergMetadataLogEntries metadata_log_entries;
