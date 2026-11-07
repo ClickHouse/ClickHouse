@@ -103,6 +103,19 @@ public:
         return chunk;
     }
 
+    void resetParser() override
+    {
+        IInputFormat::resetParser();
+        /// The statement must be finalized before its database is closed, and the database closed before the copy of
+        /// the input that it reads from is freed.
+        statement.reset();
+        sqlite_db.db.reset();
+        sqlite_db = {};
+        statement_reader = SQLiteStatementReader(*header, settings, SQLiteStatementReader::ValueReadMode::Text);
+        initialized = false;
+        sqlite_finished = false;
+    }
+
 private:
     void initialize()
     {
