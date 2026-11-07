@@ -23,6 +23,7 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
@@ -1395,6 +1396,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
+
+    CurrentThread::checkIfNotCancelled();
 
     /// The parser cannot distinguish the single element array constructor `ARRAY[x]` from subscripting
     /// a column named `ARRAY`, and parses it as a subscript. If there is no such column, it is the constructor.
@@ -3036,6 +3039,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Calculate function projection name
     ProjectionNames result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
 
+    CurrentThread::checkIfNotCancelled();
+
     ASTPtr user_defined_function = nullptr;
     /** Try to resolve function as
       * 1. Lambda function in current scope. Example: WITH (x -> x + 1) AS lambda SELECT lambda(1);
@@ -3498,6 +3503,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// Recalculate function projection name after lambda resolution
         result_projection_names = { calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names) };
     }
+
+    CurrentThread::checkIfNotCancelled();
 
     /** Create SET column for special function IN to allow constant folding
       * if left and right arguments are constants.

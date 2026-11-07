@@ -8,6 +8,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/CancellationBudget.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BlocksMarshallingStep.h>
@@ -101,6 +102,7 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     }
     catch (const Exception & e)
     {
+        rethrowIfQueryCancelled(e);
         return PreformattedMessage::create(
             "make_distributed_plan cannot distribute this query: a column default of table {} does not resolve ({})",
             read.getStorageID().getFullTableName(), e.message());
