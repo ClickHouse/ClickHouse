@@ -1,0 +1,32 @@
+rows	100000	100	100
+Enum8 = enum constant	49900
+Enum8 = string	49900
+Enum8 LIKE	49900
+Enum8 match	50000
+Enum16 = enum constant	49900
+Enum16 LIKE	50000
+NULL in, NULL out	100	100	100
+short circuit off	49900
+short circuit on	49900
+0	\N	\N	\N	\N
+1	b	0	0	1
+2	a	1	1	0
+999	b	0	0	1
+1000	\N	\N	\N	\N
+1001	b	0	0	1
+every other row NULL	50000
+one NULL	99999
+all NULL	1000	0	1000
+declared out of order	500
+zero slot	2	2
+zero slot, fast path	1
+zero slot, general path	1
+\N	\N	\N
+\N	\N	\N
+a	1	1
+b	0	0
+f(default) for a NULL row	[]	[]	[1,4]
+mixed rows	[[],[1],[],[1,2]]	[[],[1],[],[1,2]]
+DateTime	['1970-01-01 00:00:00']
+DateTime64	['1970-01-01 00:00:00.000']
+Decimal64 scale 3	['2020-01-01 00:00:00.000']
