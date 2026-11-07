@@ -32,7 +32,8 @@ public:
         const String & region_,
         const DataLake::CatalogSettings & catalog_settings_,
         DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_);
+        bool allow_server_credentials_in_user_queries_,
+        const std::string & snapshot_loading_mode_ = {});
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::S3_TABLES; }
 
