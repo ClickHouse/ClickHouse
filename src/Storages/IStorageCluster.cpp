@@ -315,6 +315,9 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             shard_info.pool);
 
         remote_query_executor->setLogger(log);
+        /// `getManyChecked` above asked the replica about this table.
+        if (table_read_on_replicas)
+            remote_query_executor->setMainTable(StorageID(table_read_on_replicas->database, table_read_on_replicas->table));
         /// The cluster of a *Cluster function uses every replica as a shard, so `shard_num`
         /// identifies the fan-out entry rather than a shard of the original cluster definition.
         remote_query_executor->setShardScope({storage->getClusterName(), shard_info.shard_num});

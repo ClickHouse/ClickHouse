@@ -52,6 +52,23 @@ SELECT 'tolerant', count() FROM dist_05514 SETTINGS skip_unavailable_shards = 1,
 SELECT count() FROM dist_05514_db SETTINGS skip_unavailable_shards = 1; -- { serverError UNKNOWN_DATABASE }
 SELECT 'tolerant db', count() FROM dist_05514_db SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing';
 
+-- An `INSERT SELECT` that each shard runs on its own data does not check the target in advance, so a shard
+-- without the target table is still skipped and the other shard is written.
+CREATE TABLE shard_0.ins_src_05514 (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE shard_1.ins_src_05514 (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE shard_0.ins_dst_05514 (x UInt32) ENGINE = MergeTree ORDER BY x;
+INSERT INTO shard_0.ins_src_05514 VALUES (10);
+INSERT INTO shard_1.ins_src_05514 VALUES (11);
+DROP TABLE IF EXISTS dist_ins_src_05514;
+DROP TABLE IF EXISTS dist_ins_dst_05514;
+CREATE TABLE dist_ins_src_05514 (x UInt32) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ins_src_05514);
+CREATE TABLE dist_ins_dst_05514 (x UInt32) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ins_dst_05514);
+INSERT INTO dist_ins_dst_05514 SELECT * FROM dist_ins_src_05514
+SETTINGS parallel_distributed_insert_select = 2, skip_unavailable_shards = 1;
+SELECT 'insert select, target missing on one shard', groupArray(x) FROM shard_0.ins_dst_05514;
+DROP TABLE dist_ins_src_05514;
+DROP TABLE dist_ins_dst_05514;
+
 -- The engine-level setting behaves the same way.
 DROP TABLE IF EXISTS dist_05514_engine;
 CREATE TABLE dist_05514_engine (x UInt32) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', t_05514)
