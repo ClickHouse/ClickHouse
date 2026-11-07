@@ -124,6 +124,13 @@ public:
 
     void onFinish() override;
 
+    /// The source of the lazy branch of lazy materialization reads the rows already selected by the main branch,
+    /// and a partial result still needs them, so such a source must not stop on `CancelReason::PartialResult`.
+    void keepReadingOnPartialResult() { keep_reading_on_partial_result = true; }
+
+    void cancel(CancelReason reason) noexcept override;
+    using ISource::cancel;
+
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
@@ -171,6 +178,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
+    bool keep_reading_on_partial_result = false;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).

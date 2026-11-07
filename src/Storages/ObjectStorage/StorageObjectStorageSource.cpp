@@ -967,6 +967,14 @@ void StorageObjectStorageSource::onFinish()
     parser_shared_resources->finishStream();
 }
 
+void StorageObjectStorageSource::cancel(CancelReason reason) noexcept
+{
+    if (reason == CancelReason::PartialResult && keep_reading_on_partial_result)
+        return;
+
+    ISource::cancel(reason);
+}
+
 Chunk StorageObjectStorageSource::generate()
 {
     lazyInitialize();
