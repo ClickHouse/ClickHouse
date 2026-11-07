@@ -4505,7 +4505,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
     for (auto & node : node_list_typed.getNodes())
     {
-        /// Classified before the resolution replaces the node.
         const auto * identifier_node = node->as<IdentifierNode>();
         bool is_identifier_reference = column_references && identifier_node && !node->hasAlias() && identifier_node->getIdentifier().isCompound();
         bool is_matcher_reference = column_references && node->getNodeType() == QueryTreeNodeType::MATCHER;
@@ -4547,8 +4546,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
                 if (!column_source || !scope.table_expression_node_to_data.contains(column_source))
                     continue;
 
-                /// The name must be a qualified reference of the column and nothing else: the written identifier with
-                /// some leading parts dropped, or for a matcher the column qualified with a suffix of its qualification parts.
+                /// The name must be the column name under a qualifier taken from the written identifier or the qualification parts.
                 const auto & name = expression_node_projection_names[i];
                 const auto & column_name = column_node->getColumnName();
                 bool is_qualified_reference = false;
@@ -5035,10 +5033,7 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
-/** A name is claimed by every result column whose name it is and by every column reference whose bare column name it is.
-  * A bare column name is used only if all of its claims come from result columns with the same name, which is the same
-  * reference repeated (`SELECT a.id, a.id`), so the renaming never creates a duplicate result column name.
-  */
+/// Column references whose bare column name no other result column has or would get (`SELECT a.id, a.id` is one claimant).
 std::vector<size_t> QueryAnalyzer::findUniqueBareProjectionNames(
     const NamesAndTypes & projection_columns, const std::vector<ProjectionColumnReference> & column_references)
 {
@@ -5073,7 +5068,6 @@ std::vector<size_t> QueryAnalyzer::findUniqueBareProjectionNames(
 
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
-    /// A column reference is named by its bare column name when no other result column has, or would get, that name.
     const auto & settings = scope.context->getSettingsRef();
     bool use_bare_column_names = !settings[Setting::analyzer_compatibility_qualify_ambiguous_column_names]
         && !(scope.joins_count >= 2 && settings[Setting::analyzer_compatibility_multiple_joins_qualify_column_names]);
