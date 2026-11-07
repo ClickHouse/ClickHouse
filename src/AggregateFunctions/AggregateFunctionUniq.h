@@ -867,8 +867,83 @@ private:
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr size_t argument_is_tuple = Data::argument_is_tuple;
     static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<typename Data::Set>::value;
+    static constexpr bool is_exact_set = detail::IsUniqExactSet<typename Data::Set>::value && Data::is_exact;
+    static constexpr size_t key_chunk_size = 256;
 
     size_t num_args = 0;
+
+    /// Inserts the same keys in the same order as `add`.
+    template <SetLevelHint hint>
+    void addManyExactImpl(
+        Data & data, const IColumn ** columns, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map) const
+    {
+        std::array<T, key_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
+        for (size_t chunk_begin = row_begin; chunk_begin < row_end; chunk_begin += key_chunk_size)
+        {
+            const size_t chunk_end = std::min(row_end, chunk_begin + key_chunk_size);
+            size_t num_keys = 0;
+            for (size_t row = chunk_begin; row < chunk_end; ++row)
+                if ((!flags || flags[row]) && (!null_map || !null_map[row]))
+                    keys[num_keys++] = UniqVariadicHash<true, argument_is_tuple>::apply(num_args, columns, row);
+            data.set.template insertMany<hint>(keys.data(), num_keys);
+        }
+    }
+
+    /// Same level handling as `Adder::addMany`.
+    void addManyExact(
+        Data & data, const IColumn ** columns, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map) const
+    {
+        bool use_single_level_hash_table = true;
+        if constexpr (Data::is_able_to_parallelize_merge)
+            use_single_level_hash_table = data.set.isSingleLevel();
+
+        if (use_single_level_hash_table)
+            addManyExactImpl<SetLevelHint::singleLevel>(data, columns, row_begin, row_end, flags, null_map);
+        else
+            addManyExactImpl<SetLevelHint::twoLevel>(data, columns, row_begin, row_end, flags, null_map);
+
+        if constexpr (Data::is_able_to_parallelize_merge)
+        {
+            if (data.set.isSingleLevel() && data.set.worthConvertingToTwoLevel(data.set.size()))
+                data.set.convertToTwoLevel();
+        }
+    }
+
+    /// GROUP BY: inserts the same keys in the same order per set as `add`.
+    template <bool check_places>
+    void addBatchExact(
+        size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, ssize_t if_argument_pos) const
+    {
+        static constexpr auto hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
+
+        const char8_t * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+
+        std::array<T, key_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `count` entries are read
+        std::array<typename Data::Set *, key_chunk_size> sets; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        for (size_t chunk_begin = row_begin; chunk_begin < row_end; chunk_begin += key_chunk_size)
+        {
+            const size_t chunk_end = std::min(row_end, chunk_begin + key_chunk_size);
+            size_t count = 0;
+            for (size_t row = chunk_begin; row < chunk_end; ++row)
+            {
+                if constexpr (check_places)
+                {
+                    if (!places[row])
+                        continue;
+                }
+                if (flags && !flags[row])
+                    continue;
+
+                keys[count] = UniqVariadicHash<true, argument_is_tuple>::apply(num_args, columns, row);
+                sets[count++] = &this->data(places[row] + place_offset).set;
+            }
+
+            for (size_t i = 0; i < count; ++i)
+                sets[i]->template insert<const T &, hint>(keys[i]);
+        }
+    }
 
 public:
     explicit AggregateFunctionUniqVariadic(const DataTypes & arguments)
@@ -926,7 +1001,10 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
+        if constexpr (is_exact_set)
+            addManyExact(this->data(place), columns, row_begin, row_end, flags, nullptr /* null_map */);
+        else
+            detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -942,7 +1020,42 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
+        if constexpr (is_exact_set)
+            addManyExact(this->data(place), columns, row_begin, row_end, flags, null_map);
+        else
+            detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
+    }
+
+    void addBatch( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (is_exact_set)
+            addBatchExact</* check_places = */ true>(row_begin, row_end, places, place_offset, columns, if_argument_pos);
+        else
+            IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>::addBatch(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (is_exact_set)
+            addBatchExact</* check_places = */ false>(row_begin, row_end, places, place_offset, columns, if_argument_pos);
+        else
+            IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>::addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
