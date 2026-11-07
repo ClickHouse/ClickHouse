@@ -1,0 +1,39 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>map_type</name>
+            <values>
+                <value>Map(UInt8, UInt8)</value>
+                <value>Map(UInt64, UInt64)</value>
+                <value>Map(String, String)</value>
+                <value>Map(UInt64, FixedString(256))</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>rows</name>
+            <values>
+                <value>65521</value>
+                <value>65536</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <input_format_defaults_for_omitted_fields>1</input_format_defaults_for_omitted_fields>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+    </settings>
+
+    <!--
+        perf.py executes SQL with clickhouse_driver, which does not support
+        inline INSERT FORMAT data. Use format() to parse JSONColumns on the
+        server and include its allocations in the query memory measurement.
+        The omitted Map columns reach insertManyDefaults in the input format.
+
+        Consume every Map column and check the row count so an empty input or
+        a count-only workload cannot look like a successful fast benchmark.
+        Include narrow maps, not just the wide allocation-sensitive case.
+        There is no timed process startup, producer process, or table DDL.
+    -->
+    <query file="map_insert_many_defaults.sql" />
+</test>
