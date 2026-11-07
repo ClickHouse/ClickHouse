@@ -166,6 +166,12 @@ struct ConnectionParams
     /// table on a disk, whose configuration comes from the server.
     bool follows_session_restriction = false;
 
+    /// `client_id` and `tenant_id` of a `WorkloadIdentityCredential` in `auth_method` given in `extra_credentials`,
+    /// which the credential does not expose. Empty when the credential takes them from the environment
+    /// (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`). Used to pass the same identity to `delta-kernel-rs`.
+    String workload_identity_client_id;
+    String workload_identity_tenant_id;
+
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
     /// Without the query, which can be a SAS, for where the url only names the endpoint (logs, errors, cache keys).
@@ -214,6 +220,10 @@ struct AuthConfig
 AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 AuthMethod getAuthMethod(const AuthConfig & auth_config);
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+/// `ETag` is an optional response header, and `Azure::ETag::ToString` aborts the process when the tag is absent
+/// (also in release builds). Use this function instead: it throws an exception when the endpoint did not send the tag.
+String getETag(const Azure::ETag & etag, const String & blob_path);
 
 #endif
 

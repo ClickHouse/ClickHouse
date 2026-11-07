@@ -190,21 +190,21 @@ We recommend materialized columns for basic processing. They're especially usefu
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
@@ -267,21 +267,21 @@ In order to ensure we don't persist the data twice (in the source and target tab
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String)
 ) ENGINE = Null
 ```
 
@@ -535,21 +535,21 @@ ALIAS columns are calculated at query time and aren't stored in the table. There
 ```sql
 CREATE TABLE otel_logs
 (
-        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
-        `TraceId` String CODEC(ZSTD(1)),
-        `SpanId` String CODEC(ZSTD(1)),
-        `TraceFlags` UInt32 CODEC(ZSTD(1)),
-        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
-        `SeverityNumber` Int32 CODEC(ZSTD(1)),
-        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
-        `Body` String CODEC(ZSTD(1)),
-        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
-        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
-        `ScopeName` String CODEC(ZSTD(1)),
-        `ScopeVersion` String CODEC(ZSTD(1)),
-        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
-        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Timestamp` DateTime64(9) CODEC(Delta, Default),
+        `TraceId` String,
+        `SpanId` String,
+        `TraceFlags` UInt32,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` Int32,
+        `ServiceName` LowCardinality(String),
+        `Body` String,
+        `ResourceSchemaUrl` String,
+        `ResourceAttributes` Map(LowCardinality(String), String),
+        `ScopeSchemaUrl` String,
+        `ScopeName` String,
+        `ScopeVersion` String,
+        `ScopeAttributes` Map(LowCardinality(String), String),
+        `LogAttributes` Map(LowCardinality(String), String),
         `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
         `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
         `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
@@ -753,7 +753,7 @@ CREATE TABLE geoip
         `country_code` String
 )
 ENGINE = MergeTree
-ORDER BY cidr
+ORDER BY cidr;
 
 INSERT INTO geoip
 WITH
