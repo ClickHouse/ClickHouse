@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/PODArray_fwd.h>
 
 
 namespace DB
@@ -17,9 +18,10 @@ namespace DB
   *
   * Column must have integer type.
   * T is type of column elements.
+  * `Id` is the type of the selector values, `UInt64` or `UInt16`. With `UInt16`, every value of `slots` must be below 65536.
   */
-template <typename T>
-IColumn::Selector createBlockSelector(
+template <typename T, typename Id = UInt64>
+PaddedPODArray<Id> createBlockSelector(
     const IColumn & column,
     const std::vector<UInt64> & slots);
 
