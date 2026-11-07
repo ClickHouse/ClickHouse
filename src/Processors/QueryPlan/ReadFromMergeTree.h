@@ -124,6 +124,10 @@ PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_
 /// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`), also inside the
 /// body of a lambda (`arrayMap(x -> rowNumberInBlock(), arr)`).
 bool dependsOnItsBlock(const ActionsDAG & actions);
+
+/// The input column an output of the DAG is a plain copy of, through aliases only (the analyzer renames
+/// `a` to `__table1.a` this way); nothing if the output is computed.
+std::optional<String> findPassedThroughInput(const ActionsDAG & dag, const String & output_name);
 }
 
 struct LazyMaterializingRows;
