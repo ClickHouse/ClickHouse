@@ -1,0 +1,55 @@
+-- double_exponential_smoothing(m[3m], 0.5, 0.5): drops the metric name; host4 has one sample and is dropped.
+-- host1 (10,20,30) -> 30, host2 (25,15,5) -> 5, host3 (10,20,15) -> 22.5.
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	22.5
+-- double_exponential_smoothing(m[3m], 0.8, 0.3): different factors.
+-- host1 -> 30, host2 -> 5, host3 (10,20,15) -> 18.
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	18
+-- Invalid factors are rejected (must be in the open interval (0, 1)).
+expects smoothing factor in the open interval (0, 1)
+expects trend factor in the open interval (0, 1)
+-- The factors may be scalar expressions, like in Prometheus: the same results as with the constant factors above.
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	22.5
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	18
+-- Computed factors out of range are rejected too.
+expects smoothing factor in the open interval (0, 1)
+expects trend factor in the open interval (0, 1)
+-- A NaN factor is not an error, like in Prometheus. The result is NaN, but the trend factor is unused for two samples.
+[('instance','host1')]	2023-11-14 22:13:20.000	nan
+[('instance','host2')]	2023-11-14 22:13:20.000	nan
+[('instance','host3')]	2023-11-14 22:13:20.000	nan
+[('instance','host1')]	2023-11-14 22:13:20.000	nan
+[('instance','host2')]	2023-11-14 22:13:20.000	nan
+[('instance','host3')]	2023-11-14 22:13:20.000	nan
+[('instance','host1')]	2023-11-14 22:13:20.000	nan
+[('instance','host2')]	2023-11-14 22:13:20.000	nan
+[('instance','host3')]	2023-11-14 22:13:20.000	nan
+[('instance','host1')]	2023-11-14 22:13:20.000	30
+[('instance','host2')]	2023-11-14 22:13:20.000	5
+[('instance','host3')]	2023-11-14 22:13:20.000	15
+-- Like in Prometheus, the factors are checked only where a window has samples, so a selector without series is not an error.
+-- The factors are read at every step: sf = 0.2, 0.3, 0.4, 0.5 and tf = 0.8, 0.7, 0.6, 0.5 (Prometheus: 7.8, 2, 11.4, 6.5).
+[('instance','host5')]	[(1699999940,7.8000000000000025),(1699999960,1.9999999999999996),(1699999980,11.4),(1700000000,6.5)]
+-- sf = 0.4, 0.6, 0.8, 1: the last step has samples, so the query fails.
+expects smoothing factor in the open interval (0, 1), got 1
+-- sf = 0.5, 1.5, 2.5: the windows of the last two steps have no samples, so it is not an error.
+[('instance','host5')]	[(1700000000,6.5)]
+-- A fixed @ works with a factor that is the same at every step, but not with a factor that varies per step.
+[('instance','host1')]	30
+[('instance','host2')]	5
+[('instance','host3')]	22.5
+NOT_IMPLEMENTED
+-- The subquery window (1699999990, 1700000000] contains no 1m step, so the result is empty (and not an error about the factors).
+-- An empty range vector gives an empty result before the factors are checked, as in Prometheus.
+-- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32.
+1	Array(Nullable(Float64))	1
+-- A table of version 10 stores one sample per row and gives the same results.
+[('instance','host1')]	30
+[('instance','host3')]	22.5
