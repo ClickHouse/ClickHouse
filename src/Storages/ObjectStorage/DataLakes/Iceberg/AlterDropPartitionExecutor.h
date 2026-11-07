@@ -86,6 +86,8 @@ private:
     struct DropPlan
     {
         TargetManifests target_manifests;
+        /// Storage paths of the files to remove. Partially matched manifests are rewritten without them.
+        std::unordered_set<String> target_file_paths;
         Iceberg::SnapshotSummaryUpdateDelete snapshot_summary_update;
     };
 

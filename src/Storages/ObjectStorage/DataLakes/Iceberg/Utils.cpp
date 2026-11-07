@@ -881,6 +881,41 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
+bool canGetAvroType(const DataTypePtr & type)
+{
+    /// Must agree with `getAvroType`.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::UInt8:
+        case TypeIndex::Int8:
+        case TypeIndex::UInt16:
+        case TypeIndex::Int16:
+        case TypeIndex::Int32:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::Time:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+        case TypeIndex::Int64:
+        case TypeIndex::DateTime:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+        case TypeIndex::String:
+        case TypeIndex::UUID:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return true;
+        case TypeIndex::DateTime64:
+            return getDecimalScale(*type) == 6;
+        case TypeIndex::Nullable:
+            return canGetAvroType(assert_cast<const DataTypeNullable &>(*type).getNestedType());
+        default:
+            return false;
+    }
+}
+
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
 {
     switch (type->getTypeId())

@@ -1367,6 +1367,15 @@ This produces a new snapshot (a `replace` operation) that references the same da
 - `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg format-version 2 tables. Running it against a format-version 1 table throws an exception, and so does running it against a format-version 3 table, because the v3 row-lineage `first_row_id` metadata is not yet round-tripped through the manifest rewrite.
 - `OPTIMIZE TABLE ... MANIFEST` is not supported for encrypted Iceberg tables whose data files contain per-file `key_metadata`. Preserving this encryption metadata across a manifest rewrite is not yet implemented, so the statement throws a `NOT_IMPLEMENTED` exception.
 
+### Merge of manifest files on insert {#manifest-merge-on-insert}
+
+Every `INSERT` adds new manifest files to the table, so without compaction their number grows with the number of inserts. Like other Iceberg writers, `INSERT` merges the small data manifest files of the current snapshot into fewer, larger ones as part of the same commit. No experimental setting is needed, and no separate snapshot is created: the new `append` snapshot lists the same data files, so only the manifest layer is rearranged.
+
+- The merge happens when the new snapshot would have more small data manifest files than the table property `commit.manifest.min-count-to-merge`, or, when the property is not set, the `iceberg_manifest_min_count_to_compact` setting (default `100`).
+- A merged manifest file spans partitions and holds up to the number of entries that fit in the table property `commit.manifest.target-size-bytes` (default 8 MiB). A data manifest file counts as small when it holds less than half of that; larger ones are kept as they are.
+- Setting the table property `commit.manifest-merge.enabled` to `false` disables the merge.
+- The merge is done only for Iceberg format-version 2 tables. It is skipped for tables with encrypted data files and for manifest files with partition values ClickHouse cannot write.
+
 ## Processing of tables with deleted rows {#deleted-rows}
 
 ClickHouse supports reading Iceberg tables that use the following deletion methods:

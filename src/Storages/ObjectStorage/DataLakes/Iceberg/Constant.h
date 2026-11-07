@@ -180,6 +180,10 @@ DEFINE_ICEBERG_FIELD_ALIAS(max_ref_age_ms, history.expire.max-ref-age-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(ref_min_snapshots_to_keep, min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(ref_max_snapshot_age_ms, max-snapshot-age-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(ref_max_ref_age_ms, max-ref-age-ms);
+/// Table properties controlling the merge of manifests on append.
+DEFINE_ICEBERG_FIELD_ALIAS(manifest_merge_enabled, commit.manifest-merge.enabled);
+DEFINE_ICEBERG_FIELD_ALIAS(manifest_min_count_to_merge, commit.manifest.min-count-to-merge);
+DEFINE_ICEBERG_FIELD_ALIAS(manifest_target_size_bytes, commit.manifest.target-size-bytes);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_format);

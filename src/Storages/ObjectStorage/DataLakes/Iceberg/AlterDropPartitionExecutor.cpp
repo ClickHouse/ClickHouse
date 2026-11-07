@@ -20,6 +20,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/DataManifestsRewriter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -406,6 +407,7 @@ AlterDropPartitionExecutor::DropPlan
 AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, const Row & target_partition) const
 {
     DropPlan result;
+    result.target_file_paths = targets;
     auto unprocessed_target_file_paths = targets;
 
     UInt64 removed_data_files = 0;
@@ -499,8 +501,15 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
         TargetManifest target_manifest{.manifest_key = manifest_key};
         if (entries_to_keep == 0)
             result.target_manifests.fully_matched.emplace_back(std::move(target_manifest));
-        else
+        else if (manifest_key.content_type == ManifestFileContentType::DATA)
+            /// E.g. a manifest that an `INSERT` merged from the manifests of several partitions. It is rewritten
+            /// without the dropped files.
             result.target_manifests.partially_matched.emplace_back(std::move(target_manifest));
+        else
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION would require rewriting a delete manifest '{}' that also contains files from other partitions",
+                manifest_key.manifest_file_path);
     }
 
     if (!unprocessed_target_file_paths.empty())
@@ -523,6 +532,41 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     SnapshotState & state, const DropPlan & plan, FileNamesGenerator & filename_generator, std::vector<String> & files_for_cleanup)
 {
     auto parent_snapshot_id = state.metadata_object->getValue<Int64>(f_current_snapshot_id);
+
+    /// The data manifests that also list files of other partitions are rewritten without the dropped files. The
+    /// remaining files are written as EXISTING entries keeping their lineage, statistics and partition tuples.
+    std::optional<DataManifestsRewriter> rewriter;
+    if (!plan.target_manifests.partially_matched.empty())
+    {
+        ManifestFileCacheKeys partially_matched;
+        for (const auto & tm : plan.target_manifests.partially_matched)
+            partially_matched.push_back(tm.manifest_key);
+
+        rewriter.emplace(
+            state.metadata_object,
+            components,
+            object_storage,
+            context,
+            /// Only used for fresh statistics; the rewrite carries the statistics over as they are.
+            std::make_shared<const Block>(),
+            write_format,
+            DataManifestsRewriter::Grouping::SpanPartitions);
+        rewriter->collect(
+            partially_matched,
+            [&](const IcebergPathFromMetadata & path) { return plan.target_file_paths.contains(components.path_resolver.resolve(path)); });
+
+        if (rewriter->hasEncryptedDataFiles())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION would require rewriting a manifest that also contains files from other partitions, "
+                "which is not supported for encrypted data files");
+        if (rewriter->hasUnsupportedPartitionValues())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DROP PARTITION would require rewriting a manifest that also contains files from other partitions, "
+                "which is not supported for their partition values");
+    }
+
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
     /// TODO: make generateNextMetadata to accept SnapshotSummaryUpdate
@@ -572,6 +616,19 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     std::unordered_set<String> removed_manifest_paths;
     for (const auto & tm : plan.target_manifests.fully_matched)
         removed_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
+    for (const auto & tm : plan.target_manifests.partially_matched)
+        removed_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
+
+    DataManifestsRewriter::Result rewritten;
+    if (rewriter)
+    {
+        /// The paths are filled before the objects are created, so they are removed if anything below fails.
+        SCOPE_EXIT({
+            for (const auto & path : rewritten.paths)
+                files_for_cleanup.push_back(components.path_resolver.resolve(path));
+        });
+        rewriter->write(filename_generator, new_snapshot, /* max_entries_per_manifest */ 0, rewritten);
+    }
 
     std::unordered_set<String> carry_forward_manifest_paths;
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
@@ -595,15 +652,17 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         state.metadata_object,
         object_storage,
         context,
-        /*manifest_entry_names=*/{},
+        rewritten.paths,
         new_snapshot,
-        /*manifest_entry_sizes=*/{},
+        rewritten.sizes,
         *buf,
         FileContentType::DATA,
         /*use_previous_snapshots=*/false,
         /*per_entry_content_types=*/{},
-        /*entry_counts=*/{},
-        carry_forward_manifest_paths);
+        rewritten.counts,
+        carry_forward_manifest_paths,
+        rewritten.partition_spec_ids,
+        rewritten.partition_summaries);
 
     buf->finalize();
 
@@ -739,11 +798,6 @@ void AlterDropPartitionExecutor::run()
         }
 
         auto plan = buildDropPlan(state, targets, target_partition);
-        if (!plan.target_manifests.partially_matched.empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DROP PARTITION would require rewriting a manifest that also contains files from other partitions");
-
         if (tryCommit(state, plan))
             return;
     }
