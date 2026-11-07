@@ -816,16 +816,16 @@ std::vector<Document> executeSelectIntoCursor(
 
         FieldTree tree;
         std::set<std::string_view, std::less<>> column_names;
-        for (size_t i = 0; i < columns.size(); ++i)
+        for (const auto & column : columns)
         {
             /// Every dot of a column name is a level of nested documents, built and serialized
             /// recursively. The depth is bounded as MongoDB bounds the nesting of a document.
-            if (static_cast<size_t>(std::count(columns[i].first.begin(), columns[i].first.end(), '.')) >= max_result_nesting_depth)
+            if (static_cast<size_t>(std::count(column.first.begin(), column.first.end(), '.')) >= max_result_nesting_depth)
                 throw Exception(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "The column '{}' of the result names a document nested deeper than {} levels",
-                    columns[i].first.substr(0, 100), max_result_nesting_depth);
-            column_names.insert(columns[i].first);
+                    column.first.substr(0, 100), max_result_nesting_depth);
+            column_names.insert(column.first);
         }
 
         /** A conflict - the columns `a` and `a.b` in one result, where `a` would be both a value and
@@ -840,7 +840,7 @@ std::vector<Document> executeSelectIntoCursor(
         {
             for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
             {
-                std::string_view ancestor(name.data(), dot);
+                std::string_view ancestor = name.substr(0, dot);
                 if (column_names.contains(ancestor))
                 {
                     conflicting.insert(ancestor);
@@ -1451,6 +1451,10 @@ SettingsChanges getMutationSettings()
     /// Waiting on this server is enough: the count of the next spec is taken by this same
     /// connection, i.e. on this server.
     changes.setSetting("mutations_sync", Field(UInt64(1)));
+    /// A generated `DELETE FROM` lowered into an `ALTER TABLE ... UPDATE _row_exists = 0`
+    /// replaces `mutations_sync` with `lightweight_deletes_sync`, so a profile that sets the
+    /// latter to zero would otherwise make the delete asynchronous.
+    changes.setSetting("lightweight_deletes_sync", Field(UInt64(1)));
     return changes;
 }
 

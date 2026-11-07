@@ -1634,7 +1634,9 @@ def test_bulk_write_command_reply_counts_are_truthful(started_cluster):
     """A `delete` or an `update` command carries a list of specs that Mongo applies one after
     another, so a spec sees what the previous ones did. The mutation of each spec is therefore
     awaited before the next one is counted: otherwise two overlapping specs would both count the
-    same rows and `n` would report more documents than the command touched."""
+    same rows and `n` would report more documents than the command touched. The profile of the
+    server sets `lightweight_deletes_sync` to zero, which a generated `DELETE FROM` must not
+    follow."""
     client = make_client()
     database = client["db"]
     collection = database["bulk_write_counts"]
