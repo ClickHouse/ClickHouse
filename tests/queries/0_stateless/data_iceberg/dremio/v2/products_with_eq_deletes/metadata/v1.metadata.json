@@ -1,0 +1,72 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "e1083b87-643e-4673-a22a-7d588b360bdc",
+  "location" : "/tmp/iceberg-test-tables/v2/products_with_eq_deletes",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1659472918422,
+  "last-column-id" : 7,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "product_id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "name",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "category",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "color",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 5,
+      "name" : "created_date",
+      "required" : true,
+      "type" : "date"
+    }, {
+      "id" : 6,
+      "name" : "weight",
+      "required" : true,
+      "type" : "double"
+    }, {
+      "id" : 7,
+      "name" : "quantity",
+      "required" : true,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "category",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.parquet.row-group-size-bytes" : "1"
+  },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

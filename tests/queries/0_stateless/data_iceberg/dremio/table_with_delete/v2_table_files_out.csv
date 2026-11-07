@@ -1,0 +1,8 @@
+content,file_path,file_format,partition,record_count,file_size_in_bytes,spec_id
+DATA,/tmp/iceberg/data/foo/foo-0.parquet,PARQUET,{category=foo},100,1196,0
+DATA,/tmp/iceberg/data/bar/bar-0.parquet,PARQUET,{category=bar},100,1197,0
+DATA,/tmp/iceberg/data/baz/baz-0.parquet,PARQUET,{category=baz},100,1198,0
+DATA,/tmp/iceberg/data/qux/qux-0.parquet,PARQUET,{category=qux},100,1198,0
+DATA,/tmp/iceberg/data/quux/quux-0.parquet,PARQUET,{category=quux},100,1206,0
+DATA,/tmp/iceberg/data/quuz/quuz-0.parquet,PARQUET,{category=quuz},100,1206,0
+POSITION_DELETES,/tmp/iceberg/data/qux/qux-delete-0.parquet,PARQUET,{category=qux},6,2097,0

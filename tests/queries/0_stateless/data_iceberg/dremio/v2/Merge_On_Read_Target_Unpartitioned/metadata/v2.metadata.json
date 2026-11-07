@@ -1,0 +1,89 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "a48d9306-bad5-4914-b06c-82685a314009",
+  "location" : "/tmp/iceberg-test-tables/v2/Merge_On_Read_Target_Unpartitioned",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1716779541145,
+  "last-column-id" : 6,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "order_id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "order_year",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "order_date",
+      "required" : true,
+      "type" : "timestamp"
+    }, {
+      "id" : 4,
+      "name" : "source_id",
+      "required" : true,
+      "type" : "int"
+    }, {
+      "id" : 5,
+      "name" : "product_name",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 6,
+      "name" : "amount",
+      "required" : true,
+      "type" : "double"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "write.merge.mode" : "merge-on-read",
+    "write.delete.mode" : "merge-on-read",
+    "write.update.mode" : "merge-on-read"
+  },
+  "current-snapshot-id" : 4259783135229976651,
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 4259783135229976651,
+    "timestamp-ms" : 1716779541144,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "100000",
+      "added-files-size" : "1681784",
+      "changed-partition-count" : "1",
+      "total-records" : "100000",
+      "total-files-size" : "1681784",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/tmp/iceberg-test-tables/v2/Merge_On_Read_Target_Unpartitioned/metadata/snap-4259783135229976651-1-adfdda19-0422-4040-9070-eb3202de896f.avro",
+    "schema-id" : 0
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1716779541144,
+    "snapshot-id" : 4259783135229976651
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1716779540839,
+    "metadata-file" : "/tmp/iceberg-test-tables/v2/Merge_On_Read_Target_Unpartitioned/metadata/v1.metadata.json"
+  } ]
+}
