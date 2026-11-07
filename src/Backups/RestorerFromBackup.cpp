@@ -364,11 +364,10 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     AccessRightsElements required_access;
     AccessRights required_access_rights;
 
-    /// Every host replaces the engine of a table, but under `ON CLUSTER` only a value in the query reaches every host.
+    /// Under `ON CLUSTER` only a setting in the query reaches every host, and an older host skips no database, so none is skipped here.
     const bool replace_external_engines_to_null = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
         && (mode != Mode::CHECK_ACCESS_ONLY
             || restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr);
-    /// Under `ON CLUSTER` each host decides the skip itself, and an older one creates the database, so none is skipped here.
     auto is_database_skipped = [&](const ASTPtr & create_database_query)
     {
         return mode != Mode::CHECK_ACCESS_ONLY && !getSkippedDatabaseEngine(create_database_query, context).empty();

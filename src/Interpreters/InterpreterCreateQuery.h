@@ -98,8 +98,7 @@ public:
 
     static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
 
-    /// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name,
-    /// so it is reported as unknown if that is the first missing grant.
+    /// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name: it is reported as unknown if that is the first missing grant.
     static void throwIfEngineIsUnknownAndNotGranted(
         const String & engine_name, bool is_database_engine, const AccessRightsElements & required_before,
         const ContextPtr & local_context);
