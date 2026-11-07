@@ -69,6 +69,13 @@ bool canCheckQueryLimit(MemoryTracker * memory_tracker)
     return false;
 }
 
+/// Counts only allocations: a free may be charged to another tracker, e.g. in the scope of a `MemoryTrackerSwitcher`.
+void addUncheckedFlush(DB::ThreadStatus & thread, Int64 size)
+{
+    if (size > 0)
+        thread.untracked_memory_flushed_unchecked += size;
+}
+
 }
 
 AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit)
@@ -141,9 +148,12 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
                 throw;
             }
 
-            /// A flush that did not check the limit leaves the unchecked flushes to the next allocation.
-            if (enforce_memory_limit && canCheckQueryLimit(memory_tracker))
+            /// A flush that checked the limits settles the unchecked flushes, any other flush adds its allocations to them,
+            /// except the bytes of an allocation that does not enforce the limit itself.
+            if (check_unchecked_flushes || (enforce_memory_limit && new_untracked_memory > 0 && canCheckQueryLimit(memory_tracker)))
                 cur_thread->untracked_memory_flushed_unchecked = 0;
+            else
+                addUncheckedFlush(*cur_thread, enforce_memory_limit ? new_untracked_memory : previous_untracked_memory);
         }
 
         return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
@@ -219,6 +229,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
                 std::ignore = memory_tracker->allocImpl(new_untracked_memory, /*enforce_memory_limit=*/ false, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
             else
                 std::ignore = memory_tracker->free(-new_untracked_memory, /*_sample_probability=*/ 0.0);
+            addUncheckedFlush(*cur_thread, new_untracked_memory);
         }
 
         return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
