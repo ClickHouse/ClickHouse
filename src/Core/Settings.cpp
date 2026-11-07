@@ -8063,14 +8063,17 @@ Toggles a query-plan-level optimization which copies filter conjuncts from one s
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
 on the other side can use them.
 
-Applies when the filter and the `MergeTree` read are separated from the join only by expression
-and filter steps, and when the copied conjunct compares a primary key column with a constant
-(including `IN` with a constant set). A predicate below a nested join or below `DISTINCT`, or a
-comparison between two key columns, is left alone: it could not drive primary key pruning on the
-other side, so copying it would only add work.
+Applies when the filter and the read are separated from the join only by expression and filter
+steps, and when the copied conjunct compares a constant (including `IN` with a constant set) with
+either a primary key column of a `MergeTree` read, or a column of a `Parquet` read (`file`, `url`,
+object storage that is not a data lake) of an integer of up to 64 bits, `Date`, `Date32` or `Decimal` type without a
+default expression, whose row groups the read can skip by min/max statistics. A predicate below a
+nested join or below `DISTINCT`, or a comparison between two key columns, is left alone: it could
+not drive pruning on the other side, so copying it would only add work.
 
 Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0, \
+        {"26.11", true, true, "Also copies filter conjuncts onto integer, Date and Decimal columns of Parquet reads, which skip row groups by their statistics."}, \
         {"26.9", false, true, "New setting that lifts filter conjuncts across equi-join keys so primary-key pruning fires on both sides."}) \
     DECLARE(Bool, query_plan_push_down_volume_reducing_functions, true, R"(
 Toggles a query-plan-level optimization which moves volume-reducing functions (`length`, `lengthUTF8`, `empty`, `notEmpty`)

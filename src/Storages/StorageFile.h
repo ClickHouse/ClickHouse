@@ -493,6 +493,8 @@ public:
     bool supportsMinMaxFromStatistics() const override;
     void setMinMaxFromStatistics() override { read_min_max_from_statistics = true; }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,

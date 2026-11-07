@@ -59,6 +59,8 @@ public:
     /// threshold of the TopN filter, so the read must neither consult nor write the TopK cache entries.
     void disableTopKQueryConditionCache() { allow_top_k_query_condition_cache = false; }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 #if CLICKHOUSE_CLOUD

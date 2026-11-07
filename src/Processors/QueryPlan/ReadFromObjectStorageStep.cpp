@@ -133,6 +133,15 @@ bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromObjectStorageStep::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    /// The format of a data lake is only the format new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return false;
+    return formatSkipsDataByStatistics(configuration->format, format_settings ? *format_settings : getFormatSettings(getContext()))
+        && info.canSkipDataByStatisticsOf(column);
+}
+
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
