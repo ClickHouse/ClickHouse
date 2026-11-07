@@ -213,10 +213,10 @@ String escapeGlobCharacters(const String & name)
 /// whole source.
 std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source source, const String & uri)
 {
-    /// A blob path and a local path are names, used as written.
+    /// A blob path and a local path are names, used as written, but their dot and empty segments may be resolved on access.
     if (source == AccessTypeObjects::Source::AZURE || source == AccessTypeObjects::Source::FILE)
     {
-        if (hasDotSegment(uri))
+        if (hasDotSegment(uri) || uri.contains("//"))
             return {};
         return {uri, escapeGlobCharacters(uri)};
     }

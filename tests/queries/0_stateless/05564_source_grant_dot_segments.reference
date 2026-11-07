@@ -31,4 +31,6 @@ url failover against an exact filter: denied READ ON URL
 azure glob against an exact filter: denied READ ON AZURE
 url failover in the query: denied READ ON URL
 url glob in the query: denied READ ON URL
+file empty segment: denied READ ON FILE
+azure empty segment: denied WRITE ON AZURE
 s3 dot segment with the whole-source grant: not denied

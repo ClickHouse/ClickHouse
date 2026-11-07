@@ -103,6 +103,8 @@ echo "url failover against an exact filter: $(check 'READ ON URL' "SELECT * FROM
 echo "azure glob against an exact filter: $(check 'READ ON AZURE' "SELECT * FROM $(azure_table "$db/exact/report*csv")")"
 echo "url failover in the query: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/a.tsv?x|$s3/other/a.tsv', 'TSV')")"
 echo "url glob in the query: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/a.tsv?{x,y}', 'TSV')")"
+echo "file empty segment: $(check 'READ ON FILE' "SELECT * FROM icebergLocal('$ufp/$db/allowed//t')")"
+echo "azure empty segment: $(check 'WRITE ON AZURE' "BACKUP TABLE $db.t TO $(azure "$db/backups//z")")"
 
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON S3 TO $user"
 echo "s3 dot segment with the whole-source grant: $(check 'READ ON S3' "SELECT * FROM s3('$s3/other/../test/a.tsv', 'TSV')")"
