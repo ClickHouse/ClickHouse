@@ -6,9 +6,11 @@ SET optimize_use_projections = 1;
 SET optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET max_projection_rows_to_use_projection_index = 1000000;
--- The skip index has to be evaluated at read time, before the projection indexes.
+-- The skip index has to be evaluated at read time, before the projection indexes. A throwing max_rows_to_read
+-- (the CI profile sets one) would evaluate it at planning time instead.
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
+SET max_rows_to_read = 0;
 -- A cached condition would skip the reads this test counts.
 SET use_query_condition_cache = 0;
 -- The skip index is not evaluated at read time with parallel replicas.
@@ -16,7 +18,7 @@ SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_proj_idx;
 
--- by_a is defined first and is the least selective projection.
+-- by_a is the least selective projection; it is defined between the selective ones.
 CREATE TABLE t_proj_idx
 (
     a UInt64,
@@ -25,8 +27,8 @@ CREATE TABLE t_proj_idx
     d UInt64,
     payload String,
     INDEX c_idx c TYPE minmax GRANULARITY 1,
-    PROJECTION by_a (SELECT _part_offset ORDER BY a),
     PROJECTION by_b (SELECT _part_offset ORDER BY b),
+    PROJECTION by_a (SELECT _part_offset ORDER BY a),
     PROJECTION by_d (SELECT _part_offset ORDER BY d)
 )
 ENGINE = MergeTree ORDER BY tuple()
@@ -57,11 +59,12 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, multiIf(
         log_comment = '05566_empty_first', rows_read <= 1000,
         log_comment = '05566_empty_intersection', rows_read <= 2000,
-        log_comment = '05566_excluded_by_skip_index', rows_read = 0,
+        log_comment = '05566_excluded_by_skip_index', rows_read = 0 AND selected_parts >= 1,
         rows_read >= 10000)
 FROM
 (
-    SELECT log_comment, ProfileEvents['RowsReadByPrewhereReaders'] + ProfileEvents['RowsReadByMainReader'] AS rows_read
+    SELECT log_comment, ProfileEvents['RowsReadByPrewhereReaders'] + ProfileEvents['RowsReadByMainReader'] AS rows_read,
+        ProfileEvents['SelectedParts'] AS selected_parts
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
         AND log_comment IN ('05566_empty_first', '05566_empty_intersection', '05566_excluded_by_skip_index', '05566_non_empty')
