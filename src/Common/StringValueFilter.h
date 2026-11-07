@@ -60,6 +60,9 @@ public:
     /// faster than a search per value when the values are short.
     bool hasBulkScanCondition() const { return bulk_scan_condition != SIZE_MAX; }
 
+    /// The needle of the bulk-scanned condition. Requires `hasBulkScanCondition`.
+    const String & getBulkScanNeedle() const { return conditions[bulk_scan_condition].needle; }
+
     /// Finds the values in a buffer of concatenated values that contain the needle of the
     /// bulk-scanned condition. The values are `[first_value, last_value)` and `offsets` are their
     /// original cumulative end offsets; `buffer` starts at the original offset `buffer_original_start`
