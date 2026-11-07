@@ -3762,10 +3762,12 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///
 /// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
 ///   instants have the same local wall-clock representation;
-/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
-///   tables compare floating-point keys bitwise and keep distinct payloads apart;
+/// - a floating-point number, also as a `QBit` element, because every `NaN` payload is rendered as the
+///   same `nan`, while hash tables compare floating-point keys bitwise and keep distinct payloads apart;
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a `Time` or `Time64`, saturated to `-999:59:59`..`999:59:59` when formatted;
+/// - a `DateTime64`, saturated to `0000-01-01`..`9999-12-31` when formatted;
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
 ///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
 /// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
@@ -3781,10 +3783,11 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
     {
         if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
             collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
-        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
-            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
-        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+        else if (isFloat(nested) || isDate32(nested) || isDateTime64(nested) || isTime(nested) || isTime64(nested)
+                 || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
+        else if (const auto * qbit = typeid_cast<const DataTypeQBit *>(&nested))
+            collapses = collapses || isFloat(qbit->getElementType());
         else if (isUInt8(nested) && nested.getName() == "Bool")
             collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
     };
