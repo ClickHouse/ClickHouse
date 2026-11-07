@@ -630,8 +630,7 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
             if (found && run_end == i + 1)
             {
-                /// The following rows that are the next offsets, each once, select the next values:
-                /// copy them with one `insertRangeFrom` instead of one `insertFrom` per row.
+                /// The following rows that are the next offsets, each once, select the next values.
                 const size_t value_index = pos - offsets_begin;
                 while (run_end < limit && pos != offsets_end && indexes[run_end] == *pos
                        && (run_end + 1 == limit || indexes[run_end + 1] != indexes[run_end]))
