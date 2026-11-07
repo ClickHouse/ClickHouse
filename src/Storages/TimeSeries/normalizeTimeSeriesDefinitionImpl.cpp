@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -34,6 +35,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/TimeSeriesDownsamplingPeriods.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <base/EnumReflection.h>
@@ -57,6 +59,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsASTFunction recent_samples_partition_by;
     extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
     extern const TimeSeriesSettingsUInt64 samples_bucket_step_seconds;
+    extern const TimeSeriesSettingsString samples_downsampling_periods;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity_bytes;
     extern const TimeSeriesSettingsASTFunction samples_partition_by;
@@ -695,6 +698,72 @@ namespace
         return makeASTOperator("plus", std::move(time), makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(ttl_seconds)));
     }
 
+    /// The expression of `SET samples = ...` of a downsampling TTL rule: the samples of the group sorted and merged by
+    /// `timeSeriesGroupArray`, then only the last sample of each `[k * interval, (k + 1) * interval)` interval is kept.
+    /// `toDateTime` makes the rule work for any type of the timestamps, and the timezone is named because `toStartOfInterval`
+    /// counts from local midnight, while the intervals must count from the Unix epoch like the buckets.
+    ASTPtr makeDownsampledSamplesExpression(UInt64 interval_seconds)
+    {
+        auto samples = [] { return makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples)); };
+        /// The operators are marked as such to be formatted as `(s, i) -> ... a[i + 1].1 ...`, the way the parser reads them back.
+        auto start_of_interval = [&](ASTPtr sample)
+        {
+            auto timestamp = makeASTOperator("tupleElement", std::move(sample), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+            return makeASTFunction("toStartOfInterval",
+                makeASTFunction("toDateTime", std::move(timestamp), make_intrusive<ASTLiteral>(String{"UTC"})),
+                makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(interval_seconds)));
+        };
+
+        auto is_last_in_array = makeASTOperator("equals", make_intrusive<ASTIdentifier>("i"), makeASTFunction("length", samples()));
+        auto next_sample = makeASTOperator("arrayElement", samples(),
+            makeASTOperator("plus", make_intrusive<ASTIdentifier>("i"), make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
+        auto is_last_in_interval = makeASTOperator("notEquals",
+            start_of_interval(std::move(next_sample)), start_of_interval(make_intrusive<ASTIdentifier>("s")));
+
+        auto lambda = makeASTOperator("lambda",
+            makeASTOperator("tuple", make_intrusive<ASTIdentifier>("s"), make_intrusive<ASTIdentifier>("i")),
+            makeASTOperator("or", std::move(is_last_in_array), std::move(is_last_in_interval)));
+        return makeASTFunction("arrayFilter", std::move(lambda), samples(), makeASTFunction("arrayEnumerate", samples()));
+    }
+
+    /// The generated TTL of an inner samples table with the `samples_downsampling_periods` setting: one `GROUP BY` rule per level.
+    /// A row older than the offset of a level is rewritten by the rule of that level; the row keeps its key, so the rule groups
+    /// by the whole sorting key `(id, bucket)`. The TTL counts from the start of the bucket plus the step, like the TTL of
+    /// the recent samples table. Returns nullptr if the setting is empty.
+    ASTPtr getSamplesDownsamplingTTLFromSettings(const TimeSeriesSettings & settings)
+    {
+        const auto periods = TimeSeriesDownsamplingPeriods::parse(settings[TimeSeriesSetting::samples_downsampling_periods].value);
+        if (periods.levels.empty())
+            return nullptr;
+
+        const UInt64 bucket_step_seconds = settings[TimeSeriesSetting::samples_bucket_step_seconds];
+        auto assignment = [](std::string_view column_name, ASTPtr expression)
+        {
+            auto result = make_intrusive<ASTAssignment>();
+            result->column_name = String{column_name};
+            result->children.push_back(std::move(expression));
+            return result;
+        };
+
+        auto ttl_list = make_intrusive<ASTExpressionList>();
+        for (const auto & level : periods.levels)
+        {
+            auto ttl_element = make_intrusive<ASTTTLElement>(TTLMode::GROUP_BY, DataDestinationType::DELETE, "", /*if_exists=*/ false);
+            ttl_element->setTTL(makeASTOperator("plus",
+                makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket)),
+                makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(level.offset_seconds + bucket_step_seconds))));
+            ttl_element->group_by_key.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            ttl_element->group_by_key.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket));
+            ttl_element->group_by_assignments.push_back(assignment(TimeSeriesColumnNames::Samples, makeDownsampledSamplesExpression(level.interval_seconds)));
+            ttl_element->group_by_assignments.push_back(assignment(TimeSeriesColumnNames::MinTime,
+                makeASTFunction("min", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime))));
+            ttl_element->group_by_assignments.push_back(assignment(TimeSeriesColumnNames::MaxTime,
+                makeASTFunction("max", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime))));
+            ttl_list->children.push_back(std::move(ttl_element));
+        }
+        return ttl_list;
+    }
+
     /// The codec declared by the entry `CODEC <name> (...)` of the column list of an inner table, where `name` is a column
     /// or a subcolumn of a column written as a dotted name (e.g. `samples.timestamp`), or nullptr if there is no such entry.
     ASTPtr getCodecDeclaration(const ASTColumns & inner_table_columns, std::string_view name)
@@ -1301,6 +1370,10 @@ namespace
                             : getDefaultSamplesPartitionKey()->formatWithSecretsOneLine();
                         if (partitioning_equals(expected_partition_by))
                             inner_engine.reset(inner_engine.partition_by);
+
+                        if (auto downsampling_ttl = getSamplesDownsamplingTTLFromSettings(settings);
+                            downsampling_ttl && ttl_equals(downsampling_ttl->formatWithSecretsOneLine()))
+                            inner_engine.reset(inner_engine.ttl_table);
                     }
                 }
                 else
@@ -1970,6 +2043,23 @@ namespace
                     {
                         /// Otherwise a declared partition key is kept; if there is none, the default one (one partition per month) is used.
                         set_partition_by(getDefaultSamplesPartitionKey());
+                    }
+
+                    /// The downsampling levels define the whole TTL of the table, so a declared TTL is rejected, unless it is
+                    /// the generated one: the definition is normalized again with the generated clauses in place.
+                    if (auto downsampling_ttl = getSamplesDownsamplingTTLFromSettings(settings))
+                    {
+                        const auto expected_ttl = downsampling_ttl->formatWithSecretsOneLine();
+                        if (inner_engine.ttl_table && (inner_engine.ttl_table->formatWithSecretsOneLine() != expected_ttl))
+                            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "{}: The inner samples table cannot declare TTL when the `samples_downsampling_periods` setting is set, "
+                                "because the setting defines the TTL of the table",
+                                table_id.getNameForLogs());
+                        if (!inner_engine.ttl_table)
+                        {
+                            inner_engine.set(inner_engine.ttl_table, downsampling_ttl);
+                            changed = true;
+                        }
                     }
                     break;
                 }
