@@ -3,6 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
@@ -35,11 +38,12 @@ namespace
 /// Reattaching these tables would change what the queries see, which is not a bug.
 bool canBeReattached(const StoragePtr & table, const ContextPtr & context)
 {
-    if (table->isDictionary())
+    if (table->isDictionary() || table->isSystemStorage())
         return false;
 
     const String engine = table->getName();
-    if (engine == "Memory" || engine == "LiveView" || engine == "WindowView")
+    /// `Buffer` keeps data in memory and flushes it on `DETACH`, which loses the data if there is no destination.
+    if (engine == "Memory" || engine == "Buffer" || engine == "LiveView" || engine == "WindowView")
         return false;
 
     /// `Set` and `Join` with `persistent = 0` keep their data only in memory.
@@ -82,38 +86,18 @@ void executeInternal(const String & query, const ContextPtr & context)
     internal_context->makeQueryContext();
     internal_context->setCurrentQueryId({});
 
+    /// Use a separate thread group, so that the work of the internal query is not accounted to the outer query:
+    /// its memory tracker, profile events and threads stay as without reattaching.
+    ThreadGroupSwitcher thread_group_switcher(ThreadGroup::createForQuery(internal_context), ThreadName::REATTACH_TABLES, /* allow_existing_group= */ true);
+
     auto io = executeQuery(query, internal_context, QueryFlags{.internal = true}).second;
     executeTrivialBlockIO(io, internal_context);
 }
 
-}
-
-void reattachRandomTablesInCurrentDatabase(const ContextPtr & context)
+void reattachTables(const DatabasePtr & database, const std::vector<String> & table_names, const ContextPtr & context)
 {
-    const double probability = static_cast<double>(context->getSettingsRef()[Setting::reattach_tables_before_query_execution_probability].value);
-    if (probability <= 0)
-        return;
-
-    const String database_name = context->getCurrentDatabase();
-    if (database_name.empty())
-        return;
-
-    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-    if (!database)
-        return;
-
-    /// Other engines either do not support a non-permanent `DETACH` (e.g. `Replicated`, `Memory`), or do not own their tables.
-    const String database_engine = database->getEngineName();
-    if (database_engine != "Atomic" && database_engine != "Ordinary")
-        return;
-
-    std::bernoulli_distribution distribution(std::min(probability, 1.0));
-    std::vector<String> table_names;
-    for (auto it = database->getTablesIterator(context, {}, /* skip_not_loaded= */ true); it->isValid(); it->next())
-        if (distribution(thread_local_rng))
-            table_names.push_back(it->name());
-
     auto log = getLogger("reattachRandomTables");
+    const String & database_name = database->getDatabaseName();
 
     for (const auto & table_name : table_names)
     {
@@ -149,6 +133,41 @@ void reattachRandomTablesInCurrentDatabase(const ContextPtr & context)
 
         LOG_TEST(log, "Reattached table {}", quoted_name);
     }
+}
+
+}
+
+void reattachRandomTablesInCurrentDatabase(const ContextPtr & context)
+{
+    const double probability = static_cast<double>(context->getSettingsRef()[Setting::reattach_tables_before_query_execution_probability].value);
+    if (probability <= 0)
+        return;
+
+    const String database_name = context->getCurrentDatabase();
+    if (database_name.empty() || DatabaseCatalog::isPredefinedDatabase(database_name))
+        return;
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (!database)
+        return;
+
+    /// Other engines either do not support a non-permanent `DETACH` (e.g. `Replicated`, `Memory`), or do not own their tables.
+    const String database_engine = database->getEngineName();
+    if (database_engine != "Atomic" && database_engine != "Ordinary")
+        return;
+
+    auto global_context = context->getGlobalContext();
+
+    std::bernoulli_distribution distribution(std::min(probability, 1.0));
+    std::vector<String> table_names;
+    for (auto it = database->getTablesIterator(global_context, {}, /* skip_not_loaded= */ true); it->isValid(); it->next())
+        if (distribution(thread_local_rng))
+            table_names.push_back(it->name());
+
+    if (table_names.empty())
+        return;
+
+    reattachTables(database, table_names, global_context);
 }
 
 }
