@@ -17,6 +17,25 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     std::vector<size_t> row_group_ids;
     std::optional<std::pair<UInt64, UInt64>> byte_range;
 
+    /// The parsed footer of the file, if the code that split the file into buckets has already read it
+    /// (see `ParquetBucketSplitter::splitForParallelReading`). The reader of the bucket then uses it
+    /// instead of reading and parsing the footer again. The caller is responsible for the bucket being
+    /// read from the same version of the file. Not serialized: the buckets sent to other servers don't
+    /// carry it.
+    std::shared_ptr<const Parquet::FileFooter> file_footer;
+    /// The column chunks of `file_footer`, shared by the readers of all buckets of the file, so that
+    /// each column is parsed only once, see `Parquet::SharedFileColumnChunks`. Not serialized.
+    Parquet::SharedFileColumnChunksPtr column_chunks;
+
+    /// Whether the bucket is one of the buckets made by `ParquetBucketSplitter::splitForParallelReading`,
+    /// so that the other row groups of the file are read by other readers of the same query rather than
+    /// skipped. Not serialized, like `file_footer`.
+    bool is_split_for_parallel_reading = false;
+    /// For a split file, whether the reader of this bucket records the statistics of all row groups of the
+    /// file, to keep them in the metadata cache (see `IInputFormat::cacheFilterColumnStatistics`). One bucket
+    /// is enough. Not serialized, like `file_footer`.
+    bool keeps_filter_column_statistics = false;
+
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
     ParquetFileBucketInfo(UInt64 offset, UInt64 length);
@@ -39,6 +58,12 @@ struct ParquetBucketSplitter : public IBucketSplitter
         ReadBuffer & buf,
         const RelativePathWithMetadata & object,
         const FormatSettings & format_settings_,
+        const ContextPtr & context) override;
+    std::vector<FileBucketInfoPtr> splitForParallelReading(
+        size_t max_buckets,
+        ReadBuffer & buf,
+        const FormatSettings & format_settings_,
+        const std::optional<RelativePathWithMetadata> & object_with_metadata,
         const ContextPtr & context) override;
     std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets) override;
 };
@@ -143,8 +168,10 @@ struct ParquetCachedStatisticsFilter
     /// If the kept ranges exclude every row group of the file version, the number of row groups of the file.
     std::optional<size_t> canSkipFile(ParquetMetadataCache & metadata_cache, const String & path, const String & version) const;
 
-    /// Counts a skipped file as the reader would have counted it.
-    static void countSkippedFile(size_t num_row_groups);
+    /// Counts a skipped file as the reader would have counted it: `num_pruned_row_groups` row groups pruned,
+    /// and, if `count_file`, the file as skipped. The sources of a split file count each its own row groups,
+    /// but the file only once.
+    static void countSkippedFile(size_t num_pruned_row_groups, bool count_file = true);
 
     /// Identifies the statistics ranges of a column in a cache cell: the column and the settings that change how
     /// the reader finds it in the file and converts its statistics.

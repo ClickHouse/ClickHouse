@@ -216,21 +216,36 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
 
         auto new_reader = std::make_unique<Parquet::ReadManager>();
         new_reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
+        /// The code that split the file into buckets may have parsed the footer already.
+        const bool has_bucket_footer = buckets_to_read && buckets_to_read->file_footer;
+        auto load_footer = [&]
+        {
+            return has_bucket_footer ? buckets_to_read->file_footer : readFileFooter(new_reader->reader.prefetcher);
+        };
+        /// Shared with the readers of the other buckets of the file, also when the cache is enabled: the cell
+        /// in the cache gets the column chunks only after the initialization of a reader.
+        Parquet::SharedFileColumnChunksPtr shared_column_chunks = has_bucket_footer ? buckets_to_read->column_chunks : nullptr;
         footer_cache_key = getMetadataCacheKey();
         if (footer_cache_key)
         {
-            std::tie(footer_cache_cell, footer_cache_hit) = metadata_cache->getOrSetMetadata(
-                *footer_cache_key, [&] { return readFileFooter(new_reader->reader.prefetcher); });
-            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks);
+            std::tie(footer_cache_cell, footer_cache_hit) = metadata_cache->getOrSetMetadata(*footer_cache_key, load_footer);
+            /// The cell may have been evicted and replaced since the split, then share nothing.
+            if (has_bucket_footer && footer_cache_cell->footer != buckets_to_read->file_footer)
+                shared_column_chunks = nullptr;
+            new_reader->reader.setFileFooter(footer_cache_cell->footer, footer_cache_cell->column_chunks, shared_column_chunks);
             if (footer_cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
             {
                 metadata_cache_cell = footer_cache_cell;
                 metadata_cache_key = *footer_cache_key;
             }
         }
+        else if (has_bucket_footer)
+        {
+            new_reader->reader.setFileFooter(buckets_to_read->file_footer, {}, shared_column_chunks);
+        }
         else
         {
-            new_reader->reader.setFileFooter(readFileFooter(new_reader->reader.prefetcher));
+            new_reader->reader.setFileFooter(load_footer());
         }
 
         std::lock_guard lock(reader_mutex);
@@ -248,7 +263,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::lock_guard lock(reader_mutex);
             reader = std::move(reader_with_footer);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-            if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition)
+            /// Of the readers of a split file, only one records the statistics (of all row groups, also of the other buckets).
+            if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition
+                && !(buckets_to_read && buckets_to_read->is_split_for_parallel_reading && !buckets_to_read->keeps_filter_column_statistics))
             {
                 /// Ranges are collected only for the columns not kept yet, and only while they can still be kept.
                 Block key_block = getPort().getHeader();
@@ -265,7 +282,10 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 }
                 reader->reader.max_key_condition_column_ranges_bytes = kept_statistics.remainingBytes();
             }
-            reader->init(parser_shared_resources, rowGroupSelection());
+            reader->init(
+                parser_shared_resources,
+                rowGroupSelection(),
+                /*other_row_groups_are_read_by_other_readers=*/ buckets_to_read && buckets_to_read->is_split_for_parallel_reading);
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
             if (footer_cache_hit)
                 metadata_cache->addColumnChunks(*footer_cache_key, footer_cache_cell, reader->reader.getColumnChunks());
@@ -400,11 +420,14 @@ std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
     return cell->footer->metadata.row_groups.size();
 }
 
-void ParquetCachedStatisticsFilter::countSkippedFile(size_t num_row_groups)
+void ParquetCachedStatisticsFilter::countSkippedFile(size_t num_pruned_row_groups, bool count_file)
 {
-    ProfileEvents::increment(ProfileEvents::ParquetFilesSkippedByCachedStatistics);
-    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, num_row_groups);
-    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, num_pruned_row_groups);
+    if (count_file)
+    {
+        ProfileEvents::increment(ProfileEvents::ParquetFilesSkippedByCachedStatistics);
+        ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+    }
 }
 
 Chunk ParquetV3BlockInputFormat::read()
@@ -690,7 +713,12 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
             filtered.push_back(rg);
     if (filtered.empty())
         return nullptr;
-    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+    auto result = std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+    result->file_footer = file_footer;
+    result->column_chunks = column_chunks;
+    result->is_split_for_parallel_reading = is_split_for_parallel_reading;
+    result->keeps_filter_column_statistics = keeps_filter_column_statistics;
+    return result;
 }
 
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
@@ -753,6 +781,75 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
     }
     return result;
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
+    size_t max_buckets,
+    ReadBuffer & buf,
+    const FormatSettings & format_settings_,
+    const std::optional<RelativePathWithMetadata> & object_with_metadata,
+    const ContextPtr & context)
+{
+    /// Each bucket is read by its own reader, and they deliver rows in no particular order.
+    if (max_buckets < 2 || format_settings_.parquet.preserve_order)
+        return {};
+
+    /// Without seeks, every reader would read the whole file into its own buffer.
+    if (!format_settings_.seekable_read)
+        return {};
+
+    Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
+    Parquet::Prefetcher prefetcher;
+    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
+    std::shared_ptr<const Parquet::FileFooter> footer;
+    auto column_chunks = std::make_shared<Parquet::SharedFileColumnChunks>();
+    /// Like the input format, uses the cache only if it's enabled. Otherwise, the footer parsed here is
+    /// still shared by the readers of all buckets.
+    ParquetMetadataCachePtr metadata_cache;
+    if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        metadata_cache = context->tryGetParquetMetadataCache();
+    std::optional<ParquetMetadataCacheKey> cache_key;
+    if (metadata_cache && object_with_metadata.has_value())
+        cache_key = makeMetadataCacheKey(*object_with_metadata);
+    if (cache_key)
+    {
+        auto cell = metadata_cache->getOrSetMetadata(
+            *cache_key, [&] { return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size); }).first;
+        footer = cell->footer;
+    }
+    else
+    {
+        footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
+    }
+    const auto & metadata = footer->metadata;
+
+    std::vector<size_t> row_groups;
+    for (size_t i = 0; i < metadata.row_groups.size(); ++i)
+        if (metadata.row_groups[i].num_rows > 0)
+            row_groups.push_back(i);
+
+    size_t num_buckets = std::min(max_buckets, row_groups.size());
+    if (num_buckets < 2)
+        return {};
+
+    /// Interleave the row groups between the buckets, rather than giving each bucket a contiguous
+    /// range: rows with similar values tend to be close to each other in the file, so the row groups
+    /// that survive filtering by min/max statistics, or that contain most of the rows passing the
+    /// filter, are spread across all readers instead of falling to one of them.
+    std::vector<std::shared_ptr<ParquetFileBucketInfo>> buckets(num_buckets);
+    for (auto & bucket : buckets)
+    {
+        bucket = std::make_shared<ParquetFileBucketInfo>();
+        bucket->file_footer = footer;
+        bucket->column_chunks = column_chunks;
+        bucket->is_split_for_parallel_reading = true;
+        bucket->row_group_ids.reserve(row_groups.size() / num_buckets + 1);
+    }
+    for (size_t i = 0; i < row_groups.size(); ++i)
+        buckets[i % num_buckets]->row_group_ids.push_back(row_groups[i]);
+    buckets.front()->keeps_filter_column_statistics = true;
+
+    return {buckets.begin(), buckets.end()};
 }
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets_)
