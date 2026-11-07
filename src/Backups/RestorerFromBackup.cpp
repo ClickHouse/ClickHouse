@@ -71,6 +71,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_RESTORE_DATABASE;
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
 }
 
@@ -190,6 +191,16 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::FINDING_TABLES_IN_BACKUP);
     findDatabasesAndTablesInBackup();
     logNumberOfDatabasesAndTablesToRestore();
+
+    /// Only the initiator of `ON CLUSTER` runs this mode, and its hosts restore without a session to hold a temporary table.
+    if (mode == Mode::CHECK_ACCESS_ONLY)
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+            if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY, "Temporary table {} cannot be restored ON CLUSTER", backQuoteIfNeed(table_name.table));
+    }
 
     /// While still in the FINDING_TABLES_IN_BACKUP stage, tell the other hosts which directory of
     /// the backup this host would restore the named collections from: with a shared (replicated)
@@ -353,6 +364,15 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     AccessRightsElements required_access;
     AccessRights required_access_rights;
 
+    /// Under `ON CLUSTER` only a setting in the query reaches every host, and an older host skips no database, so none is skipped here.
+    const bool replace_external_engines_to_null = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+        && (mode != Mode::CHECK_ACCESS_ONLY
+            || restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr);
+    auto is_database_skipped = [&](const ASTPtr & create_database_query)
+    {
+        return mode != Mode::CHECK_ACCESS_ONLY && !getSkippedDatabaseEngine(create_database_query, context).empty();
+    };
+
     {
         std::lock_guard lock{mutex};
         for (const auto & [database_name, database_info] : database_infos)
@@ -365,6 +385,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             if (restore_settings.create_database != RestoreDatabaseCreationMode::kMustExist)
             {
                 flags |= AccessType::CREATE_DATABASE;
+                const bool database_skipped = is_database_skipped(database_info.create_database_query);
 
                 /// The last point on this path that still runs as the real user. An existing local
                 /// database means nothing is created here, and `create_fn` authorizes it if it is
@@ -373,13 +394,25 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 const bool database_exists_so_nothing_is_created
                     = (mode != Mode::CHECK_ACCESS_ONLY) && DatabaseCatalog::instance().isDatabaseExist(database_name);
 
-                if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
-                    && !database_exists_so_nothing_is_created && database_info.create_database_query)
+                if (!database_skipped && !database_exists_so_nothing_is_created && database_info.create_database_query)
                 {
                     const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
                     if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
                         && create.storage->engine->arguments)
                         DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
+                }
+
+                if (!database_skipped && database_info.create_database_query)
+                {
+                    const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
+                    /// `Atomic` is what a `CREATE DATABASE` without an engine creates, and that is not checked.
+                    if (create.storage && create.storage->engine && create.storage->engine->name != "Atomic")
+                    {
+                        InterpreterCreateQuery::throwIfEngineIsUnknownAndNotGranted(
+                            create.storage->engine->name, /*is_database_engine=*/ true,
+                            AccessRightsElements{AccessRightsElement{AccessType::CREATE_DATABASE, database_name}}, context);
+                        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+                    }
                 }
             }
 
@@ -449,13 +482,13 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             /// nothing, so settings that send the data elsewhere are authorized here, as for `CREATE`.
             /// An external engine replaced by `Null` sends nothing, but temporary tables keep their engine.
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
-                && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
+                && (is_temporary || !replace_external_engines_to_null))
                 required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
             /// A skipped database creates none of its tables, so their targets are never written to.
             const auto database_it = database_infos.find(table_name.database);
             const bool database_skipped = (database_it != database_infos.end())
-                && !getSkippedDatabaseEngine(database_it->second.create_database_query, context).empty();
+                && is_database_skipped(database_it->second.create_database_query);
 
             /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing; targets are authorized here.
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist && create.targets && !database_skipped)
@@ -469,10 +502,21 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 }
             }
 
+            /// `ATTACH ... FROM '<path>'` reads a directory in `user_files` as the table data and moves it away, as for `CREATE`.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist && create.has_attach_from_path && !database_skipped)
+                required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
+
             if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
-                    required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+                {
+                    if (create.isView())
+                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
+                    else if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+                        required_access.emplace_back(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
+                    else
+                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+                }
                 continue;
             }
 
