@@ -632,7 +632,7 @@ MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexRe
 
 ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInDataParts & projection_parts)
 {
-    /// Read the projection with the fewest rows first: the intersection stays small and becomes empty sooner.
+    /// Fewest rows first, so the intersection becomes empty sooner.
     std::vector<const RangesInDataPart *> projection_parts_by_rows;
     projection_parts_by_rows.reserve(projection_parts.size());
     for (const auto & ranges : projection_parts)
@@ -655,7 +655,6 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
         else
             projection_index_bitmap = std::move(res);
 
-        /// No row of the part matches, the remaining projections cannot change that.
         if (projection_index_bitmap->empty())
             break;
     }
@@ -755,7 +754,6 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(
                 }
             }
 
-            /// The skip indexes excluded every granule of the part, so the projection indexes cannot exclude more.
             const bool part_excluded_by_skip_indexes = res
                 && std::ranges::find(res->skip_index_read_result->granules_selected, true) == res->skip_index_read_result->granules_selected.end();
 
