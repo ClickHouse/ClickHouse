@@ -5644,7 +5644,6 @@ void markTypingSettings(
 
         bool numeric_supertype = false;
         bool calls_tuple = false;
-        bool reads_tuple_element_by_name = false;
         forEachNode(*ast, [&](const IAST & node)
         {
             const auto * function = node.as<ASTFunction>();
@@ -5652,15 +5651,13 @@ void markTypingSettings(
                 return;
             for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "array", "map"})
                 numeric_supertype |= equalsCaseInsensitive(function->name, name);
-            calls_tuple |= equalsCaseInsensitive(function->name, "tuple");
-            if (equalsCaseInsensitive(function->name, "tupleElement") && function->arguments && function->arguments->children.size() >= 2)
-                if (const auto * literal = function->arguments->children[1]->as<ASTLiteral>())
-                    reads_tuple_element_by_name |= literal->value.getType() == Field::Types::String;
+            /// Any element name lookup can depend on the names `tuple` gives, so every `tuple` with arguments is a carrier.
+            calls_tuple |= equalsCaseInsensitive(function->name, "tuple") && function->arguments && !function->arguments->children.empty();
         });
         std::vector<String> carried;
         if (numeric_supertype)
             carried.push_back("allow_lossy_numeric_supertype");
-        if (calls_tuple && reads_tuple_element_by_name)
+        if (calls_tuple)
             carried.push_back("enable_named_columns_in_function_tuple");
         if (carried.empty())
             continue;
