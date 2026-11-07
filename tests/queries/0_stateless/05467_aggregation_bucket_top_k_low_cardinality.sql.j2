@@ -1,0 +1,73 @@
+-- `GROUP BY ... ORDER BY <count or uniqExact> LIMIT n` keeps only the best n groups of each two-level bucket for a
+-- non-nullable `LowCardinality` key too, alone or next to other keys. Each pair prints the pruned top-5 (`top_k 1`) and
+-- the full one (`top_k 0`); the five heaviest and lightest groups have unique counts, so both print the same rows.
+-- `LowCardinality(Nullable)` keys keep the full conversion, and `LowCardinality` keys never take the threshold merge.
+
+-- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
+SET serialize_query_plan = 0;
+SET query_plan_enable_optimizations = 1, query_plan_push_down_limit = 1, query_plan_aggregation_bucket_top_k = 1;
+SET max_threads = 4, max_block_size = 8192, group_by_two_level_threshold = 100;
+SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_rows_to_group_by = 0;
+SET collect_hash_table_stats_during_aggregation = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+SET allow_suspicious_low_cardinality_types = 1, log_queries = 1;
+
+DROP TABLE IF EXISTS t_bucket_top_k_lc;
+CREATE TABLE t_bucket_top_k_lc
+(
+    k UInt64,
+    v UInt64,
+    -- The empty string, the dictionary default, is the heaviest group.
+    ls LowCardinality(String) DEFAULT if(k = 1000004, '', toString(k)),
+    lu LowCardinality(UInt32) DEFAULT toUInt32(k),
+    lf LowCardinality(FixedString(7)) DEFAULT toFixedString(toString(k), 7),
+    lsn LowCardinality(Nullable(String)) DEFAULT toString(k)
+)
+ENGINE = Memory;
+
+-- 20000 groups of 6 rows, five heavy groups of 100..104 rows and five light groups of 1..5 rows.
+INSERT INTO t_bucket_top_k_lc (k, v) SELECT number % 20000, number FROM numbers(120000);
+INSERT INTO t_bucket_top_k_lc (k, v) SELECT 1000000 + i, j FROM (SELECT number AS i FROM numbers(5)) ARRAY JOIN range(100 + i) AS j;
+INSERT INTO t_bucket_top_k_lc (k, v) SELECT 2000000 + i, j FROM (SELECT number AS i FROM numbers(5)) ARRAY JOIN range(1 + i) AS j;
+
+SELECT count() FROM (EXPLAIN actions = 1 SELECT ls, count() AS c FROM t_bucket_top_k_lc GROUP BY ls ORDER BY c DESC LIMIT 5)
+WHERE explain LIKE '%Bucket top-K: 5 descending%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT lsn, count() AS c FROM t_bucket_top_k_lc GROUP BY lsn ORDER BY c DESC LIMIT 5)
+WHERE explain LIKE '%Bucket top-K%';
+
+{% set key_sets = [
+    ('String', 'ls', 'ls'),
+    ('UInt32', 'lu', 'lu'),
+    ('FixedString', 'lf', 'lf'),
+    ('String and number', 'ls, k % 7 AS m', 'ls, m'),
+    ('UInt32 and number', 'lu, toUInt32(k % 7) AS m', 'lu, m'),
+] -%}
+{% set ranks = [
+    ('count', 'count() AS c', 'c', 'DESC'),
+    ('count and others', 'count() AS c, sum(v) AS s, uniqExact(v) AS u', 'c', 'DESC'),
+    ('uniqExact', 'uniqExact(v) AS u', 'u', 'DESC'),
+] -%}
+{% set cases = (product(key_sets, ranks) | list) + [(key_sets[0], ('count', 'count() AS c', 'c', 'ASC'))] -%}
+{% for key, rank in cases -%}
+{% set label = key[0] ~ ', ' ~ rank[0] ~ ', ' ~ rank[3] -%}
+{% set query = 'SELECT ' ~ key[1] ~ ', ' ~ rank[1] ~ ' FROM t_bucket_top_k_lc GROUP BY ' ~ key[2] ~ ' ORDER BY ' ~ rank[2] ~ ' ' ~ rank[3] ~ ' LIMIT 5' -%}
+SELECT '{{ label }}, top_k 1', arraySort(groupArray(tuple(*))) FROM ({{ query }}) SETTINGS log_comment = '05467_pruned';
+SELECT '{{ label }}, top_k 0', arraySort(groupArray(tuple(*))) FROM ({{ query }}) SETTINGS query_plan_aggregation_bucket_top_k = 0;
+{% endfor -%}
+
+-- The extremum bound would serve this shape for other keys.
+{% for top_k in [1, 0] -%}
+SELECT 'String and number, max, DESC, top_k {{ top_k }}', arraySort(groupArray(tuple(*)))
+FROM (SELECT ls, k % 7 AS m, max(v) AS x FROM t_bucket_top_k_lc GROUP BY ls, m ORDER BY x DESC LIMIT 5)
+SETTINGS log_comment = '05467_max_{{ top_k }}', query_plan_aggregation_bucket_top_k = {{ top_k }};
+{% endfor -%}
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT count(), countIf(ProfileEvents['AggregationBucketTopKConversions'] > 0), countIf(ProfileEvents['AggregationThresholdTopKMerges'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05467_pruned';
+SELECT count(), countIf(ProfileEvents['AggregationThresholdTopKMerges'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05467_max_1';
+
+DROP TABLE t_bucket_top_k_lc;
