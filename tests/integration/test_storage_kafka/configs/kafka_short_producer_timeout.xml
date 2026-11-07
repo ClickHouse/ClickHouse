@@ -1,9 +1,9 @@
 <clickhouse>
-    <!-- Short producer timeout so tests with a dead destination don't block
-         the teardown for the default 300 seconds. -->
     <kafka>
         <producer>
-            <message_timeout_ms>5000</message_timeout_ms>
+            <!-- Long enough for the statistics interval (3 s) plus the assertion window
+                 in the blocked-insert tests; short enough to bound their teardown. -->
+            <message_timeout_ms>60000</message_timeout_ms>
         </producer>
     </kafka>
 </clickhouse>

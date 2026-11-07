@@ -206,13 +206,22 @@ def test_statistics_survive_blocked_mv_insert(kafka_cluster):
             """
         )
 
-        # The MV blocks delivering to the dead destination for the whole message timeout
-        # (300 s), so only the periodic drain from the activation task serves the events.
         k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
+
+        # Sync on the read completing (the insert starts blocking immediately after).
+        deadline_read = time.monotonic() + 10
+        while time.monotonic() < deadline_read:
+            if instance.query(
+                "SELECT count() FROM system.kafka_consumers "
+                "WHERE table = 'kafka' AND num_messages_read > 0"
+            ).strip() == "1":
+                break
+            time.sleep(1)
+
         try:
             ts_first = None
             ts_second = None
-            deadline = time.monotonic() + 240
+            deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
                 ts = get_stat_ts("kafka")
                 if ts is not None:
@@ -243,17 +252,23 @@ def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.query(
             f"""
-            CREATE TABLE test.dead_dst (a String) ENGINE = Kafka('dead_host:9092', 'dead_dst2', 'dead_group2', 'LineAsString');
+            CREATE TABLE test.dead_dst (a String) ENGINE = Kafka('dead_host:9092', 'dead_dst_overlap', 'dead_group2', 'LineAsString');
             {create_kafka_query};
             CREATE MATERIALIZED VIEW test.kafka_mv TO test.dead_dst AS SELECT a FROM test.kafka;
             """
         )
 
-        # Start the blocked insert first, then expire the Keeper session on top of it:
-        # the activation task gets stuck in partialShutdown() waiting for the blocked
-        # consumer task, so only the independent drain task can serve the events.
         k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
-        time.sleep(3)
+
+        # Sync on the read completing (the insert starts blocking immediately after).
+        deadline_read = time.monotonic() + 10
+        while time.monotonic() < deadline_read:
+            if instance.query(
+                "SELECT count() FROM system.kafka_consumers "
+                "WHERE table = 'kafka' AND num_messages_read > 0"
+            ).strip() == "1":
+                break
+            time.sleep(1)
 
         try:
             with PartitionManager() as pm:
@@ -267,7 +282,7 @@ def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
                 # being blocked in partialShutdown() for the remaining insert duration.
                 ts_first = None
                 ts_second = None
-                deadline = time.monotonic() + 60
+                deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
                     ts = get_stat_ts("kafka")
                     if ts is not None:
