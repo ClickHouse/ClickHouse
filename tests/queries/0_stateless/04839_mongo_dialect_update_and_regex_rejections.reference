@@ -1,0 +1,13 @@
+-- the values an update operator cannot write
+Code: 48. The value of '$inc' must be a scalar, an array, or an Extended JSON wrapper of them
+Code: 48. The value of '$min' must be a scalar, an array, or an Extended JSON wrapper of them
+Code: 48. Assigning a document to the field 'name' with '$set' is not supported: it replaces the whole subdocument, and the columns of the fields it leaves out are not known; set the fields one by one with dotted names such as 'name.<field>'
+Code: 36. A field name of the update operator '$set' must not be empty
+Code: 48. Assigning a document to the field 'name' with '$set' is not supported: it replaces the whole subdocument, and the columns of the fields it leaves out are not known; set the fields one by one with dotted names such as 'name.<field>'
+Code: 48. Assigning a document to the field 'profile' with '$set' is not supported: it replaces the whole subdocument, and the columns of the fields it leaves out are not known; set the fields one by one with dotted names such as 'profile.<field>'
+-- the regular expression options an operator cannot combine
+Code: 36. The 'options' of '$regexMatch' cannot be set next to a regular expression that carries options of its own
+Code: 36. The 'options' of '$regexMatch' must be a string
+Code: 36. Unsupported regular expression option 'z'
+-- the server is still healthy
+1	alpha	1

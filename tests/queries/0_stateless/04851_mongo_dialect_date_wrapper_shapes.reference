@@ -1,0 +1,8 @@
+-- the document forms of `$date` that name no value
+Code: 36. The document form of '$date' must be a single '$numberLong' holding the number of milliseconds since the epoch
+Code: 36. The document form of '$date' must be a single '$numberLong' holding the number of milliseconds since the epoch
+Code: 36. The document form of '$date' must be a single '$numberLong' holding the number of milliseconds since the epoch
+-- the canonical form, the legacy number and the relaxed string
+1	1970-01-01 00:00:00.000
+2	2019-01-01 00:00:00.000
+2	2019-01-01 00:00:00.000
