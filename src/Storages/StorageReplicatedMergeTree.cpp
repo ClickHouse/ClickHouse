@@ -7560,6 +7560,16 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
     const String & partition_id, MergeTreePartInfo & part_info,
     std::optional<EphemeralLockInZooKeeper> & delimiting_block_lock, bool for_replace_range)
 {
+    delimiting_block_lock = allocateBlockNumber(
+        partition_id,
+        getZooKeeper(),
+        {});
+    return getFakePartCoveringAllPartsInPartition(partition_id, part_info, delimiting_block_lock->getNumber(), for_replace_range);
+}
+
+bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
+    const String & partition_id, MergeTreePartInfo & part_info, Int64 delimiting_block_number, bool for_replace_range)
+{
     /// Even if there is no data in the partition, you still need to mark the range for deletion.
     /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
     Int64 left = 0;
@@ -7570,20 +7580,11 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
       * NOTE: If you need to similarly support a `DROP PART` request, you will have to think of some new mechanism for it,
       *     to guarantee this invariant.
       */
-    Int64 right = 0;
-    Int64 mutation_version = 0;
-
-    {
-        delimiting_block_lock = allocateBlockNumber(
-            partition_id,
-            getZooKeeper(),
-            {});
-        right = delimiting_block_lock->getNumber();
-        /// Make sure we cover all parts in drop range.
-        /// There might be parts with mutation version greater than current block number
-        /// if some part mutation has been assigned after block number allocation, but before creation of DROP_RANGE entry.
-        mutation_version = MergeTreePartInfo::MAX_BLOCK_NUMBER;
-    }
+    Int64 right = delimiting_block_number;
+    /// Make sure we cover all parts in drop range.
+    /// There might be parts with mutation version greater than current block number
+    /// if some part mutation has been assigned after block number allocation, but before creation of DROP_RANGE entry.
+    Int64 mutation_version = MergeTreePartInfo::MAX_BLOCK_NUMBER;
 
     if (for_replace_range)
     {
@@ -9658,7 +9659,9 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
                 "probably it is created by a replica that running newer version of ClickHouse. "
                 "Cannot remove it, will wait for this lock to disappear. Upgrade remaining hosts in the cluster to address this warning.";
 
-            if (result.data.starts_with(zookeeper_path + EphemeralLockInZooKeeper::LEGACY_LOCK_PREFIX))
+            if (auto op = deserializeCommittingBlockOpFromString(result.data); op != CommittingBlock::Op::Unknown)
+                LOG_INFO(log, "Block {} is locked by a concurrent {} operation, will wait for it to finish", paths_to_get[i], op);
+            else if (result.data.starts_with(zookeeper_path + EphemeralLockInZooKeeper::LEGACY_LOCK_PREFIX))
                 LOG_WARNING(log, old_version_warning, paths_to_get[i], result.data);
             else
                 LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
@@ -10851,18 +10854,15 @@ bool StorageReplicatedMergeTree::dropPartImpl(
 bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
     zkutil::ZooKeeper & zookeeper,
     const String & partition_id,
+    Int64 delimiting_block_number,
     bool detach,
     Coordination::Requests & ops,
     std::vector<LogEntryPtr> & entries,
-    std::vector<EphemeralLockInZooKeeper> & delimiting_block_locks,
     std::vector<size_t> & log_entry_ops_idx)
 {
     MergeTreePartInfo drop_range_info;
 
-    /// It would prevent other replicas from assigning merges which intersect locked block number.
-    std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-
-    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info, delimiting_block_lock))
+    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info, delimiting_block_number))
     {
         LOG_INFO(log, "Will not drop partition {}, it is empty.", partition_id);
         return false;
@@ -10906,8 +10906,6 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
     log_entry_ops_idx.push_back(ops.size());
     ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry->toString(),
                                                zkutil::CreateMode::PersistentSequential));
-    delimiting_block_lock->getUnlockOp(ops);
-    delimiting_block_locks.push_back(std::move(*delimiting_block_lock));
     entries.push_back(std::move(entry));
     return true;
 }
@@ -10926,14 +10924,20 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         zookeeper.get(alter_partition_version_path, &alter_partition_version_stat);
 
         Coordination::Requests ops;
-        std::vector<EphemeralLockInZooKeeper> delimiting_block_locks;
         std::vector<size_t> log_entry_ops_idx;
         ops.reserve(partition_ids.size() * 2);
-        delimiting_block_locks.reserve(partition_ids.size());
         log_entry_ops_idx.reserve(partition_ids.size());
 
-        for (const auto & partition_id : partition_ids)
-            addOpsToDropAllPartsInPartition(zookeeper, partition_id, detach, ops, entries, delimiting_block_locks, log_entry_ops_idx);
+        /// Delimiting block numbers prevent merges that intersect the drop ranges. Allocating them for all partitions in one request
+        /// orders this query the same way in every partition relative to other multi-partition holders, e.g. lightweight updates.
+        EphemeralLocksInPartitions delimiting_block_locks(
+            fs::path(zookeeper_path) / "block_numbers", "block-", fs::path(zookeeper_path) / "temp", /*znode_data=*/ std::nullopt,
+            zookeeper, std::set<String>(partition_ids.begin(), partition_ids.end()), fs::path(replica_path) / "host");
+
+        for (const auto & lock : delimiting_block_locks.getLocks())
+            addOpsToDropAllPartsInPartition(zookeeper, lock.partition_id, lock.number, detach, ops, entries, log_entry_ops_idx);
+
+        delimiting_block_locks.getUnlockOps(ops);
 
         /// Check and update version to avoid race with REPLACE_RANGE.
         /// Otherwise new parts covered by drop_range_info may appear after execution of current DROP_RANGE entry
@@ -10951,8 +10955,7 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
 
         if (code == Coordination::Error::ZOK)
         {
-            for (auto & lock : delimiting_block_locks)
-                lock.assumeUnlocked();
+            delimiting_block_locks.assumeUnlocked();
         }
         else if (code == Coordination::Error::ZBADVERSION)
         {
