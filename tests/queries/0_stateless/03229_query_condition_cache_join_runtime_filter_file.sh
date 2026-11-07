@@ -10,6 +10,8 @@
 # PREWHERE. A row group that the PREWHERE leaves without rows is recorded as matching nothing, but
 # the entry is keyed on `filter_actions_dag`, which the runtime filter is added to PREWHERE after -
 # so a later plain read of the same file loses the rows only the runtime filter had removed.
+# The same goes for a condition that a join's ON clause adds to that PREWHERE, for two PREWHEREs that differ
+# only in a lambda's body, and for `formatRowNoNewline`, which writes its arguments' names into its result.
 #
 # Shell rather than SQL because the cache engages only once the file's version token has settled,
 # which needs an explicit mtime - as in 04498_query_condition_cache_local_files.sh.
@@ -122,6 +124,125 @@ ${CLICKHOUSE_CLIENT} --query_id="$qid_det_miss" --query "$DET_QUERY SETTINGS $DE
 echo "deterministic PREWHERE, run 2 (expect 5001):"
 ${CLICKHOUSE_CLIENT} --query_id="$qid_det_hit" --query "$DET_QUERY SETTINGS $DET_SETTINGS"
 
+# Through `f.v = a.v`, the ON condition `f.v + a.v >= 2048` becomes `v + v >= 2048` in the subquery's
+# PREWHERE, which the subquery's WHERE does not contain. The rows are contiguous on purpose: a row
+# group counts as matched once one row survives PREWHERE, so the row group holding every row of the
+# plain read below must be emptied by PREWHERE alone.
+LATE_FILE="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/03229_qcc_late_prewhere.parquet"
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE IF EXISTS t_qcc_late_file;
+    CREATE TABLE t_qcc_late_file (k UInt64, v Int64, w Int64)
+    ENGINE = File(Parquet, '${CLICKHOUSE_DATABASE}/03229_qcc_late_prewhere.parquet')
+    SETTINGS output_format_parquet_row_group_size = 64;
+    INSERT INTO t_qcc_late_file SELECT number, number, number FROM numbers(2000);
+"
+touch -d '2020-01-01 00:00:00' "$LATE_FILE"
+
+LATE_JOIN="SELECT count() FROM t_qcc_late_file AS f RIGHT JOIN (SELECT * FROM t_qcc_late_file WHERE v + w < 100) AS a
+    ON f.v = a.v AND f.v + a.v >= 2048 WHERE f.v > 5"
+LATE_SETTINGS="$JOIN_SETTINGS, query_plan_convert_outer_join_to_inner_join = 1"
+qid_late_plain="${CLICKHOUSE_TEST_UNIQUE_NAME}_late_plain"
+
+echo "a condition derived from ON reaches the subquery's PREWHERE (expect 1):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 $LATE_JOIN
+        SETTINGS $LATE_SETTINGS, query_plan_max_step_description_length = 1000)
+    WHERE explain ILIKE '%prewhere filter column: %greaterOrEquals(plus(%v, %v), 2048\_%'
+      AND explain NOT ILIKE '%\_\_applyFilter%'"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
+echo "join with the derived condition (expect 0):"
+${CLICKHOUSE_CLIENT} --query "$LATE_JOIN SETTINGS $LATE_SETTINGS"
+echo "plain read of the subquery's WHERE and v > 5, cache on (expect 44):"
+${CLICKHOUSE_CLIENT} --query_id="$qid_late_plain" --query "
+    SELECT count() FROM t_qcc_late_file WHERE v + w < 100 AND v > 5 SETTINGS use_query_condition_cache = 1"
+echo "plain read of the subquery's WHERE and v > 5, cache off (expect 44):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM t_qcc_late_file WHERE v + w < 100 AND v > 5 SETTINGS use_query_condition_cache = 0"
+
+# A PREWHERE with `IN` that the hash covers keeps populating the cache, like the `=` above.
+qid_in_miss="${CLICKHOUSE_TEST_UNIQUE_NAME}_in_miss"
+qid_in_hit="${CLICKHOUSE_TEST_UNIQUE_NAME}_in_hit"
+IN_QUERY="SELECT sum(k) FROM t_qcc_jrf_file WHERE val IN (5001, 7001)"
+
+echo "PREWHERE with IN reaches the file read (expect 1):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 $IN_QUERY
+        SETTINGS $DET_SETTINGS, query_plan_max_step_description_length = 1000)
+    WHERE explain ILIKE '%prewhere filter column: %in(%val, %'"
+echo "PREWHERE with IN, run 1 (expect 12002):"
+${CLICKHOUSE_CLIENT} --query_id="$qid_in_miss" --query "$IN_QUERY SETTINGS $DET_SETTINGS"
+echo "PREWHERE with IN, run 2 (expect 12002):"
+${CLICKHOUSE_CLIENT} --query_id="$qid_in_hit" --query "$IN_QUERY SETTINGS $DET_SETTINGS"
+
+# A PREWHERE that applies a function to another function's result keeps populating the cache, like the
+# `=` and `IN` above.
+qid_nested_miss="${CLICKHOUSE_TEST_UNIQUE_NAME}_nested_miss"
+qid_nested_hit="${CLICKHOUSE_TEST_UNIQUE_NAME}_nested_hit"
+NESTED_QUERY="SELECT sum(k) FROM t_qcc_jrf_file WHERE startsWith(toString(val), '5001')"
+
+echo "PREWHERE with a nested function reaches the file read (expect 1):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 $NESTED_QUERY
+        SETTINGS $DET_SETTINGS, query_plan_max_step_description_length = 1000)
+    WHERE explain ILIKE '%prewhere filter column: %startsWith(toString(%val), %'"
+echo "PREWHERE with a nested function, run 1 (expect 5001):"
+${CLICKHOUSE_CLIENT} --query_id="$qid_nested_miss" --query "$NESTED_QUERY SETTINGS $DET_SETTINGS"
+echo "PREWHERE with a nested function, run 2 (expect 5001):"
+${CLICKHOUSE_CLIENT} --query_id="$qid_nested_hit" --query "$NESTED_QUERY SETTINGS $DET_SETTINGS"
+
+# A PREWHERE with a constant lambda keeps populating the cache, like the `=` and `IN` above.
+qid_const_lambda_miss="${CLICKHOUSE_TEST_UNIQUE_NAME}_const_lambda_miss"
+qid_const_lambda_hit="${CLICKHOUSE_TEST_UNIQUE_NAME}_const_lambda_hit"
+CONST_LAMBDA_QUERY="SELECT sum(k) FROM t_qcc_jrf_file WHERE arrayExists(x -> x > 5000 AND x < 5002, [val])"
+
+echo "PREWHERE with a constant lambda reaches the file read (expect 1):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 $CONST_LAMBDA_QUERY
+        SETTINGS $DET_SETTINGS, query_plan_max_step_description_length = 1000)
+    WHERE explain ILIKE '%prewhere filter column: %arrayExists(x UInt64 -> %'"
+echo "PREWHERE with a constant lambda, run 1 (expect 5001):"
+${CLICKHOUSE_CLIENT} --query_id="$qid_const_lambda_miss" --query "$CONST_LAMBDA_QUERY SETTINGS $DET_SETTINGS"
+echo "PREWHERE with a constant lambda, run 2 (expect 5001):"
+${CLICKHOUSE_CLIENT} --query_id="$qid_const_lambda_hit" --query "$CONST_LAMBDA_QUERY SETTINGS $DET_SETTINGS"
+
+# formatRowNoNewline writes its arguments' names into its result, so the ON condition's copy in the
+# subquery's PREWHERE removes every row although it reads the same as the subquery's own condition.
+FMT_JOIN="SELECT count() FROM t_qcc_late_file AS f RIGHT JOIN
+    (SELECT * FROM t_qcc_late_file WHERE v + w < 100 AND formatRowNoNewline('JSONEachRow', v + v) LIKE '%\"plus(v, v)\"%') AS a
+    ON f.v = a.v AND formatRowNoNewline('JSONEachRow', f.v + a.v) LIKE '%\"plus(v, v)\"%' WHERE f.v > 5"
+FMT_PLAIN="SELECT count() FROM t_qcc_late_file
+    WHERE (v + w < 100 AND formatRowNoNewline('JSONEachRow', v + v) LIKE '%\"plus(v, v)\"%') AND v > 5"
+
+echo "formatRowNoNewline from ON reaches the subquery's PREWHERE (expect 1):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 $FMT_JOIN
+        SETTINGS $LATE_SETTINGS, query_plan_max_step_description_length = 1000)
+    WHERE explain ILIKE '%prewhere filter column: %formatRowNoNewline(%formatRowNoNewline(%'"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
+echo "join with formatRowNoNewline in ON (expect 0):"
+${CLICKHOUSE_CLIENT} --query "$FMT_JOIN SETTINGS $LATE_SETTINGS"
+echo "plain read of the subquery's WHERE with formatRowNoNewline and v > 5, cache on (expect 44):"
+${CLICKHOUSE_CLIENT} --query "$FMT_PLAIN SETTINGS use_query_condition_cache = 1"
+echo "plain read of the subquery's WHERE with formatRowNoNewline and v > 5, cache off (expect 44):"
+${CLICKHOUSE_CLIENT} --query "$FMT_PLAIN SETTINGS use_query_condition_cache = 0"
+
+# Two reads whose PREWHERE differs only in a lambda's body must not share an entry: the first keeps two row
+# groups, the second keeps every row.
+LAMBDA_EQ="SELECT sum(k) FROM t_qcc_jrf_file WHERE arrayExists(x -> x = val, [5001, 7001])"
+LAMBDA_NE="SELECT sum(k) FROM t_qcc_jrf_file WHERE arrayExists(x -> x != val, [5001, 7001])"
+echo "PREWHERE with a lambda reaches the file read (expect 1):"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 $LAMBDA_NE
+        SETTINGS $DET_SETTINGS, query_plan_max_step_description_length = 1000)
+    WHERE explain ILIKE '%prewhere filter column: %arrayExists(%'"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
+echo "lambda x = val (expect 12002):"
+${CLICKHOUSE_CLIENT} --query "$LAMBDA_EQ SETTINGS $DET_SETTINGS"
+echo "lambda x != val after it, cache on (expect 49995000):"
+${CLICKHOUSE_CLIENT} --query "$LAMBDA_NE SETTINGS $DET_SETTINGS"
+echo "lambda x != val, cache off (expect 49995000):"
+${CLICKHOUSE_CLIENT} --query "$LAMBDA_NE SETTINGS use_query_condition_cache = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
 profile_event() {
@@ -159,6 +280,21 @@ echo "deterministic PREWHERE run 1 was a cache miss (expect 1):"
 profile_event "$qid_det_miss" QueryConditionCacheMisses
 echo "deterministic PREWHERE run 2 was a cache hit (expect 1):"
 profile_event "$qid_det_hit" QueryConditionCacheHits
+# The join recorded nothing under this key, so the plain read had nothing to hit.
+echo "plain read after the join with the derived condition was a cache miss (expect 1):"
+profile_event "$qid_late_plain" QueryConditionCacheMisses
+echo "PREWHERE with IN run 1 was a cache miss (expect 1):"
+profile_event "$qid_in_miss" QueryConditionCacheMisses
+echo "PREWHERE with IN run 2 was a cache hit (expect 1):"
+profile_event "$qid_in_hit" QueryConditionCacheHits
+echo "PREWHERE with a nested function run 1 was a cache miss (expect 1):"
+profile_event "$qid_nested_miss" QueryConditionCacheMisses
+echo "PREWHERE with a nested function run 2 was a cache hit (expect 1):"
+profile_event "$qid_nested_hit" QueryConditionCacheHits
+echo "PREWHERE with a constant lambda run 1 was a cache miss (expect 1):"
+profile_event "$qid_const_lambda_miss" QueryConditionCacheMisses
+echo "PREWHERE with a constant lambda run 2 was a cache hit (expect 1):"
+profile_event "$qid_const_lambda_hit" QueryConditionCacheHits
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_qcc_jrf_file; DROP TABLE t_qcc_jrf_dim"
-rm -f "$DATA_FILE"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_qcc_jrf_file; DROP TABLE t_qcc_jrf_dim; DROP TABLE t_qcc_late_file"
+rm -f "$DATA_FILE" "$LATE_FILE"
