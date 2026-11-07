@@ -301,6 +301,20 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     return res;
 }
 
+bool SkipIndexReadResult::isGranuleBeyondTopKThresholdByMinMax(size_t mark) const
+{
+    if (!threshold_tracker || !threshold_tracker->isSet() || !min_max_index_for_top_k)
+        return false;
+
+    /// Not `operator[]`: the tasks of a part share this result across threads.
+    const auto & granules_map = min_max_index_for_top_k->granules_map;
+    auto it = granules_map.find(mark);
+    if (it == granules_map.end())
+        return false;
+
+    return !threshold_tracker->isValueInsideThreshold(min_max_index_for_top_k->granules[it->second].min_or_max_value);
+}
+
 bool SkipIndexReadResult::isGranuleBeyondTopKThreshold(size_t mark) const
 {
     const Columns & index = *primary_index_for_top_k;
@@ -677,6 +691,12 @@ bool MergeTreeIndexReadResult::canSkipAnyMarkBesidesTopKThreshold() const
     return (skip_index_read_result && skip_index_read_result->may_skip_granules_besides_top_k_threshold) || projection_index_read_result;
 }
 
+bool MergeTreeIndexReadResult::isMarkBeyondTopKThreshold(size_t mark) const
+{
+    return skip_index_read_result && mark < skip_index_read_result->granules_selected.size()
+        && skip_index_read_result->granules_selected[mark] && skip_index_read_result->isGranuleBeyondTopKThresholdByMinMax(mark);
+}
+
 bool MergeTreeIndexReadResult::canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const
 {
     if (skip_index_read_result)
@@ -687,13 +707,8 @@ bool MergeTreeIndexReadResult::canSkipMark(size_t mark, const MergeTreeIndexGran
         if (!skip_result.granules_selected.at(mark))
             return true;
 
-        if (skip_result.threshold_tracker && skip_result.threshold_tracker->isSet() && skip_result.min_max_index_for_top_k)
-        {
-            auto granule_num = skip_result.min_max_index_for_top_k->granules_map[mark];
-            if (!skip_result.threshold_tracker->isValueInsideThreshold(
-                    skip_result.min_max_index_for_top_k->granules[granule_num].min_or_max_value))
-                return true;
-        }
+        if (skip_result.isGranuleBeyondTopKThresholdByMinMax(mark))
+            return true;
 
         if (skip_result.threshold_tracker && skip_result.threshold_tracker->isSet() && skip_result.primary_index_for_top_k
             && skip_result.isGranuleBeyondTopKThreshold(mark))

@@ -28,6 +28,11 @@ bool MergeTreeReaderIndex::canSkipAnyMarkBesidesTopKThreshold() const
     return index_read_result && index_read_result->canSkipAnyMarkBesidesTopKThreshold();
 }
 
+bool MergeTreeReaderIndex::isMarkBeyondTopKThreshold(size_t mark) const
+{
+    return index_read_result && index_read_result->isMarkBeyondTopKThreshold(mark);
+}
+
 MergeTreeReaderIndex::MergeTreeReaderIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexReadResultPtr index_read_result_,

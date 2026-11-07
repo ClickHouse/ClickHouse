@@ -35,6 +35,9 @@ struct SkipIndexReadResult
     /// Whether every row of the granule lies beyond the running top-K threshold according to the primary index.
     bool isGranuleBeyondTopKThreshold(size_t mark) const;
 
+    /// Whether every row of the granule lies beyond the running top-K threshold according to `min_max_index_for_top_k`.
+    bool isGranuleBeyondTopKThresholdByMinMax(size_t mark) const;
+
     /// Whether granules may be dropped other than for having every row beyond the running top-K threshold.
     bool may_skip_granules_besides_top_k_threshold = true;
     /// Pre-computed index granules for indexes created for the whole part.
@@ -224,6 +227,9 @@ struct MergeTreeIndexReadResult
 
     /// Whether all rows of the granule are filtered out by the present index read results.
     bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
+
+    /// Whether the mark is selected and the `minmax` top-K index puts every row of it beyond the running threshold.
+    bool isMarkBeyondTopKThreshold(size_t mark) const;
 };
 
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;

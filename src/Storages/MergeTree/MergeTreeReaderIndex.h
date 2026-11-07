@@ -44,6 +44,8 @@ public:
 
     bool canSkipAnyMarkBesidesTopKThreshold() const override;
 
+    bool isMarkBeyondTopKThreshold(size_t mark) const override;
+
     size_t getResultColumnCount() const override { return 1; }
 
     bool producesFilterOnly() const override { return true; }

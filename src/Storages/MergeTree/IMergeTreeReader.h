@@ -124,6 +124,9 @@ public:
     /// can still be attributed to a PREWHERE that holds this filter.
     virtual bool canSkipAnyMarkBesidesTopKThreshold() const { return canSkipAnyMark(); }
 
+    /// Whether a `minmax` top-K index puts every row of the mark beyond the running top-K threshold now.
+    virtual bool isMarkBeyondTopKThreshold(size_t /*mark*/) const { return false; }
+
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     /// The mark ranges the reader reads until the next call; null = the whole part.

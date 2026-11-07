@@ -475,6 +475,7 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     {
         readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(
             readers.main.get(), std::move(index_read_result), part_rows, info->delete_bitmap);
+        assigned_mark_ranges = mark_ranges;
     }
 
 }
@@ -590,6 +591,27 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
 {
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
+void MergeTreeReadTask::addMarksBeyondTopKThreshold()
+{
+    if (!readers.prepared_index)
+        return;
+
+    MarkRanges beyond;
+    for (const auto & range : assigned_mark_ranges)
+    {
+        for (size_t mark = range.begin; mark < range.end; ++mark)
+        {
+            if (!readers.prepared_index->isMarkBeyondTopKThreshold(mark))
+                continue;
+            if (!beyond.empty() && beyond.back().end == mark)
+                ++beyond.back().end;
+            else
+                beyond.emplace_back(mark, mark + 1);
+        }
+    }
+    addPrewhereUnmatchedMarks(beyond);
 }
 
 void MergeTreeReadTask::addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_)

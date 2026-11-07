@@ -238,6 +238,10 @@ public:
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
+    /// Adds to the PREWHERE-unmatched marks the marks of the task that the `minmax` top-K index puts beyond the
+    /// running threshold now. The threshold only tightens, so a mark read under a looser one may have no row in the result.
+    void addMarksBeyondTopKThreshold();
+
     void addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getQueryConditionCacheAttributableMarks() const { return query_condition_cache_attributable_marks; }
 
@@ -302,6 +306,8 @@ private:
 
     /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
+    /// The marks the task was created with, kept only with an index reader: `mark_ranges` is consumed while reading.
+    MarkRanges assigned_mark_ranges;
     MarkRanges query_condition_cache_attributable_marks;
 
     BlockSizeParams block_size_params;
