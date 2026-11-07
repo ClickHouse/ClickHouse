@@ -99,13 +99,15 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
     }
 }
 
-/// Collects the paths whose Iceberg logical type is exactly `string` (both `string` and `binary`
-/// read as DataTypeString). `type` is a JSON string (primitive leaf) or object (complex type).
-void collectStringPaths(const Poco::Dynamic::Var & type, std::unordered_set<String> & result, const String & current_path)
+/// Collects the paths whose Iceberg logical type is a primitive type from `type_names`, e.g. exactly
+/// `string` (both `string` and `binary` read as DataTypeString). `type` is a JSON string (primitive
+/// leaf) or object (complex type).
+void collectPrimitiveTypePaths(
+    const Poco::Dynamic::Var & type, const std::unordered_set<String> & type_names, std::unordered_set<String> & result, const String & current_path)
 {
     if (type.isString())
     {
-        if (type.extract<String>() == Iceberg::f_string)
+        if (type_names.contains(type.extract<String>()))
             result.insert(current_path);
         return;
     }
@@ -115,14 +117,14 @@ void collectStringPaths(const Poco::Dynamic::Var & type, std::unordered_set<Stri
     if (type_str == "map")
     {
         if (type_object->has(Iceberg::f_key))
-            collectStringPaths(type_object->get(Iceberg::f_key), result, Nested::concatenateName(current_path, "key"));
+            collectPrimitiveTypePaths(type_object->get(Iceberg::f_key), type_names, result, Nested::concatenateName(current_path, "key"));
         if (type_object->has(Iceberg::f_value))
-            collectStringPaths(type_object->get(Iceberg::f_value), result, Nested::concatenateName(current_path, "value"));
+            collectPrimitiveTypePaths(type_object->get(Iceberg::f_value), type_names, result, Nested::concatenateName(current_path, "value"));
     }
     else if (type_str == "list")
     {
         if (type_object->has(Iceberg::f_element))
-            collectStringPaths(type_object->get(Iceberg::f_element), result, Nested::concatenateName(current_path, "element"));
+            collectPrimitiveTypePaths(type_object->get(Iceberg::f_element), type_names, result, Nested::concatenateName(current_path, "element"));
     }
     else if (type_str == "struct")
     {
@@ -132,7 +134,7 @@ void collectStringPaths(const Poco::Dynamic::Var & type, std::unordered_set<Stri
             auto field = fields->getObject(i);
             auto child_path = Nested::concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
             if (field->has(Iceberg::f_type))
-                collectStringPaths(field->get(Iceberg::f_type), result, child_path);
+                collectPrimitiveTypePaths(field->get(Iceberg::f_type), type_names, result, child_path);
         }
     }
 }
@@ -1030,16 +1032,26 @@ Int64 IcebergSchemaProcessor::getMaxFieldId(Poco::JSON::Array::Ptr schema)
     return result;
 }
 
-std::unordered_set<String> IcebergSchemaProcessor::collectIcebergStringPaths(Poco::JSON::Array::Ptr schema)
+static std::unordered_set<String> collectIcebergPrimitiveTypePaths(Poco::JSON::Array::Ptr schema, const std::unordered_set<String> & type_names)
 {
     std::unordered_set<String> result;
     for (UInt32 i = 0; i < schema->size(); ++i)
     {
         auto current_object = schema->getObject(i);
         if (current_object->has(Iceberg::f_type))
-            collectStringPaths(current_object->get(Iceberg::f_type), result, current_object->getValue<String>(Iceberg::f_name));
+            collectPrimitiveTypePaths(current_object->get(Iceberg::f_type), type_names, result, current_object->getValue<String>(Iceberg::f_name));
     }
     return result;
+}
+
+std::unordered_set<String> IcebergSchemaProcessor::collectIcebergStringPaths(Poco::JSON::Array::Ptr schema)
+{
+    return collectIcebergPrimitiveTypePaths(schema, {Iceberg::f_string});
+}
+
+std::unordered_set<String> IcebergSchemaProcessor::collectIcebergLocalTimestampPaths(Poco::JSON::Array::Ptr schema)
+{
+    return collectIcebergPrimitiveTypePaths(schema, {Iceberg::f_timestamp, Iceberg::f_timestamp_ns});
 }
 
 std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema)
@@ -1097,6 +1109,7 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
     column_mapper->setStorageColumnEncoding(IcebergSchemaProcessor::traverseSchema(fields));
     column_mapper->setIcebergStringPaths(IcebergSchemaProcessor::collectIcebergStringPaths(fields));
     column_mapper->setIcebergOptionalPaths(IcebergSchemaProcessor::collectIcebergOptionalPaths(fields));
+    column_mapper->setLocalTimestampPaths(IcebergSchemaProcessor::collectIcebergLocalTimestampPaths(fields));
     column_mapper->setIcebergTimeFieldIds(IcebergSchemaProcessor::collectIcebergTimeFieldIds(fields));
     return column_mapper;
 }
