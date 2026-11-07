@@ -265,7 +265,10 @@ private:
         bool allow_niladic_functions = true,
         bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
+    /// `bare_column_names` has, per result column of a `SELECT` list, the bare column name a column reference can be named with (empty if not one).
+    static std::vector<size_t> findUniqueBareProjectionNames(const NamesAndTypes & projection_columns, const Names & bare_column_names);
+
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false, Names * bare_column_names = nullptr);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -350,6 +353,9 @@ private:
         auto it = table_expression_to_inlined_view_name.find(table_expression_node);
         return it == table_expression_to_inlined_view_name.end() ? nullptr : &it->second;
     }
+
+    /// The qualifier parts a column of the table expression is named with when it needs qualification, e.g. `[database, table]`.
+    std::vector<std::string> getColumnQualificationParts(const TableExpressionNodePtr & table_expression_node) const;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;

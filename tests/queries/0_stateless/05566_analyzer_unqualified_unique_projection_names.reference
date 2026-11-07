@@ -1,0 +1,96 @@
+-- case 1: the issue, two and three tables
+id
+1
+id
+1
+id
+1
+-- case 2: outer references
+1
+1
+1
+-- case 3: right-side tables
+id
+1
+id
+1
+-- case 4: names that collide keep their qualifiers
+id	b.id
+1	1
+a.id	b.id
+1	1
+a.id	id
+1	1
+id	id
+1	1
+-- case 5: matchers
+id	x
+1	10
+a.id	b.id	c.id
+1	1	1
+-- case 6: explicit alias
+a.id
+1
+-- case 7: expressions are not column references
+plus(a.id, 1)
+2
+-- case 8: join_use_nulls and group_by_use_nulls
+id
+\N
+id	cnt
+1	1
+\N	1
+-- case 9: the compatibility setting restores the qualified names
+a.id
+1
+b.id
+1
+a.id
+1
+-- case 10: analyzer_compatibility_multiple_joins_qualify_column_names
+a.id
+1
+-- case 11: DESCRIBE, materialized views
+id	Int32					
+x	Int32					
+1	10
+1	10
+-- case 12: remote
+1
+1
+-- case 13: matcher transformers
+f_r.a
+2
+a
+1
+a	x
+1	3
+id
+1
+t.id
+1
+t.id
+1
+-- case 14: subcolumn
+tup.x
+5
+-- case 15: later readers of the result column names, two tables then three tables
+id	x
+1	10
+2	15
+1	20
+2	25
+1	30
+2	35
+id	x
+1	10
+2	15
+1	20
+2	25
+1	30
+2	35
+all	id
+1	1
+-- case 16: an unqualified outer reference can match the renamed column
+a
+d

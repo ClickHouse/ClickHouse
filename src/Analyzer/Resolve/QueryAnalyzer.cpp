@@ -99,6 +99,7 @@ namespace Setting
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
+    extern const SettingsBool analyzer_compatibility_qualify_ambiguous_column_names;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
@@ -218,6 +219,26 @@ String getTupleElementName(const QueryTreeNodePtr & tuple_element_node)
 {
     const auto & arguments = tuple_element_node->as<FunctionNode &>().getArguments().getNodes();
     return arguments[1]->as<ConstantNode &>().getValue().safeGet<String>();
+}
+
+/// Whether an `APPLY` transformer of the matcher names its output columns itself, by a prefix or an alias of the lambda body.
+bool hasNamingApplyTransformer(const MatcherNode & matcher_node)
+{
+    for (const auto & transformer : matcher_node.getColumnTransformers().getNodes())
+    {
+        const auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>();
+        if (!apply_transformer)
+            continue;
+
+        if (!apply_transformer->getColumnNamePrefix().empty())
+            return true;
+
+        if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA
+            && apply_transformer->getExpressionNode()->as<const LambdaNode &>().getExpression()->hasAlias())
+            return true;
+    }
+
+    return false;
 }
 
 /// True for a `WITH` element declared `AS MATERIALIZED`, before or after its replacement by a `TableNode`.
@@ -1975,15 +1996,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
 /// Resolve query tree nodes functions implementation
 
-/** Qualify column nodes with projection names.
-  *
-  * Example: SELECT * FROM test_table AS t1, test_table AS t2;
-  */
-void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
-    const TableExpressionNodePtr & table_expression_node,
-    const IdentifierResolveScope & scope)
+std::vector<std::string> QueryAnalyzer::getColumnQualificationParts(const TableExpressionNodePtr & table_expression_node) const
 {
-    /// Build additional column qualification parts array
     std::vector<std::string> additional_column_qualification_parts;
 
     if (table_expression_node->hasAlias())
@@ -2013,6 +2027,20 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {query_node->getCTEName()};
     else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
         additional_column_qualification_parts = {union_node->getCTEName()};
+
+    return additional_column_qualification_parts;
+}
+
+/** Qualify column nodes with projection names.
+  *
+  * Example: SELECT * FROM test_table AS t1, test_table AS t2;
+  */
+void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
+    const TableExpressionNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope)
+{
+    /// Build additional column qualification parts array
+    std::vector<std::string> additional_column_qualification_parts = getColumnQualificationParts(table_expression_node);
 
     size_t additional_column_qualification_parts_size = additional_column_qualification_parts.size();
     const auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
@@ -4483,7 +4511,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     bool allow_lambda_expression,
     bool allow_table_expression,
     bool allow_niladic_functions,
-    bool is_top_level_projection
+    bool is_top_level_projection,
+    Names * bare_column_names
 )
 {
     auto & node_list_typed = node_list->as<ListNode &>();
@@ -4496,6 +4525,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
     for (auto & node : node_list_typed.getNodes())
     {
+        const auto * identifier_node = node->as<IdentifierNode>();
+        bool is_identifier_reference = bare_column_names && identifier_node && !node->hasAlias() && identifier_node->getIdentifier().isCompound();
+        bool is_matcher_reference = bare_column_names && node->getNodeType() == QueryTreeNodeType::MATCHER
+            && !hasNamingApplyTransformer(node->as<const MatcherNode &>());
+        String written_identifier = is_identifier_reference ? identifier_node->getIdentifier().getFullName() : String{};
+
         auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection);
         size_t expected_projection_names_size = 1;
@@ -4515,6 +4550,46 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
                 "Expression nodes list expected {} projection names. Actual: {}",
                 expected_projection_names_size,
                 expression_node_projection_names.size());
+
+        if (bare_column_names)
+        {
+            size_t first_result_index = result_nodes.size() - expected_projection_names_size;
+            for (size_t i = 0; i < expected_projection_names_size; ++i)
+            {
+                auto & bare_column_name = bare_column_names->emplace_back();
+
+                const auto * column_node = result_nodes[first_result_index + i]->as<ColumnNode>();
+                if (!(is_identifier_reference || is_matcher_reference) || !column_node)
+                    continue;
+
+                auto column_source = column_node->getColumnSourceOrNull();
+                if (!column_source || !scope.table_expression_node_to_data.contains(column_source))
+                    continue;
+
+                /// The name must be the column name under a qualifier taken from the written identifier or the qualification parts.
+                const auto & name = expression_node_projection_names[i];
+                const auto & column_name = column_node->getColumnName();
+                bool is_qualified_reference = false;
+                if (is_identifier_reference)
+                {
+                    is_qualified_reference = (written_identifier == name || written_identifier.ends_with("." + name))
+                        && name.ends_with("." + column_name);
+                }
+                else
+                {
+                    auto qualification_parts = getColumnQualificationParts(column_source);
+                    String qualified_name = column_name;
+                    for (auto it = qualification_parts.rbegin(); it != qualification_parts.rend() && !is_qualified_reference; ++it)
+                    {
+                        qualified_name = *it + "." + qualified_name;
+                        is_qualified_reference = qualified_name == name;
+                    }
+                }
+
+                if (is_qualified_reference)
+                    bare_column_name = column_name;
+            }
+        }
 
         result_projection_names.insert(result_projection_names.end(), expression_node_projection_names.begin(), expression_node_projection_names.end());
         expression_node_projection_names.clear();
@@ -4978,11 +5053,49 @@ void QueryAnalyzer::resolveWindowNodeList(QueryTreeNodePtr & window_node_list, I
         resolveWindow(node, scope);
 }
 
+/// Column references whose bare column name no other result column has or would get (`SELECT a.id, a.id` is one claimant).
+std::vector<size_t> QueryAnalyzer::findUniqueBareProjectionNames(
+    const NamesAndTypes & projection_columns, const Names & bare_column_names)
+{
+    chassert(projection_columns.size() == bare_column_names.size());
+
+    std::unordered_map<std::string_view, std::string_view> name_to_claimant;
+    std::unordered_set<std::string_view> contested_names;
+    auto claim = [&](std::string_view name, std::string_view claimant)
+    {
+        auto [it, inserted] = name_to_claimant.emplace(name, claimant);
+        if (!inserted && it->second != claimant)
+            contested_names.insert(name);
+    };
+
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        claim(projection_columns[i].name, projection_columns[i].name);
+        if (!bare_column_names[i].empty())
+            claim(bare_column_names[i], projection_columns[i].name);
+    }
+
+    std::vector<size_t> result;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        const auto & bare_column_name = bare_column_names[i];
+        if (!bare_column_name.empty() && !contested_names.contains(bare_column_name))
+            result.push_back(i);
+    }
+
+    return result;
+}
+
 NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope)
 {
-    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/);
+    const auto & settings = scope.context->getSettingsRef();
+    bool use_bare_column_names = !settings[Setting::analyzer_compatibility_qualify_ambiguous_column_names]
+        && !(scope.joins_count >= 2 && settings[Setting::analyzer_compatibility_multiple_joins_qualify_column_names]);
 
-    auto projection_nodes = projection_node_list->as<ListNode &>().getNodes();
+    Names bare_column_names;
+    ProjectionNames projection_names = resolveExpressionNodeList(projection_node_list, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*allow_niladic_functions*/, true /*is_top_level_projection*/, use_bare_column_names ? &bare_column_names : nullptr);
+
+    auto & projection_nodes = projection_node_list->as<ListNode &>().getNodes();
     size_t projection_nodes_size = projection_nodes.size();
 
     NamesAndTypes projection_columns;
@@ -4997,6 +5110,22 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
                 "Projection node must be constant, function, column, query or union");
 
         projection_columns.emplace_back(projection_names[i], projection_node->getResultType());
+    }
+
+    if (!use_bare_column_names)
+        return projection_columns;
+
+    for (size_t i : findUniqueBareProjectionNames(projection_columns, bare_column_names))
+    {
+        projection_columns[i].name = bare_column_names[i];
+
+        /// `ORDER BY ALL`, positional arguments and `INTERPOLATE` read the output name from `resolved_expressions`. A resolved
+        /// node is shared by all of its occurrences, so this position gets a node of its own to carry its name.
+        if (resolved_expressions.contains(projection_nodes[i]))
+        {
+            projection_nodes[i] = projection_nodes[i]->clone();
+            resolved_expressions[projection_nodes[i]] = ProjectionNames{projection_columns[i].name};
+        }
     }
 
     return projection_columns;

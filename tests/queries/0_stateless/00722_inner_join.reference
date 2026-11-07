@@ -19,7 +19,7 @@
    ┌─database─┬─name─┐
 1. │ system   │ one  │
    └──────────┴──────┘
-   ┌─db.x───┬─name─┐
+   ┌─x──────┬─name─┐
 1. │ system │ one  │
    └────────┴──────┘
    ┌─db.name─┬─name─┐
