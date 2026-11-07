@@ -1,0 +1,15 @@
+while the mutation is pending
+1	1	777
+2	2	20
+after it materialized
+1	1	777
+2	2	20
+a CLEAR COLUMN of the whole table still applies to every partition while pending
+1	1	777
+2	2	777
+and a pending DELETE IN PARTITION applied on the fly keeps its partition
+2	2
+2	2
+the multi-partition form of DELETE IN PARTITION keeps its partitions too
+3	3
+3	3
