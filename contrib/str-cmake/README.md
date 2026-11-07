@@ -43,15 +43,26 @@ checks the calling thread's current vector length: the tuned kernels run only
 at 16 bytes, the measured and modeled length. Other lengths use NEON. No
 process or thread vector-length setting is changed by the library.
 
+The public `memcpy`, `memmove`, and `memset` entry points handle up to 16 bytes
+inline. Sizes above 64 bytes call NEON directly: the selected SVE kernels
+already use those same NEON implementations above that boundary at a vector
+length of 16 bytes. Only sizes from 17 through 64 bytes need runtime selection
+for these three functions. This avoids dispatch overhead in these size ranges.
+
 The overlapping strong definitions are excluded from the existing Arm
 optimized-routines archive only while this option is enabled. Its `strchr`
 and `strnlen` remain in use. LLVM libc math and other memory routines retain
 their existing providers. Sanitizer and sanitizer-coverage builds reject the
 experimental option so their interceptors remain authoritative.
 
-The workbench has partial machine-code proof coverage. Those proofs do not
-certify newly compiled integration objects, the dispatcher, or the complete
-ClickHouse executable. This option remains experimental and disabled by default.
+The workbench has partial machine-code proof coverage. The native validation
+also proved the public `memcpy`, `memmove`, and `memset` paths for lengths from
+0 through 16 from the actual integration object files, within the model's
+assumptions. Constructors, longer paths, and the complete ClickHouse executable
+remain outside that proof. This option remains experimental and disabled by default.
+
+See the [2026-11-07 native AArch64 comparison](benchmarks/aarch64-2026-11-07.md)
+for the build configuration, query results, and limits of the measurements.
 
 On a native AArch64 glibc host, test the prefixed archive against the independent
 host libc, including protected pages and oversized early-match `memchr`:

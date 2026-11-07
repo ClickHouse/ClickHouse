@@ -51,6 +51,10 @@ __attribute__((flatten)) void *str_memcpy(void *d, const void *s, size_t n)
         kl_copy_tier(d, s, n);
         return d;
     }
+    /* At VL16 the SVE prefix covers at most 64 bytes; every other VL and
+       the baseline configuration use this same NEON implementation. */
+    if (n > 64)
+        return kl_memcpy_neon_bulk128(d, s, n);
     return __atomic_load_n(&copy_impl, __ATOMIC_RELAXED)(d, s, n);
 }
 __attribute__((flatten)) void *str_memmove(void *d, const void *s, size_t n)
@@ -60,6 +64,8 @@ __attribute__((flatten)) void *str_memmove(void *d, const void *s, size_t n)
         kl_copy_tier(d, s, n);
         return d;
     }
+    if (n > 64)
+        return kl_memmove_neon_bulk64(d, s, n);
     return __atomic_load_n(&move_impl, __ATOMIC_RELAXED)(d, s, n);
 }
 void *str_memset(void *d, int c, size_t n)
@@ -86,6 +92,8 @@ void *str_memset(void *d, int c, size_t n)
         }
         return d;
     }
+    if (n > 64)
+        return kl_memset_neon_bulk128(d, c, n);
     return __atomic_load_n(&fill_impl, __ATOMIC_RELAXED)(d, c, n);
 }
 void *str_memchr(const void *s, int c, size_t n)
