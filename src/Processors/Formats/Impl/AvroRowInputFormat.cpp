@@ -37,6 +37,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -69,6 +70,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int AVRO_EXCEPTION;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
@@ -1371,13 +1373,6 @@ void AvroRowInputFormat::readPrefix()
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    /// Under parallel parsing each segment is a standalone OCF (the `Avro` file-segmentation engine
-    /// prepends the header to every segment), so the reader must be initialized once per segment. The
-    /// base `read` only calls `readPrefix` for the first segment -- it gates on `total_rows == 0`, and
-    /// `setRowsReadBefore` makes `total_rows` non-zero for every later segment -- so initialize lazily.
-    if (!file_reader_ptr)
-        readPrefix();
-
     if (file_reader_ptr->hasMore())
     {
         file_reader_ptr->decr();
@@ -1395,9 +1390,6 @@ bool AvroRowInputFormat::supportsCountRows() const
 
 size_t AvroRowInputFormat::countRows(size_t max_block_size)
 {
-    if (!file_reader_ptr)
-        readPrefix();
-
     size_t num_rows = 0;
     while (file_reader_ptr->hasMore() && num_rows < max_block_size)
     {
@@ -1688,67 +1680,59 @@ struct AvroSegmentationState
     bool header_read = false;
 };
 
+/// The segmentator rejects a malformed container before the per-segment `avro::DataFileReaderBase` sees
+/// it, so it reports `AVRO_EXCEPTION`, as the sequential reader does for the same input.
+void readAvroStrict(ReadBuffer & in, char * to, size_t n)
+{
+    if (in.read(to, n) != n)
+        throw Exception(ErrorCodes::AVRO_EXCEPTION, "Unexpected end of Avro input");
+}
+
 /// Read one Avro `long` (ZigZag varint) from `in`, appending every consumed byte to `raw`.
-/// Fails closed on a truncated varint (EOF mid-varint) or one wider than 64 bits.
+/// Mirrors `avro::BinaryDecoder::doDecodeLong` (contrib/avro/lang/c++/impl/BinaryDecoder.cc).
 Int64 copyAvroLong(ReadBuffer & in, String & raw)
 {
     UInt64 encoded = 0;
     size_t shift = 0;
     while (true)
     {
-        if (in.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of Avro input while reading a varint");
         if (shift >= 64)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Avro varint is too long");
+            throw Exception(ErrorCodes::AVRO_EXCEPTION, "Avro varint is too long");
+        if (in.eof())
+            throw Exception(ErrorCodes::AVRO_EXCEPTION, "Unexpected end of Avro input while reading a varint");
+
         auto c = static_cast<UInt8>(*in.position());
         ++in.position();
         raw.push_back(static_cast<char>(c));
-        /// The 10th byte (shift == 63) may only carry bit 0; any higher payload bit would overflow 64
-        /// bits and be silently dropped by the shift, so reject it instead.
-        if (shift == 63 && (c & 0x7E) != 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Avro varint overflows 64 bits");
+
         encoded |= static_cast<UInt64>(c & 0x7F) << shift;
         if ((c & 0x80) == 0)
             break;
         shift += 7;
     }
-    return static_cast<Int64>((encoded >> 1) ^ (~(encoded & 1) + 1)); /// ZigZag decode
+    return decodeZigZag(encoded);
 }
 
 /// Grow and read in bounded steps, so an untrusted/corrupt length cannot pre-allocate gigabytes before
-/// `readStrict` discovers the input is truncated (it throws once a step cannot be filled).
+/// the read discovers the input is truncated (it throws once a step cannot be filled). A length is
+/// not bounded by the segment thresholds either, so the copy loops check cancellation once per step.
 constexpr size_t AVRO_SEGMENT_COPY_STEP = 1 << 20;
 
-void copyAvroBytes(ReadBuffer & in, String & raw, size_t n)
+/// `Dst` is the header `String` or the segment `Memory`, which needs `resizeAmortized` to grow cheaply.
+template <typename Dst>
+void copyAvroBytes(ReadBuffer & in, Dst & dst, size_t n)
 {
     while (n)
     {
-        /// A block length is not bounded by the segment thresholds, so check cancellation between steps;
-        /// otherwise a cancelled query keeps the segmentator reading a huge value to the end.
         CurrentThread::checkIfNotCancelled();
-        size_t step = n < AVRO_SEGMENT_COPY_STEP ? n : AVRO_SEGMENT_COPY_STEP;
-        size_t old = raw.size();
-        raw.resize(old + step);
-        in.readStrict(raw.data() + old, step);
-        n -= step;
-    }
-}
 
-void copyAvroBytesToMemory(ReadBuffer & in, DB::Memory<> & memory, size_t n)
-{
-    while (n)
-    {
-        /// `ParallelParsingInputFormat` only checks cancellation between segments, and a single block's
-        /// declared length is not bounded by the segment thresholds, so check it between steps here --
-        /// otherwise a cancelled/timed-out query keeps draining a large block to the end.
-        CurrentThread::checkIfNotCancelled();
-        size_t step = n < AVRO_SEGMENT_COPY_STEP ? n : AVRO_SEGMENT_COPY_STEP;
-        size_t old = memory.size();
-        /// Grow the segment amortized: an exact `resize` reallocates the whole buffer on every append,
-        /// which is quadratic under the ASan/TSan allocators (see `saveUpToPosition`, BSONEachRow). Still
-        /// bounded -- the step is capped, so a corrupt block length cannot pre-reserve gigabytes.
-        memory.resizeAmortized(old + step);
-        in.readStrict(memory.data() + old, step);
+        size_t step = std::min(n, AVRO_SEGMENT_COPY_STEP);
+        size_t old = dst.size();
+        if constexpr (std::is_same_v<Dst, DB::Memory<>>)
+            dst.resizeAmortized(old + step);
+        else
+            dst.resize(old + step);
+        readAvroStrict(in, dst.data() + old, step);
         n -= step;
     }
 }
@@ -1758,7 +1742,7 @@ void copyAvroString(ReadBuffer & in, String & raw)
 {
     Int64 len = copyAvroLong(in, raw);
     if (len < 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative length in Avro header string");
+        throw Exception(ErrorCodes::AVRO_EXCEPTION, "Negative length in Avro header string");
     copyAvroBytes(in, raw, static_cast<size_t>(len));
 }
 
@@ -1769,10 +1753,10 @@ void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
     h.clear();
 
     char magic[4];
-    in.readStrict(magic, 4);
+    readAvroStrict(in, magic, sizeof(magic));
     static constexpr char expected_magic[4] = {'O', 'b', 'j', '\x01'};
     if (memcmp(magic, expected_magic, sizeof(magic)) != 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Avro object container file: magic does not match");
+        throw Exception(ErrorCodes::AVRO_EXCEPTION, "Not an Avro object container file: magic does not match");
     h.append(magic, sizeof(magic));
 
     /// metadata is map<string,bytes>, one or more blocks terminated by a 0 count. A negative count
@@ -1785,7 +1769,7 @@ void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
         if (count < 0)
         {
             if (count == std::numeric_limits<Int64>::min())
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Avro metadata block count overflow");
+                throw Exception(ErrorCodes::AVRO_EXCEPTION, "Avro metadata block count overflow");
             count = -count;
             copyAvroLong(in, h); /// block byte-length: copied verbatim, value unused
         }
@@ -1793,23 +1777,22 @@ void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
         {
             /// A declared entry count is untrusted and can be huge, so stay cancellable here too.
             CurrentThread::checkIfNotCancelled();
+
             copyAvroString(in, h); /// key
             copyAvroString(in, h); /// value
         }
     }
 
     char sync[16];
-    in.readStrict(sync, sizeof(sync));
+    readAvroStrict(in, sync, sizeof(sync));
     h.append(sync, sizeof(sync));
     memcpy(state.sync.data(), sync, sizeof(sync));
     state.header_read = true;
 }
 
-void appendToMemory(DB::Memory<> & memory, const char * src, size_t n)
+void appendToMemory(const char * src, size_t n, DB::Memory<> & memory)
 {
     size_t old = memory.size();
-    /// Amortized growth: a segment is built from many small appends (block counts, sync markers), and an
-    /// exact `resize` would reallocate the whole segment on each one -- quadratic under ASan/TSan.
     memory.resizeAmortized(old + n);
     memcpy(memory.data() + old, src, n);
 }
@@ -1818,7 +1801,7 @@ Int64 copyAvroLongToMemory(ReadBuffer & in, DB::Memory<> & memory)
 {
     String tmp;
     Int64 v = copyAvroLong(in, tmp);
-    appendToMemory(memory, tmp.data(), tmp.size());
+    appendToMemory(tmp.data(), tmp.size(), memory);
     return v;
 }
 
@@ -1830,15 +1813,14 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
     if (!state.header_read)
         readAvroOCFHeader(in, state);
 
-    appendToMemory(memory, state.header.data(), state.header.size());
+    appendToMemory(state.header.data(), state.header.size(), memory);
 
     size_t rows_in_segment = 0;
     bool eof = false;
     while (true)
     {
-        /// A segment can accumulate many blocks before reaching `min_bytes`, and the framework only checks
-        /// cancellation between whole segments, so check it per block here too.
-        CurrentThread::checkIfNotCancelled();
+        /// The only legal EOF place: a well-formed file ends right after a block's sync marker.
+        /// Inside a block, throw on unexpected EOF
         if (in.eof())
         {
             eof = true;
@@ -1847,16 +1829,19 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
 
         Int64 object_count = copyAvroLongToMemory(in, memory);
         Int64 byte_count = copyAvroLongToMemory(in, memory);
-        if (object_count < 0 || byte_count < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative object/byte count in Avro data block");
+        /// Same messages as `avro::DataFileReaderBase::readDataBlock`.
+        if (object_count < 0)
+            throw Exception(ErrorCodes::AVRO_EXCEPTION, "Invalid data file. Negative object count in block header: {}", object_count);
+        if (byte_count < 0)
+            throw Exception(ErrorCodes::AVRO_EXCEPTION, "Invalid data file. Negative byte count in block header: {}", byte_count);
 
-        copyAvroBytesToMemory(in, memory, static_cast<size_t>(byte_count));
+        copyAvroBytes(in, memory, static_cast<size_t>(byte_count));
 
         char sync[16];
-        in.readStrict(sync, sizeof(sync));
+        readAvroStrict(in, sync, sizeof(sync));
         if (memcmp(sync, state.sync.data(), sizeof(sync)) != 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Avro sync marker mismatch while segmenting the file");
-        appendToMemory(memory, sync, sizeof(sync));
+            throw Exception(ErrorCodes::AVRO_EXCEPTION, "Avro sync marker mismatch while segmenting the file");
+        appendToMemory(sync, sizeof(sync), memory);
 
         rows_in_segment += static_cast<size_t>(object_count);
 

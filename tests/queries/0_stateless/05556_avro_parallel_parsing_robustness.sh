@@ -66,10 +66,10 @@ header = b"Obj\x01" + meta_positive() + SYNC
 bad = enc_long(5) + enc_long(10**9) + b"too short"          # declares 1e9 bytes, supplies 9
 open(base + "_oversized.avro", "wb").write(header + good + bad)
 
-# 4) A block count encoded as a varint that overflows 64 bits (10th byte carries more than bit 0). The
-#    segmentator's varint reader must reject it rather than silently drop the high bits.
-overflow_varint = b"\x80" * 9 + b"\x02"
-open(base + "_overflow.avro", "wb").write(header + overflow_varint)
+# 4) A block count encoded as a varint longer than 10 bytes (the 10th byte still has the continuation bit).
+#    The segmentator's varint reader must reject it, like `avro::BinaryDecoder::doDecodeLong` does.
+too_long_varint = b"\x80" * 10 + b"\x01"
+open(base + "_toolong.avro", "wb").write(header + too_long_varint)
 
 # 5) A data block with a negative object (record) count. The segmentator must reject it, not spin forever
 #    on a block it can neither advance past nor consume.
@@ -94,21 +94,22 @@ check() {
     [ "$(printf '%s' "$seq" | sort | md5sum)" = "$(printf '%s' "$par" | sort | md5sum)" ] && echo "OK" || echo "MISMATCH"
 }
 
-# A malformed file must be rejected with a specific exception -- not a different error, and never a signal
-# (a segfault/abort has exit status >= 128). Asserting the exact message makes the overflow case fail unless
-# the overflow guard, not the subsequent truncation, is what rejects it.
+# A malformed file must be rejected with a specific `AVRO_EXCEPTION`, like the sequential reader -- not a
+# different error, and never a crash. The exit status cannot tell a signal apart, as `clickhouse-local` exits
+# with the error code modulo 256 (`AVRO_EXCEPTION` = 748 gives 236), so assert the exception text instead.
+# Asserting the exact message also makes the too-long varint case fail unless the length guard, not the
+# subsequent truncation, is what rejects it.
 expect_error() {
     local file="$1" expected="$2" out rc
     out=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT Null" 2>&1); rc=$?
-    if [ "$rc" -ge 128 ]; then echo "KILLED BY SIGNAL ($rc)"; return; fi
-    if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qF "$expected"; then echo "OK"; else echo "NOT REJECTED (rc=$rc)"; fi
+    if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -F "$expected" | grep -qF "(AVRO_EXCEPTION)"; then echo "OK"; else echo "NOT REJECTED (rc=$rc)"; fi
 }
 
 echo -n "marker-in-payload: "; check "${D}_marker.avro"
 echo -n "negative-count-metadata: "; check "${D}_negcount.avro"
-echo -n "oversized-length rejected: "; expect_error "${D}_oversized.avro" "Cannot read all data"
-echo -n "overflow-varint rejected: "; expect_error "${D}_overflow.avro" "Avro varint overflows 64 bits"
-echo -n "negative-object-count rejected: "; expect_error "${D}_negobjcount.avro" "Negative object/byte count"
-echo -n "truncated-sync rejected: "; expect_error "${D}_truncsync.avro" "Cannot read all data"
+echo -n "oversized-length rejected: "; expect_error "${D}_oversized.avro" "Unexpected end of Avro input"
+echo -n "too-long-varint rejected: "; expect_error "${D}_toolong.avro" "Avro varint is too long"
+echo -n "negative-object-count rejected: "; expect_error "${D}_negobjcount.avro" "Negative object count in block header"
+echo -n "truncated-sync rejected: "; expect_error "${D}_truncsync.avro" "Unexpected end of Avro input"
 
 rm -f "${D}"_*.avro

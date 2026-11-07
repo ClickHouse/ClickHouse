@@ -14,9 +14,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
 
     try
     {
-        /// Created once per stream so a stateful engine (e.g. the Avro engine, which caches the
-        /// file header read only at the start) keeps its state across segments. Existing engines
-        /// are stateless, so this is behavior-preserving and also drops a per-segment allocation.
+        /// Created once per stream: an engine may keep state across segments (e.g. Avro caches the file header).
         auto file_segmentation_engine = file_segmentation_engine_creator(format_settings);
 
         while (!parsing_finished)
@@ -82,6 +80,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
         input_format->setRowsReadBefore(unit.offset);
         input_format->setErrorsLogger(errors_logger);
         input_format->setSerializationHints(serialization_hints);
+        input_format->setColumnMapper(column_mapper);
 
         InternalParser parser(input_format);
 
