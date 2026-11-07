@@ -220,14 +220,12 @@ ColumnPtr executeExactDecimalFloatEqualityImpl(
         const auto float_value = float_data[float_is_const ? 0 : row];
         const Float64 float64_value = static_cast<Float64>(float_value);
 
-        Int256 integer_value;
         if (std::isfinite(float64_value)
-            && std::trunc(float64_value) == float64_value
-            && accurate::convertNumeric(float_value, integer_value))
+            && std::trunc(float64_value) == float64_value)
         {
             const Int256 decimal_raw_value = decimal_value.value;
             result_data[row] = decimal_raw_value % scale_multiplier == 0
-                && decimal_raw_value / scale_multiplier == integer_value;
+                && accurate::equalsOp(decimal_raw_value / scale_multiplier, float64_value);
         }
         else
         {
