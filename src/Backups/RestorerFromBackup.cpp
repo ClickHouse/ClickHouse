@@ -503,6 +503,10 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 }
             }
 
+            /// `ATTACH ... FROM '<path>'` reads a directory in `user_files` as the table data and moves it away, as for `CREATE`.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist && create.has_attach_from_path && !database_skipped)
+                required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
+
             if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
