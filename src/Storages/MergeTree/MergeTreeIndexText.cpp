@@ -851,7 +851,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     const bool reads_whole_dictionary = block_ranges.size() == 1 && block_ranges.front().first == 0
         && block_ranges.front().second == sparse_index.size();
     const size_t min_num_tokens = (sparse_index.size() - 1) * params.dictionary_block_size;
-    if (reads_whole_dictionary && analyzer->hasPerTokenPatterns() && max_matched_tokens
+    /// A DFA seeks over the tokens it cannot match, so it does not read the whole dictionary.
+    if (!intersect_dictionary && reads_whole_dictionary && analyzer->hasPerTokenPatterns() && max_matched_tokens
         && min_num_tokens > std::max<size_t>(max_matched_tokens, state.part_info.getRowCount() / 2))
     {
         analyzer->bypassPatternQueries();
