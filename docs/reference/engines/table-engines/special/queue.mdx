@@ -1,0 +1,225 @@
+---
+description: 'A native persistent queue that delivers inserted rows to materialized views.'
+sidebarTitle: 'Queue'
+slug: /engines/table-engines/special/queue
+title: 'Queue table engine'
+doc_type: 'reference'
+---
+
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
+The `Queue` table engine stores inserted rows in ClickHouse and asynchronously delivers them to attached materialized views.
+It does not require an external message broker.
+
+<Info>
+The `Queue` table engine is experimental and may change in backwards-incompatible ways.
+Enable it with the [`allow_experimental_queue_table_engine`](/reference/settings/session-settings#allow_experimental_queue_table_engine) setting.
+</Info>
+
+## Syntax {#syntax}
+
+```sql
+CREATE TABLE queue_name
+(
+    column1 Type1,
+    column2 Type2,
+    ...
+)
+ENGINE = Queue([retention_seconds[, max_batch_size[, polling_interval_ms]]])
+```
+
+Engine arguments:
+
+- `retention_seconds` — how long messages and their acknowledgement records are retained. Default: `604800` (7 days).
+- `max_batch_size` — maximum number of messages selected by a consumer query and delivered in one batch. Default: `65536`.
+- `polling_interval_ms` — delay between background polling attempts. Default: `100`.
+
+All arguments must be positive integer literals.
+
+## Consumption with materialized views {#consumption-with-materialized-views}
+
+Attach one or more materialized views to consume queued rows:
+
+```sql
+SET allow_experimental_queue_table_engine = 1;
+
+CREATE TABLE events_queue
+(
+    event_id UInt64,
+    payload String
+)
+ENGINE = Queue(86400, 10000, 100);
+
+CREATE TABLE events_target
+(
+    event_id UInt64,
+    payload String
+)
+ENGINE = MergeTree
+ORDER BY event_id;
+
+CREATE MATERIALIZED VIEW events_consumer TO events_target
+AS SELECT event_id, payload
+FROM events_queue
+SETTINGS queue_consumer_group = 'analytics';
+
+INSERT INTO events_queue VALUES (1, 'hello');
+```
+
+An insert into a `Queue` table persists the message in the main queue log and fans it out to the pending-message table for each existing consumer group.
+The background consumer sends a bounded batch to the materialized views in one group and acknowledges each selected message after the complete view pipeline succeeds.
+Rows excluded by a materialized view's `WHERE` filter are not acknowledged and remain available to that consumer group.
+If delivery fails, the selected messages remain available for a later retry.
+
+The engine provides at-least-once delivery.
+A server failure after a view insert succeeds but before the acknowledgement is persisted can deliver the same message again.
+Target tables should therefore use an idempotent design when duplicates are not acceptable.
+
+## Consumer groups {#consumer-groups}
+
+A `Queue` table can have multiple independent consumer groups.
+Consumption writes an acknowledgement only to the selected group's state; it never deletes the message from the main queue log or from another group.
+
+Set a materialized view's group in its `SELECT` query:
+
+```sql
+CREATE MATERIALIZED VIEW consumer_a TO target_a
+AS SELECT *
+FROM events_queue
+SETTINGS
+    queue_consumer_group = 'group-a',
+    queue_consumer_offset = 'earliest';
+```
+
+`queue_consumer_offset` controls the initial position when the group is first created:
+
+- `earliest` copies all retained messages from the main queue log.
+- `latest` starts with an empty pending-message table and receives only later inserts.
+
+If `queue_consumer_group` is omitted, the materialized view's qualified name is used, giving that view an independent group.
+Materialized views with the same explicit group receive the same batch, and the batch is acknowledged only after every view in that group succeeds.
+The group can be changed with `ALTER TABLE ... MODIFY QUERY` by changing the `SELECT` settings.
+
+## Direct SELECT {#direct-select}
+
+A direct `SELECT` is noncommitting by default.
+Without a group it reads the retained main queue log, so repeated queries can return the same rows:
+
+```sql
+SELECT * FROM events_queue;
+```
+
+With a group it reads that group's pending messages without acknowledging them:
+
+```sql
+SELECT * FROM events_queue
+SETTINGS queue_consumer_group = 'manual';
+```
+
+Enable acknowledgement explicitly to consume a batch:
+
+```sql
+SELECT * FROM events_queue
+SETTINGS
+    queue_consumer_group = 'manual',
+    queue_commit_on_select = 1,
+    queue_max_batch_size = 1000;
+```
+
+The engine carries each input message ID through the query's `WHERE` step and writes tombstones only for rows that survive the filter and only after the complete query pipeline succeeds.
+Rows excluded by the filter remain pending in the consumer-group table.
+Use `queue_max_batch_size` to limit the post-filter result batch.
+The engine scans the finite pending-message snapshot until that many rows survive the filter or the snapshot is exhausted, so excluded messages do not block matching messages behind them.
+Committing queries with joins, `DISTINCT`, or `LIMIT` are rejected until their message identity can be tracked safely.
+Filtered noncommitting queries remain unrestricted and never acknowledge messages.
+Cancellation or an exception leaves the batch pending.
+`queue_max_batch_size = 0` uses the table engine's `max_batch_size`.
+
+A committing query cannot aggregate or group rows because an aggregate result does not preserve a one-to-one relationship with the messages being acknowledged.
+Run the same query with `queue_commit_on_select = 0` when acknowledgement is not intended.
+
+## Resetting a consumer group {#resetting-a-consumer-group}
+
+Set `queue_reset_consumer_offset = 1` on a noncommitting direct `SELECT` to rebuild a group's pending-message table.
+`queue_reset_consumer_offset` and `queue_commit_on_select` cannot be enabled together:
+
+```sql
+-- Replay all retained messages.
+SELECT count() FROM events_queue
+SETTINGS
+    queue_consumer_group = 'manual',
+    queue_consumer_offset = 'earliest',
+    queue_reset_consumer_offset = 1;
+
+-- Discard the current pending set and wait for new messages.
+SELECT count() FROM events_queue
+SETTINGS
+    queue_consumer_group = 'manual',
+    queue_consumer_offset = 'latest',
+    queue_reset_consumer_offset = 1;
+```
+
+Resetting to `earliest` scans the retained main log, so it is intentionally more expensive than normal reads.
+Normal consumer reads use only the group's pending-message table.
+
+## Refreshable materialized views {#refreshable-materialized-views}
+
+A refreshable materialized view can consume a queue by using the direct-select settings in its query.
+`APPEND` is the natural mode for queue consumption:
+
+```sql
+CREATE MATERIALIZED VIEW hourly_consumer
+REFRESH EVERY 1 HOUR APPEND TO events_target
+AS SELECT *
+FROM events_queue
+SETTINGS
+    queue_consumer_group = 'hourly',
+    queue_commit_on_select = 1,
+    queue_max_batch_size = 1000;
+```
+
+The refresh task acknowledges the batch only after the target insert succeeds.
+For a non-`APPEND` refresh, acknowledgement is deferred until the replacement target table has been exchanged successfully.
+
+## Storage and acknowledgement {#storage-and-acknowledgement}
+
+The engine owns an append-only retained `MergeTree` main log and one persistent internal `ReplacingMergeTree(version, is_deleted)` table per consumer group.
+Each message receives an internal UUID when it is inserted.
+An internal materialized view copies new messages from the main log to each existing group table.
+Successful delivery appends a higher-version row with `is_deleted = 1` to that consumer group's table only.
+This gives the engine a persistent per-message acknowledgement without running a mutation for each consumed row.
+
+Consumer tables use `FINAL` while selecting a batch and enable cleanup of deleted replacement rows during merges.
+Tombstones for a batch are inserted as one block, including when the batch contains one thousand or more per-message acknowledgements.
+The implementation and internal schema are experimental and should not be accessed directly.
+
+## Retention and TTL {#retention-and-ttl}
+
+The main log and consumer tables apply a TTL based on the original enqueue time.
+The live row and its acknowledgement tombstone use the same timestamp, so TTL does not remove a tombstone before the message version it hides.
+
+TTL cleanup is asynchronous and occurs during merges.
+Retention is a storage bound and expiration fallback; it is not the acknowledgement mechanism.
+
+## Background controls {#background-controls}
+
+The `Queue` engine supports the common streaming-storage controls:
+
+```sql
+SYSTEM STOP events_queue;
+SYSTEM START events_queue;
+SYSTEM PAUSE events_queue;
+SYSTEM CANCEL events_queue;
+SYSTEM REFRESH events_queue;
+```
+
+`SYSTEM REFRESH` schedules an out-of-order consumption cycle, including while the queue is stopped.
+
+## Current limitations {#current-limitations}
+
+- Delivery is at-least-once, not exactly-once.
+- A filter that permanently excludes a message leaves it pending; use a different consumer group or a later consumer query to process it.
+- Replicated internal queue state is not supported.
+- Altering the queue schema or engine arguments is not supported.

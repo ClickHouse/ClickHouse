@@ -29,6 +29,7 @@ void registerStorageExecutable(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
+void registerStorageQueue(StorageFactory & factory);
 void registerStorageElasticsearch(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory);
 
@@ -143,6 +144,7 @@ void registerStorages()
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
+    registerStorageQueue(factory);
     registerStorageElasticsearch(factory);
     registerStorageAlias(factory);
 
