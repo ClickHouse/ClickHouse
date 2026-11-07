@@ -1341,13 +1341,13 @@ ALTER TABLE iceberg_table DROP PARTITION 0;
 ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
 ```
 
-The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot or an explicitly selected metadata version.
+The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, `iceberg_ref`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot, named snapshot reference, or an explicitly selected metadata version.
 
 The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. The operation does not physically delete the data files. Earlier snapshots retain access to the removed rows and remain available to time-travel queries until those snapshots expire and their files are cleaned up.
 
 ## Time travel {#time-travel}
 
-ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
+ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp, snapshot ID, or named snapshot reference (`branch` or `tag`).
 
 ## Manifest file compaction {#manifest-compaction}
 
@@ -1389,7 +1389,12 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
 SETTINGS iceberg_snapshot_id = 3547395809148285433
 ```
 
-Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` parameters in the same query.
+```sql
+ SELECT * FROM example_table ORDER BY 1
+SETTINGS iceberg_ref = 'probe_branch'
+```
+
+Note: You cannot specify more than one of `iceberg_timestamp_ms`, `iceberg_snapshot_id`, and `iceberg_ref` in the same query. Writing while `iceberg_ref` is set is rejected; writes still go to `main` until writing to a named branch is implemented.
 
 ### Important considerations {#important-considerations}
 

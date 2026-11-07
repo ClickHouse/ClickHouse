@@ -314,6 +314,24 @@ public:
         const std::vector<Int64> & snapshot_ids,
         const std::vector<String> & ref_names) const;
 
+    /// Commit `set-snapshot-ref` on a transactional catalog. `type` is `branch` or `tag`.
+    /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry.
+    virtual Poco::JSON::Object::Ptr setSnapshotRef(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const String & ref_name,
+        const String & type,
+        Int64 snapshot_id) const;
+
+    /// Commit `remove-snapshot-ref` on a transactional catalog.
+    /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry.
+    virtual Poco::JSON::Object::Ptr removeSnapshotRef(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const String & ref_name) const;
+
     /// Drop table from catalog.
     virtual void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const;
 

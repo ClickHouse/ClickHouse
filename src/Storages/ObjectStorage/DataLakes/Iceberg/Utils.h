@@ -113,6 +113,10 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
 
 Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
+/// Resolve an Iceberg snapshot reference (branch or tag) from table metadata.
+/// `main` falls back to `current-snapshot-id` when the `refs` map is absent.
+Int64 resolveSnapshotIdFromRef(const Poco::JSON::Object::Ptr & metadata, const String & ref_name);
+
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);

@@ -68,6 +68,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_insert_into_iceberg", 1);
     context->setSetting("allow_iceberg_remove_orphan_files", 1);
     context->setSetting("allow_experimental_expire_snapshots", 1);
+    context->setSetting("allow_experimental_iceberg_snapshot_refs", 1);
     context->setSetting("allow_experimental_delta_lake_writes", 1);
     context->setSetting("allow_delta_lake_create_table", 1);
     context->setSetting("allow_experimental_paimon_storage_engine", 1);

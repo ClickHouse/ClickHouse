@@ -1588,7 +1588,7 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ## Time Travel {#time-travel}
 
-ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
+ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp, snapshot ID, or named snapshot reference (`branch` or `tag`).
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
@@ -1608,7 +1608,12 @@ ClickHouse also supports reading [deletion vectors](https://iceberg.apache.org/s
  SETTINGS iceberg_snapshot_id = 3547395809148285433
  ```
 
-Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` parameters in the same query.
+ ```sql
+ SELECT * FROM example_table ORDER BY 1
+ SETTINGS iceberg_ref = 'probe_branch'
+ ```
+
+Note: You cannot specify more than one of `iceberg_timestamp_ms`, `iceberg_snapshot_id`, and `iceberg_ref` in the same query. Writing while `iceberg_ref` is set is rejected; writes still go to `main` until writing to a named branch is implemented.
 
 ### Important considerations {#important-considerations}
 
@@ -1900,7 +1905,7 @@ ALTER TABLE iceberg_table DROP PARTITION 0;
 ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
 ```
 
-The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot or an explicitly selected metadata version.
+The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, `iceberg_ref`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot, named snapshot reference, or an explicitly selected metadata version.
 
 The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. The operation does not physically delete the data files. Earlier snapshots retain access to the removed rows and remain available to time-travel queries until those snapshots expire and their files are cleaned up.
 
@@ -2134,6 +2139,68 @@ GRANT ALTER TABLE ON my_iceberg_table TO my_user;
 - Requires the `allow_insert_into_iceberg` setting to be enabled
 - Requires the `allow_expire_snapshots` setting to be enabled
 - The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
+</Note>
+
+### Snapshot references {#iceberg-snapshot-refs}
+
+Iceberg tables store named snapshot pointers in metadata `refs`. ClickHouse can read a branch or tag with `iceberg_ref`, and can create or drop those pointers with `EXECUTE`. Creating a snapshot reference does not create a new snapshot; it only adds a name that points at an existing snapshot. `current-snapshot-id` and `refs.main` are left unchanged.
+
+**Read a named reference:**
+
+```sql
+SELECT * FROM iceberg_table SETTINGS iceberg_ref = 'probe';
+```
+
+`iceberg_ref` cannot be combined with `iceberg_snapshot_id` or `iceberg_timestamp_ms`. Writes, `OPTIMIZE`, `DROP PARTITION`, and `EXECUTE` reject an explicitly set `iceberg_ref`; writing to a non-`main` branch is not implemented yet.
+
+**Create or drop a reference:**
+
+```sql
+ALTER TABLE iceberg_table EXECUTE create_snapshot_ref(
+    name = 'probe'
+    [, type = 'branch']
+    [, snapshot_id = 123]
+    [, if_not_exists = 1]
+);
+
+ALTER TABLE iceberg_table EXECUTE drop_snapshot_ref(
+    name = 'probe'
+    [, if_exists = 1]
+);
+```
+
+**Arguments:**
+
+- `name` (positional or named) — the snapshot reference name. Letters, digits, `_`, `-`, and `.` are allowed. The reserved name `main` cannot be created or dropped.
+- `type` — `branch` or `tag`. Default `branch`.
+- `snapshot_id` — existing snapshot to point at. Default is the table's current snapshot.
+- `if_not_exists = 1` — do not fail when the name already exists. The existing pointer is left unchanged.
+- `if_exists = 1` — do not fail when dropping a name that is not present.
+
+**Example:**
+
+```sql
+SET allow_insert_into_iceberg = 1;
+SET allow_experimental_iceberg_snapshot_refs = 1;
+
+INSERT INTO iceberg_table VALUES (1);
+INSERT INTO iceberg_table VALUES (2);
+
+ALTER TABLE iceberg_table EXECUTE create_snapshot_ref(name = 'probe', type = 'branch');
+INSERT INTO iceberg_table VALUES (3);
+
+SELECT count() FROM iceberg_table;                                 -- 3
+SELECT count() FROM iceberg_table SETTINGS iceberg_ref = 'probe';  -- 2
+
+ALTER TABLE iceberg_table EXECUTE drop_snapshot_ref(name = 'probe');
+```
+
+The command returns one row with `name`, `type`, `snapshot_id`, and `skipped` (`1` when `if_not_exists` / `if_exists` skipped the change).
+
+<Note>
+- Requires both `allow_insert_into_iceberg` and `allow_experimental_iceberg_snapshot_refs`
+- REST / Unity v2 catalogs commit `set-snapshot-ref` / `remove-snapshot-ref`. File-based tables and Glue rewrite the metadata JSON.
+- A tag created at snapshot A keeps pointing at A after later inserts on `main`
 </Note>
 
 ### Remove Orphan Files {#iceberg-remove-orphan-files}
