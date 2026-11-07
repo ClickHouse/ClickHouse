@@ -201,6 +201,25 @@ private:
             addLocation(merge_file, Access::ReadOnly, fmt::format("merged into {}", source));
     }
 
+    /// A configuration that is processed on its own, such as a users configuration in a separate file, which
+    /// `UsersConfigAccessStorage` loads with its own `ConfigProcessor`: its files, and its own substitutions file
+    /// from `include_from`, which does not have to be the one of the main configuration.
+    void addIndependentConfigFile(const fs::path & file, const std::string & source)
+    {
+        addConfigFileWithMergeFiles(file, source);
+        if (file == config_file)
+            return;
+        std::error_code error;
+        if (!fs::exists(file, error))
+            return;
+
+        /// The ZooKeeper includes are left unprocessed: there is no ZooKeeper yet, and they do not name local files.
+        auto loaded = ConfigProcessor(file.string(), /* throw_on_bad_incl = */ false, /* log_to_console = */ false).loadConfig(/* allow_zk_includes = */ true);
+        if (loaded.configuration->has("include_from"))
+            if (const auto value = loaded.configuration->getString("include_from"); !value.empty())
+                addLocation(absolute(value, working_directory), Access::ReadOnly, fmt::format("`include_from` of {}", source));
+    }
+
     void addConfigFiles()
     {
         /// The main configuration file, `config.d` and the other files next to it, watched for changes.
@@ -218,7 +237,7 @@ private:
                 return;
             const fs::path next_to_config = absolute(value, config_directory);
             std::error_code error;
-            addConfigFileWithMergeFiles(fs::exists(next_to_config, error) ? next_to_config : absolute(value, working_directory), fmt::format("`{}`", key));
+            addIndependentConfigFile(fs::exists(next_to_config, error) ? next_to_config : absolute(value, working_directory), fmt::format("`{}`", key));
         };
         add_users_config("users_config");
 
@@ -259,7 +278,12 @@ private:
 
         /// They are inside `path` by default, which is not executable, and are mounted separately to be read-only and,
         /// for the scripts, executable.
-        add(absolute(config.getString("user_scripts_path", "user_scripts"), data_path), Access::ReadOnly, "`user_scripts_path`");
+        const fs::path user_scripts_path = absolute(config.getString("user_scripts_path", "user_scripts"), data_path);
+        add(user_scripts_path, Access::ReadOnly, "`user_scripts_path`");
+        /// Except the WebAssembly modules, which `WasmModuleManager` keeps in the subdirectory `wasm` and writes when
+        /// they are inserted into or deleted from `system.webassembly_modules`. It is created before the mount.
+        if (config.getBool("allow_experimental_webassembly_udf", false))
+            add(user_scripts_path / "wasm", Access::ReadWrite, "the WebAssembly modules in `user_scripts_path`");
         add(absolute(config.getString("top_level_domains_path", "top_level_domains"), data_path), Access::ReadOnly, "`top_level_domains_path`");
         add(absolute(config.getString("google_protos_path", "/usr/share/clickhouse/protos/"), working_directory), Access::ReadOnly, "`google_protos_path`");
 
@@ -297,6 +321,19 @@ private:
                 continue;
             addKey(prefix + ".path", Access::ReadWrite, type == "cache" ? caches_base : working_directory);
             addKey(prefix + ".metadata_path", Access::ReadWrite, working_directory);
+
+            /// An object storage disk with several locations, each of them a separate object storage, as in
+            /// `registerDiskObjectStorage`. A local one keeps its objects in its own `path`.
+            Poco::Util::AbstractConfiguration::Keys locations;
+            config.keys(prefix + ".locations", locations);
+            for (const auto & location : locations)
+            {
+                const std::string location_prefix = fmt::format("{}.locations.{}", prefix, location);
+                /// The same keys for the type as in `ObjectStorageFactory::create`.
+                const std::string location_type = config.getString(location_prefix + ".object_storage_type", config.getString(location_prefix + ".type", ""));
+                if (location_type.starts_with("local"))
+                    addKey(location_prefix + ".path", Access::ReadWrite, working_directory);
+            }
         }
     }
 
@@ -342,7 +379,8 @@ private:
             for (const auto * name : {"privateKeyFile", "certificateFile", "caConfig", "dhParamsFile"})
                 addKeyLocation(fmt::format("protocols.{}.{}", protocol, name), Access::ReadOnly, working_directory);
 
-        for (const auto * key : {"grpc.ssl_key_file", "grpc.ssl_cert_file", "grpc.ssl_ca_cert_file", "arrowflight.ssl_cert_file", "arrowflight.ssl_key_file", "kerberos.keytab"})
+        for (const auto * key : {"grpc.ssl_key_file", "grpc.ssl_cert_file", "grpc.ssl_ca_cert_file", "arrowflight.ssl_cert_file", "arrowflight.ssl_key_file", "kerberos.keytab",
+                                 "ssh_server.host_rsa_key", "ssh_server.host_ecdsa_key", "ssh_server.host_ed25519_key"})
             addKeyLocation(key, Access::ReadOnly, working_directory);
 
         Poco::Util::AbstractConfiguration::Keys ldap_servers;
