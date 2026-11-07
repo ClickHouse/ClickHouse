@@ -893,23 +893,28 @@ def _small_pr_skip_decision(job_name, changed_files):
     return None
 
 
+def configure_performance_shards():
+    """Choose one PR shard family before optional workflow filters run."""
+    from ci.jobs.scripts.performance_selection import pr_shards
+    from ci.praktika.runtime import RunConfig
+
+    info = Info()
+    config = RunConfig.from_fs(info.workflow_name)
+    total = pr_shards(info)
+    # ci-force-all bypasses workflow_filter_hooks, so mutually exclusive job
+    # families must be filtered in this pre-hook, before claiming any runners.
+    for job in JobConfigs.performance_comparison_pr_jobs:
+        count = int(job.parameter.rsplit("/", 1)[1])
+        if count != total:
+            config.set_job_as_filtered(job.name, "Other performance shard family selected")
+    config.dump()
+
+
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
-
-    # These are alternatives, even for `ci-force-all`: never execute both the
-    # six-shard selection and the eight-shard full suite for the same PR.
-    performance = re.fullmatch(
-        r"Performance Comparison \((?:amd|arm)_release, master_head, \d+/(6|8)\)",
-        job_name,
-    )
-    if performance and _info_cache.pr_number > 0:
-        from ci.jobs.scripts.performance_selection import pr_shards
-
-        if int(performance[1]) != pr_shards(_info_cache):
-            return True, "Other performance shard family selected"
 
     if Labels.CI_FORCE_ALL in _info_cache.pr_labels:
         return False, ""

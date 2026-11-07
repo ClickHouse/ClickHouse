@@ -2016,7 +2016,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
-    # Exactly one family is enabled by the PR filter: six selected-test shards,
+    # Exactly one family is enabled by the PR configuration pre-hook: six selected-test shards,
     # or eight full-suite shards when explicitly requested by a label.
     performance_comparison_pr_jobs = performance_comparison_with_master_head_job.parametrize(
         *[

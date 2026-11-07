@@ -4,7 +4,7 @@ name: PR
 
 on:
   pull_request:
-    branches: ['master', 'codex/perf-query-coverage']
+    branches: ['master']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
