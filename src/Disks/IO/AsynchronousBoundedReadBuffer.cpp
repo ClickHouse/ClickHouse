@@ -452,7 +452,9 @@ AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// A killed query's prefetch fails with the query's own cancellation, which the query reports itself.
+        const bool query_killed = CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled();
+        tryLogCurrentException(log, "", query_killed ? LogsLevel::debug : LogsLevel::error);
     }
 }
 

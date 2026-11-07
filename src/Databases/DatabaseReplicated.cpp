@@ -137,6 +137,7 @@ namespace FailPoints
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_pause_after_database_name_fetch[];
     extern const char database_replicated_throw_on_stop_replication[];
+    extern const char database_replicated_restore_table_created_by_other_replica[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -2991,7 +2992,10 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     /// IRestoreCoordination::acquireCreatingTableInReplicatedDatabase() and then for other nodes this function returns false which means
     /// this table is already being created by some other node.
     String table_name = create_table_query->as<const ASTCreateQuery &>().getTable();
-    if (restore_coordination->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name))
+    bool acquired = restore_coordination->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name);
+    /// Pretend that another replica has acquired the creation of the table but has not created it (yet).
+    fiu_do_on(FailPoints::database_replicated_restore_table_created_by_other_replica, { acquired = false; });
+    if (acquired)
     {
         DatabaseAtomic::createTableRestoredFromBackup(create_table_query, local_context, restore_coordination, timeout_ms);
     }
@@ -3001,8 +3005,14 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     /// TODO: The following code doesn't look very reliable, probably we need to rewrite it somehow.
     auto timeout = std::chrono::milliseconds{timeout_ms};
     auto start_time = std::chrono::steady_clock::now();
+    /// Check for cancellation (`KILL QUERY`, or the cancellation of all backups and restores on shutdown)
+    /// as `RestorerFromBackup` does: otherwise a cancelled restore keeps waiting here for the whole timeout.
+    auto process_list_element = local_context->getProcessListElementSafe();
     while (!isTableExist(table_name, local_context))
     {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         waitForReplicaToProcessAllEntries(50);
 
         auto elapsed = std::chrono::steady_clock::now() - start_time;

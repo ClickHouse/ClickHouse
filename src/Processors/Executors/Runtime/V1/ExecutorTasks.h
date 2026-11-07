@@ -73,8 +73,28 @@ class ExecutorTasks : public ISpillRequestListener
     /// CPU slots for each thread.
     SlotAllocationPtr cpu_slots;
 
+    /// Requested threads (for queued tasks or in place of downscaled ones) that wait for a CPU slot.
+    /// Changed under `mutex`, read without it after every task, so it has its own cache line.
+    alignas(64) std::atomic<size_t> threads_to_spawn = 0;
+
     /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
+
+    /// Pipeline width not taken by started threads. Requires `mutex`.
+    size_t widthLeft() const;
+    /// Add to `threads_to_spawn`, up to `widthLeft`. Requires `mutex`.
+    void addThreadsToSpawn(size_t threads);
+
+    /// Current `setMax` target of the CPU slots. Only grows. Changed under `mutex`.
+    std::atomic<size_t> desired_threads = 1;
+
+    /// Orders `setMax` calls. Not `mutex`: the allocation takes its own locks, and it calls `resume` under them.
+    std::mutex set_max_mutex;
+
+    /// Raise the `setMax` target by `threads`, up to `num_threads`. Returns whether it changed. Requires `mutex`.
+    bool growDesiredThreads(size_t threads);
+    /// Pass the current target to `setMax`. Must not be called under `mutex`.
+    void applyDesiredThreads(ISlotAllocation & slots);
 
 public:
     void notifySpillRequested() override;
@@ -113,9 +133,13 @@ public:
     // Local task optimization: the first regular task could be placed directly into thread to be executed next.
     // For async tasks proessor->schedule() is called.
     // If non-local tasks were added, wake up one thread to process them.
-    // Returns the number of additional threads the caller should try to spawn (0 if idle
-    // threads can cover the push, or no new tasks were added).
-    size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+    // Requests a thread for every new task that idle threads can't cover, within the pipeline width not taken
+    // by started threads: adds them to `threads_to_spawn` and raises the `setMax` target of the CPU slots by as much.
+    void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
+
+    /// Set the initial `setMax` target: the pipeline width for the eager allocation,
+    /// enough threads for the `initial_parallel` initial tasks for the lazy one.
+    void initDesiredThreads(bool lazy_allocation, size_t initial_parallel);
 
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors,
         bool trace_processors, ReadProgressCallback * callback, StepProfiler * step_profiler, QueryStatus * process_list_element);
@@ -130,13 +154,21 @@ public:
     void freeCPU();
 
     /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1).
+    /// The new thread is one of `threads_to_spawn`.
     /// Returns the number of additional threads the caller may try to spawn next (0 means
-    /// "stop spawning": either pipeline width is saturated or enough idle threads can absorb
-    /// the work). Callers should still spawn one at a time and re-call upscale after each.
+    /// "stop spawning": either pipeline width is saturated, and the rest of `threads_to_spawn` is dropped,
+    /// or enough idle threads can absorb the work). Callers should still spawn one at a time and
+    /// re-call upscale after each.
     size_t upscale(size_t slot_id);
 
     /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
     void downscale(size_t slot_id);
+
+    /// Request `threads` more threads (e.g. for the initial tasks), clamped to the pipeline width.
+    void requestThreads(size_t threads);
+
+    /// Whether requested threads wait for a CPU slot. Lock-free, so it is checked after every task.
+    bool hasThreadsToSpawn() const { return threads_to_spawn.load(std::memory_order_relaxed) > 0; }
 
     /// Temporarily release slot_id without downscale. Later either downscale() or resume() is called.
     void preempt(size_t slot_id);
