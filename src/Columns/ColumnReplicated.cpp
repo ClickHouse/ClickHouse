@@ -929,10 +929,6 @@ void transformColumnsWithSharedIndex(
         positions);
 }
 
-namespace
-{
-
-/// An upper bound of the nested rows the indexes refer to.
 size_t getReferencedRowsBound(const ColumnReplicated & column)
 {
     if (column.empty())
@@ -954,8 +950,6 @@ size_t getReferencedRowsBound(const ColumnReplicated & column)
         previous = index;
     }
     return runs;
-}
-
 }
 
 ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)

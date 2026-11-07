@@ -4,6 +4,7 @@
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 #include <Core/Joins.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -1233,8 +1234,20 @@ static bool decideAtBoundary(
 
     bool table_data_drifted_significantly = true;
 
+    /// The recorded output bytes are compressed with the wire codec (`network_compression_method` and its
+    /// level), so statistics collected under one codec do not describe the transfer under another. Key the
+    /// cache by the codec as well, so that a change of the codec recollects the statistics instead of reusing them.
+    /// Resolved only here, once there is a read to collect the statistics for: an unrelated query must not
+    /// start rejecting a value of the setting it never uses.
+    const auto network_compression_codec = chooseNetworkCompressionCodec(
+        optimization_settings.network_compression_method, optimization_settings.network_zstd_compression_level);
+    SipHash stats_cache_key_hash;
+    stats_cache_key_hash.update(single_replica_plan_boundary_hash);
+    stats_cache_key_hash.update(network_compression_codec->getHash());
+    const size_t stats_cache_key = stats_cache_key_hash.get64();
+
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
-    if (const auto stats = stats_cache.getStats(single_replica_plan_boundary_hash))
+    if (const auto stats = stats_cache.getStats(stats_cache_key))
     {
         bool apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode != 2;
         if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
@@ -1448,7 +1461,7 @@ static bool decideAtBoundary(
         if (!plan_with_parallel_replicas)
             return true;
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasNoStatistics);
-        LOG_TRACE(getLogger("AutoParallelReplicas"), "No stats found for hash {}", single_replica_plan_boundary_hash);
+        LOG_TRACE(getLogger("AutoParallelReplicas"), "No stats found for hash {}", stats_cache_key);
     }
 
     if (table_data_drifted_significantly
@@ -1461,7 +1474,7 @@ static bool decideAtBoundary(
         if (!plan_with_parallel_replicas)
             return true;
 
-        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_boundary_hash, rows_to_read);
+        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(stats_cache_key, rows_to_read, network_compression_codec);
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group
