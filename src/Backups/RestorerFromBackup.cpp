@@ -71,6 +71,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_RESTORE_DATABASE;
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
 }
 
@@ -190,6 +191,16 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::FINDING_TABLES_IN_BACKUP);
     findDatabasesAndTablesInBackup();
     logNumberOfDatabasesAndTablesToRestore();
+
+    /// Only the initiator of `ON CLUSTER` runs this mode, and its hosts restore without a session to hold a temporary table.
+    if (mode == Mode::CHECK_ACCESS_ONLY)
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+            if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY, "Temporary table {} cannot be restored ON CLUSTER", backQuoteIfNeed(table_name.table));
+    }
 
     /// While still in the FINDING_TABLES_IN_BACKUP stage, tell the other hosts which directory of
     /// the backup this host would restore the named collections from: with a shared (replicated)
@@ -472,7 +483,14 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             if (is_temporary)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
-                    required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+                {
+                    if (create.isView())
+                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
+                    else if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+                        required_access.emplace_back(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
+                    else
+                        required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+                }
                 continue;
             }
 

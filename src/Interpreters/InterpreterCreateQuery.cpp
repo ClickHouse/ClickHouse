@@ -1065,6 +1065,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         throwIfEngineIsUnknownAndNotGranted(
             create.storage->engine->name, /*is_database_engine=*/ false, /*required_before=*/ {}, getContext());
+        if (create.isTemporary() && create.storage->engine->name != "Memory")
+            getContext()->checkAccess(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
 
