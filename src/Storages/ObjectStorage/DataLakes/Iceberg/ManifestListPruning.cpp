@@ -162,7 +162,7 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
         if (!bounds)
             hyperrectangle.push_back(Range::createWholeUniverse());
         else if (summary.contains_null)
-            /// NULL sorts after every value, as in ManifestFilesPruner.
+            /// NULL sorts after every value.
             hyperrectangle.emplace_back(bounds->first, true, POSITIVE_INFINITY, true);
         else
             hyperrectangle.emplace_back(bounds->first, true, bounds->second, true);
