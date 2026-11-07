@@ -333,7 +333,7 @@ void KeeperSnapshotManagerS3::uploadSnapshot(const SnapshotFileInfoPtr & file_in
 void KeeperSnapshotManagerS3::startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
 {
     updateS3Configuration(config, macros);
-    snapshot_s3_thread = ThreadFromGlobalPool([this] { snapshotS3Thread(); });
+    snapshot_s3_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { snapshotS3Thread(); });
 }
 
 void KeeperSnapshotManagerS3::shutdown()

@@ -59,6 +59,137 @@ namespace ProfileEvents
 
 namespace
 {
+    /// Set while a worker of the global pool runs a job that holds no slot (see `remaining_thread_job_capacity`).
+    /// Such a worker is not long-lived, so `scheduleReturningThreadOrQueueOrThrow` counts on it to free up for
+    /// the queued jobs. That does not hold for a job it schedules itself, because the job that runs on this
+    /// worker may be waiting for it: for example, a table loader waits for the workers that load its parts.
+    /// Cleared temporarily by `CurrentThreadDoesNotWaitForScheduledThreads`.
+    thread_local bool current_global_worker_holds_no_slot = false;
+
+    /// The idle workers of local pools that hold a slot of the global pool, see `IdleGlobalSlotHolder`.
+    /// The mutex is a leaf: nothing else is locked while it is held, except the internal mutex of the
+    /// `std::condition_variable_any` of a worker when it is notified. A worker locks it while it holds the
+    /// mutex of its own pool, and the global pool locks it while it holds its own mutex.
+    struct IdleGlobalSlotHolders
+    {
+        std::mutex mutex;
+        IdleGlobalSlotHolder * head = nullptr; /// The oldest one.
+        IdleGlobalSlotHolder * tail = nullptr;
+    };
+
+    IdleGlobalSlotHolders & getIdleGlobalSlotHolders()
+    {
+        /// Never destroyed, for the same reason as `getLocalThreadPoolRegistry`. Constructed in static storage
+        /// rather than with `new`: it is first used by a worker inside `DENY_ALLOCATIONS_IN_SCOPE`.
+        alignas(IdleGlobalSlotHolders) static char storage[sizeof(IdleGlobalSlotHolders)];
+        static IdleGlobalSlotHolders & holders = *new (storage) IdleGlobalSlotHolders();
+        return holders;
+    }
+
+    /// The mutex of `IdleGlobalSlotHolders` is held by an idle worker from the moment it takes a slot until it
+    /// starts waiting, across branches, which the thread safety analysis cannot follow.
+    void lockIdleGlobalSlotHolders(IdleGlobalSlotHolders & holders) TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        holders.mutex.lock();
+    }
+
+    void unlockIdleGlobalSlotHolders(IdleGlobalSlotHolders & holders) TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        holders.mutex.unlock();
+    }
+
+    void linkIdleGlobalSlotHolderNoLock(IdleGlobalSlotHolders & holders, IdleGlobalSlotHolder & holder)
+    {
+        holder.prev = holders.tail;
+        holder.next = nullptr;
+        if (holders.tail)
+            holders.tail->next = &holder;
+        else
+            holders.head = &holder;
+        holders.tail = &holder;
+        holder.linked = true;
+    }
+
+    void unlinkIdleGlobalSlotHolderNoLock(IdleGlobalSlotHolders & holders, IdleGlobalSlotHolder & holder)
+    {
+        if (!holder.linked)
+            return;
+        if (holder.prev)
+            holder.prev->next = holder.next;
+        else
+            holders.head = holder.next;
+        if (holder.next)
+            holder.next->prev = holder.prev;
+        else
+            holders.tail = holder.prev;
+        holder.prev = nullptr;
+        holder.next = nullptr;
+        holder.linked = false;
+    }
+
+    /// Takes back the slot of the global pool held by an idle worker of a local pool, if there is one. The
+    /// worker leaves its pool, which frees its thread of the global pool. The worker never gives the slot
+    /// back itself: it is given back to `slots` right here, under the mutex of the list, so that the next
+    /// scheduling call sees it at once, even before the evicted worker wakes up.
+    bool evictIdleGlobalSlotHolderNoLock(IdleGlobalSlotHolders & holders, std::atomic<int64_t> & slots)
+    {
+        IdleGlobalSlotHolder * holder = holders.head;
+        if (!holder)
+            return false;
+        unlinkIdleGlobalSlotHolderNoLock(holders, *holder);
+        holder->evicted = true;
+        slots.fetch_add(1, std::memory_order_relaxed);
+        /// Notified under the mutex of the list: the worker checks `evicted` and starts waiting while it holds
+        /// that mutex, so the notification cannot be lost, and the worker cannot be destroyed before it is woken.
+        holder->cv->notify_one();
+        return true;
+    }
+
+    bool evictIdleGlobalSlotHolder(std::atomic<int64_t> & slots)
+    {
+        auto & holders = getIdleGlobalSlotHolders();
+        std::lock_guard lock(holders.mutex);
+        return evictIdleGlobalSlotHolderNoLock(holders, slots);
+    }
+
+    /// Evicts idle workers of local pools (see `evictIdleGlobalSlotHolderNoLock`) until `slots` is at least
+    /// `needed` or no idle worker holds a slot anymore, and returns the value of `slots`. The value is read
+    /// under the mutex of the list: an idle worker takes its slot, and gives it back when it is woken for a
+    /// job of its pool, under that mutex too, so a worker that is no longer in the list has already given
+    /// its slot back. Otherwise a value read before that worker was unlinked, but after it gave its slot back,
+    /// would make a scheduling call reject a thread for which a slot exists.
+    int64_t reclaimIdleGlobalSlots(std::atomic<int64_t> & slots, int64_t needed)
+    {
+        auto & holders = getIdleGlobalSlotHolders();
+        std::lock_guard lock(holders.mutex);
+        while (true)
+        {
+            int64_t value = slots.load(std::memory_order_relaxed);
+            if (value >= needed || !evictIdleGlobalSlotHolderNoLock(holders, slots))
+                return value;
+        }
+    }
+
+    /// Locks the mutex of a local pool and then the mutex of `IdleGlobalSlotHolders`, so that an idle worker
+    /// can wait for both its pool and the eviction of its slot with one `std::condition_variable_any`.
+    struct PoolAndIdleGlobalSlotHoldersLock
+    {
+        std::unique_lock<std::mutex> & pool_lock;
+        std::mutex & holders_mutex;
+
+        void lock() TSA_NO_THREAD_SAFETY_ANALYSIS
+        {
+            pool_lock.lock();
+            holders_mutex.lock();
+        }
+
+        void unlock() TSA_NO_THREAD_SAFETY_ANALYSIS
+        {
+            holders_mutex.unlock();
+            pool_lock.unlock();
+        }
+    };
+
     /// Diagnostic registry of `ThreadPoolImpl<ThreadFromGlobalPool*>` instances that
     /// currently own at least one worker thread. Used by `GlobalThreadPool::shutdown` to
     /// identify the subsystem responsible for a "Hung check failed, possible deadlock
@@ -199,6 +330,7 @@ namespace
         // Move constructor
         ScopedDecrement(ScopedDecrement&& other) noexcept
             : atomic_var(std::move(other.atomic_var))
+            , value_after_decrement(other.value_after_decrement)
         {
             other.atomic_var.reset();
         }
@@ -209,6 +341,7 @@ namespace
             if (this != &other)
             {
                 atomic_var.swap(other.atomic_var);
+                std::swap(value_after_decrement, other.value_after_decrement);
             }
             return *this;
         }
@@ -216,14 +349,23 @@ namespace
         explicit ScopedDecrement(std::atomic<int64_t>& var)
             : atomic_var(var)
         {
-            atomic_var->get().fetch_sub(1, std::memory_order_relaxed);
+            value_after_decrement = atomic_var->get().fetch_sub(1, std::memory_order_relaxed) - 1;
         }
+
+        /// The value of the counter right after this object took its unit from it. When the counter
+        /// tracks a limited resource, a negative value means that this object took a unit that did not
+        /// exist, so its owner has to give it back (which the destructor does) and report an error.
+        /// Exactly one owner observes each value, so concurrent takers cannot all see the same one.
+        int64_t valueAfterDecrement() const { return value_after_decrement; }
 
         ~ScopedDecrement()
         {
             if (atomic_var)
                 atomic_var->get().fetch_add(1, std::memory_order_relaxed);
         }
+
+    private:
+        int64_t value_after_decrement = 0;
     };
 }
 
@@ -236,6 +378,11 @@ public:
     Priority priority;
     CurrentMetrics::Increment metric_increment;
     ScopedDecrement available_threads_decrement;
+
+    /// Set only for jobs scheduled through `scheduleThreadOrThrow` or `scheduleThreadOrQueueOrThrow`.
+    /// Holds the worker slot that such a job occupies until it finishes; destroying the job (after it
+    /// ran, or when the queue is drained on shutdown) gives the slot back.
+    std::optional<ScopedDecrement> thread_job_slot;
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
@@ -258,9 +405,11 @@ public:
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
-        bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
+        bool capture_frame_pointers, ScopedDecrement available_threads_decrement_,
+        std::optional<ScopedDecrement> thread_job_slot_)
         : job(std::move(job_)), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
+        thread_job_slot(std::move(thread_job_slot_)),
         thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
         enable_job_stack_trace(capture_frame_pointers)
     {
@@ -320,7 +469,9 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     max_threads = std::min(max_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     max_free_threads = std::min(max_free_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
+    remaining_thread_job_capacity.store(max_threads, std::memory_order_relaxed);
     available_threads.store(0, std::memory_order_relaxed);
+    workers_return.store(max_free_threads == 0, std::memory_order_relaxed);
 }
 
 template <typename Thread>
@@ -329,12 +480,14 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
     remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    remaining_thread_job_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
 
     max_threads = value;
     max_free_threads = std::min(max_free_threads, max_threads);
+    workers_return.store(max_free_threads == 0, std::memory_order_relaxed);
 
     /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
     queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
@@ -385,6 +538,7 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
     bool need_finish_free_threads = (value < max_free_threads);
 
     max_free_threads = std::min(value, max_threads);
+    workers_return.store(max_free_threads == 0, std::memory_order_relaxed);
 
     if (need_finish_free_threads)
     {
@@ -394,6 +548,24 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
         /// purpose of LIFO scheduling.
         wakeUpExcessIdleThreadsNoLock();
     }
+}
+
+template <typename Thread>
+std::atomic<int64_t> & ThreadPoolImpl<Thread>::globalRemainingThreadJobCapacity()
+{
+    return static_cast<FreeThreadPool &>(GlobalThreadPool::instance()).remaining_thread_job_capacity;
+}
+
+template <typename Thread>
+std::atomic<size_t> & ThreadPoolImpl<Thread>::globalQueuedJobs()
+{
+    return static_cast<FreeThreadPool &>(GlobalThreadPool::instance()).queued_jobs_count;
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::setJobsAreLongLived()
+{
+    jobs_are_long_lived.store(true, std::memory_order_relaxed);
 }
 
 template <typename Thread>
@@ -409,7 +581,14 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
+    Job job,
+    Priority priority,
+    std::optional<Int64> wait_microseconds,
+    bool propagate_opentelemetry_tracing_context,
+    bool job_occupies_thread,
+    bool thread_job_may_queue,
+    bool thread_job_takes_slot)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -433,6 +612,24 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     // This ensures that available_threads decreases when a new job starts
     // and automatically increments when the job completes or goes out of scope.
     ScopedDecrement available_threads_decrement(available_threads);
+
+    /// A job that occupies its worker for the worker's whole lifetime must be given one of the
+    /// `max_threads` slots right away. Queueing it is not an option: the workers are held by other
+    /// such jobs, which never return, so a queued job would never start even though its creator
+    /// already treats its thread as running. The slot is taken under `mutex`, right before the job is
+    /// handed to its worker or queued, see `thread_job_slot` below.
+    ///
+    /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` or `scheduleReturningThreadOrThrow`
+    /// does not take a slot, see below.
+    auto on_no_slot_left = [&]
+    {
+        if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+            return on_error(fmt::format(
+                "all {} threads of the global thread pool are already occupied by long-lived threads, "
+                "consider increasing the `max_thread_pool_size` setting", max_threads));
+        else
+            return on_error(fmt::format("all {} threads of the pool are already occupied by long-lived threads", max_threads));
+    };
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
     // Load the current capacity
@@ -496,6 +693,62 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (finished)
             return on_error("finished");
 
+        /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` returns and may wait in the
+        /// queue, so it only needs a worker to free up eventually. That is impossible only when all the
+        /// slots are held by long-lived jobs, so this is the only case when it is rejected. If it took a
+        /// slot, a few such jobs that are merely queued behind ordinary finite jobs would exhaust the
+        /// slots and make the next one fail while the pool is only transiently busy.
+        ///
+        /// The check is made under `mutex`, which is held until the job is put into the queue, so a
+        /// long-lived job cannot overtake it once it is accepted. Every job that holds a slot and waits
+        /// in the queue, i.e. was scheduled through `scheduleThreadOrQueueOrThrow`, either took its slot
+        /// before this check (then it is counted here), or takes it after and is queued behind this job
+        /// (the queue is stable, and all these jobs have the same priority). Neither a job scheduled through
+        /// `scheduleThreadOrThrow` can take a worker before it: that one is handed only an idle or a new
+        /// worker, and a worker that finishes a job takes the next one from the queue instead of going
+        /// idle. So when this check passes, the workers that are left after all the long-lived jobs
+        /// ahead in the queue have started run only finite jobs, and one of them is going to take this job.
+        ///
+        /// When the scheduling thread is itself a worker of this pool that holds no slot, that worker does
+        /// not count: its job may wait for the job scheduled now, and if it is the only worker left for the
+        /// queued jobs, nobody would ever run it. That is how the startup could still hang with a slightly
+        /// too small `max_thread_pool_size`: the loader of a table took the last worker not held by a
+        /// long-lived thread and waited for the workers that load the parts of the table, queued behind it.
+        if (job_occupies_thread && !thread_job_takes_slot)
+        {
+            int64_t remaining_capacity = 0;
+
+            /// The slots may be held by idle workers of local pools (see `IdleGlobalSlotHolder`), which keep their
+            /// threads of the global pool. Take their slots back, so that they leave their pools and free their
+            /// threads for this job. The slots are given back to the counter right away, so a concurrent call
+            /// sees them even before the evicted workers wake up. The workers are woken under `mutex`, and a
+            /// worker of the global pool takes the next job under `mutex` too, so this job is already queued
+            /// when a freed thread looks for one. The decision is made on the value of the counter read under
+            /// the mutex of the list (see `reclaimIdleGlobalSlots`), so it is consistent with the slots given back
+            /// by idle workers that are woken for a job of their pool.
+            ///
+            /// An idle worker may take a slot after the counter is read here. Then it sees this job in the queue
+            /// (or is evicted when the job is queued), see `queued_jobs_count`.
+            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+            {
+                const int64_t needed_capacity = (thread_job_may_queue && current_global_worker_holds_no_slot) ? 2 : 1;
+                remaining_capacity = reclaimIdleGlobalSlots(remaining_thread_job_capacity, needed_capacity);
+            }
+            else
+                remaining_capacity = remaining_thread_job_capacity.load(std::memory_order_relaxed);
+
+            if (remaining_capacity <= 0)
+                return on_no_slot_left();
+
+            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+            {
+                if (thread_job_may_queue && remaining_capacity == 1 && current_global_worker_holds_no_slot)
+                    return on_error(fmt::format(
+                        "all {} threads of the global thread pool except the current one are already occupied by long-lived threads, "
+                        "consider increasing the `max_thread_pool_size` setting", max_threads));
+            }
+        }
+
         /// We must not allocate memory or perform operations that could throw exceptions after adding a job to the queue,
         /// because if an exception occurs, it may leave the job in the queue without notifying any threads.
         typename ThreadFromThreadPool::ThreadList::iterator thread_slot;
@@ -538,6 +791,130 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             adding_new_thread = true;
         }
 
+        /// The `remaining_thread_job_capacity` check above only rejects the case when all the worker
+        /// slots are held by other long-lived jobs. The workers can also be all busy with ordinary
+        /// jobs, and one of them may be waiting for the thread we are about to create. Queueing the
+        /// job would break the contract of `scheduleThreadOrThrow` in the same way: the caller gets a
+        /// thread whose function has not started. So if we neither started a fresh worker nor have an
+        /// idle one to hand the job to right away, refuse to schedule it.
+        ///
+        /// The idle worker is taken from the idle stack here, under `mutex`, and the job is installed
+        /// into that particular worker (see `initial_job`) instead of the shared queue: a job in the
+        /// queue competes with the jobs scheduled concurrently by other threads, and a higher-priority
+        /// ordinary job could take the woken worker while the long-lived job stays queued.
+        ///
+        /// A job scheduled through `scheduleThreadOrQueueOrThrow` or `scheduleReturningThreadOrQueueOrThrow`
+        /// skips all of this and is queued as an ordinary one.
+        const bool thread_job_needs_worker = job_occupies_thread && !thread_job_may_queue;
+        ThreadFromThreadPool * idle_thread_for_job = nullptr;
+        if (thread_job_needs_worker && !adding_new_thread)
+        {
+            while (true)
+            {
+                idle_thread_for_job = popNewestIdleThreadNoLock();
+                if (idle_thread_for_job)
+                    break;
+
+                /// The counters may say that there are free workers while none of them is in the idle stack:
+                /// a worker that was just woken by another `schedule` (and may find no job for itself), or a
+                /// worker that has just finished its job, is not linked into the stack until it reacquires
+                /// `mutex`. Nothing guarantees that such a worker will ever take our job, so start a fresh
+                /// worker for it instead, as long as the pool is below `max_threads`. A worker that was started
+                /// outside the critical section but not accepted above (because of `max_free_threads`) is used
+                /// for that if there is one.
+                if (!new_thread && threads.size() < max_threads)
+                {
+                    int64_t current_capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
+                    while (current_capacity > 0
+                        && !remaining_pool_capacity.compare_exchange_weak(current_capacity, current_capacity - 1, std::memory_order_relaxed))
+                    {
+                    }
+
+                    if (current_capacity > 0)
+                    {
+                        try
+                        {
+                            new_thread = std::make_unique<ThreadFromThreadPool>(*this);
+                        }
+                        catch (...)
+                        {
+                            remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
+                            return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
+                        }
+                    }
+                }
+
+                if (new_thread && threads.size() < max_threads)
+                {
+                    adding_new_thread = true;
+                    break;
+                }
+
+                /// The pool is at `max_threads` and the idle stack is empty. Some of the workers may be
+                /// neither running a job nor waiting in the idle stack: a worker that was woken from the
+                /// stack (by another `schedule`, or by `setMaxFreeThreads` to exit as an excess one) has
+                /// not reacquired `mutex` yet. Each of them is about to link itself back into the idle
+                /// stack, take a queued job, or leave the pool, so wait for that instead of reporting the
+                /// pool as full: none of them is busy. Only the workers that run a job (or have one handed
+                /// to them) are busy, and those are the jobs that are scheduled but no longer queued.
+                const size_t workers_with_job = scheduled_jobs - jobs.size();
+                if (finished || threads.size() <= workers_with_job)
+                    break;
+
+                /// Do not keep a thread that cannot be added spinning in `Preparing` while we wait.
+                new_thread.reset();
+                ++schedulers_waiting_for_worker;
+                worker_settled.wait(lock);
+                --schedulers_waiting_for_worker;
+            }
+
+            if (finished)
+                return on_error("finished");
+
+            if (!idle_thread_for_job && !adding_new_thread)
+            {
+                new_thread.reset();
+                if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                    return on_error(fmt::format(
+                        "all {} threads of the global thread pool are busy and no new thread can be started, "
+                        "consider increasing the `max_thread_pool_size` setting", max_threads));
+                else
+                    return on_error(fmt::format("all {} threads of the pool are busy and no new thread can be started", max_threads));
+            }
+        }
+
+        /// Take the slot of a long-lived job. It is taken here, under `mutex`, after the worker is found and
+        /// with no unlock until the job is handed to its worker or queued, so the slot is never held by a job
+        /// that may still be rejected. If it was taken before (it used to be taken optimistically before
+        /// `mutex` was locked), a concurrent call that takes no slot could see the counter at zero, reject its
+        /// worker as if all the threads were held by long-lived ones, and then this job could be rejected too
+        /// because all the workers are busy with finite jobs. A rejection there is fatal for the mandatory spawn
+        /// of a worker in `AsyncLoader`, which only has to wait for a finite job.
+        std::optional<ScopedDecrement> thread_job_slot;
+        if (job_occupies_thread && thread_job_takes_slot)
+        {
+            thread_job_slot.emplace(remaining_thread_job_capacity);
+            int64_t value_after_decrement = thread_job_slot->valueAfterDecrement();
+            if (value_after_decrement < 0)
+            {
+                /// The slots left may be held by idle workers of local pools (see `IdleGlobalSlotHolder`). Take one
+                /// back: its worker leaves its pool and frees its thread, and its slot backs the unit we took from
+                /// the counter above, which is released by `thread_job_slot`. The counter is checked again under the
+                /// mutex of the list: a slot may have been given back in the meantime, then nobody has to be evicted.
+                if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                    value_after_decrement = reclaimIdleGlobalSlots(remaining_thread_job_capacity, /* needed= */ 0);
+
+                if (value_after_decrement < 0)
+                {
+                    new_thread.reset();
+                    /// The idle worker taken for the long-lived job has not been woken yet; give it back.
+                    if (idle_thread_for_job)
+                        pushIdleThreadNoLock(idle_thread_for_job);
+                    return on_no_slot_left();
+                }
+            }
+        }
+
         if (adding_new_thread)
         {
             try
@@ -557,7 +934,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         try
         {
-            jobs.emplace(std::move(job),
+            if (thread_job_needs_worker)
+            {
+                auto initial_job = std::make_unique<JobWithPriority>(
+                    std::move(job),
                     priority,
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
@@ -566,12 +946,53 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     propagate_opentelemetry_tracing_context && DB::ThreadStatus::QueryCancellationBlocker::isActive(),
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
-                    std::move(available_threads_decrement));
+                    std::move(available_threads_decrement),
+                    std::move(thread_job_slot));
 
-            ++scheduled_jobs;
+                ++scheduled_jobs;
+                if (adding_new_thread)
+                {
+                    (*thread_slot)->start(thread_slot, std::move(initial_job));
+                }
+                else
+                {
+                    /// The worker was popped from the idle stack above and nobody else can hand it a
+                    /// job now; it picks `initial_job` up as soon as it wakes.
+                    idle_thread_for_job->initial_job = std::move(initial_job);
+                    wakeIdleThreadNoLock(idle_thread_for_job);
+                }
+            }
+            else
+            {
+                jobs.emplace(
+                    std::move(job),
+                    priority,
+                    metric_scheduled_jobs,
+                    /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
+                    propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                    /// Not for pool worker threads (created without propagation), which outlive the scheduling scope
+                    propagate_opentelemetry_tracing_context && DB::ThreadStatus::QueryCancellationBlocker::isActive(),
+                    /// capture_frame_pointers
+                    DB::Exception::enable_job_stack_trace,
+                    std::move(available_threads_decrement),
+                    std::move(thread_job_slot));
+                ++scheduled_jobs;
+                queued_jobs_count.fetch_add(1, std::memory_order_seq_cst);
 
-            if (adding_new_thread)
-                (*thread_slot)->start(thread_slot);
+                if (adding_new_thread)
+                {
+                    (*thread_slot)->start(thread_slot);
+                }
+                else if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                {
+                    /// The job waits for a busy thread to free up. An idle worker of a local pool keeps its thread
+                    /// of the global pool for an unlimited time, and the job may be needed by the thread that
+                    /// scheduled it (a nested wait), so take a thread back from such a worker if there is one.
+                    /// A worker that is about to start waiting in the idle stack sees `queued_jobs_count` instead:
+                    /// both happen under the mutex of `IdleGlobalSlotHolders`, so one of them sees the other.
+                    evictIdleGlobalSlotHolder(remaining_thread_job_capacity);
+                }
+            }
 
         }
         catch (const std::exception &)
@@ -579,7 +1000,18 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             if (adding_new_thread)
                 threads.pop_front();
 
+            /// The idle worker taken for the long-lived job has not been woken yet; give it back.
+            if (idle_thread_for_job)
+                pushIdleThreadNoLock(idle_thread_for_job);
+
             return on_error("cannot start the job or thread");
+        }
+
+        /// The long-lived job has already been handed to its worker directly.
+        if (thread_job_needs_worker)
+        {
+            ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
+            return static_cast<ReturnType>(true);
         }
 
         /// Select the most recently idle thread (LIFO order) and wake only that one
@@ -678,6 +1110,53 @@ void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, Int64 w
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleThreadOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    /// `wait_microseconds` is zero: the caller needs the thread now, and waiting for a worker slot to
+    /// be freed by another long-lived thread is not something it can usefully do.
+    scheduleImpl<void>(
+        std::move(job), priority, /* wait_microseconds= */ 0, propagate_opentelemetry_tracing_context, /* job_occupies_thread= */ true);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleThreadOrQueueOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    scheduleImpl<void>(
+        std::move(job),
+        priority,
+        /* wait_microseconds= */ 0,
+        propagate_opentelemetry_tracing_context,
+        /* job_occupies_thread= */ true,
+        /* thread_job_may_queue= */ true);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleReturningThreadOrQueueOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    scheduleImpl<void>(
+        std::move(job),
+        priority,
+        /* wait_microseconds= */ 0,
+        propagate_opentelemetry_tracing_context,
+        /* job_occupies_thread= */ true,
+        /* thread_job_may_queue= */ true,
+        /* thread_job_takes_slot= */ false);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleReturningThreadOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    scheduleImpl<void>(
+        std::move(job),
+        priority,
+        /* wait_microseconds= */ 0,
+        propagate_opentelemetry_tracing_context,
+        /* job_occupies_thread= */ true,
+        /* thread_job_may_queue= */ false,
+        /* thread_job_takes_slot= */ false);
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::wait()
 {
     Stopwatch watch;
@@ -737,6 +1216,7 @@ void ThreadPoolImpl<Thread>::finishNoLock(const std::lock_guard<std::mutex> &)
     /// Wake up all idle threads so they can see it and exit gracefully.
     wakeUpAllIdleThreadsNoLock();
     slot_freed.notify_all();
+    worker_settled.notify_all();
 }
 
 template <typename Thread>
@@ -850,6 +1330,13 @@ typename ThreadPoolImpl<Thread>::ThreadFromThreadPool * ThreadPoolImpl<Thread>::
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::notifyWorkerSettledNoLock()
+{
+    if (schedulers_waiting_for_worker)
+        worker_settled.notify_all();
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::wakeIdleThreadNoLock(ThreadFromThreadPool * thread)
 {
     thread->idle_wakeup_flag = true;
@@ -905,7 +1392,45 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
 {
     Stopwatch watch2;
 
-    thread = Thread(&ThreadFromThreadPool::worker, this);
+    if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+    {
+        thread = Thread(&ThreadFromThreadPool::worker, this);
+    }
+    else
+    {
+        /// The worker of a local pool may wait in the queue behind ordinary jobs: the local pool keeps its
+        /// own jobs queued until the worker starts, and nobody relies on the worker running before that.
+        /// Failing here instead would turn a transient saturation of the global pool into an error for
+        /// callers that cannot handle one, such as the mandatory spawn of a worker in `AsyncLoader`.
+        ///
+        /// If the jobs of the local pool never return (see `setJobsAreLongLived`), its worker takes a slot
+        /// of the global pool for its whole lifetime, and it is rejected when all of the slots are held by
+        /// other long-lived threads: it would never start otherwise.
+        ///
+        /// The workers of other local pools take no slot: their jobs return, so the worker eventually
+        /// leaves, or at least stops being busy when the pool is destroyed or shrunk. If they took slots,
+        /// a few such pools merely running finite jobs (for example the pools of query pipelines, which
+        /// keep free threads) would exhaust the slots while the global pool is only transiently busy, and
+        /// the next worker that takes no slot would be rejected for nothing. They are only rejected when
+        /// the long-lived threads hold all the slots, because then no thread would ever be free for them.
+        ///
+        /// But an idle worker of a pool that keeps free threads may never become busy again, and it keeps its
+        /// thread of the global pool all that time. If such workers held no slot, the global pool could be
+        /// held completely by them and by long-lived threads while slots are still left, and a queued thread
+        /// that takes no slot would never start. So such a worker takes a slot while it is idle, see `worker`.
+        /// The pointer is taken here because the global pool outlives all of its threads.
+        returns_when_idle = parent_pool.workers_return.load(std::memory_order_relaxed);
+        const bool pool_jobs_are_long_lived = parent_pool.jobs_are_long_lived.load(std::memory_order_relaxed);
+        if (!pool_jobs_are_long_lived)
+        {
+            global_slots_for_idle = &globalRemainingThreadJobCapacity();
+            global_queued_jobs = &globalQueuedJobs();
+        }
+        thread = Thread(
+            pool_jobs_are_long_lived ? ThreadFromGlobalPoolScheduleMode::ReserveSlot : ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted,
+            &ThreadFromThreadPool::worker,
+            this);
+    }
 
     ProfileEvents::increment(
         std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
@@ -930,10 +1455,17 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::iterator & it)
 {
+    start(it, {});
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::iterator & it, std::unique_ptr<JobWithPriority> initial_job_)
+{
     /// the thread which created ThreadFromThreadPool should start it after adding it to the pool, or destroy it.
     /// no parallelism is expected here. So the only valid transition for the start method is Preparing to Running.
     chassert(thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing);
     thread_it = it;
+    initial_job = std::move(initial_job_);
     thread_state.store(ThreadState::Running, std::memory_order_relaxed); /// now worker can start executing the main loop
 }
 
@@ -1058,6 +1590,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     parent_pool.slot_freed.notify_one();
             }
 
+            /// A job handed to this worker directly (see `scheduleThreadOrThrow`): either given at
+            /// `start`, or installed by the scheduler while this worker was sitting in the idle stack.
+            /// Such a job is taken before anything from the shared queue.
+            if (!initial_job)
+            {
             /// LIFO idle thread scheduling: link this thread into the intrusive
             /// idle stack and wait on its own per-thread CV until selected. The
             /// scheduler pops the most recently idle thread from the stack, sets
@@ -1081,27 +1618,119 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// wait. When the worker wakes via the LIFO path the notifier has
             /// already popped it and `removeIdleThreadNoLock` is a no-op.
             while (parent_pool.jobs.empty()
+                && !initial_job
+                && !returns_when_idle
                 && !parent_pool.finished
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
+                /// An idle worker of a local pool keeps its thread of the global pool, so it takes a slot of
+                /// the global pool while it is idle (see the constructor). It never takes the last slot: a
+                /// thread that takes no slot is accepted into the queue of the global pool as long as a slot
+                /// is left, and relies on a thread that does not hold a slot to free up for it. If there is
+                /// no slot to take, the worker leaves the pool instead of waiting, which frees its thread.
+                ///
+                /// It does not wait either while a job waits in the queue of the global pool: that job may be
+                /// needed by the thread that scheduled it, which counted on a thread that holds no slot to free
+                /// up. The slot is taken and the worker is linked into `IdleGlobalSlotHolders` under its mutex,
+                /// and the global pool queues a job and then evicts an idle worker under that mutex too. So
+                /// either the worker sees the queued job here, or the global pool sees the worker to evict.
+                bool linked_as_slot_holder = false;
+                if constexpr (!std::is_same_v<Thread, GlobalThreadType>)
+                {
+                    if (global_slots_for_idle)
+                    {
+                        auto & holders = getIdleGlobalSlotHolders();
+                        lockIdleGlobalSlotHolders(holders);
+                        bool took_slot = false;
+                        if (global_queued_jobs->load(std::memory_order_seq_cst) == 0)
+                        {
+                            int64_t free_slots = global_slots_for_idle->load(std::memory_order_relaxed);
+                            while (free_slots > 1
+                                && !global_slots_for_idle->compare_exchange_weak(free_slots, free_slots - 1, std::memory_order_relaxed))
+                            {
+                            }
+                            took_slot = free_slots > 1;
+                        }
+                        if (!took_slot)
+                        {
+                            unlockIdleGlobalSlotHolders(holders);
+                            break;
+                        }
+                        idle_slot_holder.cv = &cv;
+                        idle_slot_holder.evicted = false;
+                        linkIdleGlobalSlotHolderNoLock(holders, idle_slot_holder);
+                        linked_as_slot_holder = true;
+                        /// `holders.mutex` stays locked until the worker starts waiting, so the worker cannot be
+                        /// evicted before it waits: the notification would be lost.
+                    }
+                }
+
                 idle_wakeup_flag = false;
                 parent_pool.pushIdleThreadNoLock(this);
-                cv.wait(lock, [this]
+                parent_pool.notifyWorkerSettledNoLock();
+
+                auto has_reason_to_wake = [this]
                 {
                     return idle_wakeup_flag
+                        || initial_job
                         || !parent_pool.jobs.empty()
                         || parent_pool.finished
                         || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
-                });
+                };
+
+                /// While it holds a slot of the global pool, the worker is linked into the list of such workers,
+                /// so that the global pool can take the slot back when a thread needs it (see `IdleGlobalSlotHolder`).
+                bool slot_evicted = false;
+                if constexpr (!std::is_same_v<Thread, GlobalThreadType>)
+                {
+                    if (linked_as_slot_holder)
+                    {
+                        auto & holders = getIdleGlobalSlotHolders();
+                        PoolAndIdleGlobalSlotHoldersLock both_locks{lock, holders.mutex};
+                        cv.wait(both_locks, [&] { return idle_slot_holder.evicted || has_reason_to_wake(); });
+                        unlinkIdleGlobalSlotHolderNoLock(holders, idle_slot_holder);
+                        slot_evicted = idle_slot_holder.evicted;
+                        /// An evicted worker does not give its slot back: whoever evicted it did that. Otherwise the
+                        /// slot is given back before the mutex of the list is unlocked, so that whoever finds the
+                        /// list without this worker also sees its slot (see `reclaimIdleGlobalSlots`).
+                        if (!slot_evicted)
+                            global_slots_for_idle->fetch_add(1, std::memory_order_relaxed);
+                        unlockIdleGlobalSlotHolders(holders);
+                    }
+                    else
+                        cv.wait(lock, has_reason_to_wake);
+                }
+                else
+                    cv.wait(lock, has_reason_to_wake);
 
                 parent_pool.removeIdleThreadNoLock(this);
+
+                /// The slot was taken back: leave the pool to free the thread of the global pool, unless there is
+                /// a job to run right now (then the thread is freed when the job is done).
+                if (slot_evicted)
+                    break;
+            }
             }
 
+            if (initial_job)
+            {
+                job_data.emplace(std::move(*initial_job));
+                initial_job.reset();
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
+                    job_data->elapsedMicroseconds());
+            }
+            else
+            {
             if (parent_pool.jobs.empty() || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 // We enter here if:
                 //  - either this thread is not needed anymore due to max_free_threads excess;
                 //  - or shutdown happened AND all jobs are already handled.
+
+                /// The waiting scheduler wakes up only after `mutex` is released, when this worker has
+                /// already left the pool. `this` is destroyed by `removeSelfFromPoolNoPoolLock`.
+                parent_pool.notifyWorkerSettledNoLock();
 
                 if (parent_pool.threads_remove_themselves)
                     removeSelfFromPoolNoPoolLock(); // Detach and remove itself from the pool
@@ -1113,10 +1742,14 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority.
             job_data = std::move(const_cast<JobWithPriority &>(parent_pool.jobs.top()));
             parent_pool.jobs.pop();
+            parent_pool.queued_jobs_count.fetch_sub(1, std::memory_order_relaxed);
+            parent_pool.notifyWorkerSettledNoLock();
 
             ProfileEvents::increment(
                 std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
                 job_data->elapsedMicroseconds());
+
+            }
 
             /// We don't run jobs after `finished` is set, but we have to properly dequeue all jobs and finish them.
             if (parent_pool.finished)
@@ -1168,6 +1801,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             }
             else
             {
+                /// A job that holds a slot is not counted as a worker that frees up anyway.
+                current_global_worker_holds_no_slot = !job_data->thread_job_slot.has_value();
+                SCOPE_EXIT(current_global_worker_holds_no_slot = false);
                 job_data->job();
             }
 
@@ -1319,12 +1955,13 @@ void startThreadFromGlobalPool(
     UInt64 global_profiler_real_time_period_ns,
     UInt64 global_profiler_cpu_time_period_ns,
     bool global_trace_collector_allowed,
-    bool propagate_opentelemetry_context)
+    bool propagate_opentelemetry_context,
+    ThreadFromGlobalPoolScheduleMode schedule_mode)
 {
     /// NOTE:
-    /// - If scheduleOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
+    /// - If scheduling throws, the ThreadFromGlobalPoolImpl destructor won't be called.
     /// - `this` cannot be passed in the lambda since after detach() it is no longer valid.
-    GlobalThreadPool::instance().scheduleOrThrow(
+    auto job =
         [my_state = std::move(state),
          my_func = std::move(func),
          global_profiler_real_time_period_ns,
@@ -1349,10 +1986,39 @@ void startThreadFromGlobalPool(
                 thread_status.initGlobalProfiler(global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns);
 
             function();
-        },
-        {},
-        0,
-        propagate_opentelemetry_context);
+        };
+
+    if (schedule_mode == ThreadFromGlobalPoolScheduleMode::FailIfNoWorker)
+    {
+        GlobalThreadPool::instance().scheduleThreadOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::ReturningFailIfNoWorker)
+    {
+        GlobalThreadPool::instance().scheduleReturningThreadOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::ReserveSlot)
+    {
+        GlobalThreadPool::instance().scheduleThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted)
+    {
+        GlobalThreadPool::instance().scheduleReturningThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else
+    {
+        GlobalThreadPool::instance().scheduleOrThrow(std::move(job), {}, 0, propagate_opentelemetry_context);
+    }
+}
+
+CurrentThreadDoesNotWaitForScheduledThreads::CurrentThreadDoesNotWaitForScheduledThreads()
+    : previous_value(current_global_worker_holds_no_slot)
+{
+    current_global_worker_holds_no_slot = false;
+}
+
+CurrentThreadDoesNotWaitForScheduledThreads::~CurrentThreadDoesNotWaitForScheduledThreads()
+{
+    current_global_worker_holds_no_slot = previous_value;
 }
 
 CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()

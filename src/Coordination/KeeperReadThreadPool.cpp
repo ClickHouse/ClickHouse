@@ -4,6 +4,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/Exception.h>
+
+#include <fmt/format.h>
 
 namespace CurrentMetrics
 {
@@ -54,22 +57,41 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
             /*max_threads_=*/ ThreadPool::MAX_THEORETICAL_THREAD_COUNT,
             /*max_free_threads_=*/ 0,
             /*queue_size_=*/ 0);
+        /// The workers loop in `threadFunction` until shutdown, so each of them occupies a thread of the global
+        /// pool for good. They must take a slot of the global pool, otherwise they could be queued behind other
+        /// permanent threads and never start, and a batch would wait for them forever.
+        pool->setJobsAreLongLived();
     }
     while (running_threads < target_num_threads)
     {
         ++running_threads;
         try
         {
-            pool->scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup()]
+            /// A worker may be started after some batches have already run (when it could not be started
+            /// before, or when `parallel_read_threads` was increased), and the next call may take the inline
+            /// path below. The worker must not take the last batch for a new one: that batch has no requests
+            /// left, and `busy_threads` does not count this worker.
+            pool->scheduleOrThrowOnError([this, start_batch_idx = batch_idx, thread_group = CurrentThread::getGroup()]
                 {
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::KEEPER_READ);
-                    threadFunction();
+                    threadFunction(start_batch_idx);
                 });
         }
         catch (...)
         {
-            tryLogCurrentException("KeeperReadThreadPool", "Failed to create thread", LogsLevel::fatal);
-            std::abort();
+            /// The global pool has no thread left for another permanent worker (`max_thread_pool_size` is too
+            /// small). Run the batches with the workers that have started: a batch waits for `target_num_threads`
+            /// workers, so it must not count the ones that could not start. Starting the rest is retried with the
+            /// next batch.
+            --running_threads;
+            target_num_threads = running_threads;
+            if (!logged_thread_start_failure)
+            {
+                tryLogCurrentException("KeeperReadThreadPool",
+                    fmt::format("Failed to start a thread for parallel reads, running with {} threads", running_threads));
+                logged_thread_start_failure = true;
+            }
+            break;
         }
     }
 
@@ -111,13 +133,12 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
         std::rethrow_exception(std::exchange(first_exception, {}));
 }
 
-void KeeperReadThreadPool::threadFunction()
+void KeeperReadThreadPool::threadFunction(size_t seen_batch_idx)
 {
     try
     {
         std::unique_lock lock(mutex);
 
-        size_t seen_batch_idx = 0;
         while (true)
         {
             if (running_threads > target_num_threads)

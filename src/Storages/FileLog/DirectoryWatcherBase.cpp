@@ -736,7 +736,7 @@ void DirectoryWatcherBase::start()
     /// The catch keeps a watch failure contained and logged here, as the schedule pool's execute
     /// used to do. Letting it escape would instead become the global pool's first_exception and be
     /// rethrown from an unrelated later scheduleOrThrow.
-    watch_thread = std::make_unique<ThreadFromGlobalPool>([this]
+    watch_thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this]
     {
         try
         {

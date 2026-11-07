@@ -38,6 +38,8 @@ private:
     std::condition_variable wake_cv;
     std::condition_variable done_cv;
     size_t running_threads = 0;
+    /// Whether the failure to start a worker was already logged (it is retried with every batch).
+    bool logged_thread_start_failure = false;
 
     /// State of the current batch execution.
     /// Threads are woken up once at the start of the batch, then they can pick up requests
@@ -49,7 +51,8 @@ private:
     std::exception_ptr first_exception;
     ExecuteRequestsFunction execute_requests;
 
-    void threadFunction();
+    /// `seen_batch_idx` is the value of `batch_idx` when the worker was scheduled: the batches up to it are not for this worker.
+    void threadFunction(size_t seen_batch_idx);
 };
 
 }
