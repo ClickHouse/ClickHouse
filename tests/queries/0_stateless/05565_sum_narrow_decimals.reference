@@ -14,3 +14,5 @@ window frames with a nonzero first row
 0
 GROUP BY with one key per block
 0
+null map bytes other than 1
+1	1	1	1	1

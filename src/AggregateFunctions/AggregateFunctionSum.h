@@ -100,6 +100,8 @@ struct AggregateFunctionSumData
     static constexpr bool sum_narrow_decimals = (std::is_same_v<Value, Decimal32> || std::is_same_v<Value, Decimal64>)
         && (std::is_same_v<T, Value> || std::is_same_v<T, Decimal128>);
 
+    /// A row counts when `bool(condition)` differs from `add_if_zero`, as in the generic loop. Null maps may hold any
+    /// nonzero byte for a NULL, so the byte must be converted to `bool` before the comparison.
     template <typename Value, bool conditional, bool add_if_zero>
     static ALWAYS_INLINE NativeType<T> sumNarrowDecimals(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
@@ -123,7 +125,7 @@ struct AggregateFunctionSumData
                 {
                     Partial value = static_cast<Partial>(ptr[i].value);
                     if constexpr (conditional)
-                        value &= -static_cast<Partial>(condition_map[i] != add_if_zero);
+                        value &= -static_cast<Partial>(static_cast<bool>(condition_map[i]) != add_if_zero);
                     partial += value;
                 }
                 total += static_cast<Total>(partial);
@@ -137,7 +139,7 @@ struct AggregateFunctionSumData
                 {
                     Int64 value = ptr[i].value;
                     if constexpr (conditional)
-                        value &= -static_cast<Int64>(condition_map[i] != add_if_zero);
+                        value &= -static_cast<Int64>(static_cast<bool>(condition_map[i]) != add_if_zero);
                     high += value >> 32;
                     low += static_cast<UInt64>(value) & 0xFFFFFFFF;
                 }

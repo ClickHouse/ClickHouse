@@ -121,3 +121,15 @@ WHERE a != b OR x != y
 SETTINGS max_block_size = 50, max_threads = 1, compile_aggregate_expressions = 0;
 
 DROP TABLE t_narrow_decimals;
+
+-- With short-circuit evaluation disabled, `if` with a `NULL` branch reuses its condition as the null map, so a NULL may
+-- be marked by any nonzero byte. The inputs below are [1, NULL], and the value hidden under the NULL must be ignored.
+SELECT 'null map bytes other than 1';
+SET short_circuit_function_evaluation = 'disable', optimize_rewrite_aggregate_function_with_if = 0;
+SELECT
+    sum(if(toUInt8(number * 2), NULL, toDecimal32(number + 1, 0))),
+    sum(if(toUInt8(number * 2), NULL, toDecimal64(number + 1, 0))),
+    avg(if(toUInt8(number * 2), NULL, toDecimal64(number + 1, 0))),
+    sumWithOverflow(if(toUInt8(number * 2), NULL, toDecimal32(number + 1, 0))),
+    sumWithOverflow(if(toUInt8(number * 2), NULL, toDecimal64(number + 1, 0)))
+FROM numbers(2);
