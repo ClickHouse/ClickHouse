@@ -1,0 +1,31 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap_strict>
+            <host>openldap_strict</host>
+            <port>1389</port>
+            <enable_tls>no</enable_tls>
+            <!-- Direct bind with a lookup identity: the password is verified against the
+                 `bind_dn` template, then the connection is re-bound as the service account
+                 for `user_dn_detection` and the role searches. -->
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <lookup_bind_dn>cn=svc.clickhouse,ou=service,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>svcsecret</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=inetOrgPerson)(uid={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap_strict>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap_strict</server>
+            <role_mapping>
+                <base_dn>ou=groups,dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={user_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+        </ldap>
+    </user_directories>
+</clickhouse>
