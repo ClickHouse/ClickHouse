@@ -12,7 +12,6 @@ ALTER TABLE ttl_nested_full_wide ADD COLUMN n.d Array(UInt8);
 ALTER TABLE ttl_nested_full_wide ADD COLUMN m UInt64 MATERIALIZED length(n.d);
 ALTER TABLE ttl_nested_full_wide ADD PROJECTION p (SELECT id, length(n.d) AS len ORDER BY id);
 
-SELECT 'full wide before', sum(length(n.d)) FROM ttl_nested_full_wide SETTINGS optimize_use_projections = 0;
 OPTIMIZE TABLE ttl_nested_full_wide FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'full wide base', sum(length(n.d)) FROM ttl_nested_full_wide SETTINGS optimize_use_projections = 0;
 SELECT 'full wide projection', sum(length(n.d)) FROM ttl_nested_full_wide
@@ -35,7 +34,6 @@ ALTER TABLE ttl_nested_full_compact ADD COLUMN n.d Array(UInt8);
 ALTER TABLE ttl_nested_full_compact ADD COLUMN m UInt64 MATERIALIZED length(n.d);
 ALTER TABLE ttl_nested_full_compact ADD PROJECTION p (SELECT id, length(n.d) AS len ORDER BY id);
 
-SELECT 'full compact before', sum(length(n.d)) FROM ttl_nested_full_compact SETTINGS optimize_use_projections = 0;
 OPTIMIZE TABLE ttl_nested_full_compact FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'full compact base', sum(length(n.d)) FROM ttl_nested_full_compact SETTINGS optimize_use_projections = 0;
 SELECT 'full compact projection', sum(length(n.d)) FROM ttl_nested_full_compact
@@ -56,7 +54,6 @@ ALTER TABLE ttl_nested_partial_wide MODIFY COLUMN n.a Array(UInt64) TTL ts + INT
 ALTER TABLE ttl_nested_partial_wide ADD COLUMN m UInt64 MATERIALIZED length(n.d);
 ALTER TABLE ttl_nested_partial_wide ADD PROJECTION p (SELECT id, length(n.d) AS len ORDER BY id);
 
-SELECT 'partial wide before', sum(length(n.d)) FROM ttl_nested_partial_wide SETTINGS optimize_use_projections = 0;
 OPTIMIZE TABLE ttl_nested_partial_wide FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'partial wide base', sum(length(n.d)) FROM ttl_nested_partial_wide SETTINGS optimize_use_projections = 0;
 SELECT 'partial wide projection', sum(length(n.d)) FROM ttl_nested_partial_wide
@@ -79,7 +76,6 @@ ALTER TABLE ttl_nested_partial_compact MODIFY COLUMN n.a Array(UInt64) TTL ts + 
 ALTER TABLE ttl_nested_partial_compact ADD COLUMN m UInt64 MATERIALIZED length(n.d);
 ALTER TABLE ttl_nested_partial_compact ADD PROJECTION p (SELECT id, length(n.d) AS len ORDER BY id);
 
-SELECT 'partial compact before', sum(length(n.d)) FROM ttl_nested_partial_compact SETTINGS optimize_use_projections = 0;
 OPTIMIZE TABLE ttl_nested_partial_compact FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'partial compact base', sum(length(n.d)) FROM ttl_nested_partial_compact SETTINGS optimize_use_projections = 0;
 SELECT 'partial compact projection', sum(length(n.d)) FROM ttl_nested_partial_compact
@@ -105,7 +101,6 @@ ALTER TABLE ttl_nested_recomputed_source ADD COLUMN n.d Array(UInt8);
 ALTER TABLE ttl_nested_recomputed_source ADD COLUMN m UInt64 MATERIALIZED length(n.d) AFTER id;
 ALTER TABLE ttl_nested_recomputed_source ADD PROJECTION p (SELECT id, length(n.d) AS len ORDER BY id);
 
-SELECT 'recomputed before', sum(length(n.d)) FROM ttl_nested_recomputed_source SETTINGS optimize_use_projections = 0;
 OPTIMIZE TABLE ttl_nested_recomputed_source FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'recomputed base', sum(length(n.d)) FROM ttl_nested_recomputed_source SETTINGS optimize_use_projections = 0;
 SELECT 'recomputed projection', sum(length(n.d)) FROM ttl_nested_recomputed_source
@@ -128,7 +123,6 @@ ALTER TABLE ttl_nested_rollup_wide ADD PROJECTION p (SELECT id, length(n.d) AS l
 ALTER TABLE ttl_nested_rollup_wide MODIFY TTL ts + INTERVAL 1 DAY
     GROUP BY id SET `n.a` = arraySlice(any(n.a), 1, 0);
 
-SELECT 'rollup wide before', sum(length(n.d)) FROM ttl_nested_rollup_wide SETTINGS optimize_use_projections = 0;
 OPTIMIZE TABLE ttl_nested_rollup_wide FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'rollup wide base', sum(length(n.d)) FROM ttl_nested_rollup_wide SETTINGS optimize_use_projections = 0;
 SELECT 'rollup wide projection', sum(length(n.d)) FROM ttl_nested_rollup_wide
@@ -150,7 +144,6 @@ ALTER TABLE ttl_nested_rollup_compact ADD PROJECTION p (SELECT id, length(n.d) A
 ALTER TABLE ttl_nested_rollup_compact MODIFY TTL ts + INTERVAL 1 DAY
     GROUP BY id SET `n.a` = arraySlice(any(n.a), 1, 0);
 
-SELECT 'rollup compact before', sum(length(n.d)) FROM ttl_nested_rollup_compact SETTINGS optimize_use_projections = 0;
 OPTIMIZE TABLE ttl_nested_rollup_compact FINAL SETTINGS optimize_throw_if_noop = 1;
 SELECT 'rollup compact base', sum(length(n.d)) FROM ttl_nested_rollup_compact SETTINGS optimize_use_projections = 0;
 SELECT 'rollup compact projection', sum(length(n.d)) FROM ttl_nested_rollup_compact
