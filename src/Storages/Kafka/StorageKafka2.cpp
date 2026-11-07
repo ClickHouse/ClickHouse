@@ -222,7 +222,9 @@ StorageKafka2::StorageKafka2(
     }
 
     activating_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
+    drain_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (drain events)", [this]() { drainEventsTask(); });
     activating_task->deactivate();
+    drain_task->deactivate();
 }
 
 StorageKafka2::~StorageKafka2()

@@ -11,7 +11,7 @@ import helpers.kafka.common as k
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/named_collection.xml"],
+    main_configs=["configs/named_collection.xml", "configs/kafka_short_producer_timeout.xml"],
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,
@@ -227,8 +227,9 @@ def test_statistics_survive_blocked_mv_insert(kafka_cluster):
                 "statistics events accumulate in the reply queue during a busy-but-not-polling hold"
             )
         finally:
-            # CANCEL aborts the blocked insert so the teardown does not wait for its timeout.
-            instance.query("SYSTEM CANCEL test.kafka", ignore_error=True)
+            # The producer timeout (5 s in the test config) bounds the blocked insert,
+            # so the teardown only waits that long after dropping the dead destination.
+            instance.query("DROP TABLE IF EXISTS test.dead_dst SYNC", ignore_error=True)
 
 
 def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
@@ -281,7 +282,7 @@ def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
                     f"outage (ts {ts_first} -> {ts_second})"
                 )
         finally:
-            instance.query("SYSTEM CANCEL test.kafka", ignore_error=True)
+            instance.query("DROP TABLE IF EXISTS test.dead_dst SYNC", ignore_error=True)
 
 
 if __name__ == "__main__":
