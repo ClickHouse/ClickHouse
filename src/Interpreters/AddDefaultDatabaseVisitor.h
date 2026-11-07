@@ -150,6 +150,72 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
+    /// The rule of `QueryTreeBuilder`: an element of a `WITH RECURSIVE` list is a recursive common
+    /// table expression when its body is a `UNION`, an `INTERSECT` or an `EXCEPT` of several queries,
+    /// possibly in parentheses. Returns the branches of such a body, the seed first, and null for
+    /// a body of a single select query, which is an ordinary common table expression.
+    static ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
+    {
+        if (!subquery || subquery->children.empty())
+            return nullptr;
+
+        IAST * body = subquery->children.front().get();
+        while (auto * union_query = body->as<ASTSelectWithUnionQuery>())
+        {
+            auto & selects = union_query->list_of_selects->children;
+            if (selects.size() != 1)
+                return &selects;
+            body = selects.front().get();
+        }
+
+        if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
+            return &intersect_except->children;
+        return nullptr;
+    }
+
+    /// Collect aliases of expressions in the subtree, skipping nested select queries and lambdas:
+    /// their aliases are collected when the visitor descends into them.
+    static void collectAliases(const ASTPtr & ast, std::unordered_set<String> & aliases)
+    {
+        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
+            return;
+
+        String alias = ast->tryGetAlias();
+        if (!alias.empty())
+            aliases.insert(alias);
+
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+            return;
+
+        for (const auto & child : ast->children)
+            collectAliases(child, aliases);
+    }
+
+    /// Like the analyzer, the body of a lambda sees the aliases of the enclosing scope and its own aliases,
+    /// which are not visible outside of it.
+    static void collectLambdaAliases(const ASTFunction & lambda, std::unordered_set<String> & aliases)
+    {
+        for (const auto & child : lambda.children)
+            collectAliases(child, aliases);
+    }
+
+    /// Like the analyzer, take the aliases at any depth of a `WITH` expression, but not inside
+    /// a lambda or a subquery: those aliases are their own.
+    static void collectWithExpressionAliases(const IAST & ast, std::unordered_set<String> & aliases)
+    {
+        String alias = ast.tryGetAlias();
+        if (!alias.empty())
+            aliases.insert(alias);
+
+        if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
+            return;
+        if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+            return;
+
+        for (const auto & child : ast.children)
+            collectWithExpressionAliases(*child, aliases);
+    }
+
 private:
 
     ContextPtr context;
@@ -199,7 +265,7 @@ private:
             auto enclosing_query_aliases = std::move(expression_aliases);
             expression_aliases.clear();
             for (const auto & child : select->children)
-                collectAliases(child);
+                collectAliases(child, expression_aliases);
 
             for (auto & child : select->children)
             {
@@ -234,6 +300,16 @@ private:
             }
             else if (table_expression->table_function)
                 visitTableFunction(*table_expression->table_function);
+        }
+
+        if (auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        {
+            auto enclosing_aliases = expression_aliases;
+            collectLambdaAliases(*function, expression_aliases);
+            for (auto & child : ast.children)
+                visitTableExpressionsImpl(*child);
+            expression_aliases = std::move(enclosing_aliases);
+            return;
         }
 
         if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
@@ -368,7 +444,7 @@ private:
         auto enclosing_query_aliases = std::move(expression_aliases);
         expression_aliases.clear();
         for (const auto & child : select.children)
-            collectAliases(child);
+            collectAliases(child, expression_aliases);
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
@@ -407,26 +483,9 @@ private:
             }
             else if (!only_recursive_with_hides_table)
             {
-                collectWithExpressionAliases(*child);
+                collectWithExpressionAliases(*child, with_expression_aliases);
             }
         }
-    }
-
-    /// Like the analyzer, take the aliases at any depth of a `WITH` expression, but not inside
-    /// a lambda or a subquery: those aliases are their own.
-    void collectWithExpressionAliases(const IAST & ast) const
-    {
-        String alias = ast.tryGetAlias();
-        if (!alias.empty())
-            with_expression_aliases.insert(alias);
-
-        if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
-            return;
-        if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
-            return;
-
-        for (const auto & child : ast.children)
-            collectWithExpressionAliases(*child);
     }
 
     bool isExpressionAlias(const String & name) const
@@ -495,44 +554,6 @@ private:
             for (size_t i = 1; i < branches->size(); ++i)
                 visit_child((*branches)[i]);
         }
-    }
-
-    /// The rule of `QueryTreeBuilder`: an element of a `WITH RECURSIVE` list is a recursive common
-    /// table expression when its body is a `UNION`, an `INTERSECT` or an `EXCEPT` of several queries,
-    /// possibly in parentheses. Returns the branches of such a body, the seed first, and null for
-    /// a body of a single select query, which is an ordinary common table expression.
-    static ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
-    {
-        if (!subquery || subquery->children.empty())
-            return nullptr;
-
-        IAST * body = subquery->children.front().get();
-        while (auto * union_query = body->as<ASTSelectWithUnionQuery>())
-        {
-            auto & selects = union_query->list_of_selects->children;
-            if (selects.size() != 1)
-                return &selects;
-            body = selects.front().get();
-        }
-
-        if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
-            return &intersect_except->children;
-        return nullptr;
-    }
-
-    /// Collect aliases of expressions in the subtree, skipping nested select queries:
-    /// their aliases are collected when the visitor descends into them.
-    void collectAliases(const ASTPtr & ast) const
-    {
-        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTTableExpression>())
-            return;
-
-        String alias = ast->tryGetAlias();
-        if (!alias.empty())
-            expression_aliases.insert(alias);
-
-        for (const auto & child : ast->children)
-            collectAliases(child);
     }
 
     void visit(ASTSelectIntersectExceptQuery & select, ASTPtr &) const
@@ -663,6 +684,15 @@ private:
 
     void visit(ASTFunction & function, ASTPtr &) const
     {
+        if (function.name == "lambda")
+        {
+            auto enclosing_aliases = expression_aliases;
+            collectLambdaAliases(function, expression_aliases);
+            visitChildren(function);
+            expression_aliases = std::move(enclosing_aliases);
+            return;
+        }
+
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
 

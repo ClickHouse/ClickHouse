@@ -60,6 +60,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_global_with_statement;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
 }
@@ -131,8 +132,10 @@ namespace
         /// No current database: a recursive CTE stays unqualified. No `table_name`: it would be dropped from the result.
         ASTPtr select_copy = select_with_union->clone();
         AddDefaultDatabaseVisitor(context->getGlobalContext(), view_id.database_name).visit(select_copy);
+        /// What the query reads in this session, so that the common table expressions it inherits are not tables.
         auto referenced_tables = getDependenciesFromCreateQuery(
-            context, /*table_name=*/{}, select_copy, /*current_database=*/"").dependencies;
+            context, /*table_name=*/{}, select_copy, /*current_database=*/"", /*can_throw=*/false, /*validate_current_database=*/true,
+            /*max_expanded_ast_elements=*/0, /*engine_arguments_database=*/{}, context->getSettingsRef()[Setting::enable_global_with_statement]).dependencies;
         return referenced_tables.contains(view_id.getQualifiedName());
     }
 

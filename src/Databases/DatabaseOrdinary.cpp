@@ -746,6 +746,14 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         {
             SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            /// Add plain view dependencies only after successful attach (failed attach must not leave dependencies in the catalog).
+            const auto * create_query = ast->as<ASTCreateQuery>();
+            if (create_query && create_query->is_ordinary_view)
+            {
+                auto ref_deps = getDependenciesFromCreateQuery(local_context->getGlobalContext(), name, ast, name.database, /* can_throw */ false, /* validate_current_database */ false);
+                if (!ref_deps.plain_view_dependencies.empty())
+                    DatabaseCatalog::instance().addPlainViewDependencies(name, ref_deps.plain_view_dependencies);
+            }
         });
 
     return load_table[name.table] = makeLoadTask(async_loader, {job});
@@ -1158,8 +1166,19 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
                 max_query_size);
     }
 
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    /// The stored definition is re-parsed here, so unqualified names in it must be resolved against the
+    /// database that owns the table (as on the metadata loading path), not against the current database
+    /// of the session that issued the `ALTER`. Otherwise a metadata-only `ALTER` (e.g. `MODIFY COMMENT`)
+    /// issued from another database would move the dependencies of the table to same-named tables there.
+    /// `MODIFY QUERY` qualifies the new query with the table's own database as well.
+    /// The arguments of the table engine are not stored qualified, so they are resolved against the current database,
+    /// as on the `CREATE` path (`addTableDependencies` in `InterpreterCreateQuery`).
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        local_context->getGlobalContext(), table_id.getQualifiedName(), ast, table_id.database_name, /*can_throw*/false,
+        /*validate_current_database*/true, /*max_expanded_ast_elements*/0, /*engine_arguments_database*/local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(
+        local_context->getGlobalContext(), table_id.getQualifiedName(), ast, table_id.database_name, /*can_throw*/false,
+        /*engine_arguments_database*/local_context->getCurrentDatabase());
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
     writeMetadataFile(
         db_disk,
@@ -1168,7 +1187,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{}, ref_dependencies.plain_view_dependencies);
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }
