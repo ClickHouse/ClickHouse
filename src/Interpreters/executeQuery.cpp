@@ -92,6 +92,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/reattachRandomTables.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -3203,6 +3204,10 @@ static BlockIO executeQueryImpl(
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
+
+        /// For testing. Must be done before the query obtains any storage, otherwise `DETACH ... SYNC` would wait for it.
+        if (!internal && !flags.background && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+            reattachRandomTablesInCurrentDatabase(context);
 
         /// Load external tables if they were provided
         context->initializeExternalTablesIfSet();

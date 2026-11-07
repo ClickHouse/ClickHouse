@@ -1,0 +1,16 @@
+SELECT 1\nFROM system.one
+2	0
+3	1
+4	1
+5	1
+Memory	1
+Set, persistent = 0	1
+Buffer	1
+stopped merges	2
+MergeTree	2
+TinyLog	1
+Set	1
+View	2
+MaterializedView	[10,20]
+Dictionary	1
+system	1

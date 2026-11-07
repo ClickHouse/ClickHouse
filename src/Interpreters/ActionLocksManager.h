@@ -28,6 +28,9 @@ public:
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(const StoragePtr & table, StorageActionBlockType action_type);
 
+    /// Returns true if there is a non-expired lock of any type for a table
+    bool hasAny(const StoragePtr & table) const;
+
     /// Removes all locks of non-existing tables
     void cleanExpired();
 
