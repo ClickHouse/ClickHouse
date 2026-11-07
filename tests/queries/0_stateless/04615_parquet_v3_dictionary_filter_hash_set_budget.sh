@@ -11,12 +11,16 @@
 # watermark would keep pruning; if it regresses to an overestimate (say, back to the hash-table
 # model this replaced, ~4 cells per value plus the vector), the looser watermark would stop
 # pruning. Either flip changes `rows_read` and fails this test.
+# The queries test 301 constants (one present value plus absent ones), enough that the dictionary values are
+# hashed: for fewer constants the stored integers are compared directly and no value set is built, which the
+# "same watermark" lines check under a budget the value set does not fit.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
+ABSENT=$(seq -s ', ' 1000001 1000300)
 NULLS_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}_nulls.parquet"
 
 # 2 row groups of 16384 rows. Every row has a distinct Int32 `category`, so each row group's
@@ -44,16 +48,28 @@ run() {
 }
 
 echo "generous memory budget: the dictionary filter prunes row group 1, only 16384 rows are read"
-run 4000000000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
+run 4000000000 "select count() from file('${DATA_FILE}', Parquet) where category in (5, ${ABSENT})"
 
 echo "watermark that affords the hash vectors: the dictionary filter still prunes, only 16384 rows are read"
-run 6000000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
+run 6000000 "select count() from file('${DATA_FILE}', Parquet) where category in (5, ${ABSENT})"
 
 echo "watermark just below what the value set needs: pruning must be skipped, all 32768 rows are read"
+run 4000000 "select count() from file('${DATA_FILE}', Parquet) where category in (5, ${ABSENT})"
+
+echo "same watermark, one constant: the stored values are compared directly without a value set, only 16384 rows are read"
 run 4000000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
 
+echo "same watermark, 41 constants: compared in one pass with a binary search, only 16384 rows are read"
+run 4000000 "select count() from file('${DATA_FILE}', Parquet) where category in (5, $(seq -s ', ' 1000001 1000040))"
+
+echo "same watermark, two conditions of 151 constants, 201 distinct: compared directly, only 16384 rows are read"
+run 4000000 "select count() from file('${DATA_FILE}', Parquet) where category in (5, $(seq -s ', ' 1000001 1000150)) and category in (5, $(seq -s ', ' 1000051 1000200))"
+
+echo "same watermark, a tuple set of 301 rows with one distinct category: compared directly, only 16384 rows are read"
+run 5000000 "select count() from file('${DATA_FILE}', Parquet) where (category, n) in ($(seq -f '(5, %.0f)' -s ', ' 0 300))"
+
 echo "extreme memory budget (1 byte): pruning is skipped, result is still correct"
-run 1 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
+run 1 "select count() from file('${DATA_FILE}', Parquet) where category in (5, ${ABSENT})"
 
 echo "results are identical regardless of the memory budget"
 diff \
@@ -79,10 +95,10 @@ ${CLICKHOUSE_CLIENT} --query="
 "
 
 echo "null_as_default: querying the default value reads the row group with nulls (256 matches) and prunes the null-free one"
-run 4000000000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category = 0" --input_format_null_as_default=1
+run 4000000000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category in (0, ${ABSENT})" --input_format_null_as_default=1
 
 echo "null_as_default: a value only in row group 1 prunes row group 0 despite its default-extended value set"
-run 4000000000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category = 100005" --input_format_null_as_default=1
+run 4000000000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category in (100005, ${ABSENT})" --input_format_null_as_default=1
 
 # The nullable file gets the same both-sides watermark check as the non-null one above, so the
 # accounting of the nullable path (where the value set is extended with the default value hash) is
@@ -93,10 +109,10 @@ run 4000000000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, ca
 # vector, so appending would not change the behavior here. It is pinned by a `chassert` in
 # `hashDictionaryValues` instead, which every debug and sanitizer build checks on this very query.
 echo "null_as_default, watermark that affords the hash vectors: the null-free row group is still pruned"
-run 1100000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category = 0" --input_format_null_as_default=1
+run 1100000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category in (0, ${ABSENT})" --input_format_null_as_default=1
 
 echo "null_as_default, watermark just below what the value set needs: pruning is skipped, all 8704 rows are read"
-run 975000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category = 0" --input_format_null_as_default=1
+run 975000 "select count() from file('${NULLS_FILE}', Parquet, 'n UInt64, category Int32') where category in (0, ${ABSENT})" --input_format_null_as_default=1
 
 echo "null_as_default results are identical regardless of the memory budget"
 diff \

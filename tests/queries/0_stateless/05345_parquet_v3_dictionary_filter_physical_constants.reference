@@ -1,0 +1,69 @@
+i32 = -2147483647: off 250, on {"count":250,"rows_read":1000}
+i32 = -2: off 250, on {"count":250,"rows_read":1000}
+i32 = 1: off 250, on {"count":250,"rows_read":1000}
+i32 = 2147483646: off 250, on {"count":250,"rows_read":1000}
+i32 = 12345: off 0, on {"count":0,"rows_read":0}
+i32 IN (-2147483648, 2147483647): off 500, on {"count":500,"rows_read":2000}
+u32 = 1: off 250, on {"count":250,"rows_read":1000}
+u32 = 2147483649: off 250, on {"count":250,"rows_read":1000}
+u32 = 4294967293: off 250, on {"count":250,"rows_read":1000}
+u32 = 65537: off 250, on {"count":250,"rows_read":1000}
+u32 = 2147483647: off 0, on {"count":0,"rows_read":0}
+u32 IN (2147483648, 4294967295): off 500, on {"count":500,"rows_read":2000}
+i64 = -9223372036854775807: off 250, on {"count":250,"rows_read":1000}
+i64 = -2: off 250, on {"count":250,"rows_read":1000}
+i64 = 4294967297: off 250, on {"count":250,"rows_read":1000}
+i64 = 9223372036854775805: off 250, on {"count":250,"rows_read":1000}
+i64 = 0: off 0, on {"count":0,"rows_read":0}
+i64 IN (-9223372036854775808, 9223372036854775807): off 500, on {"count":500,"rows_read":2000}
+u64 = 1: off 250, on {"count":250,"rows_read":1000}
+u64 = 9223372036854775809: off 250, on {"count":250,"rows_read":1000}
+u64 = 18446744073709551613: off 250, on {"count":250,"rows_read":1000}
+u64 = 4294967296: off 250, on {"count":250,"rows_read":1000}
+u64 = 9223372036854775807: off 0, on {"count":0,"rows_read":0}
+u64 IN (9223372036854775808, 18446744073709551615): off 500, on {"count":500,"rows_read":2000}
+n64 = -6: off 200, on {"count":200,"rows_read":1000}
+n64 = 6: off 200, on {"count":200,"rows_read":1000}
+n64 = -4294967297: off 200, on {"count":200,"rows_read":1000}
+n64 = 4294967297: off 200, on {"count":200,"rows_read":1000}
+n64 = 0: off 0, on {"count":0,"rows_read":0}
+n64 IN (-5, 4294967299): off 400, on {"count":400,"rows_read":2000}
+i16 = -32767: off 250, on {"count":250,"rows_read":1000}
+i16 = -2: off 250, on {"count":250,"rows_read":1000}
+i16 = 101: off 250, on {"count":250,"rows_read":1000}
+i16 = 32766: off 250, on {"count":250,"rows_read":1000}
+i16 = 0: off 0, on {"count":0,"rows_read":0}
+i16 IN (-32768, 32767): off 500, on {"count":500,"rows_read":2000}
+u16 = 1: off 250, on {"count":250,"rows_read":1000}
+u16 = 32769: off 250, on {"count":250,"rows_read":1000}
+u16 = 65535: off 250, on {"count":250,"rows_read":1000}
+u16 = 1001: off 250, on {"count":250,"rows_read":1000}
+u16 = 2000: off 0, on {"count":0,"rows_read":0}
+i8 = -127: off 250, on {"count":250,"rows_read":1000}
+i8 = -2: off 250, on {"count":250,"rows_read":1000}
+i8 = 11: off 250, on {"count":250,"rows_read":1000}
+i8 = 126: off 250, on {"count":250,"rows_read":1000}
+i8 = 0: off 0, on {"count":0,"rows_read":0}
+i8 IN (-128, 127): off 500, on {"count":500,"rows_read":2000}
+u8 = 1: off 250, on {"count":250,"rows_read":1000}
+u8 = 129: off 250, on {"count":250,"rows_read":1000}
+u8 = 255: off 250, on {"count":250,"rows_read":1000}
+u8 = 21: off 250, on {"count":250,"rows_read":1000}
+u8 = 100: off 0, on {"count":0,"rows_read":0}
+k IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12): off 1500, on {"count":1500,"rows_read":2000}
+k IN (100, 101, 102, 103, 104, 105, 106, 107, 31): off 250, on {"count":250,"rows_read":1000}
+k = 100 OR k = 101 OR k = 102 OR k = 103 OR k = 104 OR k = 105 OR k = 106 OR k = 107 OR k = 108 OR k = 21: off 250, on {"count":250,"rows_read":1000}
+k = 100 OR k = 101 OR k = 102 OR k = 103 OR k = 104 OR k = 105 OR k = 106 OR k = 107 OR k = 108 OR k = 109: off 0, on {"count":0,"rows_read":0}
+k IN (1000..1099, 22): off 250, on {"count":250,"rows_read":1000}
+k IN (1000..1099): off 0, on {"count":0,"rows_read":0}
+k IN (1000..1299, 22): off 250, on {"count":250,"rows_read":1000}
+k IN (1000..1299): off 0, on {"count":0,"rows_read":0}
+i32 IN (-2147483647, 1000..1099): off 250, on {"count":250,"rows_read":1000}
+u64 IN (18446744073709551613, 1000..1099): off 250, on {"count":250,"rows_read":1000}
+i16 IN (-32767, 1000..1099): off 250, on {"count":250,"rows_read":1000}
+k IN (1000..1031) OR k IN (1100..1131) OR k IN (1200..1231, 22): off 250, on {"count":250,"rows_read":1000}
+k IN (1000..1039, 2, 3, 31) AND k IN (1100..1139, 3, 12): off 250, on {"count":250,"rows_read":1000}
+k IN (1000..1039, 2) AND k IN (2, 13): off 250, on {"count":250,"rows_read":1000}
+n64 = 0 [n64 Int64]: off 800, on {"count":800,"rows_read":4000}
+n64 IN (0, 1) [n64 Int64]: off 800, on {"count":800,"rows_read":4000}
+n64 = 6 [n64 Int64]: off 200, on {"count":200,"rows_read":1000}
