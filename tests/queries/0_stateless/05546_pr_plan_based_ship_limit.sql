@@ -29,7 +29,7 @@ SELECT 'offset', countIf(explain LIKE '%local LIMIT%') > 0 FROM (EXPLAIN PLAN SE
 SELECT 'filter', countIf(explain LIKE '%local LIMIT%') > 0 FROM (EXPLAIN PLAN SELECT n + 1 FROM t_pr_ship_limit WHERE n % 3 = 0 LIMIT 100);
 SELECT 'union', countIf(explain LIKE '%local LIMIT%') FROM (EXPLAIN PLAN SELECT * FROM (SELECT n FROM t_pr_ship_limit UNION ALL SELECT n FROM t_pr_ship_limit_2) LIMIT 100);
 
-SELECT '--- the LIMIT is not shipped when every row must be read';
+SELECT '--- when every row must be read, the LIMIT is shipped and reads till the end';
 SELECT 'exact_rows_before_limit', countIf(explain LIKE '%local LIMIT%') FROM (EXPLAIN PLAN SELECT * FROM t_pr_ship_limit LIMIT 100 SETTINGS exact_rows_before_limit = 1);
 
 SELECT '--- the same results as classic parallel replicas';

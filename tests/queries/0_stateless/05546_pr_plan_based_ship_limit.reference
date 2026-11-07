@@ -3,8 +3,8 @@ plain	1
 offset	1
 filter	1
 union	2
---- the LIMIT is not shipped when every row must be read
-exact_rows_before_limit	0
+--- when every row must be read, the LIMIT is shipped and reads till the end
+exact_rows_before_limit	1
 --- the same results as classic parallel replicas
 plain	100	100
 offset	100	100
