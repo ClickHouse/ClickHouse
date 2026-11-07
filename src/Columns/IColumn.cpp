@@ -21,6 +21,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsScatter.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
@@ -417,6 +418,9 @@ VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::scatt
 
     if (num_rows != selector.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of selector: {} doesn't match size of column: {}", selector.size(), num_rows);
+
+    if (ColumnsScatter::hasKernel(self))
+        return ColumnsScatter::scatter(self, selector, counts);
 
     const size_t num_columns = counts.size();
     VectorWithMemoryTracking<MutableColumnPtr> columns(num_columns);

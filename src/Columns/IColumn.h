@@ -1101,7 +1101,7 @@ private:
     IColumnHelper() = default;
     IColumnHelper(const IColumnHelper &) = default;
 
-    /// Devirtualize insertFrom.
+    /// The typed kernels of `ColumnsScatter` when `ColumnsScatter::hasKernel` holds, otherwise a devirtualized `insertFrom` loop.
     VectorWithMemoryTracking<MutableColumnPtr> doScatter(const IColumn::Selector & selector, std::span<const size_t> counts) const override;
     VectorWithMemoryTracking<MutableColumnPtr> doScatter(const IColumn::SmallSelector & selector, std::span<const size_t> counts) const override;
 
