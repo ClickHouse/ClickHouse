@@ -12,6 +12,7 @@
 #include <Poco/URI.h>
 
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <string>
 
@@ -46,12 +47,16 @@ public:
     virtual ~JWTProvider() = default;
 
     /// Returns a valid JWT for authenticating to ClickHouse.
-    /// Implementations are responsible for handling the entire lifecycle,
-    /// including initial login and subsequent refreshes.
-    virtual std::string getJWT();
+    /// A provider is shared by the foreground and every background job, so calls are serialized:
+    /// the token state is updated without any other synchronization and a rotating refresh token
+    /// must be used only once.
+    std::string getJWT();
     static Poco::Timestamp getJwtExpiry(const std::string & token);
 
 protected:
+    /// Implementations are responsible for handling the entire lifecycle,
+    /// including initial login and subsequent refreshes. Called with `token_mutex` held.
+    virtual std::string fetchJWT();
     virtual std::string getAudience() const { return oauth_audience; }
     /// Show only `verification_uri_complete` (the URL with the code embedded) in the login prompt,
     /// instead of the short `verification_uri` followed by the shortcut URL.
@@ -90,6 +95,9 @@ protected:
     std::string idp_access_token;
     std::string idp_refresh_token;
     Poco::Timestamp idp_access_token_expires_at{0};
+
+private:
+    std::mutex token_mutex;
 };
 
 /// Creates the appropriate JWT provider based on the application configuration.

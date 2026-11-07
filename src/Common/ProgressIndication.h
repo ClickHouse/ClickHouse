@@ -90,6 +90,8 @@ public:
     };
 
     MemoryUsage getMemoryUsage() const;
+    double getCPUUsage();
+    double getAverageCPUUsage() const;
 
     struct TempDataOnDiskUsage
     {

@@ -1,0 +1,43 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+
+# A statement typed while a query runs is not run after Ctrl+C cancels that query.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT sleepEachRow(1) FROM numbers(60) SETTINGS max_block_size = 1 FORMAT Null\r"
+expect -ex "FORMAT Null"
+after 2000
+send -- "SELECT concat('typed-ahead', '-ran') FORMAT TabSeparatedRaw;\r"
+after 1000
+send -- "\3"
+expect -ex "Cancelling query"
+expect ":) "
+
+send -- "SELECT concat('marker', '-05448') FORMAT TabSeparatedRaw;\r"
+expect {
+    -ex "typed-ahead-ran\r\n" { exit 1 }
+    -ex "marker-05448\r\n" { }
+}
+expect ":) "
+send -- "\4"
+expect eof
