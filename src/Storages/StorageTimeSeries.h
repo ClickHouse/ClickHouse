@@ -117,6 +117,7 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
+    void updateReferencedTables(const ASTCreateQuery & create, ContextPtr local_context) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
     void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
@@ -163,7 +164,9 @@ private:
 
     MultiVersion<TimeSeriesSettings> storage_settings;
 
+    /// Only the `table_id` of an external target changes after construction, guarded by `targets_mutex`.
     std::vector<Target> targets;
+    mutable std::mutex targets_mutex;
     bool has_inner_tables = false;
 
     mutable std::mutex caches_mutex;
