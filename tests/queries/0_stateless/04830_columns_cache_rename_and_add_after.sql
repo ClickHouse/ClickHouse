@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- Regression test: `ALTER TABLE ... RENAME COLUMN a TO b, ADD COLUMN a ... AFTER id` in a
 -- single statement, where the reintroduced `a` is inserted back into `a`'s old position.
 -- The resulting column list `(id, a, b)` has the same positional prefix `(id, a)` as the

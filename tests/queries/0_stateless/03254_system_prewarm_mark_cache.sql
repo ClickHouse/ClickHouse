@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test checks cache state
 
 SET parallel_replicas_local_plan = 1;
 

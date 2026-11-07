@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+# no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 # A global `SHOW COLUMNS` grant must not become a blanket bypass of the per-entry checks of
 # `system.columns_cache`: unlike `system.columns`, which exposes schema only, this table is an
 # operational surface, so a user holding the grant globally together with an explicit revoke on
 # one table - or on one column of it - must still be denied the part names, row ranges and cached
 # sizes of what was revoked.
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

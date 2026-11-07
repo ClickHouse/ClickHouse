@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-distributed-cache
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-random-detach, no-distributed-cache
 # no-random-settings, no-random-merge-tree-settings: the test asserts the number of S3 read
 # requests, which depends on buffer sizes, compression block sizes and the reading pool.
+# no-random-detach: the test asserts exact S3-read profile events, which DETACH/ATTACH adds to the run.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

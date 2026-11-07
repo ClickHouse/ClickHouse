@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- no-parallel: the test needs its primed entries, and `SYSTEM DROP COLUMNS CACHE` and the admission control of the cache are shared with other tests.
 
 -- In a compact part without substream marks, a column read together with its subcolumn is copied

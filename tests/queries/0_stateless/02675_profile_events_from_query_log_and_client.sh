@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-merge-tree-settings
+# Tags: no-fasttest, no-random-merge-tree-settings, no-random-detach
+# no-random-detach: test checks profile events
 # Tag no-fasttest: needs s3
 
 # It is enabled by default. Setting randomisation for automatic parallel replicas sets `enable_parallel_replicas=1`,

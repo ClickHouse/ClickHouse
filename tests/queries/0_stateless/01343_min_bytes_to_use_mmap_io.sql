@@ -1,4 +1,7 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-random-detach, no-flaky-check
+-- no-random-detach: test checks profile events
+-- no-flaky-check: takes 106 s on its own and exceeds the 180 s per-run budget of the flaky check
+-- under TSan; this PR only added a tag, the test itself is unchanged
 DROP TABLE IF EXISTS test_01343;
 -- min_bytes_for_full_part_storage = 0 forces full (non-packed) storage: a packed part keeps all
 -- columns in a single `data.packed` archive read through one buffer, so it creates no per-file mmap

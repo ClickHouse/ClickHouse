@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-random-detach
+-- no-random-detach: the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 -- Reads of projection index parts use the columns cache. Projection parts share the projection
 -- name as their part name, which is not unique across parent parts, so their entries are keyed
 -- by the name of the parent part and the projection, as `parent_part:projection`.

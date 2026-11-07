@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: the `DROP TABLE` of the test is a target of the `DETACH`/`ATTACH` hook, whose 100 ms
+# exclusive-lock probe and preflights take place in the same table-lock queue that the test inspects.
 #
 # Tests that a `system.parts` query honors its time limit even while it is waiting for the table
 # share lock in `tryLockTable`: the lock is acquired in short slices with a cancellation check

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-shared-merge-tree, no-parallel
+# Tags: long, zookeeper, no-shared-merge-tree, no-parallel, no-random-detach
+# no-random-detach: long test, DETACH/ATTACH adds too much overhead
 # no-shared-merge-tree -- replace with other test (this one checks queue)
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
