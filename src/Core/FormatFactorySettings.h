@@ -762,6 +762,22 @@ Skip specified number of lines at the beginning of data in CSV format
     DECLARE(UInt64, input_format_tsv_skip_first_lines, 0, R"(
 Skip specified number of lines at the beginning of data in TSV format
 )", 0) \
+    DECLARE(String, input_format_csv_comment_prefix, "", R"(
+Prefix of lines that should be skipped as comments in CSV format
+)", 0, \
+        {"26.11", "", "", "New setting"}) \
+    DECLARE(String, input_format_tsv_comment_prefix, "", R"(
+Prefix of lines that should be skipped as comments in TSV format
+)", 0, \
+        {"26.11", "", "", "New setting"}) \
+    DECLARE(String, format_csv_comment_prefix, "", R"(
+Prefix of lines that should be skipped as comments in CSV format (alias for input_format_csv_comment_prefix)
+)", 0, \
+        {"26.11", "", "", "New setting"}) \
+    DECLARE(String, format_tsv_comment_prefix, "", R"(
+Prefix of lines that should be skipped as comments in TSV format (alias for input_format_tsv_comment_prefix)
+)", 0, \
+        {"26.11", "", "", "New setting"}) \
     DECLARE(Bool, input_format_csv_skip_trailing_empty_lines, false, R"(
 Skip trailing empty lines in CSV format
 )", 0) \
