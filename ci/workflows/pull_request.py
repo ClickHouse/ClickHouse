@@ -11,6 +11,7 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import (
     PR_SINGLE_ARCH_SKIPPED_BUILDS,
     PR_SINGLE_ARCH_SKIPPED_JOBS,
+    configure_performance_shards,
     should_skip_job,
 )
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
@@ -83,8 +84,7 @@ PLAIN_INTEGRATION_TEST_JOB = [
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
-    # Temporary stacked-PR validation target; remove after the selector CI run.
-    base_branches=[BASE_BRANCH, "codex/perf-query-coverage"],
+    base_branches=[BASE_BRANCH],
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
@@ -299,6 +299,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/review_threads.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
+        configure_performance_shards,
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
     ],

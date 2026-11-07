@@ -14,8 +14,11 @@ its covering tests when at most 300 tests cover that header.
 
 The selection always includes the fixed set in
 [`performance_fixed_tests.json`](../../ci/jobs/scripts/performance_fixed_tests.json),
-tests that failed earlier in the PR, and new or changed tests. Changes to included
-XML, query files and settings count as changes to their owning test. Tests that
+tests that failed earlier in the PR, and new or changed tests. Failure history
+uses the preceding 30 days of normal performance runs: slowdowns in failed jobs,
+recorded dashboard failures and XML execution errors. As in the shared selectors,
+a commit and job with failures in 20 or more tests is excluded from this history.
+Changes to included XML, query files and settings count as changes to their owning test. Tests that
 have no coverage, including shell tests, are included too. Every query in every
 selected XML runs, with the usual adaptive timing repetitions. These runs use six
 shards per enabled architecture.
@@ -299,9 +302,13 @@ To retry only missing shards on a corrected branch revision, keep the same
 gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance -f performance_shards=4,13
 ```
 
-Successful shards publish independently and do not need to be rerun. Combine
-only compatible snapshots: check the binary commit, query hashes, settings, and
-completion manifests. GitHub's normal failed-job rerun uses the original commit,
+Successful shards publish independently and do not need to be rerun. The selector
+combines successful shards from separate attempts when their binary commit and
+checksum, source inputs, execution policy and complete test assignment match.
+Each manifest must match its own successful CIDB job, and every shard must pass
+the freshness and phase-publication checks. Wrapper-only fixes may use a different
+workflow commit; changed collection inputs cannot be mixed. GitHub's normal
+failed-job rerun uses the original commit,
 so it does not pick up collector fixes pushed afterward.
 
 For a failed attempt that preserved completed test artifacts, add
@@ -325,9 +332,11 @@ the compressed download's checksum or its S3 ETag.
 The default scheduled and manual budget is twelve hours. A single measured
 `string_sort.xml` needs 6h36m51s with instrumentation; assigning it to its own
 shard cannot make the complete collection fit six hours. The budget is a limit,
-not a target runtime. The first measured balance predicts about 6h46m for the
-slowest shard, including fixture and export overhead; actual CI validation is
-needed, and new tests or runtime variation can change that prediction.
+not a target runtime. The initial balance predicted about 6h46m for the slowest
+shard, including fixture and export overhead. A complete 16-shard validation
+collected all 808 eligible XML files and 7,132 queries: shard times ranged from
+5h17m to 6h33m, totaling 93.4 runner-hours. New tests and runtime variation can
+change that result.
 `performance_max_hours=6` remains available for explicitly shorter manual runs.
 
 ```bash

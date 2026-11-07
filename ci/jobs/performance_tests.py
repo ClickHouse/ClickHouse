@@ -3921,6 +3921,11 @@ def main():
                 tests_result = r
                 break
         if tests_result:
+            # CIDB exports the Tests subtree. Preserve dashboard-only failures
+            # there too, so a later PR selection retains their owning XML tests.
+            tests_result.results.extend(
+                sub for sub in check_sub_results if sub.status == Result.Status.FAIL
+            )
             # Always use master_head runs for the history query — they are
             # the stable baseline.  The CIDB check_name looks like
             # "Performance Comparison (arm_release, master_head, 1/6)".
