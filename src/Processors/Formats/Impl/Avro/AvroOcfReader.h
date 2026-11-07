@@ -41,15 +41,17 @@ class PlainStream;
 /// All errors are `AVRO_EXCEPTION` with the message prefix `avro::Exception: `.
 ///
 /// Memory is bounded by the rows, not by the block. The payload of a block is never held whole (except for the
-/// `snappy` codec, below): it is exposed as a window of plain bytes of `PLAIN_WINDOW_BYTES`, filled from the input
-/// (null codec) or by the incremental decoders of `deflate`, `zstandard`, `bzip2` and `xz` (the compressed input is
-/// taken from the buffer of `in` in the pieces it has, without a copy). The rows of a batch are decoded from the window
-/// and the bytes that the decoder is done with are dropped as it goes, also in the middle of a row: a `bytes`, `string`
-/// or `fixed` value that the query does not read is skipped as it arrives and is never held, whatever its size. A value
-/// that is read into a column makes the window grow, by doubling and only until the value fits, so the window is at
-/// most twice the size of the largest value that is read (plus `PLAIN_WINDOW_BYTES`), whatever the size of the row or
-/// of the block. Nothing is allocated from a size that the file declares: buffers grow only with the bytes that were
-/// really read or decompressed.
+/// `snappy` codec, below): the decoder is given it in windows. For the null codec a window is the piece of the input
+/// as it is (a piece of at least 64 KiB; smaller ones are gathered into a window of `PLAIN_WINDOW_BYTES`), with
+/// nothing copied but the bytes of a value that the end of a piece cuts; for `deflate`, `zstandard`,
+/// `bzip2` and `xz` it is a window of plain bytes of `PLAIN_WINDOW_BYTES`, filled by the incremental decoders of the
+/// codec (the compressed input is taken from the buffer of `in` in the pieces it has, without a copy). The rows of a
+/// batch are decoded from the window and the bytes that the decoder is done with are dropped as it goes, also in the
+/// middle of a row: a `bytes`, `string` or `fixed` value that the query does not read is skipped as it arrives and is
+/// never held, whatever its size. A value that is read into a column makes the window grow, by doubling and only until
+/// the value fits, so the window is at most twice the size of the largest value that is read (plus `PLAIN_WINDOW_BYTES`
+/// or the piece of the input), whatever the size of the row or of the block. Nothing is allocated from a size that the
+/// file declares: buffers grow only with the bytes that were really read or decompressed.
 ///
 /// `snappy` is the exception: its format has no streaming interface and the checksum of a block covers the whole plain
 /// payload, so the compressed block and its plain payload are held whole, as in the library this reader replaces
@@ -126,10 +128,16 @@ private:
     void loadSnappyBlock();
 
     /// Appends up to `limit` plain bytes to `plain`, and checks the object count against the size of the whole payload
-    /// when it has ended.
+    /// when it has ended. Not for the null codec, which has no plain copy of the payload.
     void producePlain(size_t limit);
     /// Makes room in `plain` by dropping the consumed bytes, then appends the next window. False if nothing was added.
     bool fillPlain();
+    /// `decodeRows` of every codec but null: from the window of plain bytes in `plain`.
+    void decodeFromPlain(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing);
+    /// `decodeRows` of the null codec: from the input itself. Nothing is copied but the bytes of a value that the end of
+    /// a piece of the input cuts (with the start of the next piece), and the pieces that are too small to be worth a
+    /// call of the decoder, which are gathered into a window of `PLAIN_WINDOW_BYTES`.
+    void decodeFromInput(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing);
     const UInt8 * plainData() const { return plain.data() + plain_begin; }
     size_t plainSize() const { return plain.size() - plain_begin; }
 
@@ -151,12 +159,15 @@ private:
     /// Bytes of the (compressed) payload of the block that are neither handed to the decoder nor skipped.
     UInt64 raw_left = 0;
 
-    /// The plain bytes of the block that were produced and not consumed, from `plain_begin` on.
+    /// The plain bytes of the block that were produced and not consumed, from `plain_begin` on. For the null codec,
+    /// only what `decodeFromInput` copies from the input: the bytes of a value that the end of a piece of the input cuts,
+    /// with the start of the pieces that follow, and, between two calls, the part of that copy that the rows did not use.
     PODArray<UInt8> plain;
     size_t plain_begin = 0;
     /// The plain bytes produced for the block so far, consumed or not.
     UInt64 plain_total = 0;
-    /// Decodes the payload incrementally; none for the null codec (copied) and for snappy (decompressed at once).
+    /// Decodes the payload incrementally; none for the null codec (the decoder reads the input itself) and for snappy
+    /// (decompressed at once).
     std::unique_ptr<detail::PlainStream> stream;
     /// True for a block that is entirely in `plain`.
     bool plain_complete = false;

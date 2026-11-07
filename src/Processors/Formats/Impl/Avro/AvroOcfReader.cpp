@@ -48,6 +48,11 @@ constexpr size_t SYNC_SIZE = 16;
 constexpr size_t MAX_INITIAL_PLAIN_CAPACITY = 64 * 1024;
 /// Input is handed to the zlib family and bzip2 in pieces that fit their 32 bit counters.
 constexpr size_t MAX_CODEC_CHUNK = 1ULL << 30;
+/// Bytes of the next piece of the input that are copied after the bytes of a value that the end of a piece cut, at least.
+constexpr size_t LOOKAHEAD_BYTES = 8 * 1024;
+/// The decoder is given a piece of the input as it is only when the piece has at least this many bytes. A smaller piece is
+/// not worth a call of the decoder, and is copied to a window of `PLAIN_WINDOW_BYTES` with the pieces that follow it.
+constexpr size_t MIN_LENT_PIECE_BYTES = 64 * 1024;
 /// The cap on the file header (magic, metadata, sync marker) that is parsed: the limit the Rust library applies for
 /// `max_header_bytes == 0`, passed explicitly so that the window below can never outgrow it.
 constexpr size_t MAX_HEADER_BYTES = 16ULL << 20;
@@ -182,32 +187,6 @@ private:
     PODArray<UInt8> & buf;
     size_t used;
     const size_t end;
-};
-
-/// The payload itself, for the null codec.
-class NullStream final : public detail::PlainStream
-{
-public:
-    explicit NullStream(detail::RawPayload raw_)
-        : raw(raw_)
-    {
-    }
-
-    void produce(PODArray<UInt8> & out, size_t limit) override
-    {
-        while (limit && raw.left())
-        {
-            const auto piece = raw.peek();
-            const size_t n = std::min(piece.size(), limit);
-            out.insert(piece.data(), piece.data() + n);
-            raw.advance(n);
-            limit -= n;
-        }
-        done = raw.left() == 0;
-    }
-
-private:
-    detail::RawPayload raw;
 };
 
 /// Common part of the decoders that read a compressed stream.
@@ -455,8 +434,6 @@ std::unique_ptr<detail::PlainStream> makeStream(UInt32 codec, detail::RawPayload
 {
     switch (codec)
     {
-        case AVRO_CODEC_NULL:
-            return std::make_unique<NullStream>(raw);
         case AVRO_CODEC_DEFLATE:
             return std::make_unique<DeflateStream>(raw);
         case AVRO_CODEC_ZSTANDARD:
@@ -770,7 +747,7 @@ bool OcfReader::nextBlock()
 
     if (codec == AVRO_CODEC_SNAPPY)
         loadSnappyBlock();
-    else
+    else if (codec != AVRO_CODEC_NULL)
         stream = makeStream(codec, detail::RawPayload(*this));
     return true;
 }
@@ -807,22 +784,8 @@ bool OcfReader::fillPlain()
     return plain.size() > before;
 }
 
-void OcfReader::decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing)
+void OcfReader::decodeFromPlain(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing)
 {
-    if (max_rows > rows_left)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode {} rows of an Avro block with {} left", max_rows, rows_left);
-    if (!plan_begun)
-    {
-        plan.beginBlock();
-        plan_begun = true;
-    }
-    missing.resize(columns.size());
-    for (auto & flags : missing)
-        flags.clear();
-    batch_committed = 0;
-    in_decode = false;
-
-    CurrentThread::checkIfNotCancelled();
     if (!plainSize())
         fillPlain();
 
@@ -853,6 +816,177 @@ void OcfReader::decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & column
     if (consumed > plainSize())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of an Avro window of {} were decoded", consumed, plainSize());
     plain_begin += consumed;
+}
+
+void OcfReader::decodeFromInput(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing)
+{
+    detail::RawPayload raw(*this);
+
+    /// The payload of the null codec is plain already, so the decoder is given the bytes where the input has them, and
+    /// nothing of what the rows skip, or of what they read, is copied. A window is the next contiguous `piece` of the
+    /// payload, which `raw` does not hand out (the input is not asked for more bytes) until the decoder is done with its
+    /// bytes. The input cuts the payload into pieces at places that have nothing to do with the rows, so a piece ends
+    /// inside a value more often than not, and then the window is not contiguous with the next piece: the bytes that
+    /// the decoder has not consumed (`carried`) are copied to the start of `plain`, followed by a copy of the start of the
+    /// next piece (`lookahead`), which is as much as the decoder is shown of it. What it consumed of the copy, it
+    /// consumed of the piece, which goes on after the copy: the decoder continues from that place of the input, without
+    /// the copy, and a value that is not whole in the copy widens it.
+    std::span<const UInt8> piece;
+    /// The bytes of `plain` at the start of the window: what an earlier call, which ended inside the bytes that it had
+    /// taken from the input, left of them.
+    size_t carried = plain.size();
+    size_t lookahead = 0;
+    plain_begin = 0;
+
+    auto current = [&]() -> Plan::InputWindow
+    {
+        if (!carried)
+            return {piece, raw.left() > piece.size()};
+        return {std::span<const UInt8>(plain.data(), plain.size()), raw.left() > lookahead};
+    };
+
+    /// Appends to `plain`, which holds `carried` bytes, `want` bytes of the pieces that follow what was taken from the
+    /// input (fewer if the payload ends): whole pieces (carried too) while they are smaller than what is left to
+    /// append, then the start of the piece that has the rest (`lookahead`). When the pieces of the input are smaller
+    /// than `MIN_LENT_PIECE_BYTES`, which is the case of an input that hands out few bytes at a time, the window is
+    /// `PLAIN_WINDOW_BYTES` of them instead, as it is for the other codecs: a call of the decoder is worth more bytes.
+    auto fill = [&](size_t want)
+    {
+        lookahead = 0;
+        const size_t start = plain.size();
+        for (;;)
+        {
+            piece = raw.peek();
+            if (plain.size() == start && piece.size() < std::max(want, MIN_LENT_PIECE_BYTES))
+                want = std::max(want, PLAIN_WINDOW_BYTES);
+            const size_t room = want - (plain.size() - start);
+            if (piece.size() >= room || raw.left() == piece.size())
+            {
+                lookahead = std::min(piece.size(), room);
+                plain.insert(piece.data(), piece.data() + lookahead);
+                return;
+            }
+            plain.insert(piece.data(), piece.data() + piece.size());
+            carried = plain.size();
+            raw.advance(piece.size());
+        }
+    };
+
+    /// Copies `rest`, the end of the last piece that the decoder was given, to `plain`, and the pieces that follow it.
+    auto carry = [&](std::span<const UInt8> rest)
+    {
+        plain.clear();
+        plain.insert(rest.data(), rest.data() + rest.size());
+        carried = rest.size();
+        raw.advance(rest.size());
+        fill(std::max(carried, LOOKAHEAD_BYTES));
+    };
+
+    /// What an earlier call left in `plain` is the window until the decoder needs more bytes than it has: the input is
+    /// not waited for before that.
+    if (!carried)
+        piece = raw.peek();
+
+    in_decode = true;
+    const UInt64 consumed = plan.decodeStream(
+        current(),
+        [&](UInt64 used) -> Plan::InputWindow
+        {
+            CurrentThread::checkIfNotCancelled();
+            if (!carried)
+            {
+                if (used > piece.size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of an Avro window of {} were decoded", used, piece.size());
+                const auto rest = piece.subspan(used);
+                raw.advance(used);
+                if (rest.empty())
+                    piece = raw.peek();
+                else
+                    carry(rest);
+                return current();
+            }
+
+            if (used > plain.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of an Avro window of {} were decoded", used, plain.size());
+            if (used < carried)
+            {
+                /// The value that the last piece cut is not whole in the copy: widen the copy, by doubling.
+                plain.erase(plain.begin(), plain.begin() + used);
+                carried -= used;
+                if (lookahead < piece.size())
+                {
+                    const size_t widened = std::min(piece.size(), std::max(2 * lookahead, LOOKAHEAD_BYTES));
+                    plain.insert(piece.data() + lookahead, piece.data() + widened);
+                    lookahead = widened;
+                }
+                else
+                {
+                    /// All of the piece is in `plain` already: it is carried too, and the next pieces follow it.
+                    carried += lookahead;
+                    raw.advance(piece.size());
+                    fill(std::max(carried, LOOKAHEAD_BYTES));
+                }
+                return current();
+            }
+
+            const size_t offset = used - carried;
+            const size_t unconsumed = lookahead - offset;
+            plain.clear();
+            carried = 0;
+            lookahead = 0;
+            raw.advance(offset);
+            piece = raw.peek();
+            /// The decoder needs bytes that it has not been shown. If the piece has none, it ends in the same value.
+            if (piece.size() <= unconsumed && raw.left() > piece.size())
+                carry(piece);
+            return current();
+        },
+        max_rows,
+        columns,
+        missing);
+    in_decode = false;
+
+    if (!carried)
+    {
+        if (consumed > piece.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of an Avro window of {} were decoded", consumed, piece.size());
+        raw.advance(consumed);
+    }
+    else if (consumed >= carried)
+    {
+        if (consumed > plain.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of an Avro window of {} were decoded", consumed, plain.size());
+        raw.advance(consumed - carried);
+        plain.clear();
+    }
+    else
+    {
+        /// The rows end inside the bytes that were taken from the input: what follows them is the start of the next call.
+        plain.erase(plain.begin(), plain.begin() + consumed);
+        plain.resize(carried - consumed);
+    }
+}
+
+void OcfReader::decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing)
+{
+    if (max_rows > rows_left)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode {} rows of an Avro block with {} left", max_rows, rows_left);
+    if (!plan_begun)
+    {
+        plan.beginBlock();
+        plan_begun = true;
+    }
+    missing.resize(columns.size());
+    for (auto & flags : missing)
+        flags.clear();
+    batch_committed = 0;
+    in_decode = false;
+
+    CurrentThread::checkIfNotCancelled();
+    if (codec == AVRO_CODEC_NULL)
+        decodeFromInput(plan, max_rows, columns, missing);
+    else
+        decodeFromPlain(plan, max_rows, columns, missing);
     batch_committed = max_rows;
     rows_left -= max_rows;
 }
