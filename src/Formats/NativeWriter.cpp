@@ -18,12 +18,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-
-namespace ProfileEvents
-{
-    extern const Event NativeWriterTypeCacheHits;
-}
 
 namespace DB
 {
@@ -142,10 +136,7 @@ SerializationInfoSettings NativeWriter::getSerializationInfoSettings(UInt64 clie
 NativeWriterTypeCache::Entry & NativeWriter::getCachedType(const DataTypePtr & type)
 {
     if (auto it = type_cache->entries.find(type.get()); it != type_cache->entries.end())
-    {
-        ProfileEvents::increment(ProfileEvents::NativeWriterTypeCacheHits);
         return it->second;
-    }
     NativeWriterTypeCache::Entry entry;
     entry.source = type;
     entry.type = type;

@@ -70,14 +70,12 @@
 namespace ProfileEvents
 {
     extern const Event StreamingExchangeSendBytes;
-    extern const Event NativeWriterTypeCacheHits;
     extern const Event StreamingExchangeReceiveBytes;
     extern const Event StreamingExchangePacketsSent;
     extern const Event StreamingExchangePacketsReceived;
     extern const Event StreamingExchangeSendQueueFullMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
     extern const Event RuntimeFilterReceivesAbandoned;
-    extern const Event NativeReaderTypeCacheHits;
 }
 
 namespace CurrentMetrics
@@ -361,11 +359,10 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
     }
 }
 
-/// A receiver parses each column type once and takes it from its own map for the later packets, and a
-/// sender makes the type name and the serialization of each column type once. The stream has two `UInt64`
-/// columns, which share one type, and a column of `uniq` states, whose type is the costly one to make.
-/// Both source modes must give the same values as without the maps.
-TEST(StreamingExchangeTransport, SenderAndReceiverPrepareEachColumnTypeOnce)
+/// The sender and the receiver keep the types of the columns for the later packets. The stream has two
+/// `UInt64` columns with one type object, and a column of `uniq` states. Both source modes must give the
+/// values that were sent.
+TEST(StreamingExchangeTransport, ColumnsWithASharedTypeAndStatesCrossTheSocket)
 {
     MainThreadStatus::getInstance();
     tryRegisterAggregateFunctions();
@@ -411,9 +408,6 @@ TEST(StreamingExchangeTransport, SenderAndReceiverPrepareEachColumnTypeOnce)
         auto sink = std::make_shared<CollectingSink>(header);
         auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
 
-        const UInt64 hits_before = eventCount(ProfileEvents::NativeReaderTypeCacheHits);
-        const UInt64 writer_hits_before = eventCount(ProfileEvents::NativeWriterTypeCacheHits);
-
         std::optional<int> sending_code;
         std::thread sender([&] { sending_code = run(sending, 1); });
         const auto receiving_code = run(receiving, 1);
@@ -421,12 +415,6 @@ TEST(StreamingExchangeTransport, SenderAndReceiverPrepareEachColumnTypeOnce)
 
         EXPECT_EQ(sending_code, std::nullopt);
         EXPECT_EQ(receiving_code, std::nullopt);
-
-        /// The first packet parses `UInt64` for `a` and takes it from the map for `b`, and parses the
-        /// state type. Each later packet takes all three columns from the map.
-        EXPECT_EQ(eventCount(ProfileEvents::NativeReaderTypeCacheHits) - hits_before, 1 + (packets - 1) * 3);
-        /// The sender has the same `UInt64` type object for `a` and `b`, so it counts the same way.
-        EXPECT_EQ(eventCount(ProfileEvents::NativeWriterTypeCacheHits) - writer_hits_before, 1 + (packets - 1) * 3);
 
         size_t rows = 0;
         UInt64 sum_a = 0;

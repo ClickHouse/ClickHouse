@@ -10,7 +10,6 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/range.h>
-#include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 
 #include <Formats/NativeReader.h>
@@ -23,11 +22,6 @@
 
 #include <Common/logger_useful.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event NativeReaderTypeCacheHits;
-}
 
 namespace DB
 {
@@ -150,10 +144,7 @@ DataTypePtr NativeReader::getTypeByName(const String & type_name)
     if (type_cache)
     {
         if (auto it = type_cache->find(type_name); it != type_cache->end())
-        {
-            ProfileEvents::increment(ProfileEvents::NativeReaderTypeCacheHits);
             return it->second;
-        }
     }
 
     auto type = DataTypeFactory::instance().get(type_name);
