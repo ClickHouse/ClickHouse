@@ -24,8 +24,8 @@ def _create_tables(table_name):
         settings={"database_atomic_wait_for_drop_and_detach_synchronously": True},
     )
 
-    # big number of granules + low total size in bytes = super tiny granules = big min_marks_per_task
-    # => big mark_segment_size will be chosen. it is not required to be big, just not equal to the default
+    # big number of granules => big sum_marks / replicas^2 => mark_segment_size above the smallest one will be chosen.
+    # it is not required to be big, just not equal to the default
     nodes[0].query(
         f"""
         CREATE TABLE {table_name} ON CLUSTER 'parallel_replicas' (value Int64)
@@ -35,7 +35,7 @@ def _create_tables(table_name):
         """
     )
 
-    nodes[0].query(f"INSERT INTO {table_name} SELECT 42 FROM numbers(1000)")
+    nodes[0].query(f"INSERT INTO {table_name} SELECT 42 FROM numbers(10000)")
     nodes[0].query(f"SYSTEM SYNC REPLICA ON CLUSTER 'parallel_replicas' {table_name}")
 
 
@@ -76,7 +76,7 @@ def test_mark_segment_size_communicated_correctly(
 
     nodes[0].query("SYSTEM FLUSH LOGS")
     log_line = nodes[0].grep_in_log(f"{query_id}.*Reading state is fully initialized")
-    assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
+    assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "1024"
 
 
 def test_final_on_parallel_replicas(start_cluster):
