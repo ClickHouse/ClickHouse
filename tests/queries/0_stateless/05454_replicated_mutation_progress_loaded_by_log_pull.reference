@@ -1,0 +1,6 @@
+read that loads the second mutation
+0000000000	1
+0000000001	1
+next read
+0000000000	1	1
+0000000001	1	1

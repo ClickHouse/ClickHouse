@@ -175,6 +175,9 @@ private:
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
 
+    /// Mutations forgotten by `clear`, kept until they are loaded again or their progress state is dropped.
+    StringSet mutations_cleared;
+
     /// Mapping from part name to postpone reason
     mutable std::map<String, String> current_parts_postpone_reasons;
 
