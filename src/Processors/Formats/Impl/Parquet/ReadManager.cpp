@@ -81,7 +81,9 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
 
     row_groups_to_read = std::move(row_groups_to_read_);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
-    reader.preparePrewhere();
+    /// The PREWHERE steps are used only to read row groups.
+    if (!reader.row_groups.empty())
+        reader.preparePrewhere();
 
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
     ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata().row_groups.size() - reader.row_groups.size());
