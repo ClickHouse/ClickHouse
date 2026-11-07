@@ -591,7 +591,7 @@ StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::ite
     const auto uuid = it->second->getStorageID().uuid;
     if (uuid != UUIDHelpers::Nil)
     {
-        if (!DatabaseCatalog::instance().replaceUnusedTableInUUIDMapping(uuid, it->second, loaded, /* other_owners = */ 1))
+        if (!DatabaseCatalog::instance().replaceUnusedTableInUUIDMapping(uuid, it->second, loaded))
             return it->second;
     }
     else if (it->second.use_count() != 1)

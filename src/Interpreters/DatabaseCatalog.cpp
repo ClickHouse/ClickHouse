@@ -1128,7 +1128,7 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     prev_table = std::move(table);
 }
 
-bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table, long other_owners)
+bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table)
 {
     chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     chassert(old_table && new_table);
@@ -1137,8 +1137,8 @@ bool DatabaseCatalog::replaceUnusedTableInUUIDMapping(const UUID & uuid, const S
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end() || it->second.second != old_table)
         return false;
-    /// The mapping itself is one more owner.
-    if (old_table.use_count() != other_owners + 1)
+    /// The mapping and the caller.
+    if (old_table.use_count() != 2)
         return false;
     it->second.second = std::move(new_table);
     return true;
