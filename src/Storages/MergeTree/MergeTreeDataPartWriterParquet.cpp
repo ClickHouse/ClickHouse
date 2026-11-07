@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecMultiple.h>
@@ -557,11 +558,14 @@ void MergeTreeDataPartWriterParquet::writeColumnChunks(size_t column_idx, const 
     const auto & column_to_write = columns_to_write[column_idx];
     const auto & [name, type] = column_to_write.name_and_type;
 
-    ColumnPtr column_in_file = column;
+    /// The Parquet file stores the full values, so the special representations, such as sparse and replicated
+    /// columns, are removed before the uncompressed size is calculated: their `byteSize` counts the offsets or
+    /// the indexes too, and is not the size of the values of the rows.
+    ColumnPtr column_in_file = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
     DataTypePtr type_in_file = type;
     if (column_to_write.binary)
     {
-        auto full_column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+        ColumnPtr full_column = column_in_file;
         auto serialization = type->getDefaultSerialization();
         auto binary_column = ColumnString::create();
         auto & chars = binary_column->getChars();
