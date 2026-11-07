@@ -45,6 +45,7 @@ protected:
 private:
     ContextPtr context;
     SharedHeader source_header;
+    IPartitionStrategy::PartitionExpressionActionsAndColumnName partition_key_actions;
 
     absl::flat_hash_map<std::string_view, SinkPtr> partition_id_to_sink;
     HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;

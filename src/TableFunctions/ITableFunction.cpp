@@ -67,6 +67,13 @@ void ITableFunction::checkSourceTableAccess(const ContextPtr & context, const St
     context->checkAccess(access_type, table_id);
 }
 
+void ITableFunction::checkCreateTemporaryTableAccess(ContextPtr context, bool is_insert_query) const
+{
+    auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
+    if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+}
+
 void ITableFunction::checkSourceStorageAccess(
     const ContextPtr & context, const StoragePtr & storage, const StorageID & table_id, AccessType access_type) const
 {
@@ -92,6 +99,10 @@ ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr 
     checkSourceAccess(context, /*is_insert_query*/ false);
     checkEngineAccess(context);
     checkSourceObjectAccess(context, /*for_structure=*/ true);
+    /// Resolving the structure may access the source (e.g. schema inference fetches a URL), so it must be
+    /// gated in the same way as `execute`: otherwise `DESCRIBE TABLE url(...)` would let a user who cannot
+    /// run the table function (e.g. under `readonly = 1`) make the server request an endpoint.
+    checkCreateTemporaryTableAccess(context, /*is_insert_query*/ false);
     return getActualTableStructure(context, is_insert_query);
 }
 
@@ -107,9 +118,8 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     checkEngineAccess(context);
     checkSourceObjectAccess(context, /*for_structure=*/ false);
 
-    auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
-    if (check_create_temporary_table && (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly)))
-        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+    if (check_create_temporary_table)
+        checkCreateTemporaryTableAccess(context, is_insert_query);
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
