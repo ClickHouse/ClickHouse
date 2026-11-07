@@ -18,6 +18,8 @@ public:
     std::string getName() const override;
     std::span<ISpillable * const> getSpillables() override;
 
+    bool hasVirtualRowConversions() const;
+
     Status prepare() override;
 
     /// The source of the lazy branch of lazy materialization reads the rows already selected by the main branch,
