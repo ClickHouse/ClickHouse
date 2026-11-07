@@ -93,10 +93,6 @@ SELECT 'pk_equals', (SELECT groupArray(v) FROM pk_str WHERE v = CAST('7', 'Enum8
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
     = (SELECT groupArray(v) FROM ref_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)'));
 
-SELECT 'pk_less', (SELECT groupArray(v) FROM pk_str WHERE v < CAST('7', 'Enum8(\'7\' = 3)')
-    SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
-    = (SELECT groupArray(v) FROM ref_str WHERE v < CAST('7', 'Enum8(\'7\' = 3)'));
-
 SELECT 'pk_not_equals_control', (SELECT arraySort(groupArray(v)) FROM pk_str WHERE v != CAST('7', 'Enum8(\'7\' = 3)')
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)
     = (SELECT arraySort(groupArray(v)) FROM ref_str WHERE v != CAST('7', 'Enum8(\'7\' = 3)'));

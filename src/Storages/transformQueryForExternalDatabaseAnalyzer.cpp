@@ -116,8 +116,10 @@ bool hasResultType(const QueryTreeNodePtr & node)
 }
 
 /// Rewrites each `Enum` leaf of the size-1 constant `column` as a comparison with `operand_type` reads it: the name
-/// against a string, the value against a number. Empty if an `Enum` leaf faces another type.
-std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type)
+/// against a string, the value against a number. Empty if an `Enum` leaf faces another type, or a string when
+/// `string_operand_allowed` is false.
+std::optional<ColumnWithTypeAndName> renderEnumLeaves(
+    const ColumnPtr & column, const DataTypePtr & type, const DataTypePtr & operand_type, bool string_operand_allowed = true)
 {
     if (!holdsEnumValue(column, type))
         return ColumnWithTypeAndName{column, type, ""};
@@ -133,7 +135,8 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
         DataTypes types;
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
         {
-            auto element = renderEnumLeaves(tuple_column.getColumnPtr(i), tuple_type->getElement(i), operand_tuple_type->getElement(i));
+            auto element = renderEnumLeaves(
+                tuple_column.getColumnPtr(i), tuple_type->getElement(i), operand_tuple_type->getElement(i), string_operand_allowed);
             if (!element)
                 return {};
             columns.push_back(element->column);
@@ -145,7 +148,8 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
         return ColumnWithTypeAndName{ColumnTuple::create(std::move(columns)), result_type, ""};
     }
 
-    if (!isEnum(value->type) || !isStringOrNumber(operand_value_type))
+    if (!isEnum(value->type) || !isStringOrNumber(operand_value_type)
+        || (!string_operand_allowed && isStringOrFixedString(operand_value_type)))
         return {};
 
     DataTypePtr result_type = isStringOrFixedString(operand_value_type)
@@ -265,20 +269,22 @@ private:
         else if (name == "equals" || name == "notEquals" || name == "less" || name == "greater"
             || name == "lessOrEquals" || name == "greaterOrEquals")
         {
+            /// An ordering of an `Enum` constant and a string compares by value, not as strings.
+            const bool string_operand_allowed = name == "equals" || name == "notEquals";
             for (size_t i = 0; i < 2; ++i)
-                if (auto constant = renderComparisonConstant(arguments[i], arguments[1 - i]))
+                if (auto constant = renderComparisonConstant(arguments[i], arguments[1 - i], string_operand_allowed))
                     arguments[i] = std::move(constant);
         }
     }
 
-    static QueryTreeNodePtr renderComparisonConstant(const QueryTreeNodePtr & argument, const QueryTreeNodePtr & operand)
+    static QueryTreeNodePtr renderComparisonConstant(const QueryTreeNodePtr & argument, const QueryTreeNodePtr & operand, bool string_operand_allowed)
     {
         const auto * constant_node = argument->as<ConstantNode>();
         if (!constant_node || operand->as<ConstantNode>())
             return nullptr;
 
         const auto & column = constant_node->getColumn()->getDataColumnPtr();
-        auto rendered = renderEnumLeaves(column, constant_node->getResultType(), operand->getResultType());
+        auto rendered = renderEnumLeaves(column, constant_node->getResultType(), operand->getResultType(), string_operand_allowed);
         if (!rendered || rendered->column == column)
             return nullptr;
         return std::make_shared<ConstantNode>(ColumnConst::create(rendered->column, 1), rendered->type);
