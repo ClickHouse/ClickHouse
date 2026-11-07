@@ -1,0 +1,117 @@
+{
+  "location": "data/persistent/name_mapping/warehouse_1/mydb/t1",
+  "table-uuid": "85f616f1-4c4e-412a-9119-bd72cf73c9ba",
+  "last-updated-ms": 1774544137307,
+  "last-column-id": 2,
+  "schemas": [
+    {
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "a",
+          "type": "int",
+          "required": true
+        },
+        {
+          "id": 2,
+          "name": "b",
+          "type": "long",
+          "required": false
+        }
+      ],
+      "schema-id": 0,
+      "identifier-field-ids": []
+    }
+  ],
+  "current-schema-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "default-spec-id": 0,
+  "last-partition-id": 999,
+  "properties": {
+    "schema.name-mapping.default": "[]"
+  },
+  "current-snapshot-id": 6597550917742534971,
+  "snapshots": [
+    {
+      "snapshot-id": 6597550917742534971,
+      "timestamp-ms": 1745842837953,
+      "manifest-list": "data/persistent/name_mapping/warehouse_1/mydb/t1/metadata/snap-6597550917742534971-1-ac2759da-80ce-454e-8d99-566991744fd2.avro",
+      "summary": {
+        "operation": "append",
+        "added-data-files": "1",
+        "added-records": "10000",
+        "added-files-size": "29269",
+        "changed-partition-count": "1",
+        "total-records": "10000",
+        "total-files-size": "29269",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "schema-id": 0
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 6597550917742534971,
+      "timestamp-ms": 1745842837953
+    }
+  ],
+  "metadata-log": [
+    {
+      "metadata-file": "data/persistent/name_mapping/warehouse_1/mydb/t1/metadata/v1.metadata.json",
+      "timestamp-ms": 1745842837396
+    },
+    {
+      "metadata-file": "data/persistent/name_mapping/warehouse_1/mydb/t1/metadata/v2.metadata.json",
+      "timestamp-ms": 1745842837953
+    },
+    {
+      "metadata-file": "data/persistent/name_mapping/warehouse_1/mydb/t1/metadata/v3.metadata.json",
+      "timestamp-ms": 1745842838002
+    }
+  ],
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "default-sort-order-id": 0,
+  "refs": {
+    "main": {
+      "snapshot-id": 6597550917742534971,
+      "type": "branch"
+    }
+  },
+  "statistics": [],
+  "partition-statistics": [],
+  "format-version": 1,
+  "schema": {
+    "type": "struct",
+    "fields": [
+      {
+        "id": 1,
+        "name": "a",
+        "type": "int",
+        "required": true
+      },
+      {
+        "id": 2,
+        "name": "b",
+        "type": "long",
+        "required": false
+      }
+    ],
+    "schema-id": 0,
+    "identifier-field-ids": []
+  },
+  "partition-spec": []
+}

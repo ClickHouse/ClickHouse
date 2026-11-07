@@ -1,0 +1,78 @@
+{
+	"format-version": 1,
+	"table-uuid": "8f3adae2-03ef-4e06-9f33-663ab7adcc41",
+	"location": "data/persistent/iceberg_v1_deprecated/default/legacy_v1",
+	"last-updated-ms": 1786003391399,
+	"last-column-id": 3,
+	"schema": {
+		"type": "struct",
+		"schema-id": 0,
+		"fields": [
+			{
+				"id": 1,
+				"name": "id",
+				"required": false,
+				"type": "int"
+			},
+			{
+				"id": 2,
+				"name": "category",
+				"required": false,
+				"type": "string"
+			},
+			{
+				"id": 3,
+				"name": "amount",
+				"required": false,
+				"type": "int"
+			}
+		]
+	},
+	"current-schema-id": 0,
+	"schemas": [
+		{
+			"type": "struct",
+			"schema-id": 0,
+			"fields": [
+				{
+					"id": 1,
+					"name": "id",
+					"required": false,
+					"type": "int"
+				},
+				{
+					"id": 2,
+					"name": "category",
+					"required": false,
+					"type": "string"
+				},
+				{
+					"id": 3,
+					"name": "amount",
+					"required": false,
+					"type": "int"
+				}
+			]
+		}
+	],
+	"partition-spec": [
+		{
+			"name": "category",
+			"transform": "identity",
+			"source-id": 2,
+			"field-id": 1000
+		}
+	],
+	"last-partition-id": 1000,
+	"properties": {
+		"owner": "thijs",
+		"write.parquet.compression-codec": "zstd"
+	},
+	"current-snapshot-id": -1,
+	"refs": {},
+	"snapshots": [],
+	"statistics": [],
+	"partition-statistics": [],
+	"snapshot-log": [],
+	"metadata-log": []
+}
