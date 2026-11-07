@@ -88,6 +88,13 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
         if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
             used_projection_columns_indexes.insert(i);
     }
+
+    if (query_node.hasOrderBy())
+    {
+        for (const auto & sort_node : query_node.getOrderBy().getNodes())
+            if (auto projection_index = sort_node->as<SortNode &>().getProjectionIndex())
+                used_projection_columns_indexes.insert(*projection_index);
+    }
 }
 
 }

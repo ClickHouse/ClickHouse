@@ -946,8 +946,9 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     for (auto & node : node_list_typed.getNodes())
     {
         auto * node_to_replace = &node;
+        auto * sort_node = node->as<SortNode>();
 
-        if (auto * sort_node = node->as<SortNode>())
+        if (sort_node)
             node_to_replace = &sort_node->getExpression();
 
         auto * constant_node = (*node_to_replace)->as<ConstantNode>();
@@ -989,6 +990,8 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 scope.scope_node->formatASTForErrorMessage());
 
         --pos;
+        if (sort_node)
+            sort_node->setProjectionIndex(pos);
         *node_to_replace = projection_nodes[pos]->clone();
         if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
         {
@@ -7876,6 +7879,42 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
                 "Empty list of columns in projection. In scope {}",
                 scope.scope_node->formatASTForErrorMessage());
+    }
+
+    if (query_node_typed.hasOrderBy())
+    {
+        const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+        chassert(projection_nodes.size() == projection_columns.size());
+        for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
+        {
+            auto & sort_node_typed = sort_node->as<SortNode &>();
+            if (sort_node_typed.getProjectionIndex() || !containsCorrelatedSubquery(sort_node_typed.getExpression()))
+                continue;
+
+            std::optional<size_t> projection_index;
+            for (size_t i = 0; i < projection_nodes.size(); ++i)
+            {
+                if (projection_nodes[i] == sort_node_typed.getExpression())
+                {
+                    projection_index = i;
+                    break;
+                }
+
+                if (sort_node_typed.getColumnName().empty() || projection_columns[i].name != sort_node_typed.getColumnName())
+                    continue;
+
+                if (projection_index && !projection_nodes[*projection_index]->isEqual(*projection_nodes[i]))
+                {
+                    projection_index.reset();
+                    break;
+                }
+                if (!projection_index)
+                    projection_index = i;
+            }
+
+            if (projection_index)
+                sort_node_typed.setProjectionIndex(*projection_index);
+        }
     }
 
     /** Resolve nodes with duplicate aliases.
