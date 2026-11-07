@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
@@ -69,6 +70,11 @@ SerializationPtr ISerialization::pooled(UInt128 hash, absl::FunctionRef<ISeriali
         obj->cached_hash = hash;
         return obj;
     });
+}
+
+MutableColumnPtr ISerialization::createColumnForDeserialization(const IDataType & type) const
+{
+    return type.createColumn();
 }
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)

@@ -36,9 +36,9 @@ ISerialization::KindStack SerializationDetached::getKindStack() const
     return kind_stack;
 }
 
-MutableColumnPtr SerializationDetached::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationDetached::createColumnForDeserialization(const IDataType & type) const
 {
-    return ColumnBLOB::create(nested->wrapColumnForDeserialization(std::move(column)));
+    return ColumnBLOB::create(nested->createColumnForDeserialization(type));
 }
 
 

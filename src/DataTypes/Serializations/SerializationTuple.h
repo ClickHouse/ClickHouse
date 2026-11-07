@@ -25,8 +25,8 @@ public:
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
 
-    /// Wrap each tuple element into the layout its serialization deserializes into (e.g. a sparse element).
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
+    /// Create each tuple element in the layout its serialization deserializes into (e.g. a sparse element).
+    MutableColumnPtr createColumnForDeserialization(const IDataType & type) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;

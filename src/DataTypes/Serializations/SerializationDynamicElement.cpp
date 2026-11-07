@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NullableUtils.h>
@@ -292,23 +293,19 @@ size_t SerializationDynamicElement::allocatedBytes() const
     return sizeof(*this) + dynamic_element_name.capacity() + nested_subcolumn.capacity();
 }
 
-MutableColumnPtr SerializationDynamicElement::wrapColumnForDeserialization(MutableColumnPtr column) const
+MutableColumnPtr SerializationDynamicElement::createColumnForDeserialization(const IDataType & type) const
 {
     /// The null map subcolumn is a UInt8 column read through SerializationVariantElementNullMap;
     /// nested_serialization serializes the requested type, which is not what is read here.
     if (is_null_map_subcolumn)
-        return column;
+        return type.createColumn();
 
     /// Same level ownership as in SerializationVariantElement, which this delegates to at read time.
-    if (isColumnNullable(*column))
-    {
-        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
         return ColumnNullable::create(
-            nested_serialization->wrapColumnForDeserialization(nullable.getNestedColumnPtr()->cloneEmpty()),
-            nullable.getNullMapColumnPtr()->cloneEmpty());
-    }
+            nested_serialization->createColumnForDeserialization(*nullable_type->getNestedType()), ColumnUInt8::create());
 
-    return nested_serialization->wrapColumnForDeserialization(std::move(column));
+    return nested_serialization->createColumnForDeserialization(type);
 }
 
 }
