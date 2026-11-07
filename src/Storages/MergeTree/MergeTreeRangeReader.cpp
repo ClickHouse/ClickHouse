@@ -87,6 +87,7 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
     const auto & filter_data = filter.getData();
+    const ColumnUInt64 * sparse_indices = filter.getSparseIndices();
 
     for (auto & column : columns)
     {
@@ -103,6 +104,12 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 auto mutable_column = IColumn::mutate(std::move(column));
                 mutable_column->filter(filter_data);
                 column = std::move(mutable_column);
+            }
+            else if (const auto * column_sparse = sparse_indices ? typeid_cast<const ColumnSparse *>(column.get()) : nullptr;
+                     column_sparse && column_sparse->getOffsetsData() == sparse_indices->getData())
+            {
+                /// The filter keeps exactly the non-default rows of this column, so `index` shares its values.
+                column = column_sparse->index(*sparse_indices, 0);
             }
             else
             {
