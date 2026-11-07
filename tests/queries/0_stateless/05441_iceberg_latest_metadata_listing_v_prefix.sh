@@ -74,41 +74,46 @@ $CLIENT --query "
     SELECT 'mixed', count() FROM icebergS3(s3_conn, filename = '${P3}');"
 
 # The copies of `${P3}`'s metadata files keep its location, which a read re-roots under the copy's
-# directory, so its manifest lists and manifests are copied along.
-copy_manifests()
+# directory, so the files they reference are copied first and a failed copy stops the rest.
+copy_files()
 {
-    for f in $($CLIENT --query "SELECT _file FROM s3(s3_conn, filename = '${P3}/metadata/*.avro', format = 'One') ORDER BY _file"); do
-        copy_object "${P3}/metadata/${f}" "$1/metadata/${f}"
+    local f files
+    files=$($CLIENT --query "SELECT _file FROM s3(s3_conn, filename = '${P3}/$1/$2', format = 'One') ORDER BY _file") || return 1
+    for f in $files; do
+        copy_object "${P3}/$1/${f}" "$3/$1/${f}" || return 1
     done
 }
 
-# A directory with only `<N>-<uuid>` files is listed whole. Its data files are not copied, so the
-# count is taken from the snapshot summary.
+copy_table()
+{
+    copy_files data '*' "$1" \
+        && copy_files metadata '*.avro' "$1" \
+        && copy_object "${P3}/metadata/v2.metadata.json" "$1/metadata/$2" \
+        && copy_object "${P3}/metadata/v3.metadata.json" "$1/metadata/$3"
+}
+
+# A directory with only `<N>-<uuid>` files is listed whole.
 P4="${PREFIX}/uuid_named"
-copy_object "${P3}/metadata/v2.metadata.json" "${P4}/metadata/00001-${UUID_A}.metadata.json"
-copy_object "${P3}/metadata/v3.metadata.json" "${P4}/metadata/00002-${UUID_B}.metadata.json"
-copy_manifests "${P4}"
+copy_table "${P4}" "00001-${UUID_A}.metadata.json" "00002-${UUID_B}.metadata.json"
 $CLIENT --use_iceberg_metadata_files_cache=0 --query "
     SELECT 'uuid-named', count() FROM icebergS3(s3_conn, filename = '${P4}')
-    SETTINGS optimize_trivial_count_query = 1"
+    SETTINGS optimize_trivial_count_query = 0"
 
 # Without `iceberg_list_only_v_prefixed_metadata_files` (the default) or ranking by `last-updated-ms`,
 # every file is a candidate: the `<N>-<uuid>` file committed last is selected.
 P6="${PREFIX}/by_last_updated_ms"
-copy_object "${P3}/metadata/v2.metadata.json" "${P6}/metadata/v1.metadata.json"
-copy_object "${P3}/metadata/v3.metadata.json" "${P6}/metadata/00002-${UUID_B}.metadata.json"
-copy_manifests "${P6}"
+copy_table "${P6}" v1.metadata.json "00002-${UUID_B}.metadata.json"
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
     SELECT 'default', count() FROM icebergS3(s3_conn, filename = '${P6}')
-    SETTINGS optimize_trivial_count_query = 1"
+    SETTINGS optimize_trivial_count_query = 0"
 $CLIENT --use_iceberg_metadata_files_cache=0 --query "
     SELECT 'v file only', count() FROM icebergS3(s3_conn, filename = '${P6}')
-    SETTINGS optimize_trivial_count_query = 1;
+    SETTINGS optimize_trivial_count_query = 0;
     SELECT 'all files', count() FROM icebergS3(s3_conn, filename = '${P6}')
-    SETTINGS optimize_trivial_count_query = 1, iceberg_list_only_v_prefixed_metadata_files = 0;
+    SETTINGS optimize_trivial_count_query = 0, iceberg_list_only_v_prefixed_metadata_files = 0;
     SELECT 'by last-updated-ms', count()
     FROM icebergS3(s3_conn, filename = '${P6}', SETTINGS iceberg_recent_metadata_file_by_last_updated_ms_field = 1)
-    SETTINGS optimize_trivial_count_query = 1;"
+    SETTINGS optimize_trivial_count_query = 0;"
 
 # DROP PARTITION resolves like INSERT: a directory holding both namings is refused and left as it is.
 P5="${PREFIX}/drop_partition"
