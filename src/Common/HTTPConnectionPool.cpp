@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HTTPConnectionInfo.h>
 #include <Common/HostResolvePool.h>
@@ -28,10 +29,13 @@
 #include <Poco/Timespan.h>
 
 #include <climits>
+#if !defined(OS_WINDOWS)
+/// On Windows the socket API comes from `winsock2.h`, which `Poco/Net/SocketDefs.h` includes.
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#endif
 
 #include <queue>
 #include <unordered_set>
@@ -700,6 +704,10 @@ private:
         {
             int fd = -1;
             UInt64 inode = 0;
+#if defined(OS_WINDOWS)
+            /// A Windows `SOCKET` is not a file descriptor and has no inode, so the socket gets no
+            /// identity here and `fd` stays negative.
+#else
             try
             {
                 fd = Session::socket().impl()->sockfd();
@@ -713,6 +721,7 @@ private:
             catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
             {
             }
+#endif
 
             /// Not every OS exposes an inode for a socket: on macOS `fstat` succeeds with `st_ino`
             /// set to zero. The inode is then reported as zero, but the socket still gets its
@@ -753,8 +762,8 @@ private:
         /// instead of `Poco::Net::Socket::address`, which throws for a socket that is not bound.
         UInt16 getLocalPort()
         {
-            const int fd = Session::socket().impl()->sockfd();
-            if (fd < 0)
+            const auto fd = Session::socket().impl()->sockfd();
+            if (fd == POCO_INVALID_SOCKET)
                 return 0;
 
             sockaddr_storage address{};
@@ -1401,7 +1410,7 @@ class HTTPConnectionPools::Impl
 {
 private:
     const size_t DEFAULT_WIPE_TIMEOUT_SECONDS = 10 * 60;
-    const Poco::Timespan wipe_timeout = Poco::Timespan(DEFAULT_WIPE_TIMEOUT_SECONDS, 0);
+    const Poco::Timespan wipe_timeout = timespanFromSeconds(DEFAULT_WIPE_TIMEOUT_SECONDS);
 
     ConnectionGroup::Ptr disk_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::DISK);
     ConnectionGroup::Ptr storage_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::STORAGE);

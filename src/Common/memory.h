@@ -46,7 +46,7 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
     return __real_malloc(size);
 }
 
-inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
+inline ALWAYS_INLINE size_t alignmentForAlignedNew(std::align_val_t align) noexcept
 {
     size_t alignment = static_cast<size_t>(align);
 #if !USE_JEMALLOC
@@ -54,6 +54,18 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align
     /// Mirror libc++'s `operator_new_aligned_impl` in `contrib/llvm-project/libcxx/src/new.cpp`.
     if (alignment < sizeof(void *))
         alignment = sizeof(void *);
+#endif
+    return alignment;
+}
+
+inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
+{
+    size_t alignment = alignmentForAlignedNew(align);
+#if defined(OS_WINDOWS)
+    /// `alignedAlloc` would serve zero bytes with one anyway; doing it before rounding up keeps the
+    /// size of the block equal to what `getActualAllocationSize` charged for it.
+    if (size == 0)
+        size = 1;
 #endif
     return __real_aligned_alloc(alignment, alignUp(size, alignment));
 }
@@ -110,6 +122,15 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
     {
         actual_size = je_nallocx(size_for_nallocx, 0);
     }
+#elif defined(OS_WINDOWS)
+    /// Charge exactly the size of the block `newNoExcept` requests, because that is what
+    /// `alignedAllocationSize` reports back when an unsized `operator delete` frees it - and on
+    /// Windows every `operator delete` is unsized. Zero bytes are served with one.
+    if (actual_size == 0) [[unlikely]]
+        actual_size = 1;
+
+    if constexpr (sizeof...(TAlign) == 1)
+        actual_size = alignUp(actual_size, alignmentForAlignedNew(align...));
 #endif
 
     return actual_size;
@@ -178,6 +199,15 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 #    elif defined(OS_DARWIN)
         else
             actual_size = malloc_size(ptr);
+#    elif defined(OS_WINDOWS)
+        /// `__mingw_aligned_msize` has to be told the alignment the block was allocated with.
+        else if (ptr != nullptr)
+        {
+            if constexpr (sizeof...(TAlign) == 1)
+                actual_size = DB::alignedAllocationSize(ptr, alignmentForAlignedNew(align...));
+            else
+                actual_size = DB::alignedAllocationSize(ptr, DB::DEFAULT_MALLOC_ALIGNMENT);
+        }
 #    endif
 #endif
         trace = CurrentMemoryTracker::free(actual_size);

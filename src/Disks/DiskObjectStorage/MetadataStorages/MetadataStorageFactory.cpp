@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/Macros.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
@@ -141,13 +142,13 @@ static void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         checkSingleLocation(cluster);
 
         auto metadata_path = config.getString(config_prefix + ".metadata_path",
-                                              fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
+                                              pathToGenericString(pathFromString(Context::getGlobalContextInstance()->getPath()) / "disks" / name / ""));
         auto metadata_keep_free_space_bytes = config.getUInt64(config_prefix + ".metadata_keep_free_space_bytes", 0);
 
         if (run_local_paths_check && config.has(config_prefix + ".metadata_path"))
             checkCustomLocalDiskPath(metadata_path, Context::getGlobalContextInstance());
 
-        fs::create_directories(metadata_path);
+        fs::create_directories(pathFromString(metadata_path));
         const auto db_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);

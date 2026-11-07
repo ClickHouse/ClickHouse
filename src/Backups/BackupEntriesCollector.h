@@ -1,6 +1,5 @@
 #pragma once
 
-#include <filesystem>
 #include <queue>
 #include <Backups/BackupSettings.h>
 #include <Core/QualifiedTableName.h>
@@ -155,7 +154,7 @@ private:
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;
-    std::filesystem::path root_path_in_backup;
+    String root_path_in_backup;
 
     struct DatabaseInfo
     {
@@ -242,7 +241,7 @@ private:
         TableLockHolder table_lock;
         ASTPtr create_table_query;
         String metadata_path_in_backup;
-        std::filesystem::path data_path_in_backup;
+        String data_path_in_backup;
         std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
         bool should_backup_data = true;

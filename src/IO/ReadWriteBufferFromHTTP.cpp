@@ -876,7 +876,9 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
 
 void ReadWriteBufferFromHTTP::setReadUntilPosition(size_t until)
 {
-    until = std::max(until, 1ul);
+    /// Not `1ul`: `unsigned long` is 32-bit on LLP64 (Windows), which fails the `std::max`
+    /// template deduction against `size_t`.
+    until = std::max<size_t>(until, 1);
     if (read_range.end && *read_range.end + 1 == until)
         return;
     read_range.end = until - 1;

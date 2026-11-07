@@ -21,7 +21,9 @@
 #include "Poco/Foundation.h"
 
 
-#if   defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#    include "Poco/Process_WIN32U.h"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/Process_UNIX.h"
 #endif
 

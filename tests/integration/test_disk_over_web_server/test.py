@@ -410,3 +410,107 @@ def test_config_reload(cluster):
 
     node1.query("SYSTEM RELOAD CONFIG")
     node1.query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_escaped_file_names(cluster):
+    # Stream file names are escaped with `escapeForFileName`, so a quoted or non-ASCII column
+    # produces a physical file whose name already contains `%XX`. The uploader has to percent-encode
+    # it once more when it becomes a URL path, otherwise the file lands on the web server under its
+    # decoded name and the web disk cannot address it.
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query("DROP TABLE IF EXISTS data_escaped SYNC")
+    node1.query(
+        "CREATE TABLE data_escaped (id Int32, `a-b` Int32, `тест` Int32) "
+        "ENGINE = MergeTree() ORDER BY id "
+        "SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1"
+    )
+    node1.query(
+        "INSERT INTO data_escaped SELECT number, number + 1, number + 2 FROM numbers(1000)"
+    )
+
+    metadata_path = node1.query(
+        "SELECT data_paths FROM system.tables WHERE name='data_escaped'"
+    )
+    metadata_path = metadata_path[metadata_path.find("/") : metadata_path.rfind("/") + 1]
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "/usr/bin/clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path {}".format(
+                metadata_path
+            ),
+        ],
+        user="root",
+    )
+    uuid = metadata_path.split("/")[3]
+
+    node2.query("DROP TABLE IF EXISTS test_escaped SYNC")
+    node2.query(
+        "CREATE TABLE test_escaped UUID '{}' (id Int32, `a-b` Int32, `тест` Int32) "
+        "ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'".format(uuid)
+    )
+
+    assert node2.query(
+        "SELECT sum(`a-b`), sum(`тест`) FROM test_escaped"
+    ) == node1.query("SELECT sum(`a-b`), sum(`тест`) FROM data_escaped")
+
+    node2.query("DROP TABLE test_escaped SYNC")
+    node1.query("DROP TABLE data_escaped SYNC")
+
+
+def test_projection(cluster):
+    # A projection is stored in a directory named `p.proj` inside its part. The uploader has to descend
+    # into it, and the web disk has to resolve `p.proj` as a directory even though the name has an extension.
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query("DROP TABLE IF EXISTS data_projection SYNC")
+    node1.query(
+        "CREATE TABLE data_projection (id Int32, v Int32, PROJECTION p (SELECT v, sum(id) GROUP BY v)) "
+        "ENGINE = MergeTree() ORDER BY id "
+        "SETTINGS storage_policy = 'def', min_bytes_for_wide_part=1"
+    )
+    node1.query(
+        "INSERT INTO data_projection SELECT number, number % 10 FROM numbers(1000)"
+    )
+
+    metadata_path = node1.query(
+        "SELECT data_paths FROM system.tables WHERE name='data_projection'"
+    )
+    metadata_path = metadata_path[
+        metadata_path.find("/") : metadata_path.rfind("/") + 1
+    ]
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "/usr/bin/clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path {}".format(
+                metadata_path
+            ),
+        ],
+        user="root",
+    )
+    uuid = metadata_path.split("/")[3]
+
+    node2.query("DROP TABLE IF EXISTS test_projection SYNC")
+    node2.query(
+        "CREATE TABLE test_projection UUID '{}' (id Int32, v Int32, PROJECTION p (SELECT v, sum(id) GROUP BY v)) "
+        "ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'".format(uuid)
+    )
+
+    assert (
+        node2.query(
+            "SELECT name, is_broken FROM system.projection_parts WHERE table = 'test_projection' AND active"
+        )
+        == "p\t0\n"
+    )
+
+    query = "SELECT v, sum(id) FROM {} GROUP BY v ORDER BY v SETTINGS optimize_use_projections = 1, force_optimize_projection = 1"
+    assert node2.query(query.format("test_projection")) == node1.query(
+        query.format("data_projection")
+    )
+
+    node2.query("DROP TABLE test_projection SYNC")
+    node1.query("DROP TABLE data_projection SYNC")

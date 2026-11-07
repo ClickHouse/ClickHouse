@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h>
 
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
@@ -51,10 +52,10 @@ namespace
     /// Converts a path to an absolute path and append it with a separator.
     String makeDirectoryPathCanonical(const String & directory_path)
     {
-        auto canonical_directory_path = std::filesystem::weakly_canonical(directory_path);
+        auto canonical_directory_path = std::filesystem::weakly_canonical(pathFromString(directory_path));
         if (canonical_directory_path.has_filename())
             canonical_directory_path += std::filesystem::path::preferred_separator;
-        return canonical_directory_path;
+        return pathToGenericString(canonical_directory_path);
     }
 }
 
@@ -78,7 +79,7 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
 
     try
     {
-        if (check_file_exists && !fs::exists(path))
+        if (check_file_exists && !fs::exists(pathFromString(path)))
             return nullptr;
 
         /// There is .sql file with user defined object creation statement.
@@ -130,7 +131,7 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
 {
     LOG_INFO(log, "Loading user defined objects from {}", dir_path);
 
-    if (!std::filesystem::exists(dir_path))
+    if (!std::filesystem::exists(pathFromString(dir_path)))
     {
         LOG_DEBUG(log, "The directory for user defined objects ({}) does not exist: nothing to load", dir_path);
         return;
@@ -180,8 +181,9 @@ void UserDefinedSQLObjectsDiskStorage::reloadObject(UserDefinedSQLObjectType obj
 void UserDefinedSQLObjectsDiskStorage::createDirectory()
 {
     std::error_code create_dir_error_code;
-    fs::create_directories(dir_path, create_dir_error_code);
-    if (!fs::exists(dir_path) || !fs::is_directory(dir_path) || create_dir_error_code)
+    auto dir = pathFromString(dir_path);
+    fs::create_directories(dir, create_dir_error_code);
+    if (!fs::exists(dir) || !fs::is_directory(dir) || create_dir_error_code)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
                         dir_path, create_dir_error_code.message());
 }
@@ -200,7 +202,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Storing user-defined object {} to file {}", backQuote(object_name), file_path);
 
-    if (fs::exists(file_path))
+    if (fs::exists(pathFromString(file_path)))
     {
         if (throw_if_exists)
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "File {} for user-defined function '{}' already exists", file_path, object_name);
@@ -227,13 +229,13 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
         out.close();
 
         if (replace_if_exists)
-            fs::rename(temp_file_path, file_path);
+            fs::rename(pathFromString(temp_file_path), pathFromString(file_path));
         else
             renameNoReplace(temp_file_path, file_path);
     }
     catch (...)
     {
-        fs::remove(temp_file_path);
+        fs::remove(pathFromString(temp_file_path));
         throw;
     }
 
@@ -251,7 +253,7 @@ bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
     String file_path = getFilePath(object_type, object_name);
     LOG_DEBUG(log, "Removing user defined object {} stored in file {}", backQuote(object_name), file_path);
 
-    bool existed = fs::remove(file_path);
+    bool existed = fs::remove(pathFromString(file_path));
 
     if (!existed)
     {

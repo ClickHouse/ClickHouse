@@ -1,7 +1,13 @@
+#include <cstdio>
 #include <cstdlib>
 #include <string_view>
-#include <unistd.h>
-#include <sys/ioctl.h>
+#if defined(OS_WINDOWS)
+#  include <io.h>
+#  include <Poco/UnWindows.h>
+#else
+#  include <unistd.h>
+#  include <sys/ioctl.h>
+#endif
 #if defined(OS_SUNOS)
 #  include <sys/termios.h>
 #endif
@@ -16,8 +22,44 @@ namespace DB::ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
+/// `in_fd` is used on POSIX only: see the comment on the Windows branch below.
+std::pair<uint16_t, uint16_t> getTerminalSize([[maybe_unused]] int in_fd, int err_fd)
 {
+#if defined(OS_WINDOWS)
+    /// Windows has no `TIOCGWINSZ`; the size is in the console's screen-buffer info. Take it
+    /// from `srWindow`, the visible window, and not from `dwSize`, the screen buffer - the
+    /// latter includes the scrollback and is typically far taller than the terminal.
+    ///
+    /// Only an *output* handle has a screen buffer, so `in_fd` is of no use here: unlike
+    /// `ioctl(TIOCGWINSZ)`, which answers on any descriptor of the terminal, its Windows
+    /// counterpart fails with `ERROR_INVALID_HANDLE` on the console *input* handle. Standard
+    /// output is tried alongside `err_fd` so that the size is still found when only one of the
+    /// two is redirected.
+    ///
+    /// `GetConsoleScreenBufferInfo` is also the predicate, rather than `_isatty` guarding it:
+    /// `_isatty` is true for every character device, `NUL` and the console input handle
+    /// included, so it cannot decide whether a descriptor has a screen buffer to measure -
+    /// whereas `GetConsoleScreenBufferInfo` succeeds exactly on one that does. Its failure is
+    /// therefore the answer "no console here", the same one the POSIX branch below gives for a
+    /// descriptor that is not a tty, and not an error: `clickhouse.exe --version` with its
+    /// output redirected to a pipe must print the version rather than throw.
+    for (int fd : {err_fd, _fileno(stdout)})
+    {
+        auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+        if (handle == INVALID_HANDLE_VALUE)
+            continue;
+
+        CONSOLE_SCREEN_BUFFER_INFO info{};
+        if (!GetConsoleScreenBufferInfo(handle, &info))
+            continue;
+
+        return {static_cast<uint16_t>(info.srWindow.Right - info.srWindow.Left + 1),
+                static_cast<uint16_t>(info.srWindow.Bottom - info.srWindow.Top + 1)};
+    }
+
+    /// Default - 0, as below.
+    return {0, 0};
+#else
     struct winsize terminal_size {};
     if (isatty(in_fd))
     {
@@ -31,6 +73,7 @@ std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
     }
     /// Default - 0.
     return {terminal_size.ws_col, terminal_size.ws_row};
+#endif
 }
 
 uint16_t getTerminalWidth(int in_fd, int err_fd)
@@ -40,6 +83,12 @@ uint16_t getTerminalWidth(int in_fd, int err_fd)
 
 bool terminalSupportsUTF8()
 {
+#if defined(OS_WINDOWS)
+    /// Windows does not take the console encoding from the locale environment variables - they
+    /// are normally not set at all there - but from the console's output code page, which is
+    /// what actually governs how the bytes we write are interpreted.
+    return GetConsoleOutputCP() == CP_UTF8;
+#else
     /// The character encoding is determined by the locale environment variables,
     /// in order of precedence: LC_ALL, LC_CTYPE, LANG.
     const char * locale = nullptr;
@@ -69,6 +118,7 @@ bool terminalSupportsUTF8()
     }
 
     return false;
+#endif
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

@@ -22,6 +22,11 @@
 #include "Poco/Foundation.h"
 
 
+/// The implementation wraps syslog(3) and is not built on Windows, so the class is not declared
+/// there either: a use is rejected at compile time rather than failing to link.
+#if !defined(POCO_OS_FAMILY_WINDOWS)
+
+
 namespace Poco
 {
 
@@ -105,6 +110,9 @@ private:
 
 
 } // namespace Poco
+
+
+#endif // !POCO_OS_FAMILY_WINDOWS
 
 
 #endif // Foundation_SyslogChannel_INCLUDED

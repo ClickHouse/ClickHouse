@@ -22,9 +22,9 @@ struct LazyFileRegistry
     /// (The layout mirrors `LazyObjectStorageFileRegistry`, but the two are independent:
     /// a query has a single reading step, so the indexes never mix.)
     static constexpr size_t ROW_INDEX_BITS = 40;
-    static constexpr UInt64 MAX_ROWS_PER_FILE = 1ul << ROW_INDEX_BITS;
+    static constexpr UInt64 MAX_ROWS_PER_FILE = UInt64{1} << ROW_INDEX_BITS;
     static constexpr UInt64 ROW_INDEX_MASK = MAX_ROWS_PER_FILE - 1;
-    static constexpr UInt64 MAX_FILES = 1ul << (64 - ROW_INDEX_BITS);
+    static constexpr UInt64 MAX_FILES = UInt64{1} << (64 - ROW_INDEX_BITS);
 
     struct FileEntry
     {

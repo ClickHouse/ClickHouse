@@ -1,3 +1,46 @@
+/// A pseudo-terminal pair for the embedded client, from `posix_openpt`. Windows has ConPTY, which
+/// is a different interface - `CreatePseudoConsole`, handles rather than descriptors - and the
+/// embedded client it serves is server-side, so this reports that it was not ported. The class is
+/// still declared and its members still defined, because the web terminal and the SSH handler
+/// reference it and are compiled.
+#if defined(OS_WINDOWS)
+
+#include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
+
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+void PtyClientDescriptorSet::FileDescriptorWrapper::close()
+{
+}
+
+PtyClientDescriptorSet::FileDescriptorWrapper::~FileDescriptorWrapper() = default;
+
+PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int width, int height, int width_pixels, int height_pixels)
+{
+    UNUSED(term_name_, width, height, width_pixels, height_pixels);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "A pseudo-terminal is not implemented on Windows");
+}
+
+void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_pixels, int height_pixels) const
+{
+    UNUSED(width, height, width_pixels, height_pixels);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "A pseudo-terminal is not implemented on Windows");
+}
+
+PtyClientDescriptorSet::~PtyClientDescriptorSet() = default;
+
+}
+
+#else
+
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -99,3 +142,5 @@ void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_p
 PtyClientDescriptorSet::~PtyClientDescriptorSet() = default;
 
 }
+
+#endif

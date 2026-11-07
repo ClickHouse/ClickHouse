@@ -1,5 +1,12 @@
 #pragma once
 
+/// Ships stack traces from the signal handler to the trace log over a pipe. Follows
+/// `QueryProfiler` and `SignalHandlers`, which are what feed it.
+#include <Common/TraceType.h>
+
+#if !defined(OS_WINDOWS)
+
+
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -18,26 +25,12 @@ namespace DB
 
 class TraceCollector;
 
-enum class TraceType : uint8_t
-{
-    Real,
-    CPU,
-    Memory,
-    MemorySample,
-    MemoryPeak,
-    ProfileEvent,
-    JemallocSample,
-    MemoryAllocatedWithoutCheck,
-    Instrumentation,
-    MemoryLargeAllocation
-};
-
 /// This is the second part of TraceCollector, that sends stacktrace to the pipe.
 /// It has been split out to avoid dependency from interpreters part.
 class TraceSender
 {
 public:
-    static constexpr Int8 MEMORY_CONTEXT_UNKNOWN = -1;
+    static constexpr Int8 MEMORY_CONTEXT_UNKNOWN = TRACE_MEMORY_CONTEXT_UNKNOWN;
 
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
@@ -106,3 +99,5 @@ private:
 };
 
 }
+
+#endif

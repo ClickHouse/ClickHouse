@@ -129,7 +129,6 @@ set (SRCS
     src/StreamCopier.cpp
     src/String.cpp
     src/StringTokenizer.cpp
-    src/SyslogChannel.cpp
     src/Task.cpp
     src/TaskManager.cpp
     src/TaskNotification.cpp
@@ -165,6 +164,13 @@ set (SRCS
     src/VarIterator.cpp
     src/Void.cpp
 )
+
+if (NOT OS_WINDOWS)
+    # Wraps syslog(3). Upstream Poco builds it on Unix only, and `LoggingFactory` registers
+    # the channel under the same condition; Windows has no equivalent (upstream offers
+    # `EventLogChannel` instead, which this fork does not carry).
+    list (APPEND SRCS src/SyslogChannel.cpp)
+endif ()
 
 add_library (_poco_foundation ${SRCS})
 add_library (Poco::Foundation ALIAS _poco_foundation)
@@ -211,8 +217,17 @@ target_compile_definitions (_poco_foundation
         POCO_UNBUNDLED_ZLIB
     PUBLIC
         POCO_ENABLE_CPP11
-        POCO_OS_FAMILY_UNIX
 )
+
+if (OS_WINDOWS)
+    # `POCO_WIN32_UTF8` selects Poco's `*_WIN32U` implementations, which take and return UTF-8
+    # and convert to UTF-16 at the Win32 boundary. Without it Poco would use the `*_WIN32`
+    # variants, which pass byte strings to the `*A` Win32 entry points and so mangle any path
+    # or environment value outside the active code page. We only carry the UTF-8 variants.
+    target_compile_definitions (_poco_foundation PUBLIC POCO_OS_FAMILY_WINDOWS POCO_WIN32_UTF8)
+else ()
+    target_compile_definitions (_poco_foundation PUBLIC POCO_OS_FAMILY_UNIX)
+endif ()
 
 target_include_directories (_poco_foundation SYSTEM PUBLIC "include")
 target_link_libraries (_poco_foundation PRIVATE clickhouse_common_io)

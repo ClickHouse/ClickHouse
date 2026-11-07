@@ -5,6 +5,7 @@
 #include <Common/formatReadable.h>
 #include <Common/ErrnoException.h>
 #include <IO/MMapReadBufferFromFile.h>
+#include <IO/PlatformFileIO.h>
 
 
 namespace ProfileEvents
@@ -27,7 +28,9 @@ void MMapReadBufferFromFile::open()
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
-    fd = ::open(file_name.c_str(), O_RDONLY | O_CLOEXEC);
+    /// Through `platformOpenFile`, so that on Windows the UTF-8 name is not decoded in the ANSI code page
+    /// and the file can still be renamed or removed while it is mapped, as on POSIX.
+    fd = platformOpenFile(file_name, O_RDONLY | O_CLOEXEC);
 
     if (-1 == fd)
         ErrnoException::throwFromPath(

@@ -98,7 +98,7 @@ public:
 
         double index = level * (samples.size() - 1);
         size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
-        int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
+        int_index = std::max(0uz, std::min(samples.size() - 1, int_index));
         return samples[int_index].first;
     }
 

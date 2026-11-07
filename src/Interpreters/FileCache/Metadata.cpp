@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -89,7 +90,7 @@ KeyMetadata::KeyMetadata(
     if (!origin->weight.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata without user weight");
 
-    chassert(!created_base_directory || fs::exists(getPath()));
+    chassert(!created_base_directory || fs::exists(pathFromString(getPath())));
 }
 
 bool KeyMetadata::checkAccess(const UserID & user_id_) const
@@ -177,7 +178,7 @@ std::error_code KeyMetadata::createBaseDirectory()
         return {};
 
     std::error_code ec;
-    fs::create_directories(getPath(), ec);
+    fs::create_directories(pathFromString(getPath()), ec);
 
     if (!ec)
     {
@@ -295,7 +296,7 @@ String CacheMetadata::getFileSegmentPath(
     const OriginInfo & origin,
     std::optional<size_t> size) const
 {
-    return fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size);
+    return pathToGenericString(pathFromString(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size));
 }
 
 String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -307,10 +308,10 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
         /// The id is a single path component: every carrier of a non-internal id rejects a NUL and
         /// a '/' up front via `DistributedCache::getClientIDRejectionReason`.
         chassert(!origin.user_id.contains('\0') && !origin.user_id.contains('/'));
-        return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+        return pathToGenericString(pathFromString(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str);
     }
 
-    return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
+    return pathToGenericString(pathFromString(path) / key_type_prefix / key_str.substr(0, 3) / key_str);
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
@@ -722,7 +723,7 @@ CacheMetadata::removeEmptyKey(
 
     LOG_TEST(log, "Key {} is removed from metadata", key);
 
-    const fs::path key_directory = getKeyPath(key, *locked_key.getKeyMetadata()->origin);
+    const fs::path key_directory = pathFromString(getKeyPath(key, *locked_key.getKeyMetadata()->origin));
     const fs::path key_prefix_directory = key_directory.parent_path();
 
     try
@@ -1330,14 +1331,15 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     try
     {
-        const auto path = key_metadata->getFileSegmentPath(*file_segment);
+        const String path = key_metadata->getFileSegmentPath(*file_segment);
+        const fs::path fs_path = pathFromString(path);
         if (file_segment->downloaded_size == 0)
         {
-            chassert(!fs::exists(path));
+            chassert(!fs::exists(fs_path));
         }
-        else if (fs::exists(path))
+        else if (fs::exists(fs_path))
         {
-            fs::remove(path);
+            fs::remove(fs_path);
 
             /// Clear OpenedFileCache to avoid reading from incorrect file descriptor.
             int flags = file_segment->getFlagsForLocalRead();
@@ -1468,7 +1470,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
             continue;
         }
 
-        const auto & path = key_metadata->getFileSegmentPath(*file_segment);
+        const fs::path path = pathFromString(key_metadata->getFileSegmentPath(*file_segment));
         if (!fs::exists(path))
         {
             LOG_WARNING(

@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -409,9 +410,9 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
 
     for (const auto & key : keys)
     {
-        auto key_file = std::filesystem::path(key);
+        auto key_file = pathFromString(key);
         Strings file_parts;
-        const String stem = key_file.stem();
+        const String stem = pathToGenericString(key_file.stem());
         splitInto<'_'>(file_parts, stem);
         if (file_parts.size() != 3)
             throw Exception(

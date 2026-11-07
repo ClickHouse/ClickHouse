@@ -165,8 +165,15 @@ extern "C" {
 # if !defined(OPENSSL_SYS_UEFI)
 #  undef BN_LLONG
 /* Only one for the following should be defined */
-#  define SIXTY_FOUR_BIT_LONG
-#  undef SIXTY_FOUR_BIT
+/* ClickHouse: keep in sync with `common/include/crypto/bn_conf.h`, which explains why the
+ * bignum limb width is selected from the data model. Windows is LLP64. */
+#  if defined(_WIN64)
+#   undef SIXTY_FOUR_BIT_LONG
+#   define SIXTY_FOUR_BIT
+#  else
+#   define SIXTY_FOUR_BIT_LONG
+#   undef SIXTY_FOUR_BIT
+#  endif
 #  undef THIRTY_TWO_BIT
 # endif
 

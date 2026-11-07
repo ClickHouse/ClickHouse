@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <filesystem>
+
 
 namespace DB
 {
@@ -161,6 +163,11 @@ private:
     /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.
     void setup();
+
+    /// The disk root joined with a disk-relative UTF-8 path. Both parts have to enter
+    /// `std::filesystem` through `pathFromString`, or on Windows they would be decoded
+    /// through the active code page and name the wrong file under a non-ASCII root.
+    std::filesystem::path absolutePath(const String & path) const;
 
     const String disk_path;
     std::atomic<UInt64> keep_free_space_bytes;

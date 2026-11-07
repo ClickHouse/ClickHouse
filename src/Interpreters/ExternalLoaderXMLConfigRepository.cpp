@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 
 #include <filesystem>
@@ -38,7 +39,9 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
         patterns_copy = patterns;
     }
 
-    const String config_dir = fs::path(main_config_path).parent_path();
+    /// The configuration paths are UTF-8, so they enter `std::filesystem` through `pathFromString`
+    /// and stay paths until `Poco::Glob` wants a string.
+    const fs::path config_dir = pathFromString(main_config_path).parent_path();
     std::set<std::string> files;
 
     for (const auto & pattern : patterns_copy)
@@ -48,7 +51,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
 
         if (pattern[0] != '/')
         {
-            const String absolute_path = fs::path(config_dir) / pattern;
+            const String absolute_path = pathToGenericString(config_dir / pathFromString(pattern));
 
             Poco::Glob::glob(absolute_path, files, 0);
             if (!files.empty())
@@ -81,7 +84,7 @@ void ExternalLoaderXMLConfigRepository::updatePatterns(const std::unordered_set<
 
 bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_entity_name)
 {
-    return fs::exists(fs::path(definition_entity_name));
+    return fs::exists(pathFromString(definition_entity_name));
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
