@@ -45,6 +45,9 @@ struct CorrelatedSubquery
 
     /// For LATERAL_JOIN kind: the join kind (LEFT, INNER, etc.)
     JoinKind lateral_join_kind = JoinKind::Left;
+
+    /// For LATERAL_JOIN kind: the `ON` expression, empty for `ON true`
+    QueryTreeNodePtr lateral_join_on_expression;
 };
 
 using CorrelatedSubqueries = std::vector<CorrelatedSubquery>;
