@@ -543,6 +543,38 @@ MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
     return result;
 }
 
+std::vector<std::pair<size_t, size_t>> MergeTreeRangeReader::ReadResult::computeResultRowsPerMark() const
+{
+    if (rows_per_granule.empty() || num_rows == 0 || granule_offsets.size() != rows_per_granule.size() || debug_skipped_marks != 0)
+        return {};
+
+    /// Unless `columns` hold every row of the granules, they hold the rows `final_filter` keeps.
+    const UInt8 * filter = nullptr;
+    if (num_rows != total_rows_per_granule)
+    {
+        if (!final_filter.present() || final_filter.size() != total_rows_per_granule || final_filter.countBytesInFilter() != num_rows)
+            return {};
+        filter = final_filter.getData().data();
+    }
+
+    std::vector<std::pair<size_t, size_t>> result;
+    size_t pos = 0;
+    size_t total_result_rows = 0;
+    for (size_t i = 0; i < rows_per_granule.size(); ++i)
+    {
+        const size_t granule_rows = rows_per_granule[i];
+        const size_t result_rows = filter ? countBytesInFilter(filter, pos, pos + granule_rows) : granule_rows;
+        pos += granule_rows;
+        total_result_rows += result_rows;
+        if (result_rows)
+            result.emplace_back(granule_offsets[i].granule_offset, result_rows);
+    }
+
+    if (total_result_rows != num_rows)
+        return {};
+    return result;
+}
+
 std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
 {
     WriteBufferFromOwnString out;

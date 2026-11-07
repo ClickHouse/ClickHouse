@@ -8,7 +8,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
@@ -27,7 +26,6 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/SipHash.h>
-#include <Common/findExtreme.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/castColumn.h>
@@ -816,25 +814,6 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
     return Chunk(std::move(columns), 2);
 }
 
-/// The first row that sorts first, for the column types `findExtreme*Index` supports; nullopt for others.
-template <typename... ColumnTypes>
-static std::optional<size_t> findTopKBestRowOfNumbers(const IColumn & column, int direction)
-{
-    std::optional<size_t> best_row;
-    auto try_column = [&]<typename ColumnType>(std::type_identity<ColumnType>)
-    {
-        const auto * typed_column = typeid_cast<const ColumnType *>(&column);
-        if (!typed_column)
-            return false;
-        const auto * data = typed_column->getData().data();
-        best_row = direction > 0 ? findExtremeMinIndex(data, 0, typed_column->size())
-                                 : findExtremeMaxIndex(data, 0, typed_column->size());
-        return true;
-    };
-    (try_column(std::type_identity<ColumnTypes>{}) || ...);
-    return best_row;
-}
-
 void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) const
 {
     if (column.empty() || row_group.top_k_best_value_is_final)
@@ -854,9 +833,7 @@ void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) c
 
     std::optional<size_t> best_row;
     if (!collator)
-        best_row = findTopKBestRowOfNumbers<
-            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
-            ColumnDecimal<Decimal32>, ColumnDecimal<Decimal64>, ColumnDecimal<DateTime64>>(column, direction);
+        best_row = findTopKBestRowOfNumbers(column, 0, column.size(), direction);
     if (!best_row)
     {
         best_row = 0;

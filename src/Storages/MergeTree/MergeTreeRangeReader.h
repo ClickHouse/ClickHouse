@@ -318,6 +318,10 @@ public:
         /// rows_per_granule[i] == 0 reliably means the full granule was read and filtered.
         MarkRanges computeUnmatchedMarkRanges() const;
 
+        /// For each granule with rows in `columns`, in the order of these rows: its mark and its number of rows.
+        /// Empty if some rows cannot be attributed to a mark.
+        std::vector<std::pair<size_t, size_t>> computeResultRowsPerMark() const;
+
     private:
         friend class MergeTreeRangeReader;
         friend class MergeTreeReadersChain;

@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 
 #include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
@@ -32,6 +33,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/extractStringValueFilters.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -1993,19 +1995,24 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             = !is_parallel_reading_from_replicas && !isQueryWithFinal() && !checkAnyPartOnRemoteFS(parts_with_ranges);
 
         /// If that left some streams without a task, use smaller tasks, not below `merge_tree_min_read_task_size`.
-        /// A single stream stays one (it reads in order). Only the plain read pool cuts tasks of exactly this size
-        /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
+        /// A single stream stays one (it reads in order), unless the read feeds a TopK, which sorts the rows anyway.
+        /// Only the plain read pool cuts tasks of exactly this size (adaptive granularity, no columns cache, local
+        /// prefetched pool not allowed).
         if (allow_spreading_small_read && is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
             && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
-            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
+            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && (num_streams > 1 || top_k_filter_info)
+            && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
             const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
             const size_t task_marks = std::min(
                 info.min_marks_for_concurrent_read, std::max(info.sum_marks / tasks_per_stream / initial_num_streams, min_task_marks));
+            /// For a TopK read, a part's remainder of at least half a task counts as a task: the pool leaves it to another
+            /// stream (`MergeTreeReadPool::cutFromThreadTask`).
+            const size_t partial_task_marks = top_k_filter_info ? task_marks / 2 : 0;
             size_t tasks = 0;
             for (const size_t part_marks : info.sum_marks_in_parts)
-                tasks += std::max<size_t>(1, part_marks / task_marks);
+                tasks += std::max<size_t>(1, (part_marks + partial_task_marks) / task_marks);
             if (std::min(tasks, initial_num_streams) > num_streams)
             {
                 num_streams = std::min(tasks, initial_num_streams);
@@ -5455,6 +5462,33 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
     return result.split_parts.layers.size();
 }
 
+/// Whether every part stores, with the table's type, each of these columns that a reader may compute from a default
+/// expression; the other columns read as stored or as the type's default.
+static bool partsStoreColumns(const RangesInDataParts & parts, const NameSet & column_names, const StorageSnapshotPtr & storage_snapshot)
+{
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    for (const auto & name : column_names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column)
+            continue;
+        if (!mayLeaveColumnToMissingDefaults(storage_snapshot, *column))
+            continue;
+
+        const String name_in_storage = column->getNameInStorage();
+        const auto type = columns.getPhysical(name_in_storage).type;
+        for (const auto & part : parts)
+        {
+            const auto & data_part = part.data_part;
+            auto column_in_part = data_part->tryGetColumn(name_in_storage);
+            if (!column_in_part || !column_in_part->type->equals(*type) || !data_part->hasColumnFiles(*column_in_part)
+                || data_part->getSerializationInfos().isMissingColumn(name_in_storage))
+                return false;
+        }
+    }
+    return true;
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
@@ -5723,6 +5757,23 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         if (query_info.filter_actions_dag)
             boost::hash_combine(salt, query_info.filter_actions_dag->getOutputs().front()->getHash());
         reader_settings.query_condition_cache_top_k_salt = salt;
+
+        /// Only sort column types with a typed best value scan, see `MergeTreeSelectProcessor::recordTopKBestValues`.
+        const auto & tracker = top_k_filter_info->threshold_tracker;
+        const auto sort_column = top_k_filter_info->data_type->createColumn();
+        NameSet read_columns(all_column_names.begin(), all_column_names.end());
+        if (query_info.prewhere_info)
+            for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                read_columns.insert(column_name);
+        if (tracker && !tracker->getCollator()
+            && (canFindTopKBestRowOfNumbers(*sort_column) || typeid_cast<const ColumnString *>(sort_column.get()))
+            && partsStoreColumns(result.parts_with_ranges, read_columns, storage_snapshot))
+        {
+            auto final_threshold = std::make_shared<TopKFinalThresholdWrites>();
+            final_threshold->threshold_tracker = tracker;
+            final_threshold->column_name = top_k_filter_info->column_name;
+            reader_settings.query_condition_cache_top_k_final_threshold = std::move(final_threshold);
+        }
     }
 
     if (top_k_filter_info)
@@ -6869,11 +6920,12 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the
     /// cache off for this read: a TopK read can drop granules during execution depending on the running
     /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
+    /// The same when a masking policy rewrites the columns at read time for this user, which no cache key holds.
     /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
     /// step's persistent "this read must not use the cache" flag, it is carried over by `clone`, and it
     /// disables the cache both for index analysis (`selectRangesToReadImpl`) and for the reader
     /// (`initializePipeline` derives `reader_settings.use_query_condition_cache` from it).
-    if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+    if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k] || data.hasEnabledMaskingPolicies(context))
         disableQueryConditionCache();
 
     /// A TopK granule-skip decision recorded for one part is computed against the running
@@ -6884,19 +6936,25 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// no longer holds. Fold a hash of the whole part-set snapshot into the salt so that any
     /// change to the set of parts read (`DROP PARTITION`, mutation, merge, new `INSERT`) yields a
     /// fresh key and the now-stale decisions of the unchanged parts are never reused.
+    /// The columns of the metadata go in too, so a change of the columns also yields a fresh key.
     SipHash parts_hash;
+    const String columns_description = storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false);
+    parts_hash.update(columns_description.size());
+    parts_hash.update(columns_description);
     for (const auto & part_with_ranges : getParts())
     {
         const auto & data_part = part_with_ranges.data_part;
+        String part_identity = data_part->name;
         if (data_part->isProjectionPart())
         {
             /// Projection parts are all named after their projection. Use the same
             /// `parent_part:projection` identity as the query condition cache key, so
             /// a change to one projection's parent part invalidates the snapshot.
-            parts_hash.update(data_part->getParentPartName());
-            parts_hash.update(":");
+            part_identity = data_part->getParentPartName() + ":" + part_identity;
         }
-        parts_hash.update(data_part->name);
+        /// Length-prefixed: a concatenation of part names is ambiguous.
+        parts_hash.update(part_identity.size());
+        parts_hash.update(part_identity);
     }
 
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds its seed argument on platforms where
