@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Common/MemoryStatisticsOS.h>
+
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -81,7 +84,15 @@ public:
       * real creation (out of descriptors, out of memory) must report as what it is, not as the
       * transport being unavailable.
       */
-    static void checkSupported();
+    static void checkSupported(bool require_process_rss = false);
+
+#if HAS_MEMORY_STATISTICS_OS
+    /// On Linux, sums `/proc/self/smaps` RSS outside the files owned by live regions.
+    /// Their full footprint is charged separately, including pages absent from this process's RSS.
+    /// With no regions, reads `statistics` under the same lock that protects their registration.
+    /// Read/parse errors propagate; they must not turn into an underestimated memory sample.
+    static uint64_t residentMemoryWithoutRegions(const MemoryStatisticsOS & statistics);
+#endif
 
     /// Creates a sealed region of `size` bytes, with its pages committed, and maps it.
     explicit SharedMemoryRegion(size_t size);
@@ -219,6 +230,12 @@ public:
     static std::string pathForChildFd(int child_fd);
 
 private:
+    /// Protected by the registry mutex, including the lifetime of the descriptor. File identity
+    /// covers both mappings during `grow`, without relying on names or subtracting two RSS samples.
+    SharedMemoryRegion * previous_region = nullptr;
+    SharedMemoryRegion * next_region = nullptr;
+    uint64_t region_device = 0;
+    uint64_t region_inode = 0;
     int region_fd = -1;
     char * region_data = nullptr;
     size_t region_size = 0;

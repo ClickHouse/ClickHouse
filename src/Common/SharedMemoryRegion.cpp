@@ -3,13 +3,17 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <charconv>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <limits>
 #include <optional>
+#include <mutex>
+#include <vector>
 
 #include <fcntl.h>
 #include <pthread.h>
@@ -17,6 +21,10 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
+#if defined(OS_LINUX)
+#include <sys/sysmacros.h>
+#endif
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -42,6 +50,7 @@ namespace ErrorCodes
     extern const int CANNOT_FCNTL;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 std::string SharedMemoryRegion::pathForChildFd(int child_fd)
@@ -73,6 +82,9 @@ std::string SharedMemoryRegion::pathForChildFd(int child_fd)
 
 namespace
 {
+
+std::mutex region_registry_mutex;
+SharedMemoryRegion * first_region = nullptr;
 
 /// The seals every region carries. `F_SEAL_SHRINK` is the point: the command holds a writable
 /// descriptor and must not be able to make the file shorter than the server's mapping - that is
@@ -371,8 +383,19 @@ void probeReopenThroughProcSelfFd(int fd)
 
 }
 
-void SharedMemoryRegion::checkSupported()
+void SharedMemoryRegion::checkSupported(bool require_process_rss)
 {
+    /// The OS memory source must be able to exclude region mappings before adding their charge.
+    /// Reject an unsupported configuration here, rather than disabling background corrections
+    /// with an unreadable `smaps` as soon as the first pooled region is created.
+    if (require_process_rss)
+    {
+        char buffer[4096];
+        ReadBufferFromFile smaps("/proc/self/smaps", sizeof(buffer), -1, buffer);
+        if (smaps.eof())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Shared-memory RSS accounting requires a nonempty /proc/self/smaps");
+    }
+
     const int fd = createSealableProbeMemfd();
     SCOPE_EXIT({ closeNoThrow(fd, "support probe"); });
 
@@ -415,6 +438,12 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
 
     try
     {
+        struct stat st{};
+        if (0 != ::fstat(fd, &st))
+            ErrnoException::throwWithErrno(ErrorCodes::CANNOT_FCNTL, errno, "SharedMemoryRegion: Cannot identify the region");
+        region_device = st.st_dev;
+        region_inode = st.st_ino;
+
         reserveBackingStorage(fd, 0, size, "create");
 
         /// Sealed before it is handed to anyone. The seals are what makes the mapping below safe
@@ -450,6 +479,101 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
     reserved_size = size;
     committed_size = footprint;
     footprint_size = footprint;
+
+    /// An intrusive registry cannot fail to allocate after the mapping has been created.
+    std::lock_guard lock(region_registry_mutex);
+    next_region = first_region;
+    if (next_region)
+        next_region->previous_region = this;
+    first_region = this;
+}
+
+uint64_t SharedMemoryRegion::residentMemoryWithoutRegions(const MemoryStatisticsOS & statistics)
+{
+    /// Keep the descriptors alive until the read completes, so an inode cannot be reused for an
+    /// unrelated mapping. `grow` needs no registry update: both mappings refer to the same file.
+    std::lock_guard lock(region_registry_mutex);
+    if (!first_region)
+        return statistics.get().resident;
+
+    std::vector<std::pair<uint64_t, uint64_t>> files;
+    for (auto * region = first_region; region; region = region->next_region)
+        files.emplace_back(region->region_device, region->region_inode);
+    std::sort(files.begin(), files.end());
+
+    /// Avoid allocating the default 1 MiB read buffer on every tick: its allocator retention
+    /// (or sanitizer quarantine) would itself inflate the memory being measured.
+    char buffer[16384];
+    ReadBufferFromFile in("/proc/self/smaps", sizeof(buffer), -1, buffer);
+    std::string line;
+    uint64_t resident = 0;
+    bool exclude = false;
+    bool seen_mapping = false;
+    bool seen_rss = false;
+    const auto parse_number = [](std::string_view token, auto & value, int base = 10)
+    {
+        if (token.empty())
+            return false;
+        const auto [end, error] = std::from_chars(token.data(), token.data() + token.size(), value, base);
+        return error == std::errc{} && end == token.data() + token.size();
+    };
+    while (!in.eof())
+    {
+        line.clear();
+        readStringUntilNewlineInto(line, in);
+        if (!in.eof())
+            in.ignore();
+
+        std::string_view remaining = line;
+        const auto next_token = [&remaining]() -> std::string_view
+        {
+            const auto start = remaining.find_first_not_of(" \t");
+            if (start == std::string_view::npos)
+            {
+                remaining = {};
+                return {};
+            }
+            remaining.remove_prefix(start);
+            const auto token = remaining.substr(0, remaining.find_first_of(" \t"));
+            remaining.remove_prefix(token.size());
+            return token;
+        };
+
+        if (!line.empty() && ((line[0] >= '0' && line[0] <= '9') || (line[0] >= 'a' && line[0] <= 'f')))
+        {
+            next_token(); /// Address range.
+            next_token(); /// Permissions.
+            next_token(); /// File offset.
+            const auto device = next_token();
+            const auto separator = device.find(':');
+            uint32_t device_major = 0;
+            uint32_t device_minor = 0;
+            uint64_t inode = 0;
+            if ((seen_mapping && !seen_rss)
+                || separator == std::string_view::npos
+                || !parse_number(device.substr(0, separator), device_major, 16)
+                || !parse_number(device.substr(separator + 1), device_minor, 16)
+                || !parse_number(next_token(), inode))
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse a mapping in /proc/self/smaps");
+            const std::pair<uint64_t, uint64_t> file{makedev(device_major, device_minor), inode};
+            exclude = std::binary_search(files.begin(), files.end(), file);
+            seen_mapping = true;
+            seen_rss = false;
+        }
+        else if (line.starts_with("Rss:"))
+        {
+            next_token(); /// `Rss:` label.
+            uint64_t rss_kb = 0;
+            if (!seen_mapping || seen_rss || !parse_number(next_token(), rss_kb))
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse RSS in /proc/self/smaps");
+            if (!exclude)
+                resident += rss_kb * 1024;
+            seen_rss = true;
+        }
+    }
+    if (!seen_mapping || !seen_rss)
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Missing RSS in /proc/self/smaps");
+    return resident;
 }
 
 void SharedMemoryRegion::grow(size_t new_size)
@@ -622,11 +746,23 @@ size_t SharedMemoryRegion::roundUpToPages(size_t size)
 
 SharedMemoryRegion::~SharedMemoryRegion()
 {
+    /// Freeing a large file can be slow. Keep its identity registered, but do not serialize
+    /// other regions' destruction behind the page release, including for non-OS memory sources.
     if (region_fd != -1)
         releasePagesNoThrow(region_fd);
 
-    if (region_data)
-        unmapNoThrow(region_data, region_size, "destruction");
+    {
+        std::lock_guard lock(region_registry_mutex);
+        if (previous_region)
+            previous_region->next_region = next_region;
+        else
+            first_region = next_region;
+        if (next_region)
+            next_region->previous_region = previous_region;
+
+        if (region_data)
+            unmapNoThrow(region_data, region_size, "destruction");
+    }
 
     if (region_fd != -1)
         closeNoThrow(region_fd, "destruction");
@@ -638,10 +774,17 @@ SharedMemoryRegion::~SharedMemoryRegion()
 /// that asks for the transport by calling `checkSupported`, so nothing below runs; it only has
 /// to compile.
 
-void SharedMemoryRegion::checkSupported()
+void SharedMemoryRegion::checkSupported(bool)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Shared-memory regions for executable UDFs are supported only on Linux");
 }
+
+#if HAS_MEMORY_STATISTICS_OS
+uint64_t SharedMemoryRegion::residentMemoryWithoutRegions(const MemoryStatisticsOS & statistics)
+{
+    return statistics.get().resident;
+}
+#endif
 
 SharedMemoryRegion::SharedMemoryRegion(size_t)
 {

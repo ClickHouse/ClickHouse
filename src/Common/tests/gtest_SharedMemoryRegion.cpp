@@ -1,6 +1,9 @@
 #include <Common/SharedMemoryRegion.h>
 #include <Common/Exception.h>
+#include <Common/MemoryStatisticsOS.h>
 #include <base/defines.h>
+#include <base/getPageSize.h>
+#include <base/scope_guard.h>
 
 #include <condition_variable>
 #include <cstring>
@@ -52,6 +55,16 @@ using namespace DB;
 namespace
 {
 
+/// Fault in the mapping without dirtying sanitizer shadow pages, whose RSS is unrelated to it.
+[[clang::disable_sanitizer_instrumentation]]
+void touchPages(void * data, size_t size)
+{
+    auto * pages = static_cast<volatile char *>(data);
+    const size_t page_size = getPageSize();
+    for (size_t offset = 0; offset < size; offset += page_size)
+        pages[offset] = 1;
+}
+
 /// A second mapping of the region, made the way the command makes it: from the descriptor, of the
 /// whole file. Reading `st_size` first is also how the command learns how large the file is.
 struct OtherMapping
@@ -95,6 +108,64 @@ TEST(SharedMemoryRegion, CreateReadWrite)
 TEST(SharedMemoryRegion, SupportProbePasses)
 {
     EXPECT_NO_THROW(SharedMemoryRegion::checkSupported());
+    EXPECT_NO_THROW(SharedMemoryRegion::checkSupported(/*require_process_rss=*/ true));
+}
+
+TEST(SharedMemoryRegion, ResidentMemoryExcludesOnlyOwnedFiles)
+{
+    MemoryStatisticsOS statistics;
+    constexpr size_t size = 64ULL << 20;
+    constexpr uint64_t tolerance = 8ULL << 20;
+    const auto before = statistics.get().resident;
+    EXPECT_LE(SharedMemoryRegion::residentMemoryWithoutRegions(statistics), before + tolerance);
+    EXPECT_GE(SharedMemoryRegion::residentMemoryWithoutRegions(statistics) + tolerance, before);
+    {
+        SharedMemoryRegion region(size);
+        const auto baseline = SharedMemoryRegion::residentMemoryWithoutRegions(statistics);
+        auto check_unchanged = [&]
+        {
+            const auto resident = SharedMemoryRegion::residentMemoryWithoutRegions(statistics);
+            EXPECT_LE(resident, baseline + tolerance);
+            EXPECT_GE(resident + tolerance, baseline);
+        };
+        touchPages(region.data(), region.size());
+        check_unchanged();
+
+        /// A second mapping of the same file and a replacement mapping during growth must
+        /// also be excluded, even though they have different addresses and sizes.
+        OtherMapping other(region.fd());
+        touchPages(other.data, other.size);
+        check_unchanged();
+        region.grow(2 * size);
+        touchPages(region.data(), region.size());
+        check_unchanged();
+        region.releasePagesUpToLength();
+        region.recommitUpToLength();
+        check_unchanged();
+
+        /// Removing one region must leave the other live files excluded.
+        auto second = std::make_unique<SharedMemoryRegion>(size);
+        auto third = std::make_unique<SharedMemoryRegion>(size);
+        touchPages(second->data(), second->size());
+        touchPages(third->data(), third->size());
+        check_unchanged();
+        second.reset();
+        check_unchanged();
+        third.reset();
+        check_unchanged();
+
+        /// Unrelated shared mappings remain in RSS. Excluding all shared pages would hide these.
+        void * unrelated = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+        ASSERT_NE(unrelated, MAP_FAILED);
+        SCOPE_EXIT({ ::munmap(unrelated, size); });
+        touchPages(unrelated, size);
+        const auto resident = SharedMemoryRegion::residentMemoryWithoutRegions(statistics);
+        EXPECT_GE(resident + tolerance, baseline + size);
+        EXPECT_LE(resident, baseline + size + tolerance);
+    }
+    const auto after = statistics.get().resident;
+    EXPECT_LE(SharedMemoryRegion::residentMemoryWithoutRegions(statistics), after + tolerance);
+    EXPECT_GE(SharedMemoryRegion::residentMemoryWithoutRegions(statistics) + tolerance, after);
 }
 
 /// The descriptor must be close-on-exec: otherwise a concurrent fork+exec on another thread would
