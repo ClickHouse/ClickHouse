@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class IRowInputFormat;
+
 using SimpleTransformPtr = std::shared_ptr<ISimpleTransform>;
 
 /// Receives format and allows to execute
@@ -56,6 +58,8 @@ private:
 
     const Block header;
     const InputFormatPtr format;
+    /// Set if `format` can append rows directly into `result_columns` (see `IRowInputFormat::readInto`).
+    IRowInputFormat * row_input_format = nullptr;
     const ErrorCallback on_error;
     const SimpleTransformPtr adding_defaults_transform;
     const CancelCallback is_cancelled;

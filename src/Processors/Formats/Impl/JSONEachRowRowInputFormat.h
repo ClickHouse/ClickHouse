@@ -32,6 +32,9 @@ public:
     String getName() const override { return "JSONEachRowRowInputFormat"; }
     void resetParser() override;
 
+    /// `readRow` appends after any existing rows and fills only the row it reads.
+    bool supportsReadInto() const override { return true; }
+
 protected:
     void readPrefix() override;
     void readSuffix() override;
