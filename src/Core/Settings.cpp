@@ -963,7 +963,7 @@ Possible values:
 - 0 — every blob matched by the glob is read.
 - 1 — blobs with a hidden path segment below the non-glob prefix are skipped.
 )", 0, \
-        {"26.10", false, false, "New setting: skip blobs with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
+        {"26.11", false, false, "New setting: skip blobs with a path segment starting with `_` or `.` below the non-glob prefix when listing files by glob, like other Hive-ecosystem readers do. Tables with `partition_strategy = 'hive'` always skip such paths."}) \
     DECLARE(ArrowFlightDescriptorType, arrow_flight_request_descriptor_type, ArrowFlightDescriptorType::Path, R"(
 Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset name as a path descriptor. 'command' sends a SQL query as a command descriptor (required for Dremio).
 
