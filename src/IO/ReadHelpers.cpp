@@ -2617,9 +2617,26 @@ void readTSVFieldCRLF(String & s, ReadBuffer & buf)
     readEscapedStringIntoImpl<String, false, true>(s, buf);
 }
 
+void escapeDotInJSONKey(String & out, std::string_view key)
+{
+    size_t pos = 0;
+    while (true)
+    {
+        size_t dot = key.find('.', pos);
+        if (dot == std::string_view::npos)
+            break;
+        out.append(key.substr(pos, dot - pos));
+        out.append("%2E");
+        pos = dot + 1;
+    }
+    out.append(key.substr(pos));
+}
+
 String escapeDotInJSONKey(const String & key)
 {
-    return boost::replace_all_copy(key, ".", "%2E");
+    String res;
+    escapeDotInJSONKey(res, key);
+    return res;
 }
 
 String unescapeDotInJSONKey(const String & key)

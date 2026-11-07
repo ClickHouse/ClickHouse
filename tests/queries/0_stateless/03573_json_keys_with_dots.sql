@@ -6,3 +6,6 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`,
 SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`, json.`a.b`, json.a.b;
 SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(`a%2Eb` UInt8) as json, json.`a%2Eb`, toTypeName(json.`a%2Eb`);
 
+-- Every dot of a nested key is escaped, and an empty key is left alone.
+SELECT '{"x" : {"a.b.c" : 42}}'::JSON(max_dynamic_paths = 0) AS json, JSONSharedDataPaths(json);
+SELECT '{"" : {"" : 42}}'::JSON(max_dynamic_paths = 0) AS json, JSONSharedDataPaths(json);
