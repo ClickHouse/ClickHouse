@@ -124,8 +124,8 @@ StoragePolicy::StoragePolicy(
     if (backup_metadata_only)
         checkVolumesAreReadOnly();
 
-    validateDisksHaveDistinctStorageNamespaces();
     buildVolumeIndices();
+    validateDisksHaveDistinctStorageNamespaces();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
@@ -169,8 +169,8 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         move_factor, backQuote(name));
 
-    validateDisksHaveDistinctStorageNamespaces();
     buildVolumeIndices();
+    validateDisksHaveDistinctStorageNamespaces();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
 
