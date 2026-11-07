@@ -58,7 +58,14 @@ public:
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
+    /// Like `Array`, the container has no subcolumns by itself, but allows to read the dynamic subcolumns of the elements.
+    bool hasDynamicSubcolumnsData() const override { return nested->hasDynamicSubcolumnsData(); }
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
+    std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override
+    {
+        nested->forEachKnownDynamicSubcolumnName(callback, array_level + 1);
+    }
 
     bool haveMaximumSizeOfValue() const override { return nested->haveMaximumSizeOfValue(); }
     size_t getMaximumSizeOfValueInMemory() const override { return n * nested->getMaximumSizeOfValueInMemory(); }

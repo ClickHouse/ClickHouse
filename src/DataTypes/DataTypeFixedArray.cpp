@@ -2,9 +2,11 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationFixedArray.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -101,6 +103,33 @@ SerializationPtr DataTypeFixedArray::doGetSerialization(const SerializationInfoS
 DataTypePtr DataTypeFixedArray::doCloneWithChildren(const DataTypes & new_children) const
 {
     return std::make_shared<DataTypeFixedArray>(n, new_children[0]);
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeFixedArray::getDynamicSubcolumnInfo(
+    std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+{
+    const auto & fixed_array_type = assert_cast<const DataTypeFixedArray &>(*data.type);
+    const auto & fixed_array_serialization = assert_cast<const SerializationFixedArray &>(*removeNamedSerialization(data.serialization));
+    auto nested_data = std::make_unique<ISerialization::SubstreamData>(fixed_array_serialization.getNestedSerialization());
+    nested_data->type = fixed_array_type.nested;
+    nested_data->column = data.column ? assert_cast<const ColumnFixedArray &>(*data.column).getDataPtr() : nullptr;
+
+    auto nested_subcolumn_info = getSubcolumnInfo(subcolumn_name, *nested_data, initial_array_level + 1, throw_if_null);
+    if (!nested_subcolumn_info)
+        return nullptr;
+
+    auto creator = SerializationFixedArray::SubcolumnCreator(fixed_array_type.n);
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
+    res->data.type = creator.create(nested_subcolumn_info->data.type);
+    if (data.column)
+        res->data.column = creator.create(nested_subcolumn_info->data.column);
+
+    /// Reached through the elements, exactly as `SerializationFixedArray::enumerateStreams` reaches it.
+    res->substreams_path.emplace_back(ISerialization::Substream::ArrayElements);
+    res->substreams_path.insert(res->substreams_path.end(), nested_subcolumn_info->substreams_path.begin(), nested_subcolumn_info->substreams_path.end());
+
+    return res;
 }
 
 DataTypePtr recursiveRemoveFixedArray(const DataTypePtr & type)
