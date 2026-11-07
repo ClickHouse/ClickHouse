@@ -86,6 +86,13 @@ public:
 
     bool hasBufferedData() const;
 
+    /// Keep the unread bytes and append after them at most `max_bytes` next bytes of the stream: the bytes that are
+    /// already buffered (with the chunked protocol, the received bytes of the next chunks are buffered with their
+    /// framing) and, if `read_socket`, the bytes of one read of the socket. With the chunked protocol, the framing is
+    /// removed, so the appended bytes follow the unread ones as if they were in the same chunk. It does not wait if
+    /// `read_socket` is false or the socket has already received some bytes. Returns false at the end of the stream.
+    bool appendWithoutWaiting(size_t max_bytes, bool read_socket);
+
     bool poll(size_t timeout_microseconds) override;
 
     Poco::Net::SocketAddress peerAddress() { return peer_address; }
@@ -95,6 +102,12 @@ protected:
     bool loadNextChunk(Position c_pos, bool cont = false);
     bool processChunkLeft(Position c_pos);
     bool nextImpl() override;
+
+    /// `appendWithoutWaiting` with the chunked protocol.
+    bool appendChunkedWithoutWaiting(size_t max_bytes, bool read_socket);
+
+    /// Whether some bytes of the stream are buffered after the working buffer.
+    bool hasBufferedChunkData() const;
 
     Poco::Net::SocketAddress our_address;
 
