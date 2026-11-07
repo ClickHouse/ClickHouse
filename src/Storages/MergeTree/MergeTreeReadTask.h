@@ -238,8 +238,7 @@ public:
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
-    /// Adds to the PREWHERE-unmatched marks the marks of the task that the `minmax` top-K index puts beyond the
-    /// running threshold now. The threshold only tightens, so a mark read under a looser one may have no row in the result.
+    /// Adds to the PREWHERE-unmatched marks the marks of the task that the `minmax` top-K index puts beyond the running threshold now.
     void addMarksBeyondTopKThreshold();
 
     void addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_);
