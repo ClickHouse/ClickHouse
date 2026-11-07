@@ -228,6 +228,9 @@ private:
     /// Serves librdkafka events of a consumer that is not streamed from, so they don't pile up in its queue.
     void pollIdleConsumerEvents(size_t idx);
 
+    BackgroundSchedulePoolTaskHolder drain_task;
+    void drainEventsTask();
+
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;

@@ -593,9 +593,10 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set("client.software.version", VERSION_DESCRIBE);
     conf.set("auto.offset.reset", "earliest"); // If no offset stored for this group, read all messages from the start
 
-    /// Set before the user config, so an explicit value wins. Unpolled statistics of idle consumers
-    /// are bounded by kafka_consumers_pool_ttl_ms in StorageKafka and by pollIdleConsumerEvents() in StorageKafka2.
-    conf.set("statistics.interval.ms", "3000");
+    /// Only pre-seed when the storage drains idle consumers; the old engine cannot safely
+    /// drain a held consumer (data and events share one queue), so it stays opt-in.
+    if (params.drain_idle_consumers)
+        conf.set("statistics.interval.ms", "3000");
 
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance

@@ -399,12 +399,6 @@ void StorageKafka2::activateAndReschedule()
         partialShutdown();
         tryLogCurrentException(log, "Failed to restart the table. Will try again");
     }
-
-    /// Consumers that nobody polls (all of them while the replica is inactive, or one held by a
-    /// blocked MV insert) are served here on every activation tick.
-    if (!shutdown_called)
-        for (size_t idx = 0; idx < tasks.size(); ++idx)
-            pollIdleConsumerEvents(idx);
 }
 
 void StorageKafka2::assertActive() const
@@ -617,6 +611,7 @@ void StorageKafka2::startup()
         }
     }
     activating_task->activateAndSchedule();
+    drain_task->activateAndSchedule();
 }
 
 void StorageKafka2::scheduleStreamingTasksImpl()
@@ -633,6 +628,7 @@ void StorageKafka2::shutdown(bool)
     /// Wake up any threads blocked in acquireConsumer waiting for a free consumer.
     cv.notify_all();
     activating_task->deactivate();
+    drain_task->deactivate();
     partialShutdown();
     LOG_TRACE(log, "Closing consumers");
     cleanConsumers();
@@ -705,7 +701,8 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         num_consumers > 1,
         consumer_number,
         client_id,
-        getMaxBlockSize()};
+        getMaxBlockSize(),
+        /*drain_idle_consumers=*/true};
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
@@ -1541,6 +1538,17 @@ void StorageKafka2::pollIdleConsumerEvents(size_t idx)
     {
         tryLogCurrentException(log, fmt::format("Failed to poll events of consumer #{}", idx));
     }
+}
+
+void StorageKafka2::drainEventsTask()
+{
+    /// Periodic drainer independent of the streaming and activation tasks: a blocked MV insert
+    /// keeps its streaming task inside streamToViews, and a Keeper outage makes activate() wait
+    /// in partialShutdown() for that task, so neither can drain events during such waits.
+    for (size_t idx = 0; idx < tasks.size(); ++idx)
+        pollIdleConsumerEvents(idx);
+
+    drain_task->scheduleAfter(500);
 }
 
 void StorageKafka2::cleanConsumers()

@@ -74,16 +74,10 @@ def kafka_setup_teardown():
 
 
 def test_statistics_enabled_by_default(kafka_cluster):
-    """rdkafka_stat must be populated without any statistics config, for both engines."""
+    """rdkafka_stat must be populated without any statistics config for StorageKafka2."""
     topic_name = "topic_statistics_default"
 
-    # Use distinct consumer groups: the old engine subscribes and commits offsets to the broker for its
-    # group; if both engines shared one group, the old engine's commits would move the start offset of the
-    # Keeper-backed engine (assign() without an explicit offset falls back to the broker-committed one
-    # before auto.offset.reset), making which messages the second engine sees timing-dependent.
-    old_engine_table = k.generate_old_create_table_query(
-        "kafka_old", "a String", topic_list=topic_name, consumer_group="statistics_old_engine", format="LineAsString"
-    )
+    # Distinct groups: the old engine's broker commits would move the start offset of the Keeper-backed one.
     new_engine_table = k.generate_new_create_table_query(
         "kafka_new", "a String", topic_list=topic_name, consumer_group="statistics_new_engine", format="LineAsString"
     )
@@ -91,22 +85,13 @@ def test_statistics_enabled_by_default(kafka_cluster):
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.query(
             f"""
-            CREATE TABLE test.dst_old (a String) ENGINE = MergeTree() ORDER BY tuple();
             CREATE TABLE test.dst_new (a String) ENGINE = MergeTree() ORDER BY tuple();
-            {old_engine_table};
             {new_engine_table};
-            CREATE MATERIALIZED VIEW test.kafka_old_mv TO test.dst_old AS SELECT a FROM test.kafka_old;
             CREATE MATERIALIZED VIEW test.kafka_new_mv TO test.dst_new AS SELECT a FROM test.kafka_new;
             """
         )
 
         k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
-        instance.query_with_retry(
-            "SELECT * FROM test.dst_old",
-            retry_count=60,
-            sleep_time=1,
-            check_callback=lambda x: len(TSV(x)) == 1,
-        )
         instance.query_with_retry(
             "SELECT * FROM test.dst_new",
             retry_count=60,
@@ -115,7 +100,6 @@ def test_statistics_enabled_by_default(kafka_cluster):
         )
 
         # The default interval is 3000ms, so waiting for a ts advance takes a few seconds.
-        wait_for_statistics("kafka_old")
         wait_for_statistics("kafka_new")
 
 
@@ -244,6 +228,59 @@ def test_statistics_survive_blocked_mv_insert(kafka_cluster):
             )
         finally:
             # CANCEL aborts the blocked insert so the teardown does not wait for its timeout.
+            instance.query("SYSTEM CANCEL test.kafka", ignore_error=True)
+
+
+def test_statistics_survive_blocked_insert_during_keeper_outage(kafka_cluster):
+    """Statistics must keep being served when a blocked MV insert overlaps a Keeper outage."""
+    topic_name = "topic_statistics_overlap"
+
+    create_kafka_query = k.generate_new_create_table_query(
+        "kafka", "a String", topic_list=topic_name, format="LineAsString"
+    )
+
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        instance.query(
+            f"""
+            CREATE TABLE test.dead_dst (a String) ENGINE = Kafka('dead_host:9092', 'dead_dst2', 'dead_group2', 'LineAsString');
+            {create_kafka_query};
+            CREATE MATERIALIZED VIEW test.kafka_mv TO test.dead_dst AS SELECT a FROM test.kafka;
+            """
+        )
+
+        # Start the blocked insert first, then expire the Keeper session on top of it:
+        # the activation task gets stuck in partialShutdown() waiting for the blocked
+        # consumer task, so only the independent drain task can serve the events.
+        k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
+        time.sleep(3)
+
+        try:
+            with PartitionManager() as pm:
+                pm.drop_instance_zk_connections(instance)
+                instance.wait_for_log_line(
+                    "ZooKeeper session has expired. Switching to a new session",
+                    timeout=120,
+                    look_behind_lines=0,
+                )
+                # The drain task must keep advancing ts despite the activation task
+                # being blocked in partialShutdown() for the remaining insert duration.
+                ts_first = None
+                ts_second = None
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    ts = get_stat_ts("kafka")
+                    if ts is not None:
+                        if ts_first is None:
+                            ts_first = ts
+                        elif ts > ts_first:
+                            ts_second = ts
+                            break
+                    time.sleep(2)
+                assert ts_first is not None and ts_second is not None, (
+                    f"rdkafka_stat is not served while a blocked insert overlaps a Keeper "
+                    f"outage (ts {ts_first} -> {ts_second})"
+                )
+        finally:
             instance.query("SYSTEM CANCEL test.kafka", ignore_error=True)
 
 

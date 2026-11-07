@@ -40,6 +40,9 @@ struct KafkaConfigLoader
         size_t consumer_number;
         String client_id;
         size_t max_block_size;
+        /// Only StorageKafka2 sets this: its idle and held consumers are drained by
+        /// pollIdleConsumerEvents(), which the old engine cannot do (single queue).
+        bool drain_idle_consumers = false;
     };
 
     struct ProducerConfigParams : public LoadConfigParams
