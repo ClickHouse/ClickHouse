@@ -44,6 +44,11 @@ void HTTPServerConnection::run()
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
+    /// Stop waiting for the next request as soon as the server is shutting down,
+    /// otherwise an idle keep-alive connection would block shutdown until the
+    /// keep-alive timeout elapses (`server_pool.joinAll()` waits for this thread).
+    session.setStopCallback([this] { return stopped || !tcp_server.isOpen(); });
+
     ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsCreated);
 
     /// This object stays until the socket closes. Thus, `system.connections` shows a keep-alive connection as idle between the requests.
