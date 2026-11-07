@@ -117,9 +117,10 @@ struct RangesInDataPart
 
     /// The above "ranges" member is the selected ranges after index analysis.
     /// Index analysis has 2 steps : 1) Filter by primary key   2) Filter by skip indexes
-    /// Below member saves a snapshot of the selected ranges after primary key analysis (optional),
-    /// currently done only for use_skip_indexes_if_final_exact_mode=1
-    std::optional<MarkRanges> ranges_snapshot_after_pk_analysis;
+    /// Below member saves a snapshot of the selected ranges after primary key analysis and the skip indexes
+    /// that are safe before FINAL (see `MergeTreeIndexWithCondition::safe_before_final`), before the other skip indexes
+    /// (optional), currently done only for use_skip_indexes_if_final_exact_mode=1
+    std::optional<MarkRanges> ranges_before_unsafe_skip_indexes;
 
     /// Offset ranges from parent part, used during projection index reading.
     PartOffsetRanges parent_ranges;

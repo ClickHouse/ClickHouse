@@ -2768,6 +2768,45 @@ memory usage by not loading useless columns of the primary key.
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \
+    DECLARE(String, columns_identical_across_versions, "", R"(
+Comma-separated list of columns whose values are identical in all rows with the same sorting key
+(all versions of a row). Applies to `ReplacingMergeTree`, `CollapsingMergeTree` and `VersionedCollapsingMergeTree`.
+
+A condition on such columns gives the same result for every version of a key, so queries with `FINAL`
+treat these columns like the sorting key columns:
+- conditions on them are moved to `PREWHERE` automatically and evaluated before the `FINAL` merge;
+- data skipping indexes on them are used without extending the ranges to all rows sharing a key
+  (see `use_skip_indexes_if_final_exact_mode`);
+- partition pruning is not deferred if the partition key depends only on them and the sorting key
+  (see `defer_partition_pruning_after_final`);
+- the query condition cache is used if the whole condition depends only on them and the sorting key.
+
+The setting is a promise about the data and is not verified. If rows with the same sorting key have different
+values in such a column, a query with `FINAL` can return an outdated version of a row or skip a row.
+
+The version, sign and `is_deleted` columns cannot be listed, as well as columns of floating-point types
+(`-0.0` and `0.0` are equal for the merge but can be told apart by a condition).
+The `DEFAULT` or `MATERIALIZED` expression of a listed column must be deterministic and use only listed columns
+and the sorting key columns.
+A listed column cannot be dropped or renamed. Cannot be set together with `columns_varying_across_versions`.
+
+`UPDATE` of a listed column is allowed only if its condition and new value are deterministic and use only
+the listed columns and the sorting key columns, so that it updates all versions of a row in the same way.
+)", 0, \
+        {"26.11", "", "", "New setting"}) \
+    DECLARE(String, columns_varying_across_versions, "", R"(
+Comma-separated list of columns whose values can differ between rows with the same sorting key (versions of a row).
+All other physical columns, except the version, sign and `is_deleted` columns and columns of floating-point types,
+are considered identical in all versions of a row, as if they were listed in `columns_identical_across_versions`.
+Columns added later by `ALTER TABLE ... ADD COLUMN` are considered identical as well, unless added to this list.
+A column with a `DEFAULT`, `MATERIALIZED` or `ALIAS` expression that uses a varying column or a non-deterministic
+function (e.g. `now`) is varying as well. `UPDATE` of an identical column is restricted as described in
+`columns_identical_across_versions`.
+
+An empty value means the setting is not used. Cannot be set together with `columns_identical_across_versions`.
+A listed column cannot be dropped or renamed.
+)", 0, \
+        {"26.11", "", "", "New setting"}) \
     DECLARE(UInt64, min_bytes_to_prewarm_caches, 0, R"(
 Minimal size (uncompressed bytes) to prewarm mark cache and primary index cache
 for new parts

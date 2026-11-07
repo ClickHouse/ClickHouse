@@ -1,0 +1,100 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: checks the index analysis in EXPLAIN, which parallel replicas move to the coordinator.
+
+-- With FINAL, the columns identical in all versions of a row (here: all but `score`, see `columns_varying_across_versions`)
+-- are treated like the sorting key: conditions on them move to PREWHERE, skip indexes on them do not extend the ranges,
+-- and partitions are pruned by them.
+
+SET explain_query_plan_default = 'legacy';
+SET optimize_move_to_prewhere = 1, optimize_move_to_prewhere_if_final = 1, apply_prewhere_after_final = 0;
+SET use_skip_indexes = 1, use_skip_indexes_if_final = 1, use_skip_indexes_if_final_exact_mode = 1, use_skip_indexes_on_data_read = 0;
+SET do_not_merge_across_partitions_select_final = 0, enable_automatic_decision_for_merging_across_partitions_for_final = 1;
+SET defer_partition_pruning_after_final = 1, use_query_condition_cache = 0;
+
+DROP TABLE IF EXISTS t_plain;
+DROP TABLE IF EXISTS t_identical;
+
+-- `month` and `mode` are functions of `id`, so they are identical in all versions of a row.
+CREATE TABLE t_plain
+(
+    id UInt64,
+    month UInt8,
+    mode LowCardinality(String),
+    score UInt32,
+    score_bucket UInt32 MATERIALIZED intDiv(score, 100),
+    stats Tuple(kills UInt32),
+    kills UInt32 MATERIALIZED stats.kills,
+    version UInt64,
+    deleted UInt8,
+    ratio Float64,
+    ratio_bits UInt64 MATERIALIZED reinterpretAsUInt64(ratio),
+    INDEX idx_mode mode TYPE set(10) GRANULARITY 1,
+    INDEX idx_score score TYPE minmax GRANULARITY 1
+)
+ENGINE = ReplacingMergeTree(version, deleted)
+PARTITION BY month
+ORDER BY id
+SETTINGS index_granularity = 64, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 1000000000,
+    add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 0;
+
+CREATE TABLE t_identical AS t_plain;
+ALTER TABLE t_identical MODIFY SETTING columns_varying_across_versions = 'score, stats';
+
+SYSTEM STOP MERGES t_plain;
+SYSTEM STOP MERGES t_identical;
+
+-- Version 1 of every row, then version 2 of every second row with a new score, some of them deleted.
+-- Rows 0..333 are in month 1, 334..667 in month 2, 668..999 in month 3; `mode` is 'b' for the rows 900..999.
+INSERT INTO t_plain SELECT number, 1 + intDiv(number, 334), if(number >= 900, 'b', 'a'), number, tuple(number), 1, 0, 0. FROM numbers(1000);
+INSERT INTO t_plain SELECT number * 2, 1 + intDiv(number * 2, 334), if(number * 2 >= 900, 'b', 'a'), 5000 + number, tuple(5000 + number), 2, number % 7 = 0, -0. FROM numbers(500);
+INSERT INTO t_identical SELECT * FROM t_plain WHERE version = 1;
+INSERT INTO t_identical SELECT * FROM t_plain WHERE version = 2;
+
+SELECT 'equal results',
+    (SELECT groupArraySorted(1000)((id, score)) FROM t_plain FINAL WHERE mode = 'b' AND month = 3)
+    = (SELECT groupArraySorted(1000)((id, score)) FROM t_identical FINAL WHERE mode = 'b' AND month = 3);
+
+-- `score < 950` matches the replaced versions of the even rows: the index on `score` must not hide their replacements.
+SELECT 'equal results with varying column',
+    (SELECT groupArraySorted(1000)((id, score)) FROM t_plain FINAL WHERE mode = 'b' AND score < 950)
+    = (SELECT groupArraySorted(1000)((id, score)) FROM t_identical FINAL WHERE mode = 'b' AND score < 950),
+    (SELECT count() FROM t_identical FINAL WHERE mode = 'b' AND score < 950);
+
+SELECT 'prewhere', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_identical FINAL WHERE mode = 'b');
+
+-- A column computed from a varying column varies as well.
+SELECT 'no prewhere for column computed from varying', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_identical FINAL WHERE score_bucket = 9);
+-- `ratio` is 0.0 in the old versions and -0.0 in the new ones: equal, but `ratio_bits` tells them apart.
+SELECT 'column computed from float', count() FROM t_identical FINAL WHERE ratio_bits = 0;
+SELECT 'no prewhere for column computed from varying subcolumn', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_identical FINAL WHERE kills = 900);
+
+SELECT 'no range extension', countIf(explain LIKE '%PrimaryKeyExpand%') FROM (EXPLAIN indexes = 1 SELECT id FROM t_identical FINAL WHERE mode = 'b');
+
+-- With an index on a varying column as well, the ranges are extended only within the 4 granules left by the index on `mode`
+-- (the last `Granules` line is the one of `PrimaryKeyExpand`).
+SELECT 'range extension within mode', arrayElement(groupArray(trimLeft(explain)), -1)
+FROM (EXPLAIN indexes = 1 SELECT id FROM t_identical FINAL WHERE mode = 'b' AND score >= 5300)
+WHERE explain LIKE '%Granules%';
+
+SELECT 'partition pruning', countIf(explain LIKE '%Parts: 2/6%') FROM (EXPLAIN indexes = 1 SELECT id FROM t_identical FINAL WHERE month = 3);
+
+DROP TABLE t_plain;
+DROP TABLE t_identical;
+
+-- The version column is a subcolumn: the whole `meta` varies, and so does a column computed from its subcolumn.
+DROP TABLE IF EXISTS t_version_subcolumn;
+CREATE TABLE t_version_subcolumn (id UInt64, score UInt64, meta Tuple(ver UInt64), derived UInt64 MATERIALIZED meta.ver)
+ENGINE = ReplacingMergeTree(meta.ver) ORDER BY id
+SETTINGS columns_varying_across_versions = 'score';
+INSERT INTO t_version_subcolumn (id, score, meta) VALUES (1, 100, tuple(10));
+SELECT 'no prewhere for column computed from version subcolumn', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_version_subcolumn FINAL WHERE derived = 10);
+DROP TABLE t_version_subcolumn;
+
+-- A column computed by a non-deterministic function gets a different value in each version of a row.
+DROP TABLE IF EXISTS t_nondeterministic_default;
+CREATE TABLE t_nondeterministic_default (id UInt64, score UInt64, inserted DateTime DEFAULT now())
+ENGINE = ReplacingMergeTree ORDER BY id
+SETTINGS columns_varying_across_versions = 'score';
+INSERT INTO t_nondeterministic_default (id, score) VALUES (1, 100);
+SELECT 'no prewhere for non-deterministic default', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_nondeterministic_default FINAL WHERE inserted = '2000-01-01 00:00:00');
+DROP TABLE t_nondeterministic_default;

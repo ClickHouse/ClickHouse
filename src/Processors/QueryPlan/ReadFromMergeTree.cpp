@@ -19,6 +19,7 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/indexHint.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -139,53 +140,42 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
-/// Floats are excluded: -0.0 and 0.0 merge as one key, but a condition can tell them apart
-NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
+/// check if a DAG node only depends on the given columns, e.g. on the columns safe before FINAL
+/// (ActionsDAG version of isDeterministicExpressionSafeBeforeFinal, minus determinism - see isNodeDeterministic)
+bool isNodeOverColumns(const ActionsDAG::Node * node, const NameSet & columns)
 {
-    NameSet names;
-    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
-    {
-        bool has_float = anyInTypeTree(*sorting_key.data_types[i], [](const IDataType & node) { return isFloat(node); });
-        if (!has_float)
-            names.insert(sorting_key.column_names[i]);
-    }
-    return names;
-}
-
-/// check if a DAG node only depends on sorting key columns
-/// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
-bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
-{
-    if (sorting_key_set.contains(node->result_name))
+    if (columns.contains(node->result_name))
         return true;
     if (node->type == ActionsDAG::ActionType::COLUMN)
         return true; // constants are fine
     if (node->type == ActionsDAG::ActionType::INPUT || node->type == ActionsDAG::ActionType::PLACEHOLDER)
         return false; // already checked result_name
+    /// `indexHint` has no children: its condition is kept in its own DAG, but the index analysis uses it
+    if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (const auto * index_hint = FunctionIndexHint::tryGet(node->function_base))
+            for (const auto * output : index_hint->getActions().getOutputs())
+                if (!isNodeOverColumns(output, columns))
+                    return false;
     for (const auto * child : node->children)
-        if (!isNodeOverSortingKey(child, sorting_key_set))
+        if (!isNodeOverColumns(child, columns))
             return false;
     return true;
 }
 
 /// `Graphite` FINAL rolls rows with different times into one row, so the indexes may prune only by the path,
 /// and only when the path leads the sorting key: a rollup group is a run of adjacent rows of one path
-std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(const ActionsDAG & filter, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(
+    const ActionsDAG & filter, const MergeTreeData & data, const StorageInMemoryMetadata & metadata, const ContextPtr & query_context)
 {
     /// virtual columns select parts and rows as for the other engines
-    NameSet safe_columns;
+    NameSet safe_columns = data.getColumnsSafeBeforeFinal(metadata, query_context);
     for (const auto & column : metadata.virtuals)
         safe_columns.insert(column.name);
-
-    const auto & path = data.merging_params.graphite_params.path_column_name;
-    const auto & sorting_key_columns = metadata.getSortingKeyColumns();
-    if (!sorting_key_columns.empty() && sorting_key_columns.front() == path)
-        safe_columns.insert(path);
 
     ActionsDAG::NodeRawConstPtrs atoms;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter.getOutputs().front()))
     {
-        if (isNodeOverSortingKey(atom, safe_columns))
+        if (isNodeOverColumns(atom, safe_columns))
             atoms.push_back(atom);
     }
     return ActionsDAG::buildFilterActionsDAG(atoms);
@@ -208,10 +198,23 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
         && !allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
 
+    /// the condition of `indexHint` is not among its children, see `isNodeOverColumns`
+    if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (const auto * index_hint = FunctionIndexHint::tryGet(node->function_base))
+            for (const auto * output : index_hint->getActions().getOutputs())
+                if (!isNodeDeterministic(output))
+                    return false;
+
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
     return true;
+}
+
+/// Whether a filter gives the same result for all versions of a row, so it can be evaluated before FINAL
+bool isNodeSafeBeforeFinal(const ActionsDAG::Node * node, const NameSet & columns_safe_before_final)
+{
+    return isNodeOverColumns(node, columns_safe_before_final) && isNodeDeterministic(node);
 }
 
 using VirtualColumnUtils::isDeterministicAllowingTopKFilter;
@@ -2552,16 +2555,16 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     /** To avoid merging parts across partitions we want result of partition key expression for
       * rows with same primary key to be the same.
       *
-      * If partition key expression is deterministic, and contains only columns that are included
-      * in primary key, then for same primary key column values, result of partition key expression
-      * will be the same.
+      * If partition key expression is deterministic, and contains only columns that are equal in all rows
+      * with the same sorting key (the sorting key columns and the columns identical in all versions of a row,
+      * see `MergeTreeData::getColumnsSafeBeforeFinal`), then for these rows the result of partition key
+      * expression will be the same.
       */
     const auto & partition_key_expression = storage_snapshot->metadata->getPartitionKey().expression;
     if (partition_key_expression->getActionsDAG().hasNonDeterministic())
         return false;
 
-    const auto & primary_key_columns = storage_snapshot->metadata->getPrimaryKey().column_names;
-    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+    const NameSet & safe_columns = getColumnsSafeBeforeFinal();
 
     /** The proof above equates "same primary key column values" with "one logical key for the FINAL
       * merge", but the merge comparator is coarser than value identity for floating-point columns:
@@ -2573,7 +2576,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
       */
     for (const auto & required_column : partition_key_expression->getRequiredColumnsWithTypes())
     {
-        if (!primary_key_columns_set.contains(required_column.name))
+        if (!safe_columns.contains(required_column.name))
             return false;
 
         if (anyInTypeTree(*required_column.type, [](const IDataType & type) { return isFloat(type); }))
@@ -3138,23 +3141,20 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
 namespace
 {
 
-/// Check if all columns of all useful skip indexes are also part of the primary key (float columns do not count).
-/// When true, skip indexes cannot cause incorrect FINAL results (since PK-based filtering cannot drop parts with overlapping key ranges),
-/// so the `findPKRangesForFinalAfterSkipIndex` recovery pass can be skipped.
-bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, const UsefulSkipIndexes & skip_indexes)
+/// Whether a granule dropped by the index holds no row that FINAL needs. This is so if the index is built only on the columns
+/// that are equal in all versions of a row: then its condition drops a version only together with all other versions of the row.
+/// A vector similarity index returns the nearest candidates rather than filtering by a condition, so it is never safe.
+bool isSkipIndexSafeBeforeFinal(const IMergeTreeIndex & index, const NameSet & columns_safe_before_final)
 {
-    NameSet primary_key_columns_set = sortingKeyNamesSafeBeforeFinal(primary_key);
+    if (index.isVectorSimilarityIndex())
+        return false;
 
-    for (const auto & skip_index : skip_indexes.useful_indices)
+    auto all_safe = [&](const Names & names)
     {
-        for (const auto & column : skip_index.index->index.column_names)
-        {
-            if (!primary_key_columns_set.contains(column))
-                return false;
-        }
-    }
-
-    return true;
+        return std::ranges::all_of(names, [&](const String & name) { return columns_safe_before_final.contains(name); });
+    };
+    /// An index on a sorting key expression matches it by name, an index on an expression over safe columns by its columns.
+    return all_safe(index.index.column_names) || all_safe(index.index.expression->getRequiredColumns());
 }
 
 }
@@ -3285,16 +3285,13 @@ void ReadFromMergeTree::buildIndexes(
 {
     indexes.reset();
 
-    // Build and check if primary key is used when necessary
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-
     const auto & settings = query_context->getSettingsRef();
     const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
 
     std::optional<ActionsDAG> graphite_final_filter;
     if (filter_actions_dag_ && query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
-        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot);
+        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot, query_context);
         filter_actions_dag_ = graphite_final_filter ? &*graphite_final_filter : nullptr;
     }
 
@@ -3346,6 +3343,10 @@ void ReadFromMergeTree::buildIndexes(
 
     UsefulSkipIndexes skip_indexes;
 
+    NameSet safe_columns;
+    if (query_info_.isFinal())
+        safe_columns = data.getColumnsSafeBeforeFinal(*metadata_snapshot, query_context);
+
     for (const auto & index : all_indexes)
     {
         if (ignored_index_names.contains(index.name))
@@ -3383,7 +3384,10 @@ void ReadFromMergeTree::buildIndexes(
 
         const auto & unsubstituted = condition_template->generateUnsubstituted();
         if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
-            skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
+        {
+            auto & useful_index = skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
+            useful_index.safe_before_final = query_info_.isFinal() && isSkipIndexSafeBeforeFinal(*index_helper, safe_columns);
+        }
 
         auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
         {
@@ -3436,7 +3440,8 @@ void ReadFromMergeTree::buildIndexes(
     indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
                                                         && query_info_.isFinal()
                                                         && settings[Setting::use_skip_indexes_if_final_exact_mode]
-                                                        && !areAllSkipIndexColumnsInPrimaryKey(primary_key, skip_indexes);
+                                                        /// The ranges dropped by the safe indexes need not be read again.
+                                                        && !std::ranges::all_of(skip_indexes.useful_indices, &MergeTreeIndexWithCondition::safe_before_final);
 
     indexes->skip_indexes = std::move(skip_indexes);
 }
@@ -3456,15 +3461,19 @@ bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
     if (!context->getSettingsRef()[Setting::apply_row_policy_after_final])
         return false;
 
-    NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
-
     const auto * filter_output = &query_info.row_level_filter->actions.findInOutputs(
         query_info.row_level_filter->column_name);
 
-    /// Safe to apply before FINAL only if the policy is Sorting-Key-only (verdict
-    /// is the same for every row of a dedup group) and deterministic
-    /// (no `rand`/`now` flipping the winner)
-    return !(isNodeOverSortingKey(filter_output, sorting_key_set) && isNodeDeterministic(filter_output));
+    /// Safe to apply before FINAL only if the policy uses only the columns equal in all versions of a row
+    /// (verdict is the same for every row of a dedup group) and is deterministic (no `rand`/`now` flipping the winner)
+    return !isNodeSafeBeforeFinal(filter_output, getColumnsSafeBeforeFinal());
+}
+
+const NameSet & ReadFromMergeTree::getColumnsSafeBeforeFinal() const
+{
+    if (!columns_safe_before_final)
+        columns_safe_before_final = data.getColumnsSafeBeforeFinal(*storage_snapshot->metadata, context);
+    return *columns_safe_before_final;
 }
 
 bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
@@ -3533,7 +3542,8 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     if (query_info.prewhere_info && isPrewhereDeferredAfterFinal())
         deferred_prewhere_info = query_info.prewhere_info;
 
-    /// Don't prune partitions unless the partition key is determined by the sorting key:
+    /// Don't prune partitions unless the partition key is determined by the sorting key
+    /// (and the columns equal in all versions of a row, see `MergeTreeData::getColumnsSafeBeforeFinal`):
     /// when FINAL merges across partitions, rows with the same primary key in different
     /// partitions must all participate in deduplication, so partition pruning would drop
     /// rows that affect the FINAL result.
@@ -3546,18 +3556,20 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
         && storage_snapshot->metadata->hasPartitionKey())
     {
         const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
+        /// The sorting key columns are kept as they are (with floats and for `Graphite`), the floats are checked below.
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
-        NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+        NameSet key_columns = getColumnsSafeBeforeFinal();
+        key_columns.insert(sorting_key_columns.begin(), sorting_key_columns.end());
 
         const auto & partition_expr_names = partition_key.column_names;
         bool exprs_match = std::all_of(
             partition_expr_names.begin(), partition_expr_names.end(),
-            [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
+            [&](const auto & expr_name) { return key_columns.contains(expr_name); });
 
         const auto & partition_required_columns = partition_key.expression->getRequiredColumnsWithTypes();
         bool columns_match = std::all_of(
             partition_required_columns.begin(), partition_required_columns.end(),
-            [&](const auto & col) { return sorting_key_set.contains(col.name); });
+            [&](const auto & col) { return key_columns.contains(col.name); });
 
         /// "Determined by the sorting key" holds for value identity, not for comparator equality, and
         /// the two differ for floating-point columns: `-0.0` compares equal to `0.0`, and every `NaN`
@@ -3604,22 +3616,22 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         deferFiltersAfterFinalIfNeeded();
         if (deferred_row_level_filter || deferred_prewhere_info)
         {
-            /// exclude deferred filters from index analysis, but keep sorting-key AND atoms
+            /// exclude deferred filters from index analysis, but keep the AND atoms over the columns safe before FINAL
             NameSet deferred_column_names;
             if (deferred_row_level_filter)
                 deferred_column_names.insert(deferred_row_level_filter->column_name);
             if (deferred_prewhere_info)
                 deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
 
-            NameSet sorting_key_set = sortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
+            const NameSet & safe_columns = getColumnsSafeBeforeFinal();
 
             std::vector<const ActionsDAG::Node *> index_nodes;
 
-            /// collect sorting-key-only atoms from a (possibly nested) AND tree
-            std::function<void(const ActionsDAG::Node *)> collect_sorting_key_atoms =
+            /// collect the atoms over the columns safe before FINAL from a (possibly nested) AND tree
+            std::function<void(const ActionsDAG::Node *)> collect_safe_atoms =
                 [&](const ActionsDAG::Node * n)
             {
-                if (isNodeOverSortingKey(n, sorting_key_set))
+                if (isNodeOverColumns(n, safe_columns))
                 {
                     index_nodes.push_back(n);
                     return;
@@ -3628,7 +3640,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                     && n->function_base && n->function_base->getName() == "and")
                 {
                     for (const auto * child : n->children)
-                        collect_sorting_key_atoms(child);
+                        collect_safe_atoms(child);
                 }
             };
 
@@ -3637,7 +3649,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
                 if (!deferred_column_names.contains(node->result_name))
                     index_nodes.push_back(node);
                 else
-                    collect_sorting_key_atoms(node);
+                    collect_safe_atoms(node);
             }
 
             auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input);
@@ -3705,6 +3717,23 @@ bool ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(const VirtualCol
     if (query_info_.prewhere_info && dag_has_input(query_info_.prewhere_info->prewhere_actions))
         return true;
     return false;
+}
+
+bool ReadFromMergeTree::isFilterSafeBeforeFinal(
+    const SelectQueryInfo & query_info_, const MergeTreeData & data, const StorageInMemoryMetadata & metadata, const ContextPtr & query_context)
+{
+    const NameSet safe_columns = data.getColumnsSafeBeforeFinal(metadata, query_context);
+    auto is_safe = [&](const ActionsDAG::Node * node) { return isNodeSafeBeforeFinal(node, safe_columns); };
+
+    if (query_info_.filter_actions_dag && !std::ranges::all_of(query_info_.filter_actions_dag->getOutputs(), is_safe))
+        return false;
+    if (query_info_.prewhere_info
+        && !is_safe(&query_info_.prewhere_info->prewhere_actions.findInOutputs(query_info_.prewhere_info->prewhere_column_name)))
+        return false;
+    if (query_info_.row_level_filter
+        && !is_safe(&query_info_.row_level_filter->actions.findInOutputs(query_info_.row_level_filter->column_name)))
+        return false;
+    return true;
 }
 
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
@@ -3909,6 +3938,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (table_has_unique_key)
         reader_settings.use_query_condition_cache = false;
 
+    /// With FINAL, the rows of a granule that match no filter can still decide which version of a row FINAL returns,
+    /// unless the filters use only the columns equal in all versions of a row.
+    const bool filter_safe_before_final = query_info_.isFinal() && reader_settings.use_query_condition_cache
+        && isFilterSafeBeforeFinal(query_info_, data, *metadata_snapshot, context_);
+
     const bool filter_depends_on_non_deterministic_virtuals = filterDependsOnNonDeterministicVirtuals(metadata_snapshot->virtuals, query_info_);
     if (filter_depends_on_non_deterministic_virtuals)
         reader_settings.use_query_condition_cache = false;
@@ -3963,6 +3997,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 res_parts,
                 query_info_,
+                filter_safe_before_final,
                 vector_search_parameters,
                 top_k_filter_info,
                 allow_top_k_prewhere_query_condition_cache_,
@@ -4103,7 +4138,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && (!query_info_.isFinal() || filter_safe_before_final)
                 && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
                 && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
                                                          /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).

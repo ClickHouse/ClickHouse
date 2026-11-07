@@ -1440,6 +1440,18 @@ public:
     /// When `settings_changes` is provided, apply the overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
+    /// The sorting key columns that are equal in all rows merged into one by `FINAL`. Floats are excluded:
+    /// -0.0 and 0.0 merge as one key, and NaN payloads compare equal, but a condition can tell them apart.
+    static NameSet getSortingKeyColumnsSafeBeforeFinal(const KeyDescription & sorting_key);
+
+    /// The columns (and their subcolumns) that are equal in all rows merged into one by `FINAL`: the sorting key columns
+    /// from `getSortingKeyColumnsSafeBeforeFinal` and the columns declared identical in all versions of a row by the
+    /// settings `columns_identical_across_versions` or `columns_varying_across_versions`. A deterministic condition
+    /// over them gives the same result for all versions of a row, so it can be evaluated before the `FINAL` merge.
+    /// The declared columns are not used when masking policies apply to the query: a policy can rewrite them at read time
+    /// differently for each version of a row.
+    NameSet getColumnsSafeBeforeFinal(const StorageInMemoryMetadata & metadata, const ContextPtr & query_context) const;
+
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
@@ -2535,6 +2547,15 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    /// Checks the settings `columns_identical_across_versions` and `columns_varying_across_versions`.
+    void checkColumnsIdenticalAcrossVersions(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
+
+    /// `getColumnsSafeBeforeFinal` regardless of masking policies.
+    NameSet getColumnsIdenticalAcrossVersions(const StorageInMemoryMetadata & metadata) const;
+
+    /// Rejects an `UPDATE` that can make the versions of a row differ in a column declared identical in all of them.
+    void checkUpdatesKeepColumnsIdenticalAcrossVersions(const MutationCommands & commands, const StorageInMemoryMetadata & metadata) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
 

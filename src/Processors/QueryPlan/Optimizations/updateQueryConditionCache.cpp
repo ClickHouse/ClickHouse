@@ -90,6 +90,9 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
 
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto & filter_actions_dag = query_info.filter_actions_dag;
+    /// With FINAL, the WHERE filter sees the rows after the merge, without the replaced versions, so a granule without
+    /// output rows may still have rows matching the condition. Such reads populate the cache only before the merge
+    /// (index analysis and PREWHERE, see `ReadFromMergeTree::isFilterSafeBeforeFinal`).
     if (!filter_actions_dag || query_info.isFinal())
         return;
 

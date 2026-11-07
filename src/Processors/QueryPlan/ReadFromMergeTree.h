@@ -427,6 +427,12 @@ public:
     /// columns (query-wide part numbering, catalog names, disk placement).
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
 
+    /// Whether all filters of the query (WHERE, PREWHERE, row policy) are deterministic and use only the columns equal
+    /// in all versions of a row (see `MergeTreeData::getColumnsSafeBeforeFinal`). Then, with FINAL, a granule without rows
+    /// matching the filters holds no version of a row that the query returns, so the query condition cache can skip it.
+    static bool isFilterSafeBeforeFinal(
+        const SelectQueryInfo & query_info_, const MergeTreeData & data, const StorageInMemoryMetadata & metadata, const ContextPtr & query_context);
+
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
@@ -928,6 +934,10 @@ private:
         const InputOrderInfoPtr & input_order_info);
 
     bool isRowPolicyDeferredAfterFinal() const;
+
+    /// `MergeTreeData::getColumnsSafeBeforeFinal` for the metadata of this read, computed once.
+    const NameSet & getColumnsSafeBeforeFinal() const;
+    mutable std::optional<NameSet> columns_safe_before_final;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,

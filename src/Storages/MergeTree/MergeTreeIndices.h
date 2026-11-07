@@ -389,6 +389,9 @@ struct MergeTreeIndexWithCondition
 {
     MergeTreeIndexPtr index;
     ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template;
+    /// For a query with FINAL: the index is built only on the columns that are equal in all versions of a row
+    /// (see `MergeTreeData::getColumnsSafeBeforeFinal`), so a granule it drops holds no version that FINAL needs.
+    bool safe_before_final = false;
 
     MergeTreeIndexWithCondition(
         MergeTreeIndexPtr index_,
