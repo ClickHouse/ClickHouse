@@ -79,6 +79,8 @@ public:
     bool yieldStrings() const { return yield_strings; }
 private:
     bool yield_strings;
+    /// See `JSONUtils::getJSONSettingsForSkippingField`.
+    const FormatSettings::JSON skip_field_json_settings;
 };
 
 class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSchemaReader

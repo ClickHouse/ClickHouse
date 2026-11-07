@@ -85,6 +85,8 @@ protected:
     virtual bool checkEndOfData(bool is_first_row);
 
     const FormatSettings format_settings;
+    /// See `JSONUtils::getJSONSettingsForSkippingField`.
+    const FormatSettings::JSON skip_field_json_settings;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     std::vector<UInt8> read_columns;

@@ -25,6 +25,12 @@ namespace JSONUtils
     std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size = 0);
 
     void skipRowForJSONEachRow(ReadBuffer & in);
+
+    /// Settings for skipping a field of a data row in a JSON format. The skipped field may be a column
+    /// that was declared as `DateTime64` but pruned from the requested header (e.g. `SELECT id FROM file(...)`,
+    /// or `SELECT count()`), so the MongoDB shell `ISODate("...")` wrapper is tolerated there: the value is
+    /// discarded and no type is inferred from it.
+    FormatSettings::JSON getJSONSettingsForSkippingField(const FormatSettings::JSON & settings);
     void skipRowForJSONCompactEachRow(ReadBuffer & in);
 
     /// Read row in JSONEachRow format and try to determine type for each field.

@@ -49,6 +49,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
     , yield_strings(yield_strings_)
     , format_settings(format_settings_)
+    , skip_field_json_settings(JSONUtils::getJSONSettingsForSkippingField(format_settings_.json))
 {
     name_map.initFromBlock(getPort().getHeader());
     const auto & header = getPort().getHeader();
@@ -125,7 +126,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref);
 
-    skipJSONField(*in, name_ref, format_settings.json);
+    skipJSONField(*in, name_ref, skip_field_json_settings);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
