@@ -2052,6 +2052,11 @@ void LocalServer::processConfig()
         if (!server_default_database.empty() && !getClientConfiguration().has("only-system-tables"))
             writeMissingDatabaseMetadataFile(*DatabaseCatalog::instance().getDatabase(server_default_database), global_context);
 
+        /// The persisted expressions of tables can refer to user-defined types by name
+        /// (e.g. `ORDER BY CAST(x, 'MyType')`), so the types must be known before the tables are loaded.
+        if (fs::exists(fs::path(path) / "user_defined"))
+            global_context->getUserDefinedTypesStorage().loadObjects();
+
         if (fs::exists(fs::path(path) / "metadata"))
         {
             LOG_DEBUG(log, "Loading metadata from {}", path);

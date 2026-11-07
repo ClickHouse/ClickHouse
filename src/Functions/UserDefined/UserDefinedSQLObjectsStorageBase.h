@@ -3,6 +3,7 @@
 #include <mutex>
 
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -12,10 +13,23 @@
 namespace DB
 {
 
+/// The lower-case name of the kind of object a storage holds, for messages: "function", "type".
+std::string_view getUserDefinedSQLObjectTypeName(UserDefinedSQLObjectType object_type);
+
+/// The error codes to use when an object of the given kind already exists / does not exist.
+int getUserDefinedSQLObjectAlreadyExistsErrorCode(UserDefinedSQLObjectType object_type);
+int getUnknownUserDefinedSQLObjectErrorCode(UserDefinedSQLObjectType object_type);
+
+/// Strips the `IF NOT EXISTS` / `OR REPLACE` flags (and normalizes the body) of a `CREATE` query
+/// before it is stored, so that the stored definition does not depend on how it was created.
+ASTPtr normalizeCreateUserDefinedSQLObjectQuery(const IAST & create_query, UserDefinedSQLObjectType object_type, const ContextPtr & context);
+
+/// A storage holds objects of a single kind (see `UserDefinedSQLObjectType`): objects of different kinds
+/// live in different namespaces, so a function and a type may share a name.
 class UserDefinedSQLObjectsStorageBase : public IUserDefinedSQLObjectsStorage, private WithContext
 {
 public:
-    explicit UserDefinedSQLObjectsStorageBase(ContextPtr global_context_);
+    UserDefinedSQLObjectsStorageBase(ContextPtr global_context_, UserDefinedSQLObjectType object_type_);
     ASTPtr get(const String & object_name) const override;
 
     ASTPtr tryGet(const String & object_name) const override;
@@ -66,6 +80,8 @@ protected:
     void setObject(const String & object_name, const IAST & create_object_query);
     void removeObject(const String & object_name);
     void removeAllObjectsExcept(const Strings & object_names_to_keep);
+
+    const UserDefinedSQLObjectType storage_object_type;
 
     UnorderedMapWithMemoryTracking<String, ASTPtr> object_name_to_create_object_map;
     mutable std::recursive_mutex mutex;

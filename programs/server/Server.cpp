@@ -3662,6 +3662,9 @@ try
         /// The tables (including the ones in the `system` database) can depend on the dictionaries from the configuration files,
         /// so register them before loading the databases. They start loading later, in `loadOrReloadDictionaries`.
         global_context->registerDictionariesBeforeLoadingMetadata(config());
+        /// Load user-defined types. The persisted expressions of tables can refer to them by name
+        /// (e.g. `ORDER BY CAST(x, 'MyType')`), so they must be known before the tables are loaded.
+        global_context->getUserDefinedTypesStorage().loadObjects();
         load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
         maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 
