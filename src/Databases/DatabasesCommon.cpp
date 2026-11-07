@@ -203,7 +203,13 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure",
                         backQuote(ast_create_query.getTable()));
 
-    if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
+    /// A parameterized view normally has no structure of its own, but one whose stored definition
+    /// declares an explicit column list exposes that schema and allows altering it (e.g. `COMMENT COLUMN`),
+    /// so the changes must be persisted as for an ordinary table.
+    bool is_parameterized_view_with_declared_schema = ast_create_query.isParameterizedView() && has_structure
+        && !ast_create_query.columns_list->columns->children.empty();
+
+    if (!ast_create_query.is_dictionary && (!ast_create_query.isParameterizedView() || is_parameterized_view_with_declared_schema))
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
         ASTPtr new_codec_declarations = InterpreterCreateQuery::formatCodecDeclarations(metadata.columns);

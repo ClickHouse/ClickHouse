@@ -53,6 +53,11 @@ public:
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
 
+    /// Follows a chain of `Alias` tables from `storage` down to the first storage that is not an `Alias`
+    /// (`storage` itself when it is not an `Alias`). Returns nullptr when some `Alias` in the chain has no
+    /// existing target or the chain is cyclic, i.e. when there is no final table to reach.
+    static StoragePtr tryResolveChain(const StoragePtr & storage);
+
     /// Returns whether the current user has the specified access to every table this alias resolves
     /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.
     /// An empty `column_name` represents table-level access.
