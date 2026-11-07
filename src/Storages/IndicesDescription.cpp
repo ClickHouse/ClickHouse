@@ -29,7 +29,8 @@ namespace
 {
 
 /// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
-void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+/// They are evaluated when the index is written, where nothing builds the set of an `IN` with a subquery or a table.
+void expandAndValidateTextIndexTransforms(const ASTPtr & arguments, const ColumnsDescription & columns)
 {
     using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
     for (const auto & child : arguments->children)
@@ -43,6 +44,7 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
         {
             ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
             ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
+            checkExpressionDoesntContainSubqueries(*func->arguments->children[1], fmt::format("The text index {} expression", key->name()));
         }
     }
 }
@@ -141,7 +143,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.is_implicitly_created = is_implicitly_created;
     result.escape_filenames = escape_filenames;
 
-    checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
+    checkExpressionDoesntContainSubqueries(*index_definition->getExpression(), "Key expressions");
     result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
@@ -161,7 +163,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         result.arguments = index_type->arguments->clone();
 
         if (result.type == TEXT_INDEX_NAME)
-            expandTextIndexTransformAliases(result.arguments, columns);
+            expandAndValidateTextIndexTransforms(result.arguments, columns);
     }
 
     return result;

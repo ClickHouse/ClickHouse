@@ -81,6 +81,7 @@ Negative tests.
 - The preprocessor expression must reference the underlying column
 - The preprocessor expression must use only deterministic functions
 - The preprocessor expression must not contain arrayJoin
+- The preprocessor expression must not contain a subquery
 Advanced expressions and types.
 - The preprocessor expression must contain the index definition
 -- Single arguments
