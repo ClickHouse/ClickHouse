@@ -99,7 +99,19 @@ enum class DistinctKeyRepresentation
 {
     Columns,
     Hash128,
+    Key16,
+    Key32,
+    Key64,
+    Keys32,
+    Keys64,
+    Keys128,
+    Keys256,
+    NullableKeys128,
+    NullableKeys256,
 };
+
+/// Returns the type of the single service column used by a non-column representation.
+DataTypePtr getDistinctKeyRepresentationType(DistinctKeyRepresentation representation);
 
 /// Owns hash-based `DISTINCT` state, including `LowCardinality` filtering and size-limit enforcement.
 /// `DistinctTransform` uses it for streaming deduplication; `ExternalDistinctTransform` also extracts
@@ -116,7 +128,8 @@ public:
         const SizeLimits & set_size_limits_,
         bool skip_null_keys_ = false);
 
-    /// Returns the representation chosen from the materialized input columns. Requires an initialized set.
+    /// Returns fingerprints for genuinely hashed methods and exact packed keys for fixed methods whose
+    /// values comparison can merge. Other methods retain their original key columns. Requires an initialized set.
     DistinctKeyRepresentation getKeyRepresentation() const;
 
     const ColumnNumbers & getKeyColumnsPositions() const { return key_columns_pos; }
@@ -148,7 +161,7 @@ public:
     };
 
     /// Transfers the hash table, arena, and key metadata into an extractor. With `Columns`, the result
-    /// follows `getKeyColumnsPositions`; with `Hash128`, it contains one `UInt128` fingerprint column.
+    /// follows `getKeyColumnsPositions`; other representations contain one packed-key or fingerprint column.
     /// The returned columns own their values independently of the extractor. The table is released
     /// after its final key is materialized, or when the extractor is destroyed early.
     /// Requires at least one retained key and `skip_null_keys_ = false`: only external `DISTINCT` extracts
