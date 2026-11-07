@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -36,6 +37,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesIDRange.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/tryGetLiteralAlternatives.h>
@@ -232,16 +234,20 @@ TableTimeRange getTimeRangeToFilterIDs(
 
 }
 
-StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
+StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context, ViewTarget::Kind data_target)
 {
-    std::string_view function_name = "timeSeriesSelector";
+    const bool is_histograms = (data_target == ViewTarget::Histograms);
+    std::string_view function_name = is_histograms ? "timeSeriesHistogramSelector" : "timeSeriesSelector";
 
-    size_t min_num_args = 5;
-    size_t max_num_args = 6;
+    /// timeSeriesHistogramSelector() has no argument `return_columns`: it returns one histogram per row.
+    size_t min_num_args = is_histograms ? 4 : 5;
+    size_t max_num_args = min_num_args + 1;
 
     if ((args.size() < min_num_args) || (args.size() > max_num_args))
     {
-        std::string_view expected_args = "[database, ] time_series_table, selector, min_time, max_time, return_columns";
+        std::string_view expected_args = is_histograms
+            ? "[database, ] time_series_table, selector, min_time, max_time"
+            : "[database, ] time_series_table, selector, min_time, max_time, return_columns";
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Table function '{}' requires {}..{} arguments: {}({})",
                         function_name, min_num_args, max_num_args, function_name, expected_args);
@@ -281,6 +287,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
+    /// Checked before the lookup, so the histogram selector does not reveal whether the table or its histograms target exists.
+    if (data_target == ViewTarget::Histograms)
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
+
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
@@ -289,6 +299,11 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr table_id_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
+
+    if ((data_target == ViewTarget::Histograms) && !time_series_storage->hasTarget(ViewTarget::Histograms))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table function '{}' requires a TimeSeries table with a histograms target, but table {} has none",
+                        function_name, time_series_storage_id.getNameForLogs());
 
     PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
 
@@ -301,8 +316,9 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto max_time = parseTimeSeriesTimestamp(max_time_field, max_time_type, parameters_scale);
 
     /// The argument `return_columns` chooses the columns returning the samples: 'samples' or 'timestamp_and_value'.
-    String return_columns_str = getStringConstArgument(args[argument_index++], context, "return_columns");
-    auto return_columns = parseReturnColumns(return_columns_str, function_name);
+    auto return_columns = Configuration::ReturnColumns::TimestampAndValue;
+    if (!is_histograms)
+        return_columns = parseReturnColumns(getStringConstArgument(args[argument_index++], context, "return_columns"), function_name);
 
     chassert(argument_index == args.size());
 
@@ -311,6 +327,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     config.table_id_type = std::move(table_id_type);
     config.table_timestamp_type = std::move(table_timestamp_type);
     config.table_value_type = std::move(table_value_type);
+    config.data_target = data_target;
+    config.data_columns = (data_target == ViewTarget::Histograms)
+        ? getTimeSeriesHistogramPayloadColumns()
+        : NamesAndTypes{{TimeSeriesColumnNames::Value, config.table_value_type}};
     config.return_columns = return_columns;
     config.selector = std::move(selector);
     config.time_scale = parameters_scale;
@@ -397,8 +417,10 @@ namespace
                     tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
             }
 
+            /// PromQL regex matchers are fully anchored; anchor with an explicit group so alternations stay grouped (`^a|b$` would mean `(^a)|(b$)`).
+            /// Already-anchored patterns are left as-is.
             if (!value.starts_with('^'))
-                value = '^' + value;
+                value = "^(" + value + ")";
             if (!value.ends_with('$'))
                 value += '$';
         }
@@ -798,6 +820,7 @@ namespace
                                            ASTPtr select_query_from_tags_table,
                                            const TableTimeRange & time_range_to_filter_samples,
                                            const DataTypePtr & table_timestamp_type,
+                                           const NamesAndTypes & data_columns,
                                            UInt64 bucket_step_seconds,
                                            ASTPtr whole_metric_id_range_condition)
     {
@@ -829,9 +852,10 @@ namespace
             }
             else
             {
-                /// timestamp, value
+                /// timestamp, value (or the histogram payload columns)
                 select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                for (const auto & [name, type] : data_columns)
+                    select_list.push_back(make_intrusive<ASTIdentifier>(name));
             }
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
@@ -883,6 +907,7 @@ namespace
                            const DataTypePtr & table_id_type,
                            const DataTypePtr & table_timestamp_type,
                            const DataTypePtr & table_value_type,
+                           const NamesAndTypes & data_columns,
                            UInt64 bucket_step_seconds)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -923,9 +948,12 @@ namespace
                 "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTLiteral>(table_timestamp_type->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
 
-            select_list.push_back(makeASTFunction(
-                "_CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>(table_value_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+            for (const auto & [name, type] : data_columns)
+            {
+                select_list.push_back(makeASTFunction(
+                    "_CAST", make_intrusive<ASTIdentifier>(name), make_intrusive<ASTLiteral>(type->getName())));
+                select_list.back()->setAlias(name);
+            }
         }
 
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
@@ -1226,6 +1254,9 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// Checked again here: a table created AS the histogram selector is configured once, not with the reader's grants.
+    if (config.data_target == ViewTarget::Histograms)
+        context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
@@ -1233,15 +1264,17 @@ void StorageTimeSeriesSelector::readImpl(
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
     /// Prefer the recent samples table when the whole range fits in its TTL window: it's a much smaller copy of the recent samples.
-    auto samples_table_kind = ViewTarget::Samples;
+    /// Histogram reads always go to their own target table, one histogram per row.
+    auto samples_table_kind = config.data_target;
 
     /// The step of the buckets of the table being read (the samples table and the recent samples table have their own steps),
     /// zero for a table storing one sample per row (see `TimeSeriesSettings::hasBucketedSamples`).
     UInt64 bucket_step_seconds = 0;
-    if (time_series_settings->hasBucketedSamples())
+    if (time_series_settings->hasBucketedSamples() && (samples_table_kind == ViewTarget::Samples))
         bucket_step_seconds = (*time_series_settings)[TimeSeriesSetting::samples_bucket_step_seconds];
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
-    if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
+    if ((samples_table_kind == ViewTarget::Samples) && recent_samples_ttl_seconds
+        && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
         /// If the start of the range is within the TTL, the whole range is: the recent samples table keeps everything after that.
         if (isWithinRecentSamplesTTL(recent_samples_ttl_seconds, std::time(nullptr), config.min_time, config.time_scale)
@@ -1339,6 +1372,7 @@ void StorageTimeSeriesSelector::readImpl(
         select_query_from_tags_table,
         time_range_to_filter_samples,
         config.table_timestamp_type,
+        config.data_columns,
         bucket_step_seconds,
         std::move(whole_metric_id_range_condition));
 
@@ -1347,6 +1381,7 @@ void StorageTimeSeriesSelector::readImpl(
         config.table_id_type,
         config.table_timestamp_type,
         config.table_value_type,
+        config.data_columns,
         bucket_step_seconds);
 
     select_query = convertToReturnColumns(
