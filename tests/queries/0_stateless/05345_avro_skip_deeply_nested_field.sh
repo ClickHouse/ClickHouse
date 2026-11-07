@@ -51,14 +51,17 @@ open(dst, 'wb').write(b'Obj\x01' + meta + sync + zz(1) + zz(len(payload)) + payl
 gen "$DIR/chain_40.avro" chain 40
 gen "$DIR/chain_50000.avro" chain 50000
 gen "$DIR/list_10.avro" list 10
-gen "$DIR/list_100000.avro" list 100000
+gen "$DIR/list_1000000.avro" list 1000000
 
 for f in chain_40 list_10; do
     $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$DIR/$f.avro', Avro, 'id Int64')"
 done
 
-for f in chain_50000 list_100000; do
-    (ulimit -s 1024; $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$DIR/$f.avro', Avro, 'id Int64')" 2>&1) | grep -q -F 'TOO_DEEP_RECURSION' && echo "$f: too deep"
-done
+# With a stack of 1 MiB, the decoder over `contrib/avro` recurses on the native stack until `TOO_DEEP_RECURSION`. The Rust decoder keeps the
+# nesting on the heap, up to 100000 levels whatever the stack is, so it reads `chain_50000`: either result is right, and a crash is not.
+(ulimit -s 1024; $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$DIR/chain_50000.avro', Avro, 'id Int64')" 2>&1) | grep -q -E '^42$|TOO_DEEP_RECURSION' && echo "chain_50000: read or too deep"
+
+# A million levels is more than either of them takes.
+(ulimit -s 1024; $CLICKHOUSE_LOCAL -q "SELECT id FROM file('$DIR/list_1000000.avro', Avro, 'id Int64')" 2>&1) | grep -q -F 'TOO_DEEP_RECURSION' && echo "list_1000000: too deep"
 
 rm -rf "$DIR"

@@ -28,6 +28,13 @@ cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/lexer_fuzzer.in/
 cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/select_parser_fuzzer.in/
 cp $SRC/tests/queries/0_stateless/*.sql $BIN/tests/fuzz/create_parser_fuzzer.in/
 
+# the seed corpora of the Avro fuzzers are committed (tests/fuzz/<fuzzer>.in/), see
+# src/Processors/Formats/fuzzers; stage them next to the generated ones
+mkdir -p $BIN/tests/fuzz
+for dir in $SRC/tests/fuzz/avro_*_fuzzer.in; do
+    cp -r "$dir" $BIN/tests/fuzz/
+done
+
 # build corpus archives
 cd $BIN/tests/fuzz
 for dir in *_fuzzer.in; do

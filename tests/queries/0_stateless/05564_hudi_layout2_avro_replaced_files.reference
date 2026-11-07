@@ -1,0 +1,7 @@
+valid: keep
+absent: drop,keep
+null: drop,keep
+nullable_array: keep
+null_value: INCORRECT_DATA
+bytes: INCORRECT_DATA
+uuid_string: keep

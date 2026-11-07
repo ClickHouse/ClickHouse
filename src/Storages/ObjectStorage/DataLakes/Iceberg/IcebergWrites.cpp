@@ -58,6 +58,7 @@
 #include <Common/randomSeed.h>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -467,6 +468,178 @@ void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value
     else
         setVersionedFieldNull(rec, field_name);
 }
+
+#if USE_AVRO_RUST
+/// The Avro datum of the writer's schema `schema` that holds `value`, a field of a manifest list the reader decoded.
+avro::GenericDatum makeDatumFromField(const avro::NodePtr & schema, const Field & value, const String & field_name)
+{
+    switch (schema->type())
+    {
+        case avro::AVRO_INT:
+        {
+            const Int64 integer = value.safeGet<Int64>();
+            if (integer < std::numeric_limits<Int32>::min() || integer > std::numeric_limits<Int32>::max())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg manifest list field '{}' has value {} that does not fit an `int`",
+                    field_name,
+                    integer);
+            return avro::GenericDatum(static_cast<Int32>(integer));
+        }
+        case avro::AVRO_LONG:
+            return avro::GenericDatum(value.safeGet<Int64>());
+        case avro::AVRO_BOOL:
+            return avro::GenericDatum(value.safeGet<UInt64>() != 0);
+        case avro::AVRO_BYTES:
+        {
+            const String & bytes = value.safeGet<String>();
+            return avro::GenericDatum(std::vector<uint8_t>(bytes.begin(), bytes.end()));
+        }
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Iceberg manifest list field '{}' is written as Avro type {}, copying a value into it is not supported",
+                field_name,
+                avro::toString(schema->type()));
+    }
+}
+
+/// Sets the field `field_name` of a record of the writer's schema to the decoded `value`, whether the field is a plain
+/// type or a `["null", T]` union there. The datum is built from the writer's schema, so it does not matter how the
+/// file the value comes from declared the field.
+void setFieldFromValue(avro::GenericRecord & rec, const String & field_name, const Field & value)
+{
+    const size_t field_index = rec.fieldIndex(field_name);
+    const avro::NodePtr & field_schema = rec.schema()->leafAt(static_cast<UInt32>(field_index));
+    const bool is_union = field_schema->type() == avro::AVRO_UNION;
+
+    if (value.isNull())
+    {
+        if (!is_union)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg manifest list field '{}' is null, but it is required",
+                field_name);
+        setVersionedFieldNull(rec, field_name);
+    }
+    else if (is_union)
+    {
+        avro::GenericUnion field(field_schema);
+        field.selectBranch(1);
+        field.datum() = makeDatumFromField(field_schema->leafAt(1), value, field_name);
+        rec.fieldAt(field_index) = avro::GenericDatum(field_schema, field);
+    }
+    else
+    {
+        rec.fieldAt(field_index) = makeDatumFromField(field_schema, value, field_name);
+    }
+}
+
+/// The manifest list of the parent snapshot, read through `AvroForIcebergDeserializer`, whose entries are copied into the
+/// new manifest list. A field is judged by the kind of the Avro type of its value as the schema of the file declares it,
+/// as the legacy `avro::GenericDatum::type` reader did, and not by the ClickHouse type of its column, which has already
+/// coalesced `bytes` with `string`, nor by the union around it: a field written as `["null", T]` is accepted where `T` is
+/// required as long as the value is not null.
+class ParentManifestList
+{
+public:
+    ParentManifestList(const AvroForIcebergDeserializer & entries_, const String & path_) : entries(entries_), path(path_) {}
+
+    size_t rows() const { return entries.rows(); }
+    bool has(const String & field_name) const { return entries.hasPath(field_name); }
+    Field value(size_t row, const String & field_name) const { return entries.getValueFromRowByName(row, field_name); }
+    /// Whether the top level `field_name` of the row is an Avro null, which `value` cannot tell from an empty array.
+    bool isNull(size_t row, const String & field_name) const { return entries.isNullInRow(row, field_name); }
+
+    /// The value of a field that has to exist, not be null and be of the Avro kind `expected_kind` (`expected_name` in the
+    /// error message).
+    Field required(size_t row, const String & field_name, AvroKind expected_kind, const char * expected_name) const
+    {
+        if (!has(field_name))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Manifest list {} entry is missing required field '{}'", path, field_name);
+
+        const auto kind = entries.getAvroKindOfField(field_name);
+        if (!kind || *kind != static_cast<UInt8>(expected_kind))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest list {} field '{}' has Avro type {}, but type {} is required",
+                path,
+                field_name,
+                kind ? AvroRust::kindName(*kind) : "unknown",
+                expected_name);
+
+        Field result = value(row, field_name);
+        if (result.isNull())
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest list {} field '{}' has Avro type null, but type {} is required",
+                path,
+                field_name,
+                expected_name);
+        return result;
+    }
+
+private:
+    const AvroForIcebergDeserializer & entries;
+    const String & path;
+};
+
+/// Copies the `partitions` field of an entry of the parent manifest list, which has three states that are kept apart:
+/// a null `partitions` stays null, as for an unpartitioned table; an empty array that is not null is written as an array of
+/// no summaries; an array with summaries is copied summary by summary. The column of `partitions` holds an empty array for
+/// a null, so the null is told from the value of the row before its subfields are read.
+/// A `contains_nan` or a bound that is null stays null.
+void copyPartitionSummaries(const ParentManifestList & list, size_t row, avro::GenericRecord & entry)
+{
+    /// An entry that is written without the field is null, as it is for the entries of the writer that have no summaries.
+    if (!list.has(Iceberg::f_partitions) || list.isNull(row, Iceberg::f_partitions))
+        return;
+
+    auto get_array = [&](const String & path) -> Array
+    {
+        if (!list.has(path))
+            return {};
+        auto value = list.value(row, path);
+        return value.getType() == Field::Types::Array ? value.safeGet<Array>() : Array{};
+    };
+
+    const Array contains_null = get_array(Iceberg::c_partitions_contains_null);
+    const Array contains_nan = get_array(Iceberg::c_partitions_contains_nan);
+    const Array lower_bounds = get_array(Iceberg::c_partitions_lower_bound);
+    const Array upper_bounds = get_array(Iceberg::c_partitions_upper_bound);
+
+    /// Selecting the array branch also for no summaries keeps an empty `partitions` from becoming a null.
+    auto & partitions_field = entry.field(Iceberg::f_partitions);
+    partitions_field.selectBranch(1);
+    auto & summaries = partitions_field.value<avro::GenericArray>();
+    const auto summary_schema = summaries.schema()->leafAt(0);
+    for (size_t i = 0; i < contains_null.size(); ++i)
+    {
+        avro::GenericDatum summary_datum(summary_schema);
+        auto & summary = summary_datum.value<avro::GenericRecord>();
+        summary.field(Iceberg::f_contains_null) = avro::GenericDatum(contains_null[i].safeGet<UInt64>() != 0);
+        if (i < contains_nan.size() && !contains_nan[i].isNull())
+        {
+            auto & contains_nan_field = summary.field(Iceberg::f_contains_nan);
+            contains_nan_field.selectBranch(1);
+            contains_nan_field.value<bool>() = contains_nan[i].safeGet<UInt64>() != 0;
+        }
+        auto set_bound = [&](const String & field_name, const Array & bounds)
+        {
+            if (i >= bounds.size() || bounds[i].isNull())
+                return;
+            const String & bound = bounds[i].safeGet<String>();
+            auto & bound_field = summary.field(field_name);
+            bound_field.selectBranch(1);
+            bound_field.value<std::vector<uint8_t>>() = std::vector<uint8_t>(bound.begin(), bound.end());
+        };
+        set_bound(Iceberg::f_lower_bound, lower_bounds);
+        set_bound(Iceberg::f_upper_bound, upper_bounds);
+        summaries.value().push_back(summary_datum);
+    }
+}
+#endif
 
 }
 
@@ -1001,6 +1174,97 @@ void generateManifestList(
                     snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list));
 
                 auto resolved_manifest_list_path = path_resolver.resolve(manifest_list);
+#if USE_AVRO_RUST
+                /// The parent manifest list is read in bounded batches, typed, and its entries are copied by value into the writer's schema.
+                forEachAvroMetadataBatch(
+                    resolved_manifest_list_path,
+                    object_storage,
+                    context,
+                    "IcebergWrites",
+                    [&](const AvroForIcebergDeserializer & old_manifest_list)
+                    {
+                        const ParentManifestList old_entries(old_manifest_list, resolved_manifest_list_path);
+                        for (size_t row = 0; row < old_entries.rows(); ++row)
+                        {
+                            const String old_manifest_path
+                                = old_entries.required(row, Iceberg::f_manifest_path, AVRO_KIND_STRING, "string").safeGet<String>();
+
+                            /// When a path filter is supplied, copy only the matching entries.
+                            if (!carry_forward_manifest_paths.empty() && !carry_forward_manifest_paths.contains(old_manifest_path))
+                                continue;
+                            avro::GenericDatum new_datum(schema.root());
+                            avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
+
+                            auto copy_required_field = [&](const String & field_name, AvroKind expected_kind, const char * expected_name)
+                            {
+                                setFieldFromValue(new_entry, field_name, old_entries.required(row, field_name, expected_kind, expected_name));
+                            };
+
+                            new_entry.field(f_manifest_path) = old_manifest_path;
+                            copy_required_field(Iceberg::f_manifest_length, AVRO_KIND_LONG, "long");
+                            copy_required_field(Iceberg::f_partition_spec_id, AVRO_KIND_INT, "int");
+                            /// iceberg-spark changed `f_added_snapshot_id` from 'null, long' to 'long' (apache/iceberg#11626); rewrite with the new schema in case we read the old type.
+                            if (old_entries.has(Iceberg::f_added_snapshot_id))
+                                new_entry.field(f_added_snapshot_id)
+                                    = old_entries.required(row, Iceberg::f_added_snapshot_id, AVRO_KIND_LONG, "non-null long").safeGet<Int64>();
+                            else
+                                /// This only happens when we read data written by a old version of iceberg, which violates the spec of iceberg.
+                                throw Exception(
+                                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                    "Manifest list {} has null value for field '{}', but it is required",
+                                    resolved_manifest_list_path,
+                                    Iceberg::f_added_snapshot_id);
+                            auto add_field_to_datum = [&](const String & field)
+                            {
+                                if (old_entries.has(field))
+                                    setFieldFromValue(new_entry, field, old_entries.value(row, field));
+                            };
+                            add_field_to_datum(Iceberg::f_added_files_count);
+                            add_field_to_datum(Iceberg::f_existing_files_count);
+                            add_field_to_datum(Iceberg::f_deleted_files_count);
+                            copyPartitionSummaries(old_entries, row, new_entry);
+                            add_field_to_datum(Iceberg::f_added_rows_count);
+                            add_field_to_datum(Iceberg::f_existing_rows_count);
+                            add_field_to_datum(Iceberg::f_deleted_rows_count);
+                            add_field_to_datum(Iceberg::f_key_metadata);
+                            /// v2 and v3 share the manifest-list schema, so these fields exist for both.
+                            if (version > 1)
+                            {
+                                add_field_to_datum(Iceberg::f_content);
+                                add_field_to_datum(Iceberg::f_sequence_number);
+                                add_field_to_datum(Iceberg::f_min_sequence_number);
+                            }
+                            if (version > 2)
+                            {
+                                add_field_to_datum(Iceberg::f_manifest_first_row_id);
+
+                                /// A data manifest without `first_row_id` (written before the upgrade to v3) gets one now.
+                                const bool has_first_row_id = old_entries.has(Iceberg::f_manifest_first_row_id)
+                                    && !old_entries.value(row, Iceberg::f_manifest_first_row_id).isNull();
+                                const bool is_data_manifest = !old_entries.has(Iceberg::f_content)
+                                    || old_entries.required(row, Iceberg::f_content, AVRO_KIND_INT, "int").safeGet<Int64>()
+                                        == static_cast<Int32>(Iceberg::ManifestFileContentType::DATA);
+                                if (!has_first_row_id && is_data_manifest)
+                                {
+                                    const Int64 added_rows
+                                        = old_entries.required(row, Iceberg::f_added_rows_count, AVRO_KIND_LONG, "long").safeGet<Int64>();
+                                    const Int64 existing_rows
+                                        = old_entries.required(row, Iceberg::f_existing_rows_count, AVRO_KIND_LONG, "long").safeGet<Int64>();
+                                    Int64 manifest_rows = 0;
+                                    if (added_rows < 0 || existing_rows < 0 || common::addOverflow(added_rows, existing_rows, manifest_rows))
+                                        throw Exception(
+                                            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                            "Manifest list {} entry has invalid row counts ({} added, {} existing), cannot assign row ids to it",
+                                            resolved_manifest_list_path,
+                                            added_rows,
+                                            existing_rows);
+                                    setVersionedField(new_entry, reserve_row_ids(manifest_rows), Iceberg::f_manifest_first_row_id);
+                                }
+                            }
+                            writer.write(new_datum);
+                        }
+                    });
+#else
                 forEachAvroEntry(resolved_manifest_list_path, object_storage, context, "IcebergWrites",
                     [&](const avro::GenericDatum & datum)
                     {
@@ -1120,6 +1384,7 @@ void generateManifestList(
                         }
                         writer.write(new_datum);
                     });
+#endif
                 break;
             }
         }

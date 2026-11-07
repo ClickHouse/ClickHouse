@@ -11,7 +11,7 @@ rm -rf "$DIR"
 mkdir -p "$DIR"
 
 # A chain of named records A_k { x: A_(k-1) }, each defined inside its own array field f_k, so the schema
-# JSON nests only a few levels deep. Schema inference follows the references: f_k is 2k + 1 levels deep.
+# JSON nests only a few levels deep. Schema inference follows the references: f_k is k + 1 levels deep.
 function gen()
 {
     python3 -c "
@@ -48,8 +48,7 @@ gen "$DIR/chain_10000.avro" 10000
 
 $CLICKHOUSE_LOCAL -q "DESC file('$DIR/chain_40.avro', Avro)" | wc -l
 
-# Inference builds every field's type before the deepest one overflows, so its cost grows with the stack
-# size: a 1 MiB stack keeps this case small on every build.
-(ulimit -s 1024; $CLICKHOUSE_LOCAL -q "DESC file('$DIR/chain_10000.avro', Avro)" 2>&1) | grep -q -F 'TOO_DEEP_RECURSION' && echo 'too deep'
+# Inference follows named references, so the explicit depth guard must reject this chain before native stack exhaustion.
+$CLICKHOUSE_LOCAL -q "DESC file('$DIR/chain_10000.avro', Avro)" 2>&1 | grep -q -F 'TOO_DEEP_RECURSION' && echo 'too deep'
 
 rm -rf "$DIR"

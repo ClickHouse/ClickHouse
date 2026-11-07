@@ -1,0 +1,24 @@
+null: limit
+0	128	00000000xx
+null: narrow projection
+137438691328
+null: count
+524288
+null: all rows
+524288	67108864	1
+null: wide row
+1000	3273600	1
+null: truncated
+rejected
+deflate: limit
+0	128	00000000xx
+deflate: narrow projection
+137438691328
+deflate: count
+524288
+deflate: all rows
+524288	67108864	1
+deflate: wide row
+1000	3273600	1
+deflate: truncated
+rejected

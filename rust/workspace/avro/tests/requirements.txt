@@ -1,0 +1,7 @@
+# Python dependencies of gen_fixtures.py and gen_random.py (the independent implementation that the tests compare with).
+# fastavro reads the Snappy codec through cramjam and the Zstandard codec through the standard library
+# (`compression.zstd`, Python 3.14+) or `backports.zstd`; without one of them it rejects such a file and
+# the corpus test then fails for the file that it accepts.
+fastavro==1.13.1
+cramjam==2.14.0
+backports.zstd==1.8.0; python_version < "3.14"

@@ -1274,6 +1274,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
     }
 }
 
+#if !USE_AVRO_RUST
 AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
 {
@@ -1393,6 +1394,7 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
 
     return num_rows;
 }
+#endif
 
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
@@ -1423,6 +1425,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
     return schema_id;
 }
 
+#if !USE_AVRO_RUST
 AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
@@ -1477,6 +1480,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     }
     return it->second;
 }
+#endif
 
 AvroSchemaReader::AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_)
     : ISchemaReader(in_), confluent(confluent_), format_settings(format_settings_)
@@ -1485,22 +1489,48 @@ AvroSchemaReader::AvroSchemaReader(ReadBuffer & in_, bool confluent_, const Form
 
 NamesAndTypesList AvroSchemaReader::readSchema()
 {
+#if !USE_AVRO_RUST
     avro::NodePtr root_node;
+#endif
     if (confluent)
     {
+#if USE_AVRO_RUST
+        auto schema = getConfluentSchemaRegistry(format_settings)->getSchema(
+            readConfluentSchemaId(in), format_settings.avro.schema_registry_timeouts, format_settings.avro.schema_registry_retry);
+        auto root = schema->root();
+        if (root.kind() != AVRO_KIND_RECORD)
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
+        NamesAndTypesList result;
+        for (UInt32 i = 0; i < root.info().child_count; ++i)
+            result.emplace_back(String(root.fieldName(i)), AvroRust::inferType(root.child(i), format_settings.schema_inference_allow_nullable_tuple_type));
+        return result;
+#else
         UInt32 schema_id = readConfluentSchemaId(in);
         root_node = getConfluentSchemaRegistry(format_settings)->getSchema(
             schema_id,
             format_settings.avro.schema_registry_timeouts,
             format_settings.avro.schema_registry_retry).root();
+#endif
     }
     else
     {
+#if USE_AVRO_RUST
+        AvroRust::OcfReader reader(in);
+        auto root = reader.schema().root();
+        if (root.kind() != AVRO_KIND_RECORD)
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
+        NamesAndTypesList result;
+        for (UInt32 i = 0; i < root.info().child_count; ++i)
+            result.emplace_back(String(root.fieldName(i)), AvroRust::inferType(root.child(i), format_settings.schema_inference_allow_nullable_tuple_type));
+        return result;
+#else
         auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
             std::make_unique<AvroInputStreamReadBufferAdapter>(in), MAX_AVRO_SCHEMA_DEPTH);
         root_node = file_reader_ptr->dataSchema().root();
+#endif
     }
 
+#if !USE_AVRO_RUST
     if (root_node->type() != avro::Type::AVRO_RECORD)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
 
@@ -1509,6 +1539,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
         names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i), format_settings.schema_inference_allow_nullable_tuple_type));
 
     return names_and_types;
+#endif
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)

@@ -24,10 +24,12 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
+#if !USE_AVRO_RUST
 namespace avro
 {
 class GenericDatum;
 }
+#endif
 
 namespace DB
 {
@@ -185,12 +187,28 @@ KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
 
+#if USE_AVRO_RUST
+/// Streams the Avro metadata file `filename` (a manifest list or a manifest, as a path in `object_storage`) in batches
+/// of at most `CANCELLATION_CHECK_PERIOD_ROWS` entries, without holding the whole file in memory. `callback` gets an
+/// `AvroForIcebergDeserializer` over the entries of each batch, numbered from 0, with every field of them typed by the
+/// Rust decoder. Throws if the file is not a valid Avro file or its root is not a record.
+void forEachAvroMetadataBatch(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    const std::function<void(const AvroForIcebergDeserializer & batch)> & callback);
+#else
+/// Streams the entries of the Avro metadata file `filename` (a manifest list or a manifest, as a path in `object_storage`)
+/// one by one as `avro::GenericDatum` into `callback`, without holding the whole file in memory.
+/// Throws if the file is not a valid Avro file or its root is not a record.
 void forEachAvroEntry(
     const String & filename,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback);
+#endif
 
 /// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
 /// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian

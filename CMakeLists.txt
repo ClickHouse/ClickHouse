@@ -833,6 +833,15 @@ function (add_native_target TARGET)
 endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+# `rust/workspace` has no targets on FreeBSD because its dependencies require a newer libc than the bundled sysroot.
+include(CMakeDependentOption)
+# On wherever Rust is available. Builds without Rust (unsupported platforms) keep the `contrib/avro` decoder.
+cmake_dependent_option(
+    ENABLE_AVRO_RUST
+    "Enable the Rust Avro/AvroConfluent input decoder"
+    ON
+    "ENABLE_AVRO;ENABLE_RUST;NOT OS_FREEBSD"
+    OFF)
 
 # We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
 if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)

@@ -1,0 +1,12 @@
+deflate_valid
+ok
+deflate_fastavro
+ok
+deflate_trailing
+ok
+deflate_trailing_last_only
+ok
+zstandard_valid
+ok
+zstandard_trailing
+rejected

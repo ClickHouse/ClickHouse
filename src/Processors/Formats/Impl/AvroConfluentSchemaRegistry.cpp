@@ -47,6 +47,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+#if USE_AVRO_RUST
+    extern const int AVRO_EXCEPTION;
+#endif
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int INCOMPATIBLE_SCHEMA;
@@ -130,15 +133,26 @@ auto runWithRetry(
 
 }
 
-avro::ValidSchema ConfluentSchemaRegistry::getSchema(
+ConfluentSchemaRegistry::ReadSchemaResult ConfluentSchemaRegistry::getSchema(
     uint32_t id,
     const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
     const FormatSettings::AvroSchemaRegistryRetryConfig & retry)
 {
     auto [schema, loaded] = schema_cache.getOrSet(
         id,
-        [this, id, &timeouts, &retry]() { return std::make_shared<avro::ValidSchema>(fetchSchema(id, timeouts, retry)); });
+        [this, id, &timeouts, &retry]()
+        {
+#if USE_AVRO_RUST
+            return fetchSchema(id, timeouts, retry);
+#else
+            return std::make_shared<ReadSchema>(fetchSchema(id, timeouts, retry));
+#endif
+        });
+#if USE_AVRO_RUST
+    return schema;
+#else
     return *schema;
+#endif
 }
 
 void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRequest & request) const
@@ -165,12 +179,12 @@ void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRe
     }
 }
 
-avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
+ConfluentSchemaRegistry::FetchedReadSchema ConfluentSchemaRegistry::fetchSchema(
     uint32_t id,
     const FormatSettings::AvroSchemaRegistryTimeouts & timeouts,
     const FormatSettings::AvroSchemaRegistryRetryConfig & retry)
 {
-    auto do_fetch = [&]() -> avro::ValidSchema
+    auto do_fetch = [&]() -> FetchedReadSchema
     {
         try
         {
@@ -206,7 +220,24 @@ avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
 
                 auto schema = json_body->getValue<std::string>("schema");
                 LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Successfully fetched schema id = {}\n{}", id, schema);
+#if USE_AVRO_RUST
+                try
+                {
+                    return std::make_shared<ReadSchema>(schema, MAX_AVRO_SCHEMA_DEPTH);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::AVRO_EXCEPTION)
+                        throw;
+                    std::string_view message = e.message();
+                    constexpr std::string_view prefix = "avro::Exception: ";
+                    if (message.starts_with(prefix))
+                        message.remove_prefix(prefix.size());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "{}", message);
+                }
+#else
                 return avro::compileJsonSchemaFromString(schema, MAX_AVRO_SCHEMA_DEPTH);
+#endif
             }
             catch (const Exception &)
             {

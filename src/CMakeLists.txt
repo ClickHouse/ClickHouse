@@ -520,6 +520,7 @@ add_object_library(clickhouse_processors_executors_runtime_v1 Processors/Executo
 add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
+add_object_library(clickhouse_processors_formats_impl_avro Processors/Formats/Impl/Avro)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_transforms_window Processors/Transforms/Window)
 add_object_library(clickhouse_window_functions WindowFunctions)
@@ -855,6 +856,14 @@ endif ()
 
 if (TARGET ch_contrib::avrocpp)
     target_link_libraries(dbms PRIVATE ch_contrib::avrocpp)
+endif ()
+
+if (TARGET ch_rust::avro)
+    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::avro,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(dbms PRIVATE ch_rust::avro)
+    if (TARGET ch_contrib::bzip2)
+        target_link_libraries(dbms PRIVATE ch_contrib::bzip2)
+    endif ()
 endif ()
 
 set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
