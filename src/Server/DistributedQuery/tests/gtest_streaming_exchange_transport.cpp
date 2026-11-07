@@ -161,7 +161,7 @@ private:
 struct LoopbackExchange
 {
     ExchangeConnectionsPtr connections = std::make_shared<ExchangeConnections>();
-    ExchangeServer server{"127.0.0.1", 0, connections};
+    ExchangeServer server{"127.0.0.1", 0, /*listen_backlog=*/ 64, connections};
 
     LoopbackExchange() { server.start(); }
 };
