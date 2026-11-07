@@ -322,13 +322,13 @@ TEST(Executor, SchedulingCallerDoesNotRetainAcceptedTask)
         ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
         ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
 
-    auto task = std::make_shared<DestructionTrackingExecutableTask>(task_destroyed);
-    std::weak_ptr<IExecutableTask> weak_task = task;
+    auto task_to_schedule = std::make_shared<DestructionTrackingExecutableTask>(task_destroyed);
+    std::weak_ptr<IExecutableTask> weak_task = task_to_schedule;
     auto scheduling_caller = std::async(
         std::launch::async,
-        [&, task = std::move(task)]() mutable
+        [&, owned_task = std::move(task_to_schedule)]() mutable
         {
-            const bool scheduled = executor->trySchedule(std::move(task));
+            const bool scheduled = executor->trySchedule(std::move(owned_task));
             scheduling_caller_held.count_down();
             release_scheduling_caller.wait();
             return scheduled;
