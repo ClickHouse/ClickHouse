@@ -1,0 +1,16 @@
+--- UTF-16 and UTF-8 with BOM parts
+5
+5
+5
+5
+--- nested rich text runs
+deep	1
+--- malformed DIFAT
+The XLS file is corrupted: too many DIFAT sectors
+The XLS file is corrupted: the chain of DIFAT sectors has a cycle
+--- DateTime64 range
+2262-04-11 23:47:16.854000000
+is out of the range of the `DateTime64(9)` type
+2262-04-11 23:47:16.855
+is out of the range of the `DateTime64(9)` type
+2263-01-01 00:00:00.000000

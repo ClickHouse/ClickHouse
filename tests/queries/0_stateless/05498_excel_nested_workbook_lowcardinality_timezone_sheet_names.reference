@@ -1,0 +1,13 @@
+--- XLS: the workbook stream of the root storage is read, not the one of an embedded object
+café €	-7	2024-01-15
+Grüße	2.5	\N
+end	true	\N
+--- LowCardinality: the conversion of the dictionary type is used
+9007199254740993	\N	LowCardinality(UInt64)	LowCardinality(Nullable(String))
+--- implicit time zones follow session_timezone
+2024-01-15 03:00:00	2024-01-15 03:00:00.250
+2021-01-01 09:00:00	2021-01-01 09:00:00.500
+--- continuation sheet names are unique
+1048575
+1
+does not have a sheet '3'

@@ -52,5 +52,6 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Values
+XLSX
 LineAsString
 OK

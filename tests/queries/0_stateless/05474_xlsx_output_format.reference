@@ -1,0 +1,49 @@
+--- inferred schema
+n	Nullable(Int64)					
+i8	Nullable(Int64)					
+u64	Nullable(Float64)					
+i128	Nullable(Float64)					
+dec	Nullable(Float64)					
+f64	Nullable(Float64)					
+f32	Nullable(Float64)					
+b	Nullable(Bool)					
+d	Nullable(Date32)					
+d32	Nullable(String)					
+dt	Nullable(DateTime64(3))					
+dt64	Nullable(DateTime64(3))					
+s	Nullable(String)					
+fs	Nullable(String)					
+nullable	Nullable(Int64)					
+arr	Nullable(String)					
+lc	Nullable(String)					
+e	Nullable(String)					
+uuid	Nullable(String)					
+special	Nullable(String)					
+--- inferred data
+0	0	18446744073709552000	0	0	0	0	true	2024-01-15	1899-12-31	2024-01-15 10:30:00.000	2024-01-15 10:30:00.123	s0	ab\0	0	[0,1]	0	zero	00000000-0000-0000-0000-000000000001	nan
+1	-1	18446744073709552000	1e21	0.3333	0.25	0.1	false	2024-01-16	1900-01-01	2024-01-15 11:30:01.000	2024-01-15 10:30:01.123	s1 & <x> "q" \n\r\t_x0041_ 	ab\0	\N	[1,2]	10	one	00000000-0000-0000-0000-000000000001	-inf
+2	-2	18446744073709552000	2e21	0.6666	0.5	0.2	true	2024-01-17	1900-01-02	2024-01-15 12:30:02.000	2024-01-15 10:30:02.123	s2\0 bad � utf8 	ab\0	2	[2,3]	20	zero	00000000-0000-0000-0000-000000000001	1.5
+--- exact round trip with the original structure
+3
+0	s0	nan
+1	s1 & <x> "q" \n\r\t_x0041_ 	-inf
+2	s2\0 bad � utf8 	1.5
+--- settings: sheet name and no header
+0
+1
+2
+0
+1
+2
+--- empty result
+0
+--- deterministic output
+same
+--- insert into a table function
+0	0
+1	1
+2	2
+3	3
+4	4
+--- errors
+Invalid sheet name 'a/b'
