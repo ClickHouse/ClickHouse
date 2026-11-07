@@ -5293,11 +5293,14 @@ std::set<MergeTreePartInfo> StorageReplicatedMergeTree::findReplicaUniqueParts(c
 
 String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entry, bool active)
 {
+    /// Copy the queue candidate before any network calls, without holding the queue mutex.
+    const String covering_part = queue.getVirtualPartCovering(entry.new_part_name);
     String dummy;
-    return findReplicaHavingCoveringPartImplLowLevel(&entry, entry.new_part_name, dummy, active);
+    return findReplicaHavingCoveringPartImplLowLevel(&entry, entry.new_part_name, dummy, active, covering_part);
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active)
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPartImplLowLevel(
+    LogEntry * entry, const String & part_name, String & found_part_name, bool active, const String & covering_part)
 {
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
@@ -5314,16 +5317,26 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPartImplLowLevel(Log
             continue;
 
         String largest_part_found;
-        Strings parts = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts");
-        for (const String & part_on_replica : parts)
+        if (!covering_part.empty()
+            && zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "parts" / covering_part))
         {
-            if (part_on_replica == part_name
-                || MergeTreePartInfo::contains(part_on_replica, part_name, format_version))
+            largest_part_found = covering_part;
+        }
+        else
+        {
+            /// A future merge or mutation may not be ready on this replica. Look for an available part here
+            /// before moving to the next replica, preserving the random source order.
+            Strings parts = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts");
+            for (const String & part_on_replica : parts)
             {
-                if (largest_part_found.empty()
-                    || MergeTreePartInfo::contains(part_on_replica, largest_part_found, format_version))
+                if (part_on_replica == part_name
+                    || MergeTreePartInfo::contains(part_on_replica, part_name, format_version))
                 {
-                    largest_part_found = part_on_replica;
+                    if (largest_part_found.empty()
+                        || MergeTreePartInfo::contains(part_on_replica, largest_part_found, format_version))
+                    {
+                        largest_part_found = part_on_replica;
+                    }
                 }
             }
         }

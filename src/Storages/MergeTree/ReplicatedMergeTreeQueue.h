@@ -500,6 +500,10 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
+    /// Returns a copy of the containing name from `virtual_parts`, excluding fake `DROP_RANGE` parts.
+    /// The part may not exist yet. A different fetch target must pass `addFuturePartIfNotCoveredByThem`.
+    String getVirtualPartCovering(const String & part_name) const;
+
     /// Returns true if part_info is covered by some DROP_RANGE or DROP_PART
     bool isGoingToBeDropped(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
     bool isGoingToBeDroppedImpl(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info) const;

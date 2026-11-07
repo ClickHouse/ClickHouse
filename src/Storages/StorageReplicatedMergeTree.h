@@ -778,12 +778,14 @@ private:
 
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.
-      * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
+      * If found, returns the replica name and registers a different covering part in 'entry.actual_new_part_name'.
+      * The queue candidate is checked first and may not be the largest part on the source replica.
       * If not found, returns empty string.
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     bool findReplicaHavingCoveringPart(const String & part_name, bool active);
-    String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
+    String findReplicaHavingCoveringPartImplLowLevel(
+        LogEntry * entry, const String & part_name, String & found_part_name, bool active, const String & covering_part = {});
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, LoggerPtr log_);
 
     /** Download the specified part from the specified replica.
