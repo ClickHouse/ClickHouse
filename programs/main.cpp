@@ -324,11 +324,13 @@ static void configureJemallocForLocal(int argc, char ** argv, char ** envp)
         if (std::string_view(*env).starts_with("MALLOC_CONF="))
             return;
 
-    cpu_set_t cpus;
-    CPU_ZERO(&cpus);
-    if (0 != sched_getaffinity(0, sizeof(cpus), &cpus))
+    /// `cpu_set_t` holds only 1024 CPUs, and `sched_getaffinity` fails with EINVAL when the kernel mask is wider.
+    /// 8192 is the largest `NR_CPUS` of the supported architectures.
+    UInt64 mask[8192 / 64] = {};
+    auto * cpus = reinterpret_cast<cpu_set_t *>(mask);
+    if (0 != sched_getaffinity(0, sizeof(mask), cpus))
         return;
-    unsigned num_cpus = static_cast<unsigned>(CPU_COUNT(&cpus));
+    unsigned num_cpus = static_cast<unsigned>(CPU_COUNT_S(sizeof(mask), cpus));
     if (num_cpus == 0)
         return;
     unsigned num_arenas = std::min(std::max((num_cpus + 7) / 8, 2u), num_cpus);
