@@ -6,7 +6,7 @@ title: 'Keeper HTTP API and Dashboard'
 doc_type: 'reference'
 ---
 
-ClickHouse Keeper provides an HTTP API and embedded web dashboard for monitoring, health checks, and storage management. 
+ClickHouse Keeper provides an HTTP API and embedded web dashboard for monitoring, health checks, and storage management.
 This interface allows operators to inspect cluster status, execute commands, and manage Keeper storage through a web browser or HTTP clients.
 
 ## Configuration {#configuration}
@@ -77,23 +77,82 @@ Success response (HTTP 200):
 
 ### Commands API {#commands-api}
 
-- **Path**: `/api/v1/commands/{command}`
+- **Path**: `/api/v1/commands`
 - **Methods**: GET, POST
-- **Description**: Executes Four-Letter Word commands or ClickHouse Keeper Client CLI commands
+- **Description**: Tab-completes a CLI line prefix (`complete`), or executes Four-Letter Word / Keeper Client CLI commands (`command`). Path segments after `/api/v1/commands` are not used.
 
 Query parameters:
-- `command` - The command to execute
-- `cwd` - Current working directory for path-based commands (default: `/`)
+- `complete` - When present, tab-completes the CLI line prefix given as the parameter value (text up to the cursor), using the same logic as `clickhouse-keeper-client`. Returns completion candidates and a `replace_start` UTF-8 byte offset into the `complete` value. An empty value lists all registered command names. No command is executed.
+- `command` - The command to execute (required unless `complete` is set)
+- `cwd` - Current working directory for path-based commands and completion (default: `/`)
+
+#### Complete command line {#complete-command-line}
+
+Request:
+```bash
+curl "http://localhost:9182/api/v1/commands?complete=ls%20/cli&cwd=/"
+```
+
+Response:
+```json
+{
+  "completions": ["/clickhouse/", "/clickhouse_keeper"],
+  "replace_start": 3
+}
+```
+
+`completions` are strings that replace the prefix from `replace_start` to the end of the `complete` value (same contract as replxx last-word completion). `replace_start` is a UTF-8 byte offset into the `complete` query parameter, not a Unicode code-point or JavaScript UTF-16 string index. The embedded dashboard uses this endpoint for Tab completion so escaping and multi-argument handling stay on the server.
+
+#### Execute command {#execute-command}
+
+Keeper Client CLI responses always include `result`. An optional `cwd` field is present only when the command successfully changed the working directory (currently, a successful `cd`). Four-Letter Word responses include `result` only.
+
+CLI command (for example, `ls` or `create`):
+
+```json
+{
+  "result": "..."
+}
+```
+
+Successful `cd`:
+
+```json
+{
+  "result": "",
+  "cwd": "/clickhouse"
+}
+```
+
+Failed `cd` (path does not exist; working directory unchanged):
+
+```json
+{
+  "result": "Path /does_not_exist does not exist\n"
+}
+```
+
+Four-Letter Word command:
+
+```json
+{
+  "result": "..."
+}
+```
+
+Pass the current working directory in the `cwd` query parameter on each request. Update your local working directory only when the response includes `cwd`.
 
 Examples:
 ```bash
 # Four-Letter Word command
-curl http://localhost:9182/api/v1/commands/stat
+curl "http://localhost:9182/api/v1/commands?command=stat"
 
 # ZooKeeper CLI command
-curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
-```
+curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 
+# Change directory; cwd is returned only on success
+curl "http://localhost:9182/api/v1/commands?command=cd%20/clickhouse&cwd=/"
+```
 ### Storage API {#storage-api}
 
 - **Base Path**: `/api/v1/storage`
