@@ -29,7 +29,7 @@ ALTER TABLE t3 ADD COLUMN n UInt64 DEFAULT toUInt64(v);
 SELECT t1.id, t3.n FROM t1 LEFT JOIN t3 ON t1.id = t3.id AND t3.enabled = true AND t3.id > 0
 WHERE t3.enabled = true AND t3.n > 0 ORDER BY t1.id;
 
--- A new name is not taken from a stored column.
+-- The same with a stored column named `__prewhere_<condition>`, which must be read as stored.
 CREATE TABLE t4 (id Int64, reviewer Int64, enabled Bool, `__prewhere_equals(__table2.enabled, 1_Bool)` UInt8) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t4_mem AS t4 ENGINE = Memory;
 INSERT INTO t4 VALUES (1, 100, true, 7), (2, 200, false, 8);
