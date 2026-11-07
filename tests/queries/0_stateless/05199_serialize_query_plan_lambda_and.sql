@@ -1,8 +1,8 @@
 -- A lambda body becomes `ExpressionActions` while the query plan is built, so with
 -- `serialize_query_plan = 1` that very DAG is what is shipped to the shard. A JIT-compiled node in it
 -- has no name in `FunctionFactory` - its name is a dump of the compiled expression - and the shard
--- used to fail with `UNKNOWN_FUNCTION and(UInt8, less(UInt64, 1000 : UInt16))`. The body is left
--- uncompiled in a plan that is shipped, and the shard compiles it when it rebuilds the lambda.
+-- used to fail with `UNKNOWN_FUNCTION and(UInt8, less(UInt64, 1000 : UInt16))`. The lambda keeps its
+-- uncompiled body for serialization, and the shard compiles it when it rebuilds the lambda.
 
 DROP TABLE IF EXISTS t_05199;
 DROP TABLE IF EXISTS t_05199_dist;
