@@ -872,7 +872,7 @@ private:
 
     size_t num_args = 0;
 
-    /// The keys of a chunk of rows are computed before they are inserted; same keys and order as `add`.
+    /// Inserts the same keys in the same order as `add`.
     template <SetLevelHint hint>
     void addManyExactImpl(
         Data & data, const IColumn ** columns, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map) const
@@ -889,7 +889,7 @@ private:
         }
     }
 
-    /// The level handling of `Adder::addMany`.
+    /// Same level handling as `Adder::addMany`.
     void addManyExact(
         Data & data, const IColumn ** columns, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map) const
     {
@@ -909,7 +909,7 @@ private:
         }
     }
 
-    /// GROUP BY: the keys of a chunk of rows are computed before they are inserted; same keys and order per set as `add`.
+    /// GROUP BY: inserts the same keys in the same order per set as `add`.
     template <bool check_places>
     void addBatchExact(
         size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, ssize_t if_argument_pos) const
