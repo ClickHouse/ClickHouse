@@ -1,0 +1,8 @@
+-- reordered column list, only a value error (1.5 into UInt8): no false positive
+explanation missing
+-- reordered column list, text into a numeric column: a genuine structure mismatch
+explanation present
+-- map_columns disabled: the parser maps positionally, so the reordered data is a genuine mismatch
+explanation present
+-- no column list in the dump: the parser maps positionally even with map_columns enabled
+explanation present

@@ -1,0 +1,22 @@
+-- CSV: the header detection must not sample the unreached second row
+explanation missing
+explanation missing
+-- TSVWithNames with parallel parsing: the header row is not a data row
+explanation missing
+explanation present
+-- Values: a query parameter is read with its declared type
+explanation present
+explanation missing
+-- TSV / CSV: numbers that schema inference keeps as String
+explanation missing
+explanation missing
+explanation missing
+explanation present
+-- Native: valid scalar conversions beside a failing UUID
+explanation missing
+explanation missing
+explanation missing
+-- BSONEachRow: a 16-byte binary value into Int128 beside a failing UUID
+explanation missing
+-- BSONEachRow: a 3-byte binary value into Int128
+explanation present

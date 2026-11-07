@@ -1,0 +1,27 @@
+-- An empty object into a JSON column is not evidence of a non-object token
+(CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+explanation missing
+inserted
+(INCORRECT_DATA)
+explanation present
+-- Custom boolean representations that are also numbers
+(CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+explanation missing
+inserted
+-- A tuple in one CSV field
+(INCORRECT_DATA)
+explanation missing
+inserted
+(INCORRECT_DATA)
+explanation missing
+inserted
+-- A skipped unnamed column in CSVWithNamesAndTypes
+(INCORRECT_DATA)
+explanation missing
+inserted
+(INCORRECT_DATA)
+explanation present
+-- A streamed TSV capture ending at an escaped line break
+(CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+explanation missing
+inserted

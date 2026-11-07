@@ -1,0 +1,14 @@
+-- A JSON null inferred as a non-nullable String is an inference placeholder
+(CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+explanation missing
+inserted
+(CANNOT_READ_ARRAY_FROM_TEXT)
+explanation present
+-- A named Tuple cast projects the elements by name
+(CANNOT_PARSE_UUID)
+explanation missing
+inserted
+(CANNOT_PARSE_UUID)
+explanation missing
+(CANNOT_READ_ARRAY_FROM_TEXT)
+explanation present

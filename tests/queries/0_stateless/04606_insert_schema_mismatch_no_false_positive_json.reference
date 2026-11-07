@@ -1,0 +1,6 @@
+-- Decimal read from a quoted string is compatible; the parse fails only on the fractional UInt8 value
+insert failed as expected
+explanation missing
+-- a row that omits a column is default-filled, not a structure mismatch; the parse fails only on the fractional value
+insert failed as expected
+explanation missing

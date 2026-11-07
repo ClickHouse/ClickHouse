@@ -251,6 +251,21 @@ public:
 
     std::optional<size_t> readNumberOrRows() override;
 
+    /// The parser projects only the requested columns by name (`planVortexScan`) and never touches
+    /// the rest of the file, regardless of `input_format_skip_unknown_fields`.
+    bool alwaysSkipsUnknownFields() const override { return true; }
+
+    /// The decoded columns are converted by `ArrowColumnToCHColumn`, which `castColumn`s them to the
+    /// requested destination type, and `CAST` into the `UInt32`-backed `IPv4` is implemented only from
+    /// an unsigned integer.
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::UnsignedIntegerOnly; }
+
+    bool castsStringSourceColumns() const override { return true; }
+
+    /// The data carries named columns that the parser maps onto the destination by name. Missing
+    /// columns are always filled with defaults (the default `allowsMissingNamedColumns`).
+    bool mapsColumnsByName() const override { return true; }
+
 private:
     void initializeIfNeeded();
 

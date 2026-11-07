@@ -102,7 +102,17 @@ protected:
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 {
 public:
-    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool json_strings_ = false);
+
+    bool readsTypedJSONValueTokens() const override { return !json_strings; }
+    bool readsStringValuesAsWholeText() const override { return json_strings; }
+
+    /// `JSONEachRowRowInputFormat` registers the `Nested` prefixes under `input_format_import_nested_json`.
+    bool importsNestedJSONObjects() const override { return true; }
+
+    /// The parser resolves field names through `CaseAwareBlockNameMap`, honoring
+    /// `input_format_column_name_matching_mode`.
+    bool honorsColumnNameMatchingMode() const override { return true; }
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
@@ -111,6 +121,9 @@ private:
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     bool first_row = true;
+    /// True for the `JSONStringsEachRow` variant, where every value is a string whose content is
+    /// re-parsed with the whole-text deserializer of the destination type.
+    bool json_strings = false;
     bool data_in_square_brackets = false;
     JSONInferenceInfo inference_info;
 };
