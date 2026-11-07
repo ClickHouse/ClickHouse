@@ -124,7 +124,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "OptimizeToolchain" --ci --timestamp
 
   build_toolchain_pgo_bolt_amd64:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, amd-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgVG9vbGNoYWluIChQR08sIEJPTFQpIChhbWQ2NCk=') }}
     name: "Build Toolchain (PGO, BOLT) (amd64)"
@@ -161,7 +161,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Toolchain (PGO, BOLT) (amd64)' --workflow "OptimizeToolchain" --ci --timestamp
 
   build_toolchain_pgo_bolt_aarch64:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgVG9vbGNoYWluIChQR08sIEJPTFQpIChhYXJjaDY0KQ==') }}
     name: "Build Toolchain (PGO, BOLT) (aarch64)"

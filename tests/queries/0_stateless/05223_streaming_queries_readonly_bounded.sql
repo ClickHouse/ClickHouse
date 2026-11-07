@@ -4,7 +4,6 @@
 -- is empty). A table that starts read-only, whether created or attached with `table_readonly = 1`,
 -- does not run the workers that modify data, but it must still run this read-only one.
 
-SET enable_analyzer = 1; -- streaming queries require the analyzer (CI randomizes this setting)
 SET enable_streaming_queries = 1;
 SET use_skip_indexes_on_data_read = 0;
 

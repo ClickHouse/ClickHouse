@@ -17,7 +17,6 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
 -- A boundary remembered from the first run would decline the second one without building the plan, which
 -- counts `AutomaticParallelReplicasDecidedWithoutBuildingPlan` instead of the events checked here.
 SET automatic_parallel_replicas_remember_boundary = 0;
-SET enable_analyzer = 1;
 
 SELECT key % 100 AS k, max(val) FROM t_autopr_overhead_split GROUP BY k
 FORMAT Null SETTINGS log_comment = '05259_autopr_overhead_split';

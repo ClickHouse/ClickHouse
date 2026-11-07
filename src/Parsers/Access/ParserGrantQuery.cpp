@@ -854,6 +854,7 @@ Possible parameters:
 - `AZURE`
 - `BIGQUERY`
 - `DISK`
+- `ELASTICSEARCH`
 - `FILE`
 - `HDFS`
 - `HIVE`
@@ -943,8 +944,19 @@ GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
 GRANT CURRENT GRANTS(READ ON S3) TO alice
 ```
 
+**Revoking:**
+
+```sql
+-- Revokes only this filter, other filters on S3 are kept
+REVOKE READ ON S3('s3://foo/.*') FROM john
+
+-- Revokes READ on S3, including all filters
+REVOKE READ ON S3 FROM john
+```
+
 **Important limitations:**
 
+- **Filters are compared as strings:** `REVOKE` removes only the filter that is exactly the same as the granted one. Revoking `S3('s3://foo/bar/.*')` throws an exception instead of narrowing a grant on `S3('s3://foo/.*')`.
 - **Partial revokes are not allowed:** You cannot revoke a subset of a granted filter pattern. You must revoke the entire grant and re-grant with new patterns if needed.
 - **Wildcard grants are not allowed:** You cannot use `GRANT READ ON *('regexp')` or similar wildcard-only patterns. Specific source must be provided.
 
@@ -1044,13 +1056,13 @@ Revokes privileges from users or roles.
 
 ## Syntax {#syntax}
 
-**Revoking privileges from users**
+**Revoking privileges**
 
 ```sql
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 ```
 
-**Revoking roles from users**
+**Revoking roles**
 
 ```sql
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
@@ -1083,7 +1095,7 @@ REVOKE SELECT(wage) ON accounts.staff FROM mira;
 [Original article](/reference/settings/session-settings)
 )DOCS_MD",
         .syntax = R"(
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 )",
         .related = {"GRANT", "CHECK GRANT", "SHOW"},

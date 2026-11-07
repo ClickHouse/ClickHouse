@@ -573,6 +573,39 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = {use_v2
         uc_api_delete(node, f"schemas/{CATALOG}.{schema_name}")
 
 
+def test_drop_table(started_cluster):
+    """`DROP TABLE` removes the table from Unity, not only from ClickHouse."""
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    schema_name = unique_name("v2_drop")
+    table = f"{schema_name}.dropped"
+    db_name = unique_name("v2_drop_db")
+
+    uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
+    create_database(node, db_name)
+
+    node.query(
+        f"CREATE TABLE {db_name}.`{table}` (id Int32)"
+        f" ENGINE = DeltaLakeLocal('/var/lib/clickhouse/user_files/tmp/{table}')",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+    assert show_tables(node, db_name, f"{schema_name}%") == [table]
+
+    # The table is external, so Databricks keeps its data. Asking to delete it is refused.
+    assert "SUPPORT_IS_DISABLED" in node.query_and_get_error(
+        f"DROP TABLE {db_name}.`{table}`",
+        settings={"iceberg_delete_data_on_drop": 1},
+    )
+    assert show_tables(node, db_name, f"{schema_name}%") == [table]
+
+    node.query(f"DROP TABLE {db_name}.`{table}`")
+
+    assert show_tables(node, db_name, f"{schema_name}%") == []
+    assert "UNKNOWN_TABLE" in node.query_and_get_error(
+        f"SELECT * FROM {db_name}.`{table}`"
+    )
+
+
 def test_pat_token_authentication(started_cluster):
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_pat")

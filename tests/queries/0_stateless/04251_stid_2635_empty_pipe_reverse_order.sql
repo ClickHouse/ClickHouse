@@ -22,8 +22,6 @@
 -- pinned because the test runner randomizes it: with it off, `read_in_order` is not set and the
 -- guarded path is skipped.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS stid_2635_l;
 DROP TABLE IF EXISTS stid_2635_r;
 
