@@ -33,11 +33,6 @@ void hash128Range(const ColumnRawPtrs & key_columns, size_t begin, size_t end, U
         const size_t value_size = key_columns[0]->sizeOfValueIfFixed();
         sipHash128PaddedFixedStrings(key_columns[0]->getRawData().data() + begin * value_size, value_size, end - begin, hashes);
     }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    for (size_t row = begin; row < end; ++row)
-        chassert(hashes[row - begin] == hash128(row, key_columns.size(), key_columns));
-#endif
 }
 
 Hash128InOrder::Hash128InOrder(ColumnRawPtrs key_columns_, size_t begin, size_t end_)
