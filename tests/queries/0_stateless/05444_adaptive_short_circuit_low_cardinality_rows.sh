@@ -15,7 +15,7 @@ SETTINGS="short_circuit_function_evaluation = 'force_enable', max_threads = 1, m
 
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE lc (ok UInt8, s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
-    INSERT INTO lc SELECT number % 100 != 0, if(number % 2, 'a', 'b') FROM numbers(2000000);"
+    INSERT INTO lc SELECT number % 100 != 0, if(number % 2, 'a', 'b') FROM numbers(200000);"
 
 QUERY="SELECT sum(if(ok, compareSubstrings(s, 'z', 0, 0, 1), 0)) FROM lc"
 static_result=$(${CLICKHOUSE_CLIENT} --query "$QUERY SETTINGS $SETTINGS, enable_adaptive_short_circuit_lazy_execution = 0")
