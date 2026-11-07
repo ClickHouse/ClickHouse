@@ -1,0 +1,14 @@
+-- on cluster, not granted column
+ACCESS_DENIED SELECT(restricted) ON db.t
+-- on cluster, identifier without a column
+ACCESS_DENIED SELECT ON db.t
+-- on cluster, granted column
+OK
+-- on cluster, table only on the hosts
+ACCESS_DENIED SELECT ON db.t_absent
+-- local, identifier without a column
+(UNKNOWN_IDENTIFIER)
+-- schema
+id
+restricted
+oc_ok

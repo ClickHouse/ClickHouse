@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -330,6 +331,25 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Changing the settings that send the data of a table elsewhere through an alias is not supported. "
                 "Execute the ALTER directly on the target table: {}.{}",
+                backQuoteIfNeed(target_database),
+                backQuoteIfNeed(target_table));
+        }
+
+        bool reads_target_columns = false;
+        if ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN) && command.default_expression)
+        {
+            auto target = getTargetTable();
+            const auto target_metadata = target->getInMemoryMetadataPtr(local_context, false);
+            reads_target_columns = !InterpreterAlterQuery::getColumnsReadByColumnExpression(
+                *command.default_expression, target_metadata->getColumnsWithVirtuals(), target->supportsSubcolumns()).empty();
+        }
+
+        if (reads_target_columns || command.type == AlterCommand::RENAME_COLUMN)
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "A column expression that reads columns of the target table, or a column rename, cannot be applied through an alias, "
+                "because the target's grants are not checked for it. Execute the ALTER directly on the target table: {}.{}",
                 backQuoteIfNeed(target_database),
                 backQuoteIfNeed(target_table));
         }

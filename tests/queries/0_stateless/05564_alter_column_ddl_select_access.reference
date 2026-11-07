@@ -1,0 +1,96 @@
+-- alias
+ACCESS_DENIED SELECT(restricted)
+-- default
+ACCESS_DENIED SELECT(restricted)
+-- materialized
+ACCESS_DENIED SELECT(restricted)
+-- ephemeral
+ACCESS_DENIED SELECT(restricted)
+-- inside a lambda
+ACCESS_DENIED SELECT(restricted)
+-- qualified
+ACCESS_DENIED SELECT(restricted)
+-- shadowed by an expression alias
+ACCESS_DENIED SELECT(restricted)
+-- modify alias
+ACCESS_DENIED SELECT(restricted)
+-- modify default
+ACCESS_DENIED SELECT(restricted)
+-- multiple commands
+ACCESS_DENIED SELECT(restricted)
+-- nested prefix
+ACCESS_DENIED SELECT(n.secret)
+-- subcolumn of an alias column
+ACCESS_DENIED SELECT(pub_tup)
+-- ephemeral column
+ACCESS_DENIED SELECT(restricted)
+-- alias table, expression
+NOT_IMPLEMENTED
+-- alias table, rename
+NOT_IMPLEMENTED
+-- alias table, modify
+NOT_IMPLEMENTED
+-- alias table, constant
+OK
+-- alias table, lambda only
+OK
+-- rename
+ACCESS_DENIED SELECT(restricted)
+-- granted column
+OK
+-- modify, granted column
+OK
+-- rename, granted column
+OK
+-- lambda parameter
+OK
+-- field of a lambda parameter
+OK
+-- granted alias column
+OK
+-- dictionary identifier
+OK
+-- not granted column
+ACCESS_DENIED SELECT(restricted)
+-- not granted virtual column
+ACCESS_DENIED SELECT(_table)
+-- granted virtual column
+OK
+-- granted subcolumn
+OK
+-- not granted subcolumn
+ACCESS_DENIED SELECT(tup.b)
+-- quoted dotted column
+OK
+-- full access
+OK
+-- full access, read
+F-S1
+F-S2
+-- added columns
+1	[2,3]	['e1']	a1	q1
+2	[3,4]	['e2']	a2	q2
+-- schema
+id
+restricted
+other
+pub
+tup
+arr
+n.secret
+n.x
+pub_tup
+eph
+q.k
+k
+via_alias_const
+via_alias_lambda
+ok_default2
+c_lambda
+c_field
+c_pub
+c_dict
+p_virtual
+s_a
+d_quoted
+f
