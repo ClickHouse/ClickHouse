@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/SingleValueData.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -95,7 +96,7 @@ public:
             default_value = type->getDefault();
         else
         {
-            Field converted = convertFieldToType(default_value, *type);
+            Field converted = convertUntypedFieldToType(default_value, *type);
             if (converted.isNull())
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert parameter of aggregate function {} ({}) "
                                 "to type {} to be used as default value in array",
@@ -227,6 +228,8 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
     if (argument_types.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function groupArrayInsertAt requires two arguments.");
+
+    assertTypeCanBeKeptInField(name, *argument_types[0]);
 
     return std::make_shared<AggregateFunctionGroupArrayInsertAtGeneric>(argument_types, parameters);
 }

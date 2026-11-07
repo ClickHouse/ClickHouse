@@ -9,10 +9,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -31,6 +33,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool skip_redundant_aliases_in_udf;
+    extern const SettingsUUIDTypeVersion uuid_type_version;
 }
 
 namespace ErrorCodes
@@ -43,13 +46,23 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
 
+    std::unordered_set<String> lambda_names; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+    collectLambdaNames(*ast, lambda_names);
+    visitImpl(ast, context_, lambda_names, /*inside_apply=*/false);
+}
+
+void UserDefinedSQLFunctionVisitor::visitImpl(
+    ASTPtr & ast, ContextPtr context_, const std::unordered_set<String> & lambda_names, bool inside_apply) /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `collectLambdaNames`
+{
+    chassert(ast);
+
     for (auto & child : ast->children)
     {
         if (!child)
             return;
 
         auto * old_ptr = child.get();
-        visit(child, context_);
+        visitImpl(child, context_, lambda_names, inside_apply);
         auto * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
@@ -62,13 +75,73 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
     if (auto * ttl_element = ast->template as<ASTTTLElement>())
     {
         for (auto & key : ttl_element->group_by_key)
-            visit(key, context_);
+            visitImpl(key, context_, lambda_names, inside_apply);
         for (auto & assignment : ttl_element->group_by_assignments)
-            visit(assignment, context_);
+            visitImpl(assignment, context_, lambda_names, inside_apply);
+    }
+
+    /// The function of an `APPLY` transformer is not among its children either.
+    if (auto * apply_transformer = ast->template as<ASTColumnsApplyTransformer>())
+    {
+        /// The analyzer expands the SQL UDFs of `APPLY` by itself and names the resulting columns after the original
+        /// expression (`f(a)` for `APPLY f`), while an expansion here makes it name them after the expanded body.
+        /// So the expressions of `APPLY` are expanded here only when it is needed to materialize `uuid_type_version`
+        /// into the bodies of the UDFs (a bare `UUID` in the body of a UDF means `UUID2` with version 2): then
+        /// `APPLY f` with a SQL UDF `f` is rewritten to `APPLY(x -> f(x))`, so that the body of `f` can be expanded.
+        /// Not if a lambda named `f` is declared in the query: it takes precedence over the UDF in the analyzer.
+        if (context_->getSettingsRef()[Setting::uuid_type_version] == 2)
+        {
+            ASTPtr expanded_lambda;
+            String expanded_lambda_arg;
+            if (apply_transformer->lambda)
+            {
+                expanded_lambda = apply_transformer->lambda->clone();
+                expanded_lambda_arg = apply_transformer->lambda_arg;
+            }
+            else if (!apply_transformer->parameters && !lambda_names.contains(apply_transformer->func_name))
+            {
+                const auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer->func_name);
+                if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
+                {
+                    static constexpr auto lambda_argument = "x";
+                    expanded_lambda = makeASTFunction("lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
+                        makeASTFunction(apply_transformer->func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
+                    expanded_lambda_arg = lambda_argument;
+                }
+            }
+
+            if (expanded_lambda)
+            {
+                visitImpl(expanded_lambda, context_, lambda_names, /*inside_apply=*/true);
+                /// The lambdas declared in the rest of the query shadow the functions of the same name in the body.
+                if (applyUUIDTypeVersionInPlace(*expanded_lambda->clone(), 2, lambda_names))
+                {
+                    apply_transformer->lambda = expanded_lambda;
+                    apply_transformer->lambda_arg = expanded_lambda_arg;
+                    apply_transformer->func_name.clear();
+                }
+            }
+
+            /// The parameters of an aggregate function, as in `APPLY(quantile(f()))`, likewise: their expansion changes
+            /// the names of the resulting columns too (`quantile(0.5)(a)` instead of `quantile(f())(a)`).
+            if (apply_transformer->parameters)
+            {
+                ASTPtr expanded_parameters = apply_transformer->parameters->clone();
+                visitImpl(expanded_parameters, context_, lambda_names, /*inside_apply=*/true);
+                if (applyUUIDTypeVersionInPlace(*expanded_parameters->clone(), 2, lambda_names))
+                    apply_transformer->parameters = expanded_parameters;
+            }
+        }
     }
 
     if (const auto * function = ast->template as<ASTFunction>())
     {
+        /// The expressions of `APPLY` used not to be expanded here, so the analyzer resolved a lambda of the same name
+        /// before the UDF. Keep that precedence for them. Elsewhere, the expansion is unchanged.
+        if (inside_apply && lambda_names.contains(function->name))
+            return;
+
         UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
         auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
         if (replace_result)

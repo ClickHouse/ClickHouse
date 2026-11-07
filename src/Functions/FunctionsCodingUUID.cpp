@@ -312,7 +312,7 @@ public:
     String getSignatureString() const override
     {
         /// See `FunctionUUIDNumToString::getSignatureString` for why `[const Int8 | UInt8]`.
-        return "(UUID, [const Int8 | UInt8]) -> FixedString(16)";
+        return "(UUID | UUID2, [const Int8 | UInt8]) -> FixedString(16)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -321,6 +321,8 @@ public:
         const ColumnPtr & column = col_type_name.column;
 
         const bool defaultFormat = (parseVariant(arguments) == UUIDSerializer::Variant::Default);
+        /// `UUID2` stores the value in the big-endian layout; convert to the logical `UUID` layout first.
+        const bool is_uuid2 = isUUID2(col_type_name.type);
 
         if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
         {
@@ -336,8 +338,9 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
-                uint64_t loBytes = DB::UUIDHelpers::getLowBytes(uuids[i]);
+                const UUID uuid = is_uuid2 ? DB::UUIDHelpers::swapHalves(uuids[i]) : uuids[i];
+                uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuid);
+                uint64_t loBytes = DB::UUIDHelpers::getLowBytes(uuid);
                 unalignedStoreBigEndian<uint64_t>(&vec_res[dst_offset], hiBytes);
                 unalignedStoreBigEndian<uint64_t>(&vec_res[dst_offset + sizeof(hiBytes)], loBytes);
                 if (!defaultFormat)
@@ -377,8 +380,8 @@ public:
     /// from the second argument.
     String getSignatureString() const override
     {
-        return "(UUID) -> DateTime64(3)"
-               " OR (UUID, const tz StringOrFixedString) -> DateTime64(3, tz)";
+        return "(UUID | UUID2) -> DateTime64(3)"
+               " OR (UUID | UUID2, const tz StringOrFixedString) -> DateTime64(3, tz)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -387,11 +390,11 @@ public:
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: should be 1 or 2", getName());
 
-        if (!checkAndGetDataType<DataTypeUUID>(arguments[0].type.get()))
+        if (!isUUID(arguments[0].type) && !isUUID2(arguments[0].type))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected UUID",
+                "Illegal type {} of first argument of function {}, expected UUID or UUID2",
                 arguments[0].type->getName(),
                 getName());
         }
@@ -416,6 +419,9 @@ public:
         const ColumnWithTypeAndName & col_type_name = arguments[0];
         const ColumnPtr & column = col_type_name.column;
 
+        /// `UUID2` stores the value in the big-endian layout; convert to the logical `UUID` layout first.
+        const bool is_uuid2 = isUUID2(col_type_name.type);
+
         if (const auto * col_in = checkAndGetColumn<ColumnUUID>(column.get()))
         {
             const auto & vec_in = col_in->getData();
@@ -426,7 +432,8 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuids[i]);
+                const UUID uuid = is_uuid2 ? DB::UUIDHelpers::swapHalves(uuids[i]) : uuids[i];
+                const uint64_t hiBytes = DB::UUIDHelpers::getHighBytes(uuid);
                 const uint64_t ms = ((hiBytes & 0xf000) == 0x7000) ? (hiBytes >> 16) : 0;
 
                 vec_res[i] = DecimalUtils::dateTimeFromComponents(ms / intExp10(datetime_scale), ms % intExp10(datetime_scale), datetime_scale);
@@ -531,12 +538,13 @@ SELECT
 
     /// UUIDToNum documentation
     FunctionDocumentation::Description description_UUIDToNum = R"(
-Accepts a [UUID](/reference/data-types/uuid) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+Accepts a [UUID](/reference/data-types/uuid) or a [UUID2](/reference/data-types/uuid2) and returns its binary representation as a [FixedString(16)](/reference/data-types/fixedstring), with its format optionally specified by `variant` (`Big-endian` by default).
+The binary representation depends only on the UUID value, not on which of the two types holds it.
 This function replaces calls to two separate functions `UUIDStringToNum(toString(uuid))` so no intermediate conversion from UUID to string is required to extract bytes from a UUID.
     )";
     FunctionDocumentation::Syntax syntax_UUIDToNum = "UUIDToNum(uuid[, variant = 1])";
     FunctionDocumentation::Arguments arguments_UUIDToNum = {
-        {"uuid", "UUID.", {"String", "FixedString"}},
+        {"uuid", "UUID.", {"UUID", "UUID2"}},
         {"variant", "Variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDToNum = {"Returns a binary representation of the UUID.", {"FixedString(16)"}};
@@ -580,7 +588,7 @@ Returns the timestamp component of a UUID version 7.
     )";
     FunctionDocumentation::Syntax syntax_UUIDv7ToDateTime = "UUIDv7ToDateTime(uuid[, timezone])";
     FunctionDocumentation::Arguments arguments_UUIDv7ToDateTime = {
-        {"uuid", "A UUID version 7.", {"String"}},
+        {"uuid", "A UUID version 7.", {"UUID", "UUID2"}},
         {"timezone", "Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};

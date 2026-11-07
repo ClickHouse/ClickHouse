@@ -1,0 +1,19 @@
+-- A lambda declared in the query takes precedence over a SQL UDF of the same name in APPLY
+3
+3
+3
+3
+-- Without a lambda of the same name, the UDF applies
+2
+-- A callable formal parameter of a lambda takes precedence over a SQL UDF of the same name in APPLY
+3
+3
+-- A persisted named APPLY of a UDF keeps the names of the projections
+2
+2
+1
+-- A typed JSON default value of an aggregate function keeps the identifier
+[{"u":"00000000-0000-0000-0000-000000000001"},{"u":"00000000-0000-0000-0000-000000000001"}]
+-- A typed JSON value carried by a nested Variant keeps the identifier
+['{"u":"00000000-0000-0000-0000-000000000001"}']
+[\'{"u": "00000000-0000-0000-0000-000000000001"}\']

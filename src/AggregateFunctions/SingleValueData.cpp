@@ -6,6 +6,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/TypeTree.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -23,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
 extern const int TOO_LARGE_STRING_SIZE;
 extern const int NOT_IMPLEMENTED;
@@ -1811,6 +1813,39 @@ bool canUseFieldForValueData(const DataTypePtr & value_type)
     /// because they can store values of different data types in a single column.
     return !anyInTypeTree(*value_type, [](const IDataType & type) { return isVariant(type) || isDynamic(type) || isObject(type); });
 };
+
+void assertTypeCanBeKeptInField(const String & function_name, const IDataType & type)
+{
+    const auto has_uuid_and_uuid2_alternatives = [](const IDataType & node)
+    {
+        const auto * variant = typeid_cast<const DataTypeVariant *>(&node);
+        if (!variant)
+            return false;
+
+        /// The same alternative can contain both types, like `Tuple(UUID, UUID2)`: its values keep their layouts.
+        size_t alternatives_with_uuid = 0;
+        size_t alternatives_with_uuid2 = 0;
+        size_t alternatives_with_both = 0;
+        for (const auto & alternative : variant->getVariants())
+        {
+            const bool has_uuid = anyInTypeTree(*alternative, [](const IDataType & t) { return WhichDataType(t).isUUID(); });
+            const bool has_uuid2 = anyInTypeTree(*alternative, [](const IDataType & t) { return WhichDataType(t).isUUID2(); });
+            alternatives_with_uuid += has_uuid;
+            alternatives_with_uuid2 += has_uuid2;
+            alternatives_with_both += has_uuid && has_uuid2;
+        }
+        return alternatives_with_uuid && alternatives_with_uuid2
+            && (alternatives_with_both == 0 || alternatives_with_uuid + alternatives_with_uuid2 > 2);
+    };
+
+    if (anyInTypeTree(type, has_uuid_and_uuid2_alternatives))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Aggregate function {} does not support the argument type {}: it keeps the values without the alternative of the `Variant`, "
+            "and it is not known whether a value is a `UUID` or a `UUID2`",
+            function_name,
+            type.getName());
+}
 
 void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data)
 {

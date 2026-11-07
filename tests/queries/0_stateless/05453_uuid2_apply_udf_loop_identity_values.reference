@@ -1,0 +1,13 @@
+APPLY lambda
+UUID2
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
+APPLY named
+UUID2
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
+APPLY in ALTER MODIFY QUERY
+SELECT * APPLY x -> CAST(x, \'UUID2\') FROM t_apply_src
+loop with a scalar database name
+1
+values with the destination type
+['00000000-0000-0000-0000-000000000001']	UUID2
+['00000000-0000-0000-0000-000000000001']	UUID
