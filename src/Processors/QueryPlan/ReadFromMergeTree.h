@@ -584,6 +584,7 @@ public:
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & query_context,
+        bool is_final,
         bool skip_partition_pruning_ = false);
 
     static void buildIndexes(
@@ -777,6 +778,7 @@ private:
         const ContextPtr & query_context,
         const StorageMetadataPtr & metadata_snapshot,
         bool skip_partition_pruning_,
+        bool is_final,
         bool require_ready_sets = false);
 
     MergeTreeSettingsPtr data_settings;
