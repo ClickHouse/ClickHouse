@@ -5,6 +5,8 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -145,20 +147,29 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
     {
         case VolumeLoadBalancing::ROUND_ROBIN:
         {
-            /// A reservation takes one turn and tries the disks in order from it, so it tries every disk once
-            /// even when other threads take turns meanwhile. When it passes over disks without room, the
-            /// turns move past them too, so the next reservations spread over the other disks instead of all
-            /// taking the disk after them.
+            /// Every attempt takes the next turn, like a reservation of its own, so that concurrent
+            /// reservations spread over the disks in the order of their turns. When other threads take turns
+            /// between two attempts, the turn of a reservation can fall on a disk it has already tried. It
+            /// then takes one of the disks it has not tried, picked by the round of the turn so that such
+            /// attempts spread over them evenly. So a reservation tries every disk once.
             const size_t disks_num = disks.size();
-            const size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
-            for (size_t i = 0; i < disks_num; ++i)
+            const size_t first_disk = last_used.fetch_add(1u, std::memory_order_acq_rel) % disks_num;
+            if (ReservationPtr reservation = try_reserve(disks[first_disk]))
+                return reservation;
+
+            /// The first attempt cannot fall on a tried disk, so the untried disks are tracked only after it
+            /// fails, and a reservation that succeeds at once copies nothing.
+            Disks untried = disks;
+            untried.erase(untried.begin() + first_disk);
+            while (!untried.empty())
             {
-                if (ReservationPtr reservation = try_reserve(disks[(start_from + i) % disks_num]))
-                {
-                    if (i)
-                        last_used.fetch_add(i, std::memory_order_acq_rel);
+                const size_t turn = last_used.fetch_add(1u, std::memory_order_acq_rel);
+                auto disk = std::ranges::find(untried, disks[turn % disks_num]);
+                if (disk == untried.end())
+                    disk = untried.begin() + (turn / disks_num) % untried.size();
+                if (ReservationPtr reservation = try_reserve(*disk))
                     return reservation;
-                }
+                untried.erase(disk);
             }
             return {};
         }
