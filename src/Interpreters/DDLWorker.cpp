@@ -584,6 +584,11 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_context->setSetting("implicit_transaction", Field{0});
         }
 
+        /// The entry holds ClickHouse SQL whatever dialect the initiator parsed the original query in,
+        /// e.g. an `ALTER TABLE ... UPDATE` produced from an `update` of the Mongo dialect. An entry of an
+        /// older initiator may still carry `dialect` in its settings, and so may the profile of this host.
+        query_context->setSetting("dialect", Field{"clickhouse"});
+
         query_context->setInitialQueryId(task.entry.initial_query_id);
 
         if (!task.is_initial_query)
