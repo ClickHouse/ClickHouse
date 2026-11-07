@@ -630,7 +630,7 @@ private:
 class ReadFromMergeTreeTextIndex : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromMergeTreeTextIndex"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeTextIndex"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromMergeTreeTextIndex(

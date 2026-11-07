@@ -21,8 +21,8 @@ public:
     BlockIO execute() override;
 
     /// Ignore quota and limits here because execute() produces a SELECT query which checks quotas/limits by itself.
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
+    [[nodiscard]] bool ignoreQuota() const override { return true; }
+    [[nodiscard]] bool ignoreLimits() const override { return true; }
 
 private:
     ASTPtr query_ptr;

@@ -424,12 +424,12 @@ public:
         state.reset();
     }
 
-    bool joinable() const
+    [[nodiscard]] bool joinable() const
     {
         return initialized();
     }
 
-    std::thread::id get_id() const
+    [[nodiscard]] std::thread::id get_id() const
     {
         return state ? state->thread_id.load() : std::thread::id{};
     }
@@ -440,7 +440,7 @@ protected:
     /// Internally initialized() should be used over joinable(),
     /// since it is enough to know that the thread is initialized,
     /// and ignore that fact that thread cannot join itself.
-    bool initialized() const
+    [[nodiscard]] bool initialized() const
     {
         return static_cast<bool>(state);
     }

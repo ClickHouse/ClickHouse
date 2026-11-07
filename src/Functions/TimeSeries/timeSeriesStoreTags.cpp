@@ -27,26 +27,26 @@ public:
     /// `getSignatureString`).
     explicit FunctionTimeSeriesStoreTags(ContextPtr context_) : WithContext(context_) {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     /// There should be 2 or more arguments.
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
     /// Function timeSeriesStoreTags(id, ...) always returns `id`, so it's deterministic.
-    bool isDeterministic() const override { return true; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
 
     /// Stateful: writes to the per-query tags collector read by timeSeriesIdToGroup() etc.
-    bool isStateful() const override { return true; }
+    [[nodiscard]] bool isStateful() const override { return true; }
 
     /// Disable constant folding: the side effect (storing tags in the per-query `ContextTimeSeriesTagsCollector`)
     /// must run at execution time, not analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
+    [[nodiscard]] bool isSuitableForConstantFolding() const override { return false; }
 
     /// This function allows NULLs as a way to specify that some tags don't have values.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Declarative signature — returns the `id` argument as-is, so the
     /// result type follows the first argument's type. The mandatory prefix is
@@ -56,7 +56,7 @@ public:
     /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
     /// `Array(...) | Nothing` argument into it), so the accepted arities are
     /// `2 + 2 * N` and calls like `timeSeriesStoreTags(id, [])` are valid.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(I : Any,"
                " Array(Tuple(String, String)) | Nothing,"
@@ -73,7 +73,7 @@ public:
     /// `ColumnsWithTypeAndName` override below is authoritative (it runs the helpers). Route
     /// the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never applies the approximate signature string as a validator.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -82,7 +82,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
         return arguments[0].type;
@@ -106,12 +106,12 @@ public:
     /// was created with may already have expired by plan-optimization time, which would otherwise
     /// raise a `Context has expired` logical error. The function returns its `id` argument
     /// unchanged, so the dry-run result is just that column.
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         return arguments[0].column;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
         auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();

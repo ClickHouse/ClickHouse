@@ -140,7 +140,7 @@ public:
     }
 
 private:
-    QueryTreeNodePtr generateOptimizedDateFilter(
+    [[nodiscard]] QueryTreeNodePtr generateOptimizedDateFilter(
         const String & comparator, const QueryTreeNodePtr & column_node, const FieldInterval & range) const
     {
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");

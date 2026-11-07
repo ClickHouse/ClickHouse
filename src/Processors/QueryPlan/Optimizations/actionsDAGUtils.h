@@ -169,8 +169,8 @@ struct HeaderColumnsToInputs
 
     std::vector<size_t> read_by;
 
-    size_t size() const { return read_by.size(); }
-    bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
+    [[nodiscard]] size_t size() const { return read_by.size(); }
+    [[nodiscard]] bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
 };
 
 HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);

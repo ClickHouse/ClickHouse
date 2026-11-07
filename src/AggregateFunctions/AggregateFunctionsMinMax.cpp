@@ -51,7 +51,7 @@ public:
         forEachInTypeTree(*this->result_type, check_not_dynamic_or_variant);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (isMin)
             return "min";
@@ -136,7 +136,7 @@ public:
         this->data(place).write(buf, *serialization);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return singleValueSerializedSizeBound<Data>();
     }
@@ -157,7 +157,7 @@ public:
         this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -170,7 +170,7 @@ public:
     /// because the merge skips `NaN` (partials `NaN` and `1` of `max` merge to `1`, which is not
     /// the maximum of the two under any `NaN` placement), and so are compound types, which may
     /// contain floating-point elements.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         const auto type = removeLowCardinality(this->result_type);
         const WhichDataType which(type);
@@ -180,7 +180,7 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (!Data::is_compilable)
             return false;

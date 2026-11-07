@@ -135,7 +135,7 @@ namespace
     {
         const bool * alive_bins;
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return alive_bins[DB::bucketCountBin(hash)]; }
     };
 
     /// The filter of the best groups of a count-first unit: their hashes, sorted, and a bitset on 12 bits of them. A
@@ -154,12 +154,12 @@ namespace
                 bits[(hash >> 6) & 63] |= UInt64{1} << (hash & 63);
         }
 
-        bool ALWAYS_INLINE contains(UInt64 hash) const
+        [[nodiscard]] bool ALWAYS_INLINE contains(UInt64 hash) const
         {
             return ((bits[(hash >> 6) & 63] >> (hash & 63)) & 1) && std::binary_search(hashes.begin(), hashes.end(), hash);
         }
 
-        bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
+        [[nodiscard]] bool ALWAYS_INLINE takes(UInt64 hash) const { return contains(hash); }
 
     private:
         const DB::PaddedPODArray<UInt64> & hashes;
@@ -302,7 +302,7 @@ namespace
         }
 
         /// The record count of partition `sub` of the bucket, in the producers' chunks and in its spill stream.
-        size_t recordsOf(size_t sub) const
+        [[nodiscard]] size_t recordsOf(size_t sub) const
         {
             size_t records = spilledOf(sub).recordCount();
             for (const auto & producer : session.producer_buffers)
@@ -353,7 +353,7 @@ namespace
         }
 
     private:
-        DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
+        [[nodiscard]] DB::AdaptiveAggregationSession::SpilledPartition & spilledOf(size_t sub) const
         {
             return session.spilled_partitions[first_partition + sub];
         }

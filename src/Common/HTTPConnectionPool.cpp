@@ -356,7 +356,7 @@ class IExtendedPool : public IHTTPConnectionPoolForEndpoint
 public:
     using Ptr = std::shared_ptr<IExtendedPool>;
 
-    virtual HTTPConnectionGroupType getGroupType() const = 0;
+    [[nodiscard]] virtual HTTPConnectionGroupType getGroupType() const = 0;
     virtual size_t wipeExpired() = 0;
 };
 
@@ -558,7 +558,7 @@ private:
             notifySocketInode();
         }
 
-        String getTarget() const
+        [[nodiscard]] String getTarget() const
         {
             if (!Session::getProxyConfig().host.empty())
                 return fmt::format("{}:{} over proxy {}",
@@ -866,7 +866,7 @@ public:
         group->releaseStoredConnections(stored_connections.size());
     }
 
-    String getTarget() const
+    [[nodiscard]] String getTarget() const
     {
         if (!proxy_configuration.isEmpty())
             return fmt::format("{} over proxy {}",
@@ -925,12 +925,12 @@ public:
         return prepareNewConnection(timeouts, connect_time);
     }
 
-    const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
+    [[nodiscard]] const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const override
     {
         return group->getMetrics();
     }
 
-    HTTPConnectionGroupType getGroupType() const override
+    [[nodiscard]] HTTPConnectionGroupType getGroupType() const override
     {
         return group->getType();
     }
@@ -1445,7 +1445,7 @@ public:
         http_group->setSocketBufferSizes(std::move(http));
     }
 
-    HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
+    [[nodiscard]] HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
     {
         /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
         /// The groups are created once in the constructor and never replaced.
@@ -1460,7 +1460,7 @@ public:
         }
     }
 
-    bool isSoftLimitReached(HTTPConnectionGroupType type) const
+    [[nodiscard]] bool isSoftLimitReached(HTTPConnectionGroupType type) const
     {
         /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
         switch (type)

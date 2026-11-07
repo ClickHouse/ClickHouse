@@ -94,7 +94,7 @@ struct SettingFieldNumber
     SettingFieldNumber(const SettingFieldNumber &) = default;
     SettingFieldNumber & operator=(const SettingFieldNumber &) = default;
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     SettingFieldNumber & operator=(Type x);
@@ -103,7 +103,7 @@ struct SettingFieldNumber
     operator Type() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -158,12 +158,12 @@ struct SettingAutoWrapper final
         return *this;
     }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     explicit operator Field() const { return is_auto ? Field(keyword) : Field(base); }
 
-    String toString() const { return is_auto ? keyword : base.toString(); }
+    [[nodiscard]] String toString() const { return is_auto ? keyword : base.toString(); }
 
     void parseFromString(const String & str)
     {
@@ -188,8 +188,8 @@ struct SettingAutoWrapper final
      */
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
-    Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
-    std::optional<Type> valueOrNullopt() const { return is_auto ? std::optional<Type>(std::nullopt) : base.value; }
+    [[nodiscard]] Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+    [[nodiscard]] std::optional<Type> valueOrNullopt() const { return is_auto ? std::optional<Type>(std::nullopt) : base.value; }
 };
 
 using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;
@@ -220,11 +220,11 @@ struct SettingFieldTriBool
     SettingFieldTriBool & operator=(const SettingFieldTriBool &) = default;
     SettingFieldTriBool & operator=(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     explicit operator Field() const;
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -258,14 +258,14 @@ struct SettingFieldMaxThreads final
     SettingFieldMaxThreads & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
     SettingFieldMaxThreads & operator=(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
     /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto == true`.
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -306,7 +306,7 @@ struct SettingFieldTimespan final
     SettingFieldTimespan & operator =(UInt64 x) { microseconds = microsecondsFromUnits(x); changed = true; return *this; }
     SettingFieldTimespan & operator =(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator Poco::Timespan() const { return Poco::Timespan(microseconds); } /// NOLINT
@@ -314,11 +314,11 @@ struct SettingFieldTimespan final
     explicit operator UInt64() const { return microseconds / static_cast<Int64>(microseconds_per_unit); }
     explicit operator Field() const;
 
-    Int64 totalMicroseconds() const { return microseconds; }
-    Int64 totalMilliseconds() const { return microseconds / 1000; }
-    Int64 totalSeconds() const { return microseconds / 1000000; }
+    [[nodiscard]] Int64 totalMicroseconds() const { return microseconds; }
+    [[nodiscard]] Int64 totalMilliseconds() const { return microseconds / 1000; }
+    [[nodiscard]] Int64 totalSeconds() const { return microseconds / 1000000; }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -349,13 +349,13 @@ struct SettingFieldString final
     SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const { return value; }
+    [[nodiscard]] String toString() const { return value; }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
@@ -377,13 +377,13 @@ public:
     SettingFieldMap & operator =(const Map & map) { value = map; changed = true; return *this; }
     SettingFieldMap & operator =(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -404,13 +404,13 @@ public:
     SettingFieldChar & operator =(char c) { value = c; changed = true; return *this; }
     SettingFieldChar & operator =(const Field & f);
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator char() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
 
-    String toString() const { return String(&value, 1); }
+    [[nodiscard]] String toString() const { return String(&value, 1); }
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;
@@ -435,14 +435,14 @@ struct SettingFieldURI final
     SettingFieldURI & operator =(const char * str) { *this = parseURI(str); return *this; }
     SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const Poco::URI &() const { return value; } /// NOLINT
     explicit operator String() const { return toString(); }
     explicit operator Field() const { return toString(); }
 
-    String toString() const { return value.toString(); }
+    [[nodiscard]] String toString() const { return value.toString(); }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
@@ -483,13 +483,13 @@ struct SettingFieldEnum final
     SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
     SettingFieldEnum & operator =(const Field & f) { *this = Traits::fromString(f.safeGet<String>()); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator EnumType() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
 
-    String toString() const { return Traits::toString(value); }
+    [[nodiscard]] String toString() const { return Traits::toString(value); }
     void parseFromString(const String & str) { *this = Traits::fromString(str); }
 
     void writeBinary(WriteBuffer & out) const;
@@ -533,7 +533,7 @@ struct SettingFieldMultiEnum final
     SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<String>()); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator ValueType() const { return value; } /// NOLINT
@@ -546,7 +546,7 @@ struct SettingFieldMultiEnum final
         return res;
     }
 
-    String toString() const
+    [[nodiscard]] String toString() const
     {
         constexpr String separator = ",";
         String result;
@@ -629,13 +629,13 @@ struct SettingFieldTimezone final
     SettingFieldTimezone & operator =(const char * str) { *this = std::string_view{str}; return *this; }
     SettingFieldTimezone & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    String toString() const { return value; }
+    [[nodiscard]] String toString() const { return value; }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;
@@ -657,12 +657,12 @@ struct SettingFieldCustom final
 
     SettingFieldCustom & operator =(const Field & f) { value = f; changed = true; return *this; }
 
-    bool isChanged() const { return changed; }
+    [[nodiscard]] bool isChanged() const { return changed; }
     void setChanged(bool changed_) { changed = changed_; }
 
     explicit operator Field() const { return value; }
 
-    String toString(bool show_secrets = true) const;
+    [[nodiscard]] String toString(bool show_secrets = true) const;
     void parseFromString(const String & str);
 
     void writeBinary(WriteBuffer & out) const;

@@ -68,7 +68,7 @@ public:
         data.deserialize(buf);
     }
 
-    Value get(Float64 level) const
+    [[nodiscard]] Value get(Float64 level) const
     {
         return getImpl<Value>(level);
     }
@@ -78,7 +78,7 @@ public:
         getManyImpl(levels, indices, size, result);
     }
 
-    Float64 getFloat(Float64 level) const
+    [[nodiscard]] Float64 getFloat(Float64 level) const
     {
         return getImpl<Float64>(level);
     }
@@ -92,7 +92,7 @@ private:
     DDSketchDenseLogarithmic data;
 
     template <typename T>
-    T getImpl(Float64 level) const
+    [[nodiscard]] T getImpl(Float64 level) const
     {
         return static_cast<T>(data.get(level));
     }

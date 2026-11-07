@@ -177,7 +177,7 @@ struct ALPPage
                 "ALP page has {} bytes after its last vector", body_size - expected_offset);
     }
 
-    size_t vectorLength(size_t vector_idx) const
+    [[nodiscard]] size_t vectorLength(size_t vector_idx) const
     {
         chassert(vector_idx < num_vectors);
         return std::min(vector_size, num_elements - (vector_idx << log_vector_size));
@@ -502,7 +502,7 @@ private:
 
     /// Estimated size in bits of the encoded `sample` (bit-packed values and exceptions).
     /// Returns nullopt if `require_two_encodable` and fewer than two values are not exceptions.
-    std::optional<size_t> estimateSize(ExponentAndFactor params, bool require_two_encodable) const
+    [[nodiscard]] std::optional<size_t> estimateSize(ExponentAndFactor params, bool require_two_encodable) const
     {
         const T encode_multiplier_exponent = Traits::pow10[params.exponent];
         const T encode_multiplier_factor = Traits::neg_pow10[params.factor];
@@ -754,7 +754,7 @@ public:
         return result;
     }
 
-    parquet::Encoding::type encoding() const override { return last_page_encoding; }
+    [[nodiscard]] parquet::Encoding::type encoding() const override { return last_page_encoding; }
 
     void Put(const T * src, int num_values) override
     {
@@ -776,7 +776,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ReportUnencodedDataBytes is only for BYTE_ARRAY");
     }
 
-    arrow::MemoryPool * memory_pool() const override { return arrow::default_memory_pool(); }
+    [[nodiscard]] arrow::MemoryPool * memory_pool() const override { return arrow::default_memory_pool(); }
 
 private:
     PODArray<T> values;

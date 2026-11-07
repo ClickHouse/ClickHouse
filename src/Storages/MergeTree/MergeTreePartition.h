@@ -33,16 +33,16 @@ struct MergeTreePartition
     /// For month-based partitioning.
     explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) {}
 
-    String getID(const MergeTreeData & storage) const;
-    String getID(const Block & partition_key_sample) const;
+    [[nodiscard]] String getID(const MergeTreeData & storage) const;
+    [[nodiscard]] String getID(const Block & partition_key_sample) const;
 
     static std::optional<Row> tryParseValueFromID(const String & partition_id, const Block & partition_key_sample);
 
     /// `partition_key_sample` must be the adjusted partition key (see `adjustPartitionKey`): it is the key
     /// whose types produced the values in `value`, and its signedness can differ from the declared key's.
     void serializeText(const Block & partition_key_sample, WriteBuffer & out, const FormatSettings & format_settings) const;
-    String serializeToString(const Block & partition_key_sample) const;
-    String serializeToString(const IMergeTreeDataPart & part) const;
+    [[nodiscard]] String serializeToString(const Block & partition_key_sample) const;
+    [[nodiscard]] String serializeToString(const IMergeTreeDataPart & part) const;
 
     void load(const IMergeTreeDataPart & part);
 

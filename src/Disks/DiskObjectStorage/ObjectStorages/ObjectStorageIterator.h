@@ -22,7 +22,7 @@ public:
     virtual std::optional<RelativePathsWithMetadata> getCurrentBatchAndScheduleNext() = 0;
 
     /// Returns the number of elements in the batches that were fetched so far.
-    virtual size_t getAccumulatedSize() const = 0;
+    [[nodiscard]] virtual size_t getAccumulatedSize() const = 0;
 
     virtual ~IObjectStorageIterator() = default;
 
@@ -73,7 +73,7 @@ public:
         return current_batch;
     }
 
-    size_t getAccumulatedSize() const override { return batch.size(); }
+    [[nodiscard]] size_t getAccumulatedSize() const override { return batch.size(); }
 
 private:
     RelativePathsWithMetadata batch;

@@ -280,7 +280,7 @@ struct AggregateFunctionSumData
         readBinaryLittleEndian(sum, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
 #if defined(__x86_64__)
         if constexpr (std::is_same_v<AccumulateResult, wide::BitInt256> || std::is_same_v<AccumulateResult, wide::BitUInt256>)
@@ -430,7 +430,7 @@ struct AggregateFunctionSumKahanData
         readBinary(compensation, buf);
     }
 
-    T get() const
+    [[nodiscard]] T get() const
     {
         return sum;
     }
@@ -453,7 +453,7 @@ public:
     using ColVecType = ColumnVectorOrDecimal<T>;
     using ResultType = TResult;
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (Type == AggregateFunctionTypeSum)
             return "sum";
@@ -488,14 +488,14 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// The sum of unsigned integers qualifies for the `Subadditive` bound: the merged value is
     /// the modular sum of the partial values, which never exceeds their saturating sum - even
     /// when the accumulator wraps around. Signed and floating-point sums do not qualify
     /// (negative addends break the bound), and neither do the decimal and wide-integer results
     /// (the bound's arithmetic works on `UInt64` values).
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if constexpr (is_unsigned_v<T> && std::is_same_v<TResult, UInt64>)
             return MergedValueBound::Subadditive;
@@ -594,7 +594,7 @@ public:
         this->data(place).write(buf);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
     {
         return Data::serialized_size_bound;
     }
@@ -617,7 +617,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         if constexpr (Type == AggregateFunctionTypeSumKahan)
             return false;

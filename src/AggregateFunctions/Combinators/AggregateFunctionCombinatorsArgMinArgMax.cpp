@@ -33,7 +33,7 @@ public:
     ~AggregateFunctionCombinatorArgMinArgMaxData() { data().~SingleValueDataBase(); }
 
     SingleValueDataBase & data() { return v_data.get(); }
-    const SingleValueDataBase & data() const { return v_data.get(); }
+    [[nodiscard]] const SingleValueDataBase & data() const { return v_data.get(); }
 };
 
 template <bool isMin>
@@ -89,7 +89,7 @@ public:
         forEachInTypeTree(*arguments[key_col], check_not_dynamic_or_variant);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (isMin)
             return nested_function->getName() + "ArgMin";
@@ -97,7 +97,7 @@ public:
             return nested_function->getName() + "ArgMax";
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -130,29 +130,29 @@ public:
         }
     }
 
-    bool isState() const override { return nested_function->isState(); }
+    [[nodiscard]] bool isState() const override { return nested_function->isState(); }
 
-    bool isVersioned() const override { return nested_function->isVersioned(); }
+    [[nodiscard]] bool isVersioned() const override { return nested_function->isVersioned(); }
 
-    size_t getVersionFromRevision(size_t revision) const override { return nested_function->getVersionFromRevision(revision); }
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override { return nested_function->getVersionFromRevision(revision); }
 
-    size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
+    [[nodiscard]] size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
 
-    DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
+    [[nodiscard]] DataTypePtr getStateType() const override { return this->getStateTypeWithVersionOf(*nested_function); }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena() || singleValueTypeAllocatesMemoryInArena(key_type->getTypeId());
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor() && /*false*/ std::is_trivially_destructible_v<SingleValueDataBase>;
     }
 
-    size_t sizeOfData() const override { return key_offset + sizeof(Key); }
+    [[nodiscard]] size_t sizeOfData() const override { return key_offset + sizeof(Key); }
 
-    size_t alignOfData() const override { return std::max(nested_function->alignOfData(), alignof(SingleValueDataBaseMemoryBlock)); }
+    [[nodiscard]] size_t alignOfData() const override { return std::max(nested_function->alignOfData(), alignof(SingleValueDataBaseMemoryBlock)); }
 
     void create(AggregateDataPtr __restrict place) const override
     {
@@ -204,12 +204,12 @@ public:
 
     /// The nested state is at the beginning of the state, so the parallel merge is forwarded to the nested
     /// function with the same places, restricted to the states that have the extremal key.
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
 
     /// `parallelizeMergePrepare` is not forwarded: it would prepare (e.g. convert to two-level) the nested states
     /// of all places, including those that are discarded because their key is not extremal. The nested
     /// `parallelizeMergeMulti` handles the unprepared states of the selected places itself.
-    bool isParallelizeMergePrepareNeeded() const override { return false; }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return false; }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
@@ -311,14 +311,14 @@ public:
         nested_function->rollbackInsertResult(place, to);
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 template <bool isMin>
 class CombinatorArgMinArgMax final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (isMin)
             return "ArgMin";
@@ -326,7 +326,7 @@ public:
             return "ArgMax";
     }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(
@@ -337,7 +337,7 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

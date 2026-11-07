@@ -119,16 +119,16 @@ public:
     virtual ~ObjectStorageQueueIFileMetadata();
 
     /// Get path from current file metadata.
-    const std::string & getPath() const { return path; }
+    [[nodiscard]] const std::string & getPath() const { return path; }
     /// Get maximum number of retries for file processing.
-    size_t getMaxTries() const { return max_loading_retries; }
+    [[nodiscard]] size_t getMaxTries() const { return max_loading_retries; }
     /// Get file status.
     /// File status is an in-memory processing info of the file, containing:
     /// number of processed rows, processing time, exception, etc.
     FileStatusPtr getFileStatus() { return file_status; }
 
-    const std::string & getProcessingPath() const { return processing_node_path; }
-    const std::string & getProcessorInfo() const { return processor_info; }
+    [[nodiscard]] const std::string & getProcessingPath() const { return processing_node_path; }
+    [[nodiscard]] const std::string & getProcessorInfo() const { return processor_info; }
 
     static std::string generateProcessingID();
 
@@ -146,11 +146,11 @@ public:
     /// Sets `failure_message` when the result is `Failed`.
     virtual PathState getPathState(std::string & failure_message) const = 0;
 
-    const std::string & getFailedNodePath() const { return failed_node_path; }
-    const std::string & getProcessedNodePath() const { return processed_node_path; }
+    [[nodiscard]] const std::string & getFailedNodePath() const { return failed_node_path; }
+    [[nodiscard]] const std::string & getProcessedNodePath() const { return processed_node_path; }
 
-    virtual bool useBucketsForProcessing() const { return false; }
-    virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
+    [[nodiscard]] virtual bool useBucketsForProcessing() const { return false; }
+    [[nodiscard]] virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
 
     /// Try set file as Processing.
     bool trySetProcessing();
@@ -196,9 +196,9 @@ public:
 
     /// Whether prepareFailedRequests just reset processing
     /// without actually marking the file as failed.
-    bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
+    [[nodiscard]] bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
     /// Whether the file was given up on for good (see `permanently_failed`).
-    bool wasPermanentlyFailed() const { return permanently_failed; }
+    [[nodiscard]] bool wasPermanentlyFailed() const { return permanently_failed; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
@@ -214,7 +214,7 @@ public:
         std::string last_exception;
         UInt64 retries = 0;
 
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
         static NodeMetadata fromString(const std::string & metadata_str);
     };
 
@@ -241,7 +241,7 @@ protected:
 
     /// Whether the cached file status alone already tells that the file
     /// must not be processed, so keeper does not have to be asked at all.
-    bool hasNonProcessableState() const;
+    [[nodiscard]] bool hasNonProcessableState() const;
 
     const std::string path;
     const std::string zookeeper_name;

@@ -492,9 +492,9 @@ private:
         MutationsSnapshot() = default;
         MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
 
-        MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
-        std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getColumnsChangedOnFly() const override;
+        [[nodiscard]] MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        [[nodiscard]] std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
+        [[nodiscard]] NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy
@@ -514,7 +514,7 @@ private:
             {}
 
 
-            size_t getNextMinExecutionTimeUsResolution() const
+            [[nodiscard]] size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
                     return static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
@@ -530,7 +530,7 @@ private:
                 latest_fail_time_us = static_cast<size_t>(Poco::Timestamp().epochMicroseconds());
             }
 
-            bool partCanBeMutated() const
+            [[nodiscard]] bool partCanBeMutated() const
             {
                 if (max_postpone_time_ms == 0)
                     return true;

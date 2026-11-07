@@ -49,12 +49,12 @@ public:
 
     LoggerPtr log = getLogger("CascadesOptimizer");
 
-    const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
-    const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
-    const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
+    [[nodiscard]] const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
+    [[nodiscard]] const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
+    [[nodiscard]] const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
 
     Memo & getMemo() { return memo; }
-    const Memo & getMemo() const { return memo; }
+    [[nodiscard]] const Memo & getMemo() const { return memo; }
 
 private:
     void addRule(OptimizationRulePtr rule);

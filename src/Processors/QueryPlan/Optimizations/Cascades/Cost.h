@@ -60,7 +60,7 @@ struct CostConfig
     Float64 funnel_sequential_cost_per_row = 1.0; /// Gather/scatter push every row through one stream endpoint.
     Float64 merge_sequential_cost_per_row = 1.0;  /// N-way merge of sorted streams advances one cursor at a time.
 
-    String dump() const;
+    [[nodiscard]] String dump() const;
 };
 
 CostConfig parseCostConfig(const String & json_str);
@@ -71,7 +71,7 @@ struct Cost
     Float64 network = 0;    /// Bytes transferred over network.
     Float64 sequential = 0; /// Single-threaded phases (hash builds, merges).
 
-    Float64 total(const CostConfig & config) const
+    [[nodiscard]] Float64 total(const CostConfig & config) const
     {
         /// If any component is infinite the plan is impossible; return infinity directly. Multiplying
         /// first would let a zero weight turn `inf * 0` into NaN, and a NaN cost compares as neither
@@ -101,7 +101,7 @@ struct Cost
         return *this;
     }
 
-    String dump(const CostConfig & config) const;
+    [[nodiscard]] String dump(const CostConfig & config) const;
 };
 
 struct ExpressionCost

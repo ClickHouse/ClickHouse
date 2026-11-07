@@ -138,7 +138,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    const ColumnRawPtrs & getActualColumns() const
+    [[nodiscard]] const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }
@@ -181,7 +181,7 @@ protected:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling init() for non-nullable keys is forbidden");
     }
 
-    const ColumnRawPtrs & getActualColumns() const
+    [[nodiscard]] const ColumnRawPtrs & getActualColumns() const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal error: calling getActualColumns() for non-nullable keys is forbidden");
     }
@@ -274,7 +274,7 @@ public:
             unpack_order = Method::State::packedKeysOrder(key_sizes);
     }
 
-    bool atEnd() const { return position == end; }
+    [[nodiscard]] bool atEnd() const { return position == end; }
 
     /// Returns at most `max_rows` keys, stopping after a complete key reaches `max_bytes` of allocated column
     /// memory. The byte target is soft because a key or an allocation can exceed it; zero disables it.
@@ -444,7 +444,7 @@ struct SetVariantsTemplate: public Variant
 
     Type type = Type::EMPTY;
 
-    bool empty() const { return type == Type::EMPTY; }
+    [[nodiscard]] bool empty() const { return type == Type::EMPTY; }
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
@@ -471,17 +471,17 @@ struct SetVariantsTemplate: public Variant
     /// buffers and arena allocations for the range beginning at `start_row`. Requires an initialized
     /// set and materialized key columns matching the selected method. Saturates at the maximum of
     /// `size_t` when the bound is not representable.
-    size_t estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const
+    [[nodiscard]] size_t estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const
         requires std::is_same_v<Variant, NonClearableSet>;
 
     /// Estimates the per-row packed-key buffer of the selected hash method, independently of table
     /// growth. Other methods pack or hash each row on demand and need no such buffer.
     /// Requires an initialized set and key sizes matching the selected method.
-    size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes) const;
+    [[nodiscard]] size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes) const;
 
-    size_t getTotalRowCount() const;
+    [[nodiscard]] size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`
-    size_t getTotalByteCount() const;
+    [[nodiscard]] size_t getTotalByteCount() const;
 };
 
 using SetVariants = SetVariantsTemplate<NonClearableSet>;

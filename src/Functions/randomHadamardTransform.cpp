@@ -86,20 +86,20 @@ public:
     static constexpr auto name = "randomHadamardTransform";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomHadamardTransform>(); }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
     /// The transform of a constant vector is a constant: with all arguments constant the default
     /// implementation runs the transform on a single row and wraps the result in a `ColumnConst`,
     /// instead of repeating it for every row of the block. This also lets the analyzer fold the
     /// whole call to a literal, which matters for a vector search where the query vector is a
     /// constant rotated the same way as the stored vectors.
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
     /// 'seed' and 'output_dims' are read as scalars, so they must stay constant even when the vector is not.
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -129,7 +129,7 @@ public:
         return std::make_shared<DataTypeArray>(array_type->getNestedType());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         UInt64 seed = 0;
         size_t fixed_out_dims = 0; /// 0 means "full" (= m)

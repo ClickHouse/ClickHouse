@@ -1311,11 +1311,11 @@ TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
     EXPECT_FALSE(metadata->existsDirectory("A/non-existing"));
     EXPECT_FALSE(metadata->existsFileOrDirectory("A/non-existing"));
 
-    EXPECT_ANY_THROW(metadata->getFileSize("non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getFileSize("non-existing"));
     EXPECT_EQ(metadata->getFileSizeIfExists("non-existing"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getFileSize("non-existing/A"));
+    EXPECT_ANY_THROW((void)metadata->getFileSize("non-existing/A"));
     EXPECT_EQ(metadata->getFileSizeIfExists("non-existing/A"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getFileSize("A/non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getFileSize("A/non-existing"));
     EXPECT_EQ(metadata->getFileSizeIfExists("A/non-existing"), std::nullopt);
 
     EXPECT_EQ(metadata->listDirectory("non-existing"), std::vector<std::string>());
@@ -1325,18 +1325,18 @@ TEST_F(MetadataPlainRewritableDiskTest, OperationsNonExisting)
     EXPECT_EQ(metadata->listDirectory("A/non-existing"), std::vector<std::string>());
     EXPECT_FALSE(metadata->iterateDirectory("A/non-existing")->isValid());
 
-    EXPECT_ANY_THROW(metadata->getStorageObjects("non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getStorageObjects("non-existing"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("non-existing"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getStorageObjects("non-existing/A"));
+    EXPECT_ANY_THROW((void)metadata->getStorageObjects("non-existing/A"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("non-existing/A"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getStorageObjects("A/non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getStorageObjects("A/non-existing"));
     EXPECT_EQ(metadata->getStorageObjectsIfExist("A/non-existing"), std::nullopt);
 
-    EXPECT_ANY_THROW(metadata->getLastModified("non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getLastModified("non-existing"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("non-existing"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getLastModified("non-existing/A"));
+    EXPECT_ANY_THROW((void)metadata->getLastModified("non-existing/A"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("non-existing/A"), std::nullopt);
-    EXPECT_ANY_THROW(metadata->getLastModified("A/non-existing"));
+    EXPECT_ANY_THROW((void)metadata->getLastModified("A/non-existing"));
     EXPECT_EQ(metadata->getLastModifiedIfExists("A/non-existing"), std::nullopt);
 }
 

@@ -96,7 +96,7 @@ public:
     void skipRowEndDelimiter();
     void skipRowBetweenDelimiter();
 
-    size_t getFormatDataIdx() const { return format_data_idx; }
+    [[nodiscard]] size_t getFormatDataIdx() const { return format_data_idx; }
 
 private:
     PeekableReadBuffer * buf;

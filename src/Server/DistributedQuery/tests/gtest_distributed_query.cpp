@@ -87,7 +87,7 @@ public:
     {
     }
 
-    String getName() const override { return "ReadFromFile"; }
+    [[nodiscard]] String getName() const override { return "ReadFromFile"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/) override
     {
@@ -155,9 +155,9 @@ public:
         updateInputHeaders({input_header_});
     }
 
-    String getName() const override { return "PrintTSV"; }
+    [[nodiscard]] String getName() const override { return "PrintTSV"; }
 
-    bool hasOutputStream() const { return false; }
+    [[nodiscard]] bool hasOutputStream() const { return false; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & /*settings*/) override
     {

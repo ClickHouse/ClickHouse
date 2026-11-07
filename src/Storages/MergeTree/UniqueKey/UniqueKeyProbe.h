@@ -73,11 +73,11 @@ public:
         std::vector<std::optional<UInt64>> & out) const = 0;
 
     /// Whether the row at `row_number` is bitmap-dead in this part.
-    virtual bool isRowDead(UInt64 row_number) const = 0;
+    [[nodiscard]] virtual bool isRowDead(UInt64 row_number) const = 0;
 
     /// The underlying part, surfaced through `ProbeResult::part`. Production
     /// targets return the part; may be nullptr when the part is unknown.
-    virtual const IMergeTreeDataPart * getUnderlyingPart() const = 0;
+    [[nodiscard]] virtual const IMergeTreeDataPart * getUnderlyingPart() const = 0;
 };
 
 using ProbeTargetPartPtr = std::shared_ptr<const IProbeTargetPart>;

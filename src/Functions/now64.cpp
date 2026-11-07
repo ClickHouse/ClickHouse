@@ -32,9 +32,9 @@ class ExecutableFunctionNow64 final : public IExecutableFunction
 public:
     explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
 
-    String getName() const override { return "now64"; }
+    [[nodiscard]] String getName() const override { return "now64"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return result_type->createColumnConst(input_rows_count, time_value);
     }

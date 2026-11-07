@@ -106,8 +106,8 @@ class CompressionCodecGorilla : public ICompressionCodec
 public:
     explicit CompressionCodecGorilla(UInt8 data_bytes_size_);
 
-    uint8_t getMethodByte() const override;
-    ASTPtr getCodecDescription() const override;
+    [[nodiscard]] uint8_t getMethodByte() const override;
+    [[nodiscard]] ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -117,13 +117,13 @@ protected:
 
     UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
+    [[nodiscard]] UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    bool isCompression() const override { return true; }
-    bool isGenericCompression() const override { return false; }
-    bool isFloatingPointTimeSeriesCodec() const override { return true; }
+    [[nodiscard]] bool isCompression() const override { return true; }
+    [[nodiscard]] bool isGenericCompression() const override { return false; }
+    [[nodiscard]] bool isFloatingPointTimeSeriesCodec() const override { return true; }
 
-    String getDescription() const override
+    [[nodiscard]] String getDescription() const override
     {
         return "Calculates XOR between current and previous value; suitable for slowly changing numbers.";
     }

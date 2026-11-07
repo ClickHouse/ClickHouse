@@ -38,15 +38,15 @@ public:
 
     FunctionFirstNonDefault() = default;
 
-    String getName() const override { return name; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
         for (size_t i = 0; i + 1 < number_of_arguments; ++i)
@@ -54,7 +54,7 @@ public:
         return args;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Variadic over T1..Tn; the type-function ellipsis needs the variable index to
         /// build the group-to-repeat, hence the explicit `T1` rather than bare `T`.
@@ -64,7 +64,7 @@ public:
     /// Cap the arity at 1024 like the legacy `getReturnTypeImpl` did. The DSL
     /// signature has no upper-bound matcher, so enforce it here before
     /// delegating to the DSL for the actual return-type computation.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         constexpr size_t max_args = 1024;
         if (arguments.size() > max_args)
@@ -73,7 +73,7 @@ public:
         return IFunction::getReturnTypeImpl(arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (arguments.size() == 1)
             return arguments[0].column;

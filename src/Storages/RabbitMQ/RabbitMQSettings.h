@@ -56,7 +56,7 @@ struct RabbitMQSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
-    SettingsChanges getFormatSettings() const;
+    [[nodiscard]] SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
 

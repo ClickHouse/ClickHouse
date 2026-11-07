@@ -172,7 +172,7 @@ private:
         return place + prefix_size;
     }
 
-    MutableColumns prepareArgumentColumns() const
+    [[nodiscard]] MutableColumns prepareArgumentColumns() const
     {
         MutableColumns argument_columns;
         argument_columns.reserve(this->argument_types.size());
@@ -296,12 +296,12 @@ public:
         nested_func->rollbackInsertResult(getNestedPlace(place), to);
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return prefix_size + nested_func->sizeOfData();
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return std::max(alignof(Data), nested_func->alignOfData());
     }
@@ -318,7 +318,7 @@ public:
         nested_func->destroy(getNestedPlace(place));
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
     }
@@ -329,42 +329,42 @@ public:
         nested_func->destroyUpToState(getNestedPlace(place));
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return nested_func->getName() + "Distinct";
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return true;
     }
 
-    bool isState() const override
+    [[nodiscard]] bool isState() const override
     {
         return nested_func->isState();
     }
 
-    bool isVersioned() const override
+    [[nodiscard]] bool isVersioned() const override
     {
         return nested_func->isVersioned();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_func->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override
+    [[nodiscard]] size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
     }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_func);
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         /// Distinct state contains a history of unique values and can be merged across
         /// variants without reading the nested function state from rhs
@@ -380,9 +380,9 @@ public:
         this->merge(place, rhs_place, arena);
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
-    AggregateFunctionPtr getOwnNullAdapter(
+    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
         const Array & params,

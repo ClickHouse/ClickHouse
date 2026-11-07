@@ -35,7 +35,7 @@ public:
     /// is called once per stream with the same filter and only the first call takes effect.
     void setFilter(const RuntimeFilterConstPtr & filter);
 
-    MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
+    [[nodiscard]] MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
 
 private:
     void setFilterImpl(const RuntimeFilterConstPtr & filter);

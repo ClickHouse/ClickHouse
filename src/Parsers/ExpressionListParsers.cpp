@@ -519,7 +519,7 @@ namespace
     class ParserFunctionName : public IParserBase
     {
     protected:
-        const char * getName() const override { return "function name"; }
+        [[nodiscard]] const char * getName() const override { return "function name"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
             ParserCompoundIdentifier parser(false, true, Highlight::function);
@@ -676,12 +676,12 @@ public:
 
     virtual bool parse(IParser::Pos & /*pos*/, Expected & /*expected*/, Action & /*action*/) = 0;
 
-    bool isFinished() const
+    [[nodiscard]] bool isFinished() const
     {
         return finished;
     }
 
-    int previousPriority() const
+    [[nodiscard]] int previousPriority() const
     {
         if (operators.empty())
             return 0;
@@ -689,7 +689,7 @@ public:
         return operators.back().priority;
     }
 
-    OperatorType previousType() const
+    [[nodiscard]] OperatorType previousType() const
     {
         if (operators.empty())
             return OperatorType::None;
@@ -697,7 +697,7 @@ public:
         return operators.back().type;
     }
 
-    const Operator * previousOperator() const
+    [[nodiscard]] const Operator * previousOperator() const
     {
         if (operators.empty())
             return nullptr;
@@ -711,7 +711,7 @@ public:
     /// a lambda body can leave higher-priority binary operators on top of the
     /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
     /// inspecting only the stack top via `previousType` would miss the lambda.
-    bool hasPendingOperator(OperatorType type) const
+    [[nodiscard]] bool hasPendingOperator(OperatorType type) const
     {
         for (const auto & op : operators)
             if (op.type == type)
@@ -719,7 +719,7 @@ public:
         return false;
     }
 
-    int isCurrentElementEmpty() const
+    [[nodiscard]] int isCurrentElementEmpty() const
     {
         return operators.empty() && operands.empty();
     }
@@ -1667,13 +1667,13 @@ private:
 
     /// `argument` put back as text, when it is a literal and the target type reads the text more
     /// precisely - see `exactCastArgument`.
-    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
     {
         return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 
     /// `TRY_CAST(x AS T)` is `accurateCastOrNull(x, 'T')`. It reads a literal argument as exactly as `CAST` does.
-    ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
+    [[nodiscard]] ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
     {
         auto exact_argument = exactArgument(argument, type_text, pos);
         if (is_try)

@@ -68,31 +68,31 @@ public:
     }
 
     /// Throws an exception if not found.
-    TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context) const;
+    [[nodiscard]] TableFunctionPtr get(const ASTPtr & ast_function, ContextPtr context) const;
 
     /// Returns nullptr if not found.
-    TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
+    [[nodiscard]] TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
 
-    std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
-    std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
-    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const;
-    bool hasArgumentSecretsIgnoringCase(const String & name) const;
+    [[nodiscard]] std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
+    [[nodiscard]] std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
+    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const;
+    [[nodiscard]] bool hasArgumentSecretsIgnoringCase(const String & name) const;
 
-    bool isTableFunctionName(const std::string & name) const;
+    [[nodiscard]] bool isTableFunctionName(const std::string & name) const;
 
     using TableFunctions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    const TableFunctions & getAllTableFunctions() const { return table_functions; }
+    [[nodiscard]] const TableFunctions & getAllTableFunctions() const { return table_functions; }
 
 private:
 
-    const TableFunctions & getMap() const override { return table_functions; }
+    [[nodiscard]] const TableFunctions & getMap() const override { return table_functions; }
 
-    const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
+    [[nodiscard]] const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
 
-    String getFactoryName() const override { return "TableFunctionFactory"; }
+    [[nodiscard]] String getFactoryName() const override { return "TableFunctionFactory"; }
 
-    std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name) const;
-    std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
+    [[nodiscard]] std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name) const;
+    [[nodiscard]] std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
 
     TableFunctions table_functions;
     TableFunctions case_insensitive_table_functions;

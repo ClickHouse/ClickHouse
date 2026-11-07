@@ -60,8 +60,8 @@ public:
         const String & comment;
         bool is_restore_from_backup = false;
 
-        ContextMutablePtr getContext() const;
-        ContextMutablePtr getLocalContext() const;
+        [[nodiscard]] ContextMutablePtr getContext() const;
+        [[nodiscard]] ContextMutablePtr getLocalContext() const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -103,7 +103,7 @@ public:
 
     using Storages = std::unordered_map<std::string, Creator>;
 
-    StoragePtr get(
+    [[nodiscard]] StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
         ContextMutablePtr local_context,
@@ -132,18 +132,18 @@ public:
         .get_export_access_fn = nullptr,
     }, Documentation documentation = {});
 
-    const Storages & getAllStorages() const
+    [[nodiscard]] const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
+    [[nodiscard]] const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & name) const
     {
         auto it = storages.find(name);
         return it == storages.end() ? nullptr : &it->second.secret_arguments;
     }
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
@@ -152,7 +152,7 @@ public:
     }
 
     using FeatureMatcherFn = std::function<bool(StorageFeatures)>;
-    std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
+    [[nodiscard]] std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
     {
         std::vector<String> result;
         for (const auto& pair : storages)
@@ -161,16 +161,16 @@ public:
         return result;
     }
 
-    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
+    [[nodiscard]] std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
-    const StorageFeatures & getStorageFeatures(const String & storage_name) const;
+    [[nodiscard]] const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
-    AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    [[nodiscard]] AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
-    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+    [[nodiscard]] AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
 
 private:
     Storages storages;

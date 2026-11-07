@@ -12,12 +12,12 @@ struct PinnedPartUUIDs
     std::set<UUID> part_uuids;
     Coordination::Stat stat{};
 
-    bool contains(const UUID & part_uuid) const
+    [[nodiscard]] bool contains(const UUID & part_uuid) const
     {
         return part_uuids.contains(part_uuid);
     }
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void fromString(const String & buf);
 
 private:

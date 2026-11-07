@@ -394,7 +394,7 @@ public:
         slices.insert(slices.end(), std::make_move_iterator(new_slices.begin()), std::make_move_iterator(new_slices.end()));
     }
 
-    const Proto::ColumnEncoding & getEncoding(UInt64 column_id) const override
+    [[nodiscard]] const Proto::ColumnEncoding & getEncoding(UInt64 column_id) const override
     {
         if (column_id >= footer.columns.size())
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -402,7 +402,7 @@ public:
         return footer.columns[column_id];
     }
 
-    std::unique_ptr<InputByteStream> getStream(UInt64 column_id, Proto::StreamKind kind) const override
+    [[nodiscard]] std::unique_ptr<InputByteStream> getStream(UInt64 column_id, Proto::StreamKind kind) const override
     {
         std::pair<UInt64, UInt32> key{column_id, static_cast<UInt32>(kind)};
         auto name = fmt::format("column {} kind {} in stripe {}", column_id, static_cast<UInt32>(kind), stripe_index);
@@ -421,7 +421,7 @@ public:
             std::move(loader), it->second.second, reader.getCompression(), reader.getCompressionBlockSize(), std::move(name));
     }
 
-    std::optional<std::string_view> getStreamData(UInt64 column_id, Proto::StreamKind kind) const
+    [[nodiscard]] std::optional<std::string_view> getStreamData(UInt64 column_id, Proto::StreamKind kind) const
     {
         auto it = streams.find({column_id, static_cast<UInt32>(kind)});
         if (it == streams.end())
@@ -429,17 +429,17 @@ public:
         return it->second;
     }
 
-    const std::vector<bool> & getSelectedColumns() const override { return selected_columns; }
-    const DateLUTImpl & getWriterTimezone() const override { return writer_timezone; }
-    const DateLUTImpl & getReaderTimezone() const override { return reader_timezone; }
-    UInt64 getNumberOfRows() const override { return reader.getStripe(stripe_index).number_of_rows; }
-    bool isDecimalAsLong() const override
+    [[nodiscard]] const std::vector<bool> & getSelectedColumns() const override { return selected_columns; }
+    [[nodiscard]] const DateLUTImpl & getWriterTimezone() const override { return writer_timezone; }
+    [[nodiscard]] const DateLUTImpl & getReaderTimezone() const override { return reader_timezone; }
+    [[nodiscard]] UInt64 getNumberOfRows() const override { return reader.getStripe(stripe_index).number_of_rows; }
+    [[nodiscard]] bool isDecimalAsLong() const override
     {
         const auto & version = reader.getPostScript().version;
         return version.size() == 2 && version[0] == 1 && version[1] == 9999;
     }
 
-    const Proto::StripeFooter & getFooter() const { return footer; }
+    [[nodiscard]] const Proto::StripeFooter & getFooter() const { return footer; }
 
 private:
     Reader & reader;

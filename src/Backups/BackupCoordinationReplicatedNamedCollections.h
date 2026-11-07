@@ -30,7 +30,7 @@ public:
     void addDirectory(DirectoryPathForNamedCollections && directory_path);
 
     /// Returns all added paths to directories if `host_id` is the host chosen to store the named collections.
-    Strings getDirectories(const String & replication_id, const String & host_id) const;
+    [[nodiscard]] Strings getDirectories(const String & replication_id, const String & host_id) const;
 
 private:
     struct DirPathsAndHost

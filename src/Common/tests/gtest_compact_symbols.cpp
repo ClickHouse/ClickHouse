@@ -175,7 +175,7 @@ TEST(CompactSymbols, RejectsHugeAdvertisedAddressFrameSize)
     advertiseHugeFrameContentSize(encoded, addresses_offset);
 
     Reader reader(std::string_view(encoded.data(), encoded.size()));
-    EXPECT_THROW(reader.decodeAddresses(), std::runtime_error);
+    EXPECT_THROW((void)reader.decodeAddresses(), std::runtime_error);
 }
 
 TEST(CompactSymbols, RejectsHugeAdvertisedNameGranuleSize)
@@ -187,7 +187,7 @@ TEST(CompactSymbols, RejectsHugeAdvertisedNameGranuleSize)
     advertiseHugeFrameContentSize(encoded, names_offset);
 
     Reader reader(std::string_view(encoded.data(), encoded.size()));
-    EXPECT_THROW(reader.maximumNameGranuleSize(), std::runtime_error);
+    EXPECT_THROW((void)reader.maximumNameGranuleSize(), std::runtime_error);
 }
 
 TEST(CompactSymbols, ValidatesNames)
@@ -218,7 +218,7 @@ TEST(CompactSymbols, ValidatesNames)
     std::copy_n(invalid_frame.data(), invalid_frame_size, encoded.data() + names_offset + compressed_offset);
 
     Reader reader(std::string_view(encoded.data(), encoded.size()));
-    EXPECT_NO_THROW(reader.maximumNameGranuleSize());
+    EXPECT_NO_THROW((void)reader.maximumNameGranuleSize());
     EXPECT_THROW(reader.validateNames(), std::runtime_error);
 }
 

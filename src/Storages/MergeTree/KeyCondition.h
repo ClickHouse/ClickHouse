@@ -136,7 +136,7 @@ public:
     using UpdatePartialDisjunctionResultFn = std::function<void (size_t position, bool result, bool is_unknown)>;
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
-    BoolMask checkInHyperrectangle(
+    [[nodiscard]] BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
@@ -146,7 +146,7 @@ public:
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
     /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
     /// See the optimized overload of checkInRange for explanation of relevant parameters.
-    BoolMask checkInHyperrectangle(
+    [[nodiscard]] BoolMask checkInHyperrectangle(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
         const DataTypes & sparse_data_types) const;
@@ -191,7 +191,7 @@ public:
         BoolMask initial_mask,
         const Hyperrectangle * key_bounds = nullptr) const;
 
-    const KeyOrder & getKeyOrder() const { return key_order; }
+    [[nodiscard]] const KeyOrder & getKeyOrder() const { return key_order; }
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -203,35 +203,35 @@ public:
 
     /// Checks that the index can not be used
     /// FUNCTION_UNKNOWN will be AND'ed (if any).
-    bool alwaysUnknownOrTrue() const;
+    [[nodiscard]] bool alwaysUnknownOrTrue() const;
 
     /// Checks that the index can not be used
     /// Does not allow any FUNCTION_UNKNOWN (will instantly return true).
-    bool anyUnknownOrAlwaysTrue() const;
+    [[nodiscard]] bool anyUnknownOrAlwaysTrue() const;
 
-    bool alwaysFalse() const;
+    [[nodiscard]] bool alwaysFalse() const;
 
-    bool hasMonotonicFunctionsChain() const;
+    [[nodiscard]] bool hasMonotonicFunctionsChain() const;
 
     /// Impose an additional condition: the value in the column `column` must be in the range `range`.
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
     /// Checks if the condition has unknown atoms.
-    bool hasUnknownAtoms() const;
+    [[nodiscard]] bool hasUnknownAtoms() const;
 
     /// A copy where every atom that cannot be evaluated is replaced with the constant that maximizes the condition.
     /// It has the same `can_be_true` on every range, but `can_be_false` is not exact, so it must not be used for exact ranges.
-    KeyCondition createWithUnknownAtomsAssumedTrue() const;
+    [[nodiscard]] KeyCondition createWithUnknownAtomsAssumedTrue() const;
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
-    size_t getNumKeyColumns() const { return num_key_columns; }
+    [[nodiscard]] size_t getNumKeyColumns() const { return num_key_columns; }
 
     /// Returns the size of the minimal prefix of key columns that contains all columns used in the RPN.
     /// Suppose there are 5 keys columns: 0, 1, 2, 3, 4. If any RPNElement uses key columns 0, 3.
     /// Then, it returns 4 (last used key column index + 1).
-    size_t getUsedKeyPrefixSize() const;
+    [[nodiscard]] size_t getUsedKeyPrefixSize() const;
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -242,7 +242,7 @@ public:
         std::string condition;
     };
 
-    Description getDescription() const;
+    [[nodiscard]] Description getDescription() const;
 
     /** A chain of possibly monotone functions.
       * If the key column is wrapped in functions that can be monotonous in some value ranges
@@ -278,7 +278,7 @@ public:
     /// including `MergeTreeSetIndex`.
     static size_t getNumUnevaluableChainApplications();
 
-    bool matchesExactContinuousRange() const;
+    [[nodiscard]] bool matchesExactContinuousRange() const;
 
     /// Extract plain ranges of the condition.
     /// Note that only support one column key condition.
@@ -317,7 +317,7 @@ public:
     ///  - `x + 1 < 100`                               -> { "(-Inf, +Inf)" } (simple arithmetic on the key is not inverted to avoid potential overflow)
     ///  - `intDiv(x, 3) < 10`                         -> { "(-Inf, +Inf)" } (functions on the key are not analyzed here)
     ///  - `(x < 10 AND x % 2 = 0) OR (x < 20 AND x % 3 = 0)` -> { "(-Inf, +Inf)" } (no partial extraction across OR branches)
-    Ranges extractBounds() const;
+    [[nodiscard]] Ranges extractBounds() const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -366,9 +366,9 @@ public:
         RPNElement(Function function_, std::vector<size_t> key_columns_, const Range & range_);
 
         /// If `key_names` is empty, prints column numbers instead.
-        String toString(const std::vector<String> & key_names = {}) const;
+        [[nodiscard]] String toString(const std::vector<String> & key_names = {}) const;
 
-        size_t getKeyColumn() const { chassert(key_columns.size() == 1); return key_columns.at(0); }
+        [[nodiscard]] size_t getKeyColumn() const { chassert(key_columns.size() == 1); return key_columns.at(0); }
 
         Function function = FUNCTION_UNKNOWN;
 
@@ -443,8 +443,8 @@ public:
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
     static const AtomMap atom_map;
 
-    const RPN & getRPN() const { return rpn; }
-    const ColumnIndices & getKeyColumns() const { return key_columns; }
+    [[nodiscard]] const RPN & getRPN() const { return rpn; }
+    [[nodiscard]] const ColumnIndices & getKeyColumns() const { return key_columns; }
 
     /// Whether this key condition is relaxed (computed from the RPN atoms). When a key
     /// condition is relaxed, it is considered weakened. This is because keys may not
@@ -509,7 +509,7 @@ public:
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
     /// on a given regular expression. Such an atom is relaxed unless the regular
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
-    bool isRelaxed() const;
+    [[nodiscard]] bool isRelaxed() const;
 
     /// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
     /// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
@@ -523,10 +523,10 @@ public:
     /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
     void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
 
-    bool isSinglePoint() const { return single_point; }
+    [[nodiscard]] bool isSinglePoint() const { return single_point; }
 
     /// Does the filter condition have any ORs?
-    bool hasOnlyConjunctions() const;
+    [[nodiscard]] bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
@@ -542,9 +542,9 @@ public:
     void extractSingleColumnConditions(std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const;
 
     /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
-    std::unordered_set<size_t> getUsedColumns() const;
+    [[nodiscard]] std::unordered_set<size_t> getUsedColumns() const;
 
-    std::vector<size_t> getUsedColumnsInOrder() const;
+    [[nodiscard]] std::vector<size_t> getUsedColumnsInOrder() const;
 
     /// Private constructor.
     KeyCondition(
@@ -558,8 +558,8 @@ private:
     /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
     /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
     /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
-    bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
-    bool mayReadNullKeyValue(
+    [[nodiscard]] bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
+    [[nodiscard]] bool mayReadNullKeyValue(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
         const DataTypes & sparse_key_types) const;
@@ -715,7 +715,7 @@ private:
 
     /// Builds a complete comparison atom, including type conversion, relaxation and the final range.
     /// Returns `std::nullopt` when the candidate cannot supply a sound constraint.
-    std::optional<RPNElement> tryBuildComparisonAtom(
+    [[nodiscard]] std::optional<RPNElement> tryBuildComparisonAtom(
         const ComparisonAtomCandidate & candidate, std::string func_name, const ContextPtr & context) const;
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
@@ -784,7 +784,7 @@ private:
     /// `nested_null_is_ordinary_value` is set for a null-safe comparison. There a `NULL` nested in a
     /// `Tuple` is an ordinary value that matches only a `NULL` at the same position, so a transform that
     /// hides it does not relax the atom.
-    std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
+    [[nodiscard]] std::vector<TransformedConstant> transformConstantByDeterministicKeyFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         const ColumnWithTypeAndName & constant,
@@ -803,14 +803,14 @@ private:
     /// The returned vector contains a deterministic sub-DAG for every key column that
     /// can be computed from `expr_name`. When `first_match_only` is set, the search
     /// stops at the first collected sub-DAG.
-    std::vector<DeterministicKeyDag> collectKeyWrappingDags(
+    [[nodiscard]] std::vector<DeterministicKeyDag> collectKeyWrappingDags(
         const String & expr_name,
         const BuildInfo & info,
         bool first_match_only) const;
 
     /// Finds the first key column computable from `node` through deterministic functions. The set
     /// analysis uses the returned recipe to transform set elements into key column values.
-    std::optional<DeterministicKeyDag> tryGetDeterministicKeyTransform(
+    [[nodiscard]] std::optional<DeterministicKeyDag> tryGetDeterministicKeyTransform(
         const RPNBuilderTreeNode & node, const BuildInfo & info) const;
 
     /// Appends prepared set-membership atoms for this predicate to `group`. Each atom may constrain
@@ -863,7 +863,7 @@ private:
 
     /// Collects the predicate components and the whole tuple from which deterministic functions compute key
     /// columns. For a scalar predicate expression, only the expression itself is considered.
-    std::vector<SetTransformSource> collectSetTransformSources(
+    [[nodiscard]] std::vector<SetTransformSource> collectSetTransformSources(
         const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
         size_t args_count) const;
@@ -953,7 +953,7 @@ private:
     /// - SELECT * FROM test WHERE toDate(p) >= '2020-09-01' AND toUnixTimestamp(p)%5==0
     ///   In this case will be (FUNCTION_IN_RANGE, FUNCTION_UNKNOWN, FUNCTION_AND)
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
-    bool unknownOrAlwaysTrue(bool unknown_any) const;
+    [[nodiscard]] bool unknownOrAlwaysTrue(bool unknown_any) const;
 
     /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
       * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE. The hyperrectangles of the leaves of a conjunction
@@ -965,13 +965,13 @@ private:
 
     /// Determines if a function maintains monotonicity.
     /// Currently only does special checks for toDateTime monotonicity.
-    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
+    [[nodiscard]] bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
 
     /// Returns the ranges in `rpn` corresponding to subconditions that are AND-ed together.
     /// E.g. consider condition `x AND (y OR z) AND w`. The `rpn` is [x, y, z, OR, AND, w, AND].
     /// This function will return [(0, 1), (1, 4), (5, 6)], corresponding to: [x], [y, z, OR], [w].
     /// The returned vector is not necessarily sorted.
-    std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> topLevelConjunction() const;
+    [[nodiscard]] std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> topLevelConjunction() const;
 
     RPN rpn;
 

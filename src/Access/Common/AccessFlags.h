@@ -53,11 +53,11 @@ public:
 
     AccessFlags operator ~() const { AccessFlags res; res.flags = ~flags; return res; }
 
-    bool isEmpty() const { return flags.none(); }
-    bool isAll() const { return flags.all(); }
+    [[nodiscard]] bool isEmpty() const { return flags.none(); }
+    [[nodiscard]] bool isAll() const { return flags.all(); }
     explicit operator bool() const { return !isEmpty(); }
-    bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
-    bool isGlobalWithParameter() const;
+    [[nodiscard]] bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
+    [[nodiscard]] bool isGlobalWithParameter() const;
     bool validateParameter(String & parameter, std::function<void(const char *)> add_to_expected) const;
     enum ParameterType
     {
@@ -68,8 +68,8 @@ public:
         USER_NAME,
         DEFINER,
     };
-    ParameterType getParameterType() const;
-    std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
+    [[nodiscard]] ParameterType getParameterType() const;
+    [[nodiscard]] std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
@@ -81,13 +81,13 @@ public:
     void clear() { flags.reset(); }
 
     /// Returns a comma-separated list of keywords, like "SELECT, CREATE USER, UPDATE".
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
     /// Returns a list of access types.
-    std::vector<AccessType> toAccessTypes() const;
+    [[nodiscard]] std::vector<AccessType> toAccessTypes() const;
 
     /// Returns a list of keywords.
-    std::vector<std::string_view> toKeywords() const;
+    [[nodiscard]] std::vector<std::string_view> toKeywords() const;
 
     /// Returns all the flags.
     /// These are the same as (allGlobalFlags() | allDatabaseFlags() | allTableFlags() | allColumnsFlags() | allDictionaryFlags()).

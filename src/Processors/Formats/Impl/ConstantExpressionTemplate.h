@@ -37,7 +37,7 @@ class ConstantExpressionTemplate : boost::noncopyable
         static UInt64 getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
                                       const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
 
-        String dumpTemplate() const;
+        [[nodiscard]] String dumpTemplate() const;
 
         String result_column_name;
 
@@ -87,7 +87,7 @@ public:
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
     ColumnPtr evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset = 0);
 
-    size_t rowsCount() const { return rows_count; }
+    [[nodiscard]] size_t rowsCount() const { return rows_count; }
 
 private:
     bool tryParseExpression(

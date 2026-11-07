@@ -38,7 +38,7 @@ public:
 
     ~DDSketchLogarithmicMapping() = default;
 
-    int key(Float64 value) const
+    [[nodiscard]] int key(Float64 value) const
     {
         if (value < min_possible || value > max_possible)
         {
@@ -47,13 +47,13 @@ public:
         return static_cast<int>(logGamma(value) + offset);
     }
 
-    Float64 value(int key) const { return lowerBound(key) * (1 + relative_accuracy); }
+    [[nodiscard]] Float64 value(int key) const { return lowerBound(key) * (1 + relative_accuracy); }
 
     /// The [min, max] bin keys that are valid to deserialize: the keys key() yields for the smallest
     /// and largest representable values, capped to what the store can index without overflowing
     /// Returns an empty range (every key rejected) when nothing is valid (a corrupted offset
     /// pushes every producible key outside the cap)
-    std::pair<Int64, Int64> validKeyRange() const
+    [[nodiscard]] std::pair<Int64, Int64> validKeyRange() const
     {
         static constexpr Int64 key_bound = Int64(1) << 30;
         const Float64 bound = static_cast<Float64>(key_bound);
@@ -68,17 +68,17 @@ public:
                 max_value_key >= bound ? key_bound : static_cast<Int64>(max_value_key)};
     }
 
-    Float64 logGamma(Float64 value) const { return std::log(value) * multiplier; }
+    [[nodiscard]] Float64 logGamma(Float64 value) const { return std::log(value) * multiplier; }
 
-    Float64 powGamma(Float64 value) const { return std::exp(value / multiplier); }
+    [[nodiscard]] Float64 powGamma(Float64 value) const { return std::exp(value / multiplier); }
 
-    Float64 lowerBound(int index) const { return powGamma(static_cast<Float64>(index) - offset); }
+    [[nodiscard]] Float64 lowerBound(int index) const { return powGamma(static_cast<Float64>(index) - offset); }
 
-    Float64 getGamma() const { return gamma; }
+    [[nodiscard]] Float64 getGamma() const { return gamma; }
 
-    Float64 getMinPossible() const { return min_possible; }
+    [[nodiscard]] Float64 getMinPossible() const { return min_possible; }
 
-    [[maybe_unused]] Float64 getMaxPossible() const { return max_possible; }
+    [[nodiscard]] [[maybe_unused]] Float64 getMaxPossible() const { return max_possible; }
 
     bool operator==(const DDSketchLogarithmicMapping & other) const
     {

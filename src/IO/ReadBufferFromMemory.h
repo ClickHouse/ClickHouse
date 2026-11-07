@@ -31,7 +31,7 @@ public:
     explicit ReadBufferFromMemory(std::string_view str)
         : SeekableReadBuffer(const_cast<char *>(str.data()), str.size(), 0) {}
 
-    bool isMemoryBuffer() const override { return true; }
+    [[nodiscard]] bool isMemoryBuffer() const override { return true; }
 
     template <PaddedBufferStorage Storage>
     void setPaddedStorage(const Storage & storage, size_t storage_offset, size_t size)

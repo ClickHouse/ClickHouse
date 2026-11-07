@@ -31,7 +31,7 @@ namespace
             setWorkingBuffer(in.buffer(), in.offset());
         }
 
-        const ReadBuffer & getWrappedReadBuffer() const override { return in; }
+        [[nodiscard]] const ReadBuffer & getWrappedReadBuffer() const override { return in; }
 
         bool poll(size_t timeout_microseconds) override
         {

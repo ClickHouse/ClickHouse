@@ -524,7 +524,7 @@ private:
 class ReadFromFilesystem final : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromFilesystem"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromFilesystem"; }
 
     ReadFromFilesystem(
         const Names & column_names_,

@@ -84,9 +84,9 @@ struct KQLToken
     /// Timespan: the value in 100-nanosecond ticks, the unit KQL itself uses.
     Int64 timespan_ticks = 0;
 
-    std::string_view text() const { return {begin, static_cast<size_t>(end - begin)}; }
-    bool isEnd() const { return type == KQLTokenType::EndOfStream; }
-    bool isError() const { return type == KQLTokenType::Error; }
+    [[nodiscard]] std::string_view text() const { return {begin, static_cast<size_t>(end - begin)}; }
+    [[nodiscard]] bool isEnd() const { return type == KQLTokenType::EndOfStream; }
+    [[nodiscard]] bool isError() const { return type == KQLTokenType::Error; }
 };
 
 /** Converts KQL source text into a token vector in one pass.
@@ -114,7 +114,7 @@ private:
     KQLToken lexBareWord(const char * token_begin);
 
     void skipWhitespaceAndComments();
-    bool atLineStart() const;
+    [[nodiscard]] bool atLineStart() const;
 
     const char * pos;
     const char * const begin;

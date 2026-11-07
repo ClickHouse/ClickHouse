@@ -46,9 +46,9 @@ public:
                              bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                              WriteMode write_mode) override;
 
-    const ReadSettings & getReadSettings() const override { return read_settings; }
-    const WriteSettings & getWriteSettings() const override { return write_settings; }
-    size_t getWriteBufferSize() const override { return write_buffer_size; }
+    [[nodiscard]] const ReadSettings & getReadSettings() const override { return read_settings; }
+    [[nodiscard]] const WriteSettings & getWriteSettings() const override { return write_settings; }
+    [[nodiscard]] size_t getWriteBufferSize() const override { return write_buffer_size; }
 
 protected:
     LoggerPtr const log;
@@ -75,9 +75,9 @@ public:
     void removeFiles(const Strings & file_names) override;
     void removeEmptyDirectories() override;
 
-    const ReadSettings & getReadSettings() const override { return read_settings; }
-    const WriteSettings & getWriteSettings() const override { return write_settings; }
-    size_t getWriteBufferSize() const override { return write_buffer_size; }
+    [[nodiscard]] const ReadSettings & getReadSettings() const override { return read_settings; }
+    [[nodiscard]] const WriteSettings & getWriteSettings() const override { return write_settings; }
+    [[nodiscard]] size_t getWriteBufferSize() const override { return write_buffer_size; }
 
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override = 0;
 

@@ -125,7 +125,7 @@ public:
 
     QueryTreeNodePtr buildQueryTreeNode(ASTPtr query_, ContextPtr context_);
 
-    std::shared_ptr<TableFunctionNode> buildTableFunction(const ASTPtr & table_function, const ContextPtr & context) const;
+    [[nodiscard]] std::shared_ptr<TableFunctionNode> buildTableFunction(const ASTPtr & table_function, const ContextPtr & context) const;
 
 private:
 
@@ -135,49 +135,49 @@ private:
         bool is_materialized = false;
     };
 
-    QueryTreeNodePtr buildSelectOrUnionExpression(
+    [[nodiscard]] QueryTreeNodePtr buildSelectOrUnionExpression(
         const ASTPtr & select_or_union_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildSelectWithUnionExpression(
+    [[nodiscard]] QueryTreeNodePtr buildSelectWithUnionExpression(
         const ASTPtr & select_with_union_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildSelectIntersectExceptQuery(
+    [[nodiscard]] QueryTreeNodePtr buildSelectIntersectExceptQuery(
         const ASTPtr & select_intersect_except_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildSelectExpression(
+    [[nodiscard]] QueryTreeNodePtr buildSelectExpression(
         const ASTPtr & select_query,
         bool is_subquery,
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const;
+    [[nodiscard]] QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildInterpolateList(const ASTPtr & interpolate_expression_list, const ContextPtr & context) const;
+    [[nodiscard]] QueryTreeNodePtr buildInterpolateList(const ASTPtr & interpolate_expression_list, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildWindowList(const ASTPtr & window_definition_list, const ContextPtr & context) const;
+    [[nodiscard]] QueryTreeNodePtr buildWindowList(const ASTPtr & window_definition_list, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildExpressionList(const ASTPtr & expression_list, const ContextPtr & context) const;
+    [[nodiscard]] QueryTreeNodePtr buildExpressionList(const ASTPtr & expression_list, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildExpression(const ASTPtr & expression, const ContextPtr & context) const;
+    [[nodiscard]] QueryTreeNodePtr buildExpression(const ASTPtr & expression, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildWindow(const ASTPtr & window_definition, const ContextPtr & context) const;
+    [[nodiscard]] QueryTreeNodePtr buildWindow(const ASTPtr & window_definition, const ContextPtr & context) const;
 
-    QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
+    [[nodiscard]] QueryTreeNodePtr buildJoinTree(bool is_subquery, const ASTSelectQuery & select_query, const ContextPtr & context) const;
 
-    ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
+    [[nodiscard]] ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
 
     QueryTreeNodePtr setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
 };

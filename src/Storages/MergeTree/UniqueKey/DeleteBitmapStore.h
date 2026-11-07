@@ -217,7 +217,7 @@ private:
 
         /// Where the bytes are filed: a carried name records its version, a staged one leaves it
         /// to whoever holds the file.
-        DeleteBitmapFileOps::BitmapFile fileFor(const String & target_name) const
+        [[nodiscard]] DeleteBitmapFileOps::BitmapFile fileFor(const String & target_name) const
         {
             return {carried ? csn : 0, target_name};
         }

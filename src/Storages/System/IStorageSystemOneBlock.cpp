@@ -20,7 +20,7 @@ namespace DB
 class ReadFromSystemOneBlock : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromSystemOneBlock"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemOneBlock"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemOneBlock(

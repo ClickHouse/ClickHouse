@@ -115,10 +115,10 @@ public:
     /// (here: for `error`) is usually cheaper.
     /// Non-ASCII bytes are ignored: in UTF-8 mode, `^.error$` rejects the bytes which cannot start a UTF-8 character
     /// (e.g. 0x80), but dictionary tokens hardly ever start with them, so this would not skip anything.
-    bool canSkipPrefixes() const;
+    [[nodiscard]] bool canSkipPrefixes() const;
 
     /// Memory used by the states and transitions.
-    size_t memoryUsage() const;
+    [[nodiscard]] size_t memoryUsage() const;
 
     /// Intersects the DFA with a sorted sequence of tokens, i.e. a dictionary. The DFA itself is immutable: it is built
     /// once per query and shared by the dictionary scans of all parts. Every scan uses its own `Cursor`, which remembers
@@ -167,8 +167,8 @@ public:
 private:
     /// Returned by `step` if the state has no transition for the byte.
     static constexpr StateID dead = UINT32_MAX;
-    StateID step(StateID state, uint8_t byte) const;
-    const Transition * nextTransition(StateID state, unsigned byte) const;
+    [[nodiscard]] StateID step(StateID state, uint8_t byte) const;
+    [[nodiscard]] const Transition * nextTransition(StateID state, unsigned byte) const;
     /// Indexed by `StateID`, state 0 is the start state.
     std::vector<State> states;
 };

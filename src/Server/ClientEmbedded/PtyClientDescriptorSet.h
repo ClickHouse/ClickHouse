@@ -39,7 +39,7 @@ private:
             fd = fd_;
         }
 
-        int get() const { return fd; }
+        [[nodiscard]] int get() const { return fd; }
 
         void close();
 

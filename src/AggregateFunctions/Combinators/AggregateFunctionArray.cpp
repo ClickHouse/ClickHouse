@@ -19,13 +19,13 @@ namespace
 class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Array"; }
+    [[nodiscard]] String getName() const override { return "Array"; }
 
-    bool supportsNesting() const override { return true; }
+    [[nodiscard]] bool supportsNesting() const override { return true; }
 
-    bool transformsArgumentTypes() const override { return true; }
+    [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Array aggregate functions require at least one argument");
@@ -43,7 +43,7 @@ public:
         return nested_arguments;
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

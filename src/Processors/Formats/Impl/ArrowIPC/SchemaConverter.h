@@ -218,7 +218,7 @@ struct DictPlan
     VectorWithMemoryTracking<DictPlan> children;
 
     /// True if this node or any descendant is dictionary-encoded (lets the writer skip untouched columns).
-    bool hasAnyDictionary() const;
+    [[nodiscard]] bool hasAnyDictionary() const;
 };
 
 using DictPlans = VectorWithMemoryTracking<DictPlan>;

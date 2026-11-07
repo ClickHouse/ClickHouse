@@ -25,7 +25,7 @@ struct NormalizeTimeSeriesDefinitionParams
     bool is_restore_from_backup = false;
 
     /// Whether the query creates a new table. It's false on ATTACH and when restoring from a backup.
-    bool isNewTable() const { return (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup; }
+    [[nodiscard]] bool isNewTable() const { return (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup; }
 
     /// The CREATE query of the table from the clause `AS <other_table>`, as it is stored (not normalized).
     /// Required for a new table with that clause.

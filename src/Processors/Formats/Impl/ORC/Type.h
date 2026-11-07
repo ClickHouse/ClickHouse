@@ -42,26 +42,26 @@ class Type
 public:
     explicit Type(TypeKind kind_) : kind(kind_) {}
 
-    TypeKind getKind() const { return kind; }
-    UInt64 getColumnId() const { return column_id; }
-    UInt64 getMaximumColumnId() const { return maximum_column_id; }
-    UInt64 getSubtypeCount() const { return subtypes.size(); }
-    const Type * getSubtype(UInt64 i) const { return subtypes.at(i).get(); }
+    [[nodiscard]] TypeKind getKind() const { return kind; }
+    [[nodiscard]] UInt64 getColumnId() const { return column_id; }
+    [[nodiscard]] UInt64 getMaximumColumnId() const { return maximum_column_id; }
+    [[nodiscard]] UInt64 getSubtypeCount() const { return subtypes.size(); }
+    [[nodiscard]] const Type * getSubtype(UInt64 i) const { return subtypes.at(i).get(); }
     /// Only for STRUCT.
-    const std::string & getFieldName(UInt64 i) const { return field_names.at(i); }
+    [[nodiscard]] const std::string & getFieldName(UInt64 i) const { return field_names.at(i); }
     /// Only for CHAR and VARCHAR.
-    UInt64 getMaximumLength() const { return maximum_length; }
+    [[nodiscard]] UInt64 getMaximumLength() const { return maximum_length; }
     /// Only for DECIMAL.
-    UInt64 getPrecision() const { return precision; }
-    UInt64 getScale() const { return scale; }
+    [[nodiscard]] UInt64 getPrecision() const { return precision; }
+    [[nodiscard]] UInt64 getScale() const { return scale; }
 
-    bool hasAttributeKey(const std::string & key) const { return attributes.contains(key); }
-    const std::string & getAttributeValue(const std::string & key) const { return attributes.at(key); }
+    [[nodiscard]] bool hasAttributeKey(const std::string & key) const { return attributes.contains(key); }
+    [[nodiscard]] const std::string & getAttributeValue(const std::string & key) const { return attributes.at(key); }
     void setAttribute(const std::string & key, const std::string & value) { attributes[key] = value; }
-    const std::map<std::string, std::string> & getAttributes() const { return attributes; }
+    [[nodiscard]] const std::map<std::string, std::string> & getAttributes() const { return attributes; }
 
     /// The type name in the same format as in the reference implementation (Hive type names).
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
 
     void setMaximumLength(UInt64 value) { maximum_length = value; }
     void setPrecisionAndScale(UInt64 precision_, UInt64 scale_) { precision = precision_; scale = scale_; }

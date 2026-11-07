@@ -21,24 +21,24 @@ extern const int LOGICAL_ERROR;
 class FunctionExists final : public IFunction
 {
 public:
-    String getName() const override { return "exists"; }
+    [[nodiscard]] String getName() const override { return "exists"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t  /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t  /*input_rows_count*/) const override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function 'exists' is not supposed to be executed");
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
     {
         return false;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Any) -> UInt8";
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
@@ -49,7 +49,7 @@ public:
     /// (the subquery doesn't have a regular column type), so we must not
     /// validate the argument count via the declarative signature here; just
     /// return `UInt8` directly.
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }

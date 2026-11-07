@@ -20,7 +20,7 @@ public:
     uint16_t warnings_count;
 
 protected:
-    size_t getPayloadSize() const override;
+    [[nodiscard]] size_t getPayloadSize() const override;
 
     void writePayloadImpl(WriteBuffer & buffer) const override;
 

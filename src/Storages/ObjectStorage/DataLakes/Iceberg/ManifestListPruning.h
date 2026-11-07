@@ -26,7 +26,7 @@ public:
         DB::ContextPtr context,
         bool require_ready_sets = false);
 
-    bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
+    [[nodiscard]] bool canBePruned(Int32 partition_spec_id, const PartitionFieldSummaries & partition_summaries) const;
 
 private:
     struct SpecCondition

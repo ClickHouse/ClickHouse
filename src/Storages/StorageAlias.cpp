@@ -494,7 +494,7 @@ struct AliasCheckTasks : IStorage::DataValidationTasksBase
         chassert(inner);
     }
 
-    size_t size() const override { return inner->size(); }
+    [[nodiscard]] size_t size() const override { return inner->size(); }
 };
 
 }

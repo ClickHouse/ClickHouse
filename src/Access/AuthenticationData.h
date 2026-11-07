@@ -31,62 +31,62 @@ public:
     AuthenticationData(AuthenticationData && src) = default;
     AuthenticationData & operator =(AuthenticationData && src) = default;
 
-    AuthenticationType getType() const { return type; }
+    [[nodiscard]] AuthenticationType getType() const { return type; }
 
     /// Sets the password and encrypt it using the authentication type set in the constructor.
     void setPassword(const String & password_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
-    String getPassword() const;
+    [[nodiscard]] String getPassword() const;
 
     /// Sets the password as a string of hexadecimal digits.
     void setPasswordHashHex(const String & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
-    String getPasswordHashHex() const;
+    [[nodiscard]] String getPasswordHashHex() const;
 
     /// Sets the password in binary form.
     void setPasswordHashBinary(const Digest & hash, std::optional<OneTimePasswordSecret> second_factor, bool validate);
-    const Digest & getPasswordHashBinary() const { return password_hash; }
+    [[nodiscard]] const Digest & getPasswordHashBinary() const { return password_hash; }
 
     /// Sets the salt in String form.
     void setSalt(String salt);
-    String getSalt() const;
+    [[nodiscard]] String getSalt() const;
 
-    const std::optional<OneTimePasswordSecret> & getOneTimePassword() const { return otp_secret; }
+    [[nodiscard]] const std::optional<OneTimePasswordSecret> & getOneTimePassword() const { return otp_secret; }
 
     /// Sets the password using bcrypt hash with specified workfactor
     void setPasswordBcrypt(const String & password_, int workfactor_, std::optional<OneTimePasswordSecret> second_factor, bool validate);
 
     /// Sets the server name for authentication type LDAP.
-    const String & getLDAPServerName() const { return ldap_server_name; }
+    [[nodiscard]] const String & getLDAPServerName() const { return ldap_server_name; }
     void setLDAPServerName(const String & name) { ldap_server_name = name; }
 
     /// Sets the realm name for authentication type KERBEROS.
-    const String & getKerberosRealm() const { return kerberos_realm; }
+    [[nodiscard]] const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
 #if USE_SSL
-    const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
+    [[nodiscard]] const X509Certificate::Subjects & getSSLCertificateSubjects() const { return ssl_certificate_subjects; }
     void setSSLCertificateSubjects(X509Certificate::Subjects && ssl_certificate_subjects_);
     void addSSLCertificateSubject(X509Certificate::Subjects::Type type_, String && subject_);
 #endif
 
 #if USE_SSH
-    const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
+    [[nodiscard]] const std::vector<SSHKey> & getSSHKeys() const { return ssh_keys; }
     void setSSHKeys(std::vector<SSHKey> && ssh_keys_) { ssh_keys = std::forward<std::vector<SSHKey>>(ssh_keys_); }
 #endif
 
-    HTTPAuthenticationScheme getHTTPAuthenticationScheme() const { return http_auth_scheme; }
+    [[nodiscard]] HTTPAuthenticationScheme getHTTPAuthenticationScheme() const { return http_auth_scheme; }
     void setHTTPAuthenticationScheme(HTTPAuthenticationScheme scheme) { http_auth_scheme = scheme; }
 
-    const String & getHTTPAuthenticationServerName() const { return http_auth_server_name; }
+    [[nodiscard]] const String & getHTTPAuthenticationServerName() const { return http_auth_server_name; }
     void setHTTPAuthenticationServerName(const String & name) { http_auth_server_name = name; }
 
-    time_t getValidUntil() const { return valid_until; }
+    [[nodiscard]] time_t getValidUntil() const { return valid_until; }
     void setValidUntil(time_t valid_until_) { valid_until = valid_until_; }
 
     /// If not empty, the access rights of a user authenticated with this method
     /// are limited to the intersection with these elements (the GRANTS clause).
-    const AccessRightsElements & getGrants() const { return grants; }
+    [[nodiscard]] const AccessRightsElements & getGrants() const { return grants; }
     void setGrants(AccessRightsElements grants_) { grants = std::move(grants_); }
 
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
@@ -102,7 +102,7 @@ public:
     /// instant everywhere and which older versions parse the same way (see the comment in `toAST`
     /// for details, including the clamping of out-of-range deadlines). Otherwise (`SHOW CREATE USER`)
     /// `valid_until` is formatted in the server time zone for display.
-    boost::intrusive_ptr<ASTAuthenticationData> toAST(bool attach_mode) const;
+    [[nodiscard]] boost::intrusive_ptr<ASTAuthenticationData> toAST(bool attach_mode) const;
 
     struct Util
     {

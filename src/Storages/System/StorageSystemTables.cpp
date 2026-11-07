@@ -1113,7 +1113,7 @@ private:
 class ReadFromSystemTables : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromSystemTables"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemTables"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromSystemTables(

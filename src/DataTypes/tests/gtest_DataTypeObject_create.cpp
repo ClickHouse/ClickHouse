@@ -56,7 +56,7 @@ TEST(DataTypeObject, CreateJSONWithNonObjectTypeArgumentChildDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(make_intrusive<ASTLiteral>(Field(UInt64(42))));
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is an `ASTFunction` named
@@ -78,7 +78,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsNullArgumentsDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `equals` function has `arguments` with zero children — `children[0]`
@@ -101,7 +101,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsZeroChildrenDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `equals` function has only one child — `children[1]` reads past the end.
@@ -124,7 +124,7 @@ TEST(DataTypeObject, CreateJSONWithEqualsOneChildDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is a function that is NOT
@@ -146,7 +146,7 @@ TEST(DataTypeObject, CreateJSONWithParameterWrongFunctionNameIsRejected)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `parameter` of an `ASTObjectTypeArgument` is not an `ASTFunction` at all
@@ -166,7 +166,7 @@ TEST(DataTypeObject, CreateJSONWithParameterNotAFunctionDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `path_with_type` of an `ASTObjectTypeArgument` is not an
@@ -186,7 +186,7 @@ TEST(DataTypeObject, CreateJSONWithPathWithTypeWrongKindDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// The `skip_path_regexp` of an `ASTObjectTypeArgument` is not a string literal
@@ -207,7 +207,7 @@ TEST(DataTypeObject, CreateJSONWithSkipPathRegexpWrongKindDoesNotCrash)
     auto arguments = make_intrusive<ASTExpressionList>();
     arguments->children.push_back(object_arg);
 
-    EXPECT_THROW(factory.get("JSON", arguments), Exception);
+    EXPECT_THROW((void)factory.get("JSON", arguments), Exception);
 }
 
 /// Verify well-formed `JSON(...)` types still parse correctly.

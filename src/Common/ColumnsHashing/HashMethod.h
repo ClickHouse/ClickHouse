@@ -135,7 +135,7 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     /// Is used for default implementation in HashMethodBase.
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
 
-    const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
+    [[nodiscard]] const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 };
 
 
@@ -245,7 +245,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
 
     /// Returns the row's bytes in the padded source column, without persisting the key. The view remains
     /// valid for this block and permits reads up to 15 bytes past its end.
-    std::string_view getKeyBytes(ssize_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(ssize_t row) const
     {
         return {reinterpret_cast<const char *>(chars) + offsets[row - 1], offsets[row] - offsets[row - 1]};
     }
@@ -360,7 +360,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
     /// Returns the row's bytes in the padded source column, without packing or persisting the key. The
     /// view remains valid for this block and permits reads up to 15 bytes past its end.
-    std::string_view getKeyBytes(ssize_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(ssize_t row) const
     {
         const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
         const size_t size = offsets[row] - offsets[row - 1];
@@ -422,7 +422,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
 
     /// Returns the row's bytes in the padded source column, without persisting the key. The view remains
     /// valid for this block and permits reads up to 15 bytes past its end.
-    std::string_view getKeyBytes(size_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(size_t row) const
     {
         return {reinterpret_cast<const char *>(&(*chars)[row * n]), n};
     }
@@ -824,10 +824,10 @@ public:
         usable = true;
     }
 
-    bool isUsable() const { return usable; }
+    [[nodiscard]] bool isUsable() const { return usable; }
 
     /// The comparator must be usable and both rows must be valid.
-    ALWAYS_INLINE bool rowsEqual(size_t row, size_t other_row) const
+    [[nodiscard]] ALWAYS_INLINE bool rowsEqual(size_t row, size_t other_row) const
     {
         for (const auto & [data, size] : slices)
         {

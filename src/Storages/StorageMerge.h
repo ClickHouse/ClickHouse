@@ -136,9 +136,9 @@ private:
             std::optional<OptimizedRegularExpression> source_table_regexp_,
             std::optional<DBToTableSetMap> source_databases_and_tables_);
 
-        DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
+        [[nodiscard]] DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
 
-        DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
+        [[nodiscard]] DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
     };
 
     DatabaseNameOrRegexp database_name_or_regexp;
@@ -195,7 +195,7 @@ class ReadFromMerge final : public SourceStepWithFilter
 {
 public:
     static constexpr auto name = "ReadFromMerge";
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
@@ -223,10 +223,10 @@ public:
     /// With `allow_shorter_read_key`, a read whose sorting key is shorter than the prefix passes: it refuses the request itself.
     /// Creates the child plans.
     bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
-    const InputOrderInfoPtr & getInputOrder() const { return order_info; }
+    [[nodiscard]] const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
-    bool hasChildPlans() const { return child_plans.has_value(); }
+    [[nodiscard]] bool hasChildPlans() const { return child_plans.has_value(); }
     /// Drops the child plans, so that they are created again when they are needed next. For a first-pass
     /// optimization which probes the children before the filters are applied to this step (`applyFilters`):
     /// children created then would miss the filter on `_database` and `_table` (`getSelectedTables`), and
@@ -317,7 +317,7 @@ private:
         void addFilterTransform(QueryPlan &, ContextPtr) const;
 
         /// The policy AND-ed with `forwarded`, as the row-level filter of the `storage` read; null if it cannot evaluate it.
-        FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
+        [[nodiscard]] FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
 
         void addCreatingSetsStep(QueryPlan &, ContextPtr) const;
 
@@ -391,7 +391,7 @@ private:
         bool is_smallest_column_requested,
         const Names & column_names_read);
 
-    StorageMerge::StorageListWithLocks getSelectedTables(
+    [[nodiscard]] StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;
 };
 

@@ -35,7 +35,7 @@ struct ResponseOutput
         compression_holder = std::move(buf);
     }
 
-    WriteBuffer * get() const
+    [[nodiscard]] WriteBuffer * get() const
     {
         if (compression_holder)
             return compression_holder.get();

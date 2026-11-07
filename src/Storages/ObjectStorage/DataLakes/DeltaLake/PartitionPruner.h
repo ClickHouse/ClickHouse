@@ -27,7 +27,7 @@ public:
         const DB::NameToNameMap & physical_names_map_,
         DB::ContextPtr context);
 
-    bool canBePruned(const DB::ObjectInfo & object_info) const;
+    [[nodiscard]] bool canBePruned(const DB::ObjectInfo & object_info) const;
 
 private:
     std::optional<DB::KeyCondition> key_condition;

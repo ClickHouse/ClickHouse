@@ -594,7 +594,7 @@ public:
     explicit ExpressionTree(size_t leaf_) : op(Operator::LEAF), leaf(leaf_) {}
     ExpressionTree(Operator op_, std::vector<ExpressionTreePtr> children_) : op(op_), children(std::move(children_)) {}
 
-    TruthValue evaluate(const std::vector<TruthValue> & leaves) const
+    [[nodiscard]] TruthValue evaluate(const std::vector<TruthValue> & leaves) const
     {
         switch (op)
         {

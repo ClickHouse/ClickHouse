@@ -34,13 +34,13 @@ public:
     void setSplitOffsets(std::vector<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
     void merge(const DataFileStatistics & other);
 
-    std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
-    std::vector<std::pair<size_t, size_t>> getNullCounts() const;
-    std::vector<std::pair<size_t, Field>> getLowerBounds() const;
-    std::vector<std::pair<size_t, Field>> getUpperBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
+    [[nodiscard]] std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getLowerBounds() const;
+    [[nodiscard]] std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
-    const std::vector<Int64> & getFieldIds() const { return field_ids; }
-    const std::vector<UInt64> & getSplitOffsets() const { return split_offsets; }
+    [[nodiscard]] const std::vector<Int64> & getFieldIds() const { return field_ids; }
+    [[nodiscard]] const std::vector<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 

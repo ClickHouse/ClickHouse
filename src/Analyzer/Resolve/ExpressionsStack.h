@@ -52,12 +52,12 @@ public:
         expressions.pop_back();
     }
 
-    [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
+    [[nodiscard]] [[maybe_unused]] const QueryTreeNodePtr & getRoot() const
     {
         return expressions.front();
     }
 
-    const QueryTreeNodePtr & getTop() const
+    [[nodiscard]] const QueryTreeNodePtr & getTop() const
     {
         return expressions.back();
     }
@@ -69,7 +69,7 @@ public:
         return expressions[n];
     }
 
-    [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
+    [[nodiscard]] [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
     {
         return alias_name_to_expressions.contains(alias);
     }
@@ -82,12 +82,12 @@ public:
       * function only identify GROUP BY keys and are compared with them in their original form
       * by `GroupingFunctionsResolvePass`.
       */
-    bool hasAggregateOrGroupingFunction() const
+    [[nodiscard]] bool hasAggregateOrGroupingFunction() const
     {
         return aggregate_or_grouping_functions_counter > 0;
     }
 
-    QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
+    [[nodiscard]] QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
     {
         auto expression_it = alias_name_to_expressions.find(alias);
         if (expression_it == alias_name_to_expressions.end())
@@ -101,12 +101,12 @@ public:
         return std::ranges::any_of(expressions, [node](const auto & expression) { return expression.get() == node; });
     }
 
-    [[maybe_unused]] size_t size() const
+    [[nodiscard]] [[maybe_unused]] size_t size() const
     {
         return expressions.size();
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return expressions.empty();
     }
@@ -128,7 +128,7 @@ public:
         }
     }
 
-    [[maybe_unused]] String dump() const
+    [[nodiscard]] [[maybe_unused]] String dump() const
     {
         WriteBufferFromOwnString buffer;
         dump(buffer);

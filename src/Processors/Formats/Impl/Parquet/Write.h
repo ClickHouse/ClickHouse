@@ -96,8 +96,8 @@ struct IcebergOptionality
     /// dotted path and must not add a second OPTIONAL level.
     bool owned_by_enclosing_nullable = false;
 
-    bool isOptional(const String & path) const;
-    bool isLocalTimestamp(const String & path) const;
+    [[nodiscard]] bool isOptional(const String & path) const;
+    [[nodiscard]] bool isLocalTimestamp(const String & path) const;
 };
 
 /// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
@@ -157,7 +157,7 @@ struct ColumnChunkWriteState
     ColumnChunkWriteState & operator=(ColumnChunkWriteState &&) = default;
 
     /// Estimated memory usage.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 };
 
 struct RowGroupWithIndexes

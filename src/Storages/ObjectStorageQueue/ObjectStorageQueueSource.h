@@ -40,7 +40,7 @@ public:
 
         FileMetadataPtr file_metadata;
 
-        std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectStorageQueueObjectInfo>(*this); }
+        [[nodiscard]] std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectStorageQueueObjectInfo>(*this); }
     };
 
     class FileIterator : public IObjectIterator, private WithContext

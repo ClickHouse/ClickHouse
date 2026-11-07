@@ -93,7 +93,7 @@ public:
 
     [[nodiscard]] ResourceCost takeSpillRequest(
         const ISpillable * spillable, ResourceCost spillable_bytes, const IProcessor * scheduled_owner = nullptr);
-    ResourceCost getMinBytesToSpill() const { return min_bytes_to_spill; }
+    [[nodiscard]] ResourceCost getMinBytesToSpill() const { return min_bytes_to_spill; }
     ResourceCost finishSpill(const ISpillable * spillable, ResourceCost settled_bytes);
     /// Return a failed claim to pending demand; query cancellation will retire it after workers stop.
     void cancelSpill(const ISpillable * spillable, ResourceCost bytes);

@@ -40,7 +40,7 @@ public:
     /// Applies the postprocessor to all tokens in one batch execution.
     /// Tokens mapped to an empty string are removed.
     /// If no expression was provided, returns the tokens unchanged.
-    VectorWithMemoryTracking<String> processTokens(VectorWithMemoryTracking<String> tokens) const;
+    [[nodiscard]] VectorWithMemoryTracking<String> processTokens(VectorWithMemoryTracking<String> tokens) const;
 
     /// Processes a flat ColumnString in which each row holds a single token
     /// (tokens of all documents are concatenated into one column, in order).
@@ -57,17 +57,17 @@ public:
     /// their respective arrays. Returns a new ColumnArray(String) with updated offsets.
     ColumnPtr processTokensArrayBatch(const ColumnArray * tokens) const;
 
-    bool hasActions() const { return actions.has_value(); }
+    [[nodiscard]] bool hasActions() const { return actions.has_value(); }
 
     /// Non-null when the postprocessor is an `if`/`multiIf(token IN/NOT IN (<string literals>), '', token)`
     /// filter, enabling the fast path (drop decided per distinct token, dropped tokens build no postings).
-    const MergeTreeIndexTextInlineFilter * getInlineFilter() const { return inline_filter ? &*inline_filter : nullptr; }
+    [[nodiscard]] const MergeTreeIndexTextInlineFilter * getInlineFilter() const { return inline_filter ? &*inline_filter : nullptr; }
 
     /// Returns an ActionsDAG rewriting a haystack column into the Array(String) of postprocessed tokens
     /// the index stores: arrayMap(x -> postprocessor(x), tokens(col, '<tokenizer>')). Array(String)
     /// index columns are mapped directly (elements are already tokens). Only call when hasActions().
     /// `source_ast`, when set, is tokenized instead of `col_name`, so the caller can splice in the preprocessor expression.
-    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
+    [[nodiscard]] ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
 
 private:
     std::optional<ExpressionActions> actions;

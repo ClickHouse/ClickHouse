@@ -20,7 +20,7 @@ private:
     bool parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected);
 
 protected:
-    const char * getName() const override { return "COPY query"; }
+    [[nodiscard]] const char * getName() const override { return "COPY query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:

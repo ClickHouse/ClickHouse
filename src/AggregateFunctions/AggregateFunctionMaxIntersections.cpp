@@ -76,7 +76,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: arguments must have the same type", getName());
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return kind == AggregateFunctionIntersectionsKind::Count
             ? "maxIntersections"
@@ -91,7 +91,7 @@ public:
     }
 
     /// MaxIntersectionsData::Allocator uses the arena
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

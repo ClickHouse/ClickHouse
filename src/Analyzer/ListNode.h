@@ -26,7 +26,7 @@ public:
     explicit ListNode(QueryTreeNodes nodes);
 
     /// Get list nodes
-    const QueryTreeNodes & getNodes() const
+    [[nodiscard]] const QueryTreeNodes & getNodes() const
     {
         return children;
     }
@@ -37,7 +37,7 @@ public:
         return children;
     }
 
-    QueryTreeNodeType getNodeType() const override
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::LIST;
     }
@@ -45,19 +45,19 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
     iterator begin() { return children.begin(); }
-    const_iterator begin() const { return children.begin(); }
+    [[nodiscard]] const_iterator begin() const { return children.begin(); }
 
     iterator end() { return children.end(); }
-    const_iterator end() const { return children.end(); }
+    [[nodiscard]] const_iterator end() const { return children.end(); }
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
     void updateTreeHashImpl(HashState &, CompareOptions) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 };
 
 }

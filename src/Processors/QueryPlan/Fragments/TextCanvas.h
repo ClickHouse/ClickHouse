@@ -67,7 +67,7 @@ public:
     void frame(size_t x, size_t y, size_t width, size_t height, std::string_view title);
 
     /// The content of a cell, or an empty view outside the grid.
-    std::string_view at(size_t x, size_t y) const;
+    [[nodiscard]] std::string_view at(size_t x, size_t y) const;
 
     /// Writes all lines, each without trailing spaces and followed by a newline.
     void writeTo(WriteBuffer & out) const;

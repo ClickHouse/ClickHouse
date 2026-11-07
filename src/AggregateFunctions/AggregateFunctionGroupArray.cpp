@@ -156,11 +156,11 @@ public:
     {
     }
 
-    String getName() const override { return getNameByTrait<Trait>(); }
+    [[nodiscard]] String getName() const override { return getNameByTrait<Trait>(); }
 
     /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
     /// evaluation of the same expression draws differently.
-    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+    [[nodiscard]] bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
 
     void insertWithSampler(Data & a, const T & v, Arena * arena) const
     {
@@ -382,7 +382,7 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 };
 
 
@@ -399,7 +399,7 @@ struct GroupArrayNodeBase
     /// Returns pointer to actual payload
     char * data() { return reinterpret_cast<char *>(this) + sizeof(Node); }
 
-    const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
+    [[nodiscard]] const char * data() const { return reinterpret_cast<const char *>(this) + sizeof(Node); }
 
     /// Clones existing node (does not modify next field)
     Node * clone(Arena * arena) const
@@ -525,11 +525,11 @@ public:
     {
     }
 
-    String getName() const override { return getNameByTrait<Trait>(); }
+    [[nodiscard]] String getName() const override { return getNameByTrait<Trait>(); }
 
     /// The sampler seeds itself from `thread_local_rng` unless the query names a seed, and then every
     /// evaluation of the same expression draws differently.
-    bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
+    [[nodiscard]] bool isDeterministic() const override { return Trait::sampler != Sampler::RNG || seed.has_value(); }
 
     void insertWithSampler(Data & a, const Node * v, Arena * arena) const
     {
@@ -743,7 +743,7 @@ public:
             node->insertInto(column_data);
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return true; }
 };
 
 

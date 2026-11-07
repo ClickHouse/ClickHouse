@@ -60,10 +60,10 @@ public:
     explicit FunctionNode(String function_name_);
 
     /// Get function name
-    const String & getFunctionName() const { return function_name; }
+    [[nodiscard]] const String & getFunctionName() const { return function_name; }
 
     /// Get NullAction modifier
-    NullsAction getNullsAction() const { return nulls_action; }
+    [[nodiscard]] NullsAction getNullsAction() const { return nulls_action; }
     void setNullsAction(NullsAction action) { nulls_action = action; }
 
     void markAsOperator(bool val = true) { this->is_operator = val; }
@@ -72,40 +72,40 @@ public:
     /// It normally affects only formatting, but it also tells an operator apart from an ordinary
     /// call to a function of the same name, which matters for an operator whose internal name is
     /// a legal identifier a user can define a function with.
-    bool isOperator() const { return is_operator; }
+    [[nodiscard]] bool isOperator() const { return is_operator; }
 
     /// Get parameters
-    const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
+    [[nodiscard]] const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
 
     /// Get parameters
     ListNode & getParameters() { return children[parameters_child_index]->as<ListNode &>(); }
 
     /// Get parameters node
-    const QueryTreeNodePtr & getParametersNode() const { return children[parameters_child_index]; }
+    [[nodiscard]] const QueryTreeNodePtr & getParametersNode() const { return children[parameters_child_index]; }
 
     /// Get parameters node
     QueryTreeNodePtr & getParametersNode() { return children[parameters_child_index]; }
 
     /// Get arguments
-    const ListNode & getArguments() const { return children[arguments_child_index]->as<const ListNode &>(); }
+    [[nodiscard]] const ListNode & getArguments() const { return children[arguments_child_index]->as<const ListNode &>(); }
 
     /// Get arguments
     ListNode & getArguments() { return children[arguments_child_index]->as<ListNode &>(); }
 
     /// Get arguments node
-    const QueryTreeNodePtr & getArgumentsNode() const { return children[arguments_child_index]; }
+    [[nodiscard]] const QueryTreeNodePtr & getArgumentsNode() const { return children[arguments_child_index]; }
 
     /// Get arguments node
     QueryTreeNodePtr & getArgumentsNode() { return children[arguments_child_index]; }
 
     /// Get argument types
-    const DataTypes & getArgumentTypes() const;
+    [[nodiscard]] const DataTypes & getArgumentTypes() const;
 
     /// Get argument columns
-    ColumnsWithTypeAndName getArgumentColumns() const;
+    [[nodiscard]] ColumnsWithTypeAndName getArgumentColumns() const;
 
     /// Returns true if function node has window, false otherwise
-    bool hasWindow() const { return children[window_child_index] != nullptr; }
+    [[nodiscard]] bool hasWindow() const { return children[window_child_index] != nullptr; }
 
     /** Get window node.
       * Valid only for window function node.
@@ -113,7 +113,7 @@ public:
       * 1. It can be identifier node if window function is defined as expr OVER window_name.
       * 2. It can be window node if window function is defined as expr OVER (window_name ...).
       */
-    const QueryTreeNodePtr & getWindowNode() const { return children[window_child_index]; }
+    [[nodiscard]] const QueryTreeNodePtr & getWindowNode() const { return children[window_child_index]; }
 
     /** Get window node.
       * Valid only for window function node.
@@ -123,7 +123,7 @@ public:
     /** Get ordinary function.
       * If function is not resolved or is resolved as non ordinary function nullptr is returned.
       */
-    FunctionBasePtr getFunction() const
+    [[nodiscard]] FunctionBasePtr getFunction() const
     {
         if (kind != FunctionKind::ORDINARY)
             return {};
@@ -133,7 +133,7 @@ public:
     /** Get ordinary function.
       * If function is not resolved or is resolved as non ordinary function exception is thrown.
       */
-    FunctionBasePtr getFunctionOrThrow() const
+    [[nodiscard]] FunctionBasePtr getFunctionOrThrow() const
     {
         if (kind != FunctionKind::ORDINARY)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -147,19 +147,19 @@ public:
       * If function is not resolved nullptr returned.
       * If function is resolved as non aggregate function nullptr returned.
       */
-    AggregateFunctionPtr getAggregateFunction() const;
+    [[nodiscard]] AggregateFunctionPtr getAggregateFunction() const;
 
     /// Is function node resolved
-    bool isResolved() const { return function != nullptr; }
+    [[nodiscard]] bool isResolved() const { return function != nullptr; }
 
     /// Is function node window function
-    bool isWindowFunction() const { return hasWindow(); }
+    [[nodiscard]] bool isWindowFunction() const { return hasWindow(); }
 
     /// Is function node aggregate function
-    bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
+    [[nodiscard]] bool isAggregateFunction() const { return kind == FunctionKind::AGGREGATE; }
 
     /// Is function node ordinary function
-    bool isOrdinaryFunction() const { return kind == FunctionKind::ORDINARY; }
+    [[nodiscard]] bool isOrdinaryFunction() const { return kind == FunctionKind::ORDINARY; }
 
     /** Resolve function node as non aggregate function.
       * It is important that function name is updated with resolved function name.
@@ -186,9 +186,9 @@ public:
       */
     void resolveAsWindowFunction(AggregateFunctionPtr window_function_value);
 
-    QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::FUNCTION; }
+    [[nodiscard]] QueryTreeNodeType getNodeType() const override { return QueryTreeNodeType::FUNCTION; }
 
-    DataTypePtr getResultType() const override
+    [[nodiscard]] DataTypePtr getResultType() const override
     {
         if (!function)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -210,18 +210,18 @@ public:
     }
 
     /// Whether `convertToNullable` was called, also when the result type cannot be `Nullable` and did not change.
-    bool isConvertedToNullable() const { return wrap_with_nullable; }
+    [[nodiscard]] bool isConvertedToNullable() const { return wrap_with_nullable; }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
+    [[nodiscard]] bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
     void updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const override;
 
-    QueryTreeNodePtr cloneImpl() const override;
+    [[nodiscard]] QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    [[nodiscard]] ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     String function_name;

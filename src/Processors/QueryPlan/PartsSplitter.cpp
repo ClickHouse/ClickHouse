@@ -192,7 +192,7 @@ public:
             loaded_columns = std::min(loaded_columns, index->size());
     }
 
-    Values getValue(size_t part_idx, size_t mark) const
+    [[nodiscard]] Values getValue(size_t part_idx, size_t mark) const
     {
         const auto & index = indices[part_idx];
         chassert(index->size() >= loaded_columns);
@@ -206,7 +206,7 @@ public:
         return values;
     }
 
-    std::optional<size_t> findRightmostMarkLessThanValueInRange(
+    [[nodiscard]] std::optional<size_t> findRightmostMarkLessThanValueInRange(
         size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
@@ -228,13 +228,13 @@ public:
         return right - 1;
     }
 
-    std::optional<size_t>
+    [[nodiscard]] std::optional<size_t>
     findRightmostMarkLessThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
     {
         return findRightmostMarkLessThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }
 
-    std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
+    [[nodiscard]] std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
         size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
@@ -256,13 +256,13 @@ public:
         return left;
     }
 
-    std::optional<size_t>
+    [[nodiscard]] std::optional<size_t>
     findLeftmostMarkGreaterThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
     {
         return findLeftmostMarkGreaterThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }
 
-    size_t getMarkRows(size_t part_idx, size_t mark) const
+    [[nodiscard]] size_t getMarkRows(size_t part_idx, size_t mark) const
     {
         return parts[part_idx].data_part->index_granularity->getMarkRows(mark);
     }
@@ -376,7 +376,7 @@ struct PartsRangesIterator
         buffer << " value " << ::toString(value) << '\n';
     }
 
-    [[maybe_unused]] String toString() const
+    [[nodiscard]] [[maybe_unused]] String toString() const
     {
         WriteBufferFromOwnString buffer;
         dump(buffer);

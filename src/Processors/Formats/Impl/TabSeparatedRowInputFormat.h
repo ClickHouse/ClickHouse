@@ -73,7 +73,7 @@ public:
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
-    FormatSettings::EscapingRule getEscapingRule() const override
+    [[nodiscard]] FormatSettings::EscapingRule getEscapingRule() const override
     {
         return is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped;
     }
@@ -98,7 +98,7 @@ public:
     TabSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool is_raw_, const FormatSettings & format_settings);
 
 private:
-    bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
+    [[nodiscard]] bool allowVariableNumberOfColumns() const override { return format_settings.tsv.allow_variable_number_of_columns; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
     std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;

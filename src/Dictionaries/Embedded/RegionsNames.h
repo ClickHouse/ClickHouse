@@ -82,7 +82,7 @@ private:
 public:
     explicit RegionsNames(IRegionsNamesDataProviderPtr data_provider);
 
-    std::string_view getRegionName(RegionID region_id, Language language) const
+    [[nodiscard]] std::string_view getRegionName(RegionID region_id, Language language) const
     {
         size_t language_id = static_cast<size_t>(language);
 

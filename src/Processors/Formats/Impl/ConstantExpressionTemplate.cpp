@@ -127,7 +127,7 @@ struct SpecialParserType
     /// Type and nullability
     std::vector<std::pair<Field::Types::Which, bool>> nested_types;
 
-    bool useDefaultParser() const
+    [[nodiscard]] bool useDefaultParser() const
     {
         return main_type == Field::Types::String || (!nested_types.empty()
             && std::all_of(

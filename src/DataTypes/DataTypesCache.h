@@ -25,27 +25,27 @@ public:
         SerializationPtr serialization;
     };
 
-    bool hasElement(BinaryTypeIndex index) const;
+    [[nodiscard]] bool hasElement(BinaryTypeIndex index) const;
 
     /// O(1) lookup by BinaryTypeIndex. Returns the cached element.
-    const Element & getElement(BinaryTypeIndex index) const;
+    [[nodiscard]] const Element & getElement(BinaryTypeIndex index) const;
 
     /// O(1) lookup by BinaryTypeIndex. Returns pre-cached type.
-    DataTypePtr getType(BinaryTypeIndex index) const;
+    [[nodiscard]] DataTypePtr getType(BinaryTypeIndex index) const;
 
     /// O(1) lookup by BinaryTypeIndex. Returns pre-cached serialization.
-    SerializationPtr getSerialization(BinaryTypeIndex index) const;
+    [[nodiscard]] SerializationPtr getSerialization(BinaryTypeIndex index) const;
 
     /// Lookup by type name. Returns pre-cached element for simple types, nullptr otherwise.
-    const Element * findByName(const String & type_name) const;
+    [[nodiscard]] const Element * findByName(const String & type_name) const;
 
     /// Lookup by type name. Returns pre-cached type for simple types,
     /// falls back to DataTypeFactory for others.
-    DataTypePtr getType(const String & type_name) const;
+    [[nodiscard]] DataTypePtr getType(const String & type_name) const;
 
     /// Lookup serialization by type name. Returns pre-cached serialization
     /// for simple types, falls back to DataTypeFactory for others.
-    SerializationPtr getSerialization(const String & type_name) const;
+    [[nodiscard]] SerializationPtr getSerialization(const String & type_name) const;
 
     SimpleDataTypesCache();
 

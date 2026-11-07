@@ -34,11 +34,11 @@ public:
     {
     }
 
-    String getName() const override { return Data::name(); }
+    [[nodiscard]] String getName() const override { return Data::name(); }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -80,13 +80,13 @@ public:
     {
     }
 
-    String getName() const override { return Policy::name; }
+    [[nodiscard]] String getName() const override { return Policy::name; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         return this->argument_types.at(0);
     }
@@ -125,11 +125,11 @@ public:
         }
     }
 
-    bool isVersioned() const override { return true; }
+    [[nodiscard]] bool isVersioned() const override { return true; }
 
-    size_t getDefaultVersion() const override { return 1; }
+    [[nodiscard]] size_t getDefaultVersion() const override { return 1; }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         if (revision >= STATE_VERSION_1_MIN_REVISION)
             return 1;

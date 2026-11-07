@@ -31,7 +31,7 @@ struct KeeperNodesReadView
 {
     std::shared_ptr<KeeperStorage> storage_holder;
 
-    virtual size_t getNodeCount() const = 0;
+    [[nodiscard]] virtual size_t getNodeCount() const = 0;
     virtual bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) = 0;
 
     virtual ~KeeperNodesReadView() = default;
@@ -98,7 +98,7 @@ struct KeeperNodesStorage
 
     /// List children names without data.
     /// (Implementation should not rely on getNumChildren() stat because it may be inaccurate for system nodes.)
-    virtual std::vector<std::string> listCommittedChildrenNames(std::string_view path) const = 0;
+    [[nodiscard]] virtual std::vector<std::string> listCommittedChildrenNames(std::string_view path) const = 0;
 
     /// Directly create or mutate a committed node. Used to set up system nodes and by tests.
     virtual bool addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) = 0;

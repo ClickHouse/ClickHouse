@@ -97,12 +97,12 @@ public:
                     getName());
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return nested_function->getName() + "Resample";
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -126,42 +126,42 @@ public:
             nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
     }
 
-    bool isState() const override
+    [[nodiscard]] bool isState() const override
     {
         return nested_function->isState();
     }
 
-    bool isVersioned() const override
+    [[nodiscard]] bool isVersioned() const override
     {
         return nested_function->isVersioned();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override
+    [[nodiscard]] size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
     }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_function);
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         /// Nested Resample combinators multiply the sizes, and every layer is only checked against
         /// `max_elements` on its own, so the product can wrap around or exceed any sane allocation.
@@ -172,7 +172,7 @@ public:
         return result;
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return align_of_data;
     }
@@ -229,8 +229,8 @@ public:
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
     }
 
-    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
@@ -371,7 +371,7 @@ public:
             nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
 }

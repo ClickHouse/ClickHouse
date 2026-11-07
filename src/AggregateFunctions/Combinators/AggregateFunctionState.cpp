@@ -14,16 +14,16 @@ namespace
 class AggregateFunctionCombinatorState final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "State"; }
+    [[nodiscard]] String getName() const override { return "State"; }
 
-    bool returnsNestedState() const override { return true; }
+    [[nodiscard]] bool returnsNestedState() const override { return true; }
 
-    DataTypes transformArguments(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {
         return arguments;
     }
 
-    AggregateFunctionPtr transformAggregateFunction(
+    [[nodiscard]] AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,

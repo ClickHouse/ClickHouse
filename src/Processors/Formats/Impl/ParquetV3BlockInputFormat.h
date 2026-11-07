@@ -22,12 +22,12 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     ParquetFileBucketInfo(UInt64 offset, UInt64 length);
     void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
     void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
-    String getIdentifier() const override;
-    String getFormatName() const override
+    [[nodiscard]] String getIdentifier() const override;
+    [[nodiscard]] String getFormatName() const override
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
+    [[nodiscard]] std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 

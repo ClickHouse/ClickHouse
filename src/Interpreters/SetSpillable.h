@@ -40,7 +40,7 @@ class SetSpillables
 public:
     void add(const ActionsDAG & actions);
     void add(const std::shared_ptr<SetSpillState> & state);
-    std::span<ISpillable * const> get() const { return components; }
+    [[nodiscard]] std::span<ISpillable * const> get() const { return components; }
 
 private:
     void add(const IColumn & column);

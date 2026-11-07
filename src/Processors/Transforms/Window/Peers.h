@@ -21,8 +21,8 @@ public:
     void advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition);
     void advanceCurrentRow(const SlidingBlocks & blocks, const PartitionBounds & partition);
 
-    const RowPoint & current() const;
-    const PeersBounds & bounds() const;
+    [[nodiscard]] const RowPoint & current() const;
+    [[nodiscard]] const PeersBounds & bounds() const;
 
 private:
     RowPoint current_row;

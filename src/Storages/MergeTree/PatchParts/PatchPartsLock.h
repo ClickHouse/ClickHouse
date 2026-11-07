@@ -17,11 +17,11 @@ struct UpdateAffectedColumns
 
     /// Conflict is only when one update uses column and antoher update updates column.
     /// Updates can concurrently update the same column and can concurrently use the same column.
-    bool hasConflict(const UpdateAffectedColumns & other) const;
+    [[nodiscard]] bool hasConflict(const UpdateAffectedColumns & other) const;
 
     inline static const size_t VERSION = 0;
 
-    String toString() const;
+    [[nodiscard]] String toString() const;
     void fromString(const String & str);
 };
 
@@ -34,7 +34,7 @@ struct UpdateAffectedColumnsWithCounters
 
     void add(const UpdateAffectedColumns & other);
     void remove(const UpdateAffectedColumns & other);
-    bool hasConflict(const UpdateAffectedColumns & other) const;
+    [[nodiscard]] bool hasConflict(const UpdateAffectedColumns & other) const;
 };
 
 struct PlainLightweightUpdatesSync
