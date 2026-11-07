@@ -619,6 +619,7 @@ void StorageBuffer::read(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto buffers_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
+        buffers_select_query_options.query_tree_already_optimized = query_info.query_tree_already_optimized;
 
         auto storage = std::make_shared<StorageValues>(
                 getStorageID(),

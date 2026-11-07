@@ -25,6 +25,7 @@
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
+#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/getResultColumnOrigins.h>
@@ -425,7 +426,8 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
-        || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || select_query_options.query_tree_already_optimized)
     {
         query_tree_pass_manager.runOnlyResolve(query_tree);
         result_column_origins = getResultColumnOrigins(query_tree);
@@ -440,6 +442,10 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         result_column_origins = getResultColumnOrigins(query_tree);
         query_tree_pass_manager.runFrom(query_tree, QueryTreePassManager::resolve_passes_count);
     }
+
+    /// Resolves `_shard_num` of a `Distributed` table in a view body inlined into this query.
+    if (select_query_options.query_tree_already_optimized)
+        ShardNumColumnToFunctionPass().run(query_tree, context);
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);

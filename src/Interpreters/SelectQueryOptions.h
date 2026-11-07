@@ -80,6 +80,10 @@ struct SelectQueryOptions
     /// The query as received from the initiator of a distributed read, not a subquery of it.
     bool is_secondary_query_root = false;
 
+    /// The query is printed from a query tree the initiator of the read already optimized, so only the passes that keep
+    /// the header run.
+    bool query_tree_already_optimized = false;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
