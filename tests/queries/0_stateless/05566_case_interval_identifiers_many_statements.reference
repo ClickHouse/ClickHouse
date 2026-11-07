@@ -1,0 +1,2 @@
+2000 
+2000 SELECT `interval`, case FROM t WHERE `interval` > 1;

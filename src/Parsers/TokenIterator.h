@@ -5,6 +5,7 @@
 #include <base/defines.h>
 
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 
@@ -26,6 +27,28 @@ private:
     Lexer lexer;
     bool skip_insignificant;
 
+    /// The answers of `followedInSameBrackets` by the index of the keyword token, one map per kind of keyword.
+    std::unordered_map<size_t, bool> end_follows_case;
+    std::unordered_map<size_t, bool> kind_follows_interval;
+
+    /// Returns the token at `index` without moving `max`, which tells where the parser stopped.
+    const Token & peek(size_t index)
+    {
+        while (true)
+        {
+            if (index < data.size())
+                return data[index];
+
+            if (!data.empty() && data.back().isEnd())
+                return data.back();
+
+            Token token = lexer.nextToken();
+
+            if (!skip_insignificant || token.isSignificant())
+                data.emplace_back(token);
+        }
+    }
+
 public:
     Tokens(const char * begin, const char * end, size_t max_query_size = 0, bool skip_insignificant_ = true)
         : lexer(begin, end, max_query_size), skip_insignificant(skip_insignificant_)
@@ -34,26 +57,26 @@ public:
 
     const Token & operator[] (size_t index)
     {
-        while (true)
-        {
-            if (index < data.size())
-            {
-                max_pos = std::max(max_pos, index);
-                return data[index];
-            }
-
-            if (!data.empty() && data.back().isEnd())
-            {
-                max_pos = data.size() - 1;
-                return data.back();
-            }
-
-            Token token = lexer.nextToken();
-
-            if (!skip_insignificant || token.isSignificant())
-                data.emplace_back(token);
-        }
+        const Token & token = peek(index);
+        max_pos = std::max(max_pos, std::min(index, data.size() - 1));
+        return token;
     }
+
+    /// A keyword that begins an expression which must contain a certain keyword at its own bracket depth:
+    /// `CASE` ... `END`, and `INTERVAL` <expr> <kind>.
+    enum class KeywordWithTerminator : uint8_t
+    {
+        Case,
+        Interval,
+    };
+
+    /// Whether the token at `index` is followed by the terminator of `keyword` (`END` for `CASE`, an interval kind
+    /// for `INTERVAL`) in the same brackets: after it, outside nested brackets, and before the brackets around it close,
+    /// and before the end of the statement. If it is not, the token cannot begin that expression. Does not move `max`.
+    ///
+    /// The scan also answers for every other occurrence of `keyword` it passes, so all the occurrences in
+    /// a query are answered in time linear in the length of the query.
+    bool followedInSameBrackets(size_t index, KeywordWithTerminator keyword);
 
     const Token & max()
     {
@@ -100,6 +123,9 @@ public:
     ALWAYS_INLINE bool operator!=(const TokenIterator & rhs) const { return index != rhs.index; }
 
     ALWAYS_INLINE bool isValid() { return get().type < TokenType::EndOfStream; }
+
+    /// See `Tokens::followedInSameBrackets`.
+    bool followedInSameBrackets(Tokens::KeywordWithTerminator keyword) { return tokens->followedInSameBrackets(index, keyword); }
 
     /// Rightmost token we had looked.
     ALWAYS_INLINE const Token & max() { return tokens->max(); }
