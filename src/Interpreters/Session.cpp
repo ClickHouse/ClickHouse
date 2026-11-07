@@ -11,6 +11,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
@@ -44,6 +45,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int USER_EXPIRED;
     extern const int ACCESS_DENIED;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
 
@@ -787,9 +789,25 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
                 "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
     }
 
+    /// A secret interserver query carries the initiator's `EXECUTE AS ... SETTINGS` values; `setUser` checks them here.
+    std::optional<SettingsChanges> execute_as_settings;
+    if (getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER && query_context->getClientInfo().execute_as_settings)
+    {
+        execute_as_settings.emplace();
+        for (const auto & [name, value] : *query_context->getClientInfo().execute_as_settings)
+            execute_as_settings->emplace_back(name, Field::restoreFromDump(value));
+    }
+
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+        query_context->setUser(
+            *user_id,
+            effective_external_roles,
+            getAuthenticationGrants(),
+            getAuthenticationValidUntil(),
+            execute_as_settings ? &*execute_as_settings : nullptr);
+    else if (execute_as_settings)
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "EXECUTE AS ... SETTINGS values received for a query without a user");
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);

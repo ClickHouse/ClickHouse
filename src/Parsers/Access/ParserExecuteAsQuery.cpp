@@ -4,7 +4,9 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ParserSetQuery.h>
 
 
 namespace DB
@@ -28,6 +30,18 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     node = query;
 
     query->set(query->target_user, target_user);
+
+    if (ParserKeyword{Keyword::SETTINGS}.ignore(pos, expected))
+    {
+        auto target_settings = make_intrusive<ASTSetQuery>();
+        target_settings->is_standalone = false;
+        do
+        {
+            if (!ParserSetQuery::parseNameLiteralPair(target_settings->changes.emplace_back(), pos, expected))
+                return false;
+        } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+        query->set(query->target_settings, target_settings);
+    }
 
     /// support 1) EXECUTE AS <user1>  2) EXECUTE AS <user1> SELECT ...
 
@@ -91,13 +105,15 @@ Allows to execute queries on behalf of a different user.
 ## Syntax {#syntax}
 
 ```sql
-EXECUTE AS target_user;
-EXECUTE AS target_user subquery;
+EXECUTE AS target_user [SETTINGS name = value [, ...]];
+EXECUTE AS target_user [SETTINGS name = value [, ...]] subquery;
 ```
 
 The first form (without `subquery`) sets that all the following queries in the current session will be executed on behalf of the specified `target_user`.
 
 The second form (with `subquery`) executes only the specified `subquery` on behalf of the specified `target_user`.
+
+Settings changed in the current session or query carry over to `target_user` only where its settings constraints allow them.
 
 In order to work both forms require config setting `access_control_improvements.allow_impersonate_user`
 to be set to `1` and the `IMPERSONATE` privilege to be granted. For example, the following commands
@@ -110,6 +126,34 @@ allow user `user2` to execute commands `EXECUTE AS user1 ...` and also allow use
 While impersonating another user function [currentUser()](/reference/functions/regular-functions/other-functions#currentUser) returns the name of that other user,
 and function [authenticatedUser()](/reference/functions/regular-functions/other-functions#authenticatedUser) returns the name of the user who has been actually authenticated.
 
+## Setting values for the target user {#settings}
+
+The `SETTINGS` clause gives values to custom settings that a settings profile of `target_user` declares `CONST`
+without a value, for example as the key of a row policy. The values are applied after the profiles of `target_user`,
+so neither the following queries nor a later `SET`, `SET profile` or `SETTINGS` clause can change them. It requires the
+server setting `access_control_improvements.allow_execute_as_settings` (disabled by default). A setting may be given
+only once, `target_user` must not be defined in the server configuration files, and the caller must be allowed to set
+the same value for itself. A nested `EXECUTE AS` keeps the values: the next user must declare the same settings, and its
+`SETTINGS` clause may only repeat them. Each value is a string, number, boolean or `NULL` literal, not a map.
+
+The values also reach the remote nodes of a distributed query over a cluster with `<secret>`, which check them against
+the same user there; the query fails if a remote node does not have the feature enabled or is of an older version.
+Over a cluster without `<secret>` the remote node does not apply the constraints of the user. Other ways a query is run
+again, for example `INSERT` into a `Distributed` table, `ON CLUSTER` queries or background operations, do not carry the
+values; at most they pass a value on as an ordinary setting, subject to the constraints of the user they run as. Use
+`getSetting` rather than `getSettingOrDefault` in such a row policy, so that a query without the value fails.
+
+```sql
+CREATE SETTINGS PROFILE tenant_lock SETTINGS SQL_tenant CONST;
+CREATE USER tenant_reader SETTINGS PROFILE tenant_lock;
+CREATE ROW POLICY tenant_rows ON events USING tenant = getSetting('SQL_tenant') TO tenant_reader;
+GRANT SELECT ON events TO tenant_reader;
+GRANT IMPERSONATE ON tenant_reader TO gateway;
+
+-- As `gateway`: reads only the rows of `acme`, and `SET SQL_tenant = 'other'` in the session is refused.
+EXECUTE AS tenant_reader SETTINGS SQL_tenant = 'acme';
+```
+
 ## Examples {#examples}
 
 ```sql
@@ -119,8 +163,8 @@ EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- outputs "james   
 ```
 )DOCS_MD",
         .syntax = R"(
-EXECUTE AS target_user
-EXECUTE AS target_user subquery
+EXECUTE AS target_user [SETTINGS name = value [, ...]]
+EXECUTE AS target_user [SETTINGS name = value [, ...]] subquery
 )",
         .related = {"GRANT", "CREATE USER", "SET ROLE"},
     };

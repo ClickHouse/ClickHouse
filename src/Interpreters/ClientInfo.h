@@ -158,6 +158,12 @@ public:
     /// Initiator's current roles for secondary queries; nullopt = not sent (remote uses default roles).
     std::optional<std::vector<String>> current_roles;
 
+    /// Initiator's `EXECUTE AS ... SETTINGS` values as (name, `Field::dump`) pairs for secondary queries; nullopt = not sent.
+    std::optional<std::vector<std::pair<String, String>>> execute_as_settings;
+    /// The part of the interserver secret hash input that follows `initial_user`: the serialized external roles sent
+    /// with the query, `current_roles` and `execute_as_settings`.
+    String serializeRolesAndSettingsForInterserverHash(UInt64 protocol_revision, const String & external_roles) const;
+
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
     /// The element can be trusted only if you trust the corresponding proxy.
@@ -189,7 +195,7 @@ public:
       * Revisions are passed to use format that server will understand or client was used.
       */
     /// `with_trailing_fields` controls whether the fields added after the async `Distributed` insert header layout
-    /// was frozen — `client_agent`, `is_internal`, `current_roles`, `http_handler_name` and `http_request_url` —
+    /// was frozen — `client_agent`, `is_internal`, `current_roles`, `execute_as_settings`, `http_handler_name` and `http_request_url` —
     /// are (de)serialized as part of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
     /// persisted async `Distributed` insert header, where these are stored as trailing header fields instead, so
     /// that older binaries draining newer queue files can read the header without misinterpreting it.
