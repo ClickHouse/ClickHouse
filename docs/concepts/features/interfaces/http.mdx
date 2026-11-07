@@ -361,7 +361,7 @@ The table must already exist. For a database-prefixed upload, `http_allow_databa
 `/database/table.format` path. An unqualified `/table.format` upload still requires
 `http_allow_table_as_file`. The request body may use a compression suffix such as `.CSV.gz`; the server
 decompresses it before inserting the rows. Path-table `PUT` uploads use normal `INSERT` semantics, so repeating
-the same request can insert the rows again. Auto-creation, schema inference, and multipart uploads are not
+the same request can insert the rows again. Auto-creation and schema inference are not
 supported. Use the regular [`INSERT` over HTTP](#insert-queries) form when the query or upload behavior needs
 to be customized.
 
@@ -374,6 +374,28 @@ gzip -c rows.csv \
   | curl -X PUT --data-binary @- \
       'http://localhost:8123/my_db/hits.CSV.gz'
 ```
+
+### Upload a multipart form file {#multipart-table-uploads}
+
+A multipart HTTP `POST` request without a `query` field can insert one uploaded file into an **existing**
+table. The uploaded filename supplies the table name and the input format. The file must be non-empty.
+
+```bash
+# The database is supplied as an HTTP setting.
+curl -F 'file=@hits.CSV' 'http://localhost:8123/?database=my_db'
+
+# The filename can also supply the database.
+curl -F 'file=@my_db.hits.CSV' 'http://localhost:8123/'
+```
+
+Use `table.format` or `database.table.format` for the filename. A compressed file may use a suffix
+such as `table.CSV.gz`. Filenames with additional dots are rejected as ambiguous. To upload to a
+table with dots in its name, use an explicit `INSERT` query instead.
+
+The upload uses normal `INSERT` permissions and does not create or replace tables. Multipart files are
+temporarily staged while the form is parsed, subject to `http_max_multipart_form_data_size`.
+Requests containing an explicit SQL `query` field or URL parameter retain the existing multipart
+external-table behavior, even if the `query` field follows the file field.
 
 ## Insert queries over HTTP/HTTPS {#insert-queries}
 

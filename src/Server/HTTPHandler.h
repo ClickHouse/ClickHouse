@@ -91,6 +91,10 @@ public:
     /// query text).
     virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) = 0;
 
+    /// A multipart upload can replace the consumed form request with its staged file bytes.
+    /// The default handlers keep their existing body handling.
+    virtual std::unique_ptr<ReadBuffer> takeRequestBody() { return {}; }
+
 protected:
     LoggerPtr log;
 
@@ -257,13 +261,17 @@ protected:
         HTTPServerResponse & response);
 };
 
+class MultipartFormUpload;
+
 class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
     bool parse_http_path;
-    /// Only the built-in catch-all handler enables the path-table upload mutation exception.
+    /// Only built-in handlers enable queryless file uploads.
     bool allow_path_table_uploads = false;
+    std::unique_ptr<MultipartFormUpload> multipart_form_upload;
+    std::unique_ptr<ReadBuffer> multipart_upload_body;
 
 public:
     explicit DynamicQueryHandler(
@@ -275,6 +283,10 @@ public:
         HTTPPathHintsPtr path_hints_ = nullptr,
         bool parse_http_path_ = true,
         bool allow_path_table_uploads_ = false);
+
+    ~DynamicQueryHandler() override;
+
+    std::unique_ptr<ReadBuffer> takeRequestBody() override;
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
