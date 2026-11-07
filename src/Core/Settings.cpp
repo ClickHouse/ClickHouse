@@ -1716,9 +1716,11 @@ Possible values:
 - `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
 - `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
-Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas. To enable it:
+Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas, provided the target table is also a replicated MergeTree or an Iceberg table on remote storage that is not in a data lake catalog database. To enable it:
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
+
+That form, and the one used when the `SELECT` reads a cluster table function such as `s3Cluster`, both run the whole `INSERT` on every node over that node's own slice of the read, so they apply only where each node's write becomes visible on all of the others. The `INSERT` falls back to running on the initiator alone when the target is a Delta Lake table, because the nodes would commit one transaction each and those commits race for a single log version; when it is a local Iceberg table, whose files each node keeps on its own disk; when the target is reached through an `Alias`; and when a dependent materialized view is reachable from it, because a view target that does not replicate would keep a different subset of the rows on each node. For a MergeTree target it also falls back when the `INSERT` sets `insert_deduplication_token`, which would give blocks written by different nodes the same identifiers, or uses `insert_quorum` without `insert_quorum_parallel`, which allows only one part in flight per table. Reading stays distributed in all of those cases.
 
 :::note
 The rewritten query, including every expression of the `SELECT` (subqueries, UDFs, and so on), is executed on the shards under the credentials of the cluster configuration — the same trust model as other shard-side processing, such as the subqueries of a non-`GLOBAL` `IN`. Configure an interserver secret (the `secret` element of the cluster configuration) if shard-side reads must be authorized as the calling user.
