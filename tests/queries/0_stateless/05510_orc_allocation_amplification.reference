@@ -1,0 +1,32 @@
+compression_block local push_down=0 lazy=0: 1	10000
+compression_block local push_down=0 lazy=1: 1	10000
+compression_block local push_down=1 lazy=0: 1	10000
+compression_block local push_down=1 lazy=1: 1	10000
+compression_block remote push_down=0 lazy=0: 1	10000
+compression_block remote push_down=0 lazy=1: 1	10000
+compression_block remote push_down=1 lazy=0: 1	10000
+compression_block remote push_down=1 lazy=1: 1	10000
+dictionary_size local push_down=0 lazy=0: (INCORRECT_DATA)
+dictionary_size local push_down=0 lazy=1: (INCORRECT_DATA)
+dictionary_size local push_down=1 lazy=0: (INCORRECT_DATA)
+dictionary_size local push_down=1 lazy=1: (INCORRECT_DATA)
+dictionary_size remote push_down=0 lazy=0: (INCORRECT_DATA)
+dictionary_size remote push_down=0 lazy=1: (INCORRECT_DATA)
+dictionary_size remote push_down=1 lazy=0: (INCORRECT_DATA)
+dictionary_size remote push_down=1 lazy=1: (INCORRECT_DATA)
+snappy_chunk_size local push_down=0 lazy=0: (INCORRECT_DATA)
+snappy_chunk_size local push_down=0 lazy=1: (INCORRECT_DATA)
+snappy_chunk_size local push_down=1 lazy=0: (INCORRECT_DATA)
+snappy_chunk_size local push_down=1 lazy=1: (INCORRECT_DATA)
+snappy_chunk_size remote push_down=0 lazy=0: (INCORRECT_DATA)
+snappy_chunk_size remote push_down=0 lazy=1: (INCORRECT_DATA)
+snappy_chunk_size remote push_down=1 lazy=0: (INCORRECT_DATA)
+snappy_chunk_size remote push_down=1 lazy=1: (INCORRECT_DATA)
+zstd_chunk_size local push_down=0 lazy=0: (INCORRECT_DATA)
+zstd_chunk_size local push_down=0 lazy=1: (INCORRECT_DATA)
+zstd_chunk_size local push_down=1 lazy=0: (INCORRECT_DATA)
+zstd_chunk_size local push_down=1 lazy=1: (INCORRECT_DATA)
+zstd_chunk_size remote push_down=0 lazy=0: (INCORRECT_DATA)
+zstd_chunk_size remote push_down=0 lazy=1: (INCORRECT_DATA)
+zstd_chunk_size remote push_down=1 lazy=0: (INCORRECT_DATA)
+zstd_chunk_size remote push_down=1 lazy=1: (INCORRECT_DATA)

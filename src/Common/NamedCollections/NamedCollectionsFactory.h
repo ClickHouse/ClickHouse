@@ -95,7 +95,18 @@ public:
         /// Only set when `is_replicated` is true: identifies the shared storage for backup coordination.
         std::string replication_id;
     };
+    /// Never loads the key of an encrypted storage: BACKUP and RESTORE ask for these properties
+    /// before knowing whether they carry any collection, and a backup or restore carrying none
+    /// must not depend on the key being loadable.
     MetadataStorageProperties getMetadataStorageProperties();
+
+#if CLICKHOUSE_CLOUD && USE_SSL
+    /// Describes the key of the metadata storage, which must be encrypted (see
+    /// `MetadataStorageProperties::is_encrypted`), see
+    /// NamedCollectionsMetadataStorage::getEncryptionKeyInfo. Loads the key if it is not loaded
+    /// yet, so this must be asked only when the key is needed anyway.
+    NamedCollectionsEncryptionKeyInfo getEncryptionKeyInfo();
+#endif
 
     /// Stored bytes of the SQL-created collections, exactly as the metadata storage holds them,
     /// keyed by the collection name. Never decrypts anything.
