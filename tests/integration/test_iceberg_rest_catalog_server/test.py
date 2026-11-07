@@ -2,6 +2,7 @@
 
 import base64
 import gzip
+import http.client
 import json
 import time
 import uuid
@@ -511,6 +512,32 @@ def test_not_found_shape(started_cluster):
         "GET", "/v1/other_warehouse/namespaces", expected_code=404
     )
     assert_error_shape(response, "NotFoundException")
+
+
+def test_error_response_keeps_connection_usable(started_cluster):
+    # Routing rejects each POST. Its body must not leak into the next request on the same connection.
+    # http.client never reconnects on its own, so a closed socket fails the follow-up GET.
+    body = json.dumps({"name": "t"})
+    connection = http.client.HTTPConnection(node.ip_address, CATALOG_PORT)
+    try:
+        for path, expected_code in [
+            ("/v1/other_warehouse/namespaces/ns/tables", 404),
+            ("/v1/my_warehouse/namespaces/ns/tables/t/metrics", 406),
+        ]:
+            connection.request(
+                "POST", path, body=body, headers={"Content-Type": "application/json"}
+            )
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == expected_code, text
+            assert response.getheader("Connection", "").lower() != "close", text
+            connection.request("GET", "/v1/config?warehouse=my_warehouse")
+            response = connection.getresponse()
+            text = response.read().decode()
+            assert response.status == 200, text
+            assert json.loads(text)["overrides"]["prefix"] == "my_warehouse"
+    finally:
+        connection.close()
 
 
 def wait_listening(url, expected):
