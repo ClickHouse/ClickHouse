@@ -237,11 +237,18 @@ NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metad
 {
     NameSet res;
     const auto & columns = metadata.getColumns();
+    /// A TTL input can be a subcolumn (`j.flag`), which is read through its owning column.
+    auto add_columns = [&](const NamesAndTypesList & required)
+    {
+        for (const auto & column : required)
+            if (auto physical = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                res.insert(physical->getNameInStorage());
+    };
     auto add = [&](const TTLDescription & ttl)
     {
-        for (const auto & column : ttl.expression_columns)
-            if (columns.hasPhysical(column.name))
-                res.insert(column.name);
+        add_columns(ttl.expression_columns);
+        /// `TTLCalcTransform` evaluates the WHERE part of a ROWS WHERE rule too, to bound its infos.
+        add_columns(ttl.where_expression_columns);
     };
 
     if (metadata.hasRowsTTL())
