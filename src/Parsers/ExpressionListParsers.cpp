@@ -166,8 +166,12 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /* Rewrite in AST:
      *  = ANY --> IN
      * != ALL --> NOT IN
-     *  = ALL --> IN (SELECT singleValueOrNull(*) FROM subquery)
+     *  = ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR (x = tupleElement(_a, 2) AND isNotNull(tupleElement(_a, 2)))
+     *             where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
      * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
+     * <, <=, >, >= ANY --> comparison with (SELECT min(*) / max(*) FROM subquery)
+     * <, <=, >, >= ALL --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x op tupleElement(_a, 2)
+     *             where SQ = (SELECT (count(*) = 0, min(*) / max(*)) FROM subquery)
     **/
 
     auto * function = assert_cast<ASTFunction *>(ast.get());
@@ -207,6 +211,28 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
 
+    /// `x op ALL (empty set)` must be TRUE (vacuous truth). This is what the aggregate-based rewrites below
+    /// (`= ALL`, `< ALL`, `<= ALL`, `> ALL`, `>= ALL`) get wrong without extra care: `singleValueOrNull`
+    /// returns NULL for an empty set, so `x IN (NULL)` is FALSE, and `min` / `max` return the default value
+    /// of the type. So for ALL we also need to know whether the right-hand side is empty. The emptiness flag
+    /// and the aggregate are computed by a single SELECT returning a tuple, see below.
+    /// `!= ALL` is not handled here: it returns early above as a plain `notIn`, which already yields TRUE on
+    /// an empty right-hand side for a non-NULL left-hand side. `NULL != ALL (empty set)` keeps returning NULL,
+    /// following the NULL semantics of `notIn` (and mirroring `NULL = ANY (empty set)`), instead of TRUE: under
+    /// the default `transform_null_in = 0` a NULL left-hand side - a literal NULL or a NULL value in a Nullable
+    /// column - makes `notIn` return NULL before the emptiness of the set is looked at, and only with
+    /// `transform_null_in = 1` an empty set gives TRUE for NULL as well. `05045_notequals_all_single_evaluation`
+    /// pins this.
+    const bool vacuous_truth = type == SubqueryFunctionType::ALL;
+
+    ASTPtr projection = aggregate_function;
+    if (vacuous_truth)
+    {
+        auto flag = makeASTFunction("equals",
+            makeASTFunction("count", make_intrusive<ASTAsterisk>()), make_intrusive<ASTLiteral>(UInt64{0}));
+        projection = makeASTFunction("tuple", std::move(flag), aggregate_function);
+    }
+
     auto table_expression = make_intrusive<ASTTableExpression>();
     table_expression->subquery = std::move(subquery_node);
     table_expression->children.push_back(table_expression->subquery);
@@ -219,7 +245,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     tables_in_select->children.push_back(std::move(tables_in_select_element));
 
     auto select_exp_list = make_intrusive<ASTExpressionList>();
-    select_exp_list->children.push_back(aggregate_function);
+    select_exp_list->children.push_back(std::move(projection));
 
     auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
@@ -231,7 +257,73 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
     auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
-    ast->children[0]->children.back() = std::move(new_subquery);
+
+    if (!vacuous_truth)
+    {
+        ast->children[0]->children.back() = std::move(new_subquery);
+        return true;
+    }
+
+    /// x op ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR x op tupleElement(_a, 2)
+    ///     where SQ = (SELECT (count(*) = 0, aggregate(*)) FROM subquery), for `<`, `<=`, `>`, `>=`
+    /// x = ALL subquery --> ifNull(tupleElement(SQ AS _a, 1), 1) OR (x = tupleElement(_a, 2) AND isNotNull(tupleElement(_a, 2)))
+    ///     where SQ = (SELECT (count(*) = 0, singleValueOrNull(*)) FROM subquery)
+    ///
+    /// The scalar subquery SQ occurs in the result only once, under a unique alias `_a`, and the other places refer
+    /// to it by that alias. So:
+    /// - The right-hand side is evaluated once, so even if it is non-deterministic, the emptiness flag and the
+    ///   compared value observe the same evaluation.
+    /// - The rewritten expression does not copy any of its operands, so the parsed query is linear in the size of
+    ///   the original one, and `max_ast_elements` is not exceeded by nested `ALL` quantifiers
+    ///   (`x = ALL (SELECT y = ALL (...))`). Note that the analyzer still expands every reference to an alias
+    ///   with a copy of the aliased expression, so deeply nested quantifiers are analyzed with a cost that grows
+    ///   with the nesting depth (bounded by `max_expanded_ast_elements`); the scalar subqueries themselves are
+    ///   evaluated once, as the copies have the same hash.
+    /// - SQ is evaluated to a constant, and so are its elements. The comparison of `x` with a constant keeps the
+    ///   type conversions of a comparison with a constant (e.g. of a `String` with a number, or of a `Date` with
+    ///   a `String`), and it stays visible to the primary key analysis, while the constant emptiness flag folds
+    ///   the disjunction.
+    ///
+    /// The aggregation over an empty set may produce no row at all (`empty_result_for_aggregation_by_empty_set = 1`,
+    /// or a correlated subquery for a missing group). Then the scalar subquery is NULL, and that also means that
+    /// the right-hand side is empty, hence `ifNull(..., 1)`.
+    ///
+    /// For `= ALL`, `singleValueOrNull` gives NULL when the subquery returns several distinct values or a NULL, and
+    /// then the result is FALSE, as for the former `x IN (SELECT singleValueOrNull(*) FROM subquery)`, not NULL:
+    /// this is what `isNotNull` is for.
+    ///
+    /// The alias is derived from the hash of SQ, so different subqueries get different aliases, and identical
+    /// subqueries, which may share an alias, also share the value.
+    auto & arguments = ast->children[0]->children;
+    auto lhs = arguments[0];
+
+    const auto hash = new_subquery->getTreeHash(/*ignore_aliases=*/ false);
+    const String alias = fmt::format("_all_subquery_{}_{}", hash.low64, hash.high64);
+    new_subquery->setAlias(alias);
+
+    auto rhs_element = [&](UInt64 index) -> ASTPtr
+    {
+        return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(alias), make_intrusive<ASTLiteral>(index));
+    };
+
+    auto is_empty = makeASTFunction("ifNull",
+        makeASTFunction("tupleElement", std::move(new_subquery), make_intrusive<ASTLiteral>(UInt64{1})),
+        make_intrusive<ASTLiteral>(UInt64{1}));
+
+    ASTPtr comparison;
+    if (function_equals)
+        comparison = makeASTFunction("and",
+            makeASTFunction("equals", std::move(lhs), rhs_element(2)),
+            makeASTFunction("isNotNull", rhs_element(2)));
+    else
+        comparison = makeASTFunction(operator_name, std::move(lhs), rhs_element(2));
+
+    /// Mutate ast in place to become: or(is_empty, comparison)
+    auto * result = assert_cast<ASTFunction *>(ast.get());
+    result->name = "or";
+    result->arguments = make_intrusive<ASTExpressionList>();
+    result->arguments->children = {std::move(is_empty), std::move(comparison)};
+    result->children = {result->arguments};
 
     return true;
 }
