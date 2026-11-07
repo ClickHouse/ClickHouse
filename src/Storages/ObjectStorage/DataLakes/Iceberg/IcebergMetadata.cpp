@@ -1599,33 +1599,23 @@ std::optional<UInt64> countDeletedRows(
     const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
     LoggerPtr log)
 {
-    /// Keyed by the data file both bounds name, so each data file needs one lookup instead of a pass over the deletes.
-    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
-    size_t skipped_delete_files = 0;
-    for (const auto & position_delete : position_deletes)
-    {
-        const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
-        if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
-            deletes_by_data_file[*lower].push_back(position_delete);
-        else
-            ++skipped_delete_files;
-    }
-    if (skipped_delete_files)
+    auto grouped = groupPositionDeletesByDataFile(position_deletes);
+    if (!grouped.other.empty())
         LOG_DEBUG(
-            log, "The row estimate does not subtract {} position delete files that cover several data files", skipped_delete_files);
+            log, "The row estimate does not subtract {} position delete files that cover several data files", grouped.other.size());
 
     UInt64 deleted_rows = 0;
-    if (deletes_by_data_file.empty())
+    if (grouped.single_data_file.empty())
         return deleted_rows;
 
     /// `defineDeletesSpan` needs them in the order of `operator<=>`.
-    for (auto & [_, deletes] : deletes_by_data_file)
+    for (auto & [_, deletes] : grouped.single_data_file)
         std::sort(deletes.begin(), deletes.end());
 
     for (const auto & data_file : data_files)
     {
-        const auto it = deletes_by_data_file.find(data_file->parsed_entry->file_path_key);
-        if (it == deletes_by_data_file.end())
+        const auto it = grouped.single_data_file.find(data_file->parsed_entry->file_path_key);
+        if (it == grouped.single_data_file.end())
             continue;
 
         UInt64 file_scoped_rows = 0;

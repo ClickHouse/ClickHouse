@@ -712,7 +712,8 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
             parsed_log_entries.append(parse_log_entry(log_line))
             has_processing_logs = True
 
-    assert has_skipping_logs, "No skipping logs found"
+    #  Delete files bounded by one data file are looked up by path, so no pair of this query is skipped one by one.
+    assert not has_skipping_logs, "A delete file bounded by one data file was checked against another data file"
     assert has_processing_logs, "No processing logs found"
 
     #  Parse manifest file entries from system.iceberg_metadata_log.

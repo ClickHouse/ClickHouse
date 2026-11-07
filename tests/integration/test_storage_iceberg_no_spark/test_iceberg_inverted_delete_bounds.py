@@ -86,19 +86,18 @@ def _patch_data_file_path_bounds(instance, table_path, mutate):
     return patched
 
 
-def _swap(lower, upper):
-    # The bounds are the extremes of the delete file's own `file_path` column, so a delete file
-    # referencing a single data file has lower == upper and exchanging them leaves the manifest
-    # well formed. The fixture covers two data files with one delete file to keep the pair
-    # distinct.
-    assert lower["value"] != upper["value"]
-    lower["value"], upper["value"] = upper["value"], lower["value"]
+def _invert_around_own_path(lower, upper):
+    # A delete file written for one data file has lower == upper == that data file's path. Raising
+    # the lower bound just above it inverts the pair; reordered, it would still contain exactly that
+    # path, so the delete file would be skipped for the other data file only.
+    assert lower["value"] == upper["value"]
+    lower["value"] = upper["value"] + b"~"
 
 
 def _set_above_every_path(lower, upper):
-    # An inverted pair whose two values sort above every data file path. Reordering it, rather
-    # than ignoring it, yields a range that contains no data file at all, so the delete file
-    # would go on being skipped everywhere.
+    # An inverted pair whose two values sort just above the delete file's own data file path, with no
+    # data file path between them. Reordering it, rather than ignoring it, yields a range that
+    # contains no data file at all, so the delete file would go on being skipped everywhere.
     above = max(lower["value"], upper["value"]) + b"~"
     assert above > lower["value"] and above > upper["value"]
     lower["value"], upper["value"] = above + b"~", above
@@ -115,8 +114,8 @@ def test_iceberg_inverted_delete_bounds(started_cluster_iceberg_no_spark):
         settings=NOCACHE,
     )
     write = {"allow_insert_into_iceberg": 1, **NOCACHE}
-    # Two inserts make two data files, and one delete touching both makes a single delete file whose
-    # `file_path` bounds are the two data file paths.
+    # Two inserts make two data files, and one delete touching both writes a delete file for each,
+    # whose `file_path` bounds are both its own data file path.
     for lowest in (0, 10):
         instance.query(
             f"INSERT INTO {table_name} SELECT number, char(number + ascii('a')) "
@@ -149,17 +148,16 @@ def test_iceberg_inverted_delete_bounds(started_cluster_iceberg_no_spark):
             profile_event("IcebergMinMaxNonPrunedDeleteFiles"),
         )
 
-    # Control: with well-formed bounds the delete file is kept for both data files and no pair is
-    # skipped. That pins the fixture the arms below need: no `referenced_data_file` (with one, both
-    # bounds would come from that single path and one of the two pairs would be skipped), bounds
-    # spanning both data file paths, and the same tuple the arms assert, which makes each of them a
-    # comparison against this run rather than against a remembered number.
-    assert read() == (survivors, 0, 2)
+    # Control: with well-formed bounds each data file keeps its own delete file and skips the other
+    # one. That pins the fixture the arms below need: two delete files, each bounded by its own data
+    # file path.
+    assert read() == (survivors, 2, 2)
 
     # Inverted, the bounds describe an empty range of paths, so skipping on them would drop the
-    # delete file for every data file and return the rows it deletes.
-    assert _patch_data_file_path_bounds(instance, table_path, _swap) > 0
-    assert read() == (survivors, 0, 2)
+    # delete files for every data file and return the rows they delete. Ignored, they leave all four
+    # pairs kept; reordered, they would leave the control's two.
+    assert _patch_data_file_path_bounds(instance, table_path, _invert_around_own_path) > 0
+    assert read() == (survivors, 0, 4)
 
     assert _patch_data_file_path_bounds(instance, table_path, _set_above_every_path) > 0
-    assert read() == (survivors, 0, 2)
+    assert read() == (survivors, 0, 4)

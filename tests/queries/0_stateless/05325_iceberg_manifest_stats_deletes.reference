@@ -1,8 +1,11 @@
 --- T1: delete file scoped to one data file
 Join: m[1000] ⋈ t[no_stats~180]
 live rows: 180
---- T2: delete file covering two data files
-Join: m[1000] ⋈ t[no_stats~200]
+--- T2: 68 rows, 28 deleted by file-scoped position deletes, 3 by a delete file covering two data files
+Join: m[1000] ⋈ t[no_stats~40]
+live rows: 37
+--- T2b: a DELETE touching two data files writes one delete file per data file, so both are subtracted
+Join: m[1000] ⋈ t[no_stats~180]
 live rows: 180
 --- T3: no filter
 Join: m[1000] ⋈ t[no_stats~180]
