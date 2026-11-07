@@ -125,14 +125,18 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
+    /// The response to a `HEAD` request has no body, so the headers are sent only in `finalizeImpl`,
+    /// when the size of the body that a `GET` request would receive is known.
+    if (is_http_method_head)
+        return;
+
     {
         std::lock_guard lock(mutex);
         startSendHeaders();
         finishSendHeaders();
     }
 
-    if (!is_http_method_head)
-        HTTPWriteBuffer::nextImpl();
+    HTTPWriteBuffer::nextImpl();
 }
 
 
@@ -211,6 +215,12 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
     {
         std::lock_guard lock(mutex);
+        if (is_http_method_head && !headers_finished_sending)
+        {
+            /// Report the size of the body that a `GET` request would receive. S3 clients rely on it in `HeadObject`.
+            response.setChunkedTransferEncoding(false);
+            response.setContentLength64(count());
+        }
         startSendHeaders();
         finishSendHeaders();
     }

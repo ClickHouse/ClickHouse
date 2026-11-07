@@ -28,6 +28,11 @@ struct HTTPHandlerConnectionConfig;
 /// - the `request_credentials` instance must be preserved until the next request or until any exception.
 ///
 /// Throws an exception if authentication failed.
+///
+/// `allow_aws_signature_v4` enables authentication of requests signed with AWS Signature Version 4 (see `AWSSignatureV4.h`).
+/// The caller is responsible for the parts of the request that the signature covers but this function does not check:
+/// the request body must be wrapped with `wrapAWSSignatureV4RequestBody`, and the AWS-specific query parameters must
+/// be ignored.
 bool authenticateUserByHTTP(
     const HTTPServerRequest & request,
     const HTMLForm & params,
@@ -36,6 +41,7 @@ bool authenticateUserByHTTP(
     std::unique_ptr<Credentials> & request_credentials,
     const HTTPHandlerConnectionConfig & connection_config,
     ContextPtr global_context,
-    LoggerPtr log);
+    LoggerPtr log,
+    bool allow_aws_signature_v4 = false);
 
 }
