@@ -126,6 +126,11 @@ char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, c
         ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
 }
 
+void IAggregateFunction::setSumAndCount(AggregateDataPtr __restrict /*place*/, const Field & /*sum*/, UInt64 /*count*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setSumAndCount is not implemented for {}", getName());
+}
+
 void IAggregateFunction::mergeStateFromDifferentVariant(
     AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
 {

@@ -1,13 +1,16 @@
 #include <Storages/Statistics/StatisticsBasic.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/FieldVisitorWriteBinary.h>
@@ -33,6 +36,7 @@ enum BasicFeatureMask : UInt8
     NumericMinMax = 1u << 0,
     StringLengthSum = 1u << 1,
     DefaultCount = 1u << 2,
+    ExactSum = 1u << 3,
 };
 
 const NullMap * tryGetNullMap(const IColumn & column)
@@ -74,7 +78,6 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
 
 }
 
-
 StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , data_type(removeLowCardinalityAndNullable(removeNullable(data_type_)))
@@ -89,6 +92,23 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     column_default_field = (*default_col)[0];
 
     is_nullable = isNullableOrLowCardinalityNullable(data_type_) || column_default_field.isNull();
+
+    if (canStatisticsTrackSum(data_type_))
+    {
+        AggregateFunctionProperties properties;
+        sum_function = AggregateFunctionFactory::instance().get("sum", NullsAction::EMPTY, {data_type}, {}, properties);
+        chassert(!sum_function->allocatesMemoryInArena());
+        sum_buffer.reset(sum_function->sizeOfData(), sum_function->alignOfData());
+        sum_state = sum_buffer.data();
+        sum_function->create(sum_state);
+        has_sum = true;
+    }
+}
+
+StatisticsBasic::~StatisticsBasic()
+{
+    if (sum_function)
+        sum_function->destroy(sum_state);
 }
 
 void StatisticsBasic::build(const ColumnPtr & column)
@@ -115,6 +135,16 @@ void StatisticsBasic::build(const ColumnPtr & column)
     if (tracks_string)
         string_total_bytes += sumNonNullStringBytes(column);
 
+    if (has_sum)
+    {
+        auto values = column->convertToFullColumnIfConst();
+        const IColumn * values_ptr = values.get();
+        if (typeid_cast<const ColumnSparse *>(values_ptr))
+            sum_function->addBatchSparseSinglePlace(0, column_size, sum_state, &values_ptr, nullptr);
+        else
+            sum_function->addBatchSinglePlace(0, column_size, sum_state, &values_ptr, nullptr);
+    }
+
     row_count += column_size;
 }
 
@@ -137,6 +167,11 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
         default_count += other->default_count;
     }
 
+    if (has_sum && other->has_sum)
+        sum_function->merge(sum_state, other->sum_state, nullptr);
+    else
+        has_sum = false;
+
     row_count += other->row_count;
 }
 
@@ -153,6 +188,8 @@ void StatisticsBasic::build(UInt64 rows, const Field & min_value, const Field & 
     /// For any other type the default count would count zeros, which a summary does not give.
     has_default_count = is_nullable;
     default_count = is_nullable ? null_count : 0;
+    /// A summary has no total of the values.
+    has_sum = false;
 }
 
 void StatisticsBasic::serialize(WriteBuffer & buf)
@@ -166,6 +203,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::StringLengthSum;
     if (has_default_count)
         mask |= BasicFeatureMask::DefaultCount;
+    if (has_sum)
+        mask |= BasicFeatureMask::ExactSum;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -177,6 +216,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(string_total_bytes, buf);
     if (has_default_count)
         writeIntBinary(default_count, buf);
+    if (has_sum)
+        sum_function->serialize(sum_state, buf);
 }
 
 std::optional<UInt64> StatisticsBasic::getSerializedSize() const
@@ -188,6 +229,13 @@ std::optional<UInt64> StatisticsBasic::getSerializedSize() const
         size += sizeof(string_total_bytes);
     if (has_default_count)
         size += sizeof(default_count);
+    if (has_sum)
+    {
+        NullWriteBuffer sum_buf;
+        sum_function->serialize(sum_state, sum_buf);
+        sum_buf.finalize();
+        size += sum_buf.count();
+    }
     return size;
 }
 
@@ -212,6 +260,17 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
     has_default_count = (mask & BasicFeatureMask::DefaultCount) != 0;
     if (has_default_count)
         readIntBinary(default_count, buf);
+
+    has_sum = sum_function && (mask & BasicFeatureMask::ExactSum) != 0;
+    if (has_sum)
+        sum_function->deserialize(sum_state, buf);
+}
+
+Field StatisticsBasic::getSum() const
+{
+    auto column = sum_function->getResultType()->createColumn();
+    sum_function->insertResultInto(sum_state, *column, nullptr);
+    return (*column)[0];
 }
 
 std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const
@@ -258,7 +317,10 @@ std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
 
 size_t StatisticsBasic::allocatedBytes() const
 {
-    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
+    size_t bytes = sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
+    if (sum_function)
+        bytes += sum_function->sizeOfData();
+    return bytes;
 }
 
 String StatisticsBasic::getNameForLogs() const
