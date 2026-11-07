@@ -1,0 +1,15 @@
+before	0
+SELECT	1
+SELECT 1\nFROM system.one
+EXPLAIN	2
+failed query	3
+not reattached with zero probability	3
+Memory	1
+Set, persistent = 0	1
+stopped merges	2
+MergeTree	2
+TinyLog	1
+Set	1
+View	2
+MaterializedView	[10,20]
+Dictionary	1
