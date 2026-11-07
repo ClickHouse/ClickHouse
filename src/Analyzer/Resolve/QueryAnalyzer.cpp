@@ -990,6 +990,12 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
 
         --pos;
         *node_to_replace = projection_nodes[pos]->clone();
+
+        /// The clone keeps the aliases of the projection expression. The projection is usually resolved already, so the
+        /// clone is taken from `resolved_expressions` and `resolveExpressionNode` does not register it for alias removal.
+        /// Without this, a query sent to another server defines the same alias with two different bodies.
+        scope.aliases.node_to_remove_aliases.push_back(*node_to_replace);
+
         if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
         {
             resolved_expressions[*node_to_replace] = it->second;
