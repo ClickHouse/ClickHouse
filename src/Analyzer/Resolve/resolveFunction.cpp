@@ -1505,11 +1505,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
-    /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda or a SQL UDF with this name keeps its arguments.
+    /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
+    /// with this name keeps its arguments.
     if (auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
         arguments_count && function_node_ptr->getArguments().getNodes().size() == *arguments_count
         && (function_node_ptr->isWindowFunction()
-            || (!lambda_expression_untyped && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name))))
+            || (!lambda_expression_untyped && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+                && !UserDefinedExecutableFunctionFactory::has(function_name, scope.context)))) /// NOLINT(readability-static-accessed-through-instance)
     {
         auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
         const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();

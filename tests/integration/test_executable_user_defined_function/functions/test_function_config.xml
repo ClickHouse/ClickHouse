@@ -532,4 +532,19 @@
         <deterministic>false</deterministic>
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>groupConcatDistinct</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>tr -d '\t'</command>
+        <execute_direct>0</execute_direct>
+    </function>
+
 </functions>
