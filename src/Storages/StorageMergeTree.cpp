@@ -4945,7 +4945,8 @@ std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAnd
 
     part->info.min_block = block_holder->block.number;
     part->info.max_block = block_holder->block.number;
-    part->info.mutation = 0;
+    /// Merges and mutations read the version of a patch part from its name, readers from its index.
+    part->info.mutation = part->info.isPatch() ? part->getPatchPartIndex().getMaxDataVersion() : 0;
 
     bool keep_non_zero_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;

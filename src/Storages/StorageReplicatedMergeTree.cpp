@@ -10471,9 +10471,23 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     String part_name = literal->value.safeGet<String>();
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
+    if (part_info.isPatch())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot move patch part {} to another shard, its data versions are allocated from the block numbers of this table. "
+            "Apply it with `ALTER TABLE ... APPLY PATCHES IN PARTITION ID '{}'` and move the patched part instead",
+            part_name, getOriginalPartitionIdOfPatch(part_info.getPartitionId()));
+
     auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found locally", part_name);
+
+    assertSourceHasNoPatchesForPartition(
+        getPatchParts(getPartsOfAllReplicas(zookeeper, zookeeper_path, format_version)),
+        format_version,
+        part_info.getPartitionId(),
+        part->info.getDataVersion(),
+        zookeeper_path,
+        "MOVE PART " + part_name + " TO SHARD");
 
     if (part->uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} does not have an uuid assigned and it can't be moved between shards", part_name);
