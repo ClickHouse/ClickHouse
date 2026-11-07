@@ -52,6 +52,7 @@ private:
     bool isProfilingEnabled();
     bool isProfilingCompiled();
     std::string dumpProfile(const std::string & label);
+    size_t captureCheckpoint(const std::string & label);
 
     /// Print usage information
     void printUsage();
@@ -65,6 +66,8 @@ private:
     bool no_system_tables = false;
     bool symbolize = false;
     bool initialize_mark_caches = true;
+    std::optional<size_t> background_pool_size;
+    std::optional<size_t> max_threads;
 
     /// Server context
     std::unique_ptr<SharedContextHolder> shared_context;
