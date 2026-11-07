@@ -108,6 +108,7 @@ namespace Setting
 {
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsUInt64 table_function_remote_max_addresses;
+    extern const SettingsUInt64 max_ast_elements;
 }
 
 namespace ErrorCodes
@@ -4945,11 +4946,20 @@ String replaySettingsPrelude(
             res += "SET " + *spelling + " = " + value + ";\n";
     /// A stored CREATE can be longer than the default limit; the `;` counts too.
     size_t longest = 0;
+    /// The source loads its metadata as an internal ATTACH, which skips the AST size limit the replay checks.
+    size_t biggest = 0;
     for (const auto & create_query : create_queries)
+    {
         longest = std::max(longest, create_query.size() + 1);
+        if (const ASTPtr ast = tryParseCreate(create_query))
+            biggest = std::max(biggest, ast->size());
+    }
     if (longest > DBMS_DEFAULT_MAX_QUERY_SIZE)
         if (const auto spelling = server_spelling("max_query_size"))
             res += "SET " + *spelling + " = " + std::to_string(longest) + ";\n";
+    if (biggest > Settings{}[Setting::max_ast_elements])
+        if (const auto spelling = server_spelling("max_ast_elements"))
+            res += "SET " + *spelling + " = " + std::to_string(biggest) + ";\n";
     res += "\n";
     return res;
 }
