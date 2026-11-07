@@ -127,24 +127,24 @@ WhatIfResult buildResultWithoutScan(
     WhatIfResult result;
     result.database = data.getStorageID().getDatabaseName();
     result.table = data.getStorageID().getTableName();
-    for (const auto & index_desc : store.getForTable(data.getStorageID()))
+    for (const auto & hypothetical : store.getForTable(data.getStorageID()))
     {
         WhatIfCandidateResult r;
-        r.name = index_desc.name;
-        r.type = index_desc.type;
+        r.name = hypothetical.index.name;
+        r.type = hypothetical.index.type;
         r.status = WhatIfCandidateResult::NotApplicable;
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
     auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+    for (const auto & hypothetical : store.getProjectionsForTable(data.getStorageID()))
     {
         WhatIfCandidateResult r;
-        r.name = projection.name;
-        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
+        r.name = hypothetical.projection.name;
+        r.type = hypothetical.projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
         r.status = WhatIfCandidateResult::NotApplicable;
         r.not_applicable_reason = reason;
-        refreshHypotheticalProjection(projection, data, metadata, context, r.not_applicable_reason);
+        refreshHypotheticalProjection(hypothetical, data, metadata, context, r.not_applicable_reason);
         result.candidates.push_back(std::move(r));
     }
     if (result.candidates.empty())
@@ -187,7 +187,7 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
 
 /// Check applicability, then try empirical → statistical → applicability_only
 WhatIfCandidateResult evaluateIndex(
-    const IndexDescription & index_desc,
+    const HypotheticalObjectStore::Entry & hypothetical,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
@@ -198,8 +198,8 @@ WhatIfCandidateResult evaluateIndex(
     const auto & data = read_step->getMergeTreeData();
 
     WhatIfCandidateResult result;
-    result.name = index_desc.name;
-    result.type = index_desc.type;
+    result.name = hypothetical.index.name;
+    result.type = hypothetical.index.type;
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
@@ -219,49 +219,25 @@ WhatIfCandidateResult evaluateIndex(
         {
             auto ignored_names = parseIdentifiersOrStringLiteralsToSet(
                 user_settings[Setting::ignore_data_skipping_indexes].toString(), user_settings);
-            if (ignored_names.contains(index_desc.name))
+            if (ignored_names.contains(hypothetical.index.name))
             {
                 result.status = WhatIfCandidateResult::NotApplicable;
-                result.not_applicable_reason = "Index '" + index_desc.name + "' is listed in `ignore_data_skipping_indices`";
+                result.not_applicable_reason = "Index '" + hypothetical.index.name + "' is listed in `ignore_data_skipping_indices`";
                 return result;
             }
         }
     }
 
-    /// Rebuild from current metadata, so a schema change since CREATE turns into not_applicable
-    IndexDescription fresh_index_desc;
-    try
-    {
-        auto metadata = read_step->getStorageMetadata();
-        fresh_index_desc = IndexDescription::getIndexFromAST(
-            index_desc.definition_ast,
-            metadata->getColumns(),
-            /* is_implicitly_created = */ false,
-            /* escape_filenames = */ true,
-            context);
-    }
-    catch (const Exception &)
+    const auto & metadata = read_step->getStorageMetadata();
+    const auto change = hypothetical.binding.changeIn(*metadata, context, data.getStorageID());
+    if (!change.empty())
     {
         result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason = "Hypothetical index no longer matches the current table schema: "
-            + getCurrentExceptionMessage(false);
+        result.not_applicable_reason = "Hypothetical index no longer matches the table: " + change + ". Run CREATE HYPOTHETICAL INDEX again";
         return result;
     }
-
-    MergeTreeIndexPtr index_helper;
-    try
-    {
-        /// validate before get, same as CREATE: creators read their arguments unguarded
-        const auto & merge_tree_settings = *data.getSettings();
-        MergeTreeIndexFactory::instance().validate(fresh_index_desc, /* attach = */ false, merge_tree_settings);
-        index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(), fresh_index_desc, merge_tree_settings);
-    }
-    catch (const Exception &)
-    {
-        result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason = "Failed to create index: " + getCurrentExceptionMessage(false);
-        return result;
-    }
+    /// keeps a reference to `hypothetical.index`
+    auto index_helper = MergeTreeIndexFactory::instance().get(metadata, hypothetical.index, *data.getSettings());
 
     /// CREATE checked these columns, but the scan reads them now, so re-check SELECT against
     /// current grants, a grant revoked since CREATE should deny the estimate
@@ -280,17 +256,7 @@ WhatIfCandidateResult evaluateIndex(
     ActionsDAGWithInversionPushDown predicate_dag(filter_dag->getOutputs().front(), context, /* boolean_context */ true);
     const ActionsDAG::Node * predicate = predicate_dag.predicate;
 
-    MergeTreeIndexConditionPtr condition;
-    try
-    {
-        condition = index_helper->createIndexCondition(predicate, context);
-    }
-    catch (const Exception &)
-    {
-        result.status = WhatIfCandidateResult::NotApplicable;
-        result.not_applicable_reason = "Cannot build index condition: " + getCurrentExceptionMessage(false);
-        return result;
-    }
+    auto condition = index_helper->createIndexCondition(predicate, context);
 
     /// Let the condition decide first, a standalone conjunct can still be usable inside a mixed
     /// OR. Only fall through to the disjunction case when it can't prune on its own
@@ -533,13 +499,13 @@ WhatIfResult estimateHypotheticalObjects(
     UInt64 combined_total_parts = 0;
     UInt64 combined_total_marks = 0;
 
-    for (const auto & index_desc : hypo_indexes)
+    for (const auto & hypothetical : hypo_indexes)
     {
         if (!blanket_not_applicable_reason.empty())
         {
             WhatIfCandidateResult r;
-            r.name = index_desc.name;
-            r.type = index_desc.type;
+            r.name = hypothetical.index.name;
+            r.type = hypothetical.index.type;
             r.status = WhatIfCandidateResult::NotApplicable;
             r.not_applicable_reason = blanket_not_applicable_reason;
             result.candidates.push_back(std::move(r));
@@ -550,7 +516,7 @@ WhatIfResult estimateHypotheticalObjects(
         if (want_combined)
             surviving_marks.assign(result.baseline_marks, 0);
         auto index_result = evaluateIndex(
-            index_desc, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
+            hypothetical, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
 
         /// push empirically-evaluated candidates in a per-mark survival set we can intersect
         if (want_combined && index_result.status == WhatIfCandidateResult::Applicable && index_result.estimate_source == WhatIfCandidateResult::Empirical)
@@ -620,9 +586,9 @@ WhatIfResult estimateHypotheticalObjects(
         optimizeSharingSets(weigh_plan, weigh_context, built_sets);
     };
 
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+    for (const auto & hypothetical : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, weigh, plan_context));
+            evaluateProjection(hypothetical, read_step, analysis, baseline_parts, settings, weigh, plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
