@@ -1853,17 +1853,20 @@ def test_select_columns(started_cluster):
     instance.query(
         f"INSERT INTO {name} SELECT * FROM generateRandom('{structure}') LIMIT {limit} SETTINGS s3_truncate_on_insert=1"
     )
-    instance.query(f"SELECT value2, '{id}' FROM {name}")
+    # The instance has a page cache, which is used for object storage by default: the second query would read
+    # the column of the first one from it and not from S3.
+    no_page_cache = "SETTINGS use_page_cache_for_object_storage = 0"
+    instance.query(f"SELECT value2, '{id}' FROM {name} {no_page_cache}")
 
     instance.query("SYSTEM FLUSH LOGS")
     result1 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2, ''{id}'' FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT value2, ''{id}'' FROM {name} {no_page_cache}'"
     )
 
-    instance.query(f"SELECT *, '{id}' FROM {name}")
+    instance.query(f"SELECT *, '{id}' FROM {name} {no_page_cache}")
     instance.query("SYSTEM FLUSH LOGS")
     result2 = instance.query(
-        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT *, ''{id}'' FROM {name}'"
+        f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE type='QueryFinish' and query LIKE 'SELECT *, ''{id}'' FROM {name} {no_page_cache}'"
     )
 
     assert round(int(result2) / int(result1)) == 3

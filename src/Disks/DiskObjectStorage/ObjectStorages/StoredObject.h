@@ -37,6 +37,11 @@ struct StoredObject
     /// `getETagHash` of the ETag, 0 if not computed. Used only where a read asks for it.
     UInt64 etag_hash = 0;
 
+    /// `getImmutableContentIdHash` of `ObjectMetadata::immutable_content_id`, 0 if not computed. Keys the distributed
+    /// cache, like `etag_hash`, for an object known from the records of its table without an ETag (a data file of
+    /// Iceberg or Delta Lake). Unlike `etag_hash`, it cannot be checked against a `GET` response.
+    UInt64 immutable_content_id_hash = 0;
+
     explicit StoredObject(
         const String & remote_path_ = "",
         const String & local_path_ = "",
@@ -59,6 +64,7 @@ size_t getTotalSize(const StoredObjects & objects);
 Strings collectRemotePaths(const StoredObjects & objects);
 
 UInt64 getETagHash(const String & etag);
+UInt64 getImmutableContentIdHash(const String & immutable_content_id);
 
 }
 
