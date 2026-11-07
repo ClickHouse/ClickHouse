@@ -784,7 +784,8 @@ static NameSet collectIndicesRebuiltByMutation(
             continue;
         }
 
-        const auto & index_columns = index.expression->getRequiredColumns();
+        /// The same columns `MutationsInterpreter` checks, including the ones the index WHERE reads.
+        const auto index_columns = metadata_snapshot->getColumnsRequiredForIndex(index);
 
         /// Neither an index over a cleared column nor one over a column whose type changes carries
         /// its granules over; only the two modes that refuse the `ALTER` outright leave the latter
@@ -1329,7 +1330,7 @@ static void splitAndModifyMutationCommands(
                 if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
                     continue;
 
-                for (const auto & column : index.expression->getRequiredColumns())
+                for (const auto & column : index.getRequiredColumns())
                 {
                     auto column_in_storage = getColumnNameInStorage(column);
                     if (column_in_storage)
