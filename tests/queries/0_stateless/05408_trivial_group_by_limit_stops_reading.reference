@@ -1,0 +1,14 @@
+gbl_stop_distributed	5	-
+gbl_stop_exact_key_count	5	-
+gbl_stop_exact_key_count_external	5	-
+gbl_stop_merge_tree	5	1
+gbl_stop_merge_tree_aggregate	5	0
+gbl_stop_merge_tree_in_order	5	1
+gbl_stop_merge_tree_in_order_threads	5	1
+gbl_stop_projection	5	1
+gbl_stop_serialized_plan	5	-
+gbl_stop_single_thread	5	-
+gbl_stop_stream_ends_with_enough_keys	5	-
+gbl_stop_stream_with_single_key	5	-
+gbl_stop_stream_without_rows	5	-
+gbl_stop_user_overflow_mode_any	1000	-
