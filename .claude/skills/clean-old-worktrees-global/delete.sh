@@ -63,9 +63,10 @@ tr '\n' '\0' < "$list" | xargs -r -0 -P 8 -n1 bash -c '
     [ -d "$p" ] || skip "not a directory"
     [ -d "$p/.git" ] && skip "main repository"
     [ "$(realpath "$p")" = "$p" ] || skip "reached through a symlink"
-    if ! grep -qs "^gitdir: .*/worktrees/" "$p/.git"; then
+    is_worktree() { grep -qs "^gitdir: .*/worktrees/[^/]*\$" "$1/.git"; }
+    if ! is_worktree "$p"; then
         case ${d##*/} in build*) ;; *) skip "neither a worktree nor a build directory" ;; esac
-        [ -e "${p%/*}/.git" ] || skip "build directory outside a checkout"
+        [ -d "${p%/*}/.git" ] || is_worktree "${p%/*}" || skip "build directory outside a checkout"
     fi
     is_under() { P=$p awk "{ if (\$0 == ENVIRON[\"P\"] || index(\$0, ENVIRON[\"P\"] \"/\") == 1) { found = 1; exit } } END { exit !found }" "$1"; }
     is_under "$STATE/mounts" && skip "contains a mount point"

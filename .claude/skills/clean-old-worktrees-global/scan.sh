@@ -39,11 +39,12 @@ supported_name()
         *$'\t'*|*$'\n'*) printf 'unsupported name\t%q\n' "$1" >> "$SKIPPED"; return 1 ;;
     esac
 }
-# A `.git` file of a worktree points to `.../worktrees/<name>`, unlike the one of a submodule (`.../modules/<path>`).
-# This also holds for orphaned worktrees, whose metadata is already pruned.
+# A `.git` file of a worktree points to `.../worktrees/<name>`, unlike the one of a submodule (`.../modules/<path>`,
+# which for a submodule of a worktree is `.../worktrees/<name>/modules/<path>`). This also holds for orphaned worktrees,
+# whose metadata is already pruned.
 is_worktree()
 {
-    grep -qs '^gitdir: .*/worktrees/' "$1/.git"
+    grep -qs '^gitdir: .*/worktrees/[^/]*$' "$1/.git"
 }
 export -f age_of supported_name is_worktree
 
@@ -53,8 +54,9 @@ export -f age_of supported_name is_worktree
 # shellcheck disable=SC2016 # The inner scripts are expanded by the inner shell.
 {
     find . -mindepth 1 -maxdepth 1 -type d -printf '%P\0'
-    find . -xdev -mindepth 3 -maxdepth 7 \( -name .git -type f -printf '%h\0' \) \
-        -o \( -name contrib -o -name 'build*' -o -name .git -o -name node_modules \) -type d -prune
+    # No -mindepth: it would also disable pruning above that depth.
+    find . -xdev -maxdepth 7 \( -name contrib -o -name 'build*' -o -name .git -o -name node_modules \) -type d -prune \
+        -o -path './*/*/.git' -type f -printf '%h\0'
 } | sed -z 's#^\./##' | xargs -r -0 -P "$par" -n1 bash -c '
     d=$1
     supported_name "$d" || exit 0
