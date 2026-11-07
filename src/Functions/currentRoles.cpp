@@ -75,9 +75,9 @@ namespace
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
-            return "() -> Array(String)";
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
@@ -114,9 +114,9 @@ Returns an array of the roles which are assigned to the current user.
 SELECT currentRoles();
         )",
         R"(
-┌─currentRoles()─┐
-│ []             │
-└────────────────┘
+┌─currentRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
         )"
     }
     };
@@ -137,9 +137,9 @@ Returns an array of the roles which are enabled for the current user.
 SELECT enabledRoles();
         )",
         R"(
-┌─enabledRoles()─┐
-│ []             │
-└────────────────┘
+┌─enabledRoles()─────────────────────────────────────────────────┐
+│ ['general_data', 'sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -160,9 +160,9 @@ Returns an array of default roles for the current user.
 SELECT defaultRoles();
         )",
         R"(
-┌─defaultRoles()─┐
-│ []             │
-└────────────────┘
+┌─defaultRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
         )"
     }
     };
