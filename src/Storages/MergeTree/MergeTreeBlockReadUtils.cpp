@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypesNumber.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -46,12 +45,14 @@ namespace FailPoints
 namespace
 {
 
-bool hasMaterializedTextIndex(
+/// Whether the virtual column of a text index can be read from the index in the part (direct read).
+bool canReadTextIndexVirtualColumnInPart(
     const StorageSnapshotPtr & storage_snapshot,
+    const IndexReadTasks & index_read_tasks,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const String & virtual_column_name)
 {
-    if (storage_snapshot->metadata->virtuals.empty())
+    if (index_read_tasks.empty() || storage_snapshot->metadata->virtuals.empty())
         return false;
 
     const auto * virtual_column = storage_snapshot->metadata->virtuals.tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
@@ -59,15 +60,11 @@ bool hasMaterializedTextIndex(
         return false;
 
     /// Name of the text index is embedded as a comment to the virtual column.
-    const auto & text_index_name = virtual_column->comment;
-    for (const auto & index_desc : storage_snapshot->metadata->getSecondaryIndices())
-    {
-        if (index_desc.type == "text" && index_desc.name == text_index_name)
-            if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
-                return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
-    }
+    auto it = index_read_tasks.find(virtual_column->comment);
+    if (it == index_read_tasks.end())
+        return false;
 
-    return false;
+    return canReadTextIndexInPart(*it->second.index.index, data_part_info_for_reader);
 }
 
 /// Columns absent in part may depend on other absent columns so we are
@@ -78,6 +75,7 @@ bool injectRequiredColumnsRecursively(
     const StorageSnapshotPtr & storage_snapshot,
     const AlterConversionsPtr & alter_conversions,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const IndexReadTasks & index_read_tasks,
     const GetColumnsOptions & options,
     Names & columns,
     NameSet & required_columns,
@@ -135,8 +133,7 @@ bool injectRequiredColumnsRecursively(
             return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part)
-            && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part)
-            && canReadTextIndexInPart(alter_conversions))
+            && canReadTextIndexVirtualColumnInPart(storage_snapshot, index_read_tasks, data_part_info_for_reader, column_name_in_part))
         {
             /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
@@ -165,7 +162,7 @@ bool injectRequiredColumnsRecursively(
     bool result = false;
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
-            identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
+            identifier, storage_snapshot, alter_conversions, data_part_info_for_reader, index_read_tasks,
             options, columns, required_columns, injected_columns);
 
     return result;
@@ -173,9 +170,19 @@ bool injectRequiredColumnsRecursively(
 
 }
 
-bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
+bool canReadTextIndexInPart(const IMergeTreeIndex & index, const IMergeTreeDataPartInfoForReader & part_info)
 {
+    /// The index may be not materialized in this part (e.g. after `ALTER TABLE ADD INDEX`), or its files
+    /// may be present on disk but absent from the checksums (e.g. left behind by a mutation). In both
+    /// cases there is nothing to read from, and the virtual columns have to be computed from the column data.
+    ///
+    /// This must be the same check as the one in the index readers (`getDeserializedFormat`), and not
+    /// `IMergeTreeDataPart::hasSecondaryIndex`, which also accepts index files that are not in the checksums.
+    if (!index.getDeserializedFormat(part_info, index.getFileName()))
+        return false;
+
     /// Patches are joined by the keys read in the first step, which the text index reader cannot read.
+    auto alter_conversions = part_info.isProjectionPart() ? nullptr : part_info.getAlterConversions();
     return !alter_conversions || !alter_conversions->hasPatches();
 }
 
@@ -187,6 +194,7 @@ bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
+    const IndexReadTasks & index_read_tasks,
     bool with_subcolumns,
     Names & columns)
 {
@@ -216,6 +224,7 @@ NameSet injectRequiredColumns(
             storage_snapshot,
             alter_conversions,
             data_part_info_for_reader,
+            index_read_tasks,
             options,
             columns,
             required_columns,
@@ -493,7 +502,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names column_to_read_after_prewhere = required_columns;
 
     /// Inject columns required for defaults evaluation
-    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
+    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, index_read_tasks, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
@@ -530,7 +539,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         {
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,
-                with_subcolumns, step_column_names);
+                index_read_tasks, with_subcolumns, step_column_names);
         }
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
