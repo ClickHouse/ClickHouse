@@ -156,6 +156,11 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
+    /// Explicit workload identity IDs (e.g. from extra_credentials). The SDK credential
+    /// does not expose them back, so they are kept here for the delta-kernel path.
+    String workload_identity_client_id;
+    String workload_identity_tenant_id;
+
     /// When true, the client must not authenticate with the AKS workload identity or the machine's managed identity.
     bool forbid_implicit_credentials = true;
 

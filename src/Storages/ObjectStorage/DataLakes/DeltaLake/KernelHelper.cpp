@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -330,8 +331,48 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_key", connection_params.endpoint.account_key);
             break;
         }
-        case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
+        {
+            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+            if (!name.empty())
+                set_option("azure_storage_account_name", name);
+
+            /// The server's identity is restricted for this storage: forward nothing, the request is unsigned below.
+            if (drop_credentials)
+                break;
+
+            /// The object_store builder does not read the workload identity environment variables on its own.
+            auto env_value = [](const char * env_var) -> const char *
+            {
+                if (const char * value = std::getenv(env_var); value && *value) // NOLINT(concurrency-mt-unsafe)
+                    return value;
+                return nullptr;
+            };
+
+            /// Explicit IDs (extra_credentials / named collection) win over the environment.
+            const char * tenant = !connection_params.workload_identity_tenant_id.empty()
+                ? connection_params.workload_identity_tenant_id.c_str()
+                : env_value("AZURE_TENANT_ID");
+            const char * client = !connection_params.workload_identity_client_id.empty()
+                ? connection_params.workload_identity_client_id.c_str()
+                : env_value("AZURE_CLIENT_ID");
+            const char * token_file = env_value("AZURE_FEDERATED_TOKEN_FILE");
+
+            if (!tenant || !client || !token_file)
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Azure workload identity is not fully configured for the delta-kernel path: "
+                    "tenant_id and client_id must be passed via extra_credentials or set as "
+                    "AZURE_TENANT_ID / AZURE_CLIENT_ID, and AZURE_FEDERATED_TOKEN_FILE must be set");
+
+            set_option("azure_tenant_id", tenant);
+            set_option("azure_client_id", client);
+            set_option("azure_federated_token_file", token_file);
+            if (const char * authority = env_value("AZURE_AUTHORITY_HOST"))
+                set_option("azure_authority_host", authority);
+            break;
+        }
+        case 1: /// ClientSecretCredential
         case 5: /// StaticCredential
         case 6: /// TokenProviderCredential
         default:
@@ -386,16 +427,25 @@ class AzureKernelHelper final : public IKernelHelper
 {
 public:
     AzureKernelHelper(
-        const DB::AzureBlobStorage::ConnectionParams & connection_params_,
+        DB::ObjectStoragePtr object_storage_,
         const std::string & blob_path_)
-        : connection_params(connection_params_)
-        , table_location(buildTableLocation(connection_params_, blob_path_))
+        : object_storage(std::move(object_storage_))
+        , table_location(buildTableLocation(*object_storage->getAzureBlobStorageConnectionParams(), blob_path_))
         , data_path(normalizeBlobPath(blob_path_))
     {}
 
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return data_path; }
+
+    DB::UInt128 getCredentialsFingerprint() const override
+    {
+        /// A storage that uses the server's identity follows the restriction of the accessing session
+        /// (see `AzureObjectStorage::applyNewSettings`), so a cached engine is rebuilt when it changes.
+        SipHash hash;
+        hash.update(object_storage->getAzureBlobStorageConnectionParams()->forbid_implicit_credentials);
+        return hash.get128();
+    }
 
     ffi::EngineBuilder * createBuilder() const override
     {
@@ -406,19 +456,21 @@ public:
             "get_engine_builder");
         BuilderGuard guard(builder);
 
-        for (const auto & [name, value] : getAzureBuilderOptions(connection_params))
+        /// Read the *current* params, which follow the restriction of the accessing session, not a copy from table creation.
+        const auto connection_params = object_storage->getAzureBlobStorageConnectionParams();
+        for (const auto & [name, value] : getAzureBuilderOptions(*connection_params))
             setBuilderOption(builder, name, value);
 
         LOG_TRACE(
             log,
             "Using azure container: {}, data_path: {}",
-            connection_params.endpoint.container_name, data_path);
+            connection_params->endpoint.container_name, data_path);
 
         return guard.release();
     }
 
 private:
-    const DB::AzureBlobStorage::ConnectionParams connection_params;
+    const DB::ObjectStoragePtr object_storage;
     const std::string table_location;
     const std::string data_path;
     const LoggerPtr log = getLogger("AzureKernelHelper");
@@ -523,7 +575,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Azure:
         {
             return std::make_shared<DeltaLake::AzureKernelHelper>(
-                *object_storage->getAzureBlobStorageConnectionParams(),
+                object_storage,
                 configuration->getRawPath().path);
         }
 #endif

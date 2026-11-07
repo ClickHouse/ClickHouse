@@ -3,6 +3,7 @@ import json
 import ssl
 import sys
 import tempfile
+import urllib.parse
 
 CERT = """-----BEGIN CERTIFICATE-----
 MIIDCzCCAfOgAwIBAgIUb5QMu4bhLzHO3oWpq9E4xIzZZnwwDQYJKoZIhvcNAQEL
@@ -59,6 +60,44 @@ requests_log = []
 # Requests to the mock storage endpoint, with whether each carried a bearer token.
 storage_log = []
 
+LAST_MODIFIED = "Mon, 01 Jan 2024 00:00:00 GMT"
+# Blobs of container `cont`: a one-commit Delta table whose stats count three rows, for reads that need only the log.
+BLOBS = {
+    "stats_table/_delta_log/00000000000000000000.json": "\n".join([
+        json.dumps({"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}}),
+        json.dumps({"metaData": {
+            "id": "stats_table",
+            "format": {"provider": "parquet", "options": {}},
+            "schemaString": json.dumps({"type": "struct", "fields": [{"name": "c", "type": "long", "nullable": True, "metadata": {}}]}),
+            "partitionColumns": [],
+            "configuration": {},
+            "createdTime": 1700000000000,
+        }}),
+        json.dumps({"add": {
+            "path": "part-0.parquet",
+            "partitionValues": {},
+            "size": 100,
+            "modificationTime": 1700000000000,
+            "dataChange": True,
+            "stats": json.dumps({"numRecords": 3}),
+        }}),
+    ]) + "\n",
+}
+
+
+def list_blobs_xml(prefix):
+    entries = "".join(
+        f"<Blob><Name>{name}</Name><Properties><Last-Modified>{LAST_MODIFIED}</Last-Modified>"
+        f"<Etag>0x1</Etag><Content-Length>{len(body.encode())}</Content-Length>"
+        f"<Content-Type>application/octet-stream</Content-Type><BlobType>BlockBlob</BlobType></Properties></Blob>"
+        for name, body in sorted(BLOBS.items())
+        if name.startswith(prefix)
+    )
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        f'<EnumerationResults ContainerName="cont"><Prefix>{prefix}</Prefix><Blobs>{entries}</Blobs><NextMarker /></EnumerationResults>'
+    )
+
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -76,8 +115,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _storage_request(self):
         storage_log.append({"method": self.command, "path": self.path, "authorization": "Authorization" in self.headers})
-        # The container exists, so a table can be created on it; there are no blobs.
-        if "restype=container" in self.path:
+        url = urllib.parse.urlsplit(self.path)
+        query = urllib.parse.parse_qs(url.query)
+        blob = urllib.parse.unquote(url.path).removeprefix("/account/cont/")
+        if query.get("comp") == ["list"]:
+            self._send(200, list_blobs_xml(query.get("prefix", [""])[0]), "application/xml")
+        elif blob in BLOBS:
+            self._send(200, BLOBS[blob], "application/octet-stream", headers={"ETag": '"0x1"', "Last-Modified": LAST_MODIFIED})
+        # The container exists, so a table can be created on it.
+        elif "restype=container" in self.path:
             self._send(200, "", headers={
                 "ETag": '"0x1"',
                 "Last-Modified": "Mon, 01 Jan 2024 00:00:00 GMT",
@@ -137,7 +183,9 @@ if __name__ == "__main__":
         key_file.flush()
 
         server = http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(cert_file.name, key_file.name)
-        server.socket = context.wrap_socket(server.socket, server_side=True)
+        # `plain` serves HTTP for delta-kernel, whose object store does not accept the self-signed certificate.
+        if sys.argv[2:] != ["plain"]:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(cert_file.name, key_file.name)
+            server.socket = context.wrap_socket(server.socket, server_side=True)
         server.serve_forever()
