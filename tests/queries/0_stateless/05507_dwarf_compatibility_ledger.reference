@@ -1,0 +1,14 @@
+12	18	compile_unit	cu_from_strx	0	[]	cu_from_strx		0	[]	['name','str_offsets_base','addr_base','rnglists_base','stmt_list']	['strx1','sec_offset','sec_offset','sec_offset','sec_offset']	[0,8,0,0,0]	['cu_from_strx','','','','']
+30	55	subprogram	cu_from_strx	0	['compile_unit']		f0.c	77	[(8192,8240)]	['entry_pc','const_value','type','specification','abstract_origin','import','description','decl_line','decl_column','decl_file','call_file','ranges']	['LLVM_addrx_offset','data16','ref_sig8','ref_sup4','ref_sup8','GNU_ref_alt','strp_sup','indirect','implicit_const','data1','data1','rnglistx']	[8277,16,0,0,0,0,0,77,42,0,1,0]	['','','','','','','sup_str','','','f0.c','<error>','']
+85	1		cu_from_strx	0	['compile_unit']			0	[]	[]	[]	[]	[]
+[]
+[12]
+[12]
+[0,8,0,0,0]
+[8277,16,0,0,0,0,0,77,42,0,1,0]
+3	4089888941241388008
+bad_addr_size_1: rejected DWARF
+dup_abbrev: rejected DWARF
+bad_children_byte: rejected DWARF
+unknown_form: rejected DWARF
+truncated_second_unit: rejected DWARF
