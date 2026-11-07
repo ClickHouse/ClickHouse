@@ -60,17 +60,23 @@ struct StorageNamespace
 
 /// Normalizes a disk path. A local directory is canonicalized before its `..` components are collapsed,
 /// because a `..` after a symlink leaves the directory the symlink points to, not the one that holds it.
-/// A trailing separator is dropped, so that a root with and without one compare equal.
-std::filesystem::path normalizeDiskPath(const String & path, bool is_local)
+/// Any other path is a prefix of object keys, where repeated separators and `..` are significant bytes
+/// that address different objects, so it is kept as is.
+/// A trailing separator is dropped in both cases, so that a root with and without one compare equal.
+String normalizeDiskPath(const String & path, bool is_local)
 {
-    auto normalized = is_local
-        ? std::filesystem::weakly_canonical(std::filesystem::path(path)).lexically_normal()
-        : std::filesystem::path(path).lexically_normal();
+    if (!is_local)
+    {
+        if (path.size() > 1 && path.ends_with('/'))
+            return path.substr(0, path.size() - 1);
+        return path;
+    }
 
+    auto normalized = std::filesystem::weakly_canonical(std::filesystem::path(path)).lexically_normal();
     if (!normalized.has_filename() && normalized.has_relative_path())
         normalized = normalized.parent_path();
 
-    return normalized;
+    return normalized.string();
 }
 
 /// Returns the storage namespace of a disk, or nothing when the disk has no persistent one.
@@ -96,7 +102,7 @@ std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
         .description = data_source.type == DataSourceType::ObjectStorage ? data_source.description : String{},
         .objects_namespace = std::move(objects_namespace),
         .zookeeper_name = data_source.type == DataSourceType::ObjectStorage ? data_source.zookeeper_name : String{},
-        .path = path.string(),
+        .path = path,
     };
 }
 
@@ -112,7 +118,7 @@ std::optional<String> getLocalListingDirectory(const DiskPtr & disk)
     if (data_source.type == DataSourceType::RAM || !data_source.isPathLocal())
         return {};
 
-    return normalizeDiskPath(disk->getPath(), /*is_local=*/ true).string();
+    return normalizeDiskPath(disk->getPath(), /*is_local=*/ true);
 }
 
 }

@@ -825,3 +825,26 @@ TEST_F(DiskEncryptedTest, SharedLocalMetadataOverDifferentObjectStoragesIsDetect
     auto third = makeLocalObjectStorageDisk("third", getDirectory() + "metadata_third/", getDirectory() + "blobs_third/");
     EXPECT_FALSE(areDisksDuplicateStorage(first, third));
 }
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsPathStartingWithPathOfWrappedEncryptedDisk)
+{
+    /// The wrapped `encrypted` disk takes a path that starts with its own `path` for an already prefixed one and does
+    /// not prefix it, so the files of such an outer disk would not be where its path says: `enc/` would share the files
+    /// of the wrapped disk, and `enc/../other/` would leave its directory.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "inner", "local_disk", "enc/");
+    configureEncryptedDisk(*config, "outer_same", "inner", "enc/");
+    configureEncryptedDisk(*config, "outer_escape", "inner", "enc/../other/");
+    configureEncryptedDisk(*config, "outer_ok", "inner", "other/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto inner = makeConfiguredEncryptedDisk("inner", *config, disks);
+    disks.emplace("inner", inner);
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("outer_same", *config, disks), DB::Exception);
+    EXPECT_THROW(makeConfiguredEncryptedDisk("outer_escape", *config, disks), DB::Exception);
+
+    auto outer = makeConfiguredEncryptedDisk("outer_ok", *config, disks);
+    EXPECT_EQ(outer->getPath(), inner->getPath() + "other/");
+    EXPECT_FALSE(haveSameStorageNamespace(outer, inner));
+}

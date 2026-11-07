@@ -256,6 +256,24 @@ namespace
                 "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
                 quoteString(out_path));
 
+        /// An `encrypted` disk over another `encrypted` disk passes `out_path` followed by a relative path to it, and
+        /// the wrapped disk treats a path that already starts with its own `path` as wrapped and does not prefix it
+        /// (see `DiskEncryptedTransaction::wrappedPath`). So with such an `out_path` the files would not be where the
+        /// joined path below says: `enc/` over a disk with `path = 'enc/'` would share the files of the wrapped disk,
+        /// and `enc/../other/` would leave it. Reject it, so that the joined path is where the files are.
+        if (const auto * wrapped_encrypted = dynamic_cast<const DiskEncrypted *>(out_disk.get()))
+        {
+            const String & wrapped_disk_path = wrapped_encrypted->getPathInWrappedDisk();
+            if (!wrapped_disk_path.empty() && out_path.starts_with(wrapped_disk_path))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Disk path '{}' must not start with the path '{}' of the wrapped encrypted disk {}, "
+                    "because the wrapped disk would take it for a path it has already prefixed",
+                    quoteString(out_path),
+                    quoteString(wrapped_disk_path),
+                    backQuote(out_disk->getName()));
+        }
+
         /// Normalize the effective path before checking that it stays under the delegate's root. When the delegate's
         /// path is a local directory, including object storage with local metadata or local objects, canonicalize the
         /// paths to resolve existing symlink components too. This happens before the lexical normalization, because a
