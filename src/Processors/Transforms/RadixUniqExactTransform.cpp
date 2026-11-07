@@ -1595,9 +1595,8 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
             [&](size_t row)
             {
                 const size_t size = size_of(row);
+                chassert(size < sizeof(UInt128));
                 routed_empty_string |= size == 0;
-                if (size >= sizeof(UInt128)) [[unlikely]]
-                    return sipHash128Padded(chars + start_of(row), size) | LONG_STRING_KEY_BIT;
                 return mixKey(packShortString(chars + start_of(row), size));
             },
             [&](size_t lhs, size_t rhs)
@@ -1626,7 +1625,11 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         const size_t n = column_fixed_string->getN();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
+            [](size_t) -> UInt128
+            {
+                chassert(false);
+                return {};
+            },
             [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; },
             [](size_t) { return true; },
             [chars, n](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
