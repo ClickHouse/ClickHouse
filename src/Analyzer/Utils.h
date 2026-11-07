@@ -298,10 +298,14 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 /// internal tuple of bit planes.
 bool typeNeedsExactLiteralSerialization(const IDataType & type);
 
+/// True if this constant needs `columnConstantToExactLiteralAST`: its type does, or it holds a `Date32` or `Time` past its range.
+bool constantNeedsExactLiteralSerialization(const IColumn & column, const IDataType & type);
+
 /// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
 /// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
 /// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
-/// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant`, `Dynamic` or `QBit` use the
+/// `DateTime` text-parsing heuristics. `Date32`/`Time` values past the range of their type are serialized exactly too.
+/// Values with none of those types and no `Variant`, `Dynamic`, `QBit`, `Date32` or `Time` use the
 /// same representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
 /// The active member of a `Variant`, and of a `Dynamic` when `date_time_as_numbers` is set, reached through
 /// `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is named by its own type; under any other wrapper, and
