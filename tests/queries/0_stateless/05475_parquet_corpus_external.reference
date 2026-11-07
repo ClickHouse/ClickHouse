@@ -122,6 +122,10 @@ parquet-testing/data/datapage_v2.snappy.parquet `e`.size0	ok
 parquet-testing/data/datapage_v2.snappy.parquet content	5	ok
 parquet-testing/data/datapage_v2.snappy.parquet stress	ok
 parquet-testing/data/datapage_v2.snappy.parquet types	Nullable(String), Int32, Float64, Bool, Array(Int32)
+parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet `value`	ok
+parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet content	1	ok
+parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet stress	ok
+parquet-testing/data/datapage_v2_empty_datapage.snappy.parquet types	Nullable(Float32)
 parquet-testing/data/delta_binary_packed.parquet content	200	ok
 parquet-testing/data/delta_binary_packed.parquet stress	ok
 parquet-testing/data/delta_binary_packed.parquet types	66 columns, types hash 363A3C6043BAAB42
