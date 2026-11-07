@@ -12,8 +12,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # re-filter would keep:
 #   - `UInt8` over a STRICT INTEGER cell 300 reads locally as 44 (truncation), so `x = 44` must keep the
 #     row, but the pushed-down `x = 44` is false against the remote 300;
-#   - `Int64` over a STRICT REAL cell 1.9 reads locally as 1 (`sqlite3_column_int64` truncates), so `x = 1`
-#     must keep the row;
+#   - `Int64` over a STRICT REAL cell 1.9 fails the local read, while a pushed-down `x = 1` would silently
+#     drop that row instead;
 #   - `Float64` over a STRICT INTEGER cell 2^53 + 1 reads locally as the double 2^53 (rounding), so
 #     `x = 9007199254740992.` must keep the row;
 #   - `Float32` over a STRICT REAL cell 2^24 + 1 reads locally as the float 2^24, so `x = 16777216.` must
@@ -37,8 +37,8 @@ CREATE TABLE t (u8 UInt8, i64r Int64, f64i Float64, f32r Float32, i64 Int64, f64
 SELECT 'UInt8 over STRICT INTEGER holding 300 (reads as 44), u8 = 44 must keep both rows:';
 SELECT u8 FROM t WHERE u8 = 44 ORDER BY u8;
 
-SELECT 'Int64 over STRICT REAL holding 1.9 (reads as 1), i64r = 1 must keep both rows:';
-SELECT i64r FROM t WHERE i64r = 1 ORDER BY i64r;
+SELECT 'Int64 over STRICT REAL holding 1.9, i64r = 1 must stay local and fail the read:';
+SELECT i64r FROM t WHERE i64r = 1 ORDER BY i64r; -- { serverError INCORRECT_DATA }
 
 SELECT 'Float64 over STRICT INTEGER holding 2^53 + 1 (reads as 2^53), f64i = 9007199254740992. must keep the row:';
 SELECT f64i FROM t WHERE f64i = 9007199254740992. ORDER BY f64i;
@@ -55,10 +55,12 @@ SELECT f64 FROM t WHERE f64 > 0.5 ORDER BY f64;
 
 # The coercing pairs must not reach SQLite (no WHERE in the query sent to it), while the exact pairs
 # (Int64 over INTEGER, Float64 over REAL) must retain the transformed WHERE.
-${CLICKHOUSE_LOCAL} --send_logs_level=trace --query="
+# An error hint makes the client set send_logs_level = 'fatal' for the whole script, so the trace level is set in it.
+${CLICKHOUSE_LOCAL} --query="
+SET send_logs_level = 'trace';
 CREATE TABLE t (u8 UInt8, i64r Int64, f64i Float64, f32r Float32, i64 Int64, f64 Float64) ENGINE = SQLite('${DB_PATH}', 't');
 SELECT u8 FROM t WHERE u8 = 44 FORMAT Null;
-SELECT i64r FROM t WHERE i64r = 1 FORMAT Null;
+SELECT i64r FROM t WHERE i64r = 1 FORMAT Null; -- { serverError INCORRECT_DATA }
 SELECT f64i FROM t WHERE f64i = 9007199254740992. FORMAT Null;
 SELECT f32r FROM t WHERE f32r = 16777216. FORMAT Null;
 SELECT i64 FROM t WHERE i64 > 2 FORMAT Null;
