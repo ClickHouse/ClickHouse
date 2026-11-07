@@ -3383,6 +3383,8 @@ Note that regardless of the SQL security option, in every case it is still requi
 Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order to create a view with this option.
 </Note>
 
+The server-only option `query_log.enable_query_access_info_attribution` is disabled by default and cannot be changed by a query. It enables new access-info sharing and restricted marks for ordinary `DEFINER` and `NONE` view reads; it also controls some materialized-view paths. See the [query log server settings](/reference/settings/server-settings/settings/query#query_log) for its full scope and effect on `system.user_query_log` visibility.
+
 If `DEFINER`/`SQL SECURITY` aren't specified, the result depends on the [`ignore_empty_sql_security_in_create_view_query`](/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query) server setting.
 
 With its default value of `true`, the query is stored as written and the view gets an empty SQL security type. A normal view then runs with the permissions of the invoker, and for a materialized view with an explicitly specified target table, the access checks on that target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.

@@ -1,0 +1,64 @@
+-- This segment runs in a new client connection; keep the original test settings.
+SET log_queries = 1;
+SET log_queries_probability = 1;
+SET log_queries_min_type = 'QUERY_START';
+SET use_query_cache = 0;
+
+EXECUTE AS user_05400_mv_reader SELECT count() FROM mv_05400_definer
+SETTINGS log_comment = '05400_mv_definer_read';
+EXECUTE AS user_05400_mv_reader SELECT count() FROM mv_05400_none
+SETTINGS log_comment = '05400_mv_none_read';
+-- Read a real column so this assertion observes the legacy target's physical partition collection.
+EXECUTE AS user_05400_mv_reader SELECT sum(id) FROM mv_05402_legacy_read
+SETTINGS log_comment = '05402_empty_security_mv_read';
+SYSTEM FLUSH LOGS query_log;
+
+-- Every tested read returned a row; each operator event is marked hidden and
+-- the legacy target remains present in the dependency partitions.
+SELECT count() = 3,
+    countIf(query_starts = 1 AND hidden_starts = 1) = 3,
+    countIf(query_finishes = 1 AND hidden_finishes = 1) = 3,
+    countIf(legacy_target_partition = 1) = 1
+FROM
+(
+    SELECT log_comment,
+        countIf(type = 'QueryStart') AS query_starts,
+        countIf(type = 'QueryStart' AND query_access_info_is_hidden = 1) AS hidden_starts,
+        countIf(type = 'QueryFinish') AS query_finishes,
+        countIf(type = 'QueryFinish' AND query_access_info_is_hidden = 1) AS hidden_finishes,
+        countIf(log_comment = '05402_empty_security_mv_read'
+            AND type = 'QueryFinish'
+            AND arrayExists(partition -> startsWith(partition,
+                concat(currentDatabase(), '.t_05402_legacy_target.')), partitions)) AS legacy_target_partition
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+        AND initial_query_id = query_id
+        AND initial_user = 'user_05400_mv_reader'
+        AND query_start_time_microseconds >= (SELECT started_at FROM t_05400_run_marker)
+        AND type IN ('QueryStart', 'QueryFinish')
+        AND log_comment IN ('05400_mv_definer_read', '05400_mv_none_read', '05402_empty_security_mv_read')
+    GROUP BY log_comment
+);
+
+-- The reader cannot see any of the three marked reads or their private arrays.
+EXECUTE AS user_05400_mv_reader SELECT count() = 0,
+    countIf(notEmpty(databases) OR notEmpty(tables) OR notEmpty(columns) OR notEmpty(partitions)
+        OR notEmpty(projections) OR notEmpty(views) OR notEmpty(used_row_policies)) = 0,
+    countIf(initial_user = 'user_05400_mv_reader') = 0
+FROM system.user_query_log
+WHERE current_database = currentDatabase()
+    AND initial_query_id = query_id
+    AND initial_user = 'user_05400_mv_reader'
+    AND query_start_time_microseconds >= (SELECT started_at FROM t_05400_run_marker)
+    AND type IN ('QueryStart', 'QueryFinish')
+    AND log_comment IN ('05400_mv_definer_read', '05400_mv_none_read', '05402_empty_security_mv_read');
+
+DROP USER user_05400_mv_reader;
+DROP TABLE mv_05400_definer;
+DROP TABLE mv_05400_none;
+DROP TABLE mv_05402_legacy_read;
+DROP TABLE t_05400_definer_source;
+DROP TABLE t_05400_none_source;
+DROP TABLE t_05402_legacy_source;
+DROP TABLE t_05402_legacy_target;
+DROP TABLE t_05400_run_marker;

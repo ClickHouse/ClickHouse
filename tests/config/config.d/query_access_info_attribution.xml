@@ -1,0 +1,6 @@
+<clickhouse>
+    <query_log>
+        <!-- Existing stateless tests cover the opt-in ON behavior. Product default remains OFF. -->
+        <enable_query_access_info_attribution>1</enable_query_access_info_attribution>
+    </query_log>
+</clickhouse>

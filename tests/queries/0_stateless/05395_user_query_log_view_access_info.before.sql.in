@@ -1,0 +1,87 @@
+
+-- Query-log access metadata remains complete for operators. Own-log users only see initial
+-- rows with an explicit unhidden marker; marked DEFINER/NONE QueryFinish rows are omitted.
+SET log_queries = 1;
+SET log_queries_probability = 1;
+SET log_queries_min_type = 'QUERY_START';
+SET analyzer_inline_views = 0;
+SET optimize_use_projections = 1;
+SET optimize_aggregation_in_order = 0;
+SET optimize_read_in_order = 0;
+SET use_query_cache = 0;
+
+DROP USER IF EXISTS user_05395_sealed;
+DROP USER IF EXISTS user_05395_invoker;
+DROP VIEW IF EXISTS v_05395_definer;
+DROP VIEW IF EXISTS v_05395_none;
+DROP VIEW IF EXISTS v_05395_invoker;
+DROP TABLE IF EXISTS t_05395_invoker_expected_qai;
+DROP TABLE IF EXISTS t_05395_direct_expected_qai;
+DROP TABLE IF EXISTS t_05395_private;
+
+CREATE TABLE t_05395_private
+(
+    id UInt64,
+    name String,
+    PROJECTION pn (SELECT id, name ORDER BY name, id)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_05395_private VALUES (1, 'alpha'), (2, 'beta'), (3, 'alpha');
+
+CREATE VIEW v_05395_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
+SELECT id, name FROM t_05395_private WHERE id > 0;
+
+CREATE VIEW v_05395_none DEFINER = CURRENT_USER SQL SECURITY NONE AS
+SELECT id, name FROM t_05395_private WHERE id > 0;
+
+CREATE VIEW v_05395_invoker SQL SECURITY INVOKER AS
+SELECT id, name FROM t_05395_private;
+
+CREATE USER user_05395_sealed;
+GRANT SELECT ON v_05395_definer TO user_05395_sealed;
+GRANT SELECT ON v_05395_none TO user_05395_sealed;
+GRANT REMOTE ON *.* TO user_05395_sealed;
+GRANT CREATE TEMPORARY TABLE ON *.* TO user_05395_sealed;
+
+CREATE USER user_05395_invoker;
+GRANT SELECT ON v_05395_invoker TO user_05395_invoker;
+GRANT SELECT ON t_05395_private TO user_05395_invoker;
+
+-- Expose only the authorized control rows and their arrays, never operator query_log access.
+CREATE TABLE t_05395_invoker_expected_qai
+(
+    query_id String,
+    databases Array(String),
+    tables Array(String),
+    columns Array(String),
+    partitions Array(String),
+    projections Array(String),
+    views Array(String),
+    used_row_policies Array(String)
+)
+ENGINE = Memory;
+GRANT SELECT ON t_05395_invoker_expected_qai TO user_05395_invoker;
+
+-- Keep the direct-query snapshot separate; its arrays are visible only to the current operator.
+CREATE TABLE t_05395_direct_expected_qai
+(
+    query_id String,
+    databases Array(String),
+    tables Array(String),
+    columns Array(String),
+    partitions Array(String),
+    projections Array(String),
+    views Array(String),
+    used_row_policies Array(String)
+)
+ENGINE = Memory;
+
+-- This run marker gives the impersonated reader a fresh lower bound without granting query-log access.
+CREATE TABLE t_05395_run_marker (started_at DateTime64(6, 'UTC')) ENGINE = Memory;
+INSERT INTO t_05395_run_marker SELECT now64(6, 'UTC');
+GRANT SELECT ON t_05395_run_marker TO user_05395_sealed;
+GRANT SELECT ON t_05395_run_marker TO user_05395_invoker;
+
+-- This reader has only view grants; direct access to the private table remains denied.

@@ -10,6 +10,8 @@
 
 #include <Core/NamesAndTypes.h>
 
+#include <Interpreters/Context.h>
+
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -45,11 +47,12 @@ namespace ErrorCodes
 QueryNode::QueryNode(
     ContextMutablePtr context_, SettingsChanges settings_changes_, std::vector<String> default_settings_, NameToNameVector query_parameters_)
     : ITableExpressionNode(children_size)
-    , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
     , default_settings(std::move(default_settings_))
     , query_parameters(std::move(query_parameters_))
 {
+    setContext(std::move(context_));
+
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
     children[group_by_child_index] = std::make_shared<ListNode>();
@@ -62,6 +65,22 @@ QueryNode::QueryNode(
 QueryNode::QueryNode(ContextMutablePtr context_)
     : QueryNode(std::move(context_), {} /*settings_changes*/)
 {}
+
+void QueryNode::setContext(ContextMutablePtr context_)
+{
+    ContextMutablePtr query_context;
+    if (context_ && context_->hasQueryContext())
+    {
+        query_context = context_->getQueryContext();
+        if (query_context == context_)
+            query_context.reset();
+    }
+
+    /// Keep the old owner until the new context is installed: context_ may be a copy of the
+    /// current context and its canonical query context may otherwise lose its last owner here.
+    context = std::move(context_);
+    query_context_lifetime = std::move(query_context);
+}
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {

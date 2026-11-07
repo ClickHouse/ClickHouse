@@ -1342,6 +1342,10 @@
              without requiring access to the query log table. -->
         <!-- <enable_user_query_log>true</enable_user_query_log> -->
 
+        <!-- Collect query access details across SQL SECURITY DEFINER and NONE views. This can expose
+             details from the view's privileged query to operators in system.query_log. -->
+        <!-- <enable_query_access_info_attribution>false</enable_query_access_info_attribution> -->
+
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
     </query_log>

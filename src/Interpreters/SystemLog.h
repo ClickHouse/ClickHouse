@@ -97,6 +97,10 @@ ORDER BY event_time_microseconds;
 If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
 </Tip>
 
+The server option `query_log.enable_query_access_info_attribution` is disabled by default and cannot be changed by a query. See the [query log server settings](/reference/settings/server-settings/settings/query#query_log) for its view and materialized-view attribution scope. `system.user_query_log` continues to require an authenticated matching identity, an initial query, and a marker explicitly equal to `0`.
+
+These user-log filters do not apply to operator reads of `system.query_log`; rows available there remain governed by normal logging, sampling, retention, and access controls. If a per-user row policy exposes `system.query_log`, preserve its existing user-identity predicate and add `is_initial_query = 1 AND query_access_info_is_hidden = 0`, or use `system.user_query_log`.
+
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
 1.  If the query execution was successful, two rows with the `QueryStart` and `QueryFinish` types are created.

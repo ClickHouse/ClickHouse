@@ -1,0 +1,8 @@
+1	1
+1	1	1	1	1	1	1
+1
+1	1	1
+1	1
+victim can read own query
+default can read own query
+forged initial_user cannot read victim query
