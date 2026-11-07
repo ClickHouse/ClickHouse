@@ -5888,6 +5888,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                 if (!structure_hint.empty())
                 {
+                    inlineUnwrittenColumnsInStructureHint(structure_hint, insert_columns, insert_column_names, scope_context);
                     removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                     table_function_ptr->setStructureHint(structure_hint);
                 }
