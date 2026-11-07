@@ -1,0 +1,19 @@
+without a grant on n.a
+m_c []
+m_d []
+m_b []
+m_mi []
+m_al []
+with a grant on n.a of the MergeTree table only
+m_c [NULL,NULL]
+m_al []
+with a grant on n.a of the Alias only
+m_al []
+codes of a Quantized member through a Buffer, with n.a granted on the Buffer only
+000000000000000000000000
+with a grant on n.a of every table
+m_c [NULL,NULL]
+m_d [NULL,NULL]
+m_b [NULL,NULL]
+m_mi [NULL,NULL]
+m_al [NULL,NULL]
