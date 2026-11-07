@@ -81,8 +81,11 @@ public:
     {
         FileStatus status = FileStatus::OPEN;
         UInt64 inode{};
+        /// The inode of the directory entry: of the symlink itself for a symlink, else the same as `inode`.
+        UInt64 entry_inode{};
         std::optional<std::ifstream> reader = std::nullopt;
-        /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
+        /// The last attempt to read the file failed for a reason of the file itself (missing, not readable, read under
+        /// another name), so it is retried.
         bool open_failed = false;
     };
 
@@ -213,6 +216,10 @@ private:
 
     /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
     bool isTrackedByDirectoryEvents(const String & file_name) const;
+
+    /// A name that leads to another file and gets no event for it is re-keyed to that file, at offset 0: returns the inode
+    /// to read the name as (`file_ctx.inode` if it is not re-keyed), nullopt if that file is read under another name.
+    std::optional<UInt64> getInodeToRead(const String & file_name, const FileContext & file_ctx) const;
 
     void threadFunc();
 
