@@ -125,7 +125,11 @@ def check(build_dir, info):
         decrease, binary, name = max(decreases)
         lines.append(f"{binary} ({name}) decreased by {decrease / MIB:.2f} MiB, more than {MAX_DECREASE_MIB} MiB")
         if info.pr_number > 0:
-            allowed = ALLOW_DECREASE_LABEL in info.pr_labels
+            # A sync pull request in the private repository carries the labels of the upstream pull request it
+            # mirrors as `upstream_pr_labels`, not as its own labels.
+            allowed = ALLOW_DECREASE_LABEL in info.pr_labels or ALLOW_DECREASE_LABEL in (
+                info.get_kv_data("upstream_pr_labels") or []
+            )
             status = Result.Status.OK if allowed else Result.Status.FAIL
             lines.append(
                 f"Allowed by the `{ALLOW_DECREASE_LABEL}` label"

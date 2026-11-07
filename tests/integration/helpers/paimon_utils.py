@@ -474,7 +474,7 @@ def create_paimon_table(
             additional_settings=additional_settings,
             engine_name=engine_name,
         ),
-        settings={"allow_experimental_paimon_storage_engine": 1},
+        settings={"enable_paimon_storage_engine": 1},
     )
 
 

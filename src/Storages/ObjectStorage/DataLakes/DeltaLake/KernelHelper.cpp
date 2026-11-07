@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Common/FailPoint.h>
@@ -104,7 +105,7 @@ public:
 
         /// Check if user didn't mention any region.
         /// Same as in S3/Client.cpp (stripping len("https://s3.")).
-        if (url.endpoint.substr(11) == "amazonaws.com")
+        if (url.endpoint.size() > 11 && url.endpoint.substr(11) == "amazonaws.com")
             url.addRegionToURI(region);
 
         no_sign = auth_settings[DB::S3AuthSetting::no_sign_request];
@@ -450,7 +451,11 @@ private:
 class LocalKernelHelper final : public IKernelHelper
 {
 public:
-    explicit LocalKernelHelper(const std::string & path_) : table_location(getTableLocation(path_)), path(path_) {}
+    /// `resolved_path` is `path_` resolved the same way the local object storage resolves the keys of data files.
+    LocalKernelHelper(const std::string & path_, const std::string & resolved_path)
+        : table_location(getTableLocation(resolved_path)), path(path_), directory(resolved_path)
+    {
+    }
 
     const std::string & getTableLocation() const override { return table_location; }
 
@@ -470,16 +475,22 @@ public:
     /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
     void prepareForTableCreation() const override
     {
-        std::filesystem::create_directories(path);
+        std::filesystem::create_directories(directory);
     }
 
 private:
     const std::string table_location;
     const std::string path;
+    const std::string directory;
 
-    static std::string getTableLocation(const std::string & path)
+    /// The kernel accepts only an absolute `file://` URL. A relative path stays relative to the directory
+    /// the local object storage reads from (the current directory in `clickhouse-local`).
+    static std::string getTableLocation(const std::string & resolved_path)
     {
-        return "file://" + path + "/";
+        std::string absolute_path = std::filesystem::absolute(resolved_path).lexically_normal().string();
+        while (absolute_path.size() > 1 && absolute_path.ends_with('/'))
+            absolute_path.pop_back();
+        return "file://" + absolute_path + "/";
     }
 };
 }
@@ -519,7 +530,9 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::Local:
         {
             const auto * local_conf = dynamic_cast<const DB::StorageLocalConfiguration *>(configuration.get());
-            return std::make_shared<DeltaLake::LocalKernelHelper>(local_conf->getPathForRead().path);
+            const auto & path = local_conf->getPathForRead().path;
+            return std::make_shared<DeltaLake::LocalKernelHelper>(
+                path, DB::resolvePathRelativelyToBase(path, object_storage->getCommonKeyPrefix()));
         }
         default:
         {

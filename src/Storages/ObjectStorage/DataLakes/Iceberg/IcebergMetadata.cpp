@@ -150,12 +150,12 @@ extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
-extern const SettingsBool allow_experimental_expire_snapshots;
+extern const SettingsBool allow_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
 extern const SettingsSeconds lock_acquire_timeout;
 extern const SettingsSeconds iceberg_compaction_delay_bias;
 extern const SettingsSeconds iceberg_compaction_data_cleanup;
-extern const SettingsBool allow_experimental_cleanup_old_data_files_compaction;
+extern const SettingsBool enable_cleanup_old_data_files_compaction;
 extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
@@ -844,7 +844,8 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
             "iceberg_recent_metadata_file_by_last_updated_ms_field",
             "iceberg_metadata_async_prefetch_period_ms",
             "allow_experimental_iceberg_compaction",
-            "allow_experimental_cleanup_old_data_files_compaction",
+            "enable_cleanup_old_data_files_compaction",
+            "allow_experimental_cleanup_old_data_files_compaction", /// The alias of `enable_cleanup_old_data_files_compaction`.
             "iceberg_compaction_lock_lease_seconds",
             "iceberg_compaction_delay_bias",
             "iceberg_compaction_data_cleanup",
@@ -1013,12 +1014,12 @@ Pipe IcebergMetadata::executeCommand(
 
     if (command_name == "expire_snapshots")
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_expire_snapshots].value)
+        if (!context->getSettingsRef()[Setting::allow_expire_snapshots].value)
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Iceberg expire_snapshots is experimental. "
-                "To allow its usage, enable setting allow_experimental_expire_snapshots");
+                "To allow its usage, enable setting allow_expire_snapshots");
         }
 
         checkTableRootIsQueriedPath("expire_snapshots");
@@ -1098,7 +1099,8 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
+    /// Other clients of a catalog resolve the location without this table's storage configuration.
+    if (catalog || local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path = configuration_ptr->getMetadataLocationURI();
     else if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
@@ -1587,6 +1589,73 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
     return true;
 }
 
+namespace
+{
+
+/// Counts the rows of `data_files` removed by deletion vectors and by position delete files scoped to one data file,
+/// matched as `IcebergIterator::next` matches them; std::nullopt if such a delete file has a negative `record_count`.
+std::optional<UInt64> countDeletedRows(
+    const std::vector<ProcessedManifestFileEntryPtr> & data_files,
+    const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
+    LoggerPtr log)
+{
+    /// Keyed by the data file both bounds name, so each data file needs one lookup instead of a pass over the deletes.
+    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
+    size_t skipped_delete_files = 0;
+    for (const auto & position_delete : position_deletes)
+    {
+        const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+        if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
+            deletes_by_data_file[*lower].push_back(position_delete);
+        else
+            ++skipped_delete_files;
+    }
+    if (skipped_delete_files)
+        LOG_DEBUG(
+            log, "The row estimate does not subtract {} position delete files that cover several data files", skipped_delete_files);
+
+    UInt64 deleted_rows = 0;
+    if (deletes_by_data_file.empty())
+        return deleted_rows;
+
+    /// `defineDeletesSpan` needs them in the order of `operator<=>`.
+    for (auto & [_, deletes] : deletes_by_data_file)
+        std::sort(deletes.begin(), deletes.end());
+
+    for (const auto & data_file : data_files)
+    {
+        const auto it = deletes_by_data_file.find(data_file->parsed_entry->file_path_key);
+        if (it == deletes_by_data_file.end())
+            continue;
+
+        UInt64 file_scoped_rows = 0;
+        std::optional<UInt64> deletion_vector_rows;
+        for (const auto & position_delete : defineDeletesSpan(data_file, it->second, /* is_equality_delete */ false, log))
+        {
+            const auto & entry = *position_delete->parsed_entry;
+            if (entry.record_count < 0)
+            {
+                LOG_WARNING(
+                    log,
+                    "Position delete file '{}' has a negative record count {}, so the read gets no row estimate",
+                    entry.file_path_key.serialize(),
+                    entry.record_count);
+                return std::nullopt;
+            }
+            /// A data file has at most one deletion vector, which holds all its deleted positions, so it is not summed.
+            if (entry.isDeletionVector())
+                deletion_vector_rows = entry.record_count;
+            else
+                file_scoped_rows += entry.record_count;
+        }
+        /// A deletion vector replaces the position delete files of its data file (`IcebergDataObjectInfo::addDeletionVector`).
+        deleted_rows += std::min(deletion_vector_rows.value_or(file_scoped_rows), static_cast<UInt64>(data_file->parsed_entry->record_count));
+    }
+    return deleted_rows;
+}
+
+}
+
 std::optional<DataLakeReadEstimate>
 IcebergMetadata::estimateRead(
     StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
@@ -1628,6 +1697,10 @@ IcebergMetadata::estimateRead(
             context,
             /* require_ready_sets */ true);
 
+    /// Matched after the walk, since delete manifests can follow data manifests.
+    std::vector<ProcessedManifestFileEntryPtr> remaining_data_files;
+    std::vector<ProcessedManifestFileEntryPtr> position_deletes;
+
     std::vector<ManifestFileCacheKey> manifests_to_decode;
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
@@ -1651,8 +1724,9 @@ IcebergMetadata::estimateRead(
         const auto files_handle = getManifestFileEntriesHandle(
             fetch->get(), persistent_components, context, manifest_list_entry, table_state_snapshot->schema_id);
 
-        if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
-            || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+        const auto & manifest_position_deletes = files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
+        position_deletes.insert(position_deletes.end(), manifest_position_deletes.begin(), manifest_position_deletes.end());
+        if (!manifest_position_deletes.empty() || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
             estimate.has_delete_files = true;
 
         /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
@@ -1694,8 +1768,14 @@ IcebergMetadata::estimateRead(
                 return estimate;
             }
             column_statistics.addFile(*data_file, manifest_list_entry.manifest_file_path);
+            remaining_data_files.push_back(data_file);
         }
     }
+
+    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, log);
+    if (!deleted_rows)
+        return estimate;
+    column_statistics.subtractDeletedRows(*deleted_rows);
     column_statistics.finalize(estimate);
     return estimate;
 }

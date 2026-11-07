@@ -1384,7 +1384,7 @@ Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled
 
 #### PARTITION BY {#partition-by}
 
-`PARTITION BY` — The [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — The [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning is primarily a data management technique, not a query optimization tool: to speed up queries, rely on the ORDER BY expression first. You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
 For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/reference/data-types/date). The partition names here have the `"YYYYMM"` format.
 
@@ -2745,7 +2745,7 @@ increasing the efficiency of `SELECT` queries as a consequence.
 All parameters of this table engine, with the exception of the `Sign` parameter,
 have the same meaning as in [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree).
 
-- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/reference/data-types/int-uint).
+- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/reference/data-types/int-uint). It can also be a subcolumn of another column, for example an element of a `Tuple` or a typed path of `JSON`: `CollapsingMergeTree(meta.sign)`.
 
 ## Creating a table {#creating-a-table}
 
@@ -3123,7 +3123,7 @@ Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY K
 
 ### `ver` {#ver}
 
-`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
+`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter. It can also be a subcolumn of another column, for example an element of a `Tuple` or a typed path of `JSON`: `ReplacingMergeTree(meta.ver)`.
 
 When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
@@ -3177,7 +3177,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
-Column data type — `UInt8`.
+Column data type — `UInt8`. Like `ver`, it can be a subcolumn of another column.
 
 <Note>
 `is_deleted` can only be enabled when `ver` is used.
