@@ -532,6 +532,30 @@ public:
                 this->setFlag(place);
     }
 
+    void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        const UInt8 * null_map = column->getNullMapData().data();
+
+        /// One call for all rows, the nested function skips the NULL ones itself, instead of a virtual call per row.
+        this->nested_function->addBatchConsecutivePlacesNotNull(
+            row_begin, row_end, this->nestedPlace(place), place_stride, &nested_column, null_map, arena);
+
+        if constexpr (result_is_nullable)
+        {
+            for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+                if (!null_map[i])
+                    this->setFlag(place);
+        }
+    }
+
     void addManyDefaults(
         AggregateDataPtr __restrict /*place*/,
         const IColumn ** /*columns*/,
