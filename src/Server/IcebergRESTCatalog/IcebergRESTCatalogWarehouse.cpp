@@ -1,16 +1,37 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
+
+#if USE_AWS_S3
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
+#include <IO/S3/URI.h>
+#endif
 
 #include <fmt/format.h>
 
 namespace DB
 {
 
+#if USE_AWS_S3
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+}
+#endif
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -32,13 +53,44 @@ S3Location parseS3Location(const String & location)
     return S3Location{.bucket = location.substr(S3_SCHEME.size(), slash - S3_SCHEME.size()), .key = location.substr(slash + 1)};
 }
 
+/// S3 client of the warehouse. It accesses the bucket with the warehouse credential.
+/// The endpoint comes from `url_scheme_mappers` in the server config, AWS by default.
+ObjectStoragePtr createObjectStorage([[maybe_unused]] ContextPtr context, [[maybe_unused]] const IcebergRESTCatalogWarehouseDefinition & definition)
+{
+#if USE_AWS_S3
+    const auto & credential = definition.credential;
+    S3::URI url(definition.base_location);
+
+    auto s3_settings = std::make_unique<S3Settings>();
+    s3_settings->request_settings.updateFromSettings(context->getSettingsRef(), /*if_changed*/ false);
+    /// The server signs the STS `AssumeRole` call with its own identity, then uses the assumed role for S3.
+    s3_settings->auth_settings[S3AuthSetting::role_arn] = credential.role_arn;
+    s3_settings->auth_settings[S3AuthSetting::external_id] = credential.external_id;
+    s3_settings->auth_settings[S3AuthSetting::role_session_name] = credential.role_session_name;
+
+    auto client = getClient(url, *s3_settings, context, /*for_disk_s3*/ false);
+    return std::make_shared<S3ObjectStorage>(
+        std::move(client),
+        std::move(s3_settings),
+        url,
+        S3Capabilities{},
+        /*key_generator*/ nullptr,
+        /*disk_name*/ "IcebergRESTCatalog",
+        /*for_disk_s3*/ false,
+        /*credentials_refresh_callback*/ S3ObjectStorage::S3CredentialsRefreshCallback{},
+        /*client_restricts_server_credentials*/ context->shouldRestrictUserQueryS3Credentials());
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The Iceberg REST catalog needs S3 support, but this build has none");
+#endif
+}
+
 }
 
 IcebergRESTCatalogWarehouse::IcebergRESTCatalogWarehouse(
     String name_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_, ObjectStoragePtr object_storage_)
     : name(std::move(name_)), base_location(std::move(base_location_)), object_storage(std::move(object_storage_)), store(std::move(store_))
 {
-    /// The server has credentials for one bucket only, so the default table location must be in it.
+    /// The warehouse has one S3 client, bound to one bucket. Every location must be in that bucket.
     validateLocation(base_location);
 }
 
@@ -69,7 +121,7 @@ String IcebergRESTCatalogWarehouse::objectKey(const String & location) const
     return std::move(parsed.key);
 }
 
-bool IcebergRESTCatalogWarehouse::createNamespace(const IcebergNamespaceName & ns, const std::map<String, String> & properties) const
+IcebergRESTCatalogWarehouse::CreateNamespaceResult IcebergRESTCatalogWarehouse::createNamespace(const IcebergNamespaceName & ns, const std::map<String, String> & properties) const
 {
     return store->createNamespace(ns, properties);
 }
@@ -132,6 +184,16 @@ String stripTrailingSlashes(String location)
     while (location.ends_with('/'))
         location.pop_back();
     return location;
+}
+
+IcebergRESTCatalogWarehousePtr createIcebergRESTCatalogWarehouse(
+    ContextPtr context, const String & name, const IcebergRESTCatalogWarehouseDefinition & definition, const IcebergRESTCatalogKeeperConfig & keeper_config)
+{
+    auto store = std::make_shared<KeeperIcebergRESTCatalogStore>(
+        [context, keeper_config] { return keeper_config.getZooKeeper(*context); },
+        keeper_config.warehousePath(name) + "/" + toString(definition.uuid));
+    auto object_storage = createObjectStorage(context, definition);
+    return std::make_shared<const IcebergRESTCatalogWarehouse>(name, definition.base_location, std::move(store), std::move(object_storage));
 }
 
 }

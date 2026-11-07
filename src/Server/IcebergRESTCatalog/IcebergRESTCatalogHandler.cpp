@@ -162,7 +162,7 @@ Poco::JSON::Object tableIdentifierToJSON(const IcebergNamespaceName & ns, const 
 
 }
 
-IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_)
+IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_)
     : log(getLogger("IcebergRESTCatalogHandler"))
     , server(server_)
     , warehouses(std::move(warehouses_))
@@ -584,14 +584,24 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
 
     validateNamespaceLocation(warehouse, properties);
 
-    if (!warehouse.createNamespace(name, properties))
+    switch (warehouse.createNamespace(name, properties))
     {
-        sendError(
-            response,
-            Poco::Net::HTTPResponse::HTTP_CONFLICT,
-            "AlreadyExistsException",
-            fmt::format("Namespace already exists: {}", joinNamespace(name)));
-        return;
+        case IcebergRESTCatalogWarehouse::CreateNamespaceResult::Created:
+            break;
+        case IcebergRESTCatalogWarehouse::CreateNamespaceResult::NamespaceExists:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "AlreadyExistsException",
+                fmt::format("Namespace already exists: {}", joinNamespace(name)));
+            return;
+        case IcebergRESTCatalogWarehouse::CreateNamespaceResult::ParentMissing:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "NotFoundException",
+                fmt::format("Parent of namespace {} does not exist", joinNamespace(name)));
+            return;
     }
     LOG_INFO(log, "Created namespace {}", joinNamespace(name));
 

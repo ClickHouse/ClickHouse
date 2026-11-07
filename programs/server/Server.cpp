@@ -4830,7 +4830,7 @@ void Server::createServers(
             {
                 try
                 {
-                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this);
                 }
                 catch (...)
                 {

@@ -2,9 +2,11 @@
 
 #include <base/types.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <Interpreters/Context_fwd.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogKeeperConfig.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouseDefinition.h>
 #include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 
-#include <map>
 #include <memory>
 
 namespace DB
@@ -33,7 +35,8 @@ public:
     String objectKey(const String & location) const;
 
     /// Catalog state. See `KeeperIcebergRESTCatalogStore` for the contracts.
-    bool createNamespace(const IcebergNamespaceName & ns, const std::map<String, String> & properties) const;
+    using CreateNamespaceResult = KeeperIcebergRESTCatalogStore::CreateNamespaceResult;
+    CreateNamespaceResult createNamespace(const IcebergNamespaceName & ns, const std::map<String, String> & properties) const;
     bool namespaceExists(const IcebergNamespaceName & ns) const;
     std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & ns) const;
     std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
@@ -60,30 +63,8 @@ using IcebergRESTCatalogWarehousePtr = std::shared_ptr<const IcebergRESTCatalogW
 
 String stripTrailingSlashes(String location);
 
-/// Experimental scaffolding. Currently, the server config holds the warehouse definition.
-/// It is only read on startup.
-///
-/// TODO: Remove warehouses from config, store warehouses in Keeper, and manage them with SQL.
-/// Have `tryGet` search in Keeper and remove the const map of warehouses.
-class IcebergRESTCatalogWarehouses
-{
-public:
-    using Map = std::map<String, IcebergRESTCatalogWarehousePtr>;
-
-    explicit IcebergRESTCatalogWarehouses(Map warehouses_) : warehouses(std::move(warehouses_)) {}
-
-    IcebergRESTCatalogWarehousePtr tryGet(const String & name) const
-    {
-        auto it = warehouses.find(name);
-        if (it == warehouses.end())
-            return nullptr;
-        return it->second;
-    }
-
-private:
-    const Map warehouses;
-};
-
-using IcebergRESTCatalogWarehousesPtr = std::shared_ptr<const IcebergRESTCatalogWarehouses>;
+/// Builds the Keeper store and the S3 client of the warehouse.
+IcebergRESTCatalogWarehousePtr createIcebergRESTCatalogWarehouse(
+    ContextPtr context, const String & name, const IcebergRESTCatalogWarehouseDefinition & definition, const IcebergRESTCatalogKeeperConfig & keeper_config);
 
 }
