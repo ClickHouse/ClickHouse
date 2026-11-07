@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 79
+    version: int = 81
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -49,6 +49,7 @@ class RunnerConfig:
     # Runner defaults
     user: str = "ec2-user" if sys.platform == "darwin" else "ubuntu"
     runner_home: str = f"/Users/{user}/actions-runner" if sys.platform == "darwin" else f"/home/{user}/actions-runner"
+    log_file: str = f"/Users/{user}/runner-init.log"
     runner_org: str = "ClickHouse"
     runner_url: str = ""  # set in __post_init__
     max_total_errors: int = 5
@@ -356,6 +357,11 @@ class Runner:
             # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
             run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
+            # M2 Pro, M4 and M4 Pro test hosts
+            if self.ec2._instance_id in ("i-04af1537ae54658c2", "i-026bcc3b5264aa319", "i-007ee22c1c365d7ef"):
+                log("Test host: the GitHub runner is not started")
+                while True:
+                    time.sleep(3600)
         else:
             Runner.configure_linux()
 
@@ -583,7 +589,7 @@ timedatectl status | grep 'NTP service: active'
         def _retarget_macos_log_path(node):
             if isinstance(node, dict):
                 if node.get("file_path") == "/var/log/cloud-init-output.log":
-                    node["file_path"] = "/var/log/amazon/ec2/ec2-macos-init.log"
+                    node["file_path"] = config.log_file
                 for v in node.values():
                     _retarget_macos_log_path(v)
             elif isinstance(node, list):
@@ -1074,6 +1080,12 @@ if __name__ == "__main__":
                 sys.exit(1)
         EC2.upload_init_script()
         sys.exit(0)
+
+    if config.init_environment == Environment.MACOS:
+        # `ec2-macos-init` logs the user_data output only when the script exits
+        log_fd = os.open(config.log_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+        os.dup2(log_fd, 1)
+        os.dup2(log_fd, 2)
 
     try:
         ec2 = EC2()
