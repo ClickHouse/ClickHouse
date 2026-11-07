@@ -258,25 +258,6 @@ void MergeTreeReaderCompact::readData(
         /// `findColumnForOffsets`) are refilled by `IMergeTreeReader::fillMissingColumns`; any
         /// other column has to be read in full.
         deserialize_settings.partially_read_columns_are_refilled = partially_read_columns.contains(name);
-        deserialize_settings.get_avg_value_size_hint_callback
-            = [&](const ISerialization::SubstreamPath & substream_path) -> double
-        {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (!stream_name)
-                return 0.0;
-
-            return avg_value_size_hints[*stream_name];
-        };
-
-        deserialize_settings.update_avg_value_size_hint_callback
-            = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
-        {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (!stream_name)
-                return;
-
-            IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[*stream_name]);
-        };
 
         if (has_substream_marks)
         {
