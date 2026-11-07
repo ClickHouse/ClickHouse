@@ -5455,6 +5455,10 @@ Formatter '%e' in function 'formatDateTime' prints single-digit days with a lead
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0, \
         {"24.12", true, false, "New setting"}) \
+    DECLARE(Bool, case_with_expression_null_equals_null, true, R"(
+Controls whether `NULL` matches `NULL` in a simple `CASE expr WHEN value` expression. If enabled, two `NULL` values match. If disabled, the comparison evaluates to unknown and the `WHEN` branch is not selected, as required by the SQL standard.
+)", 0, \
+        {"26.11", true, true, "New setting to select SQL-standard `NULL` comparison semantics for simple `CASE` expressions."}) \
     DECLARE(Bool, array_count_legacy_uint32_result, false, R"(
 If enabled, function `arrayCount` returns `UInt32` as before version 26.10, instead of `UInt64`. The `UInt32` result silently wraps around for arrays with more than `4294967295` matching elements. The setting also restores the pre-26.10 constness of the result: a predicate folding to a constant false then produces a constant result column even for a non-constant array.
 
