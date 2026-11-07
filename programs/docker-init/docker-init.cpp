@@ -19,7 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -1164,9 +1164,7 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
         }
         /// The whole file without the trailing newlines, like `$(cat file)` in entrypoint.sh: reading only the first line
         /// would make an empty password of a secret that starts with an empty line.
-        std::ostringstream content;
-        content << pf.rdbuf();
-        clickhouse_password = content.str();
+        clickhouse_password.assign(std::istreambuf_iterator<char>(pf), std::istreambuf_iterator<char>());
         while (!clickhouse_password.empty() && clickhouse_password.back() == '\n')
             clickhouse_password.pop_back();
         if (pf.bad())
