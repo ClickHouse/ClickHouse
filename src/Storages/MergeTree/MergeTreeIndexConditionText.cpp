@@ -2025,7 +2025,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(
             std::make_shared<TextSearchQuery>(
                 function_name, TextSearchMode::Any, pattern_read_mode,
-                VectorWithMemoryTracking<String>(), std::move(patterns)));
+                VectorWithMemoryTracking<String>(), std::move(patterns), VectorWithMemoryTracking<String>(), automaton_budget.get()));
         return true;
     }
     if (function_name == "has")
