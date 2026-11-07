@@ -761,3 +761,20 @@ def test_promql_extended_support():
         for key, count in sorted(record["breakdown"].items(), key=lambda kv: -kv[1])[:20]:
             print(f"  [{count:3d}] {key}")
     print()
+
+
+def test_promqltest_label_escapes_round_trip(tmp_path):
+    path = tmp_path / "label_escapes.test"
+    labels = r"""{src="a\\b", end="c\\", q="x'y", nl="l1\nl2"}"""
+    path.write_text(f"load 1m\n  m{labels} 1\n\neval instant at 0m m\n  m{labels} 1\n")
+    [scenario] = promqltest.parse_test_file(path)
+    load, case = scenario.commands
+    table = "promqltest_label_escapes"
+    node.query(f"CREATE TABLE {table} ENGINE=TimeSeries")
+    try:
+        values = promqltest.series_insert_values(load.interval_ns, load.series[0])
+        _run_promql_ddl(f"INSERT INTO {table} (metric_name, tags, samples) VALUES {values}")
+        tsv, err = _run_promql_sql(promqltest.eval_sql(table, case))
+        assert promqltest.compare_eval(case, tsv, err) == ("passed", "")
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
