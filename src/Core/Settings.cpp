@@ -2309,6 +2309,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.4", false, true, "New setting to use statistics for part pruning during query execution."}) \
+    DECLARE(UInt64, min_marks_per_part_to_load_statistics, 64, R"(
+The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
+
+Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
+
+Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
+
+Possible values:
+
+- 0 — Load statistics regardless of the size of the read.
+- Positive integer — The number of marks per data part.
+)", 0, \
+        {"26.11", 0, 64, "New setting to skip loading statistics when the primary key leaves only a small read."}) \
     DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
 Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
 
@@ -8528,7 +8541,7 @@ The version of `visibleWidth` behavior. 0 - only count the number of code points
 )", 0, \
         {"24.1", 0, 1, "We changed the default behavior of `visibleWidth` to be more precise"}) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](/reference/functions/regular-functions/conditional-functions#if), [multiIf](/reference/functions/regular-functions/conditional-functions#multiIf), [and](/reference/functions/regular-functions/logical-functions#and), and [or](/reference/functions/regular-functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](/reference/functions/regular-functions/conditional-functions#if), [multiIf](/reference/functions/regular-functions/conditional-functions#multiIf), [and](/reference/functions/regular-functions/logical-functions#and), [or](/reference/functions/regular-functions/logical-functions#or), [coalesce](/reference/functions/regular-functions/functions-for-nulls#coalesce), and [ifNull](/reference/functions/regular-functions/functions-for-nulls#ifNull) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -10835,10 +10848,6 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 )", EXPERIMENTAL, allow_experimental_unique_key, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_unique_key`."}, \
         {"26.5", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}) \
-    DECLARE(Bool, enable_alp_codec, false, R"(
-Enables the `ALP` compression codec.
-)", BETA, \
-        {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, enable_pco_codec, false, R"(
 Enables the `PCO` compression codec.
 )", BETA, \
@@ -11691,6 +11700,9 @@ Enable table function `eval`.
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false, \
         {"26.8", false, false, "Obsolete setting, renamed to `use_indexes_refiner_in_read_pools`."}) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
+    MAKE_OBSOLETE(M, Bool, enable_alp_codec, true, \
+        {"26.11", false, true, "Obsolete setting: the `ALP` compression codec is generally available and no longer needs to be enabled."}, \
+        {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
     MAKE_OBSOLETE(M, UInt64, s3_max_connections, 1024) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
