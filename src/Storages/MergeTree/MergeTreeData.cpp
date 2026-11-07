@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -7239,6 +7240,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
     if (new_storage_policy != getStoragePolicy())
     {
+        /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
             throw Exception(
