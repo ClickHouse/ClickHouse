@@ -201,13 +201,13 @@ static bool conversionKeepsDefault(const DataTypePtr & from, const DataTypePtr &
     return castColumn({from->createColumnConstWithDefaultValue(1), from, ""}, to)->isDefaultAt(0);
 }
 
-/// Whether the type default, which `add_default` inserts, is the column default that `firstNonDefault` skips; not so for `Enum` and `Date32`.
+/// Whether the type default is the column default that `firstNonDefault` skips; not so for `Enum` and `Date32`.
 static bool typeDefaultIsColumnDefault(const DataTypePtr & type)
 {
     return removeLowCardinality(type)->createColumnConstWithDefaultValue(1)->isDefaultAt(0);
 }
 
-/// Whether a join fills a not-matched row with the column default; not so for an `Enum` whose first element is not 0.
+/// Whether a join fills a not-matched row with the column default; not so for an `Enum` whose smallest value is not 0.
 static bool fillIsColumnDefault(const DataTypePtr & type)
 {
     const auto nested = removeLowCardinality(type);
@@ -267,8 +267,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             return arg;
         };
 
-        /// The key of a joined row is the merged key, so a default component under a non-default merged key
-        /// is a fill of a lower FULL JOIN, and it must stay the default after the conversion.
+        /// A default component under a non-default merged key is a lower FULL JOIN fill and must stay the default.
         auto cast_filled_component = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
         {
             const auto * component = nodes.at(0);
