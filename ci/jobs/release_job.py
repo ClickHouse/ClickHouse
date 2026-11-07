@@ -443,6 +443,7 @@ def main():
                 "docker/keeper/Dockerfile.distroless",
                 "docker/server/Dockerfile.alpine",
                 "docker/server/Dockerfile.distroless",
+                "docker/server/Dockerfile.scratch",
                 "docker/server/Dockerfile.ubuntu",
             ]
         )
@@ -552,14 +553,24 @@ def main():
                 version_minor = ".".join(parts[:3])
                 version_major = ".".join(parts[:2])
 
+                # Older release tags may not ship every Dockerfile (e.g.
+                # distroless and scratch were added later); skip variants whose
+                # Dockerfile is absent at this tag, matching the legacy workflow.
+                present_configs = []
                 for variant, dockerfile, context in build_configs:
-                    # Older release tags may not ship every Dockerfile (e.g.
-                    # distroless was added later); skip variants whose Dockerfile
-                    # is absent at this tag, matching the legacy workflow.
-                    if not os.path.isfile(dockerfile):
+                    if os.path.isfile(dockerfile):
+                        present_configs.append((variant, dockerfile, context))
+                    else:
                         print(f"Skipping {variant}: {dockerfile} not found at this tag")
-                        continue
-                    version_suffix = "" if variant == "ubuntu" else f"-{variant}"
+                assert present_configs, f"No Dockerfiles for {image} at this tag"
+                # The first present variant is published without a tag suffix:
+                # `scratch` for the server since it exists, `ubuntu` before that.
+                default_variant = present_configs[0][0]
+
+                for variant, dockerfile, context in present_configs:
+                    version_suffix = (
+                        "" if variant == default_variant else f"-{variant}"
+                    )
                     label_version = f"{version_string}{version_suffix}"
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
@@ -664,7 +675,13 @@ def main():
             name="Docker clickhouse/clickhouse-server Building",
             command=_make_docker_build(
                 image="clickhouse/clickhouse-server",
+                # The first one is the default variant, see `_make_docker_build`.
                 build_configs=[
+                    (
+                        "scratch",
+                        "docker/server/Dockerfile.scratch",
+                        "docker/server",
+                    ),
                     (
                         "ubuntu",
                         "docker/server/Dockerfile.ubuntu",
@@ -689,6 +706,7 @@ def main():
             name="Docker clickhouse/clickhouse-keeper Building",
             command=_make_docker_build(
                 image="clickhouse/clickhouse-keeper",
+                # The first one is the default variant, see `_make_docker_build`.
                 build_configs=[
                     (
                         "ubuntu",
