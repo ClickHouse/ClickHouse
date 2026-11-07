@@ -21,7 +21,8 @@ class RemoteHostFilter
  * If primary_hosts, regexp_hosts and s3_buckets are empty all urls are allowed.
  */
 public:
-    /// Returns whether the URL is allowed. With throw_on_error, throws UNACCEPTABLE_URL instead of returning false.
+    /// Returns whether the URL is allowed. With throw_on_error, throws instead of returning false:
+    /// BAD_ARGUMENTS for a host that contains a NUL, UNACCEPTABLE_URL for a host that is not allowed.
     bool checkURL(const Poco::URI & uri, bool throw_on_error = true) const;
 
     bool isBucketAllowed(const std::string & endpoint_host, UInt16 endpoint_port, const std::string & bucket) const;
