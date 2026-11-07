@@ -2,6 +2,8 @@
 
 #include <Analyzer/FunctionNode.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -21,7 +23,10 @@ namespace DB
   * otherwise it becomes a lambda function that combines the elements.
   *
   * The arguments of `einsum` after the lambda are optional: each of them must be an array used in the expression.
+  *
+  * `is_scoped_function` tells if a name of a function is bound to a lambda function in the scope of the query,
+  * like `WITH (x, y) -> x + y AS multiply`: then a call of `multiply` in the expression is not a product.
   */
-QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node);
+QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const std::function<bool(const String &)> & is_scoped_function);
 
 }

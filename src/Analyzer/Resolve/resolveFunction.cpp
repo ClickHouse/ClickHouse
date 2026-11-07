@@ -1429,8 +1429,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !function_node_ptr->getArguments().getNodes().empty()
         && function_node_ptr->getArguments().getNodes().front()->getNodeType() == QueryTreeNodeType::LAMBDA)
     {
-        node = rewriteEinsumLambda(*function_node_ptr);
-        return resolveFunction(node, scope, allow_niladic_functions);
+        auto is_scoped_function = [&](const String & name)
+        {
+            return tryResolveIdentifier({Identifier{name}, IdentifierLookupContext::FUNCTION}, scope).resolved_identifier != nullptr;
+        };
+        /// A lambda function bound to the name `einsum` in the query, like `WITH f -> ... AS einsum`, is called as usual.
+        if (!is_scoped_function(function_name))
+        {
+            node = rewriteEinsumLambda(*function_node_ptr, is_scoped_function);
+            return resolveFunction(node, scope, allow_niladic_functions);
+        }
     }
 
     /// Resolve function parameters

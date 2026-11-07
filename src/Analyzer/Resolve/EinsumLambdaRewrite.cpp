@@ -7,6 +7,8 @@
 #include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
 
+#include <functional>
+#include <set>
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
@@ -53,6 +55,22 @@ void collectIdentifierNames(const IQueryTreeNode & node, std::unordered_set<Stri
     for (const auto & child : node.getChildren())
         if (child)
             collectIdentifierNames(*child, names);
+}
+
+/// The aliases and the names of the parameters of lambda functions in the expression.
+void collectAliasNames(const IQueryTreeNode & node, std::unordered_set<String> & names)
+{
+    checkStackSize();
+
+    if (node.hasAlias())
+        names.insert(node.getAlias());
+    if (const auto * lambda = node.as<LambdaNode>())
+        for (const auto & name : lambda->getArguments().getNames())
+            names.insert(name);
+
+    for (const auto & child : node.getChildren())
+        if (child)
+            collectAliasNames(*child, names);
 }
 
 /// A name that is not in `used_names`, for a parameter of a lambda function that must not shadow anything.
@@ -113,28 +131,73 @@ QueryTreeNodePtr applySubscripts(QueryTreeNodePtr array, std::span<const QueryTr
     return array;
 }
 
-void flattenProduct(const QueryTreeNodePtr & node, QueryTreeNodes & factors)
+/// The aliases of a scope of the lambda function of einsum or of a lambda function inside it.
+/// An alias defined inside a nested lambda function is visible only there, and the parameters of a nested lambda function
+/// hide the aliases with the same names from the outer scopes.
+struct AliasScope
+{
+    std::unordered_map<String, const IQueryTreeNode *> aliases;
+    std::unordered_set<String> parameters;
+    const AliasScope * parent = nullptr;
+};
+
+/// Collects the aliases of the scope, without the nested lambda functions, which have their own scopes.
+void collectScopeAliases(const IQueryTreeNode & node, AliasScope & scope)
 {
     checkStackSize();
 
-    const auto * function = node->as<FunctionNode>();
-    if (function && function->getFunctionName() == "multiply" && function->getArguments().getNodes().size() == 2)
-    {
-        for (const auto & argument : function->getArguments().getNodes())
-            flattenProduct(argument, factors);
+    if (node.hasAlias())
+        scope.aliases.emplace(node.getAlias(), &node);
+    if (node.getNodeType() == QueryTreeNodeType::LAMBDA)
         return;
+    for (const auto & child : node.getChildren())
+        if (child)
+            collectScopeAliases(*child, scope);
+}
+
+/// The scope of the expression of a nested lambda function inside `parent`.
+AliasScope makeLambdaScope(const LambdaNode & lambda, const AliasScope & parent)
+{
+    AliasScope scope;
+    scope.parent = &parent;
+    for (const auto & name : lambda.getArguments().getNames())
+        scope.parameters.insert(name);
+    collectScopeAliases(*lambda.getExpression(), scope);
+    return scope;
+}
+
+/// The expression of the alias visible in `scope` and the scope where it is defined, or nullptr if the name is not an alias.
+std::pair<const IQueryTreeNode *, const AliasScope *> findAlias(const String & name, const AliasScope & scope)
+{
+    for (const AliasScope * current = &scope; current; current = current->parent)
+    {
+        if (current->parameters.contains(name))
+            return {nullptr, nullptr};
+        if (auto it = current->aliases.find(name); it != current->aliases.end())
+            return {it->second, current};
     }
-    factors.push_back(node);
+    return {nullptr, nullptr};
 }
 
 class EinsumLambdaRewriter
 {
 public:
-    explicit EinsumLambdaRewriter(const LambdaNode & lambda_)
+    EinsumLambdaRewriter(const LambdaNode & lambda_, const std::function<bool(const String &)> & is_scoped_function)
         : lambda(lambda_), indices(lambda.getArguments().getNames())
     {
         if (indices.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lambda function of einsum must have at least one index as an argument");
+
+        /// The names of the functions in the expression can be bound to lambda functions in the query, like
+        /// `WITH (x, y) -> x + y AS multiply`, or to aliases in the expression. Then they are not the builtin functions.
+        std::unordered_set<String> body_aliases;
+        collectAliasNames(*lambda.getExpression(), body_aliases);
+        auto is_builtin = [&](const String & name) { return !body_aliases.contains(name) && !is_scoped_function(name); };
+
+        if (!is_builtin("arrayElement"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The lambda form of einsum is not supported when the name 'arrayElement' is bound to another function in the query");
+        multiply_is_builtin = is_builtin("multiply");
     }
 
     QueryTreeNodePtr rewrite(const QueryTreeNodes & extra_arguments)
@@ -238,6 +301,7 @@ public:
 private:
     const LambdaNode & lambda;
     const Names & indices;
+    bool multiply_is_builtin = true;
 
     std::vector<TensorElement> elements;
     /// The arrays of the elements, before the subscripts that are not indices are applied.
@@ -396,23 +460,24 @@ private:
         return std::make_shared<IdentifierNode>(Identifier{getValueName(elements.size() - 1)});
     }
 
-    /// The expressions with aliases in the body, so that a reference to an alias depends on the indices of its expression.
-    std::unordered_map<String, const IQueryTreeNode *> aliases;
-
-    void collectAliases(const IQueryTreeNode & node)
+    void flattenProduct(const QueryTreeNodePtr & node, QueryTreeNodes & factors) const
     {
         checkStackSize();
 
-        if (node.hasAlias())
-            aliases.emplace(node.getAlias(), &node);
-        for (const auto & child : node.getChildren())
-            if (child)
-                collectAliases(*child);
+        const auto * function = node->as<FunctionNode>();
+        if (multiply_is_builtin && function && function->getFunctionName() == "multiply" && function->getArguments().getNodes().size() == 2)
+        {
+            for (const auto & argument : function->getArguments().getNodes())
+                flattenProduct(argument, factors);
+            return;
+        }
+        factors.push_back(node);
     }
 
-    /// The indices of the elements in the expression, also through the references to aliases.
+    /// The indices of the elements in the expression, also through the references to aliases visible in `scope`.
     /// `visited_aliases` protects from the cycles of aliases.
-    void collectIndices(const IQueryTreeNode & node, std::vector<bool> & used, std::unordered_set<String> & visited_aliases) const
+    void collectIndices(
+        const IQueryTreeNode & node, const AliasScope & scope, std::vector<bool> & used, std::set<const IQueryTreeNode *> & visited_aliases) const
     {
         checkStackSize();
 
@@ -425,30 +490,43 @@ private:
 
         if (const auto * identifier = node.as<IdentifierNode>(); identifier && identifier->getIdentifier().isShort())
         {
-            const auto & name = identifier->getIdentifier().getFullName();
-            auto it = aliases.find(name);
-            if (it != aliases.end() && it->second != &node && visited_aliases.insert(name).second)
-                collectIndices(*it->second, used, visited_aliases);
+            auto [alias_expression, alias_scope] = findAlias(identifier->getIdentifier().getFullName(), scope);
+            if (alias_expression && alias_expression != &node && visited_aliases.insert(alias_expression).second)
+                collectIndices(*alias_expression, *alias_scope, used, visited_aliases);
+            return;
+        }
+
+        if (const auto * nested_lambda = node.as<LambdaNode>())
+        {
+            auto lambda_scope = makeLambdaScope(*nested_lambda, scope);
+            collectIndices(*nested_lambda->getExpression(), lambda_scope, used, visited_aliases);
             return;
         }
 
         for (const auto & child : node.getChildren())
             if (child)
-                collectIndices(*child, used, visited_aliases);
+                collectIndices(*child, scope, used, visited_aliases);
     }
 
     /// An index is a summation index if it is used in two or more factors of some product.
     void findSummationIndices(const QueryTreeNodePtr & body)
     {
         is_summation.assign(indices.size(), false);
-        aliases.clear();
-        collectAliases(*body);
-        findSummationIndicesImpl(body);
+        AliasScope scope;
+        collectScopeAliases(*body, scope);
+        findSummationIndicesImpl(body, scope);
     }
 
-    void findSummationIndicesImpl(const QueryTreeNodePtr & node)
+    void findSummationIndicesImpl(const QueryTreeNodePtr & node, const AliasScope & scope)
     {
         checkStackSize();
+
+        if (const auto * nested_lambda = node->as<LambdaNode>())
+        {
+            auto lambda_scope = makeLambdaScope(*nested_lambda, scope);
+            findSummationIndicesImpl(nested_lambda->getExpression(), lambda_scope);
+            return;
+        }
 
         QueryTreeNodes factors;
         flattenProduct(node, factors);
@@ -458,8 +536,8 @@ private:
             for (const auto & factor : factors)
             {
                 std::vector<bool> used(indices.size(), false);
-                std::unordered_set<String> visited_aliases;
-                collectIndices(*factor, used, visited_aliases);
+                std::set<const IQueryTreeNode *> visited_aliases;
+                collectIndices(*factor, scope, used, visited_aliases);
                 for (size_t index = 0; index < indices.size(); ++index)
                     number_of_factors[index] += used[index];
             }
@@ -468,25 +546,25 @@ private:
                     is_summation[index] = true;
 
             for (const auto & factor : factors)
-                findSummationIndicesImpl(factor);
+                findSummationIndicesImpl(factor, scope);
             return;
         }
 
         for (const auto & child : node->getChildren())
             if (child)
-                findSummationIndicesImpl(child);
+                findSummationIndicesImpl(child, scope);
     }
 };
 
 }
 
-QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node)
+QueryTreeNodePtr rewriteEinsumLambda(const FunctionNode & function_node, const std::function<bool(const String &)> & is_scoped_function)
 {
     const auto & arguments = function_node.getArguments().getNodes();
     const auto & lambda = arguments.at(0)->as<const LambdaNode &>();
 
     QueryTreeNodes extra_arguments(arguments.begin() + 1, arguments.end());
-    auto res = EinsumLambdaRewriter(lambda).rewrite(extra_arguments);
+    auto res = EinsumLambdaRewriter(lambda, is_scoped_function).rewrite(extra_arguments);
     res->setAlias(function_node.getAlias());
     res->setOriginalAST(function_node.getOriginalAST());
     return res;
