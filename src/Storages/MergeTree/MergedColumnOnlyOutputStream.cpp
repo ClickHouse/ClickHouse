@@ -19,7 +19,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
     PackedFilesWriter * external_packed_skip_indices_writer,
-    StreamBaseManifestPtr stream_base_manifest)
+    StreamBaseManifestPtr stream_base_manifest,
+    std::unordered_map<String, size_t> low_cardinality_raised_max_dictionary_size_by_column)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -48,6 +49,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
     writer_settings.stream_base_manifest = std::move(stream_base_manifest);
+    writer_settings.low_cardinality_raised_max_dictionary_size_by_column = std::move(low_cardinality_raised_max_dictionary_size_by_column);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),

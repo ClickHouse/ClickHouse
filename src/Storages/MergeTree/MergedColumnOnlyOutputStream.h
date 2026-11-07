@@ -27,7 +27,8 @@ public:
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
         class PackedFilesWriter * external_packed_skip_indices_writer,
-        StreamBaseManifestPtr stream_base_manifest);
+        StreamBaseManifestPtr stream_base_manifest,
+        std::unordered_map<String, size_t> low_cardinality_raised_max_dictionary_size_by_column = {});
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();

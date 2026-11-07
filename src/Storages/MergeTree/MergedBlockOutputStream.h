@@ -29,7 +29,8 @@ public:
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        StreamBaseManifestPtr stream_base_manifest);
+        StreamBaseManifestPtr stream_base_manifest,
+        std::unordered_map<String, size_t> low_cardinality_raised_max_dictionary_size_by_column = {});
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
