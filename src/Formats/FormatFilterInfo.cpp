@@ -196,6 +196,24 @@ std::optional<size_t> FormatFilterInfo::computeConditionHash(
 
 FormatFilterInfo::FormatFilterInfo() = default;
 
+FormatFilterInfo::SetHashes FormatFilterInfo::getOrComputeSetHashes(
+    const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute)
+{
+    std::shared_ptr<SetHashesEntry> entry;
+    {
+        std::lock_guard lock(set_hashes_mutex);
+        auto & slot = set_hashes[std::make_pair(set_column.get(), hash_kind)];
+        if (!slot)
+        {
+            slot = std::make_shared<SetHashesEntry>();
+            slot->set_column = set_column;
+        }
+        entry = slot;
+    }
+
+    std::call_once(entry->computed, [&] { entry->hashes = compute(); });
+    return entry->hashes;
+}
 
 bool FormatFilterInfo::hasFilter() const
 {

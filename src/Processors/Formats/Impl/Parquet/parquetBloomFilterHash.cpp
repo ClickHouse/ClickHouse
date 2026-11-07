@@ -5,6 +5,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <fmt/format.h>
+
 #if USE_PARQUET
 
 #include <parquet/metadata.h>
@@ -280,6 +282,16 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
     }
 
     return hashes;
+}
+
+String parquetHashKind(const parquet::ColumnDescriptor * parquet_column_descriptor)
+{
+    const auto & logical_type = parquet_column_descriptor->logical_type();
+    return fmt::format("{} {} {} {}",
+        static_cast<int>(parquet_column_descriptor->physical_type()),
+        static_cast<int>(parquet_column_descriptor->converted_type()),
+        parquet_column_descriptor->type_length(),
+        logical_type ? logical_type->ToString() : "");
 }
 
 }

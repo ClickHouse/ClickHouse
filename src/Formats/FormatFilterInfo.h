@@ -1,6 +1,8 @@
 #pragma once
 
 #include <exception>
+#include <functional>
+#include <map>
 #include <mutex>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
@@ -193,6 +195,24 @@ private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
     std::exception_ptr init_exception;
+
+public:
+    using SetHashes = std::shared_ptr<const std::vector<UInt64>>;
+
+    /// Hashes of an `IN` set column, computed by `compute` once per query. `hash_kind` must identify all their other inputs.
+    SetHashes getOrComputeSetHashes(const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute);
+
+private:
+    struct SetHashesEntry
+    {
+        /// Keeps the column alive, so that its address is not reused by another column.
+        ColumnPtr set_column;
+        std::once_flag computed;
+        SetHashes hashes;
+    };
+
+    std::mutex set_hashes_mutex;
+    std::map<std::pair<const IColumn *, String>, std::shared_ptr<SetHashesEntry>> set_hashes;
 
 public:
     /// True if the format may skip rows of the file.
