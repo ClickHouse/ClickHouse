@@ -9793,7 +9793,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto storage_settings_ptr = getSettings();
     const auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(query_context, false);
     const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-    const MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
+    const MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot, query_context);
 
     std::unordered_set<String> partitions;
     if (partition->as<ASTPartition>()->all)
@@ -10184,7 +10184,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
-    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
+    MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot, query_context);
     auto src_data_id = src_data.getStorageID();
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 

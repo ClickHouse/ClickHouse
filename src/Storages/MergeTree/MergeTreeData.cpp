@@ -44,6 +44,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -51,8 +52,12 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/TypeTree.h>
@@ -5906,6 +5911,141 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
+/// The time zone of a `DateTime` or `DateTime64` type, or an empty string for any other type.
+String getTimeZoneOfDateTime(const DataTypePtr & type)
+{
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(type.get()))
+        return date_time->getTimeZone().getTimeZone();
+    if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+        return date_time64->getTimeZone().getTimeZone();
+    return {};
+}
+
+/// Whether a type change moves a `DateTime` or `DateTime64` to another time zone, also inside `Nullable`, `LowCardinality`,
+/// `Array`, `Tuple`, `Map`, `Variant`, the typed paths of `JSON` and the arguments of an `AggregateFunction`: the stored values
+/// stay, but an expression such as `toHour(dt[1])` or `toHour(finalizeAggregation(dt))` gives other values.
+bool changesTimeZone(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const auto plain_from = removeLowCardinalityAndNullable(from);
+    const auto plain_to = removeLowCardinalityAndNullable(to);
+
+    const String from_time_zone = getTimeZoneOfDateTime(plain_from);
+    const String to_time_zone = getTimeZoneOfDateTime(plain_to);
+    if (!from_time_zone.empty() || !to_time_zone.empty())
+        return !from_time_zone.empty() && !to_time_zone.empty() && from_time_zone != to_time_zone;
+
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(plain_from.get()))
+        if (const auto * to_array = typeid_cast<const DataTypeArray *>(plain_to.get()))
+            return changesTimeZone(from_array->getNestedType(), to_array->getNestedType());
+
+    if (const auto * from_tuple = typeid_cast<const DataTypeTuple *>(plain_from.get()))
+    {
+        if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(plain_to.get()))
+        {
+            const auto & from_elements = from_tuple->getElements();
+            const auto & to_elements = to_tuple->getElements();
+            for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+                if (changesTimeZone(from_elements[i], to_elements[i]))
+                    return true;
+        }
+        return false;
+    }
+
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(plain_from.get()))
+        if (const auto * to_map = typeid_cast<const DataTypeMap *>(plain_to.get()))
+            return changesTimeZone(from_map->getKeyType(), to_map->getKeyType())
+                || changesTimeZone(from_map->getValueType(), to_map->getValueType());
+
+    /// The variants are sorted by name, and a time zone in the name of a `DateTime` does not move it past another type.
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(plain_from.get()))
+    {
+        if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(plain_to.get()))
+        {
+            const auto & from_variants = from_variant->getVariants();
+            const auto & to_variants = to_variant->getVariants();
+            for (size_t i = 0; i < std::min(from_variants.size(), to_variants.size()); ++i)
+                if (changesTimeZone(from_variants[i], to_variants[i]))
+                    return true;
+        }
+        return false;
+    }
+
+    if (const auto * from_object = typeid_cast<const DataTypeObject *>(plain_from.get()))
+    {
+        if (const auto * to_object = typeid_cast<const DataTypeObject *>(plain_to.get()))
+        {
+            const auto & to_paths = to_object->getTypedPaths();
+            for (const auto & [path, from_type] : from_object->getTypedPaths())
+                if (auto it = to_paths.find(path); it != to_paths.end() && changesTimeZone(from_type, it->second))
+                    return true;
+        }
+        return false;
+    }
+
+    if (const auto * from_function = typeid_cast<const DataTypeAggregateFunction *>(plain_from.get()))
+    {
+        if (const auto * to_function = typeid_cast<const DataTypeAggregateFunction *>(plain_to.get()))
+        {
+            const auto from_arguments = from_function->getArgumentsDataTypes();
+            const auto to_arguments = to_function->getArgumentsDataTypes();
+            for (size_t i = 0; i < std::min(from_arguments.size(), to_arguments.size()); ++i)
+                if (changesTimeZone(from_arguments[i], to_arguments[i]))
+                    return true;
+        }
+        return false;
+    }
+
+    return false;
+}
+
+/// Adds the identifiers of `ast` that refer to columns, not to the parameters of an enclosing lambda, such as `dt` of
+/// `arrayMap(dt -> toHour(dt), arr)`, nor to their elements, such as `dt.a`. The first part of the identifier tells it: a quoted
+/// `dt.a` is one part and names a column.
+void collectFreeIdentifiers(const ASTPtr & ast, const NameSet & lambda_parameters, NameSet & result)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (!lambda_parameters.contains(identifier->name_parts.front()))
+            result.insert(identifier->name());
+        return;
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
+        && function->arguments->children.size() == 2)
+    {
+        NameSet parameters = lambda_parameters;
+        if (const auto * parameter_list = function->arguments->children[0]->as<ASTFunction>(); parameter_list && parameter_list->arguments)
+            for (const auto & parameter : parameter_list->arguments->children)
+                if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                    parameters.insert(parameter_identifier->name());
+        collectFreeIdentifiers(function->arguments->children[1], parameters, result);
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        collectFreeIdentifiers(child, lambda_parameters, result);
+}
+
+/// The columns and subcolumns used inside the expressions of the partition and sorting keys, as written: constant folding drops
+/// the inputs of a function that depends only on the type of a column, such as `timezoneOf(dt)`, from the key DAG. A column used
+/// as a whole element of a key, such as `ORDER BY dt`, is not included: its order and partition ID do not depend on the time zone.
+NameSet getColumnsUsedInKeyExpressions(const StorageInMemoryMetadata & metadata)
+{
+    NameSet result;
+    for (const auto * key : {&metadata.getPartitionKey(), &metadata.getSortingKey()})
+    {
+        if (!key->expression_list_ast)
+            continue;
+        for (const auto & element : key->expression_list_ast->children)
+        {
+            if (element->as<ASTIdentifier>())
+                continue;
+            collectFreeIdentifiers(element, {}, result);
+        }
+    }
+    return result;
+}
+
 /// Comma-separated list of backquoted identifiers, for exception messages.
 String backQuotedList(const std::vector<String> & identifiers)
 {
@@ -6722,8 +6862,53 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
+    /// Changing only the time zone of a `DateTime` keeps the stored values and needs no mutation, so the checks of the type
+    /// change below do not see it, but an expression of the key over the column, such as `toHour(dt)`, gives other values
+    /// afterwards: the primary key and the partitions of the existing parts would no longer match the key, and pruning would
+    /// drop their rows. Checked for every column, the version column included. A `Replicated` database re-executes the ALTER
+    /// per replica, so only the initial execution judges it: a secondary refusing what the initiator committed would retry
+    /// its queue entry forever.
+    const NameSet columns_in_key_expressions = getColumnsUsedInKeyExpressions(old_metadata);
+    auto check_time_zone_of_key_column = [&](const AlterCommand & command)
+    {
+        if (command.type != AlterCommand::MODIFY_COLUMN || !command.data_type || isSecondaryDDLReplay(local_context)
+            || !old_metadata.getColumns().hasPhysical(command.column_name))
+            return;
+
+        const auto & old_type = old_metadata.getColumns().getPhysical(command.column_name).type;
+
+        /// A key expression can also use a subcolumn of the column, such as `toHour(t.dt)` of a `Tuple`.
+        bool changes_time_zone_in_key = false;
+        for (const auto & name : columns_in_key_expressions)
+        {
+            if (name == command.column_name)
+            {
+                changes_time_zone_in_key = changesTimeZone(old_type, command.data_type);
+            }
+            else if (name.starts_with(command.column_name + "."))
+            {
+                const auto subcolumn_name = std::string_view(name).substr(command.column_name.size() + 1);
+                const auto old_subcolumn_type = old_type->tryGetSubcolumnType(subcolumn_name);
+                const auto new_subcolumn_type = command.data_type->tryGetSubcolumnType(subcolumn_name);
+                changes_time_zone_in_key = old_subcolumn_type && new_subcolumn_type && changesTimeZone(old_subcolumn_type, new_subcolumn_type);
+            }
+            if (changes_time_zone_in_key)
+                break;
+        }
+
+        if (!changes_time_zone_in_key)
+            return;
+
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "ALTER of key column {} from type {} to type {} is forbidden, because the column is used in a key expression "
+            "whose values can depend on the time zone",
+            backQuoteIfNeed(command.column_name), old_type->getName(), command.data_type->getName());
+    };
+
     for (const AlterCommand & command : commands)
     {
+        check_time_zone_of_key_column(command);
+
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
@@ -13774,7 +13959,9 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
 }
 
-MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
+    IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot,
+    const ContextPtr & local_context) const
 {
     /// NOLINT(storage-cast): a reference, and the `StoragePtr` overload below resolves the proxy.
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
@@ -13830,13 +14017,34 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
+    /// The structures are compared ignoring the time zone of a `DateTime`, but an expression of a key over such a column, such
+    /// as `toHour(dt)`, gives other values in another time zone: the primary key and the partition of a source part would not
+    /// match the key of this table, and pruning would drop its rows. A column used in the key as is, such as `ORDER BY dt`, is
+    /// not an argument of an expression and keeps its order in any time zone, so it may differ, as `MODIFY COLUMN` allows.
+    /// A replica that replays a committed `MOVE PARTITION TO TABLE` of a `Replicated` database applies it as the initiator did,
+    /// which may be an older version that did not check it, as for `MODIFY COLUMN`.
+    if (!local_context || !isSecondaryDDLReplay(local_context))
+    {
+        for (const auto & name : getColumnsUsedInKeyExpressions(*my_snapshot))
+        {
+            auto my_column = my_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+            auto src_column = src_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+            if (my_column && src_column && changesTimeZone(src_column->type, my_column->type))
+                throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Column {} is used in a key expression, and its time zone differs between the tables: {} in the source table, "
+                    "{} in the destination table",
+                    backQuoteIfNeed(name), src_column->type->getName(), my_column->type->getName());
+        }
+    }
+
     return *src_data;
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
-    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
+    const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot,
+    const ContextPtr & local_context) const
 {
-    return checkStructureAndGetMergeTreeData(*resolveStorageProxyLoading(source_table), src_snapshot, my_snapshot);
+    return checkStructureAndGetMergeTreeData(*resolveStorageProxyLoading(source_table), src_snapshot, my_snapshot, local_context);
 }
 
 /// must_on_same_disk=false is used only when attach partition; Both for same disk and different disk.
