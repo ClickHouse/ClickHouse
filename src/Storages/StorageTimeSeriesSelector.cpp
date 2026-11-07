@@ -519,11 +519,13 @@ namespace
             subquery_select->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(time_range_conditions)));
         }
 
-        /// LEFT JOIN (<subquery>) AS time_ranges_subquery USING (id)
+        /// LEFT ANY JOIN (<subquery>) AS time_ranges_subquery USING (id)
+        /// The time ranges table has a row for an identifier in each part written before the parts are merged,
+        /// so with ALL a time series would be repeated once per such part.
         {
             auto table_join = make_intrusive<ASTTableJoin>();
             table_join->kind = JoinKind::Left;
-            table_join->strictness = JoinStrictness::All;
+            table_join->strictness = JoinStrictness::Any;
             table_join->using_expression_list = make_intrusive<ASTExpressionList>();
             table_join->using_expression_list->children.push_back(id->clone());
             table_join->children.push_back(table_join->using_expression_list);
@@ -1171,6 +1173,8 @@ void StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(Context & context
     /// and reading out of order would sort both tables before the first row of the result.
     context.setSetting("join_algorithm", String{"full_sorting_merge"});
     context.setSetting("optimize_read_in_order", true);
+    /// The legacy setting turns `LEFT ANY JOIN` into `RIGHT_ANY`, which the merge join cannot run.
+    context.setSetting("any_join_distinct_right_table_keys", false);
 }
 
 
