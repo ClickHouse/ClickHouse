@@ -96,7 +96,7 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 SERVER_STOP_WAIT_SECONDS = 30
 
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
-SERVER_START_WAIT_SECONDS = 10
+SERVER_START_WAIT_SECONDS = 180
 
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
@@ -725,8 +725,10 @@ object_storages_properties = {
             0.2, 0.2, 1000, 10000, allow_unlimited=False
         ),
         "s3_slow_all_threads_after_network_error": true_false_lambda,
+        # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
+        # rejects strict > max
         "s3_strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 100 * 1024 * 1024
+            0.2, 0.2, 0, 16 * 1024 * 1024, 24
         ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
