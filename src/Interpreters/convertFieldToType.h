@@ -70,7 +70,8 @@ class IDataType;
   *
   * The strictness checks apply recursively inside composite types (Tuple, Array, Map), so e.g. a
   * Tuple(Decimal64(2)) element inside an Array is also checked for precision loss, and a Float32 element
-  * is rounded only when `convert_inexact_floats` is set.
+  * is rounded only when `convert_inexact_floats` is set. An element that does not fit makes the whole
+  * composite Null in both modes, also when the element type is `Nullable`.
   *
   * This makes the IN operator use exact value semantics:
   *   CAST(1, 'Bool') IN (1)   -> 1  (1 is representable as Bool, matches true)
