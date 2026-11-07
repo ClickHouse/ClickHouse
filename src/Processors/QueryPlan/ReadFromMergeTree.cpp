@@ -6934,19 +6934,23 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// fresh key and the now-stale decisions of the unchanged parts are never reused. The column
     /// list of the metadata goes in too, as for the columns cache, so does a change of the columns.
     SipHash parts_hash;
-    parts_hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    const String columns_description = storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false);
+    parts_hash.update(columns_description.size());
+    parts_hash.update(columns_description);
     for (const auto & part_with_ranges : getParts())
     {
         const auto & data_part = part_with_ranges.data_part;
+        String part_identity = data_part->name;
         if (data_part->isProjectionPart())
         {
             /// Projection parts are all named after their projection. Use the same
             /// `parent_part:projection` identity as the query condition cache key, so
             /// a change to one projection's parent part invalidates the snapshot.
-            parts_hash.update(data_part->getParentPartName());
-            parts_hash.update(":");
+            part_identity = data_part->getParentPartName() + ":" + part_identity;
         }
-        parts_hash.update(data_part->name);
+        /// Length-prefixed: a concatenation of part names is ambiguous.
+        parts_hash.update(part_identity.size());
+        parts_hash.update(part_identity);
     }
 
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds its seed argument on platforms where

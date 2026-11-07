@@ -256,6 +256,7 @@ private:
         String part_name;
         size_t marks_count = 0;
         bool has_final_mark = false;
+        /// Non-decreasing: reading a part out of mark order starts a new entry.
         std::vector<size_t> marks;
         MutableColumnPtr best_values;
     };

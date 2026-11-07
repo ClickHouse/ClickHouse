@@ -36,8 +36,6 @@
 
 #include <boost/functional/hash.hpp>
 
-#include <numeric>
-
 namespace
 {
 
@@ -811,7 +809,7 @@ void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & cu
             .has_final_mark = data_part_info->getIndexGranularity().hasFinalMark(),
             .marks = {},
             .best_values = column->cloneEmpty()});
-    auto & pending = pending_top_k_granules.back();
+    auto * pending = &pending_top_k_granules.back();
 
     const int direction = state.threshold_tracker->getDirection();
     size_t begin = 0;
@@ -834,8 +832,20 @@ void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & cu
         }
         reserved_top_k_bytes += bytes;
 
-        pending.best_values->insertFrom(*column, *best_row);
-        pending.marks.push_back(mark);
+        if (!pending->marks.empty() && mark < pending->marks.back())
+        {
+            pending_top_k_granules.push_back(PendingTopKGranules{
+                .table_uuid = pending->table_uuid,
+                .part_name = pending->part_name,
+                .marks_count = pending->marks_count,
+                .has_final_mark = pending->has_final_mark,
+                .marks = {},
+                .best_values = column->cloneEmpty()});
+            pending = &pending_top_k_granules.back();
+        }
+
+        pending->best_values->insertFrom(*column, *best_row);
+        pending->marks.push_back(mark);
         begin = end;
     }
 
@@ -871,18 +881,14 @@ void MergeTreeSelectProcessor::writeTopKQueryConditionCacheEntries() noexcept
 
         for (const auto & entry : pending_top_k_granules)
         {
-            std::vector<size_t> order(entry.marks.size());
-            std::iota(order.begin(), order.end(), 0);
-            std::ranges::stable_sort(order, {}, [&](size_t i) { return entry.marks[i]; });
-
             /// A granule read in several slices is beyond only if all of them are.
             MarkRanges beyond;
-            for (size_t i = 0; i < order.size();)
+            for (size_t i = 0; i < entry.marks.size();)
             {
-                const size_t mark = entry.marks[order[i]];
+                const size_t mark = entry.marks[i];
                 bool is_beyond = true;
-                for (; i < order.size() && entry.marks[order[i]] == mark; ++i)
-                    is_beyond = is_beyond && !tracker.isValueInsideThreshold((*entry.best_values)[order[i]]);
+                for (; i < entry.marks.size() && entry.marks[i] == mark; ++i)
+                    is_beyond = is_beyond && !tracker.isValueInsideThreshold((*entry.best_values)[i]);
                 if (!is_beyond)
                     continue;
                 if (!beyond.empty() && beyond.back().end == mark)
