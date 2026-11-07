@@ -1,0 +1,46 @@
+qualify, remote
+200	200
+qualify, Distributed
+200	200
+row_number
+200	200
+where
+1
+prewhere
+1
+Memory
+200	200
+view
+200	200
+nested indexHint
+200	200
+nested indexHint, column after the inner hint
+200	200
+alias, MergeTree
+200	200
+alias, Memory
+200	200
+alias, Distributed
+200	200
+alias with an indexHint body, WHERE, MergeTree
+1
+alias with an indexHint body, WHERE, Memory
+200	200
+alias with an indexHint body, local PREWHERE
+1
+serialize_query_plan
+200	200
+prefer_localhost_replica
+200	200
+fuzzer shape
+200
+
+200
+control: column also selected
+200	9	200
+control: single shard
+100	100
+control: local table
+100	100
+control: having
+10	200
