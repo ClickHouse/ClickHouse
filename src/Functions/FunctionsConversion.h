@@ -3762,6 +3762,10 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///
 /// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
 ///   instants have the same local wall-clock representation;
+/// - a `DateTime64` whose ticks can fall outside the printable `[0000-01-01, 9999-12-31]` window:
+///   such values are clamped when formatted, so distinct ticks render to the same string;
+/// - a `Time` or `Time64` clock reading, because formatting saturates at `999:59:59[.fraction]`
+///   while the type can hold larger values;
 /// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
 ///   tables compare floating-point keys bitwise and keep distinct payloads apart;
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
@@ -3782,7 +3786,21 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
         if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
             collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
         else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
-            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
+        {
+            /// Besides the fold, a `DateTime64` is clamped when formatted if its ticks fall outside
+            /// the printable `[0000-01-01, 9999-12-31]` window. Only scale 9 is confined to a range
+            /// inside it (`[1677-09-21, 2262-04-11]`); at a smaller scale the `Int64` tick domain
+            /// reaches past the window, so two distinct ticks can render to the same string even
+            /// for a fixed-offset time zone.
+            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset() || date_time64->getScale() < 9;
+        }
+        else if (isTime(nested) || isTime64(nested))
+        {
+            /// A clock reading is printed as `HHH:MM:SS[.fraction]` and saturates at
+            /// `999:59:59[.fraction]`, while `Time` and `Time64` can hold larger values - for
+            /// example, `addSeconds` does not clamp its result.
+            collapses = true;
+        }
         else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
         else if (isUInt8(nested) && nested.getName() == "Bool")
