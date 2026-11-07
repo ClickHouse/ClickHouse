@@ -1,0 +1,14 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <merged_s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/merged_disk/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </merged_s3>
+        </disks>
+    </storage_configuration>
+    <allowed_disks_for_table_engines>merged_s3</allowed_disks_for_table_engines>
+    <s3></s3>
+</clickhouse>

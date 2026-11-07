@@ -239,8 +239,9 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const auto & config = context->getConfigRef();
 
     s3_settings = std::make_unique<S3Settings>();
+    /// Not validated: the request settings are replaced with the collection's below.
     s3_settings->loadFromConfigForObjectStorage(
-        config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
+        config, "s3", context->getSettingsRef(), url.uri.getScheme(), /* validate_settings */ false);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -736,8 +737,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
 
     s3_settings = std::make_unique<S3Settings>();
+    /// Validated below, after the endpoint and query settings are applied.
     s3_settings->loadFromConfigForObjectStorage(
-        config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
+        config, "s3", context->getSettingsRef(), url.uri.getScheme(), /* validate_settings */ false);
 
     /// Drop any role_arn/STS fields from the global `<s3>` config before parsing `extra_credentials`, so only
     /// a query-supplied role_arn remains (a server role_arn would assume the role with the server's identity).
