@@ -19,7 +19,7 @@ EOF
 (( $(${CLICKHOUSE_CLIENT} --user $user --query "SELECT file('$missing_txt')" 2>&1 | grep -c "ACCESS_DENIED") >= 1 )) && echo "ACCESS_DENIED" || echo "UNEXPECTED";
 (( $(${CLICKHOUSE_CLIENT} --user $user --query "DESCRIBE TABLE file('$missing_csv', 'CSV')" 2>&1 | grep -c "ACCESS_DENIED") >= 1 )) && echo "ACCESS_DENIED" || echo "UNEXPECTED";
 
-${CLICKHOUSE_CLIENT} --query "GRANT READ ON FILE TO $user";
+${CLICKHOUSE_CLIENT} --query "GRANT READ ON FILE, CREATE TEMPORARY TABLE ON *.* TO $user";
 
 (( $(${CLICKHOUSE_CLIENT} --user $user --query "SELECT file('$missing_txt')" 2>&1 | grep -c "FILE_DOESNT_EXIST") >= 1 )) && echo "FILE_DOESNT_EXIST" || echo "UNEXPECTED";
 (( $(${CLICKHOUSE_CLIENT} --user $user --query "DESCRIBE TABLE file('$missing_csv', 'CSV')" 2>&1 | grep -c "CANNOT_STAT") >= 1 )) && echo "CANNOT_STAT" || echo "UNEXPECTED";
