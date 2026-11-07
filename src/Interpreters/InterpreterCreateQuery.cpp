@@ -1007,6 +1007,22 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// A table created by `CREATE TABLE ... AS f(...)` reads and writes the source of `f` under the global context, so
+/// neither a `SELECT` from it nor an `INSERT` into it checks the source grants of the user who runs it. Hence `f` is
+/// authorized like the engine of a table that `f` stands for, next to the `TABLE ENGINE` check of that engine: the
+/// implicit `TABLE ENGINE` grant of a source engine (e.g. `File`) requires both `READ` and `WRITE` on its source.
+void checkCreateTableAsTableFunction(const IAST & table_function_ast, const ContextPtr & context)
+{
+    /// Resolved on a copy, because `parseArguments` may rewrite the arguments in place (e.g. evaluate constant
+    /// expressions), which must not change the query sent to the hosts of an `ON CLUSTER` query or to the replicas
+    /// of a `Replicated` database.
+    const ASTPtr table_function_ast_copy = table_function_ast.clone();
+    const auto table_function = TableFunctionFactory::instance().get(table_function_ast_copy, context);
+    throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast_copy, *table_function, context);
+    table_function->checkSourceAccess(context, /*is_insert_query=*/ false);
+    table_function->checkSourceAccess(context, /*is_insert_query=*/ true);
+}
+
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
 bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
 {
@@ -1067,6 +1083,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             create.storage->engine->name, /*is_database_engine=*/ false, /*required_before=*/ {}, getContext());
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
+
+    /// The same for a table function, which `setEngine` may also have inherited from the `AS` source table or
+    /// replaced with `Null`. Checked before the structure is inferred from it, which reads the source.
+    if (create.as_table_function)
+        checkCreateTableAsTableFunction(*create.as_table_function, getContext());
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -2932,9 +2953,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
-        /// from the function; a definition with an explicit column list skips that inference and is
-        /// checked here.
+        /// Already checked in `checkCreateTableAsTableFunction`, repeated for the instance that is executed below.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// Classify the table function before executing it: with a static structure it returns the final storage
@@ -4086,13 +4105,14 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// this branch returns before setEngine, and the worker builds AS src with no user, so
-            /// check the inherited definition here, on a copy of the query
-            if (!create.as_table.empty())
+            /// this branch returns before setEngine, and the worker builds AS src and AS f(...) with no
+            /// user, so check what it builds here, on a copy of the query
+            if (create.as_table_function || !create.as_table.empty())
             {
                 /// a worker resolves a name without a database in its own database, so set ours, as
                 /// the UUIDs above do
-                create.as_database = getContext()->resolveDatabase(create.as_database);
+                if (!create.as_table.empty())
+                    create.as_database = getContext()->resolveDatabase(create.as_database);
 
                 /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
                 /// what the worker builds, not what our settings give
@@ -4103,28 +4123,34 @@ BlockIO InterpreterCreateQuery::execute()
                     preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
                 }
 
-                ASTPtr inherited_query = query_ptr->clone();
-                auto & inherited = inherited_query->as<ASTCreateQuery &>();
-                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
+                ASTPtr preflight_query = query_ptr->clone();
+                auto & preflight = preflight_query->as<ASTCreateQuery &>();
+                InterpreterCreateQuery(preflight_query, preflight_context).setEngine(preflight);
 
                 /// getRequiredAccess sees no engine, because this query holds none of its own
-                if (inherited.storage && inherited.storage->engine)
-                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                if (preflight.storage && preflight.storage->engine)
+                    getContext()->checkAccess(AccessType::TABLE_ENGINE, preflight.storage->engine->name);
+
+                /// and no table function either: this query's own or, for AS src, the one of a source
+                /// created from one. nothing resolves it here, and the worker keeps it only if setEngine
+                /// above did not replace it with Null
+                if (preflight.as_table_function)
+                    checkCreateTableAsTableFunction(*preflight.as_table_function, getContext());
 
                 /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
                 /// its inner engines while normalizing, so add the ones this query does not give itself
-                if (inherited.is_time_series_table)
+                if (preflight.is_time_series_table)
                 {
-                    auto as_create_ptr = DatabaseCatalog::instance().getDatabase(inherited.as_database)->getCreateTableQuery(inherited.as_table, getContext());
+                    auto as_create_ptr = DatabaseCatalog::instance().getDatabase(preflight.as_database)->getCreateTableQuery(preflight.as_table, getContext());
                     const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
                     if (as_create.targets)
                         for (const auto & target : as_create.targets->targets)
-                            if (target.inner_engine && !inherited.getTargetInnerEngine(target.kind))
-                                inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
+                            if (target.inner_engine && !preflight.getTargetInnerEngine(target.kind))
+                                preflight.setTargetInnerEngine(target.kind, target.inner_engine->clone());
                 }
 
                 /// the worker inherits the move destination of the source too, and runs with no user
-                checkExportAccess(inherited);
+                checkExportAccess(preflight);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,

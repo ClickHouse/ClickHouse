@@ -1,0 +1,31 @@
+--- with WRITE ON FILE only, reading the file is refused
+grant READ ON FILE
+--- and so is creating a table from it with an explicit structure
+grant READ ON FILE
+--- with the structure inferred from the file
+grant READ ON FILE
+--- with the structure and the table function copied from another table
+grant READ ON FILE
+--- with the table function wrapped in loop, the table is created, but reading it is refused
+grant READ ON FILE
+--- ON CLUSTER
+grant READ ON FILE
+--- ON CLUSTER with an entry format that ships the query as written
+grant READ ON FILE
+grant READ ON FILE
+--- no table was created
+0
+--- ON CLUSTER with the table function replaced by Null, if the entry format ships that setting to the hosts
+grant READ ON FILE
+Null
+--- with READ ON FILE only, creating the table is refused too
+grant WRITE ON FILE
+--- but a table wrapped in loop is created and reads the file
+canary
+--- with both, the table is created and reads the file
+canary
+canary
+--- without READ ON FILE, the table is neither attached back from its stored definition
+grant READ ON FILE
+--- nor restored from a backup
+grant READ ON FILE
