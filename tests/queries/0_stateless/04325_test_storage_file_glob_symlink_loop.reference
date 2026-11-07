@@ -117,4 +117,17 @@ C
 A
 B
 C
+brace-expanded-dotdot-folded-against-each-alias
+X
+Y
+X
+Y
+A
+P
+R
+skip-folded-against-another-spelling-fails
+fails
+fails
+skip-whose-fold-stays-below-the-directory-returned-through-another-parent
+f
 alive

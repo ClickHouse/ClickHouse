@@ -215,6 +215,29 @@ bool patternHasGlobstarSegment(const std::string & pattern)
     return false;
 }
 
+bool hasDotDotSegment(const std::string & path)
+{
+    for (const auto & segment : fs::path(path))
+        if (segment == "..")
+            return true;
+    return false;
+}
+
+/// How many levels above where `pattern` starts its `..` segments can reach: every other segment except `**` descends one.
+size_t dotDotClimb(const std::string & pattern)
+{
+    ssize_t depth = 0;
+    ssize_t lowest = 0;
+    for (const auto & segment : fs::path(pattern))
+    {
+        if (segment == "..")
+            lowest = std::min(lowest, --depth);
+        else if (!segment.empty() && segment != "/" && segment != "." && segment != "**")
+            ++depth;
+    }
+    return static_cast<size_t>(-lowest);
+}
+
 /// Classifies a filesystem query that failed while a glob was being expanded, at a place that
 /// reacts by skipping the path. The codes below mean nothing listable is there; any other error
 /// means matching files may exist but could not be read, which must not become missing rows.
@@ -291,7 +314,17 @@ struct PruningState
     std::vector<SkippedPath> skipped_paths;
     /// (canonical directory, remaining pattern) of every directory a bounded tail below a `**` has listed.
     std::unordered_set<std::string> listed_tails;
+    /// The pattern has a `..` segment and ends in a name without globs, which the exact-match branch returns with
+    /// the `..` folded lexically.
+    bool folds_dot_dot = false;
 };
+
+/// Whether walking `pattern` from a directory spelled `spelling` returns files that depend on the spelling, not only on
+/// where it resolves: a folded `..` that reaches above the directory, or one in the spelling itself.
+bool foldsAgainstSpelling(const PruningState & pruning, const std::string & spelling, const std::string & pattern)
+{
+    return pruning.folds_dot_dot && (dotDotClimb(pattern) > 0 || hasDotDotSegment(spelling));
+}
 
 /// What a path that `notePathLimitSkip` records adds to the result if it resolves to a directory or a file.
 enum class SkippedYield : uint8_t
@@ -333,7 +366,9 @@ void notePathLimitSkip(
         const size_t first_glob = walk_suffix->find_first_of("*?{");
         const size_t literal_end = walk_suffix->substr(0, first_glob).rfind('/');
         const fs::path walked = literal_end ? fs::canonical(target / walk_suffix->substr(1, literal_end), walk_ec) : target;
-        if (!walk_ec && first_glob == std::string::npos)
+        /// No other name is known to return what a walk folded against its own spelling would.
+        const bool spelled = foldsAgainstSpelling(pruning, path + walk_suffix->substr(0, literal_end), walk_suffix->substr(literal_end));
+        if (!walk_ec && !spelled && first_glob == std::string::npos)
         {
             /// A suffix without globs names one file, under the key `add_matched_path` gives it.
             (void)fs::canonical(target / walk_suffix->substr(1), walk_ec);
@@ -341,7 +376,7 @@ void notePathLimitSkip(
                 walk_key = (walked / walk_suffix->substr(literal_end + 1)).string();
             walk_is_match = true;
         }
-        else if (!walk_ec)
+        else if (!walk_ec && !spelled)
         {
             const std::string remaining = walk_suffix->substr(literal_end);
             walk_key = walked.string() + '\0' + remaining;
@@ -379,10 +414,11 @@ void notePathLimitSkip(
         else if (yield == SkippedYield::Match)
         {
             /// The key `add_matched_path` gives the match under any name: resolved parent, final component as written.
+            /// Folding the tail against `innermost.canonical` mirrors the returned path only if the prefix has no `..`.
             const fs::path normal_tail = fs::path(tail).lexically_normal();
             std::error_code parent_ec;
             const fs::path parent = fs::canonical(innermost.canonical / normal_tail.parent_path(), parent_ec);
-            if (!parent_ec && normal_tail.has_filename() && *normal_tail.begin() != "..")
+            if (!parent_ec && normal_tail.has_filename() && *normal_tail.begin() != ".." && !hasDotDotSegment(innermost.prefix))
                 skipped.key = (parent / normal_tail.filename()).string();
         }
         pruning.skipped_paths.push_back(std::move(skipped));
@@ -655,8 +691,21 @@ void listFilesWithRegexpMatchingImpl(
         /// down (the outer frame sees `/root/**/*.txt` where a re-entry sees `/**/*.txt`) and the
         /// ancestor subtree would be rescanned once per loop instead of being pruned.
         /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
-        const std::string frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
+        std::string frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
         const std::string lexical_dir = fs::path(prefix_without_globs).lexically_normal().string();
+        if (foldsAgainstSpelling(pruning, prefix_without_globs, suffix_with_globs))
+        {
+            /// Also where the spelling leads: the lexical directory and each ancestor a `..` of the suffix can climb to.
+            fs::path ancestor = fs::path(lexical_dir).parent_path();
+            const size_t climb = dotDotClimb(suffix_with_globs);
+            for (size_t level = 0; level <= climb; ++level, ancestor = ancestor.parent_path())
+            {
+                std::error_code ancestor_ec;
+                const fs::path resolved = fs::canonical(ancestor, ancestor_ec);
+                frame_key += '\0';
+                frame_key += (ancestor_ec ? ancestor : resolved).string();
+            }
+        }
         const auto [claimed, is_new] = pruning.visited_frames.try_emplace(frame_key);
         VisitedFrame & frame = claimed->second;
         if (!is_new
@@ -848,6 +897,8 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// a whole-segment `**` are recorded, i.e. those that can still recurse without bound (see
         /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
         PruningState pruning;
+        pruning.folds_dot_dot = hasDotDotSegment(for_match_expanded)
+            && fs::path(for_match_expanded).filename().string().find_first_of("*?{") == std::string::npos;
 
         /// Deduplicate by canonical path only for a `**` expansion, where the recursive descent
         /// can re-enter one directory under many aliases and would otherwise report a file once

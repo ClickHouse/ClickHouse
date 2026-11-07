@@ -446,6 +446,55 @@ ln -s ../chainsB/s1 "$TEST_DIR_ABS/incomplete/root/a"
 ln -s ../chainsA/s1 "$TEST_DIR_ABS/incomplete/root/b"
 ln -s ../chainsA/s4 "$TEST_DIR_ABS/incomplete/root/c"
 
+# `root/x/alias` and `root/y/alias` name one directory under different lexical parents. A `..` that brace
+# expansion leaves in a pattern ending in a literal name is folded against the spelling, so the two walks
+# of that directory return different files: `root/x/f.txt` and `root/y/f.txt`.
+mkdir -p "$TEST_DIR_ABS/dotdot/root/x" "$TEST_DIR_ABS/dotdot/root/y" "$TEST_DIR_ABS/dotdot/data/D"
+printf "X\n" > "$TEST_DIR_ABS/dotdot/root/x/f.txt"
+printf "Y\n" > "$TEST_DIR_ABS/dotdot/root/y/f.txt"
+printf "probe\n" > "$TEST_DIR_ABS/dotdot/data/f.txt"
+ln -s ../../data/D "$TEST_DIR_ABS/dotdot/root/x/alias"
+ln -s ../../data/D "$TEST_DIR_ABS/dotdot/root/y/alias"
+# Ancestor loop: `root/a/f.txt` is only returned as the fold of `root/a/loop/../f.txt`.
+mkdir -p "$TEST_DIR_ABS/dotdotloop/root/a"
+printf "P\n" > "$TEST_DIR_ABS/dotdotloop/f.txt"
+printf "R\n" > "$TEST_DIR_ABS/dotdotloop/root/f.txt"
+printf "A\n" > "$TEST_DIR_ABS/dotdotloop/root/a/f.txt"
+ln -s .. "$TEST_DIR_ABS/dotdotloop/root/a/loop"
+# `root/a` reaches `A` through 40 links, so `A/child` fails with `ELOOP`, while `root/z` lists the same `B` as
+# `Z/child`. The literal `../..` folds to `root/a/f.txt` and `root/z/f.txt`, so `z` does not return what `a` would.
+mkdir -p "$TEST_DIR_ABS/dotdotskip/root" "$TEST_DIR_ABS/dotdotskip/chains" "$TEST_DIR_ABS/dotdotskip/data/A" "$TEST_DIR_ABS/dotdotskip/data/Z" "$TEST_DIR_ABS/dotdotskip/data/B/e"
+printf "A\n" > "$TEST_DIR_ABS/dotdotskip/data/A/f.txt"
+printf "Z\n" > "$TEST_DIR_ABS/dotdotskip/data/Z/f.txt"
+printf "probe\n" > "$TEST_DIR_ABS/dotdotskip/data/f.txt"
+ln -s ../B "$TEST_DIR_ABS/dotdotskip/data/A/child"
+ln -s ../B "$TEST_DIR_ABS/dotdotskip/data/Z/child"
+for i in $(seq 1 $((SYMLINK_LIMIT - 2))); do
+    ln -s "s$((i + 1))" "$TEST_DIR_ABS/dotdotskip/chains/s$i"
+done
+ln -s ../data/A "$TEST_DIR_ABS/dotdotskip/chains/s$((SYMLINK_LIMIT - 1))"
+ln -s ../chains/s1 "$TEST_DIR_ABS/dotdotskip/root/a"
+ln -s ../data/Z "$TEST_DIR_ABS/dotdotskip/root/z"
+# A single `..` after `child/*` stays inside `B`, so there `z` does return what `a` would: `B/f.txt`.
+printf "f\n" > "$TEST_DIR_ABS/dotdotskip/data/B/f.txt"
+# `root/x/alias/..` and `root/w/alias/..` both resolve to `data` but fold to `root/x/l` and `root/w/l`, two files.
+# Through `x`, the candidate `l` is two links over the limit, which macOS `realpath` refuses too.
+mkdir -p "$TEST_DIR_ABS/dotdotmatch/root" "$TEST_DIR_ABS/dotdotmatch/chains" "$TEST_DIR_ABS/dotdotmatch/other/X" "$TEST_DIR_ABS/dotdotmatch/data/D"
+printf "X\n" > "$TEST_DIR_ABS/dotdotmatch/other/X/l"
+printf "W\n" > "$TEST_DIR_ABS/dotdotmatch/data/target.txt"
+ln -s ../../data/D "$TEST_DIR_ABS/dotdotmatch/other/X/alias"
+ln -s D "$TEST_DIR_ABS/dotdotmatch/data/alias"
+ln -s l2 "$TEST_DIR_ABS/dotdotmatch/data/l"
+ln -s l3 "$TEST_DIR_ABS/dotdotmatch/data/l2"
+ln -s l4 "$TEST_DIR_ABS/dotdotmatch/data/l3"
+ln -s target.txt "$TEST_DIR_ABS/dotdotmatch/data/l4"
+for i in $(seq 1 $((SYMLINK_LIMIT - 5))); do
+    ln -s "s$((i + 1))" "$TEST_DIR_ABS/dotdotmatch/chains/s$i"
+done
+ln -s ../other/X "$TEST_DIR_ABS/dotdotmatch/chains/s$((SYMLINK_LIMIT - 4))"
+ln -s ../chains/s1 "$TEST_DIR_ABS/dotdotmatch/root/x"
+ln -s ../data "$TEST_DIR_ABS/dotdotmatch/root/w"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -695,6 +744,18 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_lone/ro
 echo "skip-into-incomplete-frame-returned-through-a-shorter-alias"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/c/**/*.txt', 'TSV', 'val String') ORDER BY val"
+
+echo "brace-expanded-dotdot-folded-against-each-alias"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdot/root/*/alias/**/{..}/f.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdot/root/*/alias/{..}/**/f.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotloop/root/**/{..}/f.txt', 'TSV', 'val String') ORDER BY val"
+echo "skip-folded-against-another-spelling-fails"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/{..}/f.txt', 'TSV', 'val String')" 2>&1 \
+    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotmatch/root/*/alias/{..}/**/l', 'TSV', 'val String')" 2>&1 \
+    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+echo "skip-whose-fold-stays-below-the-directory-returned-through-another-parent"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/dotdotskip/root/**/child/*/{..}/f.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
