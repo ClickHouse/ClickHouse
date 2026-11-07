@@ -8562,6 +8562,68 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 });
             };
 
+            /** The names of all columns a matcher may produce, or nothing if they cannot be listed: with ARRAY JOIN,
+              * for a `COLUMNS` list (see `matcher_may_match_column`), and for a qualified matcher whose qualifier
+              * may refer to something other than a table expression of this query (see `matcher_may_produce_column`).
+              */
+            auto matcher_columns_if_known = [&](const MatcherNode & matcher_node, bool is_inside_lambda) -> std::optional<Names>
+            {
+                if (has_array_join || matcher_node.getMatcherType() == MatcherNodeType::COLUMNS_LIST)
+                    return {};
+
+                Names column_names;
+                auto add_table_expression_columns = [&](const QueryTreeNodePtr & table_expression,
+                    const AnalysisTableExpressionData & table_expression_data)
+                {
+                    const auto * table_node = table_expression->as<TableNode>();
+                    const auto * table_function_node = table_expression->as<TableFunctionNode>();
+                    if (table_node || table_function_node)
+                    {
+                        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+                        for (const auto & column : storage_snapshot->getColumns(buildGetColumnsOptions(matcher_node, scope.context)))
+                            column_names.push_back(column.name);
+                        return;
+                    }
+
+                    for (const auto & column : table_expression_data.column_names_and_types)
+                        column_names.push_back(column.name);
+                };
+
+                if (matcher_node.isUnqualified())
+                {
+                    for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
+                        add_table_expression_columns(table_expression, table_expression_data);
+                    return column_names;
+                }
+
+                if (is_inside_lambda)
+                    return {};
+
+                const auto & qualifier = matcher_node.getQualifiedIdentifier();
+                if (scope.aliases.alias_name_to_expression_node.contains(qualifier.front())
+                    || scope.aliases.alias_name_to_lambda_node.contains(qualifier.front()))
+                    return {};
+
+                bool qualifier_names_table_expression = false;
+                for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
+                {
+                    if (table_expression_data.canBindIdentifier(IdentifierView(qualifier)))
+                        return {};
+
+                    if (table_expression_data.table_expression_name == qualifier.getFullName()
+                        || table_expression_data.table_name == qualifier.getFullName())
+                    {
+                        add_table_expression_columns(table_expression, table_expression_data);
+                        qualifier_names_table_expression = true;
+                    }
+                }
+
+                if (!qualifier_names_table_expression)
+                    return {};
+
+                return column_names;
+            };
+
             std::unordered_set<std::string> replaced_column_names;
             /// The unqualified matcher arguments of `count` and similar functions are removed by `resolveFunction`.
             std::unordered_set<const IQueryTreeNode *> dropped_matchers;
@@ -8625,7 +8687,60 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                   * removed by a preceding `EXCEPT` is not replaced, as `c` in `* EXCEPT (c) REPLACE (1 AS c)`.
                   */
                 const auto * matcher_node = node->as<MatcherNode>();
+                /** The expressions of the transformers that are resolved for some column produced by the matcher,
+                  * if the columns are known. As in `resolveMatcher`, each column goes through the transformers in order:
+                  * every `APPLY` is executed, and an `EXCEPT` or a `REPLACE` is ignored after an `APPLY` or a `REPLACE`
+                  * was used for the column. The other transformer expressions are discarded, together with the matchers
+                  * inside them, as `COLUMNS('c') REPLACE (1 AS c)` in `* EXCEPT (c) REPLACE (identity(COLUMNS('c') REPLACE (1 AS c)) AS c)`.
+                  */
+                std::optional<std::unordered_set<const IQueryTreeNode *>> executed_transformer_expressions;
                 if (matcher_node)
+                {
+                    if (auto matcher_columns = matcher_columns_if_known(*matcher_node, is_inside_lambda))
+                    {
+                        executed_transformer_expressions.emplace();
+                        const auto & transformers = matcher_node->getColumnTransformers().getNodes();
+                        for (const auto & column_name : *matcher_columns)
+                        {
+                            if (!matcher_node->isMatchingColumn(column_name))
+                                continue;
+
+                            bool transformer_was_used = false;
+                            for (const auto & transformer : transformers)
+                            {
+                                if (const auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
+                                {
+                                    executed_transformer_expressions->insert(apply_transformer->getExpressionNode().get());
+                                    transformer_was_used = true;
+                                }
+                                else if (transformer_was_used)
+                                {
+                                    continue;
+                                }
+                                else if (const auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
+                                {
+                                    if (except_transformer->isColumnMatching(column_name))
+                                        break;
+                                }
+                                else if (const auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+                                {
+                                    const auto & replacements_names = replace_transformer->getReplacementsNames();
+                                    auto replacement_it = std::ranges::find(replacements_names, column_name);
+                                    if (replacement_it == replacements_names.end())
+                                        continue;
+
+                                    const auto & replacement_expressions = replace_transformer->getReplacements().getNodes();
+                                    executed_transformer_expressions->insert(
+                                        replacement_expressions[replacement_it - replacements_names.begin()].get());
+                                    replaced_column_names.insert(column_name);
+                                    transformer_was_used = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (matcher_node && !executed_transformer_expressions)
                 {
                     std::vector<const ExceptColumnTransformerNode *> preceding_except_transformers;
                     for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
@@ -8659,6 +8774,25 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                   * as in `* APPLY (x -> ...)`, is resolved when the matcher is expanded, so it is visited.
                   */
                 const bool children_are_inside_matcher = is_inside_matcher || matcher_node;
+                if (executed_transformer_expressions)
+                {
+                    for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
+                    {
+                        QueryTreeNodes transformer_expressions;
+                        if (const auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
+                            transformer_expressions.push_back(apply_transformer->getExpressionNode());
+                        else if (const auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+                            transformer_expressions = replace_transformer->getReplacements().getNodes();
+
+                        for (const auto & transformer_expression : transformer_expressions)
+                        {
+                            if (executed_transformer_expressions->contains(transformer_expression.get()))
+                                nodes_to_process.push_back({transformer_expression.get(), is_inside_lambda, true});
+                        }
+                    }
+                    continue;
+                }
+
                 for (const auto & child : node->getChildren())
                 {
                     if (!child || child->as<QueryNode>() || child->as<UnionNode>())
