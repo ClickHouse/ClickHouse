@@ -39,13 +39,12 @@ public:
 
     StoragePtr tryGetNested() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested;
+        return nestedIfResolved();
     }
 
     bool isNestedInUse() const override
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
         return nested && !isSharedPtrUnique(nested);
     }
 
@@ -58,7 +57,10 @@ public:
         auto nested_storage = get_nested();
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
-        nested = nested_storage;
+        {
+            std::lock_guard resolved_lock{resolved_nested_mutex};
+            nested = nested_storage;
+        }
         get_nested = {};
         return nested;
     }
@@ -334,13 +336,20 @@ private:
     /// The nested storage if the table function has already been resolved, otherwise null.
     /// Never forward while holding `nested_mutex`: a nested size query can read remote metadata,
     /// and every read and write of this table takes the same mutex.
+    /// Takes only `resolved_nested_mutex`, not `nested_mutex`: callers may hold the database mutex
+    /// (`RENAME` does), while `getNestedImpl` holds `nested_mutex` when the table function looks up
+    /// a table in the same database (`view` analyzes its query), so taking it here inverts the lock order.
     StoragePtr nestedIfResolved() const
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
         return nested;
     }
 
+    /// Serializes resolving the table function and the operations on the nested storage.
     mutable std::recursive_mutex nested_mutex;
+    /// Guards `nested` for readers that must not wait for the resolution. A leaf mutex: nothing is
+    /// acquired or called while holding it. `nested` is written while holding both mutexes.
+    mutable std::mutex resolved_nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;
