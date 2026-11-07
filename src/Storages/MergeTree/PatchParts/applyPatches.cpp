@@ -85,7 +85,8 @@ static VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const
 
         /// Patch column may have a different on-disk type when it predates
         /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
-        if (!result_column.column->structureEquals(*source_col))
+        /// Types stored in the same column class (e.g. `Int32` and `Date32`) still need the cast.
+        if (!patch_column.type->equals(*result_column.type) || !result_column.column->structureEquals(*source_col))
         {
             columns_holder.push_back(castColumn(patch_column, result_column.type));
             source_col = columns_holder.back().get();
@@ -103,7 +104,7 @@ static VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(const
     return sources;
 }
 
-Block getUpdatedHeader(const PatchesIndices & patches)
+Block getUpdatedHeader(const PatchesIndices & patches, const NameSet * updated_columns)
 {
     Blocks headers;
 
@@ -120,8 +121,9 @@ Block getUpdatedHeader(const PatchesIndices & patches)
 
         for (const auto & column : patch->patch_blocks[0])
         {
-            /// Ignore system columns and columns that have no data.
-            if (isPatchPartSystemColumn(column.name) || !column.column)
+            /// Ignore system columns, columns that have no data and columns not updated by this group of patches.
+            if (isPatchPartSystemColumn(column.name) || !column.column
+                || (updated_columns && !updated_columns->contains(column.name)))
                 header.erase(column.name);
         }
 

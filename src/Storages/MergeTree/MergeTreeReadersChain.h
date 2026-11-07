@@ -15,6 +15,8 @@ struct ColumnForPatch
     {
         /// Apply patch before converting the column to actual type.
         BeforeConversions,
+        /// Apply patch after converting only this column to actual type, before converting the other columns.
+        AfterColumnConversion,
         /// Apply patch after converting the column to actual type.
         AfterConversions,
         /// Apply patch after evaluating missing defaults for the column.

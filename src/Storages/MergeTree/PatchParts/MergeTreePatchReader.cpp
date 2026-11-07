@@ -60,6 +60,22 @@ MergeTreePatchReader::MergeTreePatchReader(PatchPartInfoForReader patch_part_, M
 {
 }
 
+DataTypePtr MergeTreePatchReader::getColumnTypeInPatch(const String & column_name) const
+{
+    const auto & requested = reader->getColumns();
+    const auto & on_disk = reader->getColumnsToRead();
+
+    auto req_it = requested.begin();
+    auto disk_it = on_disk.begin();
+    for (; req_it != requested.end() && disk_it != on_disk.end(); ++req_it, ++disk_it)
+    {
+        if (req_it->name == column_name)
+            return patch_part.perform_alter_conversions ? req_it->type : disk_it->type;
+    }
+
+    return nullptr;
+}
+
 MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRanges(MarkRanges ranges)
 {
     Stopwatch watch;

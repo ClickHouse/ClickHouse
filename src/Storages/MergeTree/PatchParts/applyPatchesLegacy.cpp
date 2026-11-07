@@ -8,7 +8,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <absl/container/flat_hash_map.h>
 #include <shared_mutex>
@@ -215,7 +214,8 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
 
         /// Patch column may have a different on-disk type when it predates
         /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
-        if (!result_column.column->structureEquals(*source_col))
+        /// Types stored in the same column class (e.g. `Int32` and `Date32`) still need the cast.
+        if (!patch_col_with_type.type->equals(*result_column.type) || !result_column.column->structureEquals(*source_col))
         {
             converted_columns_storage.push_back(castColumn(patch_col_with_type, result_column.type));
             source_col = converted_columns_storage.back().get();
@@ -260,21 +260,6 @@ bool canApplyPatchesRaw(const PatchesIndices & patches)
     }
 
     return true;
-}
-
-/// Identifies a set of updated columns in the map of patches to apply.
-UInt128 getNamesHash(const Names & names)
-{
-    SipHash hash;
-    hash.update(names.size());
-
-    for (const auto & name : names)
-    {
-        hash.update(name.size());
-        hash.update(name.data(), name.size());
-    }
-
-    return hash.get128();
 }
 
 PatchIndicesPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch)
@@ -511,8 +496,8 @@ void applyPatchesToBlockLegacy(
     const std::vector<PatchReadResultToApply> & patch_read_results,
     UInt64 source_data_version)
 {
-    /// Combine patches that update the same set of columns, keyed by the hash of the set.
-    std::unordered_map<UInt128, PatchesIndices, UInt128TrivialHash> patches_indices;
+    /// Combine patches that update the same set of columns.
+    std::unordered_map<Names, PatchesIndices, NamesHash> patches_indices;
 
     for (const auto & [patch, read_result, updated_columns] : patch_read_results)
     {
@@ -526,22 +511,20 @@ void applyPatchesToBlockLegacy(
 
                 if (!patch_indices->empty())
                 {
-                    auto columns_hash = getNamesHash(updated_columns);
-                    patches_indices[columns_hash].push_back(std::move(patch_indices));
+                    patches_indices[updated_columns].push_back(std::move(patch_indices));
                 }
                 break;
             }
             case PatchMode::Join:
             {
                 const auto & patch_data = typeid_cast<const PatchJoinReadResult &>(*read_result);
-                auto columns_hash = getNamesHash(updated_columns);
 
                 for (const auto & entry : patch_data.entries)
                 {
                     auto patch_indices = applyPatchJoin(result_block, *entry);
 
                     if (!patch_indices->empty())
-                        patches_indices[columns_hash].push_back(std::move(patch_indices));
+                        patches_indices[updated_columns].push_back(std::move(patch_indices));
                 }
                 break;
             }
@@ -553,10 +536,11 @@ void applyPatchesToBlockLegacy(
         }
     }
 
-    for (const auto & [_, patches] : patches_indices)
+    for (const auto & [updated_columns, patches] : patches_indices)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
-        auto updated_header = getUpdatedHeader(patches);
+        NameSet updated_columns_set(updated_columns.begin(), updated_columns.end());
+        auto updated_header = getUpdatedHeader(patches, &updated_columns_set);
 
         if (canApplyPatchesRaw(patches))
             applyPatchesIndices(result_block, versions_block, patches, updated_header, source_data_version);
