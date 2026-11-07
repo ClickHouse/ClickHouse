@@ -16,6 +16,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/DateLUT.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
@@ -918,9 +919,20 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
 
     if (which.isDateTime64())
     {
-        ReadBufferFromString in(value);
+        /// The Delta protocol serializes timestamp partition values either as
+        /// `{year}-{month}-{day} {hour}:{minute}:{second}[.{microsecond}]` or as an
+        /// ISO8601 UTC timestamp such as `2024-01-02T03:04:05.123456Z`.
+        /// The trailing `Z` means UTC; any other trailing characters are rejected.
+        std::string_view text = value;
+        const bool is_utc = text.ends_with('Z');
+        if (is_utc)
+            text.remove_suffix(1);
+
+        ReadBufferFromString in(text);
         DateTime64 time = 0;
-        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(check_type.get())->getTimeZone());
+        const auto & time_zone = is_utc ? DateLUT::instance("UTC") : assert_cast<const DataTypeDateTime64 *>(check_type.get())->getTimeZone();
+        readDateTime64Text(time, 6, in, time_zone);
+        assertEOF(in);
         return time;
     }
 
