@@ -42,7 +42,8 @@ bool DataTypeNullable::onlyNull() const
 
 MutableColumnPtr DataTypeNullable::createColumn() const
 {
-    return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
+    /// The null map is created when the first NULL is inserted.
+    return ColumnNullable::create(nested_data_type->createColumn());
 }
 
 MutableColumnPtr DataTypeNullable::createUninitializedColumnWithSize(size_t size) const
@@ -120,7 +121,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnI
     if (!nested_subcolumn_info)
         return nullptr;
 
-    auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
+    auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).tryGetNullMapColumnPtr() : nullptr);
     auto res = std::make_unique<SubcolumnInfo>();
     res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
     res->data.type = creator.create(nested_subcolumn_info->data.type);

@@ -1,0 +1,21 @@
+Nullable(UInt64), Nullable(size = 3, UInt64(size = 3))
+Nullable(String), Nullable(size = 2, String(size = 2))
+Nullable(String), Nullable(size = 2, String(size = 2))
+Nullable(UInt64), Nullable(size = 2, UInt64(size = 2))
+1	0	Nullable(UInt64), Nullable(size = 3, UInt64(size = 3), UInt8(size = 3))
+\N	1	Nullable(UInt64), Nullable(size = 3, UInt64(size = 3), UInt8(size = 3))
+3	0	Nullable(UInt64), Nullable(size = 3, UInt64(size = 3), UInt8(size = 3))
+a	0	Nullable(String), Nullable(size = 3, String(size = 3), UInt8(size = 3))
+\N	1	Nullable(String), Nullable(size = 3, String(size = 3), UInt8(size = 3))
+c	0	Nullable(String), Nullable(size = 3, String(size = 3), UInt8(size = 3))
+\N	1
+2	0
+1
+3
+Nullable(String), Nullable(size = 3, String(size = 3))
+Nullable(String), Nullable(size = 3, String(size = 3))
+Nullable(String), Nullable(size = 3, String(size = 3))
+Nullable(String), Nullable(size = 3, String(size = 3))
+0	0
+\N	1
+2	0

@@ -267,6 +267,14 @@ void StoredBlock::rebuildReplicatedColumns()
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
+
+    materializeNullMaps();
+}
+
+void StoredBlock::materializeNullMaps() const
+{
+    for (const auto & column : columns)
+        materializeNullMapsRecursively(*column);
 }
 
 bool StoredBlock::hasRowStore() const { return row_store != nullptr; }

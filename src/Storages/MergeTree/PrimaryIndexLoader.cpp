@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/PrimaryIndexLoader.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -107,6 +108,9 @@ Columns loadPrimaryIndexFromStorage(
     size_t total_bytes = 0;
     for (const auto & column : loaded_index)
     {
+        /// The index columns are shared with the readers and weighed by `PrimaryIndexCache`,
+        /// so create the null maps now instead of letting a reader create them lazily.
+        materializeNullMapsRecursively(*column);
         column->shrinkToFit();
         column->protect();
         total_bytes += column->byteSize();

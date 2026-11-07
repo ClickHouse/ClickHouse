@@ -101,7 +101,7 @@ public:
         const IColumn * source_tuple_column
             = source_nullable_column ? &source_nullable_column->getNestedColumn() : arguments[0].column.get();
         const auto * source_tuple_column_concrete = assert_cast<const ColumnTuple *>(source_tuple_column);
-        const NullMap * source_null_map = source_nullable_column ? &source_nullable_column->getNullMapData() : nullptr;
+        const NullMap * source_null_map = source_nullable_column ? source_nullable_column->tryGetNullMapData() : nullptr;
 
         const auto & result_tuple_type
             = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*result_type).getNestedType());

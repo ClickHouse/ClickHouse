@@ -10,6 +10,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Core/Settings.h>
 #include <Core/callOnTypeIndex.h>
@@ -1142,27 +1143,43 @@ private:
           */
         ColumnPtr result_null_mask;
 
+        /// A `Nullable` column without a null map has no NULLs.
+        auto has_no_null_map = [](const ColumnPtr & column)
+        {
+            const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column);
+            return nullable && !nullable->hasNullMap();
+        };
+
+        ColumnPtr then_null_mask = then_is_nullable && !has_no_null_map(arg_then.column) ? recursiveGetNullMapFromNullable(arg_then.column) : nullptr;
+        ColumnPtr else_null_mask = else_is_nullable && !has_no_null_map(arg_else.column) ? recursiveGetNullMapFromNullable(arg_else.column) : nullptr;
+
+        /// If neither branch has NULLs, the result has no NULLs and does not need a null map.
+        if (then_null_mask || else_null_mask)
         {
             ColumnsWithTypeAndName temporary_columns(
             {
                 arg_cond,
                 {
-                    then_is_nullable
-                        ? recursiveGetNullMapFromNullable(arg_then.column)
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
+                    then_null_mask ? then_null_mask : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
-                    else_is_nullable
-                        ? recursiveGetNullMapFromNullable(arg_else.column)
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
+                    else_null_mask ? else_null_mask : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 }
             });
 
-            result_null_mask = executeImpl(temporary_columns, std::make_shared<DataTypeUInt8>(), input_rows_count);
+            result_null_mask = materializeColumnIfConst(executeImpl(temporary_columns, std::make_shared<DataTypeUInt8>(), input_rows_count));
+
+            /// The NULLs of the branches may be not selected, then the result has no NULLs as well.
+            if (const auto * result_null_mask_vector = typeid_cast<const ColumnUInt8 *>(result_null_mask.get()))
+            {
+                const auto & result_null_mask_data = result_null_mask_vector->getData();
+                if (memoryIsZero(result_null_mask_data.data(), 0, result_null_mask_data.size()))
+                    result_null_mask = nullptr;
+            }
         }
 
         ColumnPtr result_nested_column;
@@ -1186,8 +1203,10 @@ private:
             result_nested_column = executeImpl(temporary_columns, removeNullable(result_type), temporary_columns.front().column->size());
         }
 
-        return ColumnNullable::create(
-            materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
+        if (!result_null_mask)
+            return ColumnNullable::create(materializeColumnIfConst(result_nested_column));
+
+        return ColumnNullable::create(materializeColumnIfConst(result_nested_column), result_null_mask);
     }
 
     ColumnPtr executeForNullThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
