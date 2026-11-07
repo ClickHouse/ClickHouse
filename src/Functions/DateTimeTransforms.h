@@ -206,6 +206,44 @@ enum class DateRoundingInterval : UInt8
     ISOYear,
 };
 
+/// First day of the month or year as an unclamped day number; saturating to `Date` would move 1969-12-31 to the next period.
+template <DateRoundingInterval interval>
+struct ToStartOfPeriodFactorImpl
+{
+    static constexpr auto name = "toStartOfPeriodFactor";
+
+    static Int64 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(time_zone.toDayNum(t), time_zone);
+    }
+    static Int64 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(time_zone.toDayNum<Int64>(t), time_zone);
+    }
+    static Int64 execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(ExtendedDayNum(d), time_zone);
+    }
+    static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return fromDayNum(ExtendedDayNum(d), time_zone);
+    }
+
+    using FactorTransform = ZeroTransform;
+
+private:
+    static Int64 fromDayNum(ExtendedDayNum day, const DateLUTImpl & time_zone)
+    {
+        if constexpr (interval == DateRoundingInterval::Year)
+            return time_zone.toFirstDayNumOfYear(day).toUnderType();
+        else
+        {
+            static_assert(interval == DateRoundingInterval::Month);
+            return time_zone.toFirstDayNumOfMonth(day).toUnderType();
+        }
+    }
+};
+
 /// A `DateTime` without an explicit time zone keeps the one captured when the type was created, but
 /// literals compared against such a column are parsed in the session one.
 inline const DateLUTImpl & preimageParseTimeZone(const DataTypeDateTime & type)
@@ -2115,7 +2153,7 @@ struct ToQuarterImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToStartOfYearImpl;
+    using FactorTransform = ToStartOfPeriodFactorImpl<DateRoundingInterval::Year>;
 };
 
 struct ToMonthImpl
@@ -2143,7 +2181,7 @@ struct ToMonthImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToStartOfYearImpl;
+    using FactorTransform = ToStartOfPeriodFactorImpl<DateRoundingInterval::Year>;
 };
 
 struct ToDayOfMonthImpl
@@ -2171,7 +2209,7 @@ struct ToDayOfMonthImpl
     }
 
     static constexpr bool hasPreimage() { return false; }
-    using FactorTransform = ToStartOfMonthImpl;
+    using FactorTransform = ToStartOfPeriodFactorImpl<DateRoundingInterval::Month>;
 };
 
 struct ToDaysInMonthImpl
@@ -2308,7 +2346,7 @@ struct ToDayOfYearImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToStartOfYearImpl;
+    using FactorTransform = ToStartOfPeriodFactorImpl<DateRoundingInterval::Year>;
 };
 
 struct ToDaysSinceYearZeroImpl
