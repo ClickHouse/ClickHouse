@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <atomic>
 #include <cstddef>
@@ -281,7 +282,7 @@ private:
     /// Keys whose bits are not set yet.
     ColumnPtr pending_keys;
     /// One bit per value of [words_begin, words_begin + 64 * words.size()). `words_begin` is aligned to a word.
-    std::vector<UInt64> words;
+    VectorWithMemoryTracking<UInt64> words;
     Int64 words_begin = 0;
 };
 

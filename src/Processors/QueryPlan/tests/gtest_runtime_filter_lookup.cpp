@@ -6,9 +6,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <base/scope_guard.h>
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -36,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 namespace
@@ -111,6 +114,33 @@ RuntimeFilterGeometry makeGeometry(
         .blocks_to_skip_before_reenabling = 30,
         .max_ratio_of_set_bits_in_bloom_filter = max_ratio_of_set_bits_in_bloom_filter,
     };
+}
+
+/// Runs `action` with the memory limit of the current thread just above its usage, as when a query reaches its limit,
+/// and returns whether it threw MEMORY_LIMIT_EXCEEDED. Allocations below `max_untracked_memory` (4 MiB) are not checked.
+template <typename Action>
+bool throwsAtMemoryLimit(Action && action)
+{
+    MainThreadStatus::getInstance();
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    const Int64 previous_hard_limit = thread_tracker.getHardLimit();
+    CurrentThread::flushUntrackedMemory();
+    thread_tracker.setHardLimit(thread_tracker.get() + 64 * 1024);
+    SCOPE_EXIT({
+        thread_tracker.setHardLimit(previous_hard_limit);
+        CurrentThread::flushUntrackedMemory();
+    });
+    try
+    {
+        action();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            throw;
+        return true;
+    }
+    return false;
 }
 
 }
@@ -467,6 +497,95 @@ TEST(RuntimeFilterLookup, DenseBitsetHandlesSignedKeys)
              std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max()})
         probe->insertValue(value);
     expectMask(filter.find(ColumnWithTypeAndName(std::move(probe), type, "k")), {0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0});
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetAllocationIsRefusedAtTheMemoryLimit)
+{
+    /// 16 x 1 MiB of bits cover 128M values. Three keys over 100M values stay as values until `finishInsert` allocates
+    /// 12.5 MB of bits, which the memory limit refuses as it would a Bloom filter's. The filter stays usable.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({0, 5, 100'000'000}));
+
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.finishInsert(); }));
+    EXPECT_FALSE(filter.isReady());
+
+    filter.finishInsert();
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 1, 5, 99'999'999, 100'000'000, 100'000'001}, type)), {1, 0, 1, 0, 1, 0});
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetKeepsItsKeysWhenAnAppendThrows)
+{
+    /// The bitset keeps three keys over 100M values as values, and appending 1M more (8 MB) reaches the memory limit.
+    /// The stream goes on as after `ISimpleTransform` passed the exception downstream; the failed block is not recorded.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({0, 5, 100'000'000}));
+
+    ColumnPtr block = makeUInt64SequenceColumn(1'000'000);
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.insert(block); }));
+
+    filter.insert(makeUInt64Column({6}));
+    filter.finishInsert();
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6, 7, 100'000'000}, type)), {1, 1, 1, 0, 1});
+}
+
+TEST(RuntimeFilterLookup, DenseBitsetKeepsItsKeysWhenAMergeThrows)
+{
+    /// Both partials keep their keys as values, and taking the source's 1M keys (8 MB) reaches the memory limit.
+    /// The destination still takes the next partial, as when the build streams that remain add theirs.
+    const auto type = makeUInt64Type();
+    const auto make_filter = [&](size_t filters_to_merge)
+    {
+        /// 16 x 1 MiB of bits cover 128M values; at most 2 exact keys.
+        return std::make_unique<RuntimeFilter>(
+            filters_to_merge,
+            makeRuntimeFilterConfig(),
+            RuntimeFilter::Adaptive(type, makeGeometry(1_MiB, 2, 3, 1.0), std::nullopt, false));
+    };
+    auto destination = make_filter(1);
+    destination->insert(makeUInt64Column({0, 5, 100'000'000}));
+    auto source = make_filter(0);
+    source->insert(makeUInt64SequenceColumn(1'000'000, {100'000'000}));
+    ASSERT_TRUE(source->hasPendingKeys());
+
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { destination->merge(*source); }));
+    EXPECT_EQ(destination->getFiltersToMerge(), 1);
+
+    auto other = make_filter(0);
+    other->insert(makeUInt64Column({6, 7, 100'000'001}));
+    destination->merge(*other);
+    destination->finishInsert();
+    ASSERT_TRUE(destination->isReady());
+    expectMask(
+        destination->find(makeUInt64ColumnWithType({0, 5, 6, 7, 8, 100'000'000, 100'000'001, 100'000'002}, type)),
+        {1, 1, 1, 1, 0, 1, 1, 0});
+}
+
+TEST(RuntimeFilterLookup, AdaptiveFilterRetriesTheSwitchFromTheExactSetAfterItThrew)
+{
+    /// Keys over 1e10 values do not fit a bitset, so the full exact set switches to an 8 MiB Bloom filter, which the
+    /// memory limit refuses. The exact set stays full, and the next block retries the switch.
+    const auto type = makeUInt64Type();
+    RuntimeFilter filter(
+        /*filters_to_merge_=*/0,
+        makeRuntimeFilterConfig(),
+        RuntimeFilter::Adaptive(type, makeGeometry(8_MiB, 2, 3, 1.0), std::nullopt, false));
+    filter.insert(makeUInt64Column({0, 5}));
+
+    ColumnPtr block = makeUInt64Column({10'000'000'000});
+    ASSERT_TRUE(throwsAtMemoryLimit([&] { filter.insert(block); }));
+
+    filter.insert(makeUInt64Column({6}));
+    filter.finishInsert();
+    /// No key is lost; other values may pass the Bloom filter.
+    expectMask(filter.find(makeUInt64ColumnWithType({0, 5, 6, 10'000'000'000}, type)), {1, 1, 1, 1});
 }
 
 TEST(RuntimeFilterLookup, LookupMergesExactContainsFilters)

@@ -42,6 +42,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <base/TypeLists.h>
+#include <base/scope_guard.h>
 
 namespace ProfileEvents
 {
@@ -733,9 +734,12 @@ bool DenseBitsetRuntimeFilter::insert(const ColumnPtr & values, UInt64 max_bytes
         return true;
     }
 
-    auto keys = IColumn::mutate(std::move(pending_keys));
-    keys->insertRangeFrom(*block, 0, block->size());
-    pending_keys = std::move(keys);
+    {
+        /// `pending_keys` stays valid if the append throws: `ISimpleTransform` keeps inserting after an exception.
+        auto keys = IColumn::mutate(std::move(pending_keys));
+        SCOPE_EXIT({ pending_keys = std::move(keys); });
+        keys->insertRangeFrom(*block, 0, block->size());
+    }
     if (pending_keys->byteSize() >= bitsetWordsForRange(min_key, max_key) * sizeof(UInt64))
         setPendingBits();
     return true;
@@ -773,9 +777,9 @@ bool DenseBitsetRuntimeFilter::mergeFrom(const DenseBitsetRuntimeFilter & source
     else if (!source.pending_keys->empty())
     {
         auto keys = IColumn::mutate(std::move(pending_keys));
+        SCOPE_EXIT({ pending_keys = std::move(keys); });
         keys->reserve(keys->size() + source.pending_keys->size());
         keys->insertRangeFrom(*source.pending_keys, 0, source.pending_keys->size());
-        pending_keys = std::move(keys);
     }
     return true;
 }
@@ -801,7 +805,7 @@ void DenseBitsetRuntimeFilter::setPendingBits()
     const UInt64 new_size = bitsetWordsForRange(min_key, max_key);
     if (new_begin != words_begin || new_size != words.size())
     {
-        std::vector<UInt64> widened(new_size, 0);
+        VectorWithMemoryTracking<UInt64> widened(new_size, 0);
         if (!words.empty())
         {
             const UInt64 offset = (static_cast<UInt64>(words_begin) - static_cast<UInt64>(new_begin)) / BITSET_WORD_BITS;
@@ -991,8 +995,16 @@ void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
     }
 
     auto * exact_filter = std::get_if<ExactFilter>(&filter_);
-    if (!exact_filter || exact_filter->isFull())
+    if (!exact_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
+
+    if (exact_filter->isFull())
+    {
+        /// The switch away from the full set threw and the caller kept inserting. The full set holds every key, so retry it.
+        switchFromExactFilter(filter_);
+        insert(std::move(values), filter_);
+        return;
+    }
 
     exact_filter->insert(std::move(values));
 
