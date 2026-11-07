@@ -157,6 +157,27 @@ void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChange
     }
 }
 
+void parseAddColumnSettings(const ASTSetQuery & set_query, AlterCommand & command)
+{
+    command.settings_changes = set_query.changes;
+    command.settings_names_to_check = set_query.default_settings;
+    for (const auto & parameter : set_query.query_parameters)
+        command.settings_names_to_check.push_back(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
+}
+
+void parseModifyColumnSettings(const ASTSetQuery & set_query, AlterCommand & command)
+{
+    parseSettingsChangesAndResets(set_query, command.settings_changes, command.settings_resets);
+    for (const auto & parameter : set_query.query_parameters)
+        command.settings_names_to_check.push_back(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
+}
+
+/// A server re-executing a definition another server already judged must not refuse it: it would retry its queue entry forever.
+bool isReplayOfJudgedDefinition(const ContextPtr & context)
+{
+    return isSecondaryDDLReplay(context) || context->isRecoveryFromStoredMetadata();
+}
+
 /// Rebuilds the implicit minmax indices from the `SETTINGS` clause. A setting dropped from it falls
 /// back to `settings_defaults`, the engine's config defaults. Engines without implicit indices pass none.
 void refreshSettingsDerivedMetadata(
@@ -297,7 +318,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.ttl = ast_col_decl.getTTL();
 
         if (ast_col_decl.getSettings())
-            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+            parseAddColumnSettings(ast_col_decl.getSettings()->as<ASTSetQuery &>(), command);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -368,8 +389,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = ast_col_decl.getCodec();
 
         if (ast_col_decl.getSettings())
-            parseSettingsChangesAndResets(
-                ast_col_decl.getSettings()->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
+            parseModifyColumnSettings(ast_col_decl.getSettings()->as<ASTSetQuery &>(), command);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -377,8 +397,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
         {
-            parseSettingsChangesAndResets(
-                command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
+            parseModifyColumnSettings(command_ast->settings_changes->as<ASTSetQuery &>(), command);
             command.append_column_setting = true;
         }
 
@@ -840,6 +859,10 @@ void AlterCommand::apply(
             column.settings = settings_changes;
         }
 
+        if (!isReplayOfJudgedDefinition(context))
+            for (const auto & name : settings_names_to_check)
+                MergeTreeColumnSettings::validateName(name);
+
         /// The declared statistics are transferred like in CREATE (the types are validated against the
         /// column data type by the storage in `checkAlterIsPossible`).
         if (column_statistics_decl)
@@ -968,6 +991,14 @@ void AlterCommand::apply(
                             column.settings.setSetting(change.name, change.value);
                     else
                         column.settings = settings_changes;
+                }
+
+                if (!isReplayOfJudgedDefinition(context))
+                {
+                    for (const auto & name : settings_resets)
+                        MergeTreeColumnSettings::validateName(name);
+                    for (const auto & name : settings_names_to_check)
+                        MergeTreeColumnSettings::validateName(name);
                 }
 
                 if (!settings_resets.empty())
@@ -2207,8 +2238,9 @@ void validateSubcolumnCodecCommand(
     const AlterCommand & command, const NameAndTypePair & subcolumn, const ColumnsDescription & columns, const StoragePtr & table, const ContextPtr & context)
 {
     const bool only_codec = !command.data_type && !command.default_expression && !command.comment && !command.ttl
-        && command.settings_changes.empty() && command.settings_resets.empty() && !command.column_statistics_decl
-        && !command.add_enum_values && command.after_column.empty() && !command.first
+        && command.settings_changes.empty() && command.settings_resets.empty()
+        && (command.settings_names_to_check.empty() || isReplayOfJudgedDefinition(context))
+        && !command.column_statistics_decl && !command.add_enum_values && command.after_column.empty() && !command.first
         && (command.to_remove == AlterCommand::RemoveProperty::NO_PROPERTY || command.to_remove == AlterCommand::RemoveProperty::CODEC)
         && (command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC);
     if (!only_codec)
