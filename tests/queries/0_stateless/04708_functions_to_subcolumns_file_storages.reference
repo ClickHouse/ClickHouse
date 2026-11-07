@@ -25,3 +25,23 @@
 -- a dotted element name with no colliding nested path is still rewritten
 1
 1
+-- file Array(Tuple) values and types without rewriting
+1	[10,11]	[10,11]	['ten','eleven']	Array(UInt32)	[[10],[],[11]]	Array(Array(UInt32))
+2	[]	[]	[]	Array(UInt32)	[[],[]]	Array(Array(UInt32))
+3	[30]	[30]	['thirty']	Array(UInt32)	[]	Array(Array(UInt32))
+-- file Array(Tuple) values and types with rewriting
+1	[10,11]	[10,11]	['ten','eleven']	Array(UInt32)	[[10],[],[11]]	Array(Array(UInt32))
+2	[]	[]	[]	Array(UInt32)	[[],[]]	Array(Array(UInt32))
+3	[30]	[30]	['thirty']	Array(UInt32)	[]	Array(Array(UInt32))
+-- array tuple elements reach file, Merge, and table-function subcolumns
+1
+1
+1
+1
+0
+1
+1
+-- other array subcolumns, nullable tuple wrappers, and unnamed file fields stay unchanged
+0
+0
+0
