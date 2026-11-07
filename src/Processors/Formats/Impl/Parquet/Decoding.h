@@ -166,6 +166,9 @@ struct FixedSizeConverter
     /// True if convertField can return a Null Field, so a chunk is bounded only if both its min and max are known.
     virtual bool statsNeedBothBounds() const { return false; }
 
+    /// True if the stored min is greater than the stored max in the column's sort order.
+    virtual bool statsInverted(std::span<const char> /*min*/, std::span<const char> /*max*/) const { return false; }
+
     virtual ~FixedSizeConverter() = default;
 };
 
@@ -242,6 +245,9 @@ struct PageDecoderInfo
     /// `final_output_type` (see cast_stats_to_output_type), leaves `out` unchanged.
     /// Returns false if none of the chunk's statistics may be used (see FixedSizeConverter::convertField).
     bool decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const;
+
+    /// Checked before decodeField, which can leave an out-of-range bound at infinity and so hide the inversion.
+    bool statsInverted(std::span<const char> min, std::span<const char> max) const;
 };
 
 
@@ -294,11 +300,16 @@ struct IntConverter : public FixedSizeConverter
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
+    bool statsInverted(std::span<const char> min, std::span<const char> max) const override;
 
     bool statsNeedBothBounds() const override
     {
         return date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
     }
+
+private:
+    /// The stored value, sign-extended to 64 bits if `input_signed`.
+    UInt64 loadValue(std::span<const char> data) const;
 };
 
 /// Input physical type: FLOAT or DOUBLE.

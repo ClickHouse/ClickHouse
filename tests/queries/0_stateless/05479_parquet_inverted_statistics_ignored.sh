@@ -88,6 +88,12 @@ for c in u64 u32; do
     $CLICKHOUSE_LOCAL -q "SELECT $c FROM file('$F') WHERE $c > 100 SETTINGS $PAGE; SELECT sum(value) FROM system.events WHERE event = 'ParquetPrunedPages'"
 done
 
+# Read as DateTime, the minimum 2^63 is out of range and decodes to no bound, so the decoded range [-inf, 1] is not
+# inverted; the row (saturated to the DateTime maximum) must still be found, and row group 1 still pruned.
+H="'u64 Nullable(DateTime), u32 Nullable(UInt32)'"
+$CLICKHOUSE_LOCAL -q "SELECT toUnixTimestamp(u64) FROM file('$F', Parquet, $H) WHERE u64 > toDateTime(100) SETTINGS $RG; SELECT sum(value) FROM system.events WHERE event = 'ParquetPrunedRowGroups'"
+$CLICKHOUSE_LOCAL -q "SELECT toUnixTimestamp(u64) FROM file('$F', Parquet, $H) WHERE u64 > toDateTime(100) SETTINGS $PAGE; SELECT sum(value) FROM system.events WHERE event = 'ParquetPrunedPages'"
+
 TOPK="use_top_k_dynamic_filtering = 1, max_threads = 1"
 $CLICKHOUSE_LOCAL -q "SELECT u64 FROM file('$F') ORDER BY u64 DESC LIMIT 1 SETTINGS $TOPK"
 $CLICKHOUSE_LOCAL -q "SELECT u64 FROM file('$F') ORDER BY u64 LIMIT 1 SETTINGS $TOPK"
