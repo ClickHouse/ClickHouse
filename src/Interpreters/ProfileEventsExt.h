@@ -42,6 +42,10 @@ DB::Block getProfileEvents(
     DB::InternalProfileEventsQueuePtr profile_queue,
     ThreadIdToCountersSnapshot & last_sent_snapshots);
 
+/// Decreases the increments of `event` in a `ProfileEvents` packet `block` by `amount` in total, never below zero,
+/// and decreases `amount` by what was subtracted, so that it can be spread over several packets.
+void subtractIncrements(DB::Block & block, Event event, UInt64 & amount);
+
 /// This is for ProfileEvents packets.
 enum Type : int8_t
 {
