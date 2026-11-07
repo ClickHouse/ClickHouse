@@ -3,6 +3,8 @@
 #include <IO/WriteHelpers.h>
 #include <Core/MySQL/PacketsGeneric.h>
 
+#include <span>
+
 namespace DB
 {
 
@@ -45,10 +47,13 @@ void Handshake::readPayloadImpl(ReadBuffer & payload)
     payload.readStrict(auth_plugin_data.data(), AUTH_PLUGIN_DATA_PART_1_LENGTH);
 
     payload.ignore(1);
-    payload.readStrict(reinterpret_cast<char *>(&capability_flags), 2);
+    UInt16 capability_flags_lower = 0;
+    readBinaryLittleEndian(capability_flags_lower, payload);
     payload.readStrict(reinterpret_cast<char *>(&character_set), 1);
     payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
-    payload.readStrict((reinterpret_cast<char *>(&capability_flags)) + 2, 2);
+    UInt16 capability_flags_upper = 0;
+    readBinaryLittleEndian(capability_flags_upper, payload);
+    capability_flags = static_cast<UInt32>(capability_flags_lower) | (static_cast<UInt32>(capability_flags_upper) << 16);
 
     UInt8 auth_plugin_data_length = 0;
     if (capability_flags & Capability::CLIENT_PLUGIN_AUTH)
@@ -65,7 +70,7 @@ void Handshake::readPayloadImpl(ReadBuffer & payload)
     {
         UInt8 part2_length = (SCRAMBLE_LENGTH - AUTH_PLUGIN_DATA_PART_1_LENGTH);
         auth_plugin_data.resize(SCRAMBLE_LENGTH);
-        payload.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
+        payload.readStrict(std::span(auth_plugin_data).subspan(AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length));
         payload.ignore(1);
     }
 
@@ -81,10 +86,10 @@ void Handshake::writePayloadImpl(WriteBuffer & buffer) const
     writeNulTerminatedString(server_version, buffer);
     buffer.write(reinterpret_cast<const char *>(&connection_id), 4);
     writeNulTerminatedString(auth_plugin_data.substr(0, AUTH_PLUGIN_DATA_PART_1_LENGTH), buffer);
-    buffer.write(reinterpret_cast<const char *>(&capability_flags), 2);
+    writeBinaryLittleEndian(static_cast<UInt16>(capability_flags), buffer);
     buffer.write(reinterpret_cast<const char *>(&character_set), 1);
     buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
-    buffer.write((reinterpret_cast<const char *>(&capability_flags)) + 2, 2);
+    writeBinaryLittleEndian(static_cast<UInt16>(capability_flags >> 16), buffer);
     buffer.write(static_cast<char>(auth_plugin_data.size()));
     writeChar(0x0, 10, buffer);
     writeString(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH), buffer);
