@@ -149,6 +149,7 @@ echo "S: the types that declare no source"
 for storage_type in local_blob_storage local_plain local_plain_rewritable; do
     echo "${storage_type}: $(as_user "CREATE TABLE t_05564_s ${TABLE} SETTINGS disk = disk(type = object_storage,
         object_storage_type = ${storage_type}, path = '${CLICKHOUSE_DISKS_FILES}/05564_s_${storage_type}_${DB}/')")"
+    $CLICKHOUSE_CLIENT -q "EXISTS TABLE t_05564_s"
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_05564_s SYNC"
 done
 echo "encrypted: $(as_user "CREATE TABLE t_05564_s ${TABLE} SETTINGS disk = disk(type = encrypted, key = '1234567812345678',

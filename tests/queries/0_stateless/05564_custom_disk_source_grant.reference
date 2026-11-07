@@ -51,8 +51,11 @@ azure_plain_rewritable: READ, WRITE ON AZURE
 hdfs: READ, WRITE ON HDFS
 S: the types that declare no source
 local_blob_storage: allowed
+1
 local_plain: allowed
+1
 local_plain_rewritable: allowed
+1
 encrypted: allowed
 1
 G: with the S3 grant
