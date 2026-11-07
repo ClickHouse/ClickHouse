@@ -5,12 +5,6 @@
 
     <substitutions>
         <substitution>
-           <name>scale</name>
-           <values>
-               <value>100000</value>
-           </values>
-       </substitution>
-        <substitution>
            <name>func</name>
            <values>
                <value>minMap</value>
@@ -19,18 +13,120 @@
                <value>sumMapWithOverflow</value>
            </values>
        </substitution>
+        <substitution>
+           <name>wide_key</name>
+           <values>
+               <value>k_int128</value>
+               <value>k_int256</value>
+               <value>k_decimal128</value>
+               <value>k_decimal256</value>
+           </values>
+       </substitution>
     </substitutions>
 
+    <!-- Original dataset (keep table name for CI backward compat with old queries) -->
     <create_query>
-        CREATE TABLE sum_map_{scale} ENGINE Memory AS
+        CREATE TABLE sum_map_100000 ENGINE Memory AS
         SELECT
             arrayMap(x -> (x % 23), range(50)) AS key,
             arrayMap(x -> intDiv(number, x + 1), range(50)) AS val
-        FROM numbers({scale})
+        FROM numbers(100000)
     </create_query>
 
-    <query>SELECT {func}(key, val) FROM sum_map_{scale} FORMAT Null</query>
-    <query>SELECT {func}((key, val)) FROM sum_map_{scale} FORMAT Null</query>
+    <query>SELECT {func}(key, val) FROM sum_map_100000 FORMAT Null</query>
+    <query>SELECT {func}((key, val)) FROM sum_map_100000 FORMAT Null</query>
 
-    <drop_query>DROP TABLE sum_map_{scale}</drop_query>
+    <!-- String keys: exercises HashMapWithSavedHash + arena key storage -->
+    <create_query>
+        CREATE TABLE sum_map_str ENGINE Memory AS
+        SELECT
+            arrayMap(x -> concat('k', toString(x % 23)), range(50)) AS key,
+            arrayMap(x -> intDiv(number, x + 1), range(50)) AS val
+        FROM numbers(100000)
+    </create_query>
+
+    <query>SELECT {func}(key, val) FROM sum_map_str FORMAT Null</query>
+
+    <!-- Float64 keys: exercises NaN-aware sorting and comparison -->
+    <create_query>
+        CREATE TABLE sum_map_float ENGINE Memory AS
+        SELECT
+            arrayMap(x -> toFloat64(x % 23), range(50)) AS key,
+            arrayMap(x -> toFloat64(intDiv(number, x + 1)), range(50)) AS val
+        FROM numbers(100000)
+    </create_query>
+
+    <query>SELECT {func}(key, val) FROM sum_map_float FORMAT Null</query>
+
+    <!-- Multiple value columns: exercises the inner per-column loop -->
+    <create_query>
+        CREATE TABLE sum_map_multi ENGINE Memory AS
+        SELECT
+            arrayMap(x -> (x % 23), range(50)) AS key,
+            arrayMap(x -> toUInt64(intDiv(number, x + 1)), range(50)) AS v1,
+            arrayMap(x -> toFloat64(x * number), range(50)) AS v2,
+            arrayMap(x -> toInt32(x - number), range(50)) AS v3
+        FROM numbers(100000)
+    </create_query>
+
+    <query>SELECT {func}(key, v1, v2, v3) FROM sum_map_multi FORMAT Null</query>
+
+    <!-- High cardinality: many unique keys, mostly inserts into the map -->
+    <create_query>
+        CREATE TABLE sum_map_highcard ENGINE Memory AS
+        SELECT
+            arrayMap(x -> x + number * 10, range(10)) AS key,
+            arrayMap(x -> intDiv(number, x + 1), range(10)) AS val
+        FROM numbers(100000)
+    </create_query>
+
+    <query>SELECT {func}(key, val) FROM sum_map_highcard FORMAT Null</query>
+
+    <!-- Nullable values: exercises the null bitmap path -->
+    <create_query>
+        CREATE TABLE sum_map_nullable ENGINE Memory AS
+        SELECT
+            arrayMap(x -> (x % 23), range(50)) AS key,
+            arrayMap(x -> if(x % 5 = 0, NULL, intDiv(number, x + 1))::Nullable(UInt64), range(50)) AS val
+        FROM numbers(100000)
+    </create_query>
+
+    <query>SELECT {func}(key, val) FROM sum_map_nullable FORMAT Null</query>
+
+    <!-- Filtered: keep a subset of keys (integers) -->
+    <query>SELECT sumMapFiltered([0, 5, 10, 15, 20])(key, val) FROM sum_map_100000 FORMAT Null</query>
+    <query>SELECT sumMapFilteredWithOverflow([0, 5, 10, 15, 20])(key, val) FROM sum_map_100000 FORMAT Null</query>
+
+    <!-- Filtered: string keys -->
+    <query>SELECT sumMapFiltered(['k0', 'k5', 'k10', 'k15', 'k20'])(key, val) FROM sum_map_str FORMAT Null</query>
+
+    <!-- Filtered: multiple value columns -->
+    <query>SELECT sumMapFiltered([0, 5, 10, 15, 20])(key, v1, v2, v3) FROM sum_map_multi FORMAT Null</query>
+
+    <!-- Wide keys whose 64-bit words are equal (they cancel out when folded with XOR), or that differ
+         only in the highest word: catches key hashes that do not mix all words of 128- and 256-bit keys -->
+    <create_query>
+        CREATE TABLE sum_map_wide ENGINE Memory AS
+        SELECT
+            arrayMap(x -> toInt128(number * 10 + x + 1) * (bitShiftLeft(toInt128(1), 64) + 1), range(10)) AS k_int128,
+            arrayMap(x -> bitShiftLeft(toInt256(number * 10 + x + 1), 192), range(10)) AS k_int256,
+            arrayMap(k -> toDecimal128(k, 0), k_int128) AS k_decimal128,
+            arrayMap(k -> toDecimal256(k, 0), k_int256) AS k_decimal256,
+            arrayMap(x -> intDiv(number, x + 1), range(10)) AS val
+        FROM numbers(20000)
+    </create_query>
+
+    <query>SELECT sumMap({wide_key}, val) FROM sum_map_wide FORMAT Null</query>
+
+    <!-- Many groups with small maps -->
+    <query>SELECT {func}([number % 10], [number]) FROM numbers(2000000) GROUP BY number % 500000 FORMAT Null</query>
+    <query>SELECT {func}(range(5), arrayMap(x -> number + x, range(5))) FROM numbers(2000000) GROUP BY number % 200000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS sum_map_100000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_map_str</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_map_float</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_map_multi</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_map_highcard</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_map_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_map_wide</drop_query>
 </test>
