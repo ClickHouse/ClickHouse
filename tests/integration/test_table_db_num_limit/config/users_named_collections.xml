@@ -1,0 +1,11 @@
+<clickhouse>
+    <users>
+        <default>
+            <!-- test_restore_named_collections_at_limit backs up named collections, which requires
+                 reading their values back. -->
+            <named_collection_control>1</named_collection_control>
+            <show_named_collections>1</show_named_collections>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
+        </default>
+    </users>
+</clickhouse>

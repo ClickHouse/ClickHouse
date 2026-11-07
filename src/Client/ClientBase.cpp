@@ -161,7 +161,7 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
@@ -745,7 +745,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else if (dialect == Dialect::polyglot)
-            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::enable_polyglot_dialect]);
         else if (dialect == Dialect::logsql)
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
@@ -865,7 +865,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 
 void ClientBase::onData(Block & block, ASTPtr parsed_query)
 {
-    if (block.empty())
+    if (block.empty() || local_format_error_happened)
         return;
 
     processed_rows_from_blocks += block.rows();
@@ -897,6 +897,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         //this is a bad catch. It catches too much cases unrelated to LocalFormatError
         /// Catch client errors like NO_ROW_DELIMITER
+        local_format_error_happened = true;
         throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
     }
 
@@ -948,6 +949,8 @@ void ClientBase::onLogData(Block & block)
 
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
+    if (local_format_error_happened)
+        return;
     initOutputFormat(block, parsed_query);
     output_format->setTotals(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
@@ -955,6 +958,8 @@ void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
+    if (local_format_error_happened)
+        return;
     initOutputFormat(block, parsed_query);
     output_format->setExtremes(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
@@ -1288,6 +1293,7 @@ catch (...)
         std_out_wrapper->cancel();
     std_out_wrapper.reset();
 
+    local_format_error_happened = true;
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
 
@@ -2072,6 +2078,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 }
                 catch (...)
                 {
+                    local_format_error_happened = true;
                     local_format_error = std::make_exception_ptr(
                         LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
                     sendCancel(local_format_error);
@@ -3074,6 +3081,7 @@ void ClientBase::processParsedSingleQuery(
     error_code = 0;
     cancelled = false;
     cancelled_printed = false;
+    local_format_error_happened = false;
     client_exception.reset();
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());

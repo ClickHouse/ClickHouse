@@ -1136,6 +1136,13 @@ bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
     return false;
 }
 
+bool StorageBuffer::hasBucketedMapSerialization() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->hasBucketedMapSerialization();
+    return false;
+}
+
 bool StorageBuffer::checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
     time_t time_passed = 0;
@@ -1333,17 +1340,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     {
         const auto & dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
-        {
-            auto column = block.getByName(dst_col.name);
-            if (!column.type->equals(*dst_col.type))
-            {
-                LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), dst_col.type->getName(), column.type->getName());
-                column.column = castColumn(column, dst_col.type);
-                column.type = dst_col.type;
-            }
-
-            block_to_write.insert(column);
-        }
+            block_to_write.insert(block.getByName(dst_col.name));
     }
 
     if (block_to_write.columns() == 0)
@@ -1374,8 +1371,23 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);
+
+    /// The interpreter takes its own (possibly refreshed) snapshot of the destination, so convert to its header.
+    Block block_to_push;
+    for (const auto & header_column : executor.getHeader())
+    {
+        auto column = block_to_write.getByName(header_column.name);
+        if (!column.type->equals(*header_column.type))
+        {
+            LOG_WARNING(log, "Destination table {} have different type of column {} ({} != {}). Block of data is converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column.name), header_column.type->getName(), column.type->getName());
+            column.column = castColumn(column, header_column.type);
+            column.type = header_column.type;
+        }
+        block_to_push.insert(std::move(column));
+    }
+
     executor.start();
-    executor.push(std::move(block_to_write));
+    executor.push(std::move(block_to_push));
     executor.finish();
 }
 
