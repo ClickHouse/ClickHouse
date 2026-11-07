@@ -177,3 +177,82 @@ def test_chain_reload():
         )
         == "2\n"
     )
+
+
+def curl_ok(cert_name):
+    return (
+        node.exec_in_container(
+            [
+                "curl",
+                "--silent",
+                "--cacert",
+                f"/etc/clickhouse-server/config.d/{cert_name}.crt",
+                "https://localhost:8443/",
+            ]
+        )
+        == "Ok.\n"
+    )
+
+
+def test_mismatched_pair_is_rejected():
+    """Replacing only the key of a cert/key pair must keep serving the previous pair until the cert is replaced too."""
+    config_dir = "/etc/clickhouse-server/config.d"
+    node.exec_in_container(
+        ["bash", "-c", f"cp {config_dir}/first.crt {config_dir}/cur.crt && cp {config_dir}/first.key {config_dir}/cur.key"]
+    )
+    change_config_to_key("cur")
+    assert curl_ok("first")
+
+    # Only the key is rotated: the pair is inconsistent.
+    node.exec_in_container(["bash", "-c", f"cp {config_dir}/second.key {config_dir}/cur.key"])
+    node.query("SYSTEM RELOAD CONFIG")
+    assert node.contains_in_log("does not match the certificate (")
+    assert curl_ok("first")
+
+    # The cert follows: the new pair is accepted.
+    node.exec_in_container(["bash", "-c", f"cp {config_dir}/second.crt {config_dir}/cur.crt"])
+    node.query("SYSTEM RELOAD CONFIG")
+    assert curl_ok("second")
+
+
+CONFIG_DIR = "/etc/clickhouse-server/config.d"
+
+
+def run_in_node(command):
+    node.exec_in_container(["bash", "-c", command])
+
+
+def use_pair_in_place(name):
+    """Overwrite `cur.crt` and `cur.key` in place (no rename) with the pair `name`."""
+    run_in_node(
+        f"cat {CONFIG_DIR}/{name}.crt > {CONFIG_DIR}/cur.crt && cat {CONFIG_DIR}/{name}.key > {CONFIG_DIR}/cur.key"
+    )
+
+
+@pytest.mark.parametrize(
+    "broken_file, break_command, expected_log",
+    [
+        ("crt", ": >", "PEM_read_bio_X509 failed"),
+        ("key", ": >", "Failed to load key"),
+        ("crt", "head -c 100 {dir}/second.crt >", "PEM_read_bio_X509 failed"),
+        ("key", "head -c 100 {dir}/second.key >", "Failed to load key"),
+    ],
+    ids=["empty_cert", "empty_key", "truncated_cert", "truncated_key"],
+)
+def test_partially_written_file_keeps_previous_pair(broken_file, break_command, expected_log):
+    """
+    A file observed in the middle of an in-place rewrite (empty or truncated)
+    must not replace the working pair, and the complete rewrite must be picked up afterwards.
+    """
+    use_pair_in_place("first")
+    change_config_to_key("cur")
+    assert curl_ok("first")
+
+    run_in_node(f"{break_command.format(dir=CONFIG_DIR)} {CONFIG_DIR}/cur.{broken_file}")
+    node.query("SYSTEM RELOAD CONFIG")
+    assert node.contains_in_log(expected_log)
+    assert curl_ok("first")
+
+    use_pair_in_place("second")
+    node.query("SYSTEM RELOAD CONFIG")
+    assert curl_ok("second")
