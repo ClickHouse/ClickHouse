@@ -201,9 +201,9 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 if (exact_rate)
                 {
                     const Float64 resets_before = sliding_sum.getCurrentSum().resets;
-                    if (sliding_sum.removeBefore(cut_off)
-                        && (!std::isfinite(resets_before)
-                            || sliding_sum.getCurrentSum().resets_error_inexact))
+                    const bool removed = sliding_sum.removeBefore(cut_off);
+                    /// An addition can set the flag too, so check it even when nothing left the window.
+                    if ((removed && !std::isfinite(resets_before)) || sliding_sum.getCurrentSum().resets_error_inexact)
                         sliding_sum.recomputeCurrentSum();
                     return;
                 }
@@ -324,7 +324,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             /// A compensated sum of the end samples and the resets, so a big value can't cancel out a small change.
             Float64 value_difference = 0;
             Float64 compensation = 0;
-            for (const Float64 term : {last_value, -start_value, combined.resets, combined.resets_error})
+            auto add_term = [&](Float64 term)
             {
                 const Float64 sum = value_difference + term;
                 if (std::isfinite(sum) && std::abs(value_difference) >= std::abs(term))
@@ -332,6 +332,26 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 else if (std::isfinite(sum))
                     compensation += (term - sum) + value_difference;
                 value_difference = sum;
+            };
+            add_term(last_value);
+            add_term(-start_value);
+            if (check_resets && !std::isfinite(combined.resets))
+            {
+                /// The reset sum alone overflowed: add each reset after the end samples, in time order, as Prometheus does.
+                const auto & window_values = sliding_sum.getWindow();
+                for (size_t i = 0; i < window_values.size(); ++i)
+                {
+                    const Summary & value = window_values[i].second;
+                    if (i > 0 && window_values[i - 1].second.last_value > value.first_value)
+                        add_term(static_cast<Float64>(window_values[i - 1].second.last_value));
+                    add_term(value.resets);
+                    add_term(value.resets_error);
+                }
+            }
+            else
+            {
+                add_term(combined.resets);
+                add_term(combined.resets_error);
             }
             value_difference += compensation;
 

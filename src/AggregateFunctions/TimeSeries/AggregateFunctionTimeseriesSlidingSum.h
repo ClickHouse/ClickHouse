@@ -140,6 +140,9 @@ public:
             current_sum.merge(timestamp_and_value.second);
     }
 
+    /// The in-window values in time order.
+    const auto & getWindow() const requires is_invertible { return window; }
+
     /// The reference is valid until the next `add` or `removeBefore`.
     const SummaryType & getCurrentSum() const
     {

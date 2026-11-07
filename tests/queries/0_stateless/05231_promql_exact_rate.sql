@@ -52,6 +52,13 @@ SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Arr
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([70, 75, 100, 110, 120]::Array(UInt32), [1e36, 1e18, 2, 1, 2]::Array(Float64));
 SELECT timeSeriesIncreaseToGrid(120, 200, 20, 40, 1)([70, 75, 100, 110, 120, 140, 160, 180, 200]::Array(UInt32), [1e36, 1e18, 2, 1, 2, 3, 4, 5, 6]::Array(Float64));
 
+SELECT '--- A small reset added after big resets left the window is kept ---';
+SELECT timeSeriesIncreaseToGrid(120, 160, 20, 40, 1)([83, 95, 123, 156]::Array(UInt32), [1e36, 1e18, 2, 1]::Array(Float64));
+
+SELECT '--- Resets that overflow only when summed alone keep a finite result ---';
+SELECT timeSeriesIncreaseToGrid(120, 120, 1, 40, 1)([85, 90, 100, 110, 120]::Array(UInt32), [1e308, 0, 1e308, 0, 1]::Array(Float64));
+SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([85, 90, 100, 110, 120]::Array(UInt32), [1e308, 0, 1e308, 0, 1]::Array(Float64));
+
 SELECT '--- A huge difference does not overflow the rate when the rate itself fits ---';
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(UInt32), [0, 1e308]::Array(Float64));
 SELECT timeSeriesRateToGrid(120, 120, 1, 40, 1)([100, 120]::Array(DateTime64(3)), [0, 1e308]::Array(Float64));
