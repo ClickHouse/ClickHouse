@@ -631,14 +631,14 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
+    const size_t num_columns = counts.size();
     if (columns.empty())
     {
         if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
-
-        auto counts = countColumnsSizeInSelector(num_columns, selector);
 
         VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
@@ -651,7 +651,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_colum
     VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> scattered_tuple_elements(tuple_size);
 
     for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
-        scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
+        scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatterWithCounts(selector, counts);
 
     VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
 
@@ -664,6 +664,16 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_colum
     }
 
     return res;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const

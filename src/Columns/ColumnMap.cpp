@@ -261,15 +261,26 @@ ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
     return ColumnMap::create(std::move(replicated), statistics);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::scatter(size_t num_columns, const Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
-    auto scattered_columns = nested->scatter(num_columns, selector);
+    auto scattered_columns = nested->scatterWithCounts(selector, counts);
     VectorWithMemoryTracking<MutableColumnPtr> res;
-    res.reserve(num_columns);
+    res.reserve(counts.size());
     for (auto && scattered : scattered_columns)
         res.push_back(ColumnMap::create(std::move(scattered), statistics));
 
     return res;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

@@ -147,7 +147,8 @@ DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplic
 }
 
 
-DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index, bool deduplication_enabled) const
+template <typename Id>
+DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<Id> & row_to_partition, size_t partition_index, bool deduplication_enabled) const
 {
     /// An empty selector means the block was not split (single partition); with dedup off or a
     /// single token there is nothing to attribute. Every token then belongs to this partition.
@@ -192,6 +193,9 @@ DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray
     /// filterImpl drops the absent tokens and keeps the block/offsets consistent.
     return filterImpl(absent_offsets).deduplication_info;
 }
+
+template DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt16> &, size_t, bool) const;
+template DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> &, size_t, bool) const;
 
 
 DeduplicationInfo::FilterResult DeduplicationInfo::recalculateBlock(DeduplicationInfo::FilterResult && filtered, const std::string & partition_id, ContextPtr context) const

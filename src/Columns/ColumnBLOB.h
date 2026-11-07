@@ -214,7 +214,8 @@ public:
         throwInapplicable();
     }
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const Selector &) const override { throwInapplicable(); }
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const Selector &, std::span<const size_t>) const override { throwInapplicable(); }
+    VectorWithMemoryTracking<MutableColumnPtr> doScatter(const SmallSelector &, std::span<const size_t>) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
     void getExtremes(Field &, Field &, size_t, size_t) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }

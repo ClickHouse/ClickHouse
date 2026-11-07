@@ -980,9 +980,10 @@ size_t ColumnLowCardinality::estimateCardinalityInPermutedRange(const Permutatio
     return elements.size();
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t num_columns, const Selector & selector) const
+template <typename SelectorType>
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatterImpl(const SelectorType & selector, std::span<const size_t> counts) const
 {
-    auto columns = getIndexes().scatter(num_columns, selector);
+    auto columns = getIndexes().scatterWithCounts(selector, counts);
     ColumnPtr global_unique_ptr = IColumn::mutate(dictionary.getColumnUniquePtr());
     for (auto & column : columns)
     {
@@ -992,6 +993,16 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::scatter(size_t 
     }
 
     return columns;
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::doScatter(const Selector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
+}
+
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLowCardinality::doScatter(const SmallSelector & selector, std::span<const size_t> counts) const
+{
+    return scatterImpl(selector, counts);
 }
 
 void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)

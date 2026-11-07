@@ -147,7 +147,7 @@ void MergeTreeSink::consume(Chunk & chunk)
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
-    IColumn::Selector partition_selector;
+    MergeTreeDataWriter::PartitionSelector partition_selector;
     auto part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector);
 
     using DelayedPartitions = std::vector<MergeTreeDelayedChunk::Partition>;
@@ -190,7 +190,9 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
         /// insert does not register a token in partitions it never wrote to.
-        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index, deduplicate);
+        auto current_deduplication_info = std::visit(
+            [&](const auto & selector) { return deduplication_info->filterToPartition(selector, part_index, deduplicate); },
+            partition_selector);
 
         {
             ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);

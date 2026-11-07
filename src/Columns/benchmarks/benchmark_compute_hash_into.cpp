@@ -140,7 +140,7 @@ void BM_HashAndFastrange_New(benchmark::State & state, const std::vector<ColumnP
     const size_t n = cols[0]->size();
     const size_t ncols = cols.size();
     PaddedPODArray<UInt32> hash_buf(n);
-    PaddedPODArray<UInt64> pids(n); // mapToRange writes a UInt64 selector
+    PaddedPODArray<UInt16> pids(n); // 16-bit ids, as the transform writes for at most 65536 outputs
     const UInt32 p32 = static_cast<UInt32>(num_shards);
     for (auto _ [[maybe_unused]] : state)
     {
