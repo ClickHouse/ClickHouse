@@ -117,6 +117,10 @@ public:
     /// Reloads and updates all access entities.
     void reload(ReloadMode reload_mode) override;
 
+    /// Reads the query masking rules and keeps SensitiveDataMasker up to date with them.
+    /// Call it after the access storages are added.
+    void ensureQueryMaskingRulesRead();
+
     using OnChangedHandler = AccessChangesNotifier::OnChangedHandler;
 
     /// Subscribes for all changes of entities of a given type (see AccessChangesNotifier::subscribeForChanges).

@@ -19,13 +19,24 @@ namespace ErrorCodes
 QueryMaskingRulesCache::QueryMaskingRulesCache(const AccessControl & access_control_)
     : access_control(access_control_)
 {
+}
+
+QueryMaskingRulesCache::~QueryMaskingRulesCache() = default;
+
+
+void QueryMaskingRulesCache::ensureAllRulesRead()
+{
+    std::lock_guard lock{mutex};
+    if (all_rules_read)
+        return;
+
     subscription = access_control.subscribeForChanges<QueryMaskingRule>(
         [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
             /// The changed rules are already stored and outlive the query that changed them:
             /// the server memory tracker accounts for them, but no memory limit may refuse them.
             MemoryTrackerBlockerInThread not_refused_by_memory_limits(VariableContext::Global);
-            std::lock_guard lock{mutex};
+            std::lock_guard lock2{mutex};
             for (const auto & change : changes)
             {
                 if (change.entity)
@@ -40,14 +51,7 @@ QueryMaskingRulesCache::QueryMaskingRulesCache(const AccessControl & access_cont
             if (needs_publish)
                 publishLocked();
         });
-}
 
-QueryMaskingRulesCache::~QueryMaskingRulesCache() = default;
-
-
-void QueryMaskingRulesCache::reload()
-{
-    std::lock_guard lock{mutex};
     std::unordered_map<UUID, QueryMaskingRulePtr> new_rules;
     for (const UUID & id : access_control.findAll<QueryMaskingRule>())
     {
@@ -58,6 +62,7 @@ void QueryMaskingRulesCache::reload()
     rules = std::move(new_rules);
     needs_publish = true;
     publishLocked();
+    all_rules_read = true;
 }
 
 

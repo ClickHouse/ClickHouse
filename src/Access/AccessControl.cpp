@@ -399,6 +399,8 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
     role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
+
+    ensureQueryMaskingRulesRead();
 }
 
 
@@ -469,8 +471,6 @@ void AccessControl::addReplicatedStorage(
         allow_backup_,
         throw_on_invalid_replicated_access_entities);
     addStorage(new_storage);
-    /// The storage has read its entities from ZooKeeper, but only queued the notifications about them.
-    query_masking_rules_cache->reload();
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
 
@@ -491,8 +491,6 @@ void AccessControl::addDiskStorage(const String & storage_name_, const String & 
     }
     auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, *changes_notifier, readonly_, allow_backup_);
     addStorage(new_storage);
-    /// The storage loads its entities without sending notifications.
-    query_masking_rules_cache->reload();
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
@@ -1008,6 +1006,12 @@ void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const Strin
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     external_authenticators->setConfiguration(config, getLogger());
+}
+
+
+void AccessControl::ensureQueryMaskingRulesRead()
+{
+    query_masking_rules_cache->ensureAllRulesRead();
 }
 
 

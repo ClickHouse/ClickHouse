@@ -18,15 +18,16 @@ public:
     explicit QueryMaskingRulesCache(const AccessControl & access_control_);
     ~QueryMaskingRulesCache();
 
-    /// Re-reads all the rules from the access storages and publishes them.
-    /// Throws if a rule cannot be read, keeping the rules published before.
-    void reload();
+    /// Reads all the rules from the access storages, publishes them and keeps them published.
+    /// Throws if a rule cannot be read.
+    void ensureAllRulesRead();
 
 private:
     void publishLocked() TSA_REQUIRES(mutex);
 
     const AccessControl & access_control;
     std::unordered_map<UUID, QueryMaskingRulePtr> rules TSA_GUARDED_BY(mutex);
+    bool all_rules_read TSA_GUARDED_BY(mutex) = false;
     /// Stays set after a failed publish, so the next notification pass retries it.
     bool needs_publish TSA_GUARDED_BY(mutex) = false;
     std::mutex mutex;
