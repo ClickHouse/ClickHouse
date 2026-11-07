@@ -23,6 +23,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/functional/hash.hpp>
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -44,6 +45,8 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_join_runtime_filters_for_iceberg_pruning;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
 }
 
 namespace DataLakeStorageSetting
@@ -205,6 +208,15 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
 
+    const auto & settings = context->getSettingsRef();
+    if (configuration->isIcebergConfiguration() && !join_runtime_filters_for_file_pruning.empty()
+        && settings[Setting::use_join_runtime_filters_for_iceberg_pruning] && settings[Setting::enable_join_runtime_filters_index_analysis])
+    {
+        if (auto lookup = getJoinRuntimeFilterLookup())
+            format_filter_info->join_runtime_filters = std::make_shared<const JoinRuntimeFiltersForPruning>(
+                JoinRuntimeFiltersForPruning{join_runtime_filters_for_file_pruning, std::move(lookup)});
+    }
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
@@ -249,6 +261,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     pipeline.init(std::move(pipe));
 }
 
+void ReadFromObjectStorageStep::addJoinRuntimeFilterIndexAnalysisOnDataRead(
+    const String & filter_id, const String & column_name, const DataTypePtr & column_type)
+{
+    join_runtime_filters_for_file_pruning.push_back({filter_id, column_name, column_type});
+}
+
 void ReadFromObjectStorageStep::createIterator()
 {
     if (iterator_wrapper)
@@ -264,6 +282,18 @@ void ReadFromObjectStorageStep::createIterator()
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+
+    if (!join_runtime_filters_for_file_pruning.empty())
+        if (auto lookup = getJoinRuntimeFilterLookup())
+            iterator_wrapper->setJoinRuntimeFilters(join_runtime_filters_for_file_pruning, std::move(lookup));
+}
+
+RuntimeFilterLookupPtr ReadFromObjectStorageStep::getJoinRuntimeFilterLookup() const
+{
+    /// The build side registers a join runtime filter in the lookup of the thread's query context, which is not always this step's context.
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return query_context->getRuntimeFilterLookup();
+    return nullptr;
 }
 
 ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
