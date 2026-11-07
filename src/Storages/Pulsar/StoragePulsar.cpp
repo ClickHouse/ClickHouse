@@ -153,7 +153,7 @@ private:
         // Claim as many consumers as available, but don't block
         for (size_t i = 0; i < live_consumers; ++i)
         {
-            pipes.emplace_back(std::make_shared<PulsarSource>(
+            auto source = std::make_shared<PulsarSource>(
                 pulsar_storage,
                 storage_snapshot,
                 modified_context,
@@ -163,8 +163,11 @@ private:
                 0,
                 (*pulsar_storage.pulsar_settings)[PulsarSetting::pulsar_commit_on_select].value,
                 std::nullopt,
-                true));
+                true);
+            /// From here on the source owns its reservation in `active_direct_readers` and releases it
+            /// in its destructor, even if constructing the `Pipe` below throws.
             ++sources_created;
+            pipes.emplace_back(std::move(source));
         }
 
         return Pipe::unitePipes(std::move(pipes));
