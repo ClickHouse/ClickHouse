@@ -908,6 +908,41 @@ def test_table_location_overlap(started_cluster):
     create_table(ns, "same_prefix", location=f"{outer}_x")
 
 
+def test_table_location_overlap_concurrent(started_cluster):
+    ns = f"overlap_concurrent_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    parent = create_table(ns, "anchor").json()["metadata"]["location"].rsplit("/", 1)[0]
+    locations = {"outer": f"{parent}/race", "inner": f"{parent}/race/inner"}
+
+    # Both creates pass the overlap scan when they start together. One wins the Keeper transaction.
+    # The other hits the version check on `locations`, scans again, and is refused.
+    def create(table):
+        return requests.post(
+            catalog_url(tables_url(ns)),
+            json={"name": table, "schema": DEFAULT_SCHEMA, "location": locations[table]},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = dict(zip(locations, executor.map(create, locations)))
+    codes = {table: response.status_code for table, response in responses.items()}
+    assert sorted(codes.values()) == [200, 400], codes
+
+    winner = next(table for table, code in codes.items() if code == 200)
+    loser = next(table for table, code in codes.items() if code == 400)
+    assert_error_shape(responses[loser], "BadRequestException")
+    assert f"overlaps location {locations[winner]}" in responses[loser].json()["error"]["message"]
+
+    assert sorted(list_tables(ns)) == sorted(["anchor", winner])
+    zk = get_keeper()
+    assert zk.exists(location_node(locations[winner]))
+    assert not zk.exists(location_node(locations[loser]))
+
+    # Only the winner's metadata file is left under the shared root.
+    objects = cluster.minio_client.list_objects(BUCKET, metadata_key(locations["outer"]) + "/", recursive=True)
+    keys = [obj.object_name for obj in objects]
+    assert keys and all(key.startswith(metadata_key(locations[winner]) + "/metadata/") for key in keys), keys
+
+
 def test_metadata_compression(started_cluster):
     ns = f"compression_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
