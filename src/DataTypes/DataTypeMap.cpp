@@ -211,11 +211,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
     auto map_serialization_ptr = removeNamedSerialization(data.serialization);
     const auto & map_serialization = assert_cast<const SerializationMap &>(*map_serialization_ptr);
 
-    /// The bucket of a key is the hash of its bits. The two zeros are equal, but their bits differ,
-    /// so the other zero may be in another bucket. A key with a float zero at any depth, e.g. in a `Tuple`
-    /// or in a path of a `JSON`, reads the whole Map.
+    /// Float zeros and NaNs can match keys with different bit patterns that hash to different buckets.
+    /// Read the whole Map for these keys, including when nested inside a Tuple, Array or JSON.
     bool read_whole_map = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
-        && anyFieldSatisfies((*key_column)[0], isFloatZeroField);
+        && anyFieldSatisfies((*key_column)[0], [](const Field & field) { return isFloatZeroField(field) || isNaNField(field); });
 
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
