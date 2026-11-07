@@ -7,6 +7,7 @@
 #include <Client/ConnectionPool.h>
 #include <Columns/ColumnBLOB.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -195,11 +196,18 @@ namespace
         /// requires READ ON REMOTE above, so the probe reports nothing the caller's own cluster() could not.
         auto probe_context = Context::createCopy(context->getGlobalContext());
         probe_context->makeQueryContext();
+        /// The caller's user and active roles, so the probe forwards the same roles the read and the write do.
+        if (const auto user_id = context->getUserID())
+        {
+            probe_context->setUser(*user_id, context->getExternalRoles());
+            probe_context->setCurrentRoles(context->getCurrentRoles(), /* check_grants = */ false);
+        }
         /// A secondary query of the request it serves, as the wire already sends it: a shard can then name that
         /// request, and the kind pins the per-probe id ask() sets out of the initial one.
         probe_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
         /// An interserver secret runs a secondary query as the initial user it names, so the probe asks as the caller.
         probe_context->setInitialUserName(context->getClientInfo().initial_user);
+        probe_context->setCurrentUserName(context->getClientInfo().current_user);
         probe_context->setInitialQueryId(context->getInitialQueryId());
         if (const auto & initial_address = context->getClientInfo().initial_address)
             probe_context->setInitialAddress(*initial_address);
@@ -256,6 +264,11 @@ namespace
             {
                 ask(pool, "SELECT getSetting('insert_expected_table_engine') AS s", setting_header,
                     [&](const Block &) { answered = true; });
+            }
+            catch (const NetException &)
+            {
+                /// A pooled connection to a replica that went away unnoticed fails on first use.
+                return Capability::Unreachable;
             }
             catch (const Exception & e)
             {
@@ -599,7 +612,7 @@ void checkPrometheusQueryDistributedWrite(
     {
         try
         {
-            receives_rows = distributed.getShardsReceivingRows(block);
+            receives_rows = distributed.getShardsReceivingRows(cluster, block);
         }
         catch (...) /// NOLINT(bugprone-empty-catch)
         {

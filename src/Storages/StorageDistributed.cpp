@@ -2161,9 +2161,8 @@ size_t StorageDistributed::getShardCount() const
     return getCluster()->getShardCount();
 }
 
-std::vector<bool> StorageDistributed::getShardsReceivingRows(const Block & block) const
+std::vector<bool> StorageDistributed::getShardsReceivingRows(const ClusterPtr & cluster, const Block & block) const
 {
-    const auto cluster = getCluster();
     std::vector<bool> receives_rows(cluster->getShardsInfo().size(), true);
     /// A key that is not deterministic would send the rows elsewhere when the sink evaluates it again.
     if (receives_rows.size() <= 1 || !sharding_key_expr || !sharding_key_is_deterministic)

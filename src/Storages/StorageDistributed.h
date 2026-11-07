@@ -156,7 +156,7 @@ public:
     size_t getShardCount() const;
 
     /// Which shards DistributedSink sends a row of `block` to (all of them when no sharding key splits it), by the same selector.
-    std::vector<bool> getShardsReceivingRows(const Block & block) const;
+    std::vector<bool> getShardsReceivingRows(const ClusterPtr & cluster, const Block & block) const;
 
     bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
 
