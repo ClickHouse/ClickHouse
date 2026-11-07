@@ -97,7 +97,7 @@ namespace
 {
 
 /// A read-only anonymous mapping, so it does not take memory: its pages are mapped to the zero page on reading.
-/// Only the address space is reserved, and it is large enough for any column that fits in memory.
+/// Being read-only, it is not accounted as committed memory. It is large enough for any column that fits in memory.
 /// Padded on both sides like `PaddedPODArray`, because the readers may read past the end of the null map
 /// (e.g. `memcpySmallAllowReadWriteOverflow15` in `GatherUtils`). Never unmapped.
 constexpr size_t zeros_size = 1ULL << 36;
@@ -107,7 +107,7 @@ const UInt8 * getZeros()
 {
     static const UInt8 * const zeros = []
     {
-        void * mapping = mmap(nullptr, zeros_pad_left + zeros_size + PADDING_FOR_SIMD, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        void * mapping = mmap(nullptr, zeros_pad_left + zeros_size + PADDING_FOR_SIMD, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == mapping)
             throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot mmap the zero null map");
         return static_cast<const UInt8 *>(mapping) + zeros_pad_left;
