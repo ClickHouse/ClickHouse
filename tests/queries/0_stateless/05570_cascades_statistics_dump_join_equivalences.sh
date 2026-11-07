@@ -59,12 +59,17 @@ RESULT=
 # line: Cascades needs both enable_cascades_optimizer and make_distributed_plan
 # (Planner/PlannerJoinTree.cpp) plus a node count, which it cannot read from a cluster here, and
 # enable_parallel_replicas or the join-order jitter would change which groups are derived.
+# automatic_parallel_replicas_mode must be pinned next to enable_parallel_replicas: a nonzero
+# automatic mode together with make_distributed_plan is rejected with SUPPORT_IS_DISABLED
+# (Optimizations/QueryPlanOptimizationSettings.cpp), and clearing enable_parallel_replicas alone
+# does not reset it.
 for _ in {1..5}; do
     RESULT=$($CLICKHOUSE_CLIENT -q "
         SET send_logs_level = 'test';
         SET enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1;
         SET param__internal_cascades_cluster_node_count = 4;
-        SET enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = 0, max_rows_to_group_by = 0;
+        SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+        SET query_plan_optimize_join_order_randomize = 0, max_rows_to_group_by = 0;
         SELECT 'cascades', count(), sum(a.k), sum(b.w), sum(length(a.v))
         FROM t_stats_dump_a AS a INNER JOIN t_stats_dump_b AS b ON a.k = b.k;
     " 2>>"$LOG")
