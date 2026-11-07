@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Core/Block_fwd.h>
 #include <Formats/NativeReaderTypeCache.h>
+#include <Formats/NativeWriterTypeCache.h>
 #include <Processors/Chunk.h>
 
 namespace Poco::Net
@@ -90,8 +91,12 @@ namespace StreamingExchangeProtocol
     /// columns of `header` compressed with `codec`. A chunk without rows or columns is a data packet
     /// too; only `writeEndOfStreamPacket` ends the stream. The body size in the packet header is known
     /// only after the block is serialized; the caller fills it in with `finishDataPacket` once it can
-    /// address the written bytes. Returns the offset of the packet in `out`.
-    size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec);
+    /// address the written bytes. Returns the offset of the packet in `out`. A sender passes its own
+    /// `type_cache` with every packet, so that the type name and the serialization of each column type
+    /// are made only once (see `NativeWriterTypeCache`).
+    size_t writeDataPacket(
+        const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec,
+        NativeWriterTypeCache * type_cache = nullptr);
 
     /// Appends the end-of-stream packet to `out`: the end-of-stream flag, no rows, no columns and
     /// nothing else. The packet is complete, its header carries the body size. Returns the offset of

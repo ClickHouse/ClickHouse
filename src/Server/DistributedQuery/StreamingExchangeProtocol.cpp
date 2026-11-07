@@ -95,7 +95,8 @@ namespace
     }
 }
 
-size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec)
+size_t writeDataPacket(
+    const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec, NativeWriterTypeCache * type_cache)
 {
     Stopwatch watch;
     const size_t packet_offset = out.count();
@@ -122,7 +123,8 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
         CompressedWriteBuffer compressed_buf(out, codec);
         try
         {
-            NativeWriter writer(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header);
+            NativeWriter writer(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header, /*format_settings_=*/ std::nullopt,
+                /*remove_low_cardinality_=*/ false, /*index_=*/ nullptr, /*initial_size_of_file_=*/ 0, type_cache);
             Block block = header->cloneWithColumns(chunk.getColumns());
             /// Carry the remaining aggregation metadata in block.info, the same way partial-aggregation
             /// results are transported for distributed/parallel reads.
