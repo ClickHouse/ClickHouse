@@ -610,6 +610,42 @@ struct ReadIdentity
     }
 };
 
+/// Identify a read by the table expression it reads rather than by where it sits in the plan. The
+/// analyzer names every table expression (`__table1`, `__table2`, ...) while resolving the query, and
+/// both plans are built from the same query, so the names agree across them and tell two reads of one
+/// table apart - which the table alone cannot do, and which a self-join needs. Position cannot be
+/// trusted for this: the two plans are optimized differently and may order a join's sides differently.
+std::optional<ReadIdentity> identifyRead(const ReadFromMergeTree * read)
+{
+    const auto & table_expression = read->getQueryInfo().table_expression;
+    if (!table_expression || table_expression->getAlias().empty())
+        return {};
+    return ReadIdentity{&read->getMergeTreeData(), table_expression->getAlias()};
+}
+
+/// Pairs a read of the probe plan with the read of the single-node plan it stands for, the way
+/// `transplantAnalysisToAllReads` pairs them, while the probe plan is still being optimized. A read with no
+/// unique counterpart gets none.
+FindSingleNodeRead makeSingleNodeReadFinder(QueryPlan::Node & single_node_root)
+{
+    std::map<ReadIdentity, const ReadFromMergeTree *> single_node_by_identity;
+    std::set<ReadIdentity> ambiguous;
+    for (const auto * read : collectReadingSteps(single_node_root))
+    {
+        if (auto identity = identifyRead(read); identity && !single_node_by_identity.emplace(*identity, read).second)
+            ambiguous.insert(*identity);
+    }
+    for (const auto & identity : ambiguous)
+        single_node_by_identity.erase(identity);
+
+    return [paired = std::move(single_node_by_identity)](const ReadFromMergeTree & read) -> const ReadFromMergeTree *
+    {
+        auto identity = identifyRead(&read);
+        auto it = identity ? paired.find(*identity) : paired.end();
+        return it != paired.end() ? it->second : nullptr;
+    };
+}
+
 /// Hand every read in the parallel replicas plan the analysis the single-node plan already produced for
 /// the same read. Without this only the matched read gets an analysis and the rest scan everything - on
 /// TPC-H q03, 1045 marks against 614.
@@ -638,23 +674,10 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
         return false;
     }
 
-    /// Identify a read by the table expression it reads rather than by where it sits in the plan. The
-    /// analyzer names every table expression (`__table1`, `__table2`, ...) while resolving the query, and
-    /// both plans are built from the same query, so the names agree across them and tell two reads of one
-    /// table apart - which the table alone cannot do, and which a self-join needs. Position cannot be
-    /// trusted for this: the two plans are optimized differently and may order a join's sides differently.
-    auto identify = [](const ReadFromMergeTree * read) -> std::optional<ReadIdentity>
-    {
-        const auto & table_expression = read->getQueryInfo().table_expression;
-        if (!table_expression || table_expression->getAlias().empty())
-            return {};
-        return ReadIdentity{&read->getMergeTreeData(), table_expression->getAlias()};
-    };
-
     std::map<ReadIdentity, ReadFromMergeTree *> single_node_by_identity;
     for (auto * read : single_node_reads)
     {
-        auto identity = identify(read);
+        auto identity = identifyRead(read);
         if (!identity || !single_node_by_identity.emplace(*identity, read).second)
         {
             LOG_TRACE(
@@ -670,7 +693,7 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
     std::unordered_set<const ReadFromMergeTree *> claimed_single_node_reads;
     for (size_t i = 0; i < replicas_reads.size(); ++i)
     {
-        auto identity = identify(replicas_reads[i]);
+        auto identity = identifyRead(replicas_reads[i]);
         auto it = identity ? single_node_by_identity.find(*identity) : single_node_by_identity.end();
         if (it == single_node_by_identity.end())
         {
@@ -1065,7 +1088,8 @@ void considerEnablingParallelReplicas(
     /// adds no set that collecting later would catch.
     auto built_sets = collectBuiltSets(query_plan);
     Stopwatch plan_build_watch;
-    auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(built_sets, getLogger("AutoParallelReplicas"));
+    auto build_result = optimization_settings.query_plan_with_parallel_replicas_builder(
+        built_sets, makeSingleNodeReadFinder(root), getLogger("AutoParallelReplicas"));
 
     /// The builder checks what it can before it builds anything, and logs the specific reason when it
     /// stops there. Those are skips, like the ones above, not plans that could not be compared.
