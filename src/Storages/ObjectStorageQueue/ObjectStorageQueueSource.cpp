@@ -112,6 +112,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     LoggerPtr logger_,
     bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
+    bool track_active_registry_,
     std::atomic<bool> & shutdown_called_)
     : WithContext(context_)
     , metadata(metadata_)
@@ -125,6 +126,10 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , storage_id(storage_id_)
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
+    , active_registry_id(
+        track_active_registry_ && metadata->usePersistentProcessingNode()
+            ? ObjectStorageQueueMetadata::getActiveRegistryID(storage_id_)
+            : "")
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -296,7 +301,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
-                        /* bucket_info */ {}); /// No buckets for Unordered mode.
+                        /* bucket_info */ {},
+                        active_registry_id); /// No buckets for Unordered mode.
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -595,7 +601,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
+            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, active_registry_id);
             try
             {
                 if (!file_metadata->trySetProcessing())
@@ -675,10 +681,18 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks(bool force)
 {
+    /// A Keeper session replacement removes the ephemeral registry entry while the
+    /// persistent locks remain valid. Recreate it before renewing those locks.
+    if (!active_registry_id.empty())
+        metadata->registerActive(storage_id);
+
     const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
-    if (!ttl_seconds)
+    const size_t refresh_interval_seconds = active_registry_id.empty()
+        ? (ttl_seconds ? std::max<size_t>(1, ttl_seconds / 4) : 0)
+        : metadata->getProcessingNodeRefreshIntervalSeconds();
+    if (!force && !refresh_interval_seconds)
         return;
 
     std::lock_guard lock(mutex);
@@ -691,7 +705,7 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     {
         for (auto & holder : *holders)
         {
-            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            if (force || holder->getAgeSeconds() >= static_cast<double>(refresh_interval_seconds))
             {
                 try
                 {
@@ -775,7 +789,7 @@ ObjectStorageQueueSource::BucketHolderPtr ObjectStorageQueueSource::FileIterator
             bucket_info.processor.value(), processor);
     }
 
-    auto holder = metadata->tryAcquireBucket(bucket);
+    auto holder = metadata->tryAcquireBucket(bucket, active_registry_id);
     if (!holder)
     {
         LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})", bucket, bucket_info.keys.size());
@@ -1147,6 +1161,15 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
+        const size_t refresh_interval_seconds = files_metadata->getProcessingNodeRefreshIntervalSeconds();
+        if (refresh_interval_seconds)
+        {
+            if (!is_direct_select)
+                files_metadata->registerActive(storage_id);
+            for (const auto & processed_file : processed_files)
+                processed_file.metadata->refreshProcessingNode(refresh_interval_seconds);
+        }
+
         if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption aborted by SYSTEM STOP or SYSTEM CANCEL");
 
@@ -1283,6 +1306,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
+            file_metadata->refreshProcessingNode(/* refresh_interval_seconds */ 0);
             processed_files.emplace_back(file_metadata);
 
             if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
@@ -1530,8 +1554,40 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     const std::string & exception_message,
     int error_code)
 {
+    /// The source can outlive the Keeper session which created its ephemeral registry
+    /// entry. Recreate the entry before the commit and release fences require it.
+    if (!is_direct_select)
+        files_metadata->registerActive(storage_id);
+
+    const bool processing_ownership_lost = std::any_of(
+        processed_files.begin(),
+        processed_files.end(),
+        [](const auto & file) { return file.metadata->wasProcessingOwnershipLost(); });
+    if (file_iterator->isInvalidated() || processing_ownership_lost)
+    {
+        commit_suppressed_due_to_ownership_loss = true;
+        return;
+    }
     if (processed_files.empty())
         return;
+
+    /// A file claim can remain intact while cleanup reclaims its bucket lock. Validate
+    /// held bucket locks after restoring the registry and before producing any mutations.
+    if (!is_direct_select && file_iterator->useBucketsForProcessing())
+    {
+        file_iterator->refreshExpiringBucketLocks(/* force */ true);
+        if (file_iterator->isInvalidated())
+        {
+            commit_suppressed_due_to_ownership_loss = true;
+            return;
+        }
+    }
+
+    for (const auto & processed_file : processed_files)
+    {
+        if (!processed_file.metadata->wasProcessingOwnershipLost())
+            processed_file.metadata->refreshProcessingNode(/* refresh_interval_seconds */ 0);
+    }
 
     LOG_TEST(
         log,
@@ -1552,6 +1608,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         for (size_t i = 0; i < processed_files.size(); ++i)
         {
             const auto & file_metadata = processed_files[i].metadata;
+            if (file_metadata->wasProcessingOwnershipLost())
+                continue;
             const auto & file_path = file_metadata->getPath();
             const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
 
@@ -1586,13 +1644,18 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     if (!insert_succeeded && reduce_retry_count)
     {
         for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_, last_modified_] : processed_files)
-            if (file_state == FileState::Processed)
+            if (file_state == FileState::Processed && !file_metadata_->wasProcessingOwnershipLost())
                 ++processed_count;
     }
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
         const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_] = processed_files[i];
+        if (file_metadata->wasProcessingOwnershipLost())
+        {
+            LOG_TEST(log, "Skipping Keeper commit for {}, processing ownership was lost", file_metadata->getPath());
+            continue;
+        }
         switch (file_state)
         {
             case FileState::Processed:
@@ -1702,12 +1765,6 @@ void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     }
 }
 
-void ObjectStorageQueueSource::setUncertainCommit()
-{
-    for (auto & file : processed_files)
-        file.metadata->setUncertainCommit();
-}
-
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
@@ -1716,7 +1773,7 @@ void ObjectStorageQueueSource::finalizeCommit(
     const std::string & exception_message,
     const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths)
 {
-    if (processed_files.empty())
+    if (processed_files.empty() || commit_suppressed_due_to_ownership_loss)
         return;
 
     bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
@@ -1724,6 +1781,12 @@ void ObjectStorageQueueSource::finalizeCommit(
     std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
     {
+        if (file_metadata->wasProcessingOwnershipLost())
+        {
+            LOG_TEST(log, "Skipping commit finalization for {}, processing ownership was lost", file_metadata->getPath());
+            continue;
+        }
+
         try
         {
             bool processed = false;
@@ -1928,11 +1991,8 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 DimensionalMetrics::ObjectStorageQueueFailures,
                 {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(e.code))});
 
-            /// A tryMulti attempt may have succeeded in Keeper before the connection dropped -
-            /// the commit outcome is unknown, so destructors must check ownership before
-            /// removing processing nodes (see the analogous handling in
-            /// StorageObjectStorageQueue::commit()).
-            setUncertainCommit();
+            /// The commit outcome may be unknown after a connection loss. File metadata
+            /// destructors always re-read and fence ownership before removing a claim.
             throw;
         }
 
@@ -1947,8 +2007,6 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
             DimensionalMetrics::add(
                 DimensionalMetrics::ObjectStorageQueueFailures,
                 {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
-            if (try_num > 1)
-                setUncertainCommit();
             throw zkutil::KeeperMultiException(code, requests, responses);
         }
     }
