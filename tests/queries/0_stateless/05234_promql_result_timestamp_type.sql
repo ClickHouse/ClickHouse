@@ -54,6 +54,19 @@ SELECT '-- Arguments with different time zones: the time zone of the table is us
 DESCRIBE prometheusQueryRange(ts_dt, 'up', toDateTime64(1000, 3, 'Asia/Tokyo'), toDateTime64(1030, 3, 'Europe/Amsterdam'), 15);
 DESCRIBE prometheusQueryRange(ts_u32, 'up', toDateTime64(1000, 3, 'Asia/Tokyo'), toDateTime64(1030, 3, 'Europe/Amsterdam'), 15);
 
+-- Selector-free subqueries use the result grid, not the storage timestamp type.
+SET enable_time_series_aggregate_functions = 1;
+SELECT '-- Signed @ subqueries use a DateTime64 result grid across storage timestamp types';
+SELECT arrayMap(x -> toUnixTimestamp64Second(x.1), samples) FROM prometheusQuery(ts_u32, 'vector(1)[5m:1m] @ -100', 0);
+SELECT arrayMap(x -> x.2, samples) FROM prometheusQuery(ts_u32, 'vector(time())[5m:1m] @ -100', 0);
+SELECT arrayMap(x -> toUnixTimestamp64Second(x.1), samples) FROM prometheusQuery(ts_dt, 'vector(1)[5m:1m] @ -100', 0);
+SELECT arrayMap(x -> x.2, samples) FROM prometheusQuery(ts_dt, 'vector(time())[5m:1m] @ -100', 0);
+SELECT arrayMap(x -> toUnixTimestamp64Second(x.1), samples) FROM prometheusQuery(ts_tokyo, 'vector(1)[5m:1m] @ -100', 0);
+SELECT arrayMap(x -> x.2, samples) FROM prometheusQuery(ts_tokyo, 'vector(time())[5m:1m] @ -100', 0);
+
+SELECT '-- Signed @ subquery grids floor-align steps on both sides of the Unix epoch';
+SELECT arrayMap(x -> x.2, samples) FROM prometheusQuery(ts_tokyo, 'vector(time())[5m:1m] @ +100', 0);
+
 DROP TABLE ts_dt;
 DROP TABLE ts_u32;
 DROP TABLE ts_tokyo;
