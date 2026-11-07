@@ -24,9 +24,10 @@ TABLES=()
 declare -A TABLE_TYPE TABLE_STATS TABLE_DATES
 FIXTURE_QUERIES=""
 
-# make_table <table> <column type> <full|none|no_min|no_max> <dates>...
-# Each argument is one file: sorted, comma-separated ISO dates, or a single NULL.
-# `no_min` / `no_max` omit only that bound; `none` emits only `numRecords`.
+# make_table <table> <column type> <full|none|no_min|no_max|no_null_count|partition> <dates>...
+# Each argument is one file: sorted, comma-separated ISO dates, optionally followed by NULLs.
+# `no_min` / `no_max` / `no_null_count` omit only that statistic; `none` emits only `numRecords`.
+# `partition` makes `d` the partition column: each argument is one ISO date or NULL.
 make_table() {
     local table=$1 type=$2 stats_mode=$3
     shift 3
@@ -37,8 +38,13 @@ make_table() {
     TABLE_DATES[$table]="$*"
     local date value
     for date in "$@"; do
+        if [[ "${stats_mode}" == partition ]]; then
+            FIXTURE_QUERIES+="
+            INSERT INTO FUNCTION file('${ROOT}/${table}/${date}.parquet', Parquet, 'x Int32') SELECT 1;"
+            continue
+        fi
         value="'${date//,/\',\'}'"
-        [[ "${date}" == NULL ]] && value=NULL
+        value="${value//\'NULL\'/NULL}"
         FIXTURE_QUERIES+="
             INSERT INTO FUNCTION file('${ROOT}/${table}/${date}.parquet', Parquet, 'd ${type}')
             SELECT CAST(arrayJoin([${value}]), '${type}');"
@@ -55,27 +61,48 @@ write_log() {
     local nullable=false
     [[ "${type}" == Nullable* ]] && nullable=true
     local log="${ROOT}/${table}/_delta_log/00000000000000000000.json"
+    local fields="{\\\"name\\\":\\\"d\\\",\\\"type\\\":\\\"date\\\",\\\"nullable\\\":${nullable},\\\"metadata\\\":{}}"
+    local partition_columns=""
+    if [[ "${stats_mode}" == partition ]]; then
+        fields="{\\\"name\\\":\\\"x\\\",\\\"type\\\":\\\"integer\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}},${fields}"
+        partition_columns="\"d\""
+    fi
     cat > "${log}" <<EOF
 {"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
-{"metaData":{"id":"${CLICKHOUSE_DATABASE}-${table}","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[{\\"name\\":\\"d\\",\\"type\\":\\"date\\",\\"nullable\\":${nullable},\\"metadata\\":{}}]}","partitionColumns":[],"configuration":{}}}
+{"metaData":{"id":"${CLICKHOUSE_DATABASE}-${table}","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[${fields}]}","partitionColumns":[${partition_columns}],"configuration":{}}}
 EOF
-    local date stats size
-    local -a all_dates dates
+    local date stats size value nulls partition_values
+    local -a all_dates dates non_null
     read -r -a all_dates <<< "${TABLE_DATES[$table]}"
     for date in "${all_dates[@]}"; do
+        size=$(wc -c < "${ROOT}/${table}/${date}.parquet")
+        if [[ "${stats_mode}" == partition ]]; then
+            partition_values="{\"d\":\"${date}\"}"
+            [[ "${date}" == NULL ]] && partition_values='{"d":null}'
+            cat >> "${log}" <<EOF
+{"add":{"path":"${date}.parquet","partitionValues":${partition_values},"size":${size},"modificationTime":1700000000000,"dataChange":true,"stats":"{\\"numRecords\\":1}"}}
+EOF
+            continue
+        fi
         IFS=, read -r -a dates <<< "${date}"
+        non_null=()
+        nulls=0
+        for value in "${dates[@]}"; do
+            if [[ "${value}" == NULL ]]; then
+                nulls=$(( nulls + 1 ))
+            else
+                non_null+=("${value}")
+            fi
+        done
         stats="{\"numRecords\":${#dates[@]}"
         if [[ "${stats_mode}" != none ]]; then
-            if [[ "${date}" == NULL ]]; then
-                stats+=",\"nullCount\":{\"d\":1}"
-            else
-                [[ "${stats_mode}" == no_min ]] || stats+=",\"minValues\":{\"d\":\"${date%%,*}\"}"
-                [[ "${stats_mode}" == no_max ]] || stats+=",\"maxValues\":{\"d\":\"${date##*,}\"}"
-                stats+=",\"nullCount\":{\"d\":0}"
+            if [[ "${#non_null[@]}" != 0 ]]; then
+                [[ "${stats_mode}" == no_min ]] || stats+=",\"minValues\":{\"d\":\"${non_null[0]}\"}"
+                [[ "${stats_mode}" == no_max ]] || stats+=",\"maxValues\":{\"d\":\"${non_null[-1]}\"}"
             fi
+            [[ "${stats_mode}" == no_null_count ]] || stats+=",\"nullCount\":{\"d\":${nulls}}"
         fi
         stats+="}"
-        size=$(wc -c < "${ROOT}/${table}/${date}.parquet")
         cat >> "${log}" <<EOF
 {"add":{"path":"${date}.parquet","partitionValues":{},"size":${size},"modificationTime":1700000000000,"dataChange":true,"stats":"${stats//\"/\\\"}"}}
 EOF
@@ -355,6 +382,64 @@ for enabled in 0 1; do
     expect_error "overflow_rhs: toDate(d) = '1969-12-31' (engine predicate ${enabled}, throw)" \
         overflow_rhs "toDate(d) = '1969-12-31'" "${enabled}" VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE \
         "date_time_overflow_behavior='throw'"
+done
+
+# A non-nullable `CAST` of a `Nullable(Date32)` column throws on NULL rows, but files with `nullCount` 0
+# hold none, so min/max pruning must still apply to them.
+make_table nullable_no_nulls 'Nullable(Date32)' full 2026-01-01 2026-01-02 2026-01-03
+for where in "d::Date = '2026-01-02'" "d::date = '2026-01-02'" "CAST(d AS Date) = '2026-01-02'" \
+    "CAST(d, 'Date') = '2026-01-02'" "d::Date32 = '2026-01-02'" \
+    "d::Date != '2026-01-02'" "d::Date < '2026-01-02'" "d::Date <= '2026-01-02'" \
+    "d::Date > '2026-01-02'" "d::Date >= '2026-01-02'" \
+    "'2026-01-02' = d::Date" "'2026-01-02' > d::Date" "'2026-01-02' <= CAST(d AS Date)" \
+    "d::Date32 != '2026-01-02'" "'2026-01-02' < d::Date32" \
+    "NOT (d::Date = '2026-01-02')" "NOT (d::Date < '2026-01-02')" "NOT (d::Date32 >= '2026-01-02')"; do
+    check nullable_no_nulls "${where}" "cast_keep_nullable=0"
+done
+check nullable_no_nulls "d::Date = '2026-01-02'" "cast_keep_nullable=1"
+check nullable_no_nulls "toDate(d) = '2026-01-02'"
+check nullable_no_nulls "d::Nullable(Date) = '2026-01-02'"
+
+# The NULLs share a file whose min/max alone would prune it; it must stay scanned in either polarity.
+make_table nullable_with_nulls 'Nullable(Date32)' full 2026-01-01 2026-01-02 2026-01-03,NULL
+check nullable_with_nulls "1"
+for where in "d::Date = '2026-01-01'" "d::Date32 = '2026-01-01'" "d::Date < '2026-01-02'" \
+    "NOT (d::Date = '2026-01-03')" "NOT (d::Date32 != '2026-01-01')"; do
+    for enabled in 0 1; do
+        expect_error "nullable_with_nulls: ${where} (engine predicate ${enabled})" \
+            nullable_with_nulls "${where}" "${enabled}" \
+            CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+    done
+done
+# An all-NULL file must also survive negation.
+for enabled in 0 1; do
+    expect_error "nullable: negated cast rejects NULL (engine predicate ${enabled})" \
+        nullable "NOT (CAST(d AS Date) = '2026-01-01')" "${enabled}" \
+        CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+done
+
+# Without `nullCount` a file cannot be proven NULL-free, so a non-nullable cast prunes nothing.
+make_table nullable_no_null_count 'Nullable(Date32)' no_null_count 2026-01-01 2026-01-02
+check nullable_no_null_count "d::Date = '2026-01-01'" "cast_keep_nullable=0"
+check nullable_no_null_count "NOT (d::Date = '2026-01-01')" "cast_keep_nullable=0"
+make_table nullable_no_stats 'Nullable(Date32)' none 2026-01-01 2026-01-02
+check nullable_no_stats "d::Date = '2026-01-01'" "cast_keep_nullable=0"
+
+# Non-null partition values are exact, so a non-nullable cast still prunes partitions.
+make_table partitioned_no_nulls 'Nullable(Date32)' partition 2026-01-01 2026-01-02 2205-06-08
+check partitioned_no_nulls "d::Date = '2026-01-01'" "cast_keep_nullable=0"
+check partitioned_no_nulls "d::Date32 = '2026-01-02'" "cast_keep_nullable=0"
+check partitioned_no_nulls "d::Date != '2026-01-01'" "cast_keep_nullable=0"
+
+# A NULL partition must stay scanned in either polarity, so the cast still rejects it.
+make_table partitioned 'Nullable(Date32)' partition 2026-01-01 2026-01-02 2205-06-08 NULL
+for where in "d::Date = '2026-01-01'" "d::Date32 = '2026-01-02'" \
+    "d::Date != '2026-01-01'" "NOT (d::Date = '2026-01-01')"; do
+    for enabled in 0 1; do
+        expect_error "partitioned: ${where} (engine predicate ${enabled})" \
+            partitioned "${where}" "${enabled}" \
+            CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+    done
 done
 
 run_all
