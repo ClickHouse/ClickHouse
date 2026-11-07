@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <base/types.h>
 
-#include <Common/DevectorWithMemoryTracking.h>
-#include <vector>
+#include <span>
 
 namespace DB
 {
@@ -28,6 +30,13 @@ private:
     size_t row;
 };
 
+struct ArgumentsSegment
+{
+    std::span<const IColumn * const> columns;
+    size_t row_begin = 0;
+    size_t row_end = 0;
+};
+
 class WindowArguments
 {
 public:
@@ -38,16 +47,19 @@ public:
         Int64 end_position = 0;
     };
 
-    WindowArguments(const DevectorWithMemoryTracking<Block> & blocks_, Int64 first_row_position_, Int64 num_arguments_);
+    explicit WindowArguments(Int64 num_arguments_);
+
+    void setBlocks(std::span<const Block> blocks_, Int64 first_row_position_);
 
     Int64 size() const;
     ArgumentValue at(size_t argument, Int64 row) const;
+    ArgumentsSegment segment(Int64 begin_row, Int64 end_row) const;
 
 private:
-    const DevectorWithMemoryTracking<Block> & blocks;
-    const Int64 first_row_position;
+    std::span<const Block> blocks;
+    Int64 first_row_position = 0;
     const Int64 num_arguments;
-    mutable std::vector<size_t> last_used_block;
+    mutable VectorWithMemoryTracking<size_t> last_used_block;
 };
 
 }

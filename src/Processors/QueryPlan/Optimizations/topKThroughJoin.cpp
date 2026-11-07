@@ -145,6 +145,8 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
+        if (logical->getPlannedAlgorithm() == JoinAlgorithm::FULL_SORTING_MERGE)
+            return true;
         return std::ranges::any_of(logical->getJoinSettings().join_algorithms, [](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE

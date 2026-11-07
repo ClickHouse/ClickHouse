@@ -36,6 +36,7 @@ from ci.jobs.scripts.dataset_download import (
 )
 from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
+from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -158,8 +159,12 @@ CIDB_TEST_CASES_RESULT_NAME = "Tests"
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 HISTORICAL_DATA_TABLE = "query_metrics_v2"
-# The public read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from.
-PLAY_CIDB_URL = "https://play.clickhouse.com?user=play"
+
+
+def read_cidb():
+    """The read-only endpoint the job reads the history in `HISTORICAL_DATA_TABLE` from."""
+    url = f"{CIDB.get_read_url(Info())}?user={Settings.CI_DB_READ_USER}"
+    return CIDBCluster(url=url, user="", pwd="")
 
 # --- Aggregate report tables on the play cluster --------------------------
 # These capture everything that used to only live in the static HTML report
@@ -752,7 +757,7 @@ def write_iceberg_profile_override():
     return True
 
 
-def build_perf_query_history_link(test_name, check_name):
+def build_perf_query_history_link(test_name, check_name, read_url):
     """Build a ClickHouse Play link showing performance history for a query on master."""
     table = Settings.CI_DB_TABLE_NAME or "checks"
     tn = (test_name or "").replace("'", "''")
@@ -772,7 +777,7 @@ WHERE pull_request_number = 0
     AND test_name = '{tn}'
 ORDER BY test, check_start_time
 """
-    base = Settings.CI_DB_READ_URL or ""
+    base = read_url
     user = Settings.CI_DB_READ_USER or ""
     if user:
         sep = "&" if "?" in base else "?"
@@ -780,7 +785,7 @@ ORDER BY test, check_start_time
     return f"{base}#{Utils.to_base64(query)}"
 
 
-def build_check_results_children(tests_result, check_name_pattern):
+def build_check_results_children(tests_result, check_name_pattern, read_url):
     """Per-query rows for "Check Results": one row per slower/unstable query.
 
     Rows carry compare.sh's verdict, which the report renderer classifies
@@ -805,13 +810,14 @@ def build_check_results_children(tests_result, check_name_pattern):
     children = []
     for base, (_, tr) in chosen.items():
         sub = Result(name=base, status=tr.status, duration=tr.duration)
-        sub.set_label(
-            "query history",
-            # The represented row's own name: CIDB's test_name keeps the side
-            # suffix, and the link filters on an exact match.
-            link=build_perf_query_history_link(tr.name, check_name_pattern),
-            hint="Performance history for this query on master",
-        )
+        if read_url:
+            sub.set_label(
+                "query history",
+                # The represented row's own name: CIDB's test_name keeps the side
+                # suffix, and the link filters on an exact match.
+                link=build_perf_query_history_link(tr.name, check_name_pattern, read_url),
+                hint="Performance history for this query on master",
+            )
         children.append(sub)
     return children
 
@@ -2154,7 +2160,7 @@ WHERE event_date >= today() - {FALLBACK_SHARED_DAYS + 1}
     AND ({terms})
 GROUP BY test, query_index, query_display_name
 FORMAT TSV"""
-    answer = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="").do_select_query(query, retries=1, timeout=20)
+    answer = read_cidb().do_select_query(query, retries=1, timeout=20)
     if answer is None:
         return None
     other_prs = {}
@@ -3253,7 +3259,7 @@ def main():
     elif res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster(url=PLAY_CIDB_URL, user="", pwd="")
+            cidb = read_cidb()
             if not cidb.is_ready():
                 print(
                     "WARNING: CIDB is not ready, will proceed without historical thresholds"
@@ -3923,7 +3929,9 @@ def main():
             check_sub_results += [
                 sub
                 for sub in build_check_results_children(
-                    tests_result, f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%"
+                    tests_result,
+                    f"%Performance%{arch}%master_head%{TABLE_ENGINE or ''}%",
+                    os.environ.get(CIDB.READ_URL_ENV),
                 )
                 if sub.name not in dashboard_names
             ]

@@ -86,6 +86,16 @@ The drop queries also run when the test fails, and a test whose drop queries can
 
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
+### Disabling a query
+
+The performance history of a query is keyed by the test name and the query number (`query_index`, 0-based, after substitutions), so removing or reordering a query moves the history of every later query of the test. To stop running a query without that, mark it with `disabled="1"`:
+
+```xml
+<query disabled="1">SELECT [...]</query>
+```
+
+A disabled query keeps its number, and `perf.py --print-queries` still prints it, but it is never run, and the setup statements of a disabled `<query file=...>` are not run either. On a query with substitutions, the attribute applies to all of its expansions.
+
 ### Setup queries that cannot run on the reference server
 
 A `create_query`/`fill_query` normally must succeed on both servers being compared. If your PR adds a feature the setup depends on (e.g. a new MergeTree setting), the query cannot work on the reference (master) server yet, and the test would fail the CI check. Opt out of the reference-side check with `do_not_check_in_pr="<number of your PR>"`:
@@ -150,7 +160,7 @@ How to write one:
 * Iceberg REST catalog (`requires_s3_catalog="1"`): the job-local SeaweedFS serves it on `localhost:8181`; the harness seeds the immutable table bucket `perf-catalog` (namespace `many`, tables `t1`..`t200`, one row each, `id = n`). Such a test creates one `DataLakeCatalog` database as its only exception to the `default`-only rule and drops it with `DROP DATABASE ... SYNC`; the fixed ports are part of the test text.
 * Every timed statement with side effects (`ALTER`, `INSERT`, `OPTIMIZE`, `DELETE`, table recreation) is a shell query: `perf.py` profiles a query whose timing changed (every query with `profile_all_queries`) right after its runs, each statement cut at 10 s, and a cut mutation keeps running into the next query; shell queries are not profiled. A shell query gets its settings on the client command line (`--mutations_sync 2`, `--allow_insert_into_iceberg 1`, ...); the test's `<settings>` do not apply to it.
 * Reuse `tests/benchmarks/` with `<query file="../benchmarks/<name>/queries/query_NN.sql"/>` and `<settings file="../benchmarks/<name>/settings.json"/>`.
-* There is no skip syntax for known-problem queries: keep a working query in the test (a fixed formulation, or a placeholder such as `SELECT 'Q35 skipped'`) and describe the original query, the reason and the issue link in the benchmark's README (e.g. `tests/benchmarks/tpc-ds/README.md`). A flaky query gets an issue and is removed.
+* Skip a known-problem query with `disabled="1"` (see [Disabling a query](#disabling-a-query)) or keep a working query in its place (a fixed formulation, or a placeholder such as `SELECT 'Q35 skipped'`), and describe the original query, the reason and the issue link in the benchmark's README (e.g. `tests/benchmarks/tpc-ds/README.md`). A flaky query gets an issue and is removed.
 
 Run one test locally:
 
@@ -207,7 +217,7 @@ Run one test locally against two running servers: `tests/performance/scripts/per
 
 ### Comparison of query results
 
-`perf.py` compares the result of every SQL query between the servers, on its prewarm run, so the measured runs are not affected. A query whose result the server sends is digested on the client: the number of rows and the sum of a 64-bit hash of each row, so the order of rows does not matter, with floats rounded to 6 significant digits (parallel aggregation changes the last bits), `Bool` and an integral `Decimal` as integers. A `SELECT ... FORMAT Null`, whose rows the server does not send, is digested on the server by one more query, `SELECT count(), sum(cityHash64(toString(tuple(*)))) FROM (<query>)`; a query that cannot be a subquery is listed as `result-digest-skipped`. A result of more than 200000 rows is not compared.
+With `--result-digest`, `perf.py` compares the result of every SQL query between the servers, on its prewarm run, so the measured runs are not affected. It costs one more run of every `FORMAT Null` query per server, so CI does not pass it; use it when running `perf.py` by hand. A query whose result the server sends is digested on the client: the number of rows and the sum of a 64-bit hash of each row, so the order of rows does not matter, with floats rounded to 6 significant digits (parallel aggregation changes the last bits), `Bool` and an integral `Decimal` as integers. A `SELECT ... FORMAT Null`, whose rows the server does not send, is digested on the server by one more query, `SELECT count(), sum(cityHash64(toString(tuple(*)))) FROM (<query>)`; a query that cannot be a subquery is listed as `result-digest-skipped`. A result of more than 200000 rows is not compared.
 
 Every digest is a `result-digest` line in the raw output of the test, so digests can be compared across jobs too, e.g. a test in the Iceberg configuration with the same test on MergeTree. When the servers return different results, `perf.py` prints a `result-mismatch` line and the report lists the query in "Queries with Different Results". It is not an error: a pull request that fixes a result changes it. Not compared: the queries of a test whose setup generates data with `rand`, `now` and the like (the servers hold different data), and queries whose own result is not deterministic (`rand`, `any`, `groupArray`, `LIMIT`, `system` tables and the like).
 

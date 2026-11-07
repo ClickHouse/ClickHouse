@@ -5,8 +5,7 @@
 SET allow_experimental_time_series_table = 1;
 
 -- The generated samples and recent samples tables declare `ALP` for the values of the `samples` column as a codec of a subcolumn.
--- Both are gated features, and the engine enables them for its inner tables itself, so the session keeps them disabled here.
-SET enable_alp_codec = 0;
+-- Codecs for subcolumns are a gated feature, and the engine enables them for its inner tables itself, so the session keeps them disabled here.
 SET enable_subcolumn_codecs = 0;
 
 CREATE TABLE ts_alp64 ENGINE = TimeSeries;
@@ -16,7 +15,7 @@ WHERE database = currentDatabase() AND name = 'samples'
     AND (table LIKE '.inner_id.samples.%' OR table LIKE '.inner_id.recentsamples.%')
 GROUP BY type, value_codec
 ORDER BY type, value_codec;
-SELECT toUInt8(getSetting('enable_alp_codec')), toUInt8(getSetting('enable_subcolumn_codecs'));
+SELECT toUInt8(getSetting('enable_subcolumn_codecs'));
 
 -- Keep floating-point bit patterns, including the Prometheus stale marker.
 -- The samples get distinct timestamps: the samples of a series with the same timestamp are deduplicated on insertion.
