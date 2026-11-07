@@ -581,6 +581,17 @@ StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::ite
     if (!loaded)
         return it->second;
 
+    /// The proxy is not counted like the loaded storage, e.g. `AttachedReplicatedTable` is only counted
+    /// for `StorageReplicatedMergeTree`. Computed in advance, because nothing may throw once the UUID
+    /// mapping has been replaced, or the two maps would disagree from then on.
+    std::vector<CurrentMetrics::Metric> proxy_counters;
+    std::vector<CurrentMetrics::Metric> loaded_counters;
+    if (!loaded->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    {
+        proxy_counters = getAttachedCountersForStorage(it->second);
+        loaded_counters = getAttachedCountersForStorage(loaded);
+    }
+
     /// Replace the proxy only if nobody holds it, so that no query can be using the proxy and its own
     /// table locks while other queries use the loaded storage and its locks. Under the mutexes of the
     /// database and of the UUID mapping, nobody can obtain the proxy anew. Otherwise, keep the proxy for
@@ -597,20 +608,15 @@ StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::ite
     else if (it->second.use_count() != 1)
         return it->second;
 
-    /// The proxy is not counted like the loaded storage, e.g. `AttachedReplicatedTable` is only counted
-    /// for `StorageReplicatedMergeTree`.
-    if (!loaded->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
-    {
-        for (auto metric : getAttachedCountersForStorage(it->second))
-            CurrentMetrics::sub(metric);
-        for (auto metric : getAttachedCountersForStorage(loaded))
-            CurrentMetrics::add(metric);
-    }
+    it->second = loaded;
+    for (auto metric : proxy_counters)
+        CurrentMetrics::sub(metric);
+    for (auto metric : loaded_counters)
+        CurrentMetrics::add(metric);
 
     LOG_TRACE(log, "Replaced the proxy of lazily loaded table {} with the loaded {}",
               loaded->getStorageID().getNameForLogs(), loaded->getName());
 
-    it->second = loaded;
     return loaded;
 }
 
