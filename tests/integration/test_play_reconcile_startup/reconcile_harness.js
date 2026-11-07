@@ -213,6 +213,7 @@ function makeElement(tag) {
         resetViewToggles() {},
         setViewState() {},
         showView() {},
+        _offerPlan() {},
         enableViews() {},
         finalizeMetrics() {},
         feedProfileEvents() {},
