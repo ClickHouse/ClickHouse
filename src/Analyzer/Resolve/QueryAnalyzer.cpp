@@ -5765,8 +5765,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         {
             if (auto * identifier_node = (*expression)->as<IdentifierNode>())
             {
+                /// `f.x` in `SELECT f.x FROM file(...) AS f` refers to the column `x` of the table function.
+                auto column_identifier = identifier_node->getIdentifier();
+                if (column_identifier.isCompound() && table_function_node->hasAlias() && column_identifier.at(0) == table_function_node->getAlias())
+                    column_identifier.popFirst();
 
-                if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
+                if (!virtual_column_names.contains(column_identifier.getFullName()))
                 {
                     if (asterisk)
                     {
@@ -5778,7 +5782,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     }
 
                     ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                    column.name = identifier_node->getIdentifier().getFullName();
+                    column.name = column_identifier.getFullName();
                     /// Change ephemeral columns to default columns.
                     column.default_desc.kind = ColumnDefaultKind::Default;
 
