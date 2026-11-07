@@ -59,6 +59,7 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_,
+        bool count_in_one_chunk_ = false,
         LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr,
         ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
 
@@ -112,6 +113,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
+    const bool count_in_one_chunk;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     /// The `table_id` of the query condition cache entries (see `QueryConditionCache::getTableIdForFileEntries`).
@@ -206,6 +208,7 @@ protected:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
+        bool count_in_one_chunk = false,
         ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
         bool prefetch_input_format = false);
 
