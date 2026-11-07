@@ -11,11 +11,12 @@ SIG="sig_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 WILD="http://alice:${PW}@localhost:1/files/*.csv?X-Amz-Signature=${SIG}"
 
 # Prints the error code and whether the password or the signature leaked (0 = hidden).
+# The client's own "(query: ...)" echo repeats the query text, so it is not counted.
 check()
 {
     local out
     out=$($CLICKHOUSE_CLIENT --server_logs_file=/dev/null "$@" 2>&1)
-    echo "$(echo "$out" | grep -o -m1 'BAD_ARGUMENTS') $(echo "$out" | grep -c -e "${PW}" -e "${SIG}")"
+    echo "$(echo "$out" | grep -o -m1 'BAD_ARGUMENTS') $(echo "$out" | grep -v '^(query: ' | grep -c -e "${PW}" -e "${SIG}")"
 }
 
 check -q "SELECT * FROM url('${WILD}', CSV, 'x UInt8', http_method='POST')"
