@@ -31,6 +31,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/ClickHouseCatalog.h>
 #include <Databases/DataLake/UnityV2Catalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
@@ -80,6 +81,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
     extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsString catalog_user;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
@@ -292,6 +294,16 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
+                Context::getGlobalContextInstance(),
+                snapshot_loading_mode);
+            break;
+        }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE:
+        {
+            catalog_impl = std::make_shared<DataLake::ClickHouseCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                settings[DatabaseDataLakeSetting::catalog_user].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance(),
                 snapshot_loading_mode);
@@ -591,6 +603,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
         case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+        case DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE:
         {
             switch (type)
             {
@@ -1842,7 +1855,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
-        const auto * database_engine_define = args.create_query.storage;
+        auto * database_engine_define = args.create_query.storage;
         const auto & database_engine_name = args.engine_name;
 
         DatabaseDataLakeSettings database_settings;
@@ -1877,7 +1890,9 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         ///
         ///  NOTE: it's still possible to provide endpoint argument for Glue. It's used for fake
         ///  mock glue catalog in tests only.
-        bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE;
+        /// The ClickHouse catalog of the same server is found through the server config.
+        bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE;
 
         const ASTFunction * function_define = database_engine_define->engine;
 
@@ -1892,16 +1907,21 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             engine_args = function_define->arguments->children;
             if (requires_arguments && engine_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
+            if (catalog_type == DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE && !engine_args.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Engine `{}` with catalog_type = 'clickhouse' takes no arguments: "
+                    "the catalog of this server is found through the server config", database_engine_name);
         }
 
         if (database_engine_name == "Iceberg"
             && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST
             && catalog_type != DatabaseDataLakeCatalogType::S3_TABLES
             && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
-            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Engine `Iceberg` must use `rest`, `s3tables`, `biglake`, or `onelake` catalog type only");
+                "Engine `Iceberg` must use `rest`, `s3tables`, `biglake`, `onelake`, or `clickhouse` catalog type only");
         }
 
         for (auto & engine_arg : engine_args)
@@ -1925,6 +1945,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+            case DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
@@ -1932,6 +1953,42 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
                                     "To allow its usage, enable setting allow_database_iceberg");
+                }
+
+                if (catalog_type == DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE)
+                {
+                    const auto & catalog_user_name = DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::catalog_user);
+                    auto & stored_changes = database_engine_define->settings->changes;
+                    /// The server wrote this definition itself, so its `catalog_user` is trusted.
+                    /// This covers startup and a short `ATTACH DATABASE db`.
+                    if (args.isLoadingFromExistingMetadata() || args.create_query.attach_short_syntax)
+                    {
+                        if (database_settings[DatabaseDataLakeSetting::catalog_user].value.empty())
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Database with catalog_type = 'clickhouse' has no `{}` in its definition", catalog_user_name);
+                    }
+                    else
+                    {
+                        /// The definition comes from the user or from a backup, so `catalog_user` is set here.
+                        /// A backup may carry any name. Drop it and use the restoring user.
+                        if (args.is_restore_from_backup)
+                            std::erase_if(stored_changes, [&](const auto & change) { return change.name == catalog_user_name; });
+                        else if (database_settings[DatabaseDataLakeSetting::catalog_user].changed)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Setting `{}` is set automatically to the user who creates the database and cannot be specified",
+                                catalog_user_name);
+
+                        const auto user_name = args.context->getUserName();
+                        if (user_name.empty())
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "catalog_type = 'clickhouse' requires a user to act as, but the query has none. "
+                                "For ON CLUSTER queries enable distributed_ddl_use_initial_user_and_roles");
+
+                        /// Catalog requests run as the user who creates the database.
+                        /// Add the name to the stored `CREATE DATABASE` query, so it survives a restart.
+                        stored_changes.emplace_back(catalog_user_name, user_name);
+                        database_settings.applyChanges({stored_changes.back()});
+                    }
                 }
 
                 if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)

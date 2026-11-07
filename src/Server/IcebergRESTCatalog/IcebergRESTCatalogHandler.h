@@ -32,6 +32,8 @@ public:
 private:
     /// Returns nullptr when the response has already been sent (401 with `WWW-Authenticate`).
     ContextMutablePtr authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response, Session & session) const;
+    /// Authenticates a request from a `DataLakeCatalog` database of this same server.
+    bool authenticateLoopbackUser(HTTPServerRequest & request, HTTPServerResponse & response, Session & session) const;
 
     void handleGetConfig(const Poco::URI & uri, HTTPServerResponse & response) const;
     void handleListNamespaces(const IcebergRESTCatalogWarehouse & warehouse, const Poco::URI & uri, HTTPServerResponse & response) const;

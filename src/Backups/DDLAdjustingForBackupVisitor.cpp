@@ -1,4 +1,6 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
+
+#include <algorithm>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseReplicatedSettings.h>
@@ -6,6 +8,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 
@@ -96,6 +99,16 @@ namespace
             DatabaseReplicatedSettings::checkOrClampLogsToKeep(*storage.settings, /*clamp_on_overflow=*/ true);
     }
 
+    void visitStorageDataLakeCatalogDatabaseEngine(ASTStorage & storage)
+    {
+        /// Precondition: engine_name == "DataLakeCatalog"
+
+        /// `catalog_user` is the user who created the database, set by `CREATE`. A restored database
+        /// gets the restoring user instead, so the name is not part of the definition in a backup.
+        if (storage.settings)
+            std::erase_if(storage.settings->changes, [](const auto & change) { return change.name == "catalog_user"; });
+    }
+
     void visitStorage(ASTStorage & storage, const DDLAdjustingForBackupVisitor::Data & data)
     {
         if (!storage.engine)
@@ -110,6 +123,8 @@ namespace
             visitStorageReplicatedTableEngine(storage, data);
         else if (engine_name == "Replicated")
             visitStorageReplicatedDatabaseEngine(storage);
+        else if (engine_name == "DataLakeCatalog")
+            visitStorageDataLakeCatalogDatabaseEngine(storage);
     }
 
     void visitCreateQuery(ASTCreateQuery & create, const DDLAdjustingForBackupVisitor::Data & data)

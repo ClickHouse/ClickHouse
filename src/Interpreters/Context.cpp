@@ -9,9 +9,15 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/Hex.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
+
+#if USE_SSL
+#    include <openssl/rand.h>
+#    include <Common/OpenSSLHelpers.h>
+#endif
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -521,6 +527,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int OPENSSL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
@@ -639,6 +646,24 @@ private:
     std::exception_ptr error;
 };
 
+namespace
+{
+
+String generateIcebergRESTCatalogSecret()
+{
+#if USE_SSL
+    unsigned char bytes[32];
+    if (RAND_bytes(bytes, sizeof(bytes)) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "RAND_bytes failed: {}", getOpenSSLErrors());
+    /// Lowercase hex is safe in an HTTP header.
+    return hexString(bytes, sizeof(bytes));
+#else
+    return {};
+#endif
+}
+
+}
+
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
@@ -679,6 +704,8 @@ struct ContextSharedPart : boost::noncopyable
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_scheme;                              /// http or https
     MultiVersion<InterserverCredentials> interserver_io_credentials;
+    /// Generated once per process and kept only in memory, so no client outside this process can learn it.
+    const String iceberg_rest_catalog_secret = generateIcebergRESTCatalogSecret();
 
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
@@ -7646,6 +7673,11 @@ void Context::updateInterserverCredentials(const Poco::Util::AbstractConfigurati
 {
     auto credentials = InterserverCredentials::make(config, "interserver_http_credentials");
     shared->interserver_io_credentials.set(std::move(credentials));
+}
+
+const String & Context::getIcebergRESTCatalogSecret() const
+{
+    return shared->iceberg_rest_catalog_secret;
 }
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
