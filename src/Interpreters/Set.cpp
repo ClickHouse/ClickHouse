@@ -20,7 +20,9 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -735,17 +737,69 @@ void Set::processDateTime64Column(
 }
 
 /// A cast into `Bool` turns every nonzero number into `true`; one into `UInt8`, which stores `Bool`, keeps the value or fails.
-static DataTypePtr getTypeToConvertKeyTo(const DataTypePtr & set_key_type, const DataTypePtr & key_type)
+static bool isNumberForBoolKey(const DataTypePtr & set_key_type, const DataTypePtr & key_type)
 {
     const DataTypePtr key_value_type = removeLowCardinalityAndNullable(key_type);
     const WhichDataType key_which(key_value_type);
-    if (!key_which.isInteger() && !key_which.isFloat())
-        return set_key_type;
-    if (isBool(key_value_type) || !isBool(removeNullable(set_key_type)))
+    return (key_which.isInteger() || key_which.isFloat()) && !isBool(key_value_type) && isBool(removeNullable(set_key_type));
+}
+
+static DataTypePtr getTypeToConvertKeyTo(const DataTypePtr & set_key_type, const DataTypePtr & key_type)
+{
+    if (!isNumberForBoolKey(set_key_type, key_type))
         return set_key_type;
 
     DataTypePtr type = std::make_shared<DataTypeUInt8>();
     return set_key_type->isNullable() ? makeNullable(type) : type;
+}
+
+/// A cast of a `Variant` converts each alternative into the key type, so the number alternatives are converted again here.
+static ColumnPtr castKeyColumnAccurateOrNull(
+    const ColumnWithTypeAndName & column, const DataTypePtr & set_key_type, const DataTypePtr & type, InternalCastFunctionCache * cache)
+{
+    ColumnPtr result = castColumnAccurateOrNull(column, type, cache);
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(column.type.get());
+    if (!variant_type || !isBool(removeNullable(set_key_type)))
+        return result;
+
+    const auto & variant_column = assert_cast<const ColumnVariant &>(*column.column);
+    const size_t num_variants = variant_column.getNumVariants();
+    Columns converted(num_variants);
+    std::vector<const UInt8 *> converted_values(num_variants);
+    std::vector<const UInt8 *> converted_null_maps(num_variants);
+    bool has_converted = false;
+    for (ColumnVariant::Discriminator global = 0; global != num_variants; ++global)
+    {
+        const ColumnPtr & alternative = variant_column.getVariantPtrByGlobalDiscriminator(global);
+        const DataTypePtr & alternative_type = variant_type->getVariant(global);
+        if (alternative->empty() || !isNumberForBoolKey(set_key_type, alternative_type))
+            continue;
+
+        converted[global] = castColumnAccurateOrNull({alternative, alternative_type, ""}, std::make_shared<DataTypeUInt8>(), cache);
+        const auto & converted_nullable = assert_cast<const ColumnNullable &>(*converted[global]);
+        converted_values[global] = assert_cast<const ColumnUInt8 &>(converted_nullable.getNestedColumn()).getData().data();
+        converted_null_maps[global] = converted_nullable.getNullMapData().data();
+        has_converted = true;
+    }
+
+    if (!has_converted)
+        return result;
+
+    auto mutable_result = IColumn::mutate(std::move(result));
+    auto & result_nullable = assert_cast<ColumnNullable &>(*mutable_result);
+    auto & values = assert_cast<ColumnUInt8 &>(result_nullable.getNestedColumn()).getData();
+    auto & null_map = result_nullable.getNullMapData();
+    for (size_t row = 0, num_rows = variant_column.size(); row < num_rows; ++row)
+    {
+        const auto global = variant_column.globalDiscriminatorAt(row);
+        if (global == ColumnVariant::NULL_DISCRIMINATOR || !converted[global])
+            continue;
+        const size_t offset = variant_column.offsetAt(row);
+        values[row] = converted_values[global][offset];
+        null_map[row] = converted_null_maps[global][offset];
+    }
+
+    return mutable_result;
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -814,7 +868,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (use_cast_accurate_or_null)
         {
-            result = castColumnAccurateOrNull(column_to_cast, type_to_convert_to, cast_cache.get());
+            result = castKeyColumnAccurateOrNull(column_to_cast, data_types[i], type_to_convert_to, cast_cache.get());
         }
         else
         {
@@ -859,7 +913,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                 /// covers a `Nullable` probe against a non-`Nullable` key, which `nullIn` and `IN` with
                 /// `transform_null_in = 1` reach directly: there a strict cast of the nested column
                 /// threw on the very same out-of-range values.
-                auto casted = castColumnAccurateOrNull(column_to_cast, makeNullable(target_type_without_nullable), cast_cache.get());
+                auto casted = castKeyColumnAccurateOrNull(column_to_cast, data_types[i], makeNullable(target_type_without_nullable), cast_cache.get());
                 const auto & casted_nullable = assert_cast<const ColumnNullable &>(*casted);
                 const size_t num_rows = casted_nullable.size();
 

@@ -28,5 +28,16 @@ CREATE TABLE t_bool_in_key (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS ind
 INSERT INTO t_bool_in_key SELECT number FROM numbers(4);
 SELECT arraySort(groupArray(x)) FROM t_bool_in_key WHERE x IN (SELECT true) SETTINGS use_primary_key = 0;
 
+-- A `Variant` reaches the set as a whole in a multi-column key and in the null-aware membership.
+DROP TABLE IF EXISTS t_bool_in_variant;
+CREATE TABLE t_bool_in_variant (x Variant(UInt64, Float64, String)) ENGINE = Memory SETTINGS allow_suspicious_variant_types = 1;
+INSERT INTO t_bool_in_variant VALUES (0), (1), (2), (300), (0.5), ('true'), ('abc'), (NULL);
+SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_variant WHERE (x, 1) IN (SELECT true, 1);
+SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_variant WHERE (x, 1) NOT IN (SELECT true, 1);
+SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_variant WHERE nullIn(x, (SELECT true));
+SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_variant WHERE x IN (SELECT true) SETTINGS transform_null_in = 1;
+SELECT arraySort(groupArray(if(isNull(x), 'NULL', toString(x)))) FROM t_bool_in_variant WHERE x NOT IN (SELECT true) SETTINGS transform_null_in = 1;
+
 DROP TABLE t_bool_set;
 DROP TABLE t_bool_in_key;
+DROP TABLE t_bool_in_variant;
