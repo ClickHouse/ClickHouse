@@ -273,6 +273,29 @@ TEST(DistinctSetFilterExtraction, FloatBitPatternsUseExactKeyExtraction)
     EXPECT_EQ(std::set<UInt64>(extracted.begin(), extracted.end()), (std::set<UInt64>{0, UInt64{1} << 63}));
 }
 
+TEST(DistinctSetFilterExtraction, ExactFloatKeysRespectBatchLimits)
+{
+    const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")};
+    for (const size_t max_bytes : {size_t{0}, size_t{1}})
+    {
+        DistinctSetFilter filter(header, {}, SizeLimits{});
+        auto column = makeNumberColumn<ColumnFloat64, Float64>({0., -0., 0., -0.});
+        ASSERT_EQ(filter.filter(Chunk({column}, 4)).getNumRows(), 2u);
+        auto extractor = std::move(filter).extractKeys();
+        std::set<UInt64> keys;
+        for (size_t batch_index = 0; batch_index < 2; ++batch_index)
+        {
+            auto batch = extractor->next(max_bytes ? 2 : 1, max_bytes);
+            ASSERT_EQ(batch.size(), 1u);
+            const auto & values = assert_cast<const ColumnUInt64 &>(*batch[0]).getData();
+            ASSERT_EQ(values.size(), 1u);
+            keys.insert(values.front());
+        }
+        EXPECT_TRUE(extractor->next(1, max_bytes).empty());
+        EXPECT_EQ(keys, (std::set<UInt64>{0, UInt64{1} << 63}));
+    }
+}
+
 TEST(DistinctSetFilterSemantics, ThrowModeAllowsReachingTheLimitExactly)
 {
     const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};

@@ -366,7 +366,7 @@ size_t DistinctSetFilter::getTotalByteCount() const
 namespace
 {
 
-/// Keeps the set alive while its reader materializes owning columns one batch at a time.
+/// Keeps the set alive while a typed iterator materializes owning columns one batch at a time.
 template <typename Method>
 class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
 {
@@ -380,14 +380,15 @@ public:
         , position(method.data.begin())
         , end(method.data.end())
         , representation(representation_)
-        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types, Sizes key_sizes)
-        : data(std::move(data_))
-        , reader(method, std::move(key_types), std::move(key_sizes))
     {
+        if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+            unpack_order = Method::State::packedKeysOrder(key_sizes);
     }
 
     MutableColumns next(size_t max_rows, size_t max_bytes) override
     {
+        chassert(max_rows > 0);
+
         if (!data)
             return {};
 
@@ -435,10 +436,9 @@ public:
                     break;
             }
         }
-        auto columns = reader.read(max_rows, max_bytes);
 
         /// Returned columns own their values, including strings extracted from the arena.
-        if (reader.atEnd())
+        if (position == end)
             data.reset();
 
         return columns;
@@ -452,7 +452,6 @@ private:
     const typename Method::Data::const_iterator end;
     const DistinctKeyRepresentation representation;
     std::optional<Sizes> unpack_order;
-    SetMethodKeyReader<Method> reader;
 };
 
 }
