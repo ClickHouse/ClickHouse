@@ -86,9 +86,7 @@ public:
 
     bool supportParallelJoin() const override;
     size_t getMaxBuildThreads() const override;
-    /// Forwarded to the `HashJoin`: it is the join the probe streams use until a spill switches to an external join.
     bool resizeProbeSideToMaxStreams() const override;
-    void setResizeProbeSideToMaxStreams(bool value);
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
 
