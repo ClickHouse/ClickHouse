@@ -28,8 +28,8 @@ GRANT CREATE TEMPORARY TABLE ON *.* TO u5
 GRANT FILE ON *.* TO u5
 --- 7b: a source grant with a filter: every filter of the source is shown
 GRANT CREATE TEMPORARY TABLE ON *.* TO u10
-GRANT URL ON *.* TO u10
-GRANT URL ON *.* TO u10
+GRANT READ ON URL(`http://127.0.0.1:1/a.*`) TO u10
+GRANT READ ON URL(`http://127.0.0.1:1/b.*`) TO u10
 --- 8: WITH GRANT OPTION is kept
 GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
 --- 9: SQL SECURITY INVOKER view, SQL SECURITY DEFINER view
