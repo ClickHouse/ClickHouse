@@ -90,6 +90,9 @@ void stripInitiatorOnlySettings(Settings & settings);
 /// string, not just a settings packet).
 bool isInitiatorOnlySettingName(std::string_view name);
 
+/// Like `isInitiatorOnlySettingName`, but preserve settings used when a `DDL` worker initiates a query.
+bool isInitiatorOnlyDDLSettingName(std::string_view name);
+
 /// Strip the initiator-only settings (the `isInitiatorOnlySettingName` names, in both the `name = value`
 /// and `name = DEFAULT` forms) from a query's own query-level `SETTINGS` clauses, so they are not carried
 /// in the forwarded query *text*. Used by `IStorageCluster::read`, whose `ReadFromCluster` sends the query
