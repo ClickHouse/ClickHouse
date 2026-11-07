@@ -34,8 +34,8 @@ DICT_INFO="FROM system.dictionaries WHERE database = currentDatabase() AND name 
 CHECKS="FROM system.query_log WHERE current_database = currentDatabase() AND type != 'QueryStart' AND query LIKE 'SELECT max(upd)%'"
 
 # The first periodic check always reloads: there is no previous invalidate query response to compare with.
-t0=$($CLICKHOUSE_CLIENT --query "SELECT toUnixTimestamp(last_successful_update_time) $DICT_INFO")
-wait_until "SELECT toUnixTimestamp(last_successful_update_time) > $t0 $DICT_INFO"
+# The reloaded dictionary is a new object, so its `query_count` is 0 again (the `dictGet` above made it 1).
+wait_until "SELECT query_count = 0 $DICT_INFO"
 
 # A new row that does not change the invalidate query result.
 $CLICKHOUSE_CLIENT --query "INSERT INTO dict_src VALUES (2, 'b', '2019-01-01 00:00:00')"
