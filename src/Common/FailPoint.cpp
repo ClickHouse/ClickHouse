@@ -354,6 +354,7 @@ static struct InitFiu
     ONCE(database_replicated_restore_table_created_by_other_replica) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
+    PAUSEABLE_ONCE(mt_mutate_task_pause_before_merge_list) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
