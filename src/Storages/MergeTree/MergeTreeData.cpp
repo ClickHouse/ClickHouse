@@ -11025,6 +11025,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     }
     else
     {
+        /// The analysis below resolves the predicate against a `TableNode`, which takes a storage
+        /// snapshot and may cache it for the whole query. The lightweight update discards it with
+        /// `discardSharedStorageSnapshot` before reading, see `StorageReplicatedMergeTree::updateLightweight`.
         execution_context = Context::createCopy(query_context);
     }
 
@@ -14864,6 +14867,16 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     if (it != cache->end())
         return it->second;
     return cache->emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
+}
+
+void MergeTreeData::discardSharedStorageSnapshot(const ContextPtr & query_context) const
+{
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return;
+
+    auto [cache, lock] = query_metadata_cache->getStorageSnapshotCache();
+    cache->erase(this);
 }
 
 StorageSnapshotPtr

@@ -1547,6 +1547,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
+    /// A snapshot cached by `enable_shared_storage_snapshot_in_query` before the wait for committing
+    /// inserts above (e.g. by the validation of `IN` operands in `InterpreterUpdateQuery`) would hide
+    /// the parts committed during the wait from the update. See `StorageReplicatedMergeTree::updateLightweight`.
+    discardSharedStorageSnapshot(context_copy);
+
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<MergeTreeSinkPatch>(
