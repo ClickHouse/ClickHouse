@@ -81,9 +81,10 @@ public:
         {
             group_by_keys_stack.push_back({});
         }
-        else if (query_node->isGroupByWithTotals() || query_node->isGroupByWithCube() || query_node->isGroupByWithRollup())
+        else if (query_node->isGroupByWithTotals() || query_node->isGroupByWithCube() || query_node->isGroupByWithRollup()
+            || query_node->hasGroupByWithCluster())
         {
-            /// Keep aggregator if group by is with totals/cube/rollup.
+            /// Keep aggregator if group by is with totals/cube/rollup/cluster.
             group_by_keys_stack.push_back({});
         }
         else if (query_node->isGroupByWithGroupingSets() && getSettings()[Setting::group_by_use_nulls])
