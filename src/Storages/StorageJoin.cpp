@@ -3,6 +3,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -389,18 +390,22 @@ std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 
     /// getTotalRowCount counts keys, so the rows of each key are summed here.
     const auto data = join->getJoinedData();
-    const auto * maps = std::get_if<HashJoin::MapsAll>(&data->maps.front());
-    if (!maps)
+    const HashJoinTable & table = *data->tables.front();
+    if (!table.holds<HashJoin::MapsAll>())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin keeps every row of a key in a map that is not MapsAll");
 
     UInt64 rows = 0;
+    auto count_rows = [&](const auto &, const RowRefList & mapped)
+    {
+        rows += mapped.rows();
+        return size_t(0);
+    };
+    HashJoinTable::Cursor cursor;
     switch (data->type)
     {
 #define M(TYPE) \
         case HashJoin::Type::TYPE: \
-            if (maps->TYPE) \
-                for (const auto & cell : *maps->TYPE) \
-                    rows += cell.getMapped().rows(); \
+            table.forEachCell<HashJoin::Type::TYPE, HashJoin::MapsAll>(cursor, std::numeric_limits<size_t>::max(), count_rows); \
             break;
         APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -901,7 +906,7 @@ public:
         /// Key slots of a packed map key, in engine-clause order. They come from the clause and not
         /// from right_table_keys, which deduplicates a repeated key name while the packed key does not.
         const auto & key_names_right = table_join.getOnlyClause().key_names_right;
-        const auto & key_sizes = join->getKeySizes().at(0);
+        const auto & key_sizes = join->data->tables.at(0)->keySizes();
         if (key_names_right.size() != key_sizes.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -927,19 +932,19 @@ protected:
             return {};
 
         Chunk chunk;
-        if (!joinDispatch(
+        if (!dispatchJoinShape(
                 join->kind,
                 join->strictness,
-                join->data->maps.front(),
                 join->getMapsKind(),
-                [&](auto kind, auto strictness, auto & map)
+                [&](auto kind, auto strictness, auto maps_tag)
                 {
+                    using Maps = typename decltype(maps_tag)::type;
                     /// `StorageJoin` reads the right rows back out of the maps, so it never stores them
                     /// in a map that keeps none.
-                    if constexpr (SetJoinMaps<decltype(map)>)
+                    if constexpr (SetJoinMaps<Maps>)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
                     else
-                        chunk = createChunk<kind, strictness>(map);
+                        chunk = createChunk<kind, strictness, Maps>();
                 }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
@@ -960,11 +965,11 @@ private:
     /// One entry per engine key argument, in clause order; `offset` is filled per map variant.
     std::vector<PackedKeyColumn> key_slots;
 
-    std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
+    HashJoinTable::Cursor position;
 
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
-    Chunk createChunk(const Maps & maps)
+    Chunk createChunk()
     {
         MutableColumns mut_columns = restored_block.cloneEmpty().mutateColumns();
 
@@ -974,7 +979,7 @@ private:
         {
 #define M(TYPE)                                           \
     case HashJoin::Type::TYPE:                                \
-        rows_added = fillColumns<KIND, STRICTNESS, HashJoin::Type::TYPE>(*maps.TYPE, mut_columns); \
+        rows_added = fillColumns<KIND, STRICTNESS, HashJoin::Type::TYPE, Maps>(mut_columns); \
         break;
             APPLY_FOR_JOIN_VARIANTS_LIMITED(M)
 #undef M
@@ -1013,38 +1018,25 @@ private:
         return Chunk(std::move(columns), num_rows);
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, HashJoin::Type TYPE, typename Map>
-    size_t fillColumns(const Map & map, MutableColumns & columns)
+    template <JoinKind KIND, JoinStrictness STRICTNESS, HashJoin::Type TYPE, typename Maps>
+    size_t fillColumns(MutableColumns & columns)
     {
-        size_t rows_added = 0;
+        using Map = JoinMapOf<TYPE, Maps>;
         const StoredBlock * const * stored_columns = join->getJoinedData()->stored_columns_index->blocksData();
         const KeyLayout layout = makeKeyLayout<TYPE, Map>();
 
-        if (!position)
-            position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())),
-                [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
-
-        auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());
-        auto end = map.end();
-
-        for (; it != end; ++it)
-        {
-            if constexpr (STRICTNESS == JoinStrictness::Asof)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
-            else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS))
-                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            else
-                fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-
-            if (rows_added >= max_block_size)
+        return join->data->tables.front()->forEachCell<TYPE, Maps>(
+            position,
+            max_block_size,
+            [&]([[maybe_unused]] const auto & key, [[maybe_unused]] const auto & mapped) -> size_t
             {
-                ++it;
-                break;
-            }
-        }
-
-        return rows_added;
+                if constexpr (STRICTNESS == JoinStrictness::Asof)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
+                else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS))
+                    return fillAll(columns, column_indices, key, mapped, layout, stored_columns);
+                else
+                    return fillOne(columns, column_indices, key, mapped, layout, stored_columns);
+            });
     }
 
     /// Byte ranges of the key columns inside this map's key. Empty `packed` means the map key is a
@@ -1101,45 +1093,49 @@ private:
         return layout;
     }
 
-    template <typename Map>
-    static void insertKey(MutableColumns & columns, const KeyLayout & layout, typename Map::const_iterator & it)
+    template <typename Key>
+    static void insertKey(MutableColumns & columns, const KeyLayout & layout, const Key & key)
     {
         if (layout.whole_key_pos)
-            columns[*layout.whole_key_pos]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
+            columns[*layout.whole_key_pos]->insertData(rawData(key), rawSize(key));
         else
             for (const auto & slot : layout.packed)
-                columns[slot.output_pos]->insertData(rawData(it->getKey()) + slot.offset, slot.width);
+                columns[slot.output_pos]->insertData(rawData(key) + slot.offset, slot.width);
     }
 
-    template <typename Map>
-    static void fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const KeyLayout & layout, size_t & rows_added, const StoredBlock * const * stored_columns)
+    /// Returns the rows added.
+    template <typename Key, typename Mapped>
+    static size_t fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, const Key & key, const Mapped & mapped,
+                          const KeyLayout & layout, const StoredBlock * const * stored_columns)
     {
         /// The mapped value of MapsOne is a single encoded ref; the mapped value of MapsAll
         /// (RightAny under preferUseMapsAll) is a tagged ref list whose first element is taken.
-        const UInt64 ref_word = firstRefWord(it->getMapped());
+        const UInt64 ref_word = firstRefWord(mapped);
         const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
         for (size_t j = 0; j < columns.size(); ++j)
             if (!layout.is_key_column[j])
                 columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
-        insertKey<Map>(columns, layout, it);
-        ++rows_added;
+        insertKey(columns, layout, key);
+        return 1;
     }
 
-    template <typename Map>
-    static void fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const KeyLayout & layout, size_t & rows_added, const StoredBlock * const * stored_columns)
+    /// Returns the rows added.
+    template <typename Key, typename Mapped>
+    static size_t fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, const Key & key, const Mapped & mapped,
+                          const KeyLayout & layout, const StoredBlock * const * stored_columns)
     {
-        for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
+        size_t rows_added = 0;
+        for (auto ref_it = mapped.begin(); ref_it.ok(); ++ref_it)
         {
             const UInt64 ref_word = *ref_it;
             const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
             for (size_t j = 0; j < columns.size(); ++j)
                 if (!layout.is_key_column[j])
                     columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
-            insertKey<Map>(columns, layout, it);
+            insertKey(columns, layout, key);
             ++rows_added;
         }
+        return rows_added;
     }
 };
 
