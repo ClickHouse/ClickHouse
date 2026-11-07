@@ -669,7 +669,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     };
 
                     const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
-                    if (prewhere_filters_by_top_k_threshold
+                    if (reader_settings.top_k_record_marks_beyond_threshold && prewhere_filters_by_top_k_threshold
                         && (!rows_equal_to_threshold_dropped || !rows_equal_to_threshold_dropped->load(std::memory_order_relaxed)))
                         task->addMarksBeyondTopKThreshold();
 

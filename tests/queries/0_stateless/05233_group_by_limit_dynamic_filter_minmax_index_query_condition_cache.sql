@@ -29,6 +29,7 @@ SET max_block_size = 128;
 
 DROP TABLE IF EXISTS t_desc;
 DROP TABLE IF EXISTS t_desc_unique;
+DROP TABLE IF EXISTS t_desc_alter;
 
 CREATE TABLE t_desc (v UInt64, k UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY v
 SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
@@ -66,5 +67,30 @@ GROUP BY arm
 ORDER BY arm
 SETTINGS max_block_size = 65409;
 
+-- A part that does not store a read column computes it from its DEFAULT on every read, so the values can differ on
+-- the next run: the granules beyond the boundary are not recorded, and the repeated query selects all granules again.
+CREATE TABLE t_desc_alter (v UInt64, k UInt64, INDEX ik k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY v
+SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_desc_alter SELECT number, (1000 - intDiv(number, 128)) * 100 + number % 37 FROM numbers(128000);
+OPTIMIZE TABLE t_desc_alter FINAL;
+ALTER TABLE t_desc_alter ADD COLUMN w UInt8 DEFAULT 1;
+
+SELECT 'alter, first', arraySort(groupArray((k, c, sw))) FROM (SELECT k, count() c, sum(w) sw FROM t_desc_alter GROUP BY k LIMIT 7)
+SETTINGS log_comment = '05233_qcc_alter_1';
+SELECT 'alter, repeated', arraySort(groupArray((k, c, sw))) FROM (SELECT k, count() c, sum(w) sw FROM t_desc_alter GROUP BY k LIMIT 7)
+SETTINGS log_comment = '05233_qcc_alter_2';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    'alter',
+    anyIf(ProfileEvents['SelectedMarks'], log_comment = '05233_qcc_alter_1') = 1000,
+    anyIf(ProfileEvents['SelectedMarks'], log_comment = '05233_qcc_alter_2') = anyIf(ProfileEvents['SelectedMarks'], log_comment = '05233_qcc_alter_1')
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment IN ('05233_qcc_alter_1', '05233_qcc_alter_2')
+SETTINGS max_block_size = 65409;
+
 DROP TABLE t_desc;
 DROP TABLE t_desc_unique;
+DROP TABLE t_desc_alter;

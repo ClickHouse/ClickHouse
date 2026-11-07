@@ -5433,6 +5433,26 @@ static std::vector<RangesInDataPartsDescription> sliceMarksAcrossBuckets(const R
     return result;
 }
 
+static bool allPartsStoreColumns(const RangesInDataParts & parts, const ColumnsDescription & columns, const Names & column_names)
+{
+    for (const auto & name : column_names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column)
+            continue;
+
+        const auto name_in_storage = column->getNameInStorage();
+        const DataTypePtr type = columns.getPhysical(name_in_storage).type;
+        for (const auto & part : parts)
+        {
+            auto in_part = part.data_part->tryGetColumn(name_in_storage);
+            if (!in_part || !in_part->type->equals(*type))
+                return false;
+        }
+    }
+    return true;
+}
+
 Pipe ReadFromMergeTree::createEmptyPipe(size_t num_streams) const
 {
     Pipes pipes;
@@ -5730,7 +5750,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     }
 
     if (top_k_filter_info)
+    {
         reader_settings.top_k_filter_rows_equal_to_threshold_dropped = top_k_filter_info->rows_equal_to_threshold_dropped;
+        reader_settings.top_k_record_marks_beyond_threshold
+            = allPartsStoreColumns(getParts(), storage_snapshot->metadata->getColumns(), all_column_names);
+    }
 
     /// Push down substring search conditions from PREWHERE into the column scan: the readers check
     /// every value of the corresponding String columns and read non-matching values as empty strings.
