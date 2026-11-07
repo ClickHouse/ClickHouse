@@ -1513,30 +1513,20 @@ void StorageKafka2::pollIdleConsumerEvents(size_t idx)
     try
     {
         KeeperHandlingConsumerPtr consumer;
-        bool in_use = false;
         {
             std::lock_guard lock(consumers_mutex);
             if (idx >= consumers.size() || !consumers[idx])
                 return;
-            consumer = consumers[idx];
             /// No handle means nothing to drain.
-            if (!consumer->hasConsumer())
+            if (!consumers[idx]->hasConsumer())
                 return;
-            in_use = consumer->isInUse();
+            consumer = consumers[idx];
         }
 
-        if (in_use)
-        {
-            /// The holder may not poll for a while (a blocked MV insert); the events queue is
-            /// safe to poll without ownership - data lives on detached partition queues.
-            consumer->pollEventsNonOwning();
-            return;
-        }
-
-        /// A direct SELECT can take it meanwhile; a timeout here only skips one round.
-        auto acquired = acquireConsumer(idx);
-        SCOPE_EXIT({ releaseConsumer(std::move(acquired)); });
-        acquired->drainKafkaEvents();
+        /// Always non-owning: acquiring an idle consumer can block for up to
+        /// kafka_consumer_acquire_timeout_ms if it becomes busy in between, which
+        /// would stall this task and every later slot for the whole wait.
+        consumer->pollEventsNonOwning();
     }
     catch (...)
     {
