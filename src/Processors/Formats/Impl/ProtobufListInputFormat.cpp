@@ -161,6 +161,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
                 settings.protobuf.input_flatten_google_wrappers,
                 settings.protobuf.google_protos_path);
         });
+    factory.markInputFormatSupportsResetParser("ProtobufList");
     factory.markFormatSupportsSubsetOfColumns("ProtobufList");
     factory.registerAdditionalInfoForSchemaCacheGetter(
         "ProtobufList",

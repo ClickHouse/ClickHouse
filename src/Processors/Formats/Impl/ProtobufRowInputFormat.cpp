@@ -174,6 +174,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                     settings.protobuf.oneof_presence,
                     settings.protobuf.google_protos_path);
             });
+        factory.markInputFormatSupportsResetParser(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
         factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
 

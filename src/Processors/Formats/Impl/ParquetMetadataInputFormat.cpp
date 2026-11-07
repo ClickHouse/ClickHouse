@@ -663,6 +663,7 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
            FormatParserSharedResourcesPtr,
            FormatFilterInfoPtr) -> InputFormatPtr
         { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+    factory.markInputFormatSupportsResetParser("ParquetMetadata");
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 
     factory.setDocumentation("ParquetMetadata", Documentation{

@@ -73,6 +73,7 @@ void registerInputFormatLineAsString(FormatFactory & factory)
     {
         return std::make_shared<LineAsStringRowInputFormat>(std::make_shared<const Block>(sample), buf, params);
     });
+    factory.markInputFormatSupportsResetParser("LineAsString");
 
     factory.setDocumentation("LineAsString", Documentation{
         .description = R"DOCS_MD(

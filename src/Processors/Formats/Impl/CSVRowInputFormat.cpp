@@ -545,6 +545,7 @@ void registerInputFormatCSV(FormatFactory & factory)
         {
             return std::make_shared<CSVRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, settings);
         });
+        factory.markInputFormatSupportsResetParser(format_name);
     };
 
     registerWithNamesAndTypes("CSV", register_func);

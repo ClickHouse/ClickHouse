@@ -407,6 +407,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
         {
             return std::make_shared<JSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings, json_strings);
         });
+        factory.markInputFormatSupportsResetParser(format_name);
     };
 
     register_format("JSONEachRow", false);

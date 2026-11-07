@@ -25,8 +25,6 @@ public:
 
     String getName() const override { return "DWARFBlockInputFormat"; }
 
-    void resetParser() override;
-
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:

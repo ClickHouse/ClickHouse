@@ -1650,14 +1650,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
-    std::shared_ptr<ISimpleTransform> adding_defaults_transform;
+    auto create_format = [&] { return getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr); };
+    StreamingFormatExecutor::TransformCreator create_adding_defaults_transform;
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
-        const auto & columns = *insert_context->getInsertionTableColumnsDescription();
-        if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+        auto columns = insert_context->getInsertionTableColumnsDescription();
+        if (columns->hasDefaults())
+            create_adding_defaults_transform = [columns, shared_header = std::make_shared<const Block>(header), insert_context](IInputFormat & format)
+            { return std::make_shared<AddingDefaultsTransform>(shared_header, *columns, format, insert_context); };
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1675,11 +1676,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     StreamingFormatExecutor executor(
         header,
-        format,
+        std::move(create_format),
         std::move(on_error),
         data->size_in_bytes,
         data->entries.size(),
-        std::move(adding_defaults_transform),
+        std::move(create_adding_defaults_transform),
         [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);

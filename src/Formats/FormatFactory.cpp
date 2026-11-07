@@ -708,6 +708,7 @@ InputFormatPtr FormatFactory::getInputImpl(
         format = std::make_shared<AggregateFunctionStatesFromValuesInputFormat>(
             std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format);
 
+    format->setSupportsResetParser(creators.supports_reset_parser && !parallel_parsing);
     return format;
 }
 
@@ -1237,6 +1238,14 @@ void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
     auto & target = getOrCreateCreators(name).prefers_large_blocks;
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as preferring large blocks", name);
+    target = true;
+}
+
+void FormatFactory::markInputFormatSupportsResetParser(const String & name)
+{
+    auto & target = getOrCreateCreators(name).supports_reset_parser;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting resetParser", name);
     target = true;
 }
 

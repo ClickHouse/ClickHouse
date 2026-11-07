@@ -227,6 +227,7 @@ void registerInputFormatRegexp(FormatFactory & factory)
     {
         return std::make_shared<RegexpRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
+    factory.markInputFormatSupportsResetParser("Regexp");
 
     factory.setDocumentation("Regexp", Documentation{
         .description = R"DOCS_MD(

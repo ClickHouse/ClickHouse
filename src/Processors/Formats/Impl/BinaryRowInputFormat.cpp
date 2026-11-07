@@ -101,6 +101,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readNames()
 template <bool with_defaults>
 std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
 {
+    read_data_types.clear();
     read_data_types.reserve(read_columns);
     Names type_names;
     if (format_settings.binary.decode_types_in_binary_format)
@@ -213,6 +214,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
         {
             return std::make_shared<BinaryRowInputFormat<false>>(buf, std::make_shared<const Block>(sample), params, with_names, with_types, settings);
         });
+        factory.markInputFormatSupportsResetParser(format_name);
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
@@ -226,6 +228,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     {
         return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, false, false, settings);
     });
+    factory.markInputFormatSupportsResetParser("RowBinaryWithDefaults");
 
     factory.registerInputFormat("RowBinaryWithNamesAndTypesAndDefaults", [](
          ReadBuffer & buf,
@@ -235,6 +238,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     {
         return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, /*with_names=*/true, /*with_types=*/true, settings);
     });
+    factory.markInputFormatSupportsResetParser("RowBinaryWithNamesAndTypesAndDefaults");
 
     factory.setDocumentation("RowBinary", Documentation{
         .description = R"DOCS_MD(

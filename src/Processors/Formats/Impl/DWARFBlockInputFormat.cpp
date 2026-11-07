@@ -1024,22 +1024,6 @@ Chunk DWARFBlockInputFormat::read()
     }
 }
 
-void DWARFBlockInputFormat::resetParser()
-{
-    stopThreads();
-
-    runner.reset();
-    background_exception = nullptr;
-    is_stopped = false;
-    units_queue.clear();
-    delivery_queue.clear();
-    units_in_progress = 0;
-    elf.reset();
-    extractor.reset();
-
-    IInputFormat::resetParser();
-}
-
 DWARFSchemaReader::DWARFSchemaReader(ReadBuffer & in_)
     : ISchemaReader(in_)
 {

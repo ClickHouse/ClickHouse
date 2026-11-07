@@ -208,6 +208,7 @@ private:
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
+        bool supports_reset_parser{false};
         bool prefers_large_blocks{false};
         bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
         /// If true, the output can contain arbitrary bytes that are not guaranteed to be valid UTF-8 text
@@ -389,6 +390,9 @@ public:
     void markOutputFormatNotTTYFriendly(const String & name);
     void markOutputFormatMayProduceRawBytes(const String & name);
     void registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker);
+
+    /// The input format resets all its per-input state in `IInputFormat::resetParser`.
+    void markInputFormatSupportsResetParser(const String & name);
 
     void setContentType(const String & name, const String & content_type);
     void setContentType(const String & name, ContentTypeGetter content_type);
