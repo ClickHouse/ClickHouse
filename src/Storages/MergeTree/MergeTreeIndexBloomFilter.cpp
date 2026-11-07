@@ -1193,11 +1193,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    /// `isDefaultAt` compares the bits, so a `-0.0` constant also matches the `+0.0` padding.
-                    const auto & nested_type = array_type->getNestedType();
-                    if (padded
-                        && (nested_type->createColumnConst(1, converted_field)->isDefaultAt(0)
-                            || (isFloat(removeLowCardinality(nested_type)) && isFloatZero(nested_type, converted_field))))
+                    if (padded && accurateEquals(converted_field, array_type->getNestedType()->getDefault()))
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;
