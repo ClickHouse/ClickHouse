@@ -42,6 +42,12 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
             "the aggregate function {} has been provided a null constructor", name);
 
+    /// `get` applies the `Null` combinator to a function that is not a window function from the types without `LowCardinality`,
+    /// so only a window function can be created with them (see `AggregateFunctionProperties::created_with_low_cardinality_types`).
+    if (creator_with_properties.properties.created_with_low_cardinality_types && !creator_with_properties.properties.is_window_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
+            "the aggregate function {} is created with LowCardinality types but is not a window function", name);
+
     if (!aggregate_functions.emplace(name, creator_with_properties).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",
             name);
@@ -129,10 +135,19 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
+    /// `tryGetProperties` looks through the combinators, so a combined function is created from these types as well.
+    const bool with_low_cardinality_types = properties.has_value() && properties->created_with_low_cardinality_types;
+    auto with_original_arguments = getImpl(
+        name, action, with_low_cardinality_types ? argument_types : types_without_low_cardinality, parameters, out_properties, false, state_variant);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
+
+    /// The columns of the arguments reach every aggregate function without `LowCardinality`.
+    if (with_low_cardinality_types)
+        for (const auto & type : with_original_arguments->getArgumentTypes())
+            if (recursiveRemoveLowCardinality(type).get() != type.get())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} declares an argument of type {}", name, type->getName());
     return with_original_arguments;
 }
 
@@ -351,19 +366,22 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             /// to a placeholder for only-null elements and drop the other elements' state).
             String adjusted_nested_name = getAssociatedNameByNullsAction(getAliasToOrName(nested_name), action);
             combined_function = combinator->transformAggregateFunctionFromMultipleNestedFunctions(
-                adjusted_nested_name, std::move(nested_functions), out_properties, argument_types, parameters);
+                adjusted_nested_name, std::move(nested_functions), out_properties, convertLowCardinalityTypesToNested(argument_types), parameters);
         }
         else
         {
             DataTypes nested_types = combinator->transformArguments(argument_types);
+            /// The nested function may be created from types with `LowCardinality` (see `created_with_low_cardinality_types`),
+            /// the combinator never is.
+            const DataTypes combinator_arguments = convertLowCardinalityTypesToNested(argument_types);
 
             AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, nested_state_variant);
             /// The window layout only makes a window function faster, so use the ordinary layout where the
             /// combined function cannot work with the window one.
             if (nested_state_variant != AggregateFunctionStateVariant::Aggregation
-                && !combinator->acceptsNestedFunction(*nested_function, argument_types))
+                && !combinator->acceptsNestedFunction(*nested_function, combinator_arguments))
                 nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, AggregateFunctionStateVariant::Aggregation);
-            combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+            combined_function = combinator->transformAggregateFunction(nested_function, out_properties, combinator_arguments, parameters);
         }
 
         /// Same invariant as above.

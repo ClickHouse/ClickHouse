@@ -33,7 +33,12 @@ using AggregateDescriptions = std::vector<AggregateDescription>;
 
 void serializeAggregateDescriptions(
     const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key = false, const Block * input_header = nullptr);
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
+/// With `input_header`, the functions are created from the types of the argument columns in it rather than from the types
+/// written by `serializeAggregateDescriptions`, which are those the functions declare: a function created from the argument
+/// types as they are (see `AggregateFunctionProperties::created_with_low_cardinality_types`) is then created as the planner
+/// created it, and types from an untrusted plan cannot disagree with the columns.
+void deserializeAggregateDescriptions(
+    AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity, const Block * input_header = nullptr);
 
 /// Variant for aggregates whose argument names the planner removed (the `Rollup` and `Cube` steps:
 /// their transforms only merge states, so the argument columns do not exist in their input). The
