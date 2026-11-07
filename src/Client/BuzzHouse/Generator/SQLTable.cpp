@@ -1890,15 +1890,19 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 }
                 if (is_text)
                 {
-                    /// `textIndexValidator` recursively unwraps Array/Nullable/LowCardinality (any nesting,
-                    /// via `getNestedDataType`) and then requires String/FixedString at the bottom.
+                    /// `textIndexValidator` requires a String/FixedString base type and rejects
+                    /// multidimensional arrays, so unwrap at most one Array level here.
+                    bool array_unwrapped = false;
                     while (true)
                     {
                         const SQLTypeClass tc = tp->getTypeClass();
 
                         if (tc == SQLTypeClass::ARRAY)
                         {
+                            if (array_unwrapped)
+                                break;
                             tp = static_cast<const ArrayType *>(tp)->subtype.get();
+                            array_unwrapped = true;
                         }
                         else if (tc == SQLTypeClass::NULLABLE)
                         {
