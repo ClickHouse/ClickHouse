@@ -246,13 +246,19 @@ void BaseDaemon::closeFDs()
 }
 
 
+Poco::Util::Application::ArgVec BaseDaemon::getCommandLineForConfig()
+{
+    return argv();
+}
+
+
 void BaseDaemon::initialize(Application & self)
 {
     closeFDs();
     ServerApplication::initialize(self);
 
     /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
-    argsToConfig(argv(), config(), PRIO_APPLICATION - 100);
+    argsToConfig(getCommandLineForConfig(), config(), PRIO_APPLICATION - 100);
 
     bool is_daemon = config().getBool("application.runAsDaemon", false);
     if (is_daemon)
