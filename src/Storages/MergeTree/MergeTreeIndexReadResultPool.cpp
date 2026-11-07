@@ -2,10 +2,14 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 
@@ -80,8 +84,9 @@ void MergeTreeSkipIndexReader::setTopKPrimaryKeyPruning(size_t primary_key_colum
 
 bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
 {
-    /// The dynamic predicate can prune only through the primary key or dynamic skip indexes.
-    return dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty());
+    /// The dynamic predicate can prune only through the primary key, the global row index
+    /// (`_part_starting_offset + _part_offset`) or the skip indexes on its keys (`dynamic_skip_indexes`).
+    return dynamic_predicate_builder && (prune_primary_key || prune_global_row_index || !dynamic_skip_indexes.empty());
 }
 
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
@@ -174,10 +179,43 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             const size_t granules_before = ranges.getNumberOfMarks();
             ActionsDAGWithInversionPushDown filter_dag(predicate, context, /*boolean_context=*/true);
 
-            if (prune_primary_key)
+            /// Pruning by the global row index relies on the rows of a granule having consecutive indexes, starting at
+            /// `part_starting_offset_in_query` plus the granule's first row. In a projection part `_part_offset` is not
+            /// the position of the row in that part (it may be the offset in the parent part stored by the projection),
+            /// so the projection part is not pruned this way.
+            const bool use_global_row_index_condition = prune_global_row_index && !part_info->isProjectionPart();
+            if (prune_primary_key || use_global_row_index_condition)
             {
+                /// Both conditions are checked in one pass over the ranges. When only the global row index prunes, the
+                /// primary key condition has no atoms and is always unknown, so it keeps every granule.
                 const auto & primary_key = metadata_snapshot->getPrimaryKey();
                 KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
+
+                std::optional<KeyCondition> total_offset_condition;
+                if (use_global_row_index_condition)
+                {
+                    /// The condition has a single key: the global row index, computed from the two virtual columns.
+                    /// An atom of the predicate is recognized as an atom on this key by the name of its argument, so the
+                    /// expression must be built exactly as `convertRuntimeFilterToKeyConditionDAG` builds it, with the same
+                    /// function and the same order of arguments. Atoms on other keys of the predicate are unknown to this
+                    /// condition and do not stop it from pruning.
+                    /// It is passed as the total offset condition: `markRangesFromPKRange` checks it against the range of
+                    /// global row indexes of each granule.
+                    auto uint64_type = std::make_shared<DataTypeUInt64>();
+                    ActionsDAG key_dag;
+                    const auto & part_offset = key_dag.addInput("_part_offset", uint64_type);
+                    const auto & part_starting_offset = key_dag.addInput("_part_starting_offset", uint64_type);
+                    const auto & global_row_index
+                        = key_dag.addFunction(FunctionFactory::instance().get("plus", context), {&part_offset, &part_starting_offset}, {});
+                    key_dag.getOutputs() = {&global_row_index};
+                    const String global_row_index_name(runtime_filter_global_row_index_node_name);
+                    chassert(global_row_index.result_name == global_row_index_name);
+                    total_offset_condition.emplace(
+                        filter_dag,
+                        context,
+                        Names{global_row_index_name},
+                        std::make_shared<ExpressionActions>(std::move(key_dag), ExpressionActionsSettings{}));
+                }
 
                 ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,
@@ -186,7 +224,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     metadata_snapshot,
                     dynamic_key_condition,
                     /*part_offset_condition=*/nullptr,
-                    /*total_offset_condition=*/nullptr,
+                    total_offset_condition ? &*total_offset_condition : nullptr,
                     /*exact_ranges=*/nullptr,
                     /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),

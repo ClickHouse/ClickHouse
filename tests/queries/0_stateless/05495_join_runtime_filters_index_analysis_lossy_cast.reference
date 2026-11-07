@@ -1,0 +1,26 @@
+44
+300
+44
+300
+44
+300
+44
+300
+300
+300
+300
+300
+1970-04-01
+1970-01-01 01:30:00
+1970-04-01
+05495_date_time_to_date_time64	1	1
+05495_date_to_date32	1	1
+05495_date_to_date_time	0	0
+05495_global_row_index_narrowing	0	0
+05495_global_row_index_narrowing_range	0	0
+05495_global_row_index_unsigned_to_signed	1	1
+05495_global_row_index_widening	1	1
+05495_primary_key_narrowing	0	0
+05495_primary_key_narrowing_range	0	0
+05495_primary_key_unsigned_to_signed	1	1
+05495_primary_key_widening	1	1

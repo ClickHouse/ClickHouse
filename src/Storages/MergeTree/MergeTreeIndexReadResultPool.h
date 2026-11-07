@@ -84,6 +84,9 @@ public:
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
 
+    /// Lets the dynamic predicate prune by the global row index `_part_starting_offset + _part_offset`.
+    void setGlobalRowIndexPruning() { prune_global_row_index = true; }
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
@@ -97,6 +100,9 @@ private:
 
     DynamicPredicateBuilder dynamic_predicate_builder;
     bool prune_primary_key = false;
+    /// Prune by `_part_starting_offset + _part_offset`, the global row index of the read: a granule is dropped
+    /// if the range of global row indexes of its rows does not satisfy the dynamic predicate.
+    bool prune_global_row_index = false;
     MergeTreeIndices dynamic_skip_indexes;
     DynamicSkipIndexFilter dynamic_skip_index_filter;
 
