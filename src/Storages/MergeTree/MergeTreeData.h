@@ -595,10 +595,30 @@ public:
 
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
+    /// Calls `load_part(part_index)` for every part index in `[0, num_parts)`, using up to `max_threads`
+    /// threads, and `consume_part(part_index)` for every part index in their order in the calling thread.
+    /// It is used to load the statistics (or the estimates) of many parts at once: each part does several
+    /// small reads, so on a cold disk loading them one after another adds up the latencies. With more than one
+    /// thread, the parts are processed in bounded windows of consecutive parts, and a window is consumed before
+    /// the next one is loaded, so `consume_part` should release what was loaded for the part. Every part of a
+    /// window is first passed to `try_load_part_from_memory(part_index)` in the calling thread, which loads the
+    /// part and returns true if that needs no reads from disk, and returns false otherwise; only the parts for
+    /// which it returns false are passed to `load_part`, in other threads. `load_part` must be safe to call concurrently for different
+    /// parts. If it throws for some parts, the exception of the first of them in the order of parts is
+    /// rethrown, and the parts from it onwards are not consumed.
+    static void loadStatisticsOfPartsInParallel(
+        size_t num_parts,
+        size_t max_threads,
+        const std::function<bool(size_t)> & try_load_part_from_memory,
+        const std::function<void(size_t)> & load_part,
+        const std::function<void(size_t)> & consume_part);
+
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
+
+    bool hasBucketedMapSerialization() const override;
 
     bool supportsTTL() const override { return true; }
 
@@ -730,6 +750,11 @@ public:
 
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
+    /// Removes the snapshot of this table from the query-scoped snapshot cache of
+    /// `enable_shared_storage_snapshot_in_query`, so that the next `getStorageSnapshot` in the query
+    /// takes a fresh one. Holders of the removed snapshot keep it.
+    void discardSharedStorageSnapshot(const ContextPtr & query_context) const;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);

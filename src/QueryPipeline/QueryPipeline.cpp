@@ -26,6 +26,7 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ArrayJoinTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DroppingTransform.h>
@@ -258,6 +259,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
         else if (limit_being_counted)
         {
+            /// a sort below `ARRAY JOIN` sees the rows before the expansion, so count at the limit (Case 7)
+            if (typeid_cast<ArrayJoinTransform *>(processor))
+                continue;
+
             /// Case 2.
             if (typeid_cast<PartialSortingTransform *>(processor))
             {

@@ -90,7 +90,8 @@ namespace
 
             case StoreMethod::CONST_STRING:
             case StoreMethod::VECTOR_GRID:
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
                 /// Can't get in here because these store methods are incompatible with ResultType::SCALAR.
                 throwUnexpectedStoreMethod(result, context);
@@ -253,7 +254,8 @@ namespace
             }
 
             case StoreMethod::CONST_STRING:
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
                 /// Can't get in here because these store methods are incompatible with ResultType::INSTANT_VECTOR.
                 throwUnexpectedStoreMethod(result, context);
@@ -420,11 +422,61 @@ namespace
                 break;
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            {
+                /// Two steps are here to avoid a name conflict: the input column and the merged array have the same name `samples`,
+                /// so in a single step `notEmpty(samples)` in HAVING would bind to the alias by default but to the input column
+                /// under prefer_column_name_to_alias, which is not allowed in HAVING.
+
+                /// Step 1: Merge the rows of each series into one array of samples.
+                ///
+                /// SELECT group, timeSeriesGroupArray(samples) AS samples
+                /// FROM <samples_data>
+                /// GROUP BY group
+                {
+                    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
+
+                    SelectQueryBuilder builder;
+                    builder.from_table = context.subqueries.back().name;
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    builder.select_list.push_back(makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Samples)));
+                    builder.select_list.back()->setAlias(ColumnNames::Samples);
+                    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+                    result.select_query = builder.getSelectQuery();
+                }
+
+                /// Step 2: Convert the groups to tags, cast the samples and skip the series whose arrays became empty after
+                /// the stale markers were filtered out.
+                ///
+                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                ///        CAST(samples, 'Array(Tuple(result_timestamp_type, Float64))') AS samples
+                /// FROM <step1>
+                /// WHERE notEmpty(samples)
+
+                /// timeSeriesGroupToTags(group) AS tags
+                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                tags->setAlias(ColumnNames::Tags);
+
+                /// CAST(samples, 'Array(Tuple(result_timestamp_type, Float64))') AS samples
+                /// The values can be Float32 (see the comment for StoreMethod::SAMPLES),
+                /// so we cast the merged arrays, which is cheaper than casting the samples before aggregation.
+                time_series = makeASTFunction(
+                    "CAST",
+                    make_intrusive<ASTIdentifier>(ColumnNames::Samples),
+                    make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
+                time_series->setAlias(samples_outer_column_name);
+
+                where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Samples));
+
+                break;
+            }
+
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
                 ///        CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
-                /// FROM <raw_data>
+                /// FROM <samples_data>
                 /// GROUP BY group
                 /// HAVING notEmpty(samples)
 
@@ -433,8 +485,8 @@ namespace
                 tags->setAlias(ColumnNames::Tags);
 
                 /// CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
-                /// The column `value` of raw data can be Float32 (see the comment for StoreMethod::RAW_DATA),
-                /// so we cast the aggregated arrays, which is cheaper than casting the raw data before aggregation.
+                /// The column `value` can be Float32 (see the comment for StoreMethod::TIMESTAMP_AND_VALUE),
+                /// so we cast the aggregated arrays, which is cheaper than casting the samples before aggregation.
                 time_series = makeASTFunction(
                     "CAST",
                     makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
