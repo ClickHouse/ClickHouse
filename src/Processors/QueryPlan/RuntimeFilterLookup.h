@@ -466,6 +466,7 @@ struct RuntimeFilterIndexAnalysisDescriptor
     String key_column_name;
     DataTypePtr key_column_type;
 };
+using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
 
 /// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.
 /// can produce a range predicate even after the exact value set overflows into a bloom filter.

@@ -9746,6 +9746,10 @@ Use Iceberg partition pruning for Iceberg tables
 Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
+    DECLARE(Bool, use_join_runtime_filters_for_iceberg_pruning, true, R"(
+Skip the Iceberg data files that cannot contain a key of a JOIN runtime filter applied to the read (see `enable_join_runtime_filters`). Once the build side of the join has finished, the key values recorded by the runtime filter (or their minimum/maximum range when the exact set was too large) are checked against the column bounds of each data file in its manifest file, in the same way as a query filter. Data files requested before then are read in full. Requires [enable_join_runtime_filters_index_analysis](#enable_join_runtime_filters_index_analysis) and [use_iceberg_partition_pruning](#use_iceberg_partition_pruning).
+)", 0, \
+        {"26.11", false, true, "New setting to prune Iceberg data files by JOIN runtime filters."}) \
     DECLARE(Bool, use_iceberg_manifest_statistics, false, R"(
 With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
@@ -11407,6 +11411,8 @@ Prune granules on the probe side of a JOIN with the runtime filter collected fro
 Only has an effect if `use_skip_indexes_on_data_read = 1`.
 Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
 If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
+
+For an Iceberg table, the setting also allows skipping whole data files, see [use_join_runtime_filters_for_iceberg_pruning](#use_join_runtime_filters_for_iceberg_pruning); that does not depend on `use_skip_indexes_on_data_read`.
 
 Works with parallel replicas (`enable_parallel_replicas = 1`): each replica prunes the granules it reads with the filter it built itself. That filter can be partial - for a `RIGHT` join the build side is the one split among the replicas, so each replica's filter covers only its own share of it - but the result stays correct, because exactly one side of the join is split, every matching pair of rows meets on exactly one replica, and each replica emits a disjoint share of the result.
 
