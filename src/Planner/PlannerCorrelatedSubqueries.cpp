@@ -1471,7 +1471,6 @@ void buildProjectionForLateralSubquery(
 
 /// Build the final logical join for LATERAL JOIN.
 /// Similar to buildLogicalJoin but uses ALL strictness and includes all subquery columns.
-/// It matches on the correlated columns and on the `ON` expression of the LATERAL JOIN.
 QueryPlan buildLogicalJoinForLateral(
     const PlannerContextPtr & planner_context,
     QueryPlan input_stream_plan,
@@ -1484,8 +1483,6 @@ QueryPlan buildLogicalJoinForLateral(
     auto on_expression = correlated_subquery.lateral_join_on_expression;
     if (auto on_constant = tryExtractConstantFromConditionNode(on_expression); on_constant.has_value())
     {
-        /// No subquery row satisfies a constant false `ON`: the join yields nothing for `INNER`
-        /// and null-extends every outer row for `LEFT`.
         if (!*on_constant)
         {
             ActionsDAG filter_dag(decorrelated_plan.getCurrentHeader()->getNamesAndTypesList());

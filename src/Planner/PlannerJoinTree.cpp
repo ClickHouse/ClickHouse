@@ -4090,8 +4090,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "LATERAL JOIN does not support USING clause");
 
-                /// A non-trivial ON predicate is added to the predicates of the final join of the decorrelation,
-                /// which pairs every left row with the rows of the subquery evaluated for it.
+                /// The ON expression becomes a predicate of the final join of the decorrelation.
                 QueryTreeNodePtr lateral_join_on_expression;
                 if (join_node.isOnJoinExpression())
                     lateral_join_on_expression = join_node.getJoinExpression();
