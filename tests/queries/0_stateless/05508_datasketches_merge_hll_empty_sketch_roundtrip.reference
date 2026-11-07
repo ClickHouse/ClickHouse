@@ -1,0 +1,11 @@
+single empty sketch round-trips unchanged
+0201070E030C0008
+single empty sketch round-trips unchanged through distributed aggregation
+0201070E030C0008
+several empty sketches merge order-independently
+12	2	0
+12	2	0
+empty sketches do not affect a merge with data
+1
+explicit parameters still take precedence
+10	0
