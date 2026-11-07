@@ -62,6 +62,7 @@ private:
     void ignoreVarint();
     void ignoreGroup();
     [[noreturn]] void throwUnknownFormat() const;
+    Int64 addLengthToCursor(UInt64 length) const;
 
     ReadBuffer * in;
     Int64 cursor = 0;

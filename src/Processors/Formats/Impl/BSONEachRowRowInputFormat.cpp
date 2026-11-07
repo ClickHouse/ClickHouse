@@ -1085,7 +1085,8 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
         if (document_size < sizeof(document_size))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
-        if (min_bytes != 0 && document_size > 10 * min_bytes)
+        /// Same as `document_size > 10 * min_bytes`, but without overflow for huge `min_bytes`.
+        if (min_bytes != 0 && (document_size + 9ULL) / 10 > min_bytes)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "

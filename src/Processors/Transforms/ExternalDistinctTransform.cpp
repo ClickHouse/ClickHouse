@@ -858,7 +858,7 @@ ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
         formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
 
     /// Reserving the run's space also preserves the configured amount of free disk space.
-    TemporaryBlockStreamHolder tmp_stream(run_header, tmp_data, bytes + min_free_disk_space);
+    TemporaryBlockStreamHolder tmp_stream(run_header, tmp_data, getTemporaryFileReserveSize(bytes, min_free_disk_space));
     /// The final merge applies the hint after suppression, which can remove keys from ordinary runs.
     auto merger = std::make_unique<MergeSorter>(
         run_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0, mode, preferred_block_bytes);

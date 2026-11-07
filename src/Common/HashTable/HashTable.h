@@ -2,6 +2,8 @@
 
 #include <Core/Defines.h>
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadBuffer.h>
@@ -594,7 +596,8 @@ protected:
     }
 
     /// The distance of the element in the cell at place_value from its optimal position.
-    size_t ALWAYS_INLINE distanceFromOptimalPosition(const Cell & cell, size_t place_value) const
+    /// Positions are modulo the buffer size, so the subtraction wraps around for chains that cross the end of the buffer.
+    size_t ALWAYS_INLINE NO_SANITIZE_UNSIGNED_OVERFLOW distanceFromOptimalPosition(const Cell & cell, size_t place_value) const
     {
         return grower.place(place_value - grower.place(cell.getHash(*this)));
     }
@@ -681,8 +684,9 @@ protected:
     /** Reorder the elements in every collision resolution chain by their optimal positions, as required in the Robin Hood mode.
       * Used after the elements were placed by the ordinary linear probing: on resize, or when switching to the Robin Hood mode.
       * It is an insertion sort, which is fast for the chains that are already almost ordered.
+      * Positions are modulo the buffer size, so going back from position zero wraps around.
       */
-    void orderCollisionResolutionChains()
+    void NO_SANITIZE_UNSIGNED_OVERFLOW orderCollisionResolutionChains()
     {
         if (empty())
             return;
@@ -699,7 +703,7 @@ protected:
         /// compiler assumes that moving a cell can change them, and would reload them for every cell.
         Cell * const cells = buf;
         const Grower local_grower = grower;
-        auto distance_from_optimal = [&](size_t pos) { return local_grower.place(pos - local_grower.place(cells[pos].getHash(*this))); };
+        auto distance_from_optimal = [&](size_t pos) { return local_grower.place(common::subIgnoreOverflow(pos, local_grower.place(cells[pos].getHash(*this)))); };
 
         for (size_t i = 1; i < buf_size; ++i)
         {
@@ -1105,7 +1109,8 @@ protected:
         auto getPtr() const { return ptr; }
         size_t getHash() const { return ptr->getHash(*container); }
 
-        size_t getCollisionChainLength() const
+        /// Positions are modulo the buffer size, so the subtraction wraps around for chains that cross the end of the buffer.
+        size_t NO_SANITIZE_UNSIGNED_OVERFLOW getCollisionChainLength() const
         {
             return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
         }

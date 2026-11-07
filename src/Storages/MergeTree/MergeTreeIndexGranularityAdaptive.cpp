@@ -4,6 +4,8 @@
 
 #include <fmt/ranges.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -104,10 +106,23 @@ size_t MergeTreeIndexGranularityAdaptive::getRowsCountInRange(size_t begin, size
     return marks_rows_partial_sums[end - 1] - subtrahend;
 }
 
+namespace
+{
+
+size_t saturatingAdd(size_t a, size_t b)
+{
+    size_t res = 0;
+    if (__builtin_add_overflow(a, b, &res))
+        return std::numeric_limits<size_t>::max();
+    return res;
+}
+
+}
+
 size_t MergeTreeIndexGranularityAdaptive::countMarksForRows(size_t from_mark, size_t number_of_rows) const
 {
-    size_t rows_before_mark = getMarkStartingRow(from_mark);
-    size_t last_row_pos = rows_before_mark + number_of_rows;
+    /// Saturate: a caller asking for more rows than remain gets the marks up to the end of the part.
+    size_t last_row_pos = saturatingAdd(getMarkStartingRow(from_mark), number_of_rows);
     auto it = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
     size_t to_mark = it - marks_rows_partial_sums.begin();
     return to_mark - from_mark;
@@ -115,8 +130,7 @@ size_t MergeTreeIndexGranularityAdaptive::countMarksForRows(size_t from_mark, si
 
 size_t MergeTreeIndexGranularityAdaptive::countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows) const
 {
-    size_t rows_before_mark = getMarkStartingRow(from_mark);
-    size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
+    size_t last_row_pos = saturatingAdd(saturatingAdd(getMarkStartingRow(from_mark), offset_in_rows), number_of_rows);
     auto it = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
     size_t to_mark = it - marks_rows_partial_sums.begin();
 

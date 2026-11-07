@@ -22,6 +22,7 @@
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -131,7 +132,8 @@ protected:
 
         iotaWithStepOptimized(vec.data(), count, next, step);
 
-        next += count * step;
+        /// `step` may be the wrapping (negated) step, so both operations wrap by design.
+        next = common::addIgnoreOverflow(next, common::mulIgnoreOverflow(count, step));
         remaining -= count;
 
         progress(column->size(), column->byteSize());
@@ -649,7 +651,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
         NumbersLikeUtils::checkLimits(*context, total_count);
 
-        UInt64 wrapping_step = UInt64(0) - numbers_storage.step;
+        UInt64 wrapping_step = common::negateIgnoreOverflow(numbers_storage.step);
         auto source = std::make_shared<SimpleSteppedNumbersSource>(
             max_block_size, numbers_storage.offset, wrapping_step, total_count, numbers_storage.column_name);
         source->addTotalRowsApprox(total_count);
@@ -685,6 +687,10 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     if (!numbers_storage.limit.has_value() && NumbersLikeUtils::isUniverse(extracted_ranges.ranges) && !can_pushdown_query_limit)
     {
         chassert(numbers_storage.step == 1);
+
+        /// The chunks of all streams together must fit into the range of `UInt64`, otherwise they overlap.
+        if (num_streams > std::numeric_limits<UInt64>::max() / max_block_size)
+            num_streams = std::numeric_limits<UInt64>::max() / max_block_size;
 
         /// Distance between the starts of consecutive chunks in a single source.
         /// For multiple streams, each source jumps by `num_streams * block_range` to avoid overlap.

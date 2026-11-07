@@ -51,6 +51,7 @@
 
 
 #include <Parsers/ASTAlterQuery.h>
+#include <base/sanitizer_defs.h>
 
 namespace CurrentMetrics
 {
@@ -1523,6 +1524,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
 }
 
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw_if_error)
 {
     std::lock_guard lock{infos_mutex};

@@ -10,6 +10,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/FloatUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/StringUtils.h>
 #include <base/unaligned.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
@@ -488,7 +489,7 @@ void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataT
             tmp = decodeNumpyUnicode(tmp, npy_type.getEndianness());
         else
             /// NumPy pads `|S<n>` byte strings with zero bytes; zero bytes inside the value are part of it.
-            tmp.erase(tmp.find_last_not_of('\0') + 1);
+            trimRight(tmp, '\0');
         column_string.insertData(tmp.data(), tmp.size());
     }
 }

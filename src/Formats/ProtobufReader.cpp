@@ -2,6 +2,7 @@
 
 #if USE_PROTOBUF
 #   include <IO/ReadHelpers.h>
+#   include <limits>
 
 
 namespace DB
@@ -39,6 +40,15 @@ ProtobufReader::ProtobufReader(ReadBuffer & in_)
 {
 }
 
+Int64 ProtobufReader::addLengthToCursor(UInt64 length) const
+{
+    /// The length comes from the input, so it can be any 64-bit value. Reject a length which does not fit
+    /// into the signed domain of `cursor` before adding it, instead of letting the sum wrap around.
+    if (unlikely(length > static_cast<UInt64>(std::numeric_limits<Int64>::max() - cursor)))
+        throwUnknownFormat();
+    return cursor + static_cast<Int64>(length);
+}
+
 void ProtobufReader::resetState()
 {
     root_message_has_length_delimiter = false;
@@ -58,8 +68,8 @@ void ProtobufReader::startMessage(bool with_length_delimiter_)
     root_message_has_length_delimiter = with_length_delimiter_;
     if (root_message_has_length_delimiter)
     {
-        size_t size_of_message = readVarint();
-        current_message_end = cursor + size_of_message;
+        UInt64 size_of_message = readVarint();
+        current_message_end = addLengthToCursor(size_of_message);
     }
     else
     {
@@ -197,8 +207,8 @@ bool ProtobufReader::readFieldNumber(int & field_number_)
         }
         case LENGTH_DELIMITED:
         {
-            size_t length = readVarint();
-            field_end = cursor + length;
+            UInt64 length = readVarint();
+            field_end = addLengthToCursor(length);
             return true;
         }
         case VARINT:

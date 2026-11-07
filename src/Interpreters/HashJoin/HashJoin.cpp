@@ -8,6 +8,7 @@
 
 #include <base/getL2CacheSize.h>
 #include <base/scope_guard.h>
+#include <base/sanitizer_defs.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -1428,7 +1429,8 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     LOG_DEBUG(
         log,
         "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
-        ReadableSize(total_bytes_in_join - new_total_bytes_in_join),
+        /// The shrink can also grow the byte count, e.g. when it rewrites blocks into new allocations.
+        ReadableSize(static_cast<double>(total_bytes_in_join) - static_cast<double>(new_total_bytes_in_join)),
         ReadableSize(current_memory_usage - new_current_memory_usage),
         ReadableSize(new_total_bytes_in_join),
         ReadableSize(new_current_memory_usage));
@@ -2562,6 +2564,7 @@ void HashJoin::tryRerangeRightTableData()
 }
 
 template <bool is_signed, typename Key, typename MapsTemplate>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
 {
     using SignedKey = std::make_signed_t<Key>;
@@ -2617,7 +2620,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
     size_t range = static_cast<size_t>(max_key - min_key) + 1;
 
     using Mapped = typename MapsTemplate::MappedType;
-    auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type)
+    auto convert_to_fixed_hash_map = [&]<size_t size_bits>(auto & dst_map, Type type) NO_SANITIZE_UNSIGNED_OVERFLOW
     {
         using RangeMap = JoinFixedHashMapWithSizeBits<Key, Mapped, size_bits>;
         auto range_map = std::make_shared<RangeMap>();
@@ -2762,6 +2765,7 @@ constexpr bool canLosslesslyHold()
 /// merge is split out of the loop body into two specialized paths so each loop stays branchless
 /// and vectorizable.
 template <typename BuildKey, typename HashMapT, typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void probeFixedHashMapLoop(
     const HashMapT & ht,
     std::make_unsigned_t<BuildKey> min_key,
@@ -2778,7 +2782,7 @@ void probeFixedHashMapLoop(
     constexpr T t_lo = static_cast<T>(std::numeric_limits<BuildKey>::min());
     constexpr T t_hi = static_cast<T>(std::numeric_limits<BuildKey>::max());
 
-    auto probe_one = [&](size_t i) -> UInt8
+    auto probe_one = [&](size_t i) NO_SANITIZE_UNSIGNED_OVERFLOW -> UInt8
     {
         const T v = src[i];
         if (v < t_lo || v > t_hi)

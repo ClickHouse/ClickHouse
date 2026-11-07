@@ -318,10 +318,16 @@ private:
             --running_count;
             if (last_running == thread_num)
             {
-                while (last_running-- > 0)
+                /// Scan down for the next running thread, `npos` if there is none.
+                last_running = boost::dynamic_bitset<>::npos;
+                for (size_t next = thread_num; next > 0;)
                 {
-                    if (isRunning(last_running))
+                    --next;
+                    if (isRunning(next))
+                    {
+                        last_running = next;
                         break;
+                    }
                 }
             }
         }

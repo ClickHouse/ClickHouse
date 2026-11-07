@@ -19,6 +19,7 @@
 #include <type_traits>
 #include <array>
 #include <base/sort.h>
+#include <base/sanitizer_defs.h>
 #include <algorithm>
 
 
@@ -443,6 +444,7 @@ private:
     using Container = typename ColumnDecimal<T>::Container;
 
 public:
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
     {
         const Int32 digits = static_cast<Int32>(in_scale) - scale_arg;
@@ -474,6 +476,7 @@ public:
         }
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void applyOne(NativeType in, UInt32 in_scale, NativeType& out, Scale scale_arg)
     {
         const Int32 digits = static_cast<Int32>(in_scale) - scale_arg;

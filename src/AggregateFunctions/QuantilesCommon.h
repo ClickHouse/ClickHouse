@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <base/DecomposedFloat.h>
+#include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
 
@@ -12,6 +13,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/iota.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -119,7 +121,7 @@ size_t bitLength(const U & x)
 
 /// |min()| is not representable in the signed type itself.
 template <typename T>
-make_unsigned_t<T> magnitude(T x)
+make_unsigned_t<T> NO_SANITIZE_UNSIGNED_OVERFLOW magnitude(T x)
 {
     using U = make_unsigned_t<T>;
     if constexpr (is_signed_v<T>)
@@ -128,8 +130,9 @@ make_unsigned_t<T> magnitude(T x)
         return static_cast<U>(x);
 }
 
+/// Both branches take the difference in the unsigned type on purpose, exactly as `magnitude` above.
 template <typename T>
-bool differenceFitsNative(T lo, T hi)
+bool NO_SANITIZE_UNSIGNED_OVERFLOW differenceFitsNative(T lo, T hi)
 {
     using U = make_unsigned_t<T>;
     constexpr U highest = static_cast<U>(std::numeric_limits<T>::max());
@@ -190,9 +193,10 @@ T applyOffset(T lo, make_unsigned_t<T> difference, make_unsigned_t<T> offset, bo
 {
     using U = make_unsigned_t<T>;
     chassert(offset <= difference);
+    /// Modulo 2^N in `U`: for a signed `lo` below zero, the result is still inside the endpoints.
     const U shifted = ascending
-        ? static_cast<U>(static_cast<U>(lo) + offset)
-        : static_cast<U>(static_cast<U>(lo) - offset);
+        ? static_cast<U>(common::addIgnoreOverflow(static_cast<U>(lo), offset))
+        : static_cast<U>(common::subIgnoreOverflow(static_cast<U>(lo), offset));
     T result = static_cast<T>(shifted);
     if (fraction_dropped)
     {
@@ -228,9 +232,10 @@ T interpolate(T lo, T hi, Float64 coef, LegacyFn && legacy, bool forms_native_di
     using U = make_unsigned_t<T>;
     using W = Intermediate<T>;
     const bool ascending = hi > lo;
+    /// The difference of signed endpoints across zero exceeds the signed type, so it is taken modulo 2^N in `U`.
     const U difference = ascending
-        ? static_cast<U>(static_cast<U>(hi) - static_cast<U>(lo))
-        : static_cast<U>(static_cast<U>(lo) - static_cast<U>(hi));
+        ? static_cast<U>(common::subIgnoreOverflow(static_cast<U>(hi), static_cast<U>(lo)))
+        : static_cast<U>(common::subIgnoreOverflow(static_cast<U>(lo), static_cast<U>(hi)));
     const DyadicDouble weight = decomposeToDyadic(coef);
 
     U offset = 0;
@@ -266,9 +271,10 @@ T interpolateRatio(T lo, T hi, Float64 numerator, Float64 denominator, LegacyFn 
     using U = make_unsigned_t<T>;
     using W = Intermediate<T>;
     const bool ascending = hi > lo;
+    /// The difference of signed endpoints across zero exceeds the signed type, so it is taken modulo 2^N in `U`.
     const U difference = ascending
-        ? static_cast<U>(static_cast<U>(hi) - static_cast<U>(lo))
-        : static_cast<U>(static_cast<U>(lo) - static_cast<U>(hi));
+        ? static_cast<U>(common::subIgnoreOverflow(static_cast<U>(hi), static_cast<U>(lo)))
+        : static_cast<U>(common::subIgnoreOverflow(static_cast<U>(lo), static_cast<U>(hi)));
 
     DyadicDouble scaled_up = decomposeToDyadic(numerator);
     DyadicDouble scaled_down = decomposeToDyadic(denominator);

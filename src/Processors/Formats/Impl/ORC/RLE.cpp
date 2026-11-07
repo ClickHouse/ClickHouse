@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ORC/RLE.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -21,7 +22,7 @@ namespace
 
 inline Int64 unZigZag(UInt64 value)
 {
-    return static_cast<Int64>((value >> 1) ^ (~(value & 1) + 1));
+    return static_cast<Int64>(value >> 1) ^ -static_cast<Int64>(value & 1);
 }
 
 inline UInt64 zigZag(Int64 value)
@@ -301,7 +302,7 @@ public:
                 if (repeating)
                 {
                     data[position + i] = static_cast<T>(value);
-                    value = static_cast<Int64>(static_cast<UInt64>(value) + static_cast<UInt64>(delta));
+                    value = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(value), static_cast<UInt64>(delta)));
                 }
                 else
                     data[position + i] = static_cast<T>(readValue());
@@ -322,7 +323,7 @@ public:
             remaining_values -= count;
             num_values -= count;
             if (repeating)
-                value = static_cast<Int64>(static_cast<UInt64>(value) + static_cast<UInt64>(delta) * count);
+                value = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(value), common::mulIgnoreOverflow(static_cast<UInt64>(delta), count)));
             else
                 for (size_t i = 0; i < count; ++i)
                     readVarint(*stream);
@@ -635,12 +636,12 @@ private:
         {
             if (static_cast<Int64>(i) != gap)
             {
-                literals[i] = static_cast<Int64>(static_cast<UInt64>(literals[i]) + static_cast<UInt64>(base));
+                literals[i] = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(literals[i]), static_cast<UInt64>(base)));
             }
             else
             {
                 UInt64 patched = static_cast<UInt64>(literals[i]) | (bit_width < 64 ? static_cast<UInt64>(patch) << bit_width : 0);
-                literals[i] = static_cast<Int64>(static_cast<UInt64>(base) + patched);
+                literals[i] = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(base), patched));
                 ++patch_index;
                 if (patch_index < patch_list_length)
                 {
@@ -666,22 +667,22 @@ private:
         {
             /// Fixed delta.
             for (size_t i = 1; i < run_length; ++i)
-                literals[i] = static_cast<Int64>(static_cast<UInt64>(literals[i - 1]) + static_cast<UInt64>(delta_base));
+                literals[i] = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(literals[i - 1]), static_cast<UInt64>(delta_base)));
             return;
         }
 
         if (run_length < 2)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Illegal run length {} for delta encoding in ORC stream {}", run_length, stream->getName());
 
-        Int64 previous = static_cast<Int64>(static_cast<UInt64>(first_value) + static_cast<UInt64>(delta_base));
+        Int64 previous = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(first_value), static_cast<UInt64>(delta_base)));
         literals[1] = previous;
         readInts(literals.data() + 2, run_length - 2, bit_width);
         for (size_t i = 2; i < run_length; ++i)
         {
             if (delta_base < 0)
-                previous = static_cast<Int64>(static_cast<UInt64>(previous) - static_cast<UInt64>(literals[i]));
+                previous = static_cast<Int64>(common::subIgnoreOverflow(static_cast<UInt64>(previous), static_cast<UInt64>(literals[i])));
             else
-                previous = static_cast<Int64>(static_cast<UInt64>(previous) + static_cast<UInt64>(literals[i]));
+                previous = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(previous), static_cast<UInt64>(literals[i])));
             literals[i] = previous;
         }
     }
@@ -986,7 +987,7 @@ void IntRleEncoderV2::encodeLiterals(const Int64 * values, size_t count)
         is_fixed_delta &= (delta == initial_delta);
         if (i > 1)
         {
-            UInt64 abs_delta = delta < 0 ? (0 - static_cast<UInt64>(delta)) : static_cast<UInt64>(delta);
+            UInt64 abs_delta = delta < 0 ? common::negateIgnoreOverflow(static_cast<UInt64>(delta)) : static_cast<UInt64>(delta);
             abs_deltas[i - 2] = static_cast<Int64>(abs_delta);
             max_abs_delta = std::max(max_abs_delta, abs_delta);
         }

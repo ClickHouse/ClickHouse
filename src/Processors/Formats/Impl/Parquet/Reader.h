@@ -15,6 +15,7 @@
 #include <optional>
 #include <unordered_set>
 #include <variant>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -816,6 +817,7 @@ private:
 
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
 
     private:

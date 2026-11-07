@@ -174,7 +174,8 @@ Pipes ReadFromParallelReplicasStep::addPipes(const SharedHeader & out_header)
             pools_to_use[i]->getAddress());
 
         const size_t parallel_marshalling_threads
-            = (context->getSettingsRef()[Setting::max_threads] + pools_to_use.size() - 1) / pools_to_use.size();
+            = context->getSettingsRef()[Setting::max_threads] / pools_to_use.size()
+            + (context->getSettingsRef()[Setting::max_threads] % pools_to_use.size() != 0);
         Pipe pipe = createPipeForSingeReplica(pools_to_use[i], replica_info, out_header, parallel_marshalling_threads);
         remote_sources.emplace(replica_info.number_of_current_replica, pipe.getProcessors().front());
         pipes.emplace_back(std::move(pipe));

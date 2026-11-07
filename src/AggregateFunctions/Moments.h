@@ -11,6 +11,7 @@
 #include <boost/math/distributions/students_t.hpp>
 #include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/sanitizer_defs.h>
 #include <Common/NaNUtils.h>
 
 namespace DB
@@ -29,6 +30,7 @@ namespace ErrorCodes
 /// flag, this keeps NaN/Inf values in discarded rows from poisoning the accumulators.
 /// Unlike a branch or a ternary select, it is if-converted and vectorized.
 template <typename T>
+NO_SANITIZE_UNSIGNED_OVERFLOW
 inline T ALWAYS_INLINE maskFloatingPoint(T x, bool keep)
 {
     using EquivalentInteger = std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;

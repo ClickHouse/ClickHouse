@@ -14,7 +14,7 @@ else()
     add_executable(compact-symbols ${COMPACT_SYMBOLS_SOURCES})
 endif()
 
-target_include_directories(compact-symbols PRIVATE ${ClickHouse_SOURCE_DIR}/src)
+target_include_directories(compact-symbols PRIVATE ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_SOURCE_DIR}/base)
 target_link_libraries(compact-symbols PRIVATE ch_contrib::zstd)
 
 if (SYMBOL_SECTIONS STREQUAL "compact")

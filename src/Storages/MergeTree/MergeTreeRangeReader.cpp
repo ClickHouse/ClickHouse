@@ -1082,7 +1082,9 @@ size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(
     if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
         return rows;
     const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
-    if (rows >= stripe_rows || stripe_rows > 2 * max_block_size_rows)
+    /// `stripe_rows > 2 * max_block_size_rows` without overflowing for a huge `max_block_size`
+    /// (`stripe_rows` is positive here, because `rows >= stripe_rows` otherwise).
+    if (rows >= stripe_rows || (stripe_rows - 1) / 2 >= max_block_size_rows)
         return rows;
     for (auto * reader : columns_cache_readers)
     {
@@ -1391,7 +1393,7 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
                 --last;
 
             chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
-            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
+            result.max_part_offset = result.granule_offsets[static_cast<ssize_t>(last) - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
         }
     }
 }

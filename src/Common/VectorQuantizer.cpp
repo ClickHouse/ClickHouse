@@ -1,3 +1,4 @@
+#include <base/sanitizer_defs.h>
 #include <Common/VectorQuantizer.h>
 
 #include <Common/Exception.h>
@@ -80,7 +81,7 @@ size_t projectionWorkingDim(size_t dimensions)
 /// A fast structured random projection: PROJECTION_ROUNDS blocks of (random ±1 diagonal) * Hadamard transform,
 /// replacing a dense d*d Gaussian matrix (O(d*d) per vector) with an O(d log d) transform. Returns the concatenated
 /// sign-flip diagonals (PROJECTION_ROUNDS * working_dim entries, each +-1), generated deterministically from the seed.
-std::vector<float> generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
+std::vector<float> NO_SANITIZE_UNSIGNED_OVERFLOW generateRandomProjection(size_t dimensions, UInt64 seed = RANDOM_PROJECTION_SEED)
 {
     const size_t working_dim = projectionWorkingDim(dimensions);
     std::vector<float> sign_flips(static_cast<size_t>(PROJECTION_ROUNDS) * working_dim);

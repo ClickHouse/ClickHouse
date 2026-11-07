@@ -11,6 +11,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -27,6 +28,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -50,23 +52,30 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
 #endif
 {
     /// Inserting zero copies is a no-op regardless of `position`. Returning early avoids
-    /// eagerly reading `offsets[position - 1]` below, which would go out of bounds on
+    /// eagerly reading `offsets[static_cast<ssize_t>(position) - 1]` below, which would go out of bounds on
     /// a caller-side garbage `position` (e.g. from a `size_t` underflow).
     if (length == 0)
         return;
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
-    const size_t src_offset = src_concrete.offsets[position - 1];
+    const size_t src_offset = src_concrete.offsets[static_cast<ssize_t>(position) - 1];
     const size_t src_buf_size
-        = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+        = src_concrete.offsets[position] - src_concrete.offsets[static_cast<ssize_t>(position) - 1]; /// -1th index is Ok, see PaddedPODArray.
 
     const size_t old_rows = offsets.size();
-    const size_t new_rows = old_rows + length;
-    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
-    offsets.reserve(new_rows);
+    size_t new_rows = 0;
+    if (common::addOverflow(old_rows, length, new_rows))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many rows in string column: {} + {}", old_rows, length);
 
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + src_buf_size * length;
+    size_t added_size = 0;
+    size_t new_size = 0;
+    if (common::mulOverflow(src_buf_size, length, added_size) || common::addOverflow(old_size, added_size, new_size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too many bytes in string column: {} + {} * {}", old_size, src_buf_size, length);
+
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
     chars.resize(new_size);
 
     const UInt8 * src_buf = &src_concrete.chars[src_offset];
@@ -119,7 +128,7 @@ void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
     /// Each row seeds with `WEAK_HASH32_INITIAL_VALUE` and combines its finalized hash via
     /// `combineWeakHash32`. CRC32C is a hardware dependency chain with no packed form, so a
     /// plain scalar loop is used. See IColumn::computeHashInto.
-    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    Offset prev_offset = row_begin == 0 ? 0 : offsets[static_cast<ssize_t>(row_begin) - 1];
     const UInt8 * pos = chars.data() + prev_offset;
 
     for (size_t i = row_begin; i < row_end; ++i)
@@ -249,8 +258,8 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < offsets_data.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = offsets_data.size() - 1;
+    ssize_t index = static_cast<ssize_t>(mask.size()) - 1;
+    ssize_t from = static_cast<ssize_t>(offsets_data.size()) - 1;
     offsets_data.resize_exact(mask.size());
     UInt64 last_offset = offsets_data[from];
     while (index >= 0)
@@ -435,7 +444,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];
-        size_t string_offset = offsets[j - 1];
+        size_t string_offset = offsets[static_cast<ssize_t>(j) - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -606,8 +615,8 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     size_t res_chars_size = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
-        size_t string_size = offsets[i] - offsets[i - 1];
+        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+        size_t string_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
         res_chars_size += size_to_replicate * string_size;
     }
     res_chars.resize_exact(res_chars_size);
@@ -616,9 +625,9 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     size_t curr_offset = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
-        const size_t string_size = offsets[i] - offsets[i-1];
-        const UInt8 * src = &chars[offsets[i - 1]];
+        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+        const size_t string_size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
+        const UInt8 * src = &chars[offsets[static_cast<ssize_t>(i) - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
             memcpySmallAllowReadWriteOverflow15(

@@ -217,7 +217,7 @@ Int32 readSignedVarint32Field(WireReader & r, WireType t)
 {
     expectWireType(t, WireReader::VARINT);
     UInt32 v = static_cast<UInt32>(r.readVarint());
-    return static_cast<Int32>((v >> 1) ^ (~(v & 1) + 1));
+    return static_cast<Int32>(v >> 1) ^ -static_cast<Int32>(v & 1);
 }
 
 double readDoubleField(WireReader & r, WireType t)

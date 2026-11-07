@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <utility>
 #include <vector>
+#include <base/sanitizer_defs.h>
 
 namespace DB::ArrowIPC
 {
@@ -31,6 +32,7 @@ struct FrameContentBound
 
 /// The bound the codec frames of the whole of `src` imply. Throws INCORRECT_DATA when the codec
 /// cannot parse `src` at all.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 FrameContentBound frameContentBound(CompressionCodec codec, const char * src, size_t size);
 
 /// Compresses Arrow IPC buffers, reusing one codec context across all buffers (creating a fresh

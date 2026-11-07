@@ -396,10 +396,36 @@ struct TimeWindowImpl<HOP>
         }
     }
 
+    /// The longest duration of one unit of `kind`, in the units of the result: seconds for `DateTime`, days for `Date`.
+    template <IntervalKind::Kind kind>
+    static constexpr UInt64 maxUnitLength()
+    {
+        switch (kind)
+        {
+            case IntervalKind::Kind::Second: return 1;
+            case IntervalKind::Kind::Minute: return 60;
+            case IntervalKind::Kind::Hour: return 3600;
+            case IntervalKind::Kind::Day: return 86400;
+            case IntervalKind::Kind::Week: return 7;
+            case IntervalKind::Kind::Month: return 31;
+            case IntervalKind::Kind::Quarter: return 92;
+            case IntervalKind::Kind::Year: return 366;
+            default: return 1;
+        }
+    }
+
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
     executeHop(const ColumnDateTime & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone, size_t input_rows_count)
     {
+        /// A window longer than the range of `ToType` can wrap around by a multiple of that range and land
+        /// below its end, which the checks below would not notice. The hop is not longer than the window.
+        if (window_num_units > std::numeric_limits<ToType>::max() / maxUnitLength<kind>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time overflow in function {}: the window interval is too large", name);
+
+        const Int64 negative_hop = -static_cast<Int64>(hop_num_units);
+        const Int64 negative_window = -static_cast<Int64>(window_num_units);
+
         const auto & time_data = time_column.getData();
         auto start = ColumnVector<ToType>::create();
         auto end = ColumnVector<ToType>::create();
@@ -412,7 +438,7 @@ struct TimeWindowImpl<HOP>
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
-            wstart = static_cast<ToType>(AddTime<kind>::execute(wend, -window_num_units, time_zone));
+            wstart = static_cast<ToType>(AddTime<kind>::execute(wend, negative_window, time_zone));
             ToType wend_latest;
 
             /// Subtracting a whole positive window must make the time strictly smaller: equality
@@ -424,7 +450,7 @@ struct TimeWindowImpl<HOP>
             do
             {
                 wend_latest = wend;
-                wend = static_cast<ToType>(AddTime<kind>::execute(wend, -hop_num_units, time_zone));
+                wend = static_cast<ToType>(AddTime<kind>::execute(wend, negative_hop, time_zone));
 
                 /// Subtracting a positive hop must make the time strictly smaller, otherwise it wrapped around or saturated.
                 if (wend >= wend_latest)
@@ -432,7 +458,7 @@ struct TimeWindowImpl<HOP>
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
-            start_data[i] = static_cast<ToType>(AddTime<kind>::execute(wend_latest, -window_num_units, time_zone));
+            start_data[i] = static_cast<ToType>(AddTime<kind>::execute(wend_latest, negative_window, time_zone));
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
