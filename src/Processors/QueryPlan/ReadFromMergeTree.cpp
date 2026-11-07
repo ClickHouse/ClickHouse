@@ -4937,15 +4937,19 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 #if !defined(OS_LINUX) && !defined(OS_DARWIN)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries are supported only on Linux and macOS");
 #else
+    /// `max_rows_to_read` and `max_bytes_to_read` limit each read round of a source, so one source keeps them a single budget.
+    const auto round_limits = getReadRoundLimits(query_info.storage_limits.get());
+    const bool limited_rounds = round_limits.max_rows || round_limits.max_bytes;
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
+    const size_t num_sources = limited_rounds ? 1 : num_streams;
     const SharedHeader header = getOutputHeader();
 
     Pipes pipes;
-    pipes.reserve(num_streams);
+    pipes.reserve(num_sources);
 
-    for (size_t i = 0; i < num_streams; ++i)
+    for (size_t i = 0; i < num_sources; ++i)
     {
-        auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
+        auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_sources, i);
         data.subscription_manager.registerSubscription(subscription);
         pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSource>(
             header,
