@@ -1,0 +1,150 @@
+{
+  "cases": [
+    {
+      "id": "struct-single-field",
+      "valid": true,
+      "input": { "type": "struct", "fields": [{ "id": 1, "name": "a", "required": true, "type": "int" }] },
+      "decoded": {
+        "type": "struct",
+        "fields": [{ "id": 1, "name": "a", "required": true, "type": { "type": "int" } }]
+      },
+      "clause": "struct is a tuple of typed fields; each field has an integer id, a name, a required flag, and a type",
+      "spec_ref": "format/spec.md#nested-types"
+    },
+    {
+      "id": "struct-empty",
+      "valid": true,
+      "input": { "type": "struct", "fields": [] },
+      "decoded": { "type": "struct", "fields": [] },
+      "clause": "a struct's fields array may be empty (Appendix C struct serialization)",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "struct-optional-field",
+      "valid": true,
+      "input": { "type": "struct", "fields": [{ "id": 1, "name": "a", "required": false, "type": "string" }] },
+      "decoded": {
+        "type": "struct",
+        "fields": [{ "id": 1, "name": "a", "required": false, "type": { "type": "string" } }]
+      },
+      "clause": "each struct field can be optional or required (required=false permits null values)",
+      "spec_ref": "format/spec.md#nested-types"
+    },
+    {
+      "id": "list-required-element",
+      "valid": true,
+      "input": { "type": "list", "element-id": 2, "element-required": true, "element": "string" },
+      "decoded": { "type": "list", "element-id": 2, "element-required": true, "element": { "type": "string" } },
+      "clause": "a list has an element type; the element field has an integer id and a required flag",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "list-optional-element",
+      "valid": true,
+      "input": { "type": "list", "element-id": 2, "element-required": false, "element": "long" },
+      "decoded": { "type": "list", "element-id": 2, "element-required": false, "element": { "type": "long" } },
+      "clause": "list elements can be optional or required",
+      "spec_ref": "format/spec.md#nested-types"
+    },
+    {
+      "id": "map-string-double",
+      "valid": true,
+      "input": {
+        "type": "map",
+        "key-id": 3,
+        "key": "string",
+        "value-id": 4,
+        "value-required": false,
+        "value": "double"
+      },
+      "decoded": {
+        "type": "map",
+        "key-id": 3,
+        "key": { "type": "string" },
+        "value-id": 4,
+        "value-required": false,
+        "value": { "type": "double" }
+      },
+      "clause": "a map has a key type and a value type; keys are required, values may be optional or required",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "struct-nested-list",
+      "valid": true,
+      "input": {
+        "type": "struct",
+        "fields": [
+          {
+            "id": 1,
+            "name": "tags",
+            "required": true,
+            "type": { "type": "list", "element-id": 2, "element-required": true, "element": "string" }
+          }
+        ]
+      },
+      "decoded": {
+        "type": "struct",
+        "fields": [
+          {
+            "id": 1,
+            "name": "tags",
+            "required": true,
+            "type": { "type": "list", "element-id": 2, "element-required": true, "element": { "type": "string" } }
+          }
+        ]
+      },
+      "clause": "fields may be any type, including nested types (a struct field whose type is a list)",
+      "spec_ref": "format/spec.md#nested-types"
+    },
+    {
+      "id": "struct-field-missing-id",
+      "valid": false,
+      "input": { "type": "struct", "fields": [{ "name": "a", "required": true, "type": "int" }] },
+      "clause": "each field in a struct has an integer id; a field without an id is invalid",
+      "spec_ref": "format/spec.md#nested-types"
+    },
+    {
+      "id": "map-string-double-required",
+      "valid": true,
+      "input": {
+        "type": "map",
+        "key-id": 3,
+        "key": "string",
+        "value-id": 4,
+        "value-required": true,
+        "value": "double"
+      },
+      "decoded": {
+        "type": "map",
+        "key-id": 3,
+        "key": { "type": "string" },
+        "value-id": 4,
+        "value-required": true,
+        "value": { "type": "double" }
+      },
+      "clause": "map values may be optional or required (value-required=true)",
+      "spec_ref": "format/spec.md#nested-types"
+    },
+    {
+      "id": "list-missing-element-id",
+      "valid": false,
+      "input": { "type": "list", "element-required": true, "element": "string" },
+      "clause": "a list's element field has an integer element-id; a list without element-id is invalid",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "map-missing-key-id",
+      "valid": false,
+      "input": { "type": "map", "key": "string", "value-id": 4, "value-required": false, "value": "double" },
+      "clause": "a map's key field has an integer key-id; a map without key-id is invalid",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "map-missing-value-id",
+      "valid": false,
+      "input": { "type": "map", "key-id": 3, "key": "string", "value-required": false, "value": "double" },
+      "clause": "a map's value field has an integer value-id; a map without value-id is invalid",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    }
+  ]
+}
