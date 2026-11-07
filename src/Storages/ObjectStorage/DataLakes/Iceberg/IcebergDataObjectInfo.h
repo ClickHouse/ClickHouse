@@ -90,6 +90,8 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     std::vector<UInt64> getSplitOffsetsHint() const override { return split_offsets; }
 
+    std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<IcebergDataObjectInfo>(*this); }
+
     std::optional<size_t> getFileSizeHint() const override
     {
         if (info.file_size_in_bytes.has_value() && *info.file_size_in_bytes > 0)
