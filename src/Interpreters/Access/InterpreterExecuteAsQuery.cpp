@@ -35,6 +35,9 @@ namespace
         /// CREATE HANDLER time and bound from the request - fails with UNKNOWN_QUERY_PARAMETER.
         new_context->setQueryParameters(context->getQueryParameters());
 
+        /// The HTTP `filter` parameters of the request shape the statement's result, as for a statement sent directly.
+        new_context->setHTTPCombinedFilter(context->getHTTPCombinedFilter());
+
         /// An empty current database cannot be copied over: `setCurrentDatabase` rejects an empty name,
         /// and it cannot happen for a query anyway - the server refuses to start with an empty
         /// `default_database`, so every session context has a database to inherit.
