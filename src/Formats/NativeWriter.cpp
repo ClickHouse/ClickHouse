@@ -10,6 +10,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Formats/NativeWriter.h>
 
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
@@ -24,6 +25,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char native_writer_throw_memory_limit_mid_block[];
+    extern const char native_writer_throw_memory_limit_after_flush[];
 }
 
 
@@ -127,6 +135,15 @@ void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 
     setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 }
 
+/// The whole schema of InternalTextLogsQueue::getSampleBlock, since a result block may have a "text" column too.
+/// maybe_unused: fiu_do_on expands to nothing when libfiu is disabled.
+[[maybe_unused]] static bool isInternalTextLogBlock(const Block & block)
+{
+    return block.columns() == 8 && block.has("event_time") && block.has("event_time_microseconds")
+        && block.has("host_name") && block.has("query_id") && block.has("thread_id")
+        && block.has("priority") && block.has("source") && block.has("text");
+}
+
 size_t NativeWriter::write(const Block & block)
 {
     size_t written_before = ostr.count();
@@ -184,6 +201,12 @@ size_t NativeWriter::write(const Block & block)
         /// Name
         writeStringBinary(column.name, ostr);
 
+        /// Throws with the column name written but not its type, leaving a half-serialized block.
+        fiu_do_on(FailPoints::native_writer_throw_memory_limit_mid_block, {
+            if (isInternalTextLogBlock(block) && column.name == "event_time_microseconds")
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
+        });
+
         /// The state version of a versioned aggregate function on the wire is derived from the
         /// negotiated revision, and the receiver derives it the same way. It must not be taken from a
         /// version pinned on the local type - a table attached from metadata that predates versioning
@@ -233,6 +256,13 @@ size_t NativeWriter::write(const Block & block)
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
             writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
+
+        /// Same, but once the block is partly flushed and can no longer be rolled back.
+        fiu_do_on(FailPoints::native_writer_throw_memory_limit_after_flush, {
+            if (isInternalTextLogBlock(block) && column.name == "text"
+                && ostr.count() - written_before > ostr.internalBuffer().size())
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
+        });
 
         if (index)
         {
