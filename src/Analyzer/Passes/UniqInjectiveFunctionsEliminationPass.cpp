@@ -11,6 +11,7 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 
@@ -70,10 +71,10 @@ public:
             if (!arg_function->isInjective(arg_typed->getArgumentColumns()))
                 return false;
 
-            /// The `Null` combinator makes `uniq*` skip rows where a Nullable argument is NULL: `uniq(tuple(x))`
-            /// counts the (NULL) row while `uniq(x)` skips it.
-            if (isNullableOrLowCardinalityNullable(arg->getResultType())
-                != isNullableOrLowCardinalityNullable(arg_arguments_nodes[0]->getResultType()))
+            /// The null adapters make `uniq*` skip rows where an argument is `NULL`: `uniq(tuple(x))`
+            /// counts the tuple containing `NULL` while `uniq(x)` skips it. This applies to both
+            /// `Nullable` and types such as `Variant` and `Dynamic` that store `NULL` internally.
+            if (canContainNull(*arg->getResultType()) != canContainNull(*arg_arguments_nodes[0]->getResultType()))
                 return false;
 
             arg = arg_arguments_nodes[0];
