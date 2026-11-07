@@ -80,6 +80,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
         reader.setFileFooter(Reader::readFileFooter(reader.prefetcher, reader.options.format.parquet.footer_read_size));
 
     row_groups_to_read = std::move(row_groups_to_read_);
+    reader.memory_fraction_per_reader = SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, 1.);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 

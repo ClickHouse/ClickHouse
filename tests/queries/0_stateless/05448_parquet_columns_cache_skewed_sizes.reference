@@ -1,0 +1,61 @@
+--- dictionary-encoded strings without size statistics, mostly the longest value of the dictionary: not cached
+[false]
+65536	33489679
+65536	33489679
+--- the same, written by an old version of DuckDB, without dictionary_page_offset: not cached
+[false]
+65536	33489679
+65536	33489679
+--- a wide cached chunk among narrow ones
+524288	16777216
+s	8	524288
+5292701924961914880
+5292701924961914880
+--- a large dictionary page of a column that PREWHERE does not need
+[false,false]
+0	0
+0	0
+--- several small dictionary pages of columns that PREWHERE does not need
+[false,false,false,false,false,false,false]
+0	0	0	0	0	0	0
+0	0	0	0	0	0	0
+--- strings encoded with DELTA_BYTE_ARRAY without size statistics: not cached
+[false]
+65536	33554432
+65536	33554432
+--- short strings read as a wide FixedString: not cached
+[false]
+65536	7268979749752893985
+65536	7268979749752893985
+--- the long strings of a row group in one chunk, with size statistics
+[true]
+262144	33554432
+262144	33554432
+--- the non-null strings of a row group in one chunk, without size statistics
+[false]
+262144	33554432
+262144	33554432
+--- a wide column missing in the file: not cached
+[true]
+2147450880	10104791784030208000
+2147450880	10104791784030208000
+--- arrays of tuples of which all the requested elements are missing in the file: not cached
+[true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true]
+2147450880	14177275034280132608
+2147450880	14177275034280132608
+--- a variant read as JSON: not cached
+[true,true]
+65536	720896
+65536	720896
+--- GeoParquet strings decoded into a much larger geo type: not cached
+[true]
+65536	4194304
+65536	4194304
+--- small dictionary pages of a column that PREWHERE does not need, in files read in parallel
+0	0
+0	0
+--- chunks served from the cache, in files read in parallel
+524288	13188961511153836032
+524288	1072728111390244864
+8	524288
+524288	13188961511153836032
