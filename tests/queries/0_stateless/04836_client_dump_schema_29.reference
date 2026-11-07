@@ -1,0 +1,5 @@
+SET allow_lossy_numeric_supertype = 1;
+if_not_finite: replay rc=0 
+SET allow_lossy_numeric_supertype = 1;
+SET enable_named_columns_in_function_tuple = 0;
+engine_arguments: replay rc=0 

@@ -5397,8 +5397,8 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
 bool tableFunctionAnalyzesPassively(const ASTFunction & function, const ProbeCatalog & catalog, size_t depth);
 bool functionAnalyzesPassively(const ASTFunction & function, const ContextPtr & context);
 
-/// The analyzer expands and folds an ALIAS column, so it must pass the same function check as the probed query.
-bool aliasColumnsAnalyzePassively(const ASTCreateQuery & create, const ContextPtr & context)
+/// The analyzer expands and folds an ALIAS column, so it must pass the same function and `IN` table checks as the probed query.
+bool aliasColumnsAnalyzePassively(const ASTCreateQuery & create, const ProbeCatalog & catalog, size_t depth)
 {
     if (!create.columns_list || !create.columns_list->columns)
         return true;
@@ -5411,7 +5411,20 @@ bool aliasColumnsAnalyzePassively(const ASTCreateQuery & create, const ContextPt
         forEachNode(*column->getDefaultExpression(), [&](const IAST & node)
         {
             const auto * function = node.as<ASTFunction>();
-            passive = passive && !node.as<ASTSubquery>() && (!function || functionAnalyzesPassively(*function, context));
+            passive = passive && !node.as<ASTSubquery>() && (!function || functionAnalyzesPassively(*function, catalog.context));
+            const ASTs arguments = function && function->arguments ? function->arguments->children : ASTs{};
+            const ASTIdentifier * identifier = nullptr;
+            if (arguments.size() == 2 && functionIsInOrGlobalInOperator(function->name))
+            {
+                identifier = arguments[1]->as<ASTTableIdentifier>();
+                if (!identifier)
+                    identifier = arguments[1]->as<ASTIdentifier>();
+            }
+            /// The analyzer resolves the table of an `IN` by name, and a database-less name may resolve anywhere.
+            if (passive && identifier)
+                passive = identifier->name_parts.size() == 2
+                    && !catalog.refresh_targets.contains({identifier->name_parts[0], identifier->name_parts[1]})
+                    && tableAnalyzesPassively(catalog, {identifier->name_parts[0], identifier->name_parts[1]}, depth + 1);
         });
     }
     return passive;
@@ -5480,7 +5493,7 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
         /// Any other table there may be a user's, with its own ALIAS columns.
         const ASTPtr ast = tryParseCreate(create_query);
         const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
-        return create && aliasColumnsAnalyzePassively(*create, catalog.context)
+        return create && aliasColumnsAnalyzePassively(*create, catalog, depth)
             && (engine.ends_with("MergeTree") || passive.contains(engine));
     }
     const auto it = catalog.tables.find(table);
@@ -5489,7 +5502,7 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
     const auto & [engine, create_query, target] = it->second;
     const ASTPtr ast = tryParseCreate(create_query);
     const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
-    if (!create || !aliasColumnsAnalyzePassively(*create, catalog.context))
+    if (!create || !aliasColumnsAnalyzePassively(*create, catalog, depth))
         return false;
     if (create->as_table_function)
     {
@@ -5641,8 +5654,8 @@ bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, con
     return passive;
 }
 
-/// For the settings that change how `if`, `array`, `tuple` and the like type their result, picks for each table the values its
-/// session-analyzed expressions analyze with together, else the dump session's, and warns when its storage needs non-defaults.
+/// For the settings that change how `if`, `array`, `tuple` and the like type their result, picks for each table the values all its
+/// analyzed expressions analyze with together, else warns and keeps the dump session's, and warns when its storage needs non-defaults.
 void markTypingSettings(
     std::vector<TableInfo> & tables, const std::map<String, bool> & session_values, const std::map<String, bool> & default_values,
     const AnalyzesOnSource & analyzes_on_source, std::ostream & err)
@@ -5664,7 +5677,7 @@ void markTypingSettings(
             const auto * function = node.as<ASTFunction>();
             if (!function)
                 return;
-            for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "array", "map"})
+            for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "ifNotFinite", "array", "map"})
                 numeric_supertype |= equalsCaseInsensitive(function->name, name);
             /// Any element name lookup can depend on the names `tuple` gives, so every `tuple` with arguments is a carrier.
             calls_tuple |= equalsCaseInsensitive(function->name, "tuple") && function->arguments && !function->arguments->children.empty();
@@ -5677,8 +5690,8 @@ void markTypingSettings(
         if (carried.empty())
             continue;
 
-        /// CREATE analyzes defaults and a view's SELECT with the session's settings, which a SET reaches, keys and TTL with the
-        /// server's own, which it does not, and indices and projections with both.
+        /// CREATE analyzes defaults and a view's SELECT with the session's settings, and the storage expressions with both the
+        /// session's and the server's own, so a SET reaches every expression.
         std::set<const IAST *> carriers;
         std::set<const IAST *> probed_carriers;
         auto collect_carriers = [](const IAST & root, std::set<const IAST *> & out)
@@ -5688,7 +5701,7 @@ void markTypingSettings(
                 const auto * function = node.as<ASTFunction>();
                 if (!function)
                     return;
-                for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "array", "map", "tuple", "tupleElement"})
+                for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "ifNotFinite", "array", "map", "tuple", "tupleElement"})
                     if (equalsCaseInsensitive(function->name, name))
                         out.insert(&node);
             });
@@ -5712,7 +5725,6 @@ void markTypingSettings(
         }
         std::vector<String> session_expressions;
         std::vector<String> storage_expressions;
-        std::vector<String> both_expressions;
         std::vector<String> projection_probes;
         auto add = [&](const IAST * part, const String & text, std::vector<String> & to)
         {
@@ -5744,7 +5756,7 @@ void markTypingSettings(
             if (create->columns_list->indices)
                 for (const auto & child : create->columns_list->indices->children)
                     if (const auto * index = child->as<ASTIndexDeclaration>(); index && index->getExpression())
-                        add(index->getExpression().get(), index->getExpression()->formatWithSecretsOneLine(), both_expressions);
+                        add(index->getExpression().get(), index->getExpression()->formatWithSecretsOneLine(), storage_expressions);
             /// CREATE does not analyze a constraint.
             if (create->columns_list->constraints)
                 collect_carriers(*create->columns_list->constraints, probed_carriers);
@@ -5753,11 +5765,13 @@ void markTypingSettings(
                 {
                     const auto * projection = child->as<ASTProjectionDeclaration>();
                     if (projection && projection->index)
-                        add(projection->index, projection->index->formatWithSecretsOneLine(), both_expressions);
+                        add(projection->index, projection->index->formatWithSecretsOneLine(), storage_expressions);
                     const auto * query = projection && projection->query ? projection->query->as<ASTProjectionSelectQuery>() : nullptr;
-                    if (!query || query->with() || !query->select())
+                    if (!query || !query->select())
                         continue;
                     String text = "SELECT " + query->select()->formatWithSecretsOneLine() + " FROM " + storage_relation;
+                    if (query->with())
+                        text = "WITH " + query->with()->formatWithSecretsOneLine() + " " + text;
                     if (query->where())
                         text += " WHERE " + query->where()->formatWithSecretsOneLine();
                     if (query->groupBy())
@@ -5779,6 +5793,10 @@ void markTypingSettings(
                         for (const auto & part : {element->ttl(), element->where()})
                             if (part)
                                 add(part.get(), part->formatWithSecretsOneLine(), storage_expressions);
+            /// An engine argument such as a sharding key or the columns to sum.
+            if (storage->engine && storage->engine->arguments)
+                for (const auto & argument : storage->engine->arguments->children)
+                    add(argument.get(), argument->formatWithSecretsOneLine(), storage_expressions);
         }
         auto select_of = [](const std::vector<String> & expressions, const String & relation)
         {
@@ -5787,17 +5805,14 @@ void markTypingSettings(
                 res += (i ? ", " : "SELECT ") + expressions[i];
             return res + " FROM " + relation;
         };
-        std::vector<String> session_probes = projection_probes;
         std::vector<String> storage_probes = projection_probes;
+        if (!storage_expressions.empty())
+            storage_probes.push_back(select_of(storage_expressions, storage_relation));
+        std::vector<String> session_probes = storage_probes;
         if (!session_expressions.empty())
             session_probes.push_back(select_of(session_expressions, session_relation));
         else if (create->is_materialized_view && create->select)
             session_probes.push_back(create->select->formatWithSecretsOneLine());
-        if (!both_expressions.empty())
-            session_probes.push_back(select_of(both_expressions, storage_relation));
-        storage_expressions.insert(storage_expressions.end(), both_expressions.begin(), both_expressions.end());
-        if (!storage_expressions.empty())
-            storage_probes.push_back(select_of(storage_expressions, storage_relation));
 
         /// A carrier outside the probes, or a probe that would run a subquery (see `analyzes_on_source`), leaves no proof.
         bool can_probe = analyzes_on_source
@@ -5840,22 +5855,27 @@ void markTypingSettings(
                         return mask;
             return std::nullopt;
         };
+        std::optional<size_t> mask;
         if (can_probe && !session_probes.empty())
-            if (const auto mask = find_combination(session_probes))
-                for (size_t i = 0; i < values.size(); ++i)
-                    values[i].second = ((*mask >> i) & 1) != 0;
+            mask = find_combination(session_probes);
+        if (mask)
+            for (size_t i = 0; i < values.size(); ++i)
+                values[i].second = ((*mask >> i) & 1) != 0;
+        else if (!values.empty() && (!can_probe || !session_probes.empty()))
+            err << "Warning: the typing settings of " << table_relation
+                << " could not be verified, so the dump keeps the session's values.\n";
         size_t default_mask = 0;
         for (size_t i = 0; i < values.size(); ++i)
             default_mask |= size_t{default_values.at(values[i].first)} << i;
         if (can_probe && !storage_probes.empty() && !analyzes_with(storage_probes, default_mask))
         {
             err << "Warning: the storage expressions of " << table_relation;
-            if (const auto mask = find_combination(storage_probes))
+            if (const auto storage_mask = find_combination(storage_probes))
                 for (size_t i = 0; i < values.size(); ++i)
-                    err << (i ? ", " : " need ") << values[i].first << " = " << ((*mask >> i) & 1);
+                    err << (i ? ", " : " also need ") << values[i].first << " = " << ((*storage_mask >> i) & 1);
             else
                 err << " do not analyze with the default typing settings";
-            err << " in the replaying server's settings profile; a SET in the dump does not reach them.\n";
+            err << " in the replaying server's settings profile.\n";
         }
         table.typing_settings = std::move(values);
     }
