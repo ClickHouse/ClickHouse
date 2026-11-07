@@ -341,6 +341,22 @@ bool isTrivialUnnestJoinCondition(const ASTPtr & on_expression)
         && literal->value.safeGet<UInt64>() == 1;
 }
 
+bool isLambdaWithParameter(const ASTPtr & ast, const String & name)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !(function->isLambdaFunction() || isASTLambdaFunction(*function)))
+        return false;
+
+    const auto & lambda_arguments = function->arguments->children.at(0)->as<ASTFunction &>();
+    if (lambda_arguments.arguments)
+        for (const auto & lambda_argument : lambda_arguments.arguments->children)
+            if (const auto * lambda_argument_identifier = lambda_argument->as<ASTIdentifier>();
+                lambda_argument_identifier && lambda_argument_identifier->name() == name)
+                return true;
+
+    return false;
+}
+
 /// Replaces `u.c[.rest]`, where `u` is `table_alias` and `c` has a binder, with `binder[.rest]`, except inside
 /// subqueries and inside a lambda with a parameter named `u`.
 void replaceUnnestQualifiedColumns(ASTPtr & ast, const String & table_alias, const std::unordered_map<String, String> & column_to_binder)
@@ -366,18 +382,46 @@ void replaceUnnestQualifiedColumns(ASTPtr & ast, const String & table_alias, con
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
         return;
 
-    if (const auto * function = ast->as<ASTFunction>(); function && (function->isLambdaFunction() || isASTLambdaFunction(*function)))
-    {
-        const auto & lambda_arguments = function->arguments->children.at(0)->as<ASTFunction &>();
-        if (lambda_arguments.arguments)
-            for (const auto & lambda_argument : lambda_arguments.arguments->children)
-                if (const auto * lambda_argument_identifier = lambda_argument->as<ASTIdentifier>();
-                    lambda_argument_identifier && lambda_argument_identifier->name() == table_alias)
-                    return;
-    }
+    if (isLambdaWithParameter(ast, table_alias))
+        return;
 
     for (auto & child : ast->children)
         replaceUnnestQualifiedColumns(child, table_alias, column_to_binder);
+}
+
+/// In the mask, `*` and `COLUMNS('re')` would see only the preceding tables and `u.*` nothing.
+void checkNoUnnestMatchers(const ASTPtr & ast, const String & table_alias, bool alias_shadowed = false)
+{
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
+        return;
+
+    auto throw_not_supported = [&]()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported in the ON condition of unnest(...) AS {}, name the columns instead",
+            ast->formatForErrorMessage(), table_alias);
+    };
+
+    if (ast->as<ASTAsterisk>() || ast->as<ASTColumnsRegexpMatcher>())
+        throw_not_supported();
+
+    ASTPtr qualifier;
+    if (const auto * qualified_asterisk = ast->as<ASTQualifiedAsterisk>())
+        qualifier = qualified_asterisk->qualifier;
+    else if (const auto * qualified_regexp_matcher = ast->as<ASTQualifiedColumnsRegexpMatcher>())
+        qualifier = qualified_regexp_matcher->qualifier;
+    else if (const auto * qualified_list_matcher = ast->as<ASTQualifiedColumnsListMatcher>())
+        qualifier = qualified_list_matcher->qualifier;
+
+    if (qualifier && !alias_shadowed)
+    {
+        const auto * qualifier_identifier = qualifier->as<ASTIdentifier>();
+        if (qualifier_identifier && qualifier_identifier->name_parts.size() == 1 && qualifier_identifier->name_parts[0] == table_alias)
+            throw_not_supported();
+    }
+
+    bool child_alias_shadowed = alias_shadowed || isLambdaWithParameter(ast, table_alias);
+    for (const auto & child : ast->children)
+        checkNoUnnestMatchers(child, table_alias, child_alias_shadowed);
 }
 
 /** `t, unnest(e1, ..., en) AS u(c1, ...)` is `t ARRAY JOIN e1 AS c1, ...`. A non-trivial `ON c` filters every array
@@ -395,6 +439,8 @@ ASTPtr buildUnnestArrayJoinExpressions(const UnnestTableExpression & unnest, con
 
     if (has_condition)
     {
+        checkNoUnnestMatchers(on_expression, unnest.table_alias);
+
         NameSet used_names(unnest.column_names.begin(), unnest.column_names.end());
         collectNames(on_expression, used_names);
 

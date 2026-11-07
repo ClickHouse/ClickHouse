@@ -63,6 +63,10 @@ SELECT * FROM unnest(*); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM t_unnest AS t, unnest(t.arr, SETTINGS max_threads = 1); -- { serverError BAD_ARGUMENTS }
 SELECT one.x FROM system.one, unnest([1]) AS one(x); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 SELECT * FROM t_unnest, unnest(t_unnest.arr) AS t_unnest; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON length(tuple(*)) = 4; -- { serverError NOT_IMPLEMENTED }
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON tuple(u.*) = tuple(20); -- { serverError NOT_IMPLEMENTED }
+SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS u(x) ON u.COLUMNS('x') > 15; -- { serverError NOT_IMPLEMENTED }
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(e -> e = COLUMNS('^x$'), [20]); -- { serverError NOT_IMPLEMENTED }
 
 SELECT '-- lateral';
 SELECT id, x FROM t_unnest AS t, unnest(t.arr) AS x ORDER BY ALL;
@@ -108,6 +112,10 @@ SELECT id, x, tag FROM t_unnest AS t JOIN unnest(t.arr, t.tags) AS u(x, tag) ON 
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(x -> u.x = x, [10]) ORDER BY ALL;
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(u -> u = x, [20]) ORDER BY ALL;
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(u -> u.x = x, [CAST(tuple(20), 'Tuple(x UInt32)')]) ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON tuple(t.*).1 = 1 ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON x IN (SELECT * FROM values('v UInt32', 20, 30)) ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON COLUMNS(x) > 15 ORDER BY ALL;
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(u -> tuple(u.*).1 = x, [CAST(tuple(20), 'Tuple(x UInt32)')]) ORDER BY ALL;
 
 CREATE TABLE t_unnest_binder (id UInt32, arr Array(UInt32), __unnest_column_1 UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_unnest_binder VALUES (1, [10, 20], 0), (2, [30], 1), (3, [40], 0);
