@@ -203,6 +203,9 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
+    /// Hashes the type name of a non-NULL value prefix-free and distinct from the `NULL_DISCRIMINATOR` hashed for NULL.
+    static void updateHashWithTypeName(SipHash & hash, std::string_view type_name);
+
     /// Used for deduplication: hashes the raw in-memory representation of the variant column.
     /// The hash is the same for the same INSERT data, but NOT necessarily the same for
     /// logically equivalent data with different variant layouts (e.g. value stored in a typed
