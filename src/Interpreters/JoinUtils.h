@@ -107,6 +107,10 @@ private:
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
     const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
 
+/// Replaces a `Bool` of `type`, a common type of two JOIN keys, by `UInt8` where one of the keys has an `UInt8`
+/// in that place, so that a `Bool` key and an integer key are compared by value, as `=` does.
+DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type);
+
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
   * The target of a JOIN key conversion must not have Nullable elements: `accurateCastOrNull` reports an
