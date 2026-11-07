@@ -1120,6 +1120,32 @@ def test_macros_are_unfolded_on_full_attach(pulsar_cluster):
     instance.query("DROP TABLE test.pulsar_full_attach_renamed SYNC")
 
 
+def test_rename_is_rejected_for_nested_table_macro(pulsar_cluster):
+    # `{table}` reached through a macro from the server configuration is not unfolded on CREATE,
+    # so a rename would switch the table to another topic after a reload. It must be rejected.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_nested_macro SYNC")
+    instance.query("DROP TABLE IF EXISTS test.pulsar_nested_macro_renamed SYNC")
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_nested_macro (key UInt64, value UInt64)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = '{pulsar_table_topic}',
+                 pulsar_group_name = 'nested_macro_group',
+                 pulsar_format = 'JSONEachRow'
+        """
+    )
+
+    error = instance.query_and_get_error(
+        "RENAME TABLE test.pulsar_nested_macro TO test.pulsar_nested_macro_renamed"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "{pulsar_table_topic}" in instance.query("SHOW CREATE TABLE test.pulsar_nested_macro")
+
+    instance.query("DROP TABLE test.pulsar_nested_macro SYNC")
+
+
 def test_skip_broken_messages_does_not_skip_resource_errors(pulsar_cluster):
     # `pulsar_skip_broken_messages` covers only input errors. A valid message that fails
     # for another reason (here `MEMORY_LIMIT_EXCEEDED`) must fail the query, so it is

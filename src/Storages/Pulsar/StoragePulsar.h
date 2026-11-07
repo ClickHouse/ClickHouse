@@ -45,6 +45,15 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
+    /// The broker identity (topics, subscription, ...) is expanded once in the constructor. A
+    /// `{database}` or `{table}` macro used directly in the definition is unfolded and stored on
+    /// `CREATE`, but one reached through a macro from the server configuration (e.g. `{topic}` that is
+    /// defined as `{table}`) is not, so renaming such a table would switch it to another topic or
+    /// subscription on the next load. Reject these renames.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

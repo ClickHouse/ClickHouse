@@ -285,6 +285,45 @@ pulsar::ClientConfiguration createClientConfiguration()
 
 }
 
+void StoragePulsar::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    const auto old_name = getStorageID();
+    /// Compare with the names that were used for the expansion, so that renaming the table back is allowed.
+    const auto & expanded_name = macros_info.table_id;
+    const bool table_changes = macros_info.expanded_table && new_name.table_name != expanded_name.table_name;
+    const bool database_changes = macros_info.expanded_database && new_name.database_name != expanded_name.database_name;
+    if (!table_changes && !database_changes)
+        return;
+
+    /// Converting an `Ordinary` database to `Atomic` on server startup moves all tables to a temporary
+    /// database and renames it back, so the names stay the same in the end (like for `ReplicatedMergeTree`).
+    const bool is_server_startup = Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
+        && !Context::getGlobalContextInstance()->isServerCompletelyStarted();
+    const bool move_to_atomic = old_name.uuid == UUIDHelpers::Nil && new_name.uuid != UUIDHelpers::Nil;
+    if (is_server_startup && move_to_atomic && !table_changes)
+        return;
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot rename Pulsar table {}, because one of its `pulsar_*` settings uses the implicit `{{database}}` or `{{table}}` macro "
+        "through a macro from the server configuration, so the topic or the subscription would change after the table is reloaded. "
+        "Use `{{database}}` and `{{table}}` directly in the settings: then they are unfolded on `CREATE` and the table can be renamed",
+        old_name.getNameForLogs());
+}
+
+void StoragePulsar::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
+{
+    auto new_name = getStorageID();
+    new_name.database_name = new_database_name;
+    checkTableCanBeRenamed(new_name);
+}
+
+void StoragePulsar::rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)
+{
+    checkTableCanBeRenamed(new_table_id);
+    renameInMemory(new_table_id);
+}
+
 StoragePulsar::StoragePulsar(
     const StorageID & table_id_,
     ContextPtr context_,
