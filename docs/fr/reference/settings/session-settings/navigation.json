@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "Paramètres de session",
+  "root": "fr/reference/settings/session-settings",
+  "directory": "none",
   "pages": [
     "fr/reference/settings/session-settings/additional",
     "fr/reference/settings/session-settings/aggregate",
@@ -167,6 +168,7 @@
     "fr/reference/settings/session-settings/mysql-map",
     "fr/reference/settings/session-settings/network",
     "fr/reference/settings/session-settings/number-of",
+    "fr/reference/settings/session-settings/obfuscate-markov",
     "fr/reference/settings/session-settings/odbc-bridge",
     "fr/reference/settings/session-settings/opentelemetry-start",
     "fr/reference/settings/session-settings/opentelemetry-trace",
@@ -262,6 +264,5 @@
     "fr/reference/settings/session-settings/weight-lowering",
     "fr/reference/settings/session-settings/write-through-distributed-cache",
     "fr/reference/settings/session-settings/other"
-  ],
-  "root": "fr/reference/settings/session-settings"
+  ]
 }

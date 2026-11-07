@@ -10,16 +10,16 @@ keywords: ['ClickStack', 'FAQ', 'alertas', 'dashboards', 'drill-downs', 'descubr
 Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack, incluidas las alertas, los dashboards y los drill-downs, así como el descubrimiento de métricas.
 
 <div id="alerting">
-  ## Alertas
+  ## Alertas {#alerting}
 </div>
 
 <Accordion title="¿Qué tipos de alertas admite ClickStack?">
   ClickStack admite dos tipos de alertas:
 
   * [Alertas de búsqueda](/es/clickstack/features/alerts#search-alerts): activan notificaciones cuando el recuento de resultados coincidentes de logs o trazas dentro de una ventana de tiempo supera o cae por debajo de un umbral.
-  * [Alertas de gráficos del dashboard](/es/clickstack/features/alerts#dashboard-alerts): activan notificaciones cuando una métrica representada en un panel del dashboard supera un umbral definido.
+  * [Alertas de gráficos del panel](/es/clickstack/features/alerts#dashboard-alerts): activan notificaciones cuando una métrica representada en un panel del dashboard supera un umbral definido.
 
-  Ambos tipos de alertas usan condiciones de umbral estáticas. Para obtener todos los detalles, consulta [Alertas](/es/clickstack/features/alerts).
+  Ambos tipos de alertas usan condiciones de umbral estáticas de forma predeterminada. En Managed ClickStack, pueden usar, en su lugar, la [detección de anomalías](/es/clickstack/features/anomaly-detection), que se activa cuando un valor se sale de su rango esperado. Para obtener todos los detalles, consulta [Alertas](/es/clickstack/features/alerts).
 </Accordion>
 
 <Accordion title="¿Puedo crear alertas sobre condiciones complejas de métricas como ratios, p95/p99 o fórmulas con varias métricas?">
@@ -29,9 +29,8 @@ Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack
 
   * Alertas sobre consultas SQL personalizadas para métricas.
   * Reglas de alerta con múltiples condiciones o múltiples métricas combinadas en una sola alerta.
-  * Condiciones de alerta dinámicas o basadas en detección de anomalías (la detección de anomalías está prevista).
 
-  Si necesitas crear una alerta sobre una métrica compleja, el enfoque recomendado es crear primero la visualización como un gráfico del dashboard y, después, asociarle una alerta de umbral.
+  Si necesitas crear una alerta sobre una métrica compleja, el enfoque recomendado es crear primero la visualización como un gráfico del dashboard y, después, asociarle una alerta de umbral. En Managed ClickStack, puedes asociar al gráfico una [alerta de detección de anomalías](/es/clickstack/features/anomaly-detection) en su lugar, de modo que se active cuando el valor se salga de su rango esperado y no cuando supere un umbral fijo.
 </Accordion>
 
 <Accordion title="¿Puedo usar vistas materializadas para casos de uso de alertas?">
@@ -39,7 +38,7 @@ Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack
 </Accordion>
 
 <div id="dashboards-and-drill-downs">
-  ## Dashboards y drill-downs
+  ## Dashboards y drill-downs {#dashboards-and-drill-downs}
 </div>
 
 <Accordion title="¿ClickStack admite dashboards parametrizados o variables de dashboard?">
@@ -62,9 +61,7 @@ Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack
     </Note>
 </Accordion>
 
-<div id="metrics-discovery">
-  ## Descubrimiento de métricas
-</div>
+## Descubrimiento de métricas {#metrics-discovery}
 
 <Accordion title="¿Hay una UI para explorar y buscar métricas?">
   ![Explorador de atributos de métricas](/images/clickstack/faq/metrics-explorer.webp)
@@ -78,9 +75,7 @@ Esta página responde a preguntas frecuentes sobre las capacidades de ClickStack
   No. Aunque hoy se pueden usar consultas SQL para descubrir métricas, ese no es el enfoque previsto a largo plazo. Se están desarrollando activamente mejores herramientas para el descubrimiento de métricas.
 </Accordion>
 
-<div id="further-reading">
-  ## Más información
-</div>
+## Más información {#further-reading}
 
 * [Alertas](/es/clickstack/features/alerts): alertas de búsqueda, alertas de gráficos en dashboards e integraciones de webhook.
 * [Dashboards](/es/clickstack/features/dashboards/overview): creación de visualizaciones, creación de dashboards y aplicación de filtros.

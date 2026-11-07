@@ -125,9 +125,7 @@ ORDER BY EventDate ASC
 Pour chaque jour après le 17 mars, calculez le pourcentage de consultations de pages effectuées par des utilisateurs ayant visité le site le 17 mars.
 Une sous-requête dans la clause `IN` est toujours exécutée une seule fois sur un seul serveur. Il n’existe pas de sous-requêtes dépendantes.
 
-<div id="null-processing">
-  ## Traitement des NULL
-</div>
+## Traitement des NULL {#null-processing}
 
 Lors du traitement des requêtes, l’opérateur `IN` considère que le résultat d’une opération avec [NULL](/fr/reference/settings/formats/input-format#input_format_null_as_default) est toujours égal à `0`, que `NULL` se trouve à droite ou à gauche de l’opérateur. Les valeurs `NULL` ne sont incluses dans aucun ensemble de données, ne correspondent pas les unes aux autres et ne peuvent pas être comparées si [transform&#95;null&#95;in = 0](/fr/reference/settings/session-settings/other#transform_null_in).
 
@@ -162,8 +160,65 @@ FROM t_null
 └───────────────────────┘
 ```
 
+## IN en mémoire externe {#in-in-external-memory}
+
+Le set que `IN` construit à partir d’une sous-requête ou d’une table peut être écrit sur le disque lorsqu’il est trop volumineux pour
+tenir en mémoire. Les recherches lisent alors le set depuis le disque, ce qui entraîne des E/S disque supplémentaires et peut ralentir
+les requêtes. Une liste de valeurs, comme `IN (1, 2, 3)`, ainsi qu’une table utilisant le moteur `Set` restent toujours
+en mémoire.
+
+Deux paramètres déterminent à quel moment le déversement sur le disque commence :
+
+* `max_bytes_before_external_set` définit un seuil, en octets, appliqué à la mémoire totale de la requête. Sa valeur par défaut est `0`
+  (désactivé).
+* `max_bytes_ratio_before_external_set` définit une fraction de la mémoire disponible dans les limites du serveur ou de l’utilisateur,
+  mesurée au début de l’exécution. Sa valeur par défaut est `0.5`, soit la moitié de la mémoire disponible, et
+  ce paramètre est sans effet lorsqu’aucune de ces limites ne s’applique.
+
+Lorsque les deux seuils s’appliquent, c’est le plus petit qui est retenu. Un set n’est écrit sur le disque que lorsqu’il occupe au moins
+16 Mio, ou la valeur du seuil si celle-ci est inférieure. Par exemple, cette requête écrit le set sur le disque dès que celui-ci
+occupe au moins 16 Mio :
+
+```sql
+SELECT count()
+FROM numbers(10000000)
+WHERE number IN (SELECT number * 3 FROM numbers(10000000))
+SETTINGS max_bytes_before_external_set = 16777216;
+```
+
+Un set est généralement construit avant que le reste de la requête n’occupe beaucoup de mémoire. Un set resté en mémoire pendant
+sa construction peut néanmoins être écrit sur le disque par la suite, pendant que la requête l’utilise : dès que la mémoire de la requête, ajoutée à
+la mémoire que le set conserve lorsqu’il est sur le disque, comme son filtre de Bloom, dépasse le seuil, le set est
+écrit sur le disque et la majeure partie de sa mémoire est libérée pour le reste de la requête, par exemple pour une agrégation qui
+continue de croître après la construction du set.
+
+`max_memory_usage` n’a aucune incidence sur le ratio. Pour configurer le déversement sur le disque par rapport à une limite de mémoire de requête,
+définissez un seuil absolu inférieur à cette limite. Ces seuils ne plafonnent pas l’utilisation de la mémoire. Prévoyez une marge pour
+le reste du traitement des requêtes et pour le déversement lui-même.
+
+Un set sur le disque conserve en mémoire un filtre de Bloom de ses clés, afin que les recherches de clés absentes du set
+puissent se dispenser de lire le disque. `max_bytes_for_external_set_bloom_filter` limite la mémoire du filtre,
+fixée par défaut à 128 Mio.
+
+Un set sur le disque conserve également en cache, en mémoire, les blocs lus par ses recherches, afin que les recherches ultérieures de clés situées dans
+les mêmes blocs ne relisent pas le disque. `max_bytes_for_external_set_cache` limite la mémoire du
+cache, fixée par défaut à 128 Mio.
+
+Un set écrit sur le disque pendant sa construction ne peut être exploité ni par la clé primaire ni par les index de saut de données. Avec
+`GLOBAL IN`, la table temporaire qui transmet le résultat de la sous-requête aux serveurs distants reste en
+mémoire, tandis que les sets que les serveurs distants construisent à partir de celle-ci peuvent être écrits sur le disque.
+
+Lorsqu’un set est écrit sur le disque pendant sa construction, l’intégralité de la sous-requête est lue avant la vérification des limites de taille du
+set : `max_rows_in_set` compte ses clés distinctes, et `max_bytes_in_set` compte chaque clé selon
+sa largeur dans le set, de 1 à 32 octets, par exemple 8 octets pour un `UInt64` et 16 octets pour un `String`, mais
+pas la mémoire utilisée par les recherches, comme le filtre de Bloom et le cache. Avec
+`set_overflow_mode = 'break'`, le set conserve, dans la limite autorisée, les clés qui arrivent en premier dans l’ordre où il les stocke
+sur le disque, et non les clés des premières lignes de la sous-requête. Pour des clés constituées de nombres,
+de dates ou de valeurs `FixedString` courtes, seules ou dans un tuple, il s’agit des plus petites clés. Les autres clés, comme
+`String`, forment un sous-ensemble arbitraire.
+
 <div id="distributed-subqueries">
-  ## Sous-requêtes distribuées
+  ## Sous-requêtes distribuées {#distributed-subqueries}
 </div>
 
 Il existe deux options pour les opérateurs `IN` avec des sous-requêtes (similaires aux opérateurs `JOIN`) : `IN` / `JOIN` classique et `GLOBAL IN` / `GLOBAL JOIN`. Elles se distinguent par leur mode d&#39;exécution dans le cadre du traitement des requêtes distribuées.
@@ -268,9 +323,7 @@ C’est plus efficace que d’utiliser un `IN` normal. Cependant, gardez les poi
 
 Il peut également être judicieux de spécifier une table locale dans la clause `GLOBAL IN`, si cette table locale n’est disponible que sur le serveur à l’origine de la requête et que vous souhaitez utiliser ses données sur des serveurs distants.
 
-<div id="distributed-subqueries-and-max_rows_in_set">
-  ### Sous-requêtes distribuées et max_rows_in_set
-</div>
+### Sous-requêtes distribuées et max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
 Vous pouvez utiliser [`max_rows_in_set`](/fr/reference/settings/session-settings/max-rows#max_rows_in_set) et [`max_bytes_in_set`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_set) pour contrôler la quantité de données transférées lors de requêtes distribuées.
 
@@ -282,9 +335,7 @@ SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_p
 
 Si `some_predicate` n’est pas assez sélectif, il renverra un volume important de données, ce qui entraînera des problèmes de performances. Dans ce cas, il est judicieux de limiter le volume de données transférées via le réseau. Notez également que [`set_overflow_mode`](/fr/reference/settings/session-settings/other#set_overflow_mode) est défini sur `throw` (par défaut), ce qui signifie qu’une exception est levée lorsque ces seuils sont atteints.
 
-<div id="distributed-subqueries-and-max_parallel_replicas">
-  ### Sous-requêtes distribuées et max_parallel_replicas
-</div>
+### Sous-requêtes distribuées et max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
 
 Lorsque [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) est supérieur à 1, les requêtes distribuées subissent des transformations supplémentaires.
 

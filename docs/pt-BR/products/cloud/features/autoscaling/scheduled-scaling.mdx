@@ -1,28 +1,21 @@
 ---
-sidebarTitle: 'Scheduled scaling'
+sidebarTitle: 'Scheduled Escalonamento'
 slug: /cloud/features/autoscaling/scheduled-scaling
-description: 'Artigo sobre o recurso Scheduled Scaling no ClickHouse Cloud'
-keywords: ['scheduled scaling']
-title: 'Scheduled scaling'
+description: 'Artigo sobre o recurso Scheduled Escalonamento no ClickHouse Cloud'
+keywords: ['scheduled escalonamento']
+title: 'Scheduled Escalonamento'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<BetaBadge />
+Os serviços do ClickHouse Cloud escalam automaticamente com base na utilização de CPU e memória, mas muitas cargas de trabalho seguem padrões previsíveis — picos diários de ingestão, jobs em lote executados durante a noite ou tráfego que cai acentuadamente nos fins de semana. Para esses casos de uso, o Scheduled Escalonamento permite definir exatamente quando seu serviço deve aumentar ou reduzir a escala, independentemente das métricas em tempo real.
 
-Os serviços do ClickHouse Cloud escalam automaticamente com base na utilização de CPU e memória, mas muitas cargas de trabalho seguem padrões previsíveis — picos diários de ingestão, jobs em lote executados durante a noite ou tráfego que cai acentuadamente nos fins de semana. Para esses casos de uso, o Scheduled Scaling permite definir exatamente quando seu serviço deve aumentar ou reduzir a escala, independentemente das métricas em tempo real.
+Com o Scheduled Escalonamento, você configura um conjunto de regras baseadas em tempo diretamente no console do ClickHouse Cloud. Cada regra especifica os dias em que está ativa, uma hora de início e uma hora de término em UTC e as configurações a serem aplicadas durante essa janela — o número de réplicas (horizontal), a memória mínima e máxima por réplica (vertical) e se o serviço pode ficar ocioso. Enquanto a janela estiver ativa, o ClickHouse Cloud aplica essas configurações e, quando ela termina, reverte para sua configuração de escalonamento padrão, para que seu serviço esteja dimensionado corretamente antes da chegada da demanda, em vez de reagir depois.
 
-Com o Scheduled Scaling, você configura um conjunto de regras baseadas em tempo diretamente no console do ClickHouse Cloud. Cada regra especifica os dias em que está ativa, uma hora de início e uma hora de término em UTC e as configurações a serem aplicadas durante essa janela — o número de réplicas (horizontal), a memória mínima e máxima por réplica (vertical) e se o serviço pode ficar ocioso. Enquanto a janela estiver ativa, o ClickHouse Cloud aplica essas configurações e, quando ela termina, reverte para sua configuração de scaling padrão, para que seu serviço esteja dimensionado corretamente antes da chegada da demanda, em vez de reagir depois.
+Isso é diferente do autoscaling baseado em métricas, que responde dinamicamente à pressão sobre CPU e memória. O Scheduled Escalonamento é determinístico: você sabe exatamente quando o escalonamento acontecerá e para qual tamanho. As duas abordagens são complementares — um serviço pode ter um agendamento básico de escalonamento e ainda se beneficiar do autoscaling dentro dessa janela se as cargas de trabalho variarem de forma inesperada.
 
-Isso é diferente do autoscaling baseado em métricas, que responde dinamicamente à pressão sobre CPU e memória. O Scheduled Scaling é determinístico: você sabe exatamente quando o scaling acontecerá e para qual tamanho. As duas abordagens são complementares — um serviço pode ter um agendamento básico de scaling e ainda se beneficiar do autoscaling dentro dessa janela se as cargas de trabalho variarem de forma inesperada.
-
-No momento, o Scheduled Scaling está disponível em **Beta**.
-
-<div id="setting-up-a-scaling-schedule">
-  ## Configurando um agendamento de escalonamento
-</div>
+## Configurando um agendamento de escalonamento {#setting-up-a-scaling-schedule}
 
 Para configurar um agendamento, acesse seu serviço no console do ClickHouse Cloud e vá até as configurações. Em seguida, selecione **Schedule Override** e adicione uma nova regra.
 
@@ -39,7 +32,7 @@ Cada regra exige:
 Várias regras podem ser combinadas para formar um agendamento semanal completo, desde que suas janelas não se sobreponham. Por exemplo, uma única regra que abrange de segunda a sexta-feira, das 06:00 às 20:00 UTC, pode manter seu serviço em um tamanho maior durante o dia de trabalho, com sua configuração padrão sendo aplicada fora dessa janela.
 
 <div id="use-cases">
-  ## Casos de uso
+  ## Casos de uso {#use-cases}
 </div>
 
 **Cargas de trabalho em lote e ETL:** Aumente a escala antes da execução de um job noturno de ingestão e reduza-a novamente assim que ele for concluído, evitando superprovisionamento durante as horas ociosas do dia.
@@ -55,7 +48,7 @@ Várias regras podem ser combinadas para formar um agendamento semanal completo,
 </Note>
 
 <div id="handling-bursty-workloads">
-  ## Como lidar com picos de carga de trabalho
+  ## Como lidar com picos de carga de trabalho {#handling-bursty-workloads}
 </div>
 
 Se você espera um pico de carga de trabalho em breve, pode usar a

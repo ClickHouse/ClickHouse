@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "会话设置",
+  "root": "zh/reference/settings/session-settings",
+  "directory": "none",
   "pages": [
     "zh/reference/settings/session-settings/additional",
     "zh/reference/settings/session-settings/aggregate",
@@ -167,6 +168,7 @@
     "zh/reference/settings/session-settings/mysql-map",
     "zh/reference/settings/session-settings/network",
     "zh/reference/settings/session-settings/number-of",
+    "zh/reference/settings/session-settings/obfuscate-markov",
     "zh/reference/settings/session-settings/odbc-bridge",
     "zh/reference/settings/session-settings/opentelemetry-start",
     "zh/reference/settings/session-settings/opentelemetry-trace",
@@ -262,6 +264,5 @@
     "zh/reference/settings/session-settings/weight-lowering",
     "zh/reference/settings/session-settings/write-through-distributed-cache",
     "zh/reference/settings/session-settings/other"
-  ],
-  "root": "zh/reference/settings/session-settings"
+  ]
 }

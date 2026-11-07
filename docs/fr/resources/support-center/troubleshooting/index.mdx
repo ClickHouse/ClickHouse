@@ -22,14 +22,12 @@ description: 'Trouvez des solutions aux problèmes ClickHouse les plus courants,
 
 Vous rencontrez des problèmes avec ClickHouse ? Retrouvez ici les solutions aux problèmes courants.
 
-<div id="performance-and-errors">
-  ## Performances et erreurs
-</div>
+## Performances et erreurs {#performance-and-errors}
 
 Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifiques comme &quot;Memory limit exceeded&quot; ou &quot;Connection refused&quot;.
 
 <Accordion title="Afficher les solutions liées aux performances et aux erreurs">
-  ### Performances des requêtes
+  ### Performances des requêtes {#query-performance}
 
   * [Identifier les requêtes qui utilisent le plus de ressources](/fr/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
   * [Guide complet d’optimisation des requêtes](/fr/guides/clickhouse/performance-and-monitoring/query-optimization)
@@ -38,14 +36,14 @@ Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifi
 
   <br />
 
-  ### Performances d’insertion des données
+  ### Performances d’insertion des données {#data-insertion-performance}
 
   * [Accélérer l’insertion des données](/fr/concepts/features/operations/insert/bulkinserts)
   * [Configurer les insertions asynchrones](/fr/concepts/features/operations/insert/asyncinserts)
 
   <br />
 
-  ### Outils d’analyse avancés
+  ### Outils d’analyse avancés {#advanced-analysis-tools}
 
   {/* - [Profiler avec LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
 
@@ -54,7 +52,7 @@ Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifi
 
   <br />
 
-  ### Messages d’erreur
+  ### Messages d’erreur {#error-messages}
 
   * **&quot;Memory limit exceeded&quot;** → [Diagnostiquer les erreurs de limite mémoire](/fr/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * **&quot;Connection refused&quot;** → [Résoudre les problèmes de connexion](#connections-and-authentication)
@@ -65,14 +63,12 @@ Requêtes lentes, délais d’attente dépassés ou messages d’erreur spécifi
   * **&quot;Autres problèmes&quot;** → [Suivre les erreurs dans l’ensemble de votre cluster](/fr/reference/system-tables/errors)
 </Accordion>
 
-<div id="memory-and-resources">
-  ## Mémoire et ressources
-</div>
+## Mémoire et ressources {#memory-and-resources}
 
 Utilisation élevée de la mémoire, plantages par manque de mémoire ou besoin d’aide pour dimensionner votre déploiement ClickHouse.
 
 <Accordion title="Afficher les solutions pour la mémoire">
-  ### Débogage et surveillance de la mémoire :
+  ### Débogage et surveillance de la mémoire : {#memory-debugging-and-monitoring}
 
   * [Identifier ce qui consomme la mémoire](/fr/concepts/features/performance/troubleshoot/debugging-memory-issues)
   * [Vérifier l’utilisation actuelle de la mémoire](/fr/reference/system-tables/processes)
@@ -81,7 +77,7 @@ Utilisation élevée de la mémoire, plantages par manque de mémoire ou besoin 
 
   <br />
 
-  ### Configuration de la mémoire :
+  ### Configuration de la mémoire : {#memory-configuration}
 
   * [Configurer les limites mémoire](/fr/concepts/features/configuration/settings/memory-overcommit)
   * [Paramètres mémoire du serveur](/fr/reference/settings/server-settings/settings)
@@ -89,20 +85,18 @@ Utilisation élevée de la mémoire, plantages par manque de mémoire ou besoin 
 
   <br />
 
-  ### Mise à l’échelle et dimensionnement :
+  ### Mise à l’échelle et dimensionnement : {#scaling-and-sizing}
 
   * [Dimensionner correctement votre service](/fr/guides/oss/best-practices/tips)
   * [Configurer la mise à l’échelle automatique](/fr/products/cloud/features/autoscaling/overview)
 </Accordion>
 
-<div id="connections-and-authentication">
-  ## Connexions et authentification
-</div>
+## Connexions et authentification {#connections-and-authentication}
 
 Impossible de vous connecter à ClickHouse, échecs d’authentification, erreurs de certificat SSL ou problèmes de configuration du client.
 
 <Accordion title="Afficher les solutions de connexion">
-  ### Problèmes de connexion courants
+  ### Problèmes de connexion courants {#basic-connection-issues}
 
   * [Résoudre les problèmes liés à l’interface HTTP](/fr/concepts/features/interfaces/http)
   * [Résoudre les problèmes de certificat SSL](/fr/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
@@ -110,7 +104,7 @@ Impossible de vous connecter à ClickHouse, échecs d’authentification, erreur
 
   <br />
 
-  ### Interfaces client
+  ### Interfaces client {#client-interfaces}
 
   * [Clients ClickHouse natifs](/fr/concepts/features/interfaces/native-clients-interfaces-index)
   * [Problèmes liés à l’interface MySQL](/fr/concepts/features/interfaces/mysql)
@@ -120,20 +114,18 @@ Impossible de vous connecter à ClickHouse, échecs d’authentification, erreur
 
   <br />
 
-  ### Réseau et données
+  ### Réseau et données {#network-and-data}
 
   * [Paramètres de sécurité réseau](/fr/reference/settings/server-settings/settings)
   * [Problèmes d’analyse des formats de données](/fr/reference/formats/index)
 </Accordion>
 
-<div id="setup-and-configuration">
-  ## Installation et configuration
-</div>
+## Installation et configuration {#setup-and-configuration}
 
 Installation initiale, configuration du serveur, création de bases de données, problèmes d’ingestion de données ou configuration de la réplication.
 
 <Accordion title="Afficher les solutions d’installation et de configuration">
-  ### Configuration initiale
+  ### Configuration initiale {#initial-setup}
 
   * [Configurer les paramètres du serveur](/fr/reference/settings/server-settings/settings)
   * [Configurer la sécurité et le contrôle d’accès](/fr/concepts/features/security/access-rights)
@@ -141,7 +133,7 @@ Installation initiale, configuration du serveur, création de bases de données,
 
   <br />
 
-  ### Gestion des bases de données
+  ### Gestion des bases de données {#database-management}
 
   * [Créer et gérer des bases de données](/fr/reference/statements/create/database)
   * [Choisir le bon moteur de table](/fr/reference/engines/table-engines/index)
@@ -150,7 +142,7 @@ Installation initiale, configuration du serveur, création de bases de données,
 
   <br />
 
-  ### Opérations sur les données
+  ### Opérations sur les données {#data-operations}
 
   * [Optimiser l’insertion de données en masse](/fr/concepts/features/operations/insert/bulkinserts)
   * [Résoudre les problèmes de format de données](/fr/reference/formats/index)
@@ -159,7 +151,7 @@ Installation initiale, configuration du serveur, création de bases de données,
 
   <br />
 
-  ### Configuration avancée
+  ### Configuration avancée {#advanced-configuration}
 
   * [Configurer la réplication des données](/fr/reference/engines/table-engines/mergetree-family/replication)
   * [Configurer les tables distribuées](/fr/reference/engines/table-engines/special/distributed)
@@ -170,11 +162,9 @@ Installation initiale, configuration du serveur, création de bases de données,
   * [Configurer le monitoring](/fr/reference/system-tables/overview)
 </Accordion>
 
-<div id="still-need-help">
-  ## Vous avez encore besoin d’aide ?
-</div>
+## Vous avez encore besoin d’aide ? {#still-need-help}
 
-Si vous ne trouvez pas de solution :
+Si vous ne trouvez pas de solution :
 
 1. **Demander à l’IA** - <button type="button" data-docs-ai-entry="troubleshooting" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Demander à l’IA</button> pour obtenir des réponses instantanées.
 2. **Consulter les tables système** - [Vue d’ensemble](/fr/reference/system-tables/overview)

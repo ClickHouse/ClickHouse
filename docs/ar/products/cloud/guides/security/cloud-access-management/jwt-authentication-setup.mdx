@@ -25,8 +25,14 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 
 يمكنك تهيئة موفري JWKS بنفسك لكل خدمة من **Settings → Security** في ClickHouse Cloud console.
 
+<Tip>
+  **هل تستخدم Microsoft Entra ID؟**
+
+  اتبع دليل [مصادقة JWT باستخدام Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) للاطلاع على خطوات تهيئة Entra ID، وقيم الموفّر المطلوب إدخالها، وكيفية ربط أدوار تطبيقات Entra ID بأدوار ClickHouse.
+</Tip>
+
 <div id="before-you-begin">
-  ## قبل البدء
+  ## قبل البدء {#before-you-begin}
 </div>
 
 لتهيئة موفّري JWT لخدمة، تحتاج إلى:
@@ -51,7 +57,7 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 يتحقق ClickHouse من عنوان URL الخاص بـ JWKS ويجلبه عند إضافة موفّر أو تحديثه، لذا يُرفض مسبقًا أي عنوان URL مُهيأ بشكل خاطئ أو يتعذر الوصول إليه.
 
 <div id="add-a-jwt-provider">
-  ## إضافة موفّر JWT
+  ## إضافة موفّر JWT {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -87,7 +93,7 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 </Warning>
 
 <div id="limits">
-  ## القيود
+  ## القيود {#limits}
 </div>
 
 * الحد الأقصى هو **خمسة** موفري JWT لكل خدمة.
@@ -95,7 +101,8 @@ import { VersionBadge } from "/snippets/ar/components/VersionBadge/VersionBadge.
 * يجب أن يكون عنوان URL لـ JWKS نقطة نهاية HTTPS عامة. تُرفض العناوين الخاصة أو الداخلية أو المحلية للارتباط.
 
 <div id="related">
-  ## مواضيع ذات صلة
+  ## مواضيع ذات صلة {#related}
 </div>
 
 * [مصادقة JWT](/ar/concepts/features/security/external-authenticators/jwt) — مطالبات الرمز المميز، والمستخدمون المؤقتون، واستخدام العميل.
+* [مصادقة JWT باستخدام Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id) — تهيئة Entra ID ليكون موفّر JWT.

@@ -15,21 +15,39 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 ## 支持的数据源 {#supported-data-sources}
 
-| 名称               | 徽标                                                                                                 | 类型 | 状态   | 描述                                                            |
-| ---------------- | -------------------------------------------------------------------------------------------------- | -- | ---- | ------------------------------------------------------------- |
-| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 徽标" width="32" />                | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Apache Kafka 的流式数据摄取到 ClickHouse Cloud。     |
-| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 徽标" width="32" />         | 流式 | 稳定版本 | 通过我们的直接集成，充分发挥 Confluent 与 ClickHouse Cloud 的协同能力。            |
-| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 徽标" width="32" />           | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Redpanda 的流式数据摄取到 ClickHouse Cloud。         |
-| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 徽标" width="32" />                       | 流式 | 稳定版本 | 配置 ClickPipes，开始将 AWS MSK 的流式数据摄取到 ClickHouse Cloud。          |
-| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" width="32" /> | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Azure Event Hubs 的流式数据摄取到 ClickHouse Cloud。 |
-| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" width="32" />             | 流式 | 稳定版本 | 配置 ClickPipes，开始将 WarpStream 的流式数据摄取到 ClickHouse Cloud。       |
+| 名称                                      | 徽标                                                                                                  | 类型 | 状态   | 描述                                                            |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------- | -- | ---- | ------------------------------------------------------------- |
+| Apache Kafka                            | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka 徽标" width="32" />                 | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Apache Kafka 的流式数据摄取到 ClickHouse Cloud。     |
+| Confluent Cloud                         | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud 徽标" width="32" />          | 流式 | 稳定版本 | 通过我们的直接集成，充分发挥 Confluent 与 ClickHouse Cloud 的协同能力。            |
+| Redpanda                                | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda 徽标" width="32" />            | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Redpanda 的流式数据摄取到 ClickHouse Cloud。         |
+| AWS MSK                                 | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK 徽标" width="32" />                        | 流式 | 稳定版本 | 配置 ClickPipes，开始将 AWS MSK 的流式数据摄取到 ClickHouse Cloud。          |
+| Google Managed Service for Apache Kafka | <img src="/images/icons/cloud-providers/google-cloud-color.svg" alt="Google Cloud 徽标" width="32" /> | 流式 | 私有预览 | 通过 GCP Workload Identity 连接到 Google Managed Kafka。            |
+| Azure Event Hubs                        | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" width="32" />  | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Azure Event Hubs 的流式数据摄取到 ClickHouse Cloud。 |
+| WarpStream                              | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" width="32" />              | 流式 | 稳定版本 | 配置 ClickPipes，开始将 WarpStream 的流式数据摄取到 ClickHouse Cloud。       |
+
+## GCP workload identity {#gcp-workload-identity}
+
+<Note>
+  Google Managed Kafka 和 GCP workload identity 身份验证目前处于私有预览阶段。请按照 [GCP workload identity 指南](/zh/integrations/clickpipes/security/gcp-workload-identity) 获取 ClickPipes 托管的服务账号并为其授权。
+</Note>
+
+在 Managed Kafka 集群所在的项目中，为 ClickPipes 服务账号授予 `roles/managedkafka.client` 角色。连接 broker 时，该角色会提供 SASL 身份验证所需的 `managedkafka.clusters.connect` 权限，但它不能替代 Kafka 访问控制列表 (ACL)。
+
+如果您的集群已为所选资源配置了 ACL，请为服务账号主体 (`User:<service-account-email>`) 授予以下操作权限：
+
+| Kafka 资源        | 操作                |
+| --------------- | ----------------- |
+| 所选主题            | `READ`、`DESCRIBE` |
+| ClickPipes 消费者组 | `READ`、`DESCRIBE` |
+
+您可以将消费者组 ACL 的作用范围限定为 `clickpipes-` 前缀。Workload identity 要求启用 TLS，且仅适用于 Google Managed Kafka 来源类型 (`gcmk`) 。
 
 ## 隔离级别 {#isolation-level}
 
 Kafka 消费者隔离级别决定 ClickPipe 是否只读取和插入由 Kafka 事务提交的消息。启用 `kafka_read_committed` 设置可使用 `read_committed`，并跳过已中止的 Kafka 事务中的消息。禁用该设置则使用 `read_uncommitted`，读取所有消息。您可以在**高级设置**中配置此设置。
 
 <div id="supported-data-formats">
-  ## 支持的数据格式
+  ## 支持的数据格式 {#supported-data-formats}
 </div>
 
 支持的格式如下：
@@ -39,11 +57,11 @@ Kafka 消费者隔离级别决定 ClickPipe 是否只读取和插入由 Kafka �
 * [Protobuf](/zh/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## 支持的数据类型
+  ## 支持的数据类型 {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### 标准类型
+  ### 标准类型 {#standard-types-support}
 </div>
 
 ClickPipes 当前支持以下标准 ClickHouse 数据类型：
@@ -75,7 +93,7 @@ ClickPipes 在以下情况下支持 Variant 类型：
 * JSON 字段。你可以为源数据流中的任何 JSON 字段手动指定 Variant 类型 (例如 `Variant(String, Int64, DateTime)`) 。不支持复杂子类型 (Array/Map/Tuple) 。此外，由于 ClickPipes 判定应使用哪种 Variant 子类型的方式所限，在 Variant 定义中只能使用一种整数类型或 datetime 类型——例如，不支持 `Variant(Int64, UInt32)`。
 
 <div id="json-type-support">
-  ### JSON 类型支持
+  ### JSON 类型支持 {#json-type-support}
 </div>
 
 ClickPipes 在以下情况下支持 JSON 类型：
@@ -88,7 +106,7 @@ ClickPipes 在以下情况下支持 JSON 类型：
 请注意，你需要手动将目标端列更改为所需的 JSON 类型，包括任何固定或跳过的路径。
 
 <div id="avro">
-  ### Avro
+  ### Avro {#avro}
 </div>
 
 #### 支持的 Avro 数据类型 {#supported-avro-data-types}
@@ -104,7 +122,7 @@ Avro 中的 Nullable 类型通过 `(T, null)` 或 `(null, T)` 形式的 union sc
 * 对于 null Avro Record，insert 为所有字段均使用默认值/零值的命名 Tuple
 
 <div id="protobuf">
-  ### Protobuf
+  ### Protobuf {#protobuf}
 </div>
 
 #### 支持的 Protobuf 数据类型 {#supported-protobuf-data-types}
@@ -153,7 +171,7 @@ ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用
 在 schema inference 过程中，Protobuf `oneof` 字段默认会映射为具名 `Tuple`，其中最多只有一个字段会包含非默认值。这些字段也可以自动映射为 `Variant` 列，此时生效的值将采用已设置的组成字段的类型。或者，也可以将每个组成字段手动映射到各自独立的 ClickHouse 列；由于 `oneof` 字段彼此互斥，因此每条记录中始终只会有一列被赋值。
 
 <div id="protobuf-message-lists">
-  #### 消息列表
+  #### 消息列表 {#protobuf-message-lists}
 </div>
 
 如果为 ClickPipe 定义的顶层 Protobuf schema 只包含一个 repeated 字段，且该字段本身是一个 protobuf Message，则 schema inference 和列映射将基于该“被包含”的 Message 字段。Kafka 消息会按此类消息列表进行处理，而单条 Kafka 消息会展开为多行 ClickHouse 数据。

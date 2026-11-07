@@ -1,8 +1,8 @@
 ---
 sidebarTitle: 'HTTP Sink Connector pour Confluent Platform'
 slug: /integrations/kafka/cloud/confluent/http
-description: 'Utilisation du connecteur HTTP Sink avec Kafka Connect et ClickHouse'
-title: 'Connecteur HTTP Sink Confluent'
+description: 'Utilisation du HTTP Sink Connector avec Kafka Connect et ClickHouse'
+title: 'HTTP Sink Connector Confluent'
 doc_type: 'guide'
 keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'connecteur HTTP Kafka ', 'intégration HTTP ClickHouse', 'Confluent Cloud HTTP Sink']
 ---
@@ -18,9 +18,7 @@ Nous décrivons ci-dessous une installation simple qui récupère les messages d
   Le connecteur HTTP est distribué sous la [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license).
 </Note>
 
-<div id="quick-start-steps">
-  ### Étapes de démarrage rapide
-</div>
+### Étapes de démarrage rapide {#quick-start-steps}
 
 <Steps>
   <Step title="Rassemblez vos informations de connexion" id="1-gather-your-connection-details">
@@ -106,11 +104,11 @@ Nous décrivons ci-dessous une installation simple qui récupère les messages d
 </Steps>
 
 <div id="troubleshooting">
-  ### Dépannage
+  ### Dépannage {#troubleshooting}
 </div>
 
 <div id="http-sink-doesnt-batch-messages">
-  #### HTTP Sink ne traite pas les messages par lot
+  #### HTTP Sink ne traite pas les messages par lot {#http-sink-doesnt-batch-messages}
 </div>
 
 D&#39;après la [documentation du Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp) :
@@ -121,11 +119,11 @@ D&#39;après la [documentation du Sink](https://docs.confluent.io/kafka-connecto
 2. Lorsque vous ajoutez des paramètres à l&#39;URL de l&#39;API HTTP, chaque enregistrement peut générer une URL unique. Pour cette raison, le traitement par lot est désactivé lorsque des paramètres d&#39;URL supplémentaires sont utilisés.
 
 <div id="400-bad-request">
-  #### 400 Requête incorrecte
+  #### 400 Requête incorrecte {#400-bad-request}
 </div>
 
 <div id="cannot_parse_quoted_string">
-  ##### CANNOT_PARSE_QUOTED_STRING
+  ##### CANNOT_PARSE_QUOTED_STRING {#cannot_parse_quoted_string}
 </div>
 
 Si HTTP Sink échoue avec le message suivant lors de l’insertion d’un objet JSON dans une colonne `String` :
@@ -137,7 +135,7 @@ Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote
 Définissez le paramètre `input_format_json_read_objects_as_strings=1` dans l’URL sous la forme d’une chaîne encodée `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
 
 <div id="load-the-github-dataset-optional">
-  ### Charger le jeu de données GitHub (facultatif)
+  ### Charger le jeu de données GitHub (facultatif) {#load-the-github-dataset-optional}
 </div>
 
 Notez que cet exemple conserve les champs Array du jeu de données GitHub. Nous partons du principe que vous disposez d’un topic github vide dans les exemples et que vous utilisez [kcat](https://github.com/edenhill/kcat) pour insérer des messages dans Kafka.

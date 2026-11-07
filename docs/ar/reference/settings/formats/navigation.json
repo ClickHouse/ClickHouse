@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "إعدادات الصيغة",
+  "root": "ar/reference/settings/formats",
+  "directory": "none",
   "pages": [
     "ar/reference/settings/formats/bool",
     "ar/reference/settings/formats/date-time",
@@ -19,6 +20,5 @@
     "ar/reference/settings/formats/show-create",
     "ar/reference/settings/formats/type-json",
     "ar/reference/settings/formats/other"
-  ],
-  "root": "ar/reference/settings/formats"
+  ]
 }

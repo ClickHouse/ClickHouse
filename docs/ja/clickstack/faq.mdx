@@ -10,7 +10,7 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
 このページでは、アラート、ダッシュボードとドリルダウン、メトリクス検出など、ClickStack の機能に関するよくある質問にお答えします。
 
 <div id="alerting">
-  ## アラート
+  ## アラート {#alerting}
 </div>
 
 <Accordion title="ClickStack ではどの種類のアラートをサポートしていますか？">
@@ -19,7 +19,7 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
   * [検索アラート](/ja/clickstack/features/alerts#search-alerts): 一定時間内に一致したログまたはトレースの件数がしきい値を上回る、または下回ると通知を送信します。
   * [ダッシュボードチャートアラート](/ja/clickstack/features/alerts#dashboard-alerts): ダッシュボードタイルにプロットされたメトリクスが定義したしきい値を超えると通知を送信します。
 
-  どちらのアラートタイプも、静的なしきい値条件を使用します。詳細については、[アラート](/ja/clickstack/features/alerts) を参照してください。
+  どちらのアラートタイプも、デフォルトでは静的なしきい値条件を使用します。Managed ClickStack では、代わりに[異常検知](/ja/clickstack/features/anomaly-detection)を使用でき、値が想定される範囲から外れたときにアラートが発報されます。詳細については、[アラート](/ja/clickstack/features/alerts) を参照してください。
 </Accordion>
 
 <Accordion title="比率、p95/p99、複数メトリクスの数式など、複雑なメトリクス条件に対してアラートを設定できますか？">
@@ -29,17 +29,16 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
 
   * メトリクス向けのカスタム SQL クエリに対するアラート。
   * 複数条件または複数メトリクスのアラートルールを 1 つのアラートにまとめること。
-  * 動的なアラート条件や異常検知ベースのアラート条件 (異常検知は今後対応予定です)。
 
-  複雑なメトリクスに対してアラートを設定する必要がある場合は、まず可視化をダッシュボードチャートとして作成し、そのチャートにしきい値アラートを追加する方法を推奨します。
+  複雑なメトリクスに対してアラートを設定する必要がある場合は、まず可視化をダッシュボードチャートとして作成し、そのチャートにしきい値アラートを追加する方法を推奨します。Managed ClickStack では、代わりに[異常検知アラート](/ja/clickstack/features/anomaly-detection)をチャートに追加できます。この場合、固定のしきい値を超えたときではなく、値が想定される範囲から外れたときにアラートが発報されます。
 </Accordion>
 
 <Accordion title="アラート用途で materialized view を使用できますか？">
-  materialized view は、該当する場合、ClickStack のアラートで自動的に使用されます。ただし、現時点では OpenTelemetry のメトリクスデータソースで materialized view はサポートされていません。メトリクスについては、ClickStack はデフォルトの [ClickHouse OpenTelemetry metrics schema](/ja/clickstack/ingesting-data/schemas) で最も適切に動作します。materialized view の詳細については、[Materialized views](/ja/clickstack/managing/materialized-views) を参照してください。
+  materialized view は、該当する場合、ClickStack のアラートで自動的に使用されます。ただし、現時点では OpenTelemetry のメトリクスデータソースで materialized view はサポートされていません。メトリクスについては、ClickStack はデフォルトの [ClickHouse OpenTelemetry metrics schema](/ja/clickstack/ingesting-data/schemas) で最も適切に動作します。materialized view の詳細については、[materialized view](/ja/clickstack/managing/materialized-views) を参照してください。
 </Accordion>
 
 <div id="dashboards-and-drill-downs">
-  ## ダッシュボードとドリルダウン
+  ## ダッシュボードとドリルダウン {#dashboards-and-drill-downs}
 </div>
 
 <Accordion title="ClickStack はパラメータ化されたダッシュボードやダッシュボード変数をサポートしていますか？">
@@ -62,9 +61,7 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
   </Note>
 </Accordion>
 
-<div id="metrics-discovery">
-  ## メトリクス検出
-</div>
+## メトリクス検出 {#metrics-discovery}
 
 <Accordion title="メトリクスを閲覧・検索するためのUIはありますか？">
   ![メトリクス属性エクスプローラー](/images/clickstack/faq/metrics-explorer.webp)
@@ -78,9 +75,7 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
   いいえ。現時点では SQL クエリを使ってメトリクスを検出できますが、これは長期的に想定されている方法ではありません。より優れたメトリクス検出ツールの開発が積極的に進められています。
 </Accordion>
 
-<div id="further-reading">
-  ## 参考資料
-</div>
+## 参考資料 {#further-reading}
 
 * [アラート](/ja/clickstack/features/alerts): 検索アラート、ダッシュボードチャートアラート、webhook インテグレーション。
 * [ダッシュボード](/ja/clickstack/features/dashboards/overview): 可視化の作成、ダッシュボードの構築、フィルターの適用。

@@ -147,7 +147,8 @@
             "ko/products/cloud/guides/security/saml-sso-removal",
             "ko/products/cloud/guides/security/cloud-access-management/scim-setup",
             "ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+            "ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
           ]
         }
       ]
@@ -301,8 +302,8 @@
         {
           "group": "API 참조",
           "openapi": {
-            "directory": "ko/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "ko/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

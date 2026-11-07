@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     نوصي باستخدام أحدث عميل Java مباشرةً إذا كانت الأولوية القصوى للأداء أو للوصول المباشر.
   </Note>
 
-  ## متطلبات البيئة
+  ## متطلبات البيئة {#environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) الإصدار &gt;= 8
 
-  ### الإعداد
+  ### الإعداد {#setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -59,7 +59,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     * استخدم اللاحقة `all` للحصول على ملف jar يتضمن جميع التبعيات المدمجة.
   * أو من repository الرسمي [هنا](https://github.com/ClickHouse/clickhouse-java/releases)
 
-  ## الإعداد
+  ## الإعداد {#configuration}
 
   **فئة برنامج التشغيل**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -84,12 +84,13 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * يُسمح بوجود نقطة نهاية **واحدة فقط** في URL
   * يجب تحديد البروتوكول إذا لم يكن البروتوكول الافتراضي، وهو &#39;HTTP&#39;
   * يجب تحديد المنفذ إذا لم يكن المنفذ الافتراضي &#39;8123&#39;
-  * لا يستنتج المُشغِّل البروتوكول من المنفذ، لذا يجب تحديده صراحةً
+  * لا يستنتج المُشغِّل البروتوكول من المنفذ، لذا يجب تحديده صراحةً
   * لا تكون المعلَمة `ssl` مطلوبة عند تحديد البروتوكول.
 
-  ### خصائص الاتصال
+  ### خصائص الاتصال {#connection-properties}
 
-  تُعرَّف معاملات التكوين الرئيسية في [عميل Java](/ar/integrations/language-clients/java/client#client-configuration). ينبغي تمريرها كما هي إلى برنامج التشغيل. لبرنامج التشغيل بعض الخصائص الخاصة به التي ليست جزءًا من تكوين العميل، وهي مدرجة أدناه.
+  تُعرَّف معاملات التكوين الرئيسية في [عميل Java](/ar/integrations/language-clients/java/client#client-configuration). ينبغي تمريرها
+  كما هي إلى برنامج التشغيل. لبرنامج التشغيل بعض الخصائص الخاصة به التي ليست جزءًا من تكوين العميل، وهي مدرجة أدناه.
 
   **خصائص برنامج التشغيل**:
 
@@ -147,9 +148,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   نتجنب عمدًا إضافة الإعدادات الافتراضية إلى خصائص الاتصال لتفادي المشكلات المتعلقة بملفات التعريف للقراءة فقط.
   مع ذلك، يحتاج بعض المستخدمين إلى تمرير إعدادات التنسيق (على سبيل المثال لقراءة JSON كسلسلة نصية)، ونوصي باستخدام ملف التعريف `readonly=2`.
-  اطّلع على مزيد من المعلومات حول ملفات التعريف للقراءة فقط هنا: /concepts/features/configuration/settings/constraints-on-settings#read-only.
+  اطّلع على مزيد من المعلومات حول ملفات التعريف للقراءة فقط [هنا](/ar/concepts/features/configuration/settings/constraints-on-settings#read-only).
 
-  ### تعريف العميل
+  ### تعريف العميل {#client-identification}
 
   ثمة طريقتان لتحديد التطبيق الذي أنشأ الطلب: ضبط `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` عبر
   خصائص الاتصال، أو استخدام الطريقة `java.sql.Connection#setClientInfo(String name, String value)`.
@@ -172,7 +173,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **ملاحظة:** نوصي باستخدام تنسيق `app_name/version` للخاصية `client_name` لأنه يُساعد في التعرف على التطبيق في سجل الاستعلامات.
 
-  ### تحديد العملية
+  ### تحديد العملية {#operation-identification}
 
   يُنشئ مشغّل JDBC معرّف `query_id` لكل عملية (حاليًا مُضمّن في استثناءات الخادم).
 
@@ -185,11 +186,102 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **ملاحظة:** يعمل هذا الأسلوب مع حالات الاستخدام أحادية الخيط للعبارة، لأن `localSettings` مشترك بين الخيوط.
 
-  ## أنواع البيانات المدعومة
+  ### ترويسات HTTP المخصصة {#custom-http-headers}
+
+  تُمرَّر ترويسات HTTP المخصّصة بوصفها خصائص للعميل. تستخدم كل ترويسة البادئة `http_header_`. ويُنشئ `ClientConfigProperties.httpHeader(String)` (أو `DriverProperties.httpHeader(String)`) هذا المفتاح. ولا تُستخدم الخاصية `custom_http_headers` الخاصة بـ V1 في JDBC V2.
+
+  ```java showLineNumbers
+  Properties properties = new Properties();
+  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Quota"), "test");
+  properties.setProperty(ClientConfigProperties.httpHeader("X-ClickHouse-Test"), "value1,value2");
+  Connection conn = Driver.connect("jdbc:ch:https://localhost:8443/", properties);
+
+  // URL equivalent:
+  // jdbc:ch:https://localhost:8443?http_header_X-CLICKHOUSE-QUOTA=test&http_header_X-CLICKHOUSE-TEST=value1,value2
+  ```
+
+  ## ميزات ClickHouse Cloud {#clickhouse-cloud-features}
+
+  الميزات المتاحة عند الاتصال بـ [ClickHouse Cloud](https://clickhouse.com/cloud).
+
+  ### التوجيه المراعي للنسخ المتماثلة (CLOUD) {#replica-aware-routing}
+
+  يمكن لـ ClickHouse Cloud تثبيت طلبات HTTP المترابطة على النسخة المتماثلة نفسها. أرسل ترويسة `X-ClickHouse-Replica-Tag` ليتولى وكيل Cloud توجيه كل طلب يشترك في الوسم نفسه إلى نسخة متماثلة واحدة. استخدم ذلك مع الكائنات المرتبطة بنطاق session مثل الجداول المؤقتة، أو لإعادة استخدام ذاكرة التخزين المؤقت المحلية للنسخة المتماثلة، أو لتحقيق اتساق القراءة بعد الكتابة.
+  اقرأ المزيد: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **ما يجب تعيينه:** ترويسة HTTP ‏`X-ClickHouse-Replica-Tag` (`com.clickhouse.client.api.http.ClickHouseHttpProto.HEADER_REPLICA_TAG`). استخدم قيمة الوسم نفسها لجميع الطلبات التي ينبغي أن تبقى على نسخة متماثلة واحدة.
+
+  ```java showLineNumbers
+  String replicaTag = "my-app-session-1";
+
+  Properties properties = new Properties();
+  properties.setProperty("user", user);
+  properties.setProperty("password", password);
+  properties.setProperty(
+          ClientConfigProperties.httpHeader(ClickHouseHttpProto.HEADER_REPLICA_TAG),
+          replicaTag);
+
+  Connection conn = Driver.connect("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
+
+  // URL equivalent:
+  // jdbc:ch:https://your-service.clickhouse.cloud:8443?http_header_X-CLICKHOUSE-REPLICA-TAG=my-app-session-1
+  ```
+
+  ### المصادقة باستخدام JWT (CLOUD) {#jwt-authentication}
+
+  تتيح [المصادقة باستخدام JWT](/ar/concepts/features/security/external-authenticators/jwt) المصادقةَ عبر رموز JSON Web Tokens ‏(JWTs) في ClickHouse Cloud، حيث يُنشئ ClickHouse ديناميكيًا **مستخدمين مؤقتين** استنادًا إلى مطالبات الرمز.
+
+  #### الإعدادات الأولية {#initial-configuration}
+
+  لتهيئة المصادقة الأولية باستخدام JWT في JDBC، مرِّر الخاصية `bearer_token` ضمن خصائص الاتصال أو مباشرةً في عنوان URL الخاص بـ JDBC:
+
+  ```java showLineNumbers
+  import java.sql.Connection;
+  import java.sql.DriverManager;
+  import java.sql.SQLException;
+  import java.util.Properties;
+
+  public Connection createJwtConnection(String jwtToken) throws SQLException {
+      Properties properties = new Properties();
+      properties.setProperty("bearer_token", jwtToken);
+
+      return DriverManager.getConnection("jdbc:ch:https://your-service.clickhouse.cloud:8443", properties);
+  }
+  ```
+
+  عنوان URL المكافئ:
+
+  ```plaintext
+  jdbc:ch:https://your-service.clickhouse.cloud:8443?bearer_token=<your_jwt_token>
+  ```
+
+  #### تحديث الرمز المميز أثناء التشغيل {#updating-token-at-runtime}
+
+  نظرًا لأن رموز JWT صالحة لمدة محدودة، يجب تعيين رموز JWT الجديدة **قبل** أن تنتهي صلاحية الرمز الحالي، تفاديًا لفشل أي عمليات.
+
+  لتحديث رمز JWT في اتصال JDBC نشط أثناء التشغيل، فُكَّ تغليف الاتصال للوصول إلى مثيل `com.clickhouse.client.api.Client` الأساسي، ثم استدعِ `updateBearerToken`:
+
+  ```java showLineNumbers
+  import com.clickhouse.jdbc.ConnectionImpl;
+  import java.sql.Connection;
+  import java.sql.SQLException;
+
+  public void refreshJwtToken(Connection connection, String newJwtToken) throws SQLException {
+      // Unwrap the connection to get the underlying Client instance
+      ConnectionImpl connImpl = connection.unwrap(ConnectionImpl.class);
+
+      // Set the new JWT before the current token expires
+      connImpl.getClient().updateBearerToken(newJwtToken);
+  }
+  ```
+
+  ستستخدم العبارات اللاحقة المنفَّذة عبر اتصال JDBC هذا رمز JWT المحدَّث.
+
+  ## أنواع البيانات المدعومة {#supported-data-types}
 
   يدعم JDBC driver نفس تنسيقات البيانات التي يدعمها [Java client](/ar/integrations/language-clients/java/index#supported-data-types) الأساسي.
 
-  ### تعيين أنواع JDBC
+  ### تعيين أنواع JDBC {#jdbc-type-mapping}
 
   ينطبق التعيين التالي على:
 
@@ -250,9 +342,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | Enum8          | VARCHAR  | java.lang.String |
   | Enum16         | VARCHAR  | java.lang.String |
 
-  * يُعيَّن `Enum8` و`Enum16` إلى `java.lang.String` افتراضيًا.
+  * يُعيَّن `Enum8` و`Enum16` إلى `java.lang.String` افتراضيًا.
   * يمكن قراءة قيم Enum كقيم رقمية باستخدام دالة getter المخصّصة أو الدالة `getObject(columnIndex, Integer.class)`.
-  * يُعيَّن `Enum16` داخليًا إلى short، ويُعيَّن `Enum8` إلى byte. ويجب تجنّب قراءة `Enum16` على أنه byte بسبب خطر تلف البيانات.
+  * يُعيَّن `Enum16` داخليًا إلى short، ويُعيَّن `Enum8` إلى byte. ويجب تجنّب قراءة `Enum16` على أنه byte بسبب خطر تلف البيانات.
   * يمكن تعيين قيم Enum كسلسلة نصية أو كقيمة رقمية في `PreparedStatement`.
 
   **أنواع التاريخ/الوقت**
@@ -286,7 +378,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * يُعيَّن `Array` إلى `java.sql.Array` افتراضيًا لضمان التوافق مع JDBC. ويُجرى ذلك أيضًا لتوفير مزيد من المعلومات عن قيمة المصفوفة المُعادة. وهذا مفيد في استدلال النوع.
   * يوفّر `Array` التابع `getResultSet()` لإرجاع `java.sql.ResultSet` بالمحتوى نفسه الموجود في المصفوفة الأصلية.
   * لا ينبغي قراءة أنواع المجموعات باعتبارها `java.lang.String` لأن هذه ليست طريقة صالحة لتمثيل البيانات (على سبيل المثال: لا تُوضَع قيم السلاسل النصية بين علامتَي اقتباس في المصفوفة).
-  * `Map` يُعيَّن إلى `OTHER` لأن القيمة لا يمكن قراءتها إلا باستخدام الطريقة `getObject(columnIndex, Class<T>)`.
+  * `Map` يُعيَّن إلى `OTHER` لأن القيمة لا يمكن قراءتها إلا باستخدام الطريقة `getObject(columnIndex, Class<T>)`.
     * لا يُعَدّ `Map` من نوع `java.sql.Struct` لأنه لا يحتوي على أعمدة مُسمّاة.
   * يتم تمثيل `Tuple` على شكل `Object[]` لأنه قد يحتوي على أنواع مختلفة، كما أن استخدام `List` غير صالح.
   * يمكن قراءة `Tuple` باعتباره `Array` باستخدام الطريقة `getObject(columnIndex, Array.class)`. في هذه الحالة، ستُعيد `Array#baseTypeName` تعريف العمود `Tuple`.
@@ -310,8 +402,8 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ملاحظات حول القواعد أعلاه:
 
-  * يتم الاحتفاظ بالأنواع المغلِّفة (`Nullable`, `LowCardinality`) في `getBaseTypeName()`، لكن `getBaseType()` يُرجِع رمز JDBC للنوع الداخلي.
-  * تُسطَّح المصفوفات المتداخلة في البيانات الوصفية: يُرجِع `getBaseTypeName()` نوع العنصر الأعمق غير المصفوفي، وليس العنصر الفرعي المباشر.
+  * يتم الاحتفاظ بالأنواع المغلِّفة (`Nullable`, `LowCardinality`) في `getBaseTypeName()`، لكن `getBaseType()` يُرجِع رمز JDBC للنوع الداخلي.
+  * تُسطَّح المصفوفات المتداخلة في البيانات الوصفية: يُرجِع `getBaseTypeName()` نوع العنصر الأعمق غير المصفوفي، وليس العنصر الفرعي المباشر.
   * تحتفظ الأنواع ذات المعلمات (`FixedString(N)`، والتعريفات الكاملة لـ `Enum`/`Tuple`) بمعلماتها في `getBaseTypeName()`.
 
   **أمثلة:**
@@ -340,13 +432,13 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | Array(LowCardinality(Nullable(String)))                                    | LowCardinality(Nullable(String))                                    | VARCHAR         |
   | Array(Array(Int32))                                                        | Int32                                                               | INTEGER         |
   | Array(Array(Array(String)))                                                | String                                                              | VARCHAR         |
-  | Array(Tuple(name String, val Int32))                                       | Tuple(name String, val Int32)                                       | أخرى            |
+  | Array(Tuple(name String, val Int32))                                       | Tuple(name String, val Int32)                                       | OTHER           |
   | Array(Enum8(&#39;alpha&#39; = 1, &#39;beta&#39; = 2, &#39;gamma&#39; = 3)) | Enum8(&#39;alpha&#39; = 1, &#39;beta&#39; = 2, &#39;gamma&#39; = 3) | VARCHAR         |
 
   * في V2، تحتفظ `getBaseTypeName()` بتوقيع النوع الكامل، بما في ذلك أنواع التغليف (`Nullable` و`LowCardinality`) ومعلّمات النوع (`FixedString(8)` وتعريفات `Enum` و`Tuple` الكاملة). أما V1 فيُزيل هذه ويُرجع اسم النوع الأساسي فقط.
   * تستخدم مصفوفات `Tuple` القيمة `OTHER (1111)` في V2 بدلًا من `STRUCT (2002)` لأن Tuple في ClickHouse تتضمن حقولًا مسمّاة، وهو ما لا يدعمه `java.sql.Struct`.
   * تستخدم مصفوفات `UUID` القيمة `OTHER (1111)` في V2، بما يتوافق مع تعيين `UUID` القياسي.
-  * تُعيَّن قيم `Enum` إلى `VARCHAR` — إذ تُحدَّد عناصر enum باسمها النصي بغضّ النظر عن ترميزها الرقمي الأساسي.
+  * تُعيَّن قيم `Enum` إلى `VARCHAR` — إذ تُحدَّد عناصر enum باسمها النصي بغضّ النظر عن ترميزها الرقمي الأساسي.
 
   **كتابة المصفوفات**
 
@@ -493,7 +585,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   استخدم `java.sql.Connection#createStruct` لإنشاء كائن `java.sql.Struct`. صُمِّم هذا الكائن لتوحيد التعامل مع الهياكل المتداخلة عبر قواعد بيانات مختلفة.
   يتطلب الاتصال لتمرير الإعدادات إلى دالة مصنع Struct.
 
-  تقبل الطريقة وسيطين:
+  تقبل الطريقة وسيطَين:
 
   * `typeName` - اسم نوع العناصر المتداخلة. على سبيل المثال `Nested(Tuple(Int32, String))` -&gt; `"Nested(Tuple(Int32, String))"`.
   * `elements` - العناصر المتداخلة نفسها. على سبيل المثال `[1, 'test']` -&gt; `new Object[] {1, 'test'}`.
@@ -510,7 +602,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  **قراءة متداخلة**
+  **قراءة Nested**
 
   استخدم `ResultSet#getStruct(columnIndex, StructDescriptor)` لقراءة كائن `Nested`. يمكن استخدام الكائن للوصول إلى العناصر المتداخلة بأي مستوى من مستويات التداخل.
   يمكن استخدام الدالة `Struct#getResultSet()` لقراءة العناصر المتداخلة بطريقة أكثر توحيدًا عبر `java.sql.ResultSet`، وهو مفيد
@@ -559,9 +651,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | ----------------------- | ----------------- | --------------------- |
   | UUID                    | OTHER             | java.util.UUID        |
   | IPv4                    | OTHER             | java.net.Inet4Address |
-  | IPv6                    | أخرى              | java.net.Inet6Address |
-  | JSON                    | أخرى              | java.lang.String      |
-  | AggregateFunction       | أخرى              | (التمثيل الثنائي)     |
+  | IPv6                    | OTHER             | java.net.Inet6Address |
+  | JSON                    | OTHER             | java.lang.String      |
+  | AggregateFunction       | OTHER             | (التمثيل الثنائي)     |
   | SimpleAggregateFunction | (النوع المُغلَّف) | (الفئة المُغلَّفة)    |
 
   * لا يُعد `UUID` نوعًا قياسيًا في JDBC. لكنه جزء من JDK. بشكل افتراضي، يُعاد `java.util.UUID` من الطريقة `getObject()`.
@@ -597,7 +689,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }});
   ```
 
-  ثمة خيار أكثر ملاءمةً لقراءة JSON بوصفه سلسلة نصية (String) عبر تمرير إعداد الخادم `output_format_binary_write_json_as_string=1` إلى خصائص الاتصال.
+  ثمة خيار أكثر ملاءمةً لقراءة JSON بوصفه سلسلة نصية (String) عبر تمرير إعداد الخادم `jdbc_read_json_as_string=true` إلى خصائص الاتصال.
   يجعل هذا البرنامج التشغيلي (driver) قيم JSON تُعاد كسلسلة نصية، ويمكن استخدامها للتحليل باستخدام أي مكتبة JSON.
 
   ```java
@@ -624,11 +716,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### التعامل مع التواريخ والأوقات والمناطق الزمنية
+  ### التعامل مع التواريخ والأوقات والمناطق الزمنية {#handling-dates-times-and-timezones}
 
   يُرجى الاطلاع على [دليل التاريخ والوقت](/ar/integrations/language-clients/java/date-time-guide) الذي يشرح الأخطاء الشائعة ومنطق عمل البرنامج المساعد عند التعامل مع قيم التاريخ والوقت والطوابع الزمنية.
 
-  ## إنشاء اتصال
+  ## إنشاء اتصال {#creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -639,7 +731,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## توفير بيانات الاعتماد والإعدادات
+  ## توفير بيانات الاعتماد والإعدادات {#supplying-credentials-and-settings}
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -661,7 +753,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## عبارة بسيطة
+  ## عبارة بسيطة {#simple-statement}
 
   ```java showLineNumbers
 
@@ -674,7 +766,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## إدراج
+  ## إدراج {#insert}
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -686,7 +778,62 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP`
+  ## إمكانية المراقبة &amp; الرصد {#jdbc-v2-o11y}
+
+  يدعم برنامج تشغيل JDBC لـ ClickHouse ‏(V2) المقاييس والتتبّع الموزّع بالاعتماد على محرك العميل V2 الأساسي وعلى أدوات الرصد القياسية لتطبيقات JDBC. للاطلاع على التعريفات التفصيلية للمقاييس وسمات span واصطلاحات OpenTelemetry الدلالية، راجع [وثائق إمكانية المراقبة للعميل V2](/ar/integrations/language-clients/java/client#v2-o11y).
+
+  ### التتبّع الموزّع ومقاطع التتبع {#distributed-tracing-spans}
+
+  عند تنفيذ عبارات JDBC (`executeQuery` و`executeUpdate` و`executeBatch`)، يعمل التتبّع الموزّع ضمن تسلسل هرمي من spans يتألف من span أصل وspans فرعية:
+
+  1. **‏Span الخارجي لـ JDBC / التطبيق**: يُنشأ تلقائيًا بواسطة وكيل OpenTelemetry لتطبيقات Java أو أدوات رصد APM عند اعتراض استدعاءات طرق `java.sql` (مثل `PreparedStatement.executeBatch()`).
+  2. **‏Span عملية العميل V2**: يُنشئه محرك العميل V2 الأساسي ضمن سياق التتبّع النشط الحالي (`Context.current()`). ويحمل بيانات وصفية خاصة بـ ClickHouse مثل `clickhouse.query_id`، ونص العبارة (`db.query.text`)، وإحصاءات التنفيذ على الخادم (`clickhouse.response.read_rows`، `clickhouse.response.written_rows`).
+  3. **‏Span طلب النقل**: يُنشأ لكل محاولة طلب HTTP POST إلى خادم ClickHouse، ويسجّل تفاصيل نقطة النهاية (`server.address`، `server.port`)، ورموز حالة HTTP ‏(`http.response.status_code`)، ومحاولات إعادة الإرسال.
+
+  ```text
+  Application HTTP Request Span
+    └── JDBC Statement Span (e.g., PreparedStatement.executeQuery)
+        └── Client V2 Operation Span (query default)
+            └── Transport Request Span (POST http://localhost:8123)
+  ```
+
+  نظرًا لأن العميل V2 يرث `Context.current()`، تنضمّ مقاطع التتبع الخاصة بقاعدة بيانات JDBC تلقائيًا إلى التتبّع المتاح من البيئة ضمن سياق HTTP أو المراسلة المحيط بها، دون الحاجة إلى نشر السياق يدويًا.
+
+  ### auto-instrumentation لـ JDBC {#jdbc-auto-instrumentation}
+
+  تتتبّع أطر عمل بيئة تشغيل تطبيقات Java ووكلاء APM عمليات JDBC القياسية (`Connection` و`PreparedStatement` و`ResultSet` و`executeBatch`) تلقائيًا:
+
+  * **وكيل OpenTelemetry لتطبيقات Java**: يعترض تلقائيًا استدعاءات طرق JDBC القياسية، وينشئ مقاطع تتبّع لعمليات التنفيذ على قاعدة البيانات (`SELECT`، `INSERT`، `TRUNCATE`) تتضمن `db.system=clickhouse` ونص العبارة وأزمنة التنفيذ.
+  * **Spring Boot &amp; Micrometer**: تزوّد مستودعات Spring Data JPA و`JdbcTemplate` استدعاءات قاعدة البيانات تلقائيًا بأدوات جمع بيانات الرصد عند تفعيل Micrometer Observation أو مقاييس Spring Actuator في Spring Boot.
+
+  ### تهيئة مسجّلات مقاييس المشغّل {#configuring-driver-metrics-recorders}
+
+  يمكنك تمكين مقاييس التشغيل الخاصة بالعميل V2 (المدد، وأعداد مرات الظهور، وإعادة المحاولة) لاتصالات JDBC باستخدام خاصية الاتصال `jdbc_metrics_recorder`. ينشئ المشغّل مثيلًا من الصنف المحدد لكل اتصال عبر المُنشئ العام الخاص به الذي لا يأخذ أي وسيطات.
+
+  ```java
+  // Configure via JDBC URL parameter
+  String url = "jdbc:clickhouse://localhost:8123/default?jdbc_metrics_recorder=com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder";
+
+  // Or set via java.util.Properties
+  Properties properties = new Properties();
+  properties.setProperty("jdbc_metrics_recorder", "com.clickhouse.client.api.observability.micrometer.MicrometerMetricsRecorder");
+
+  try (Connection conn = DriverManager.getConnection(url, properties)) {
+      // JDBC operations report operation metrics to Micrometer's globalRegistry
+  }
+  ```
+
+  *ملاحظة: يأتي `MicrometerMetricsRecorder` مضمّنًا مع المشغّل، لكنه يتطلب توفّر `io.micrometer:micrometer-core` ضمن classpath بيئة تشغيل التطبيق.*
+
+  ### مرجع العرض التوضيحي لـ Spring Boot {#spring-boot-demo-reference}
+
+  للاطلاع على مثال كامل يوضّح إعداد برنامج تشغيل JDBC وبيانات القياس عن بُعد في خدمة Spring Boot، راجع الوحدة `examples/demo-spring-service` في هذا المستودع:
+
+  * **إعداد مصدر بيانات JDBC** (`src/main/resources/application.yml`): يهيّئ `spring.datasource` باستخدام `com.clickhouse.jdbc.ClickHouseDriver` وخصائص المشغّل (`jdbc_ignore_unsupported_values: true`).
+  * **تكامل Spring Data JPA** (`com.clickhouse.examples.repository.SignalRepository`): يوضّح كيفية حفظ الكيانات بشكل دائم بالاعتماد على المستودعات عبر ClickHouse JDBC.
+  * **أدوات `JdbcTemplate`** (`com.clickhouse.examples.schema.ClickHouseSchemaInitializer`): يوضّح كيفية تنفيذ أوامر DDL وتصدير نقاط المقاييس باستخدام `JdbcTemplate` من Spring.
+
+  ## `HikariCP` {#hikaricp}
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -709,17 +856,17 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## مزيد من المعلومات
+  ## مزيد من المعلومات {#more-information}
 
   لمزيد من المعلومات، راجع [مستودع GitHub](https://github.com/ClickHouse/clickhouse-java) الخاص بنا و[وثائق عميل Java](/ar/integrations/language-clients/java/client).
 
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 
-  ### التسجيل
+  ### التسجيل {#logging}
 
   يستخدم برنامج التشغيل [slf4j](https://www.slf4j.org/) للتسجيل، وسيستخدم أول تنفيذ متاح على `classpath`.
 
-  ### حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة
+  ### حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة {#resolving-jdbc-timeout-on-large-inserts}
 
   عند تنفيذ عمليات إدراج كبيرة في ClickHouse ذات أوقات تنفيذ طويلة، قد تواجه أخطاء انتهاء مهلة JDBC مثل:
 
@@ -729,7 +876,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   قد تُعطّل هذه الأخطاء عملية إدراج البيانات وتؤثر على استقرار النظام. لمعالجة هذه المشكلة، قد تحتاج إلى ضبط بعض إعدادات المهلة الزمنية في نظام تشغيل العميل.
 
-  #### Mac OS
+  #### Mac OS {#mac-os}
 
   على نظام Mac OS، يمكن تعديل الإعدادات التالية لحل المشكلة:
 
@@ -739,7 +886,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux
+  #### Linux {#linux}
 
   على Linux، قد لا تكفي الإعدادات المكافئة وحدها لحل المشكلة. ويعود ذلك إلى الاختلافات في طريقة تعامل Linux مع إعدادات keep-alive للمقبس، مما يستوجب اتخاذ خطوات إضافية. اتبع الخطوات التالية:
 
@@ -754,7 +901,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `net.ipv4.tcp_keepalive_probes`: 9
   * `net.ipv4.tcp_keepalive_time`: 60 (قد ترغب في خفض هذه القيمة عن القيمة الافتراضية البالغة 300 ثانية)
 
-  2. بعد تعديل معلمات النواة، طبِّق التغييرات بتشغيل الأمر التالي:
+  2. بعد تعديل معلمات النواة، طبِّق التغييرات بتشغيل الأمر التالي:
 
   ```shell
   sudo sysctl -p
@@ -766,9 +913,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## دليل الترحيل
+  ## دليل الترحيل {#migration-guide}
 
-  ### التغييرات الرئيسية
+  ### التغييرات الرئيسية {#key-changes}
 
   | الميزة                                         | V1 (الإصدار القديم) | V2 (الإصدار الجديد)              |
   | ---------------------------------------------- | ------------------- | -------------------------------- |
@@ -782,8 +929,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     * البيانات المتدفقة غير مدعومة في JDBC V2 لأنها ليست جزءًا من مواصفة JDBC ولا من Java.
   * يتطلب JDBC V2 إعدادًا صريحًا. لا توجد إعدادات افتراضية للتجاوز التلقائي.
     * يجب تحديد البروتوكول في عنوان URL. لا يتم اكتشاف البروتوكول ضمنيًا بالاعتماد على أرقام المنافذ.
+  * تستخدم ترويسات HTTP المخصصة خاصيةً واحدة لكل ترويسة (`http_header_*`). ولا تُقبل الخاصية `custom_http_headers` الخاصة بـ V1، التي تُفصل قيمها بفواصل.
 
-  ### تغييرات التكوين
+  ### تغييرات التكوين {#configuration-changes}
 
   يوجد نوعان فقط من أنواع enum:
 
@@ -793,8 +941,8 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   يتم تحليل خصائص الاتصال على النحو التالي:
 
-  * يُحلَّل URL أولًا لاستخراج الخصائص. وتتجاوز هذه الخصائص جميع الخصائص الأخرى.
-  * لا تُمرَّر خصائص برنامج التشغيل إلى العميل.
+  * يُحلَّل URL أولًا لاستخراج الخصائص. وتتجاوز هذه الخصائص جميع الخصائص الأخرى.
+  * لا تُمرَّر خصائص برنامج التشغيل إلى العميل.
   * تُستخرَج نقاط النهاية (`host` و`port` و`protocol`) من URL.
 
   مثال:
@@ -813,11 +961,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### تغييرات أنواع البيانات
+  ### تغييرات أنواع البيانات {#data-types-changes}
 
   **الأنواع الرقمية**
 
-  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)       | نوع JDBC ‏(V1) | فئة Java ‏(V1)                            |
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)       | نوع JDBC ‏(V1) | صنف Java (V1)                             |
   | -------------- | ------------ | -------------- | -------------------- | -------------- | ----------------------------------------- |
   | Int8           | ✅            | TINYINT        | java.lang.Byte       | TINYINT        | java.lang.Byte                            |
   | Int16          | ✅            | SMALLINT       | java.lang.Short      | SMALLINT       | java.lang.Short                           |
@@ -841,20 +989,20 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   * أكبر اختلاف هو أن الأنواع غير الموقَّعة تُحوَّل إلى أنواع Java لتحسين قابلية النقل.
 
-  **أنواع السلاسل النصية**
+  **أنواع السلاسل**
 
-  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)   |
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | صنف Java (V1)    |
   | -------------- | ------------ | -------------- | ---------------- | -------------- | ---------------- |
   | String         | ✅            | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
   | FixedString    | ✅            | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
 
   * تتم قراءة `FixedString` كما هي في كلا الإصدارين. على سبيل المثال، ستُقرأ `FixedString(10)` للقيمة `'John'` على أنها `'John\0\0\0\0\0\0\0\0\0'`.
   * عند استخدام `PreparedStatement#setBytes`، سيتم تحويله إلى `unhex('<hex_string>')` ثم تُقرأ القيمة كنوع `String`.
-  * تُخزَّن السلاسل النصية بترميز UTF-8.
+  * تُخزَّن السلاسل النصية بترميز UTF-8.
 
   **أنواع التاريخ/الوقت**
 
-  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)     | نوع JDBC ‏(V1)                  | فئة Java ‏(V1)           |
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)     | نوع JDBC ‏(V1)                  | صنف Java (V1)            |
   | -------------- | ------------ | -------------- | ------------------ | ------------------------------- | ------------------------ |
   | Date           | ❌            | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
   | Date32         | ❌            | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
@@ -866,7 +1014,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * يقتصر دعم `Time` و`Time64` في V2 على كونهما نوعين جديدين.
   * يُحوَّل `DateTime` و`DateTime64` إلى `java.sql.Timestamp` لتحقيق توافق أفضل مع JDBC.
 
-  **أنواع التعداد**
+  **أنواع Enum**
 
   | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)   |
   | -------------- | ------------ | -------------- | ---------------- | -------------- | ---------------- |
@@ -878,24 +1026,24 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2)  | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)                             |
   | -------------- | ------------ | --------------- | ---------------- | -------------- | ------------------------------------------ |
-  | مصفوفة         | ❌            | ARRAY           | java.sql.Array   | ARRAY          | Object[] أو مصفوفة من أنواع بدائية |
+  | Array          | ❌            | ARRAY           | java.sql.Array   | ARRAY          | Object[] أو مصفوفة من أنواع بدائية |
   | Tuple          | ❌            | OTHER           | Object[] | STRUCT         | java.sql.Struct                            |
   | Map            | ❌            | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                              |
   | Nested         | ❌            | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                            |
 
-  * في V2، يُعيَّن `Array` إلى `java.sql.Array` افتراضيًا لضمان التوافق مع JDBC. ويُجرى ذلك أيضًا لتوفير معلومات إضافية عن قيمة المصفوفة المُعادة. وهذا مفيد في type inference.
+  * في V2، يُعيَّن `Array` إلى `java.sql.Array` افتراضيًا لضمان التوافق مع JDBC. ويُجرى ذلك أيضًا لتوفير معلومات إضافية عن قيمة المصفوفة المُعادة. وهذا مفيد في type inference.
   * في V2، يطبّق `Array` الطريقة `getResultSet()` لإرجاع `java.sql.ResultSet` بالمحتوى نفسه الموجود في المصفوفة الأصلية.
   * يستخدم V1 `STRUCT` مع `Map`، لكنه يعيد دائمًا الكائن `java.util.Map`. ويعالج V2 ذلك من خلال تعيين `Map` إلى `JAVA_OBJECT`.
   * يستخدم V1 `STRUCT` مع `Tuple`، لكنه يعيد دائمًا الكائن `List<Object>`. ويُعيّن V2 `Tuple` إلى `OTHER` ويعيد `Object[]` افتراضيًا.
   * يقدّم V2 ‏`com.clickhouse.data.Tuple#Tuple` لكتابة قيم tuple. وهذا يسهّل تحديد ما إذا كانت القيمة tuple أم مصفوفة.
   * لا يمكن استخدام `PreparedStatement#setBytes` و`ResultSet#getBytes` مع أنواع المجموعات. فقد صُمّمت هاتان الطريقتان للعمل مع السلاسل الثنائية.
   * عادةً ما يُستخدم `java.sql.Array` لكتابة أنواع `Array` وقراءتها. ويوفّر JDBC driver دعمًا كاملًا لذلك.
-  * في V2، يُعيَّن `Nested` إلى `Array` ويعرضه كمصفوفة من tuples.
+  * في V2، يُعيَّن `Nested` إلى `Array` ويعرضه كمصفوفة من tuples.
   * يوفّر V2 دعمًا جزئيًا لـ `java.sql.Struct` لأنه يشبه جدًا النوع `Array` ولا يدعم key-value pairs. ويمكن استخدام `Struct` لكتابة قيم `Tuple`.
 
   **أنواع Geo**
 
-  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)                                 | نوع JDBC ‏(V1) | فئة Java ‏(V1)                                 |
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)                                 | نوع JDBC ‏(V1) | صنف Java (V1)                                  |
   | -------------- | ------------ | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
   | Point          | ✅            | OTHER          | double[]                               | OTHER          | double[]                               |
   | Ring           | ✅            | OTHER          | double[][]                     | OTHER          | double[][]                     |
@@ -912,22 +1060,22 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | نوع ClickHouse          | متوافق مع V1 | نوع JDBC ‏(V2)    | فئة Java ‏(V2)        | نوع JDBC ‏(V1)    | فئة Java ‏(V1)        |
   | ----------------------- | ------------ | ----------------- | --------------------- | ----------------- | --------------------- |
   | JSON                    | ❌            | OTHER             | java.lang.String      | غير مدعوم         | غير مدعوم             |
-  | AggregateFunction       | ✅            | أخرى              | (التمثيل الثنائي)     | أخرى              | (التمثيل الثنائي)     |
+  | AggregateFunction       | ✅            | OTHER             | (التمثيل الثنائي)     | OTHER             | (التمثيل الثنائي)     |
   | SimpleAggregateFunction | ✅            | (النوع المُغلَّف) | (الفئة المُغلَّفة)    | (النوع المُغلَّف) | (الفئة المُغلَّفة)    |
-  | معرّف UUID              | ✅            | OTHER             | java.util.UUID        | VARCHAR           | java.util.UUID        |
+  | UUID                    | ✅            | OTHER             | java.util.UUID        | VARCHAR           | java.util.UUID        |
   | IPv4                    | ✅            | OTHER             | java.net.Inet4Address | VARCHAR           | java.net.Inet4Address |
   | IPv6                    | ✅            | OTHER             | java.net.Inet6Address | VARCHAR           | java.net.Inet6Address |
   | Dynamic                 | ❌            | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
-  | Variant                 | ❌            | أخرى              | java.Object           | غير مدعوم         | غير مدعوم             |
+  | Variant                 | ❌            | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
 
   * يستخدم V1 النوع `VARCHAR` مع `UUID`، لكنه يعيد دائمًا الكائن `java.util.UUID`. ويعالج V2 هذا الأمر من خلال تعيين `UUID` إلى `OTHER`، ثم يعيد الكائن `java.util.UUID`.
   * يستخدم V1 النوع `VARCHAR` مع `IPv4` و`IPv6`، لكنه يعيد دائمًا الكائنين `java.net.Inet4Address` و`java.net.Inet6Address`. ويعالج V2 هذا الأمر من خلال تعيين `IPv4` و`IPv6` إلى `OTHER`، ثم يعيد الكائنين `java.net.Inet4Address` و`java.net.Inet6Address`.
   * `Dynamic` و`Variant` نوعان جديدان في V2. ولا يدعمهما V1.
   * يعتمد `JSON` على النوع `Dynamic`. لذلك فهو مدعوم فقط في V2.
-  * يمكن قراءة قيم `IPv4` و`IPv6` على هيئة `byte[]` باستخدام الدالة `getBytes(columnIndex)`. ومع ذلك، يُوصى باستخدام الفئات المخصّصة لهذه الأنواع.
-  * لا يدعم V2 قراءة عنوان IP على أنه من القيم العددية، لأن التحويل مُنفَّذ بصورة أفضل في فئات `InetAddress`.
+  * يمكن قراءة قيم IPv4 وIPv6 على هيئة `byte[]` باستخدام الدالة `getBytes(columnIndex)`. ومع ذلك، يُوصى باستخدام الفئات المخصّصة لهذه الأنواع.
+  * لا يدعم V2 قراءة عنوان IP على أنه من القيم العددية، لأن التحويل مُنفَّذ بصورة أفضل في فئات InetAddress.
 
-  ### تغييرات البيانات الوصفية لقاعدة البيانات
+  ### تغييرات البيانات الوصفية لقاعدة البيانات {#database-metadata-changes}
 
   * يستخدم V2 المصطلح `Schema` فقط لتسمية قواعد البيانات. أما المصطلح `Catalog` فمحجوز للاستخدام المستقبلي.
   * يعيد V2 القيمة `false` لكل من `DatabaseMetaData.supportsTransactions()` و`DatabaseMetaData.supportsSavepoints()`. سيتغير ذلك في الإصدارات القادمة.
@@ -944,11 +1092,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   واجهة برمجة تطبيقات `clickhouse-jdbc` متزامنة، وتنطوي بشكل عام على تكاليف إضافية أعلى (كتحليل SQL وتعيين الأنواع/تحويلها وغير ذلك). يُنصح باستخدام [clickhouse-client](/ar/integrations/connectors/sql-clients/sql-console) حين يكون الأداء أولويةً قصوى، أو إذا كنت تفضّل طريقة أكثر مباشرةً للوصول إلى ClickHouse.
 
-  ## متطلبات البيئة
+  ## متطلبات البيئة {#v07-environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) الإصدار 8 أو أحدث
 
-  ### الإعداد
+  ### الإعداد {#v07-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1010,7 +1158,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## الإعداد
+  ## الإعداد {#v07-configuration}
 
   **فئة برنامج التشغيل**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1028,14 +1176,50 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `createDatabaseIfNotExist` | `false`           | ما إذا كان ينبغي إنشاء قاعدة البيانات إذا لم تكن موجودة                                                                                                                                                                                                                                                                                                                                                        |
   | `custom_http_headers`      |                   | ترويسات HTTP مخصّصة مفصولة بفواصل، على سبيل المثال: `User-Agent=client1,X-Gateway-Id=123`                                                                                                                                                                                                                                                                                                                      |
   | `custom_http_params`       |                   | معلمات استعلام HTTP مخصّصة مفصولة بفواصل، على سبيل المثال: `extremes=0,max_result_rows=100`                                                                                                                                                                                                                                                                                                                    |
-  | `nullAsDefault`            | `0`               | `0` - التعامل مع قيمة null كما هي، مع إطلاق استثناء عند إدراج null في عمود غير قابل للقيم null؛ `1` - التعامل مع قيمة null كما هي، مع تعطيل التحقق من null عند الإدراج؛ `2` - استبدال null بالقيمة الافتراضية لنوع البيانات المقابل لكلٍّ من query وinsert                                                                                                                                                     |
+  | `nullAsDefault`            | `0`               | `0` - التعامل مع قيمة null كما هي، مع إطلاق استثناء عند إدراج null في عمود غير قابل للقيم null؛ `1` - التعامل مع قيمة null كما هي، مع تعطيل التحقق من null عند الإدراج؛ `2` - استبدال null بالقيمة الافتراضية لنوع البيانات المقابل لكلٍّ من query وinsert                                                                                                                                                     |
   | `jdbcCompliance`           | `true`            | ما إذا كان سيتم دعم عمليتَي UPDATE/DELETE القياسيتين المتزامنتين والمعاملة الوهمية                                                                                                                                                                                                                                                                                                                             |
-  | `typeMappings`             |                   | خصّص التعيين بين نوع بيانات ClickHouse وصنف Java، مما سيؤثر على نتيجة كلٍّ من [`getColumnType()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSetMetaData.html#getColumnType-int-) و[`getObject(Class<>?>`)](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-java.lang.String-java.lang.Class-). على سبيل المثال: `UInt128=java.lang.String,UInt256=java.lang.String` |
+  | `typeMappings`             |                   | خصّص التعيين بين نوع بيانات ClickHouse وصنف Java، مما سيؤثر على نتيجة كلٍّ من [`getColumnType()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSetMetaData.html#getColumnType-int-) و[`getObject(Class<>?>`)](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-java.lang.String-java.lang.Class-). على سبيل المثال: `UInt128=java.lang.String,UInt256=java.lang.String` |
   | `wrapperObject`            | `false`           | ما إذا كان يجب أن تُعيد [`getObject()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-int-) ‎java.sql.Array / java.sql.Struct‎ عند استخدام Array / Tuple.                                                                                                                                                                                                                        |
 
   ملاحظة: يُرجى الرجوع إلى [إعدادات JDBC الخاصة](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java) لمزيد من المعلومات.
 
-  ## أنواع البيانات المدعومة
+  ### ترويسات HTTP المخصّصة {#v07-custom-http-headers}
+
+  تُضبط ترويسات الطلب الإضافية باستخدام `custom_http_headers`. تكون كل ترويسة على الصورة `Name=Value`. افصل بين الترويسات المتعددة بفاصلة. ولإفلات فاصلة داخل القيمة، اكتبها على الصورة `\,`. أما علامة `=` داخل القيمة فتُعامَل بوصفها جزءًا من القيمة.
+
+  ```java
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test");
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+
+  // URL Equivalent
+  // jdbc:ch:http://localhost:8123?custom_http_headers=X-ClickHouse-Quota%3Dtest,X-ClickHouse-Test%3Dtest
+  ```
+
+  ## ميزات ClickHouse Cloud {#v1-clickhouse-cloud-features}
+
+  الميزات المتاحة عند الاتصال بـ [ClickHouse Cloud](https://clickhouse.com/cloud).
+
+  ### التوجيه المراعي للنسخ المتماثلة (CLOUD) {#v1-replica-aware-routing}
+
+  يستطيع ClickHouse Cloud تثبيت طلبات HTTP المترابطة على النسخة المتماثلة نفسها. أرسل الترويسة `X-ClickHouse-Replica-Tag` ليتولى وكيل Cloud توجيه جميع الطلبات التي تحمل الوسم نفسه إلى نسخة متماثلة واحدة. استخدم ذلك مع الكائنات المرتبطة بنطاق الـ session مثل الجداول المؤقتة، أو لإعادة استخدام ذاكرة التخزين المؤقت المحلية للنسخة المتماثلة، أو لضمان اتساق القراءة بعد الكتابة.
+  اقرأ المزيد: https://clickhouse.com/docs/products/cloud/features/infrastructure/replica-aware-routing.
+
+  **ما الذي يجب ضبطه:** ترويسة HTTP ‏`X-ClickHouse-Replica-Tag` (`com.clickhouse.client.http.config.ClickHouseHttpOption.HEADER_REPLICA_TAG`) عبر `custom_http_headers`. استخدم قيمة الوسم نفسها لجميع الطلبات التي ينبغي أن تبقى على نسخة متماثلة واحدة.
+
+  ```java
+  String replicaTag = "my-app-session-1";
+
+  Properties properties = new Properties();
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Replica-Tag=" + replicaTag);
+
+  ClickHouseDataSource dataSource = new ClickHouseDataSource(
+          "jdbc:clickhouse:https://your-service.clickhouse.cloud:8443", properties);
+  try (Connection conn = dataSource.getConnection("default", "password")) {
+      // requests on this connection are pinned to the replica selected for replicaTag
+  }
+  ```
+
+  ## أنواع البيانات المدعومة {#v07-supported-data-types}
 
   يدعم JDBC driver نفس تنسيقات البيانات التي تدعمها مكتبة العميل.
 
@@ -1043,10 +1227,10 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     * AggregatedFunction - :warning: لا يدعم `SELECT * FROM table ...`
     * Decimal - استخدم `SET output_format_decimal_trailing_zeros=1` في 21.9+ لضمان الاتساق
     * Enum - يمكن التعامل معه كسلسلة نصية وكعدد صحيح
-    * UInt64 - يُعيَّن إلى `long` (في client-v1)
+    * UInt64 - يُعيَّن إلى `long` (في client-v1)
   </Note>
 
-  ## إنشاء اتصال
+  ## إنشاء اتصال {#v07-creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1059,7 +1243,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## عبارة بسيطة
+  ## عبارة بسيطة {#v07-simple-statement}
 
   ```java showLineNumbers
 
@@ -1072,7 +1256,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## إدراج
+  ## إدراج {#v07-insert}
 
   <Note>
     * استخدم `PreparedStatement` بدلًا من `Statement`
@@ -1090,7 +1274,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### مع دالة الجدول `input`
+  ### مع دالة الجدول `input` {#with-input-table-function}
 
   خيار يتميز بخصائص أداء ممتازة:
 
@@ -1109,7 +1293,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   * [توثيق الدالة input](/ar/reference/functions/table-functions/input) متى أمكن
 
-  ### الإدراج باستخدام العناصر النائبة
+  ### الإدراج باستخدام العناصر النائبة {#insert-with-placeholders}
 
   يُوصى بهذا الخيار فقط للإدراجات الصغيرة، إذ يستلزم تعبير SQL طويلاً (يُحلَّل على جانب العميل ويستهلك CPU &amp; Memory):
 
@@ -1124,7 +1308,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## التعامل مع DateTime والمناطق الزمنية
+  ## التعامل مع DateTime والمناطق الزمنية {#handling-datetime-and-time-zones}
 
   يُرجى استخدام `java.time.LocalDateTime` أو `java.time.OffsetDateTime` بدلاً من `java.sql.Timestamp`، و`java.time.LocalDate` بدلاً من `java.sql.Date`.
 
@@ -1139,10 +1323,10 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## التعامل مع `AggregateFunction`
+  ## التعامل مع `AggregateFunction` {#handling-aggregatefunction}
 
   <Note>
-    لا تُدعَم القراءة الثنائية المباشرة لحالة `AggregateFunction` إلا في `groupBitmap`. بالنسبة إلى دوال التجميع الأخرى (`min` و`max` و`avg` وما إلى ذلك)، استخدِم مُعدِّلات `-Merge` في الاستعلام الخاص بك (على سبيل المثال، `SELECT minMerge(min_state) FROM ...`) لفكّ حالة التجميع على جانب الخادم وإرجاع قيمة عادية.
+    لا تُدعَم القراءة الثنائية المباشرة لحالة `AggregateFunction` إلا في `groupBitmap`. بالنسبة إلى دوال التجميع الأخرى (`min` و`max` و`avg` وما إلى ذلك)، استخدِم مُعدِّلات `-Merge` في الاستعلام الخاص بك (على سبيل المثال، `SELECT minMerge(min_state) FROM ...`) لفكّ حالة التجميع على جانب الخادم وإرجاع قيمة عادية.
   </Note>
 
   ```java showLineNumbers
@@ -1187,7 +1371,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## تهيئة مكتبة HTTP
+  ## تهيئة مكتبة HTTP {#v07-configuring-http-library}
 
   يدعم موصّل JDBC الخاص بـ ClickHouse ثلاث مكتبات HTTP: [`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html)، و[`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html)، و[Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/).
 
@@ -1211,11 +1395,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## الاتصال بـ ClickHouse عبر SSL
+  ## الاتصال بـ ClickHouse عبر SSL {#connect-to-clickhouse-with-ssl}
 
   لإنشاء اتصال JDBC آمن بـ ClickHouse عبر SSL، تحتاج إلى ضبط خصائص JDBC لتشمل معاملات SSL. يتضمن ذلك عادةً تحديد خصائص SSL مثل `sslmode` و`sslrootcert` في JDBC URL أو كائن الخصائص.
 
-  ## خصائص SSL
+  ## خصائص SSL {#ssl-properties}
 
   | الاسم                | القيمة الافتراضية | القيم الاختيارية | الوصف                                                                     |
   | -------------------- | ----------------- | ---------------- | ------------------------------------------------------------------------- |
@@ -1248,7 +1432,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة
+  ## حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة {#v07-resolving-jdbc-timeout-on-large-inserts}
 
   عند تنفيذ عمليات إدراج كبيرة في ClickHouse ذات أوقات تنفيذ طويلة، قد تواجه أخطاء انتهاء مهلة JDBC مثل:
 
@@ -1258,7 +1442,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   قد تُعطّل هذه الأخطاء عملية إدراج البيانات وتؤثر على استقرار النظام. لمعالجة هذه المشكلة، يلزمك ضبط بعض إعدادات المهلة الزمنية في نظام تشغيل العميل.
 
-  ### Mac OS
+  ### Mac OS {#v07-mac-os}
 
   على نظام Mac OS، يمكن تعديل الإعدادات التالية لحل المشكلة:
 
@@ -1268,11 +1452,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux
+  ### Linux {#v07-linux}
 
   على Linux، قد لا تكفي الإعدادات المكافئة وحدها لحل المشكلة. إذ تستلزم الاختلافات في طريقة تعامل Linux مع إعدادات keep-alive للمقبس اتخاذ خطوات إضافية. اتبع الخطوات التالية:
 
-  1. عدِّل معلمات نواة Linux التالية في `/etc/sysctl.conf` أو في ملف تكوين ذي صلة:
+  1. عدِّل معلمات نواة Linux التالية في `/etc/sysctl.conf` أو في ملف تكوين ذي صلة:
 
   * `net.inet.tcp.keepidle`: 60000
   * `net.inet.tcp.keepintvl`: 45000
@@ -1283,7 +1467,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `net.ipv4.tcp_keepalive_probes`: 9
   * `net.ipv4.tcp_keepalive_time`: 60 (قد ترغب في خفض هذه القيمة من القيمة الافتراضية البالغة 300 ثانية)
 
-  2. بعد تعديل معلمات النواة، طبِّق التغييرات عن طريق تشغيل الأمر التالي:
+  2. بعد تعديل معلمات النواة، طبِّق التغييرات عن طريق تشغيل الأمر التالي:
 
   ```shell
   sudo sysctl -p

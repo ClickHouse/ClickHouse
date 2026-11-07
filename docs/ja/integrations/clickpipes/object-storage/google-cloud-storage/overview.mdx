@@ -13,7 +13,7 @@ GCS ClickPipe は、Google Cloud Storage (GCS) からデータを取り込むた
 GCS ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムから実行することもできます。
 
 <div id="supported-formats">
-  ## 対応フォーマット
+  ## 対応フォーマット {#supported-formats}
 </div>
 
 * [JSON](/ja/reference/formats/JSON/JSON)
@@ -23,32 +23,28 @@ GCS ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび
 * [Avro](/ja/reference/formats/Avro/Avro)
 
 <div id="features">
-  ## 機能
+  ## 機能 {#features}
 </div>
 
 <div id="one-time-ingestion">
-  ### 一回限りのインジェスト
+  ### 一回限りのインジェスト {#one-time-ingestion}
 </div>
 
 デフォルトでは、GCS ClickPipe は、指定したバケット内でパターンに一致するすべてのファイルを、1 回のバッチ処理で ClickHouse の宛先テーブルに読み込みます。インジェスト タスクが完了すると、ClickPipe は自動的に停止します。この一回限りのインジェスト モードでは exactly-once セマンティクスが提供されるため、各ファイルは重複なく確実に処理されます。
 
 <div id="continuous-ingestion">
-  ### 継続的インジェスト
+  ### 継続的インジェスト {#continuous-ingestion}
 </div>
 
 継続的インジェストが有効な場合、ClickPipes は指定されたパスからデータを継続的に取り込みます。インジェスト順序の判定には、GCS ClickPipe はデフォルトでファイルの暗黙的な[辞書式順序](#continuous-ingestion-lexicographical-order)を使用します。また、[バケット通知を行うよう設定した](https://docs.cloud.google.com/storage/docs/reporting-changes#command-line) [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションを使用して、ファイルを[任意の順序](#continuous-ingestion-any-order)で取り込むように構成することもできます。
 
-<div id="continuous-ingestion-lexicographical-order">
-  #### 辞書式順序
-</div>
+#### 辞書式順序 {#continuous-ingestion-lexicographical-order}
 
 GCS ClickPipe は、ファイルがバケットに辞書式順序で追加されることを前提としており、この暗黙的な順序に基づいてファイルを順番に取り込みます。つまり、新しいファイルは、最後に取り込まれたファイルよりも辞書式で後に来る名前である**必要があります**。たとえば、`file1`、`file2`、`file3` という名前のファイルは順番に取り込まれますが、新たに `file 0` がバケットに追加された場合、ファイル名が最後に取り込まれたファイルよりも辞書式で後ではないため、**無視**されます。
 
 このモードでは、GCS ClickPipe は指定されたパス内の**すべてのファイル**を初期ロードし、その後、設定可能な間隔 (デフォルトでは 30 秒) で新しいファイルがないかポーリングします。特定のファイルの後から継続的インジェストを開始するには、**Start after** を設定します。ClickPipes は、設定値以下の辞書式順序のファイルをスキップし、その時点から新しいファイルの取り込みを継続します。
 
-<div id="continuous-ingestion-any-order">
-  #### 順不同
-</div>
+#### 任意の順序 {#continuous-ingestion-any-order}
 
 <Tip>
   手順については、[継続的インジェストの順不同モードの設定](/ja/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode)を参照してください。
@@ -57,19 +53,19 @@ GCS ClickPipe は、ファイルがバケットに辞書式順序で追加され
 バケットから通知を受け取る [Google Cloud Pub/Sub](https://docs.cloud.google.com/storage/docs/pubsub-notifications) サブスクリプションを設定すると、暗黙的な順序を持たないファイルを取り込むように GCS ClickPipe を構成できます。これにより、ClickPipes はオブジェクト作成イベントを監視し、ファイル名の命名規則に関係なく新しいファイルを取り込めるようになります。
 
 <Note>
-  公開バケットでは**順不同モード**はサポートされていません。これを使用するには、**サービス アカウント**認証と、バケットに接続された [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションが必要です。
+  公開バケットでは**順不同モード**はサポートされていません。これを使用するには、アップロードした秘密鍵または GCP Workload Identity のいずれかを用いた service account 認証と、バケットに接続された [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) サブスクリプションが必要です。
 </Note>
 
-このモードでは、GCS ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致する Pub/Sub サブスクリプション経由の `OBJECT_FINALIZE` 通知を待ち受けます。すでに確認済みのファイル、パスに一致しないファイル、または別種のイベントに対するメッセージは、すべて**無視**されます。サブスクリプション経由で配信されたファイルのみを取り込むには、**初期ロードをスキップ**を有効にします。有効にすると、ClickPipes は選択したパス内の既存ファイルの初期スキャンをスキップし、Pub/Sub サブスクリプション経由で配信されたファイルのみを処理します。
+このモードでは、GCS ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致する Pub/Sub サブスクリプション経由の `OBJECT_FINALIZE` 通知を待ち受けます。すでに確認済みのファイル、パスに一致しないファイル、または別種のイベントに対するメッセージは、すべて**無視**されます。サブスクリプション経由で配信されたファイルのみを取り込むには、**初回読み込みをスキップ**を有効にします。有効にすると、ClickPipes は選択したパス内の既存ファイルの初期スキャンをスキップし、Pub/Sub サブスクリプション経由で配信されたファイルのみを処理します。
 
 <div id="file-pattern-matching">
-  ### ファイルパターンのマッチング
+  ### ファイルパターンのマッチング {#file-pattern-matching}
 </div>
 
 Object Storage 用 ClickPipes では、ファイルパターンのマッチングに POSIX 標準を採用しています。すべてのパターンは**大文字と小文字を区別**し、バケット名の後ろにある**フルパス全体**に対して照合されます。パフォーマンスを高めるため、できるだけ具体的なパターンを使用してください (例: `*.csv` ではなく `data-2024-*.csv`) 。
 
 <div id="supported-patterns">
-  #### 対応しているパターン
+  #### 対応しているパターン {#supported-patterns}
 </div>
 
 | パターン           | 説明                                             | 例                   | 一致するもの                                                            |
@@ -86,7 +82,7 @@ Object Storage 用 ClickPipes では、ファイルパターンのマッチン�
 * `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
 
 <div id="unsupported-patterns">
-  #### サポートされていないパターン
+  #### サポートされていないパターン {#unsupported-patterns}
 </div>
 
 | Pattern     | 説明             | 例                      | 代替手段                                     |
@@ -101,29 +97,29 @@ Object Storage 用 ClickPipes では、ファイルパターンのマッチン�
 * `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
 
 <div id="exactly-once-semantics">
-  ### exactly-once セマンティクス
+  ### exactly-once セマンティクス {#exactly-once-semantics}
 </div>
 
 大規模なデータセットを取り込む際には、さまざまな障害が発生する可能性があり、その結果、挿入が一部しか行われなかったり、データが重複したりすることがあります。Object Storage 用 ClickPipes は挿入の失敗に対して耐性があり、exactly-once セマンティクスを提供します。これは、一時的な「ステージングテーブル」を使用して実現されます。まず、データはステージングテーブルに挿入されます。この挿入中に問題が発生した場合は、ステージングテーブルを空にして、クリーンな状態から挿入を再試行できます。挿入が正常に完了した場合にのみ、ステージングテーブル内のパーティションがターゲットテーブルに移動されます。この戦略について詳しくは、[こちらのブログ記事](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)をご覧ください。
 
 <div id="virtual-columns">
-  ### 仮想カラム
+  ### 仮想カラム {#virtual-columns}
 </div>
 
 どのファイルが取り込まれたかを追跡するには、カラムマッピングのリストに `_file` 仮想カラムを含めます。`_file` 仮想カラムにはソースオブジェクトのファイル名が含まれており、これを使ってどのファイルが処理されたかをクエリできます。
 
 <div id="access-control">
-  ## アクセス制御
+  ## アクセス制御 {#access-control}
 </div>
 
 <div id="permissions">
-  ### 権限
+  ### 権限 {#permissions}
 </div>
 
 GCS ClickPipe は公開バケットと非公開バケットに対応しています。[Requester Pays](https://docs.cloud.google.com/storage/docs/requester-pays) バケットは**サポートしていません**。
 
 <div id="gcs-bucket">
-  #### GCS バケット
+  #### GCS バケット {#gcs-bucket}
 </div>
 
 ClickPipes が使用するサービス アカウントでは、バケット レベルで次の操作が許可されている必要があります。
@@ -133,7 +129,7 @@ ClickPipes が使用するサービス アカウントでは、バケット レ�
 このロールには [`storage.objects.list`](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/list) と [&#96;storage.objects.get](https://docs.cloud.google.com/storage/docs/json_api/v1/objects/get#required-permissions) の IAM 権限が含まれており、これにより ClickPipes は指定されたバケット内のオブジェクトを一覧表示し、取得できます。
 
 <div id="pubsub-subscription">
-  #### Pub/Sub サブスクリプション
+  #### Pub/Sub サブスクリプション {#pubsub-subscription}
 </div>
 
 [順不同モード](#continuous-ingestion-any-order)を使用する場合、サービス アカウントには、Pub/Sub サブスクリプションに対して次のロールが必要です。
@@ -142,18 +138,20 @@ ClickPipes が使用するサービス アカウントでは、バケット レ�
 * [`roles/pubsub.viewer`](https://cloud.google.com/pubsub/docs/access-control#roles) — サブスクリプションのメタデータを取得するため。
 
 <div id="authentication">
-  ### 認証
+  ### 認証 {#authentication}
 </div>
 
 <div id="service-account">
-  #### サービス アカウント
+  #### サービス アカウント {#service-account}
 </div>
 
 Pub/Sub 通知で[順不同モード](#continuous-ingestion-any-order)を使用する場合は、サービス アカウント認証が必要です。認証方法として **Service Account** を選択し、サービス アカウントの秘密鍵の JSON ファイルをアップロードします。
 
-<div id="hmac-credentials">
-  #### HMAC認証情報
-</div>
+#### GCP Workload Identity (ベータ) {#gcp-workload-identity}
+
+[GCP Workload Identity ガイド](/ja/integrations/clickpipes/security/gcp-workload-identity)に従い、ClickPipes のサービスコンテキストからマネージドの service account を取得します。ソースバケットに対してこの service account に `roles/storage.objectViewer` を付与し、`SERVICE_ACCOUNT_WORKLOAD_IDENTITY` 認証でパイプを作成します。unordered モードでインジェストする場合は、既存の通知サブスクリプションに対して `roles/pubsub.subscriber` と `roles/pubsub.viewer` も付与し、サブスクリプションの完全修飾名 `projects/<project-id>/subscriptions/<subscription-id>` を指定してください。
+
+#### HMAC認証情報 {#hmac-credentials}
 
 [HMACキー](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) を使用して認証するには、ClickPipe 接続を設定する際に **Authentication method** で `Credentials` を選択します。次に、`Access key` と `Secret key` に、それぞれアクセスキー (例: `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) とシークレットキー (例: `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) を入力します。
 
@@ -162,7 +160,7 @@ Pub/Sub 通知で[順不同モード](#continuous-ingestion-any-order)を使用�
 HMACキーを持つサービス アカウントを作成するには、[このガイド](/ja/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) に従ってください。
 
 <div id="network-access">
-  ### ネットワークアクセス
+  ### ネットワークアクセス {#network-access}
 </div>
 
 GCS ClickPipes では、メタデータの検出とデータのインジェストに、それぞれ ClickPipes サービスと ClickHouse Cloud サービスという 2 つの異なるネットワーク経路を使用します。ネットワークセキュリティをさらに強化したい場合 (たとえば、コンプライアンス要件への対応のため) 、**両方の経路でネットワークアクセスを設定する必要があります**。
@@ -174,9 +172,7 @@ GCS ClickPipes では、メタデータの検出とデータのインジェス�
   curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.gcp[] | select(.region == "<your-region>") | .egress_ips[]'
   ```
 
-<div id="advanced-settings">
-  ## 詳細設定
-</div>
+## 詳細設定 {#advanced-settings}
 
 ClickPipes には、ほとんどのユースケースの要件を満たす妥当なデフォルト設定が用意されています。さらに細かなチューニングが必要な場合は、以下の設定を調整できます。
 
@@ -198,7 +194,7 @@ ClickPipes には、ほとんどのユースケースの要件を満たす妥当
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の詳細設定" size="lg" border />
 
 <div id="scaling">
-  ### スケーリング
+  ### スケーリング {#scaling}
 </div>
 
 Object Storage 用 ClickPipes は、[構成された垂直オートスケーリング設定](/ja/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling)によって決まる ClickHouse サービスの最小サイズに基づいてスケーリングされます。ClickPipe のサイズは、パイプの作成時に決定されます。作成後に ClickHouse サービスの設定を変更しても、ClickPipe のサイズには影響しません。
@@ -206,23 +202,23 @@ Object Storage 用 ClickPipes は、[構成された垂直オートスケーリ�
 大規模な取り込みジョブのスループットを向上させるには、ClickPipe を作成する前に ClickHouse サービスをスケーリングすることを推奨します。
 
 <div id="known-limitations">
-  ## 既知の制約事項
+  ## 既知の制約事項 {#known-limitations}
 </div>
 
 <div id="file-size">
-  ### ファイルサイズ
+  ### ファイルサイズ {#file-size}
 </div>
 
 ClickPipes は、サイズが**10GB以下**のオブジェクトのみを取り込みます。ファイルが 10GB を超える場合、エラーは ClickPipes 専用のエラーテーブルに追記されます。
 
 <div id="compatibility">
-  ### 互換性
+  ### 互換性 {#compatibility}
 </div>
 
 GCS ClickPipe では、相互運用性を確保するために Cloud ストレージの [XML API](https://docs.cloud.google.com/storage/docs/interoperability) を使用します。そのため、`gs://` ではなく `https://storage.googleapis.com/` のバケットプレフィックスを使用し、認証には [HMAC キー](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) を使用する必要があります。
 
 <div id="view-support">
-  ### ビューのサポート
+  ### ビューのサポート {#view-support}
 </div>
 
 ターゲットテーブルに対する materialized view もサポートされています。ClickPipes は、ターゲットテーブルだけでなく、それに依存する materialized view に対してもステージングテーブルを作成します。

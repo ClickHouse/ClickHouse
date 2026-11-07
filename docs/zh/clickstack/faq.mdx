@@ -10,7 +10,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
 本页汇总了有关 ClickStack 各项功能的常见问题，包括告警、仪表盘与下钻，以及指标发现。
 
 <div id="alerting">
-  ## 告警
+  ## 告警 {#alerting}
 </div>
 
 <Accordion title="ClickStack 支持哪些类型的告警？">
@@ -19,7 +19,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
   * [搜索告警](/zh/clickstack/features/alerts#search-alerts)：当某个时间窗口内匹配的日志或 trace 结果数量超过或低于阈值时触发通知。
   * [仪表盘图表告警](/zh/clickstack/features/alerts#dashboard-alerts)：当仪表盘卡片上绘制的某项指标越过设定阈值时触发通知。
 
-  这两类告警都使用静态阈值条件。完整说明请参见 [告警](/zh/clickstack/features/alerts)。
+  这两类告警默认使用静态阈值条件。在托管 ClickStack 上，它们也可以改用[异常检测](/zh/clickstack/features/anomaly-detection)，在某个值超出其预期范围时触发。完整说明请参见 [告警](/zh/clickstack/features/alerts)。
 </Accordion>
 
 <Accordion title="我可以针对复杂的指标条件（例如比率、p95/p99 或多指标公式）设置告警吗？">
@@ -29,18 +29,15 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
 
   * 针对指标使用自定义 SQL 查询进行告警。
   * 将多个条件或多个指标组合成单条告警规则。
-  * 动态告警条件或基于异常检测的告警条件 (异常检测已在规划中) 。
 
-  如果您需要为复杂指标设置告警，推荐做法是先将其构建为仪表盘图表，再为该图表添加阈值告警。
+  如果您需要为复杂指标设置告警，推荐做法是先将其构建为仪表盘图表，再为该图表添加阈值告警。在托管 ClickStack 上，您也可以改为该图表添加[异常检测告警](/zh/clickstack/features/anomaly-detection)，使其在值超出预期范围时触发，而非在越过固定阈值时触发。
 </Accordion>
 
 <Accordion title="我可以将 materialized views 用于告警场景吗？">
   在适用的情况下，ClickStack 会自动在告警中使用 materialized views。不过，OpenTelemetry 指标数据源目前还不支持 materialized views。对于指标，ClickStack 与默认的 [ClickHouse OpenTelemetry metrics schema](/zh/clickstack/ingesting-data/schemas) 配合效果最佳。有关 materialized views 的更多信息，请参见 [Materialized views](/zh/clickstack/managing/materialized-views)。
 </Accordion>
 
-<div id="dashboards-and-drill-downs">
-  ## 仪表盘与下钻
-</div>
+## 仪表盘与下钻 {#dashboards-and-drill-downs}
 
 <Accordion title="ClickStack 是否支持参数化仪表盘或仪表盘变量？">
   是，ClickStack 支持通过自定义过滤器和变量进行参数化的仪表盘，这些过滤器和变量的值由从 ClickHouse 查询的数据填充。这些过滤器可让你根据特定值 (例如服务名称、环境或主机) 动态限定仪表盘上部分或全部卡片的范围。
@@ -62,9 +59,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
   </Note>
 </Accordion>
 
-<div id="metrics-discovery">
-  ## 指标发现
-</div>
+## 指标发现 {#metrics-discovery}
 
 <Accordion title="是否有用于浏览和搜索指标的 UI？">
   ![指标属性浏览器](/images/clickstack/faq/metrics-explorer.webp)
@@ -78,9 +73,7 @@ keywords: ['ClickStack', '常见问题', '告警', '仪表盘', '下钻', '指�
   不是。虽然目前可以使用 SQL 查询来发现指标，但这并不是预期的长期方案。更完善的指标发现工具正在积极开发中。
 </Accordion>
 
-<div id="further-reading">
-  ## 延伸阅读
-</div>
+## 延伸阅读 {#further-reading}
 
 * [告警](/zh/clickstack/features/alerts)：搜索告警、仪表盘图表告警和 webhook 集成。
 * [仪表盘](/zh/clickstack/features/dashboards/overview)：创建可视化、构建仪表盘以及使用过滤器。

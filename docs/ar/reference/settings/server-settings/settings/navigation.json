@@ -1,6 +1,6 @@
 {
-  "directory": "none",
   "group": "إعدادات الخادم",
+  "directory": "none",
   "pages": [
     "ar/reference/settings/server-settings/settings",
     "ar/reference/settings/server-settings/settings/access-control",
@@ -38,6 +38,7 @@
     "ar/reference/settings/server-settings/settings/encryption-header",
     "ar/reference/settings/server-settings/settings/format",
     "ar/reference/settings/server-settings/settings/global-profiler",
+    "ar/reference/settings/server-settings/settings/gpu",
     "ar/reference/settings/server-settings/settings/graphite",
     "ar/reference/settings/server-settings/settings/http",
     "ar/reference/settings/server-settings/settings/http-connections",
@@ -112,6 +113,7 @@
     "ar/reference/settings/server-settings/settings/skip",
     "ar/reference/settings/server-settings/settings/snapshot-cleaner",
     "ar/reference/settings/server-settings/settings/startup",
+    "ar/reference/settings/server-settings/settings/statistics-cache",
     "ar/reference/settings/server-settings/settings/storage",
     "ar/reference/settings/server-settings/settings/storage-connections",
     "ar/reference/settings/server-settings/settings/tables-loader",

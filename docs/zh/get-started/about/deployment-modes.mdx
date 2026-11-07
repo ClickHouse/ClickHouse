@@ -28,7 +28,7 @@ ClickHouse 是一个用途广泛的数据库系统，可根据你的需求以多
 </Frame>
 
 <div id="clickhouse-server">
-  ## ClickHouse Server
+  ## ClickHouse Server {#clickhouse-server}
 </div>
 
 ClickHouse Server 代表传统的客户端/服务器架构，非常适合生产环境部署。该部署模式提供 ClickHouse 广为人知的完整 OLAP 数据库能力，具备高吞吐量和低延迟查询性能。
@@ -41,9 +41,7 @@ ClickHouse Server 代表传统的客户端/服务器架构，非常适合生产�
 
 对于可靠性、性能和完整功能访问至关重要的生产环境，这种部署模式是首选。
 
-<div id="clickhouse-cloud">
-  ## ClickHouse Cloud
-</div>
+## ClickHouse Cloud {#clickhouse-cloud}
 
 [ClickHouse Cloud](/zh/products/cloud/getting-started/intro) 是 ClickHouse 的全托管版本，可免去自行运行部署所带来的运维开销。它在保留 ClickHouse Server 全部核心能力的同时，还通过额外功能进一步优化了开发和运维体验。
 
@@ -57,29 +55,25 @@ ClickHouse Cloud 中的 SQL 控制台包含强大的[仪表盘](/zh/products/clo
 
 由于该服务是托管式的，您无需担心更新、备份、扩缩容或安全补丁——这些都会自动处理。对于希望将精力集中在数据和应用程序上，而不是数据库管理上的组织来说，这是一个理想选择。
 
-<div id="clickhouse-cli">
-  ## ClickHouse 命令行客户端
-</div>
+## ClickHouse 命令行客户端 {#clickhouse-cli}
 
-ClickHouse 命令行客户端 (`clickhousectl`) 是一款用于本地 ClickHouse 开发和 ClickHouse Cloud 管理的命令行工具。它简化了安装 ClickHouse 各版本、启动和管理本地服务器实例以及运行查询的流程。
+[ClickHouse 命令行客户端](/zh/concepts/features/interfaces/cli) (`clickhousectl`，别名 `chctl`) 是一款命令行工具，用于本地 ClickHouse 和 Postgres 开发，以及 ClickHouse Cloud 管理。它可以安装各个版本的 ClickHouse、启动和管理本地服务器，并执行查询。
 
-对于本地开发，`clickhousectl` 可帮助安装 ClickHouse 版本并运行服务器。您可以安装任意版本的 ClickHouse、启动命名服务器，并通过内置客户端进行连接。每个服务器都有自己的数据目录，因此可以并行运行多个相互隔离的环境。
+在本地开发中，`clickhousectl` 可以安装任意版本的 ClickHouse，并运行具名服务器。可使用 `clickhousectl local client` 进行连接，该命令会运行对应版本的 `clickhouse-client`。每个服务器都将数据保存在项目的 `.clickhouse/` 目录中，因此您可以同时运行多个相互隔离的环境。在 Docker 运行时，`clickhousectl local postgres` 会以相同方式启动本地 Postgres 服务器。
 
-`clickhousectl` 还提供对 ClickHouse Cloud 资源的全面管理，包括创建和扩缩容服务、管理 API 密钥以及管理组织，使其成为同时适用于本地和云端工作流的统一工具。
+`clickhousectl` 还可以管理 ClickHouse Cloud 云资源，包括服务、扩缩容、备份、Managed Postgres、ClickPipes、托管 ClickStack、API 密钥和组织。通过浏览器登录 (`clickhousectl cloud auth login`) 仅具有只读权限；如需创建或更改资源，则需要使用 API key。
 
 ```bash
-# Install the CLI
-curl https://clickhouse.com/cli | sh
+# Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
+curl -fsSL https://clickhouse.com/cli | sh
 
-# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client
 ```
 
-<div id="clickhouse-local">
-  ## clickhouse-local
-</div>
+## clickhouse-local {#clickhouse-local}
 
 [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 是一款功能强大的命令行工具，以独立可执行程序的形式提供 ClickHouse 的完整功能。它本质上与 ClickHouse Server 是同一个数据库，只是采用了不同的打包方式，让你无需运行服务器实例，也能直接通过命令行使用 ClickHouse 的全部能力。
 
@@ -91,9 +85,7 @@ clickhousectl local client
 
 远程表函数与本地文件系统访问能力的结合，使 clickhouse-local 在需要将 ClickHouse Server 中的数据与本地机器上的文件数据进行关联查询的场景中特别有用。尤其是在处理敏感或临时的本地数据、且你不希望将其上传到服务器时，这一点更显价值。
 
-<div id="chdb">
-  ## chDB
-</div>
+## chDB {#chdb}
 
 [chDB](/zh/chdb/index) 是以进程内数据库引擎形式嵌入的 ClickHouse，目前以 Python 作为主要实现，同时也提供 Go、Rust、Node.js 和 Bun 版本。这种部署方式可将 ClickHouse 强大的 OLAP 能力直接带入你的应用进程内，无需单独安装数据库。
 

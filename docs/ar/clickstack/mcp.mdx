@@ -18,7 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Frame>
 
 <div id="availability">
-  ## التوافر
+  ## التوافر {#availability}
 </div>
 
 خادم MCP متاح في أنواع نشر ClickStack التالية:
@@ -37,20 +37,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Info>
 
 <div id="managed-clickstack">
-  ## ClickStack on ClickHouse Cloud
+  ## ClickStack on ClickHouse Cloud {#managed-clickstack}
 </div>
 
 يتصل ClickStack on ClickHouse Cloud عبر نقطة نهاية MCP الخاصة بـ Cloud على `https://mcp.clickhouse.cloud/clickstack`، ويستخدم OAuth 2.0 للمصادقة. لا يدعم هذا الـ endpoint المصادقة باستخدام مفتاح API.
 
 <div id="managed-prerequisites">
-  ### المتطلبات الأساسية
+  ### المتطلبات الأساسية {#managed-prerequisites}
 </div>
 
 * خدمة ClickHouse Cloud قيد التشغيل مع [تفعيل ClickStack](/ar/clickstack/deployment/managed)
 * [تفعيل MCP](/ar/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) على الخدمة — افتح Cloud Console، وانقر على **Connect**، ثم اختر **Connect with MCP**، وفعِّله باستخدام زر التبديل
 
 <div id="managed-endpoint">
-  ### نقطة النهاية
+  ### نقطة النهاية {#managed-endpoint}
 </div>
 
 ```text
@@ -60,7 +60,7 @@ https://mcp.clickhouse.cloud/clickstack
 تتم المصادقة باستخدام OAuth 2.0. عندما يتصل عميل MCP الخاص بك لأول مرة، تُفتح نافذة متصفح لتسجيل الدخول باستخدام بيانات اعتماد ClickHouse Cloud الخاصة بك. ولا يلزم استخدام مفتاح API.
 
 <div id="managed-connecting-a-client">
-  ### توصيل عميل MCP
+  ### توصيل عميل MCP {#managed-connecting-a-client}
 </div>
 
 يتولى كل عميل تنفيذ تدفق OAuth تلقائيًا عند أول اتصال.
@@ -137,20 +137,18 @@ https://mcp.clickhouse.cloud/clickstack
 </Tabs>
 
 <div id="managed-service-override">
-  ### استهداف خدمة معيّنة
+  ### استهداف خدمة معيّنة {#managed-service-override}
 </div>
 
 من دون ترويسة `x-service-id`، تُوجَّه الطلبات افتراضيًا إلى أول خدمة ClickStack تم توفيرها واستخدامها ضمن حسابك. ولاستهداف خدمة أخرى، مرّر `x-service-id: <YOUR_SERVICE_ID>` كترويسة في إعدادات عميل MCP.
 
 <div id="oss-byoc">
-  ## مفتوح المصدر وBYOC
+  ## مفتوح المصدر وBYOC {#oss-byoc}
 </div>
 
 تستخدم عمليات النشر مفتوحة المصدر وBYOC نقطة النهاية MCP المضمنة في مثيل ClickStack لديك، مع المصادقة باستخدام Bearer token.
 
-<div id="oss-prerequisites">
-  ### المتطلبات الأساسية
-</div>
+### المتطلبات الأساسية {#oss-prerequisites}
 
 * مثيل ClickStack قيد التشغيل (راجع [النشر](/ar/clickstack/deployment/overview) للاطّلاع على خيارات الإعداد)
 * **مفتاح الوصول الشخصي إلى API** — يمكنك العثور على مفتاحك في HyperDX ضمن **إعدادات الفريق → مفاتيح API → مفتاح الوصول الشخصي إلى API**
@@ -162,7 +160,7 @@ https://mcp.clickhouse.cloud/clickstack
 </Note>
 
 <div id="managed-endpoint">
-  ### نقطة النهاية
+  ### نقطة النهاية {#oss-endpoint}
 </div>
 
 يتوفر خادم MCP على المسار `/api/mcp` ضمن عنوان URL للواجهة الأمامية في ClickStack. على سبيل المثال، في النشر المحلي الافتراضي، يكون عنوان URL هو `http://localhost:8080/api/mcp`. استبدل `localhost:8080` بالمضيف والمنفذ الخاصَّين بالمثيل لديك إذا كنت قد غيّرت الإعدادات الافتراضية.
@@ -174,7 +172,7 @@ https://mcp.clickhouse.cloud/clickstack
 يستخدم خادم MCP بروتوكول النقل **Streamable HTTP** مع مصادقة **Bearer token**.
 
 <div id="oss-connecting-a-client">
-  ### الاتصال بعميل MCP
+  ### الاتصال بعميل MCP {#oss-connecting-a-client}
 </div>
 
 استبدل `<YOUR_CLICKSTACK_URL>` بعنوان URL الخاص بالمثيل لديك (على سبيل المثال: `http://localhost:8080`) واستبدل `<YOUR_API_KEY>` بمفتاح مفتاح الوصول الشخصي إلى API الخاص بك.
@@ -263,7 +261,7 @@ https://mcp.clickhouse.cloud/clickstack
 </Tabs>
 
 <div id="capabilities">
-  ## ما الذي يمكنك فعله باستخدام MCP؟
+  ## ما الذي يمكنك فعله باستخدام MCP؟ {#capabilities}
 </div>
 
 بمجرد الاتصال، سيتمكن مساعد الذكاء الاصطناعي الخاص بك من الوصول إلى مجموعة من الأدوات التي تغطي المجالات الأساسية في ClickStack. وتشمل ما يلي:
@@ -271,7 +269,7 @@ https://mcp.clickhouse.cloud/clickstack
 * **الاستعلام عن البيانات** — ابحث في السجلات والتتبعات والمقاييس واجرِ تجميعًا لها باستخدام منشئ الاستعلامات في ClickStack، أو صياغة البحث، أو Raw SQL.
 * **مصادر البيانات** — اعرض مصادر البيانات المتاحة، واتصالات قواعد البيانات، وبُنى الأعمدة، ومفاتيح السمات.
 * **لوحات المعلومات** — أنشئ لوحات المعلومات وحدّثها واحذفها وافحصها، بما في ذلك عناصرها.
-* **التنبيهات** — أنشئ التنبيهات وحدّثها وافحصها، بما في ذلك سجل تقييمها.
+* **التنبيهات** — أنشئ التنبيهات وحدّثها وافحصها، بما في ذلك سجل تقييمها. وعندما تكون ميزة [اكتشاف الشذوذ](/ar/clickstack/features/anomaly-detection) مفعّلة، يمكن للمساعدين أيضًا اختبار إعدادات تنبيهات الشذوذ رجعيًا على البيانات التاريخية الحديثة قبل حفظها.
 * **عمليات البحث المحفوظة** — أنشئ تعريفات عمليات البحث المحفوظة القابلة لإعادة الاستخدام وحدّثها وافحصها.
 * **Webhooks** — اعرض وجهات webhook المتاحة لإشعارات التنبيه.
 * **الفرق** — اعرض الفرق التي ينتمي إليها المستخدم الحالي وحدد الفريق النشط.
@@ -279,7 +277,7 @@ https://mcp.clickhouse.cloud/clickstack
 قد تتوسع مجموعة الأدوات هذه بمرور الوقت. وسيكتشف عميل MCP الأدوات المتاحة تلقائيًا عند اتصاله.
 
 <div id="multi-team">
-  ## الاستخدام متعدد الفرق (OSS/BYOC)
+  ## الاستخدام متعدد الفرق (OSS/BYOC) {#multi-team}
 </div>
 
 ينطبق هذا على عمليات النشر مفتوحة المصدر وBYOC فقط. بالنسبة إلى ClickStack on ClickHouse Cloud، راجع [استهداف خدمة محددة](#managed-service-override).
@@ -289,11 +287,11 @@ https://mcp.clickhouse.cloud/clickstack
 استخدم أداة عرض الفرق من عميل MCP لمعرفة الفرق التي تملك صلاحية الوصول إليها وأيّها هو النشط حاليًا.
 
 <div id="troubleshooting">
-  ## استكشاف الأخطاء وإصلاحها
+  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
 </div>
 
 <div id="troubleshooting-managed">
-  ### ClickStack on ClickHouse Cloud
+  ### ClickStack on ClickHouse Cloud {#troubleshooting-managed}
 </div>
 
 <Accordion title="عدم اكتمال تدفق OAuth">
@@ -312,7 +310,7 @@ https://mcp.clickhouse.cloud/clickstack
 </Accordion>
 
 <div id="troubleshooting-oss">
-  ### مفتوح المصدر وBYOC
+  ### مفتوح المصدر وBYOC {#troubleshooting-oss}
 </div>
 
 <Accordion title="أتلقى خطأ مصادقة 403">

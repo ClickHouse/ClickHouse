@@ -4,7 +4,7 @@ title: '使用 ClickStack 的告警'
 sidebarTitle: '告警'
 description: '使用 ClickStack 的告警'
 doc_type: 'guide'
-keywords: ['ClickStack', '可观测性', '告警', '搜索告警', '通知', '阈值', 'Slack', '电子邮件', 'PagerDuty', '错误监控', '性能监控', '用户事件']
+keywords: ['ClickStack', '可观测性', '告警', '搜索告警', '异常检测', '通知', '阈值', 'Slack', '电子邮件', 'PagerDuty', '错误监控', '性能监控', '用户事件']
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
@@ -16,14 +16,17 @@ ClickStack 内置告警支持，使团队能够针对日志、指标和链路追
 告警功能可在整个 ClickStack 数据范围内无缝运行，帮助你跟踪系统健康状况、发现性能回退，并监控关键业务事件。
 
 <div id="types-of-alerts">
-  ## 告警类型
+  ## 告警类型 {#types-of-alerts}
 </div>
 
 ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表板图表告警**。告警创建后，会关联到相应的搜索或图表。
 
-<div id="search-alerts">
-  ### 1. 搜索告警
-</div>
+每个告警可采用以下两种检测模式之一，在告警编辑器的 **Alert type** 中进行选择：
+
+* **静态阈值**：当值越过您设定的数值时触发。这是默认模式，也是本页介绍的模式。
+* **异常检测** (仅限托管 ClickStack) ：当值超出基于近期历史数据学习得出的预期范围时触发。请参阅[异常检测告警](/zh/clickstack/features/anomaly-detection)。
+
+### 1. 搜索告警 {#search-alerts}
 
 搜索告警可让你根据已保存搜索的结果触发通知，帮助你发现特定事件或模式的出现频率是否高于 (或低于) 预期。
 
@@ -58,9 +61,7 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
 
 <Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="多个告警" size="md" />
 
-<div id="dashboard-alerts">
-  ### 2. 仪表板图表告警
-</div>
+### 2. 仪表板图表告警 {#dashboard-alerts}
 
 仪表板图表告警将告警功能扩展到了图表。
 
@@ -98,9 +99,7 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
   </Step>
 </Steps>
 
-<div id="add-webhook">
-  ## 添加 webhook
-</div>
+## 添加 webhook {#add-webhook}
 
 在创建告警时，您既可以使用现有的 webhook，也可以新建一个。创建后，该 webhook 还可在其他告警中复用。
 
@@ -119,7 +118,7 @@ webhook 名称为必填项，描述为可选项。其他需要填写的设置取
 请注意，ClickStack 开源版与 ClickStack Cloud 提供的服务类型有所不同。请参阅[服务类型集成](#integrations)。
 
 <div id="integrations">
-  ### 服务类型集成
+  ### 服务类型集成 {#integrations}
 </div>
 
 ClickStack 告警可开箱即用地集成以下服务类型：
@@ -154,9 +153,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 * Webhook 请求头 (可选)
 * Webhook 请求体 (可选) 。请求体当前支持模板变量 `{{title}}`、`{{body}}` 和 `{{link}}`。
 
-<div id="managing-alerts">
-  ## 管理告警
-</div>
+## 管理告警 {#managing-alerts}
 
 可以通过 HyperDX 左侧的告警面板集中管理告警。
 
@@ -177,9 +174,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 
 点击某个告警会带你进入该告警所关联的图表或搜索页面。
 
-<div id="deleting-alerts">
-  ### 删除告警
-</div>
+### 删除告警 {#deleting-alerts}
 
 要删除告警，请打开关联搜索或图表的编辑对话框，然后选择 **Remove Alert**。
 在下面的示例中，`Remove Alert` 按钮会删除该图表上的告警。
@@ -187,13 +182,13 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="删除图表告警" size="lg" />
 
 <div id="sql-based-alerts">
-  ## 基于 SQL 的图表告警
+  ## 基于 SQL 的图表告警 {#sql-based-alerts}
 </div>
 
 基于 SQL 的图表告警允许你编写任意 ClickHouse SQL 来定义告警条件。这样你就能完全控制过滤、聚合和计算——凡是能够用 SQL 表达的内容，都可以设置为告警。
 
 <div id="supported-chart-types">
-  ### 支持的图表类型
+  ### 支持的图表类型 {#supported-chart-types}
 </div>
 
 基于 SQL 的告警支持以下三种图表类型：
@@ -206,9 +201,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 
 其他基于 SQL 的图表类型 (表、饼图、热力图等) 不支持告警。
 
-<div id="create-sql-based-alert">
-  ### 创建 SQL 告警
-</div>
+### 创建 SQL 告警 {#create-sql-based-alert}
 
 要为基于 SQL 的图表创建告警：
 
@@ -244,7 +237,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 </Steps>
 
 <div id="sql-result-interpretation">
-  ### 如何解读查询结果
+  ### 如何解读查询结果 {#sql-result-interpretation}
 </div>
 
 告警系统会检查 SQL 查询返回的列，以确定应将哪个值与阈值进行比较。
@@ -254,13 +247,13 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 * **分组列**：任何非数值、非时间戳列 (例如 `ServiceName`、`Environment`) 都会被视为分组维度。存在分组时，系统会分别跟踪每个唯一的分组值组合，并单独触发告警。对于每个值超过已配置阈值的分组，ClickStack 都会发送一条告警。分组仅适用于时间序列图表。
 
 <div id="query-params">
-  ### 查询参数和宏
+  ### 查询参数和宏 {#query-params}
 </div>
 
 SQL 告警查询支持模板参数和宏，它们会在评估时自动替换。这些参数和宏与[构建基于 SQL 的图表](/zh/clickstack/features/dashboards/sql-visualizations)时可用的完全相同。
 
 <div id="required-alert-parameters">
-  #### 必需参数与推荐参数
+  #### 必需参数与推荐参数 {#required-alert-parameters}
 </div>
 
 用于折线图或堆叠条形图告警的查询**必须**包含时间间隔参数或宏 (`{intervalSeconds:Int64}`、`{intervalMilliseconds:Int64}`、`$__timeInterval(col)` 或 `$__timeInterval_ms(col)`) 。告警执行时，该参数会被替换为告警配置的周期。
@@ -274,11 +267,11 @@ SQL 告警查询支持模板参数和宏，它们会在评估时自动替换。�
 </Warning>
 
 <div id="example-queries">
-  ### 告警查询示例
+  ### 告警查询示例 {#example-queries}
 </div>
 
 <div id="example-error-rate">
-  #### 每个服务的错误率 (时间序列)
+  #### 每个服务的错误率 (时间序列) {#example-error-rate}
 </div>
 
 当任一服务的错误率超过 5% 时触发告警；为避免低流量服务产生噪声告警，告警周期内的请求数至少需达到 10 个。
@@ -308,11 +301,13 @@ WHERE request_count > 10
 
 在此查询中，`ServiceName` 是一个非数值、非时间戳列，因此每个服务都会被作为独立的告警组进行跟踪。告警会针对每个服务分别独立触发。
 
-<div id="example-anomaly-detection">
-  #### 使用滞后平均值进行异常检测 (时间序列)
-</div>
+#### 使用滞后平均值进行异常检测 (时间序列) {#example-anomaly-detection}
 
 对超出滚动平均值两个标准差以上的错误计数设置告警。这有助于捕捉相对于近期基线行为的突增，而不是依赖固定阈值。
+
+<Tip>
+  在托管 ClickStack 上，[异常检测告警](/zh/clickstack/features/anomaly-detection)无需编写自定义 SQL 即可实现同样的效果，还额外提供预览、回测以及按分组计算的基线。如果需要完全掌控基线的计算方式，或者使用的是 ClickStack 开源版，请采用下面的 SQL 方法。
+</Tip>
 
 ```sql
 WITH buckets AS (
@@ -321,7 +316,7 @@ WITH buckets AS (
     count() AS bucket_count
   FROM $__sourceTable
   WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
-        - toIntervalSecond($__interval_s * 30) -- 向前拉取 30 个时间间隔
+        - toIntervalSecond($__interval_s * 30) -- Fetch 30 intervals back
     AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
     AND SeverityText = 'error'
   GROUP BY ts
@@ -360,7 +355,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 请注意，该查询会在日期范围开始前拉取 30 个时间间隔的数据，为滚动窗口计算提供初始值，然后再将最终输出过滤为仅包含评估窗口的数据。
 
 <div id="common-alert-scenarios">
-  ## 常见告警场景
+  ## 常见告警场景 {#common-alert-scenarios}
 </div>
 
 以下是一些可在 HyperDX 中使用的常见告警场景：
@@ -374,3 +369,6 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 触发告警。
 
 **用户事件：** 你还可以为面向客户的团队设置告警，以便在有新用户注册或发生关键用户操作时收到通知。
+
+**异常变化：** 如果没有明确的阈值可用，例如错误计数因服务而异，或流量随时段不断变化，可以使用按
+`ServiceName` 分组的[异常检测告警](/zh/clickstack/features/anomaly-detection)。

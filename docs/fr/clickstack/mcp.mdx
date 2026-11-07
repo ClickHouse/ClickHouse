@@ -18,7 +18,7 @@ Vous pouvez ainsi utiliser des outils comme [Claude Code](https://docs.anthropic
 </Frame>
 
 <div id="availability">
-  ## Disponibilité
+  ## Disponibilité {#availability}
 </div>
 
 Le serveur MCP est disponible pour les types de déploiement ClickStack suivants :
@@ -37,20 +37,20 @@ Le serveur MCP est disponible pour les types de déploiement ClickStack suivants
 </Info>
 
 <div id="managed-clickstack">
-  ## ClickStack on ClickHouse Cloud
+  ## ClickStack on ClickHouse Cloud {#managed-clickstack}
 </div>
 
 ClickStack on ClickHouse Cloud se connecte via le MCP endpoint Cloud à `https://mcp.clickhouse.cloud/clickstack` et utilise OAuth 2.0 pour l’authentification. L’authentification par clé API n’est pas prise en charge pour ce endpoint.
 
 <div id="managed-prerequisites">
-  ### Prérequis
+  ### Prérequis {#managed-prerequisites}
 </div>
 
 * Un service ClickHouse Cloud en cours de fonctionnement avec [ClickStack activé](/fr/clickstack/deployment/managed)
 * [MCP activé](/fr/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) sur le service — ouvrez la console Cloud, cliquez sur **Connect**, sélectionnez **Connect with MCP**, puis activez-le
 
 <div id="managed-endpoint">
-  ### Endpoint
+  ### Endpoint {#managed-endpoint}
 </div>
 
 ```text
@@ -60,7 +60,7 @@ https://mcp.clickhouse.cloud/clickstack
 L’authentification utilise OAuth 2.0. Lorsque votre client MCP se connecte pour la première fois, une fenêtre de navigateur s’ouvre afin que vous puissiez vous connecter avec vos identifiants ClickHouse Cloud. Aucune clé API n’est nécessaire.
 
 <div id="managed-connecting-a-client">
-  ### Connexion d’un client MCP
+  ### Connexion d’un client MCP {#managed-connecting-a-client}
 </div>
 
 Chaque client gère automatiquement le flux OAuth lors de la première connexion.
@@ -137,20 +137,18 @@ Chaque client gère automatiquement le flux OAuth lors de la première connexion
 </Tabs>
 
 <div id="managed-service-override">
-  ### Cibler un service spécifique
+  ### Cibler un service spécifique {#managed-service-override}
 </div>
 
 Sans l’en-tête `x-service-id`, les requêtes sont dirigées par défaut vers le premier service ClickStack provisionné et utilisé par votre compte. Pour cibler un autre service, ajoutez `x-service-id: <YOUR_SERVICE_ID>` comme en-tête dans la configuration de votre client MCP.
 
 <div id="oss-byoc">
-  ## Open Source et BYOC
+  ## Open Source et BYOC {#oss-byoc}
 </div>
 
 Les déploiements Open Source et BYOC utilisent l&#39;endpoint MCP intégré de votre instance ClickStack avec une authentification par jeton Bearer.
 
-<div id="oss-prerequisites">
-  ### Prérequis
-</div>
+### Prérequis {#oss-prerequisites}
 
 * Une instance ClickStack active (voir [Déploiement](/fr/clickstack/deployment/overview) pour les options de déploiement)
 * Une **Personal API Access Key** — trouvez la vôtre dans HyperDX, sous **Team Settings → API Keys → Personal API Access Key**
@@ -162,7 +160,7 @@ Les déploiements Open Source et BYOC utilisent l&#39;endpoint MCP intégré de 
 </Note>
 
 <div id="oss-endpoint">
-  ### endpoint
+  ### endpoint {#oss-endpoint}
 </div>
 
 Le serveur MCP est disponible sur le chemin `/api/mcp` de l’URL du frontend ClickStack. Par exemple, avec un déploiement local par défaut, l’URL est `http://localhost:8080/api/mcp`. Remplacez `localhost:8080` par l’hôte et le port de votre instance si vous avez modifié les valeurs par défaut.
@@ -174,7 +172,7 @@ Le serveur MCP est disponible sur le chemin `/api/mcp` de l’URL du frontend Cl
 Le serveur MCP utilise le transport **Streamable HTTP** avec une authentification par **Bearer token**.
 
 <div id="managed-connecting-a-client">
-  ### Connexion d’un client MCP
+  ### Connexion d’un client MCP {#oss-connecting-a-client}
 </div>
 
 Remplacez `<YOUR_CLICKSTACK_URL>` par l’URL de votre instance (par exemple, `http://localhost:8080`) et `<YOUR_API_KEY>` par votre Personal API Access Key.
@@ -263,15 +261,15 @@ Remplacez `<YOUR_CLICKSTACK_URL>` par l’URL de votre instance (par exemple, `h
 </Tabs>
 
 <div id="capabilities">
-  ## Que pouvez-vous faire avec MCP ?
+  ## Que pouvez-vous faire avec MCP ? {#capabilities}
 </div>
 
-Une fois connecté, votre assistant IA a accès à un ensemble d’outils couvrant les principaux domaines de ClickStack. Il s’agit notamment de :
+Une fois connecté, votre assistant IA a accès à un ensemble d’outils couvrant les principaux domaines de ClickStack. Il s’agit notamment de :
 
 * **Interrogation des données** — Recherchez et agrégerez les logs, les traces et les métriques à l’aide du query builder de ClickStack, de la syntaxe de recherche ou de SQL brut.
 * **Sources de données** — Répertoriez les sources de données disponibles, les connexions aux bases de données, les schémas de colonnes et les clés d’attribut.
 * **Tableaux de bord** — Créez, mettez à jour, supprimez et inspectez les tableaux de bord ainsi que leurs tuiles.
-* **Alertes** — Créez, mettez à jour et inspectez les alertes, ainsi que leur historique d’évaluation.
+* **Alertes** — Créez, mettez à jour et inspectez les alertes, ainsi que leur historique d’évaluation. Lorsque la [détection d’anomalies](/fr/clickstack/features/anomaly-detection) est activée, les assistants peuvent également tester rétrospectivement les paramètres des alertes d’anomalie sur l’historique récent avant de les enregistrer.
 * **Recherches enregistrées** — Créez, mettez à jour et inspectez des définitions de recherches enregistrées réutilisables.
 * **Webhooks** — Répertoriez les destinations webhook disponibles pour les notifications d’alerte.
 * **Équipes** — Répertoriez les équipes auxquelles appartient l’utilisateur actuel et identifiez l’équipe active.
@@ -279,7 +277,7 @@ Une fois connecté, votre assistant IA a accès à un ensemble d’outils couvra
 L’ensemble des outils disponibles peut évoluer au fil du temps. Votre client MCP découvrira automatiquement les outils disponibles lors de la connexion.
 
 <div id="multi-team">
-  ## Utilisation par plusieurs équipes (OSS/BYOC)
+  ## Utilisation par plusieurs équipes (OSS/BYOC) {#multi-team}
 </div>
 
 Cela s&#39;applique uniquement aux déploiements Open Source et BYOC. Pour ClickStack on ClickHouse Cloud, voir [Cibler un service spécifique](#managed-service-override).
@@ -289,11 +287,11 @@ Par défaut, les requêtes MCP s&#39;exécutent dans le contexte de votre équip
 Utilisez l&#39;outil de liste des équipes de votre MCP client pour voir à quelles équipes vous avez accès et laquelle est active.
 
 <div id="troubleshooting">
-  ## Dépannage
+  ## Dépannage {#troubleshooting}
 </div>
 
 <div id="troubleshooting-managed">
-  ### ClickStack on ClickHouse Cloud
+  ### ClickStack on ClickHouse Cloud {#troubleshooting-managed}
 </div>
 
 <Accordion title="Le flux OAuth n’aboutit pas">
@@ -312,7 +310,7 @@ Utilisez l&#39;outil de liste des équipes de votre MCP client pour voir à quel
 </Accordion>
 
 <div id="troubleshooting-oss">
-  ### Open Source et BYOC
+  ### Open Source et BYOC {#troubleshooting-oss}
 </div>
 
 <Accordion title="J’obtiens une erreur d’authentification 403">

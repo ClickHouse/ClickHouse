@@ -98,6 +98,7 @@
         "ko/clickstack/features/event-patterns",
         "ko/clickstack/features/event-deltas",
         "ko/clickstack/features/alerts",
+        "ko/clickstack/features/anomaly-detection",
         "ko/clickstack/service-maps",
         "ko/clickstack/features/session-replay",
         "ko/clickstack/mcp",
@@ -109,6 +110,13 @@
             {
               "group": "2026",
               "pages": [
+                {
+                  "group": "10월",
+                  "pages": [
+                    "ko/clickstack/demo-days/2026/2026-10-08",
+                    "ko/clickstack/demo-days/2026/2026-10-01"
+                  ]
+                },
                 {
                   "group": "9월",
                   "pages": [
@@ -288,8 +296,8 @@
       "expanded": true,
       "group": "API 참조",
       "openapi": {
-        "directory": "ko/clickstack/api-reference",
-        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+        "directory": "ko/clickstack/api-reference"
       },
       "root": "ko/clickstack/api-reference"
     }

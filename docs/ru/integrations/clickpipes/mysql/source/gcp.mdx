@@ -11,18 +11,17 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
+import { CloudSQLIAMAuthentication } from "/snippets/ru/clickpipes/_cloudsql_iam_authentication.mdx";
 
 Это пошаговое руководство по настройке вашего экземпляра Cloud SQL for MySQL для репликации данных через ClickPipe для MySQL.
 
 <div id="enable-binlog-retention-gcp">
-  ## Включить хранение бинарного лога
+  ## Включить хранение бинарного лога {#enable-binlog-retention-gcp}
 </div>
 
 Бинарный лог — это набор файлов журнала, содержащих сведения об изменениях данных на сервере MySQL, и эти файлы необходимы для репликации.
 
-<div id="enable-binlog-logging-gcp">
-  ### Включите бинарное логирование через PITR
-</div>
+### Включите бинарное логирование через PITR {#enable-binlog-logging-gcp}
 
 Функция PITR определяет, включено ли бинарное логирование для MySQL в Google Cloud. Это можно настроить в консоли Cloud: откройте экземпляр Cloud SQL и прокрутите страницу вниз до показанного ниже раздела.
 
@@ -45,7 +44,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="Настройка флагов binlog в GCP" size="lg" border />
 
 <div id="configure-database-user-gcp">
-  ## Настройте пользователя базы данных
+  ## Настройте пользователя базы данных {#configure-database-user-gcp}
 </div>
 
 Подключитесь к своему экземпляру Cloud SQL MySQL от имени пользователя root и выполните следующие команды:
@@ -69,8 +68,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+## Использование аутентификации в базе данных через IAM (необязательно, бета) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="mysql" />
+
 <div id="configure-network-access-gcp-mysql">
-  ## Настройка сетевого доступа
+  ## Настройка сетевого доступа {#configure-network-access-gcp-mysql}
 </div>
 
 Если вы хотите ограничить доступ к своему экземпляру Cloud SQL, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в список разрешённых IP-адресов экземпляра Cloud SQL MySQL.
@@ -78,9 +81,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp" alt="Разрешённые IP-адреса в GCP MySQL" size="lg" border />
 
-<div id="download-root-ca-certificate-gcp-mysql">
-  ## Скачайте и используйте корневой CA‑сертификат
-</div>
+## Скачайте и используйте корневой CA‑сертификат {#download-root-ca-certificate-gcp-mysql}
 
 Чтобы подключиться к экземпляру Cloud SQL, необходимо скачать корневой CA‑сертификат.
 

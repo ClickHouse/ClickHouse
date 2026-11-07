@@ -4,7 +4,7 @@ title: 'ClickStack のアラート'
 sidebarTitle: 'アラート'
 description: 'ClickStack のアラート'
 doc_type: 'guide'
-keywords: ['ClickStack', 'オブザーバビリティ', 'アラート', 'search-alerts', '通知', 'しきい値', 'Slack', 'Email', 'PagerDuty', 'error-monitoring', 'performance-monitoring', 'user-events']
+keywords: ['ClickStack', 'オブザーバビリティ', 'アラート', 'search-alerts', 'anomaly-detection', '通知', 'しきい値', 'Slack', 'Email', 'PagerDuty', 'error-monitoring', 'performance-monitoring', 'user-events']
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
@@ -16,14 +16,17 @@ ClickStack にはアラート機能が標準で備わっており、チームは
 アラート機能は ClickStack 上のデータ全体でシームレスに機能し、システムヘルスの追跡、パフォーマンス低下の検出、重要なビジネスイベントの監視に役立ちます。
 
 <div id="types-of-alerts">
-  ## アラートの種類
+  ## アラートの種類 {#types-of-alerts}
 </div>
 
 ClickStack では、アラートを作成する方法として、互いを補完する 2 つの方式 **検索アラート** と **ダッシュボードチャートアラート** をサポートしています。アラートを作成すると、そのアラートは検索またはチャートのいずれかに紐付けられます。
 
-<div id="search-alerts">
-  ### 1. 検索アラート
-</div>
+各アラートでは、2 つの検出モードのいずれかを使用します。モードはアラートエディターの **Alert type** で選択します。
+
+* **Static threshold**: 値が指定した数値を超えたときに発報します。デフォルトのモードであり、本ページではこのモードについて説明します。
+* **Anomaly detection**(Managed ClickStack のみ): 直近の履歴から学習した想定範囲を値が外れたときに発報します。詳しくは [異常検知アラート](/ja/clickstack/features/anomaly-detection) を参照してください。
+
+### 1. 検索アラート {#search-alerts}
 
 検索アラートでは、保存済みの検索結果に基づいて通知をトリガーできます。これにより、特定のイベントやパターンの発生頻度が想定より高い場合や低い場合を検知できます。
 
@@ -58,9 +61,7 @@ ClickStack では、アラートを作成する方法として、互いを補完
 
 <Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="複数のアラート" size="md" />
 
-<div id="dashboard-alerts">
-  ### 2. ダッシュボードチャートアラート
-</div>
+### 2. ダッシュボードチャートアラート {#dashboard-alerts}
 
 ダッシュボードアラートは、チャートに対しても設定できます。
 
@@ -98,9 +99,7 @@ ClickStack では、アラートを作成する方法として、互いを補完
   </Step>
 </Steps>
 
-<div id="add-webhook">
-  ## webhook の追加
-</div>
+## webhook の追加 {#add-webhook}
 
 アラート の作成時には、既存の webhook を使用することも、新しく作成することもできます。作成した webhook は、ほかの アラート でも再利用できます。
 
@@ -119,7 +118,7 @@ webhook 名は必須で、説明は任意です。そのほかに必要な設定
 利用できるサービス種別は、ClickStack Open Source と ClickStack Cloud とで異なる点に注意してください。詳細は[サービス種別のインテグレーション](#integrations)を参照してください。
 
 <div id="integrations">
-  ### サービス種別別インテグレーション
+  ### サービス種別別インテグレーション {#integrations}
 </div>
 
 ClickStack の alerts は、標準で次のサービス種別と連携できます。
@@ -154,9 +153,7 @@ ClickStack の alerts は、標準で次のサービス種別と連携できま�
 * Webhook headers (任意)
 * Webhook ボディ (任意) 。現在、ボディではテンプレート変数 `{{title}}`、`{{body}}`、`{{link}}` をサポートしています。
 
-<div id="managing-alerts">
-  ## アラートの管理
-</div>
+## アラートの管理 {#managing-alerts}
 
 アラートは、HyperDX の左側にあるアラートパネルから一元管理できます。
 
@@ -177,9 +174,7 @@ ClickStack の alerts は、標準で次のサービス種別と連携できま�
 
 アラートをクリックすると、そのアラートが紐付けられているチャートまたは検索に移動します。
 
-<div id="deleting-alerts">
-  ### アラートの削除
-</div>
+### アラートの削除 {#deleting-alerts}
 
 アラートを削除するには、関連する Search またはチャートの編集ダイアログを開き、**Remove Alert** を選択します。
 以下の例では、`Remove Alert` ボタンをクリックすると、チャートからアラートが削除されます。
@@ -187,13 +182,13 @@ ClickStack の alerts は、標準で次のサービス種別と連携できま�
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="チャートのアラートの削除" size="lg" />
 
 <div id="sql-based-alerts">
-  ## SQLベースのチャートアラート
+  ## SQLベースのチャートアラート {#sql-based-alerts}
 </div>
 
 SQLベースのチャートアラートでは、任意の ClickHouse SQL を記述してアラート条件を定義できます。これにより、フィルタリング、集計、計算を含め、あらゆる処理を完全に制御できます。つまり、SQL で表現できるものはすべてアラートにできます。
 
 <div id="supported-chart-types">
-  ### サポートされているチャートタイプ
+  ### サポートされているチャートタイプ {#supported-chart-types}
 </div>
 
 SQL ベースのアラートは、次の 3 つのチャート表示タイプでサポートされています。
@@ -206,9 +201,7 @@ SQL ベースのアラートは、次の 3 つのチャート表示タイプで�
 
 その他の SQL ベースのチャートタイプ (テーブル、円グラフ、ヒートマップなど) はアラートをサポートしていません。
 
-<div id="create-sql-based-alert">
-  ### SQLアラートを作成する
-</div>
+### SQLアラートを作成する {#create-sql-based-alert}
 
 SQLベースのチャートにアラートを作成するには、次の手順を行います。
 
@@ -244,7 +237,7 @@ SQLベースのチャートにアラートを作成するには、次の手順�
 </Steps>
 
 <div id="sql-result-interpretation">
-  ### クエリ結果の解釈方法
+  ### クエリ結果の解釈方法 {#sql-result-interpretation}
 </div>
 
 アラートシステムは、しきい値と比較する対象を判断するために、SQLクエリが返すカラムを確認します。
@@ -254,13 +247,13 @@ SQLベースのチャートにアラートを作成するには、次の手順�
 * **グループカラム**: 数値カラムでもタイムスタンプカラムでもないカラム (例: `ServiceName`, `Environment`) は、グループ化の次元として扱われます。グループが存在する場合、グループ値の一意な組み合わせごとに個別に追跡され、それぞれに対してアラートが生成されます。ClickStack は、設定されたしきい値を超えた値を持つ各グループごとにアラートを送信します。グループは時系列チャートでのみ利用できます。
 
 <div id="query-params">
-  ### クエリパラメータとマクロ
+  ### クエリパラメータとマクロ {#query-params}
 </div>
 
 SQL アラートクエリでは、評価時に自動的に置き換えられるテンプレートパラメータとマクロをサポートしています。これらは、[SQL ベースのチャートを作成する](/ja/clickstack/features/dashboards/sql-visualizations)際に使用できるパラメータやマクロと同じものです。
 
 <div id="required-alert-parameters">
-  #### 必須および推奨パラメータ
+  #### 必須および推奨パラメータ {#required-alert-parameters}
 </div>
 
 Line グラフまたは Stacked Bar グラフのアラートに使用するクエリには、**必ず**インターバルパラメータまたはマクロ (`{intervalSeconds:Int64}`、`{intervalMilliseconds:Int64}`、`$__timeInterval(col)`、または `$__timeInterval_ms(col)`) を含める必要があります。アラートの実行時には、これらはアラートに設定された期間に置き換えられます。
@@ -274,11 +267,11 @@ Line グラフまたは Stacked Bar グラフのアラートに使用するク�
 </Warning>
 
 <div id="example-queries">
-  ### アラートクエリの例
+  ### アラートクエリの例 {#example-queries}
 </div>
 
 <div id="example-error-rate">
-  #### サービスごとのエラー率 (時系列)
+  #### サービスごとのエラー率 (時系列) {#example-error-rate}
 </div>
 
 いずれかのサービスのエラー率が 5% を超えた場合にアラートを発報します。また、トラフィックの少ないサービスでノイズの多いアラートが発生するのを避けるため、アラート期間内のリクエスト数が少なくとも 10 件あることを条件とします。
@@ -308,11 +301,13 @@ WHERE request_count > 10
 
 このクエリでは、`ServiceName` は数値カラムでもタイムスタンプのカラムでもないため、各サービスは個別のアラートグループとして扱われます。アラートはサービスごとに個別に発報されます。
 
-<div id="example-anomaly-detection">
-  #### ラグ付き平均による異常検知 (時系列)
-</div>
+#### ラグ付き平均による異常検知 (時系列) {#example-anomaly-detection}
 
 エラー数が移動平均を2標準偏差超えて上回った場合にアラートを発します。これにより、固定のしきい値ではなく、直近のベースライン動作に対するスパイクを検出できます。
+
+<Tip>
+  Managed ClickStack では、[異常検知アラート](/ja/clickstack/features/anomaly-detection) を使えばカスタム SQL を書かずに同じことを実現でき、さらにプレビュー、バックテスト、グループごとのベースラインも利用できます。ベースラインの計算を完全に制御したい場合や、ClickStack Open Source を使用している場合は、以下の SQL によるアプローチを使用してください。
+</Tip>
 
 ```sql
 WITH buckets AS (
@@ -321,7 +316,7 @@ WITH buckets AS (
     count() AS bucket_count
   FROM $__sourceTable
   WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
-        - toIntervalSecond($__interval_s * 30) -- 30インターバル分さかのぼって取得
+        - toIntervalSecond($__interval_s * 30) -- Fetch 30 intervals back
     AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
     AND SeverityText = 'error'
   GROUP BY ts
@@ -360,7 +355,7 @@ WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
 このクエリは、ローリングウィンドウ計算を初期化するために、日付範囲の開始*前*の30インターバルを取得し、その後、最終出力を評価ウィンドウのみに絞り込みます。
 
 <div id="common-alert-scenarios">
-  ## 一般的なアラートのシナリオ
+  ## 一般的なアラートのシナリオ {#common-alert-scenarios}
 </div>
 
 HyperDX で活用できる、一般的なアラートのシナリオをいくつか紹介します。
@@ -375,3 +370,7 @@ HyperDX で活用できる、一般的なアラートのシナリオをいくつ
 
 **ユーザーイベント:** 新規ユーザーの登録時や重要なユーザー操作が実行された際に、
 顧客対応チームへ通知されるようアラートを設定することもできます。
+
+**異常な変化:** サービスごとにエラー件数が異なる場合や、トラフィックが時間帯によって変動する場合など、明確なしきい値を決められないときは、
+`ServiceName` でグループ化した
+[異常検知アラート](/ja/clickstack/features/anomaly-detection)を使用してください。

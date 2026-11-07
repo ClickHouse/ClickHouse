@@ -147,7 +147,8 @@
             "ar/products/cloud/guides/security/saml-sso-removal",
             "ar/products/cloud/guides/security/cloud-access-management/scim-setup",
             "ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
-            "ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup"
+            "ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+            "ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id"
           ]
         }
       ]
@@ -301,8 +302,8 @@
         {
           "group": "مرجع واجهة برمجة التطبيقات",
           "openapi": {
-            "directory": "ar/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "ar/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

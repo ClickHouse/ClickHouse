@@ -11,7 +11,7 @@ doc_type: 'reference'
 터미널을 열려면 ClickHouse HTTP 포트의 `/webterminal`로 이동하십시오(예: `http://localhost:8123/webterminal`).
 
 <div id="enabling-the-feature">
-  ## 기능 활성화 및 비활성화
+  ## 기능 활성화 및 비활성화 {#enabling-the-feature}
 </div>
 
 `/webterminal` 엔드포인트는 기본적으로 활성화되어 있으며 `enable_webterminal` 서버 설정(server setting)으로 제어됩니다. 이를 비활성화하려면 해당 설정을 `false`로 지정하십시오. 그러면 `/webterminal` 요청에 대해 HTTP 상태 `403 Forbidden`이 반환됩니다.
@@ -26,9 +26,7 @@ doc_type: 'reference'
   `enable_webterminal`은 기존 `allow_experimental_webterminal` 설정을 대체합니다. `enable_webterminal`이 설정되지 않은 경우에는 하위 호환성을 위해 기존 이름도 계속 사용할 수 있습니다.
 </Note>
 
-<div id="authentication">
-  ## 인증
-</div>
+## 인증 {#authentication}
 
 웹 터미널은 HTTP 프로토콜과 동일한 `Session` 및 접근 제어 확인 절차를 사용해 사용자를 인증하지만, 자격 증명은 HTTP 업그레이드 요청을 통해 전달되는 것이 아니라 이미 설정된 WebSocket 연결 내에서 인밴드 방식으로 교환됩니다. WebSocket 핸드셰이크가 완료되면 브라우저는 첫 번째 메시지를 JSON으로 전송합니다:
 
@@ -43,7 +41,7 @@ doc_type: 'reference'
 잘못된 자격 증명이 제공되면 server가 코드 `1008`로 WebSocket 연결을 종료하고, 브라우저 UI는 자격 증명을 다시 입력하라는 메시지를 표시합니다.
 
 <div id="session">
-  ## 세션 화면
+  ## 세션 화면 {#session}
 </div>
 
 인증이 완료되면 서버는 의사 터미널에 연결된 `clickhouse-client`를 실행하고, 해당 입출력을 WebSocket을 통해 중계합니다. 이 세션은 다음을 포함해 `clickhouse-client`의 전체 기능을 지원합니다.
@@ -56,13 +54,13 @@ doc_type: 'reference'
 터미널 렌더링에는 [xterm.js](https://xtermjs.org/)를 사용합니다. 모든 리소스는 ClickHouse 바이너리 자체에서 제공되며, 서드파티 CDN은 로드되지 않습니다.
 
 <div id="play-integration">
-  ## `/play`과의 통합
+  ## `/play`과의 통합 {#play-integration}
 </div>
 
 [`/play`](/ko/concepts/features/interfaces/http) Web SQL UI에는 웹 터미널이 도킹 가능한 패널로 내장되어 있습니다. 사이드바의 터미널 아이콘으로 표시하거나 숨길 수 있으며, 쿼리 편집기가 비어 있을 때는 `~` 키를 누르십시오. `/play` 페이지는 로드 시점에 `/webterminal`의 사용 가능 여부를 감지하며, 엔드포인트를 사용할 수 없으면(예를 들어 `enable_webterminal`이 `false`로 설정된 경우) 터미널 컨트롤을 숨깁니다.
 
 <div id="docs-integration">
-  ## 문서 웹사이트 통합
+  ## 문서 웹사이트 통합 {#docs-integration}
 </div>
 
 이 문서 웹사이트는 페이지 하단의 좁은 개발자 트레이에 동일한 터미널을 내장하고 있으며, 읽기 전용 `play` 사용자로 [ClickHouse playground](https://play.clickhouse.com)에 연결됩니다. 따라서 어느 페이지에서나 페이지를 벗어나지 않고 예시를 실행해 볼 수 있습니다. 고정 트레이는 푸터 컨트롤을 가리지 않도록 페이지 하단에 그에 맞는 공간을 확보합니다. 터미널이 열려 있는 동안 문서 페이지는 잠기고 스크롤바는 숨겨집니다. 터미널 위에서 스크롤해도 터미널의 스크롤백 내에서만 스크롤되며, 뒤의 문서 페이지는 이동하지 않습니다. &quot;ClickHouse terminal&quot; 바를 클릭하거나 `~` 키를 눌러 바 위의 여백이 있는 패널을 여십시오. 바를 다시 클릭하거나 셰브론을 사용하거나 `~` 또는 `Escape`를 누르거나 패널의 상단 가장자리를 아래로 끌어 패널을 접을 수 있습니다. 이 상단 가장자리로 패널 크기도 조정할 수 있습니다. `exit` 또는 `Ctrl+D`로 세션을 종료하면 패널도 접힙니다.
@@ -72,7 +70,7 @@ doc_type: 'reference'
 터미널 트레이는 웹사이트의 데스크톱 레이아웃에 포함되며, 좁은 뷰포트에서는 사용할 수 없습니다.
 
 <div id="security">
-  ## 보안 고려 사항
+  ## 보안 고려 사항 {#security}
 </div>
 
 웹 터미널은 ClickHouse HTTP 엔드포인트에 인증할 수 있는 모든 사용자에게 대화형 셸 형태의 세션을 노출하므로, HTTP 프로토콜에 적용되는 동일한 주의 사항이 여기에도 적용됩니다.
@@ -82,10 +80,22 @@ doc_type: 'reference'
 * 이 엔드포인트는 교차 출처 WebSocket 하이재킹을 완화하기 위해 `Origin` 헤더를 `Host`와 대조하여 검증합니다. 외부에서 TLS를 종료하는 경우 이에 맞게 리버스 프록시를 구성하십시오.
 * TLS를 종료하는 리버스 프록시 뒤에서는 브라우저가 `https`를 사용하더라도 ClickHouse로의 업스트림 연결은 일반 `http`이므로, 엄격한 동일 출처 검사가 정상적인 연결을 거부하게 됩니다. 이러한 배포에서는 WebSocket 세션을 열 수 있도록 허용할 전체 origin 목록을 쉼표로 구분해 `webterminal_allowed_origins`에 설정하십시오. 이 설정이 비어 있지 않으면 기본 동일 출처 검사를 대체합니다. 예시: `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`.
 
-이 handler는 또한 RFC 6455에 따라 WebSocket 프로토콜 준수 여부를 강제합니다. 마스킹되지 않은 클라이언트 frame, 예약된 opcode, 과도하게 크거나 조각난 control frame, 그리고 예약된 RSV bit는 모두 프로토콜 오류 close code와 함께 거부됩니다.
+## 세션 제한 {#session-limits}
+
+각 웹 터미널 세션은 자체 스레드와 의사 터미널을 갖춘 내장 `clickhouse-client`를 실행합니다. 따라서 서버는 다른 인터페이스의 세션과 동일한 제한을 웹 터미널 세션에도 적용하며, 이 제한 값은 인증된 사용자의 설정을 따릅니다.
+
+* [`max_sessions_for_user`](/ko/reference/settings/session-settings/max#max_sessions_for_user)는 사용자의 동시 세션 수를 제한합니다. 제한을 초과한 세션은 내장 클라이언트가 시작되기 전에 거부되며, 서버는 코드 `1008`로 WebSocket을 닫습니다.
+* [`idle_connection_timeout`](/ko/reference/settings/session-settings/other#idle_connection_timeout)은 native protocol과 마찬가지로, 내장 클라이언트가 다음 쿼리를 기다리는 동안 양방향 트래픽이 지정된 시간(초) 동안 전혀 없으면 세션을 닫습니다. 실행 중인 쿼리는 출력이 없더라도 이 타임아웃으로 중단되지 않습니다.
+* [`receive_timeout`](/ko/reference/settings/session-settings/receive#receive_timeout) 및 [`send_timeout`](/ko/reference/settings/session-settings/send#send_timeout)은 클라이언트로부터 WebSocket 프레임을 읽는 시간과 클라이언트로 데이터를 전송하는 시간을 제한합니다. 값을 `0`으로 지정하면 타임아웃이 비활성화됩니다.
+
+터미널에서 `SET` 쿼리로 이 설정을 변경하면, 해당 쿼리가 완료되고 내장 클라이언트가 프롬프트로 돌아온 시점부터 적용됩니다.
+
+이 세션은 다른 인터페이스의 연결과 함께 서버 전체의 [`max_connections`](/ko/reference/settings/server-settings/settings/max#max_connections) 제한에도 집계됩니다.
+
+또한 핸들러는 RFC 6455에 따라 WebSocket 프로토콜 준수 여부를 엄격하게 검사합니다. 마스킹되지 않은 클라이언트 프레임, 예약된 opcode, 크기를 초과하거나 분할된 제어 프레임, 예약된 RSV 비트는 프로토콜 오류 종료 코드와 함께 거부됩니다.
 
 <div id="platform">
-  ## 플랫폼 지원
+  ## 플랫폼 지원 {#platform}
 </div>
 
 이 핸들러는 ClickHouse가 지원하는 모든 플랫폼에서 컴파일됩니다. 내장된 `clickhouse-client` 실행기에 사용되는 의사 터미널 계층은 이식 가능한 POSIX 기본 요소(`posix_openpt`/`grantpt`/`unlockpt`)를 기반으로 구현되며, Linux 전용 경로에서는 스레드 안전한 `ptsname_r`를 사용합니다. 엔드포인트를 사용할 수 없으면(예: `enable_webterminal`이 `false`로 설정된 경우) ClickHouse 시작 페이지와 `/play`의 `/webterminal` 링크가 자동으로 숨겨집니다.

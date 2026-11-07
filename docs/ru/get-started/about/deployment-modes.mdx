@@ -27,9 +27,7 @@ ClickHouse — универсальная система управления б
   <iframe src="https://www.youtube.com/embed/EOXEW_-r10A?si=6IanDSJlRzN8f9Mo" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<div id="clickhouse-server">
-  ## ClickHouse Server
-</div>
+## ClickHouse Server {#clickhouse-server}
 
 ClickHouse Server использует традиционную клиент-серверную архитектуру и идеально подходит для промышленной эксплуатации. Этот режим развертывания предоставляет все возможности OLAP-базы данных, которыми известен ClickHouse: высокую пропускную способность и низкую задержку при выполнении запросов.
 
@@ -42,7 +40,7 @@ ClickHouse Server использует традиционную клиент-с�
 Этот режим развертывания — оптимальный выбор для производственных сред, где критически важны надежность, производительность и полный доступ ко всем возможностям.
 
 <div id="clickhouse-cloud">
-  ## ClickHouse Cloud
+  ## ClickHouse Cloud {#clickhouse-cloud}
 </div>
 
 [ClickHouse Cloud](/ru/products/cloud/getting-started/intro) — это полностью управляемая версия ClickHouse, которая избавляет от необходимости самостоятельно сопровождать развертывание. Сохраняя все основные возможности ClickHouse Server, она дополняет их функциями, которые упрощают разработку и эксплуатацию.
@@ -57,29 +55,25 @@ SQL Console в ClickHouse Cloud включает мощную функцию [п
 
 Поскольку сервис является управляемым, вам не нужно беспокоиться об обновлениях, резервных копиях, масштабировании или исправлениях безопасности — всё это выполняется автоматически. Это делает его отличным выбором для организаций, которые хотят сосредоточиться на данных и приложениях, а не на администрировании базы данных.
 
-<div id="clickhouse-cli">
-  ## ClickHouse CLI
-</div>
+## ClickHouse CLI {#clickhouse-cli}
 
-ClickHouse CLI (`clickhousectl`) — это инструмент командной строки для локальной разработки с ClickHouse и управления ClickHouse Cloud. Он упрощает установку разных версий ClickHouse, запуск и управление локальными экземплярами сервера, а также выполнение запросов.
+[ClickHouse CLI](/ru/concepts/features/interfaces/cli) (`clickhousectl`, псевдоним `chctl`) — это инструмент командной строки для локальной разработки с ClickHouse и Postgres, а также для управления ClickHouse Cloud. Он устанавливает версии ClickHouse, запускает локальные серверы и управляет ими, а также выполняет запросы.
 
-Для локальной разработки `clickhousectl` помогает устанавливать версии ClickHouse и запускать серверы. Вы можете установить любую версию ClickHouse, запускать именованные серверы и подключаться через встроенный клиент. Каждый сервер получает собственный каталог данных, поэтому можно одновременно запускать несколько изолированных сред.
+Для локальной разработки `clickhousectl` устанавливает любую версию ClickHouse и запускает именованные серверы. Для подключения используйте `clickhousectl local client` — эта команда запускает `clickhouse-client` соответствующей версии. Каждый сервер хранит данные в каталоге проекта `.clickhouse/`, поэтому можно параллельно запускать несколько изолированных окружений. Если запущен Docker, команда `clickhousectl local postgres` точно так же запускает локальные серверы Postgres.
 
-`clickhousectl` также предоставляет полное управление ресурсами ClickHouse Cloud, включая создание и масштабирование сервисов, управление ключами API и администрирование организаций, что делает его единым инструментом как для локальных, так и для облачных рабочих процессов.
+Кроме того, `clickhousectl` управляет облачными ресурсами ClickHouse Cloud: сервисами, масштабированием, резервными копиями, Managed Postgres, ClickPipes, Управляемым ClickStack, ключами API и организациями. Вход через браузер (`clickhousectl cloud auth login`) даёт доступ только для чтения; для создания или изменения ресурсов нужен ключ API.
 
 ```bash
-# Install the CLI
-curl https://clickhouse.com/cli | sh
+# Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
+curl -fsSL https://clickhouse.com/cli | sh
 
-# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
 clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client
 ```
 
-<div id="clickhouse-local">
-  ## clickhouse-local
-</div>
+## clickhouse-local {#clickhouse-local}
 
 [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) — это мощный инструмент командной строки, который предоставляет всю функциональность ClickHouse в виде автономного исполняемого файла. По сути, это та же база данных, что и ClickHouse Server, но в таком формате, который позволяет использовать все возможности ClickHouse прямо из командной строки без запуска экземпляра сервера.
 
@@ -91,9 +85,7 @@ clickhousectl local client
 
 Сочетание удалённых табличных функций и доступа к локальной файловой системе делает clickhouse-local особенно полезным в сценариях, где нужно выполнять JOIN между данными в ClickHouse Server и файлами на локальной машине. Это особенно важно при работе с конфиденциальными или временными локальными данными, которые вы не хотите загружать на сервер.
 
-<div id="chdb">
-  ## chDB
-</div>
+## chDB {#chdb}
 
 [chDB](/ru/chdb/index) — это ClickHouse, встроенный в приложение как внутрипроцессный движок базы данных; основная реализация доступна для Python, но он также поддерживается в Go, Rust, NodeJS и Bun. Этот вариант развертывания переносит мощные OLAP-возможности ClickHouse непосредственно в процесс вашего приложения, устраняя необходимость в отдельной установке базы данных.
 

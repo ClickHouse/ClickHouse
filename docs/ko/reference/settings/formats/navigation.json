@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "포맷 설정",
+  "root": "ko/reference/settings/formats",
+  "directory": "none",
   "pages": [
     "ko/reference/settings/formats/bool",
     "ko/reference/settings/formats/date-time",
@@ -19,6 +20,5 @@
     "ko/reference/settings/formats/show-create",
     "ko/reference/settings/formats/type-json",
     "ko/reference/settings/formats/other"
-  ],
-  "root": "ko/reference/settings/formats"
+  ]
 }

@@ -11,20 +11,19 @@ integration:
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
+import { CloudSQLIAMAuthentication } from "/snippets/zh/clickpipes/_cloudsql_iam_authentication.mdx";
 
 <Info>
   如果你使用的是受支持的提供商之一 (见侧边栏) ，请参阅该提供商对应的专门指南。
 </Info>
 
 <div id="supported-postgres-versions">
-  ## 支持的 Postgres 版本
+  ## 支持的 Postgres 版本 {#supported-postgres-versions}
 </div>
 
 Postgres 12 及更高版本
 
-<div id="enable-logical-replication">
-  ## 启用逻辑复制
-</div>
+## 启用逻辑复制 {#enable-logical-replication}
 
 如果设置 `cloudsql. logical_decoding` 已开启，则**无需**执行以下步骤。如果你是从其他数据复制工具迁移而来，通常此设置已预先配置好。
 
@@ -38,9 +37,7 @@ Postgres 12 及更高版本
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="重启服务器" size="lg" border />
 
-<div id="creating-clickpipes-user-and-granting-permissions">
-  ## 创建 ClickPipes 用户并授予权限
-</div>
+## 创建 ClickPipes 用户并授予权限 {#creating-clickpipes-user-and-granting-permissions}
 
 使用管理员用户连接到您的 Cloud SQL Postgres，并运行以下命令：
 
@@ -67,7 +64,7 @@ Postgres 12 及更高版本
 4. 使用您要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议仅在 publication 中包含您实际需要的表，以避免额外的性能开销。
 
 <Warning>
-  凡是包含在 publication 中的表，都必须**定义主键**，&#95;或者&#95;将其**副本标识**配置为 `FULL`。有关如何界定范围的指导，请参阅 [Postgres FAQs](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+  凡是包含在 publication 中的表，都必须**定义主键**，*或者*将其**副本标识**配置为 `FULL`。有关如何界定范围的指导，请参阅 [Postgres FAQs](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
 </Warning>
 
 * 为特定表创建 publication：
@@ -76,19 +73,21 @@ Postgres 12 及更高版本
   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
   ```
 
-  * 为特定 schema 中的所有表创建 publication：
+* 为特定 schema 中的所有表创建 publication：
 
-    ```sql
-    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
-    ```
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+  ```
 
 `clickpipes` publication 定义了将流式传输到 ClickPipes 的表的变更事件集合。除非您打算复制所有表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
+## 使用 IAM 数据库身份验证 (可选，Beta) {#iam-database-authentication}
+
+<CloudSQLIAMAuthentication engine="postgres" />
+
 [//]: # "TODO 添加 SSH 隧道"
 
-<div id="add-clickpipes-ips-to-firewall">
-  ## 将 ClickPipes IP 添加到防火墙
-</div>
+## 将 ClickPipes IP 添加到防火墙 {#add-clickpipes-ips-to-firewall}
 
 请按以下步骤将 ClickPipes IP 添加到您的网络中。
 
@@ -111,7 +110,7 @@ Postgres 12 及更高版本
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="已将 ClickPipes 网络添加到防火墙" size="lg" border />
 
 <div id="whats-next">
-  ## 下一步是什么？
+  ## 下一步是什么？ {#whats-next}
 </div>
 
 您现在可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。

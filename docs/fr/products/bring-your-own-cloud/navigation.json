@@ -54,6 +54,7 @@
         {
           "group": "Mode connecteur",
           "hidden": true,
+          "tag": "Preview",
           "pages": [
             "fr/products/bring-your-own-cloud/connector/overview",
             "fr/products/bring-your-own-cloud/connector/onboarding",
@@ -68,8 +69,7 @@
             "fr/products/bring-your-own-cloud/connector/reference/configuration",
             "fr/products/bring-your-own-cloud/connector/reference/faq",
             "fr/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ],
-          "tag": "Preview"
+          ]
         }
       ]
     }

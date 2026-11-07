@@ -183,6 +183,7 @@
           "pages": [
             "es/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "es/integrations/connectors/data-ingestion/community-integrations/erathos",
+            "es/integrations/connectors/data-ingestion/community-integrations/sqlflow",
             {
               "group": "Estuary",
               "pages": [
@@ -218,6 +219,7 @@
         "es/integrations/connectors/sql-clients/dbeaver",
         "es/integrations/connectors/sql-clients/dbvisualizer",
         "es/integrations/connectors/sql-clients/jupysql",
+        "es/integrations/connectors/sql-clients/libredb-studio",
         "es/integrations/connectors/sql-clients/probedeck",
         "es/integrations/connectors/sql-clients/qstudio",
         "es/integrations/connectors/sql-clients/tablum",

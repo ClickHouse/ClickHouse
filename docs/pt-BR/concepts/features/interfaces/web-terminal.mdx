@@ -11,7 +11,7 @@ O terminal web é uma interface no navegador que fornece uma sessão interativa 
 Navegue até `/webterminal` em qualquer porta HTTP do ClickHouse (por exemplo, `http://localhost:8123/webterminal`) para abrir o terminal.
 
 <div id="enabling-the-feature">
-  ## Habilitando e desabilitando a funcionalidade
+  ## Habilitando e desabilitando a funcionalidade {#enabling-the-feature}
 </div>
 
 O endpoint `/webterminal` vem habilitado por padrão e é controlado pela configuração do servidor `enable_webterminal`. Para desabilitá-lo, defina a configuração como `false`; as requisições para `/webterminal` passarão a retornar o status HTTP `403 Forbidden`.
@@ -26,9 +26,7 @@ O endpoint `/webterminal` vem habilitado por padrão e é controlado pela config
   `enable_webterminal` substitui a antiga configuração `allow_experimental_webterminal`. O nome antigo ainda é aceito por questão de compatibilidade retroativa quando `enable_webterminal` não está definido.
 </Note>
 
-<div id="authentication">
-  ## Autenticação
-</div>
+## Autenticação {#authentication}
 
 O terminal web autentica o usuário com as mesmas verificações de `Session` e de controle de acesso do protocolo HTTP, mas as credenciais são transmitidas pelo próprio canal da conexão WebSocket já estabelecida, em vez de pela solicitação de upgrade HTTP. Após a conclusão do handshake do WebSocket, o navegador envia a primeira mensagem em JSON:
 
@@ -43,7 +41,7 @@ Isso evita colocar credenciais em parâmetros de consulta da URL ou em cabeçalh
 Credenciais inválidas fazem o servidor fechar o WebSocket com o código `1008`; a interface do navegador solicita as credenciais novamente.
 
 <div id="session">
-  ## Como funciona a sessão
+  ## Como funciona a sessão {#session}
 </div>
 
 Após a autenticação, o servidor executa o `clickhouse-client` conectado a um pseudoterminal e encaminha sua entrada e saída via WebSocket. A sessão oferece a experiência completa do `clickhouse-client`, incluindo:
@@ -56,13 +54,13 @@ Após a autenticação, o servidor executa o `clickhouse-client` conectado a um 
 O terminal usa [xterm.js](https://xtermjs.org/) para renderização. Todos os recursos são fornecidos pelo próprio binário do ClickHouse — nenhum CDN de terceiros é carregado.
 
 <div id="play-integration">
-  ## Integração com `/play`
+  ## Integração com `/play` {#play-integration}
 </div>
 
 A interface Web SQL [`/play`](/pt-BR/concepts/features/interfaces/http) incorpora o terminal web como um painel acoplável. Ative-o pelo ícone de terminal na barra lateral ou pressione a tecla `~` quando o editor de consulta estiver vazio. A página `/play` detecta a disponibilidade de `/webterminal` ao carregar e oculta os controles do terminal quando o endpoint não está disponível (por exemplo, quando `enable_webterminal` está definido como `false`).
 
 <div id="docs-integration">
-  ## Integração com o site de documentação
+  ## Integração com o site de documentação {#docs-integration}
 </div>
 
 Este site de documentação incorpora o mesmo terminal em uma barra estreita para desenvolvedores na parte inferior da página, conectado ao [ClickHouse playground](https://play.clickhouse.com) como o usuário `play`, somente leitura, para que seja possível testar os exemplos de qualquer página sem sair dela. A barra fixa reserva um espaço correspondente no fim da página para não ocultar os controles do rodapé. Enquanto o terminal está aberto, a página de documentação fica bloqueada e sua barra de rolagem é ocultada. A rolagem sobre o terminal fica restrita ao seu histórico e não move a página de documentação por trás dele. Clique na barra &quot;ClickHouse terminal&quot; ou pressione a tecla `~` para abrir o painel com preenchimento acima da barra. Clique novamente na barra, use o chevron, pressione `~` ou `Escape`, ou arraste a borda superior do painel para baixo para recolhê-lo; essa borda também permite redimensioná-lo. Encerrar a sessão — `exit` ou `Ctrl+D` — também recolhe o painel.
@@ -72,7 +70,7 @@ Ao fechar o painel, a sessão e seu histórico são mantidos: ao reabrir o termi
 A barra do terminal faz parte do layout para desktop do site e não está disponível em viewports estreitos.
 
 <div id="security">
-  ## Considerações de segurança
+  ## Considerações de segurança {#security}
 </div>
 
 O terminal web expõe uma sessão interativa semelhante a um shell para qualquer pessoa que consiga se autenticar no endpoint HTTP do ClickHouse, portanto as mesmas ressalvas aplicáveis ao protocolo HTTP também se aplicam aqui:
@@ -82,10 +80,22 @@ O terminal web expõe uma sessão interativa semelhante a um shell para qualquer
 * O endpoint valida o cabeçalho `Origin` em relação ao `Host` para mitigar o sequestro de WebSocket entre origens; configure os proxies reversos adequadamente se você encerrar o TLS externamente.
 * Por trás de um proxy reverso que encerra TLS, a conexão upstream com o ClickHouse usa `http` simples, embora o navegador use `https`; por isso, a verificação estrita de mesma origem rejeitaria conexões legítimas. Para essas implantações, defina `webterminal_allowed_origins` como uma lista, separada por vírgulas, de origens completas autorizadas a abrir sessões WebSocket; quando essa configuração não está vazia, ela substitui a verificação padrão de mesma origem. Exemplo: `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`.
 
-O handler também impõe conformidade com o protocolo WebSocket de acordo com a RFC 6455: frames de cliente sem máscara, opcodes reservados, frames de controle grandes demais ou fragmentados e bits RSV reservados são rejeitados com códigos de fechamento por erro de protocolo.
+## Limites de sessão {#session-limits}
+
+Cada sessão do terminal web executa um `clickhouse-client` embutido com sua própria thread e seu próprio pseudoterminal, de modo que o servidor aplica a ela os mesmos limites aplicados às sessões de outras interfaces, com base nas configurações do usuário autenticado:
+
+* [`max_sessions_for_user`](/pt-BR/reference/settings/session-settings/max#max_sessions_for_user) limita o número de sessões simultâneas do usuário. Uma sessão que exceda o limite é rejeitada antes que o cliente embutido seja iniciado, e o servidor fecha o WebSocket com o código `1008`.
+* [`idle_connection_timeout`](/pt-BR/reference/settings/session-settings/other#idle_connection_timeout) encerra uma sessão após o número especificado de segundos sem tráfego em nenhuma das direções enquanto o cliente embutido aguarda a próxima consulta, assim como no protocolo nativo. Uma consulta em execução não é interrompida por esse tempo limite, mesmo que não produza nenhuma saída.
+* [`receive_timeout`](/pt-BR/reference/settings/session-settings/receive#receive_timeout) e [`send_timeout`](/pt-BR/reference/settings/session-settings/send#send_timeout) limitam o tempo de leitura de um quadro WebSocket recebido do cliente e de envio de dados ao cliente. O valor `0` desativa o tempo limite.
+
+Alterações nessas configurações feitas com uma consulta `SET` no terminal entram em vigor quando a consulta termina e o cliente embutido volta ao prompt.
+
+As sessões também contam para o limite global do servidor [`max_connections`](/pt-BR/reference/settings/server-settings/settings/max#max_connections), juntamente com as conexões de outras interfaces.
+
+O handler também garante a conformidade com o protocolo WebSocket, conforme a RFC 6455: quadros do cliente sem máscara, opcodes reservados, quadros de controle grandes demais ou fragmentados e bits RSV reservados são rejeitados com códigos de fechamento de erro de protocolo.
 
 <div id="platform">
-  ## Disponibilidade da plataforma
+  ## Disponibilidade da plataforma {#platform}
 </div>
 
 O handler é compilado em todas as plataformas suportadas pelo ClickHouse. A camada de pseudoterminal usada pelo executor integrado do `clickhouse-client` é implementada com base em primitivas POSIX portáveis (`posix_openpt`/`grantpt`/`unlockpt`), com uma implementação específica para Linux que usa o `ptsname_r`, que é seguro para threads. Os links para `/webterminal` na página inicial do ClickHouse e em `/play` ficam ocultos automaticamente quando o endpoint não está disponível (por exemplo, quando `enable_webterminal` está definido como `false`).

@@ -1,6 +1,6 @@
 {
-  "directory": "none",
   "group": "Configurações do servidor",
+  "directory": "none",
   "pages": [
     "pt-BR/reference/settings/server-settings/settings",
     "pt-BR/reference/settings/server-settings/settings/access-control",
@@ -38,6 +38,7 @@
     "pt-BR/reference/settings/server-settings/settings/encryption-header",
     "pt-BR/reference/settings/server-settings/settings/format",
     "pt-BR/reference/settings/server-settings/settings/global-profiler",
+    "pt-BR/reference/settings/server-settings/settings/gpu",
     "pt-BR/reference/settings/server-settings/settings/graphite",
     "pt-BR/reference/settings/server-settings/settings/http",
     "pt-BR/reference/settings/server-settings/settings/http-connections",
@@ -112,6 +113,7 @@
     "pt-BR/reference/settings/server-settings/settings/skip",
     "pt-BR/reference/settings/server-settings/settings/snapshot-cleaner",
     "pt-BR/reference/settings/server-settings/settings/startup",
+    "pt-BR/reference/settings/server-settings/settings/statistics-cache",
     "pt-BR/reference/settings/server-settings/settings/storage",
     "pt-BR/reference/settings/server-settings/settings/storage-connections",
     "pt-BR/reference/settings/server-settings/settings/tables-loader",

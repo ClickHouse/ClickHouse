@@ -1,6 +1,6 @@
 {
-  "directory": "none",
   "group": "Настройки сервера",
+  "directory": "none",
   "pages": [
     "ru/reference/settings/server-settings/settings",
     "ru/reference/settings/server-settings/settings/access-control",
@@ -38,6 +38,7 @@
     "ru/reference/settings/server-settings/settings/encryption-header",
     "ru/reference/settings/server-settings/settings/format",
     "ru/reference/settings/server-settings/settings/global-profiler",
+    "ru/reference/settings/server-settings/settings/gpu",
     "ru/reference/settings/server-settings/settings/graphite",
     "ru/reference/settings/server-settings/settings/http",
     "ru/reference/settings/server-settings/settings/http-connections",
@@ -112,6 +113,7 @@
     "ru/reference/settings/server-settings/settings/skip",
     "ru/reference/settings/server-settings/settings/snapshot-cleaner",
     "ru/reference/settings/server-settings/settings/startup",
+    "ru/reference/settings/server-settings/settings/statistics-cache",
     "ru/reference/settings/server-settings/settings/storage",
     "ru/reference/settings/server-settings/settings/storage-connections",
     "ru/reference/settings/server-settings/settings/tables-loader",
