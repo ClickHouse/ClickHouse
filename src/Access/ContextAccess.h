@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <Access/AccessRights.h>
 #include <Access/ContextAccessParams.h>
+#include <Access/EnabledRoles.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Core/UUID.h>
@@ -21,7 +22,6 @@ namespace DB
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct EnabledRolesInfo;
-class EnabledRoles;
 class EnabledRowPolicies;
 class EnabledQuota;
 class EnabledSettings;
@@ -30,6 +30,7 @@ struct Settings;
 struct SettingsProfilesInfo;
 class SettingsChanges;
 class AccessControl;
+struct ImplicitExpansionSettings;
 struct IAccessEntity;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
@@ -151,7 +152,7 @@ public:
     /// at all, without disclosing through the error message what it would have seen).
     bool isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view filter) const;
 
-    static AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control);
+    static AccessRights addImplicitAccessRights(const AccessRights & access, const ImplicitExpansionSettings & settings);
 
     ContextAccess(const AccessControl & access_control_, const Params & params_);
     ~ContextAccess();
@@ -218,7 +219,7 @@ private:
     mutable scope_guard subscription_for_user_change TSA_GUARDED_BY(mutex);
     mutable scope_guard subscription_for_initial_user_change TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRoles> enabled_roles TSA_GUARDED_BY(mutex);
-    mutable scope_guard subscription_for_roles_changes TSA_GUARDED_BY(mutex);
+    mutable EnabledRoles::Subscription subscription_for_roles_changes TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRolesInfo> roles_info TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const AccessRights> access TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const AccessRights> access_with_implicit TSA_GUARDED_BY(mutex);
