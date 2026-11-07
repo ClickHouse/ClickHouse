@@ -1,0 +1,78 @@
+--- 1: disabled by default
+SUPPORT_IS_DISABLED
+--- 2: the grants of a role are shown for the user, filtered by the query
+GRANT SELECT(column1) ON default.mytable1 TO u1
+--- 3: column-level grant
+GRANT SELECT(a) ON default.t2 TO u2
+--- 4: no relevant grant
+--- 5: JOIN, IN subquery and scalar subquery
+GRANT SELECT(a) ON default.t2 TO u2
+GRANT SELECT(x, y) ON default.t3 TO u2 WITH GRANT OPTION
+--- 5b: the pipeline of the query is not executed
+GRANT SELECT(a) ON default.t2 TO u2
+--- 5c: the settings of the query and of the session apply as when the query runs
+GRANT SELECT(a) ON default.t2 TO u2
+GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
+GRANT SELECT(a) ON default.t2 TO u2
+GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
+GRANT SELECT(a) ON default_1.t2 TO u1
+GRANT SELECT(a) ON default.t2 TO u2
+GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
+GRANT SELECT(x) ON default.t3 TO u1
+GRANT SELECT(a) ON default_1.t2 TO u1
+--- 6: trivial count
+GRANT SELECT(a) ON default.t2 TO u2
+--- 6b: Alias table
+GRANT SELECT(a, b) ON default.al TO u4
+GRANT SELECT(a) ON default.t2 TO u4
+GRANT SELECT(a) ON default.al TO u4
+GRANT SELECT(a) ON default.t2 TO u4
+--- 7: table function with a source
+GRANT CREATE TEMPORARY TABLE ON *.* TO u5
+GRANT FILE ON *.* TO u5
+--- 7b: a source grant with a filter: every filter of the source is shown
+GRANT CREATE TEMPORARY TABLE ON *.* TO u10
+GRANT READ ON URL(`http://127.0.0.1:1/a.*`) TO u10
+GRANT READ ON URL(`http://127.0.0.1:1/b.*`) TO u10
+--- 8: WITH GRANT OPTION is kept
+GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
+--- 9: SQL SECURITY INVOKER view, SQL SECURITY DEFINER view
+GRANT SELECT(a) ON default.t2 TO u4
+GRANT SELECT(a) ON default.vi TO u4
+GRANT SELECT(a) ON default.vd TO u4
+--- 9c: Merge table
+GRANT SELECT ON default.m TO u7
+GRANT SELECT(a) ON default.t2 TO u7
+--- 10: view inlining, as a session setting and in the query
+GRANT SELECT(a) ON default.t2 TO u4
+GRANT SELECT(a, b) ON default.vi TO u4
+GRANT SELECT(a) ON default.t2 TO u4
+GRANT SELECT(a, b) ON default.vi TO u4
+--- 11: several users
+GRANT SELECT(a) ON default.t2 TO u2
+GRANT SELECT(a) ON default.t2 TO u4
+--- 12: the query is analyzed with the access of the current user
+GRANT SELECT(a) ON default.t2 TO u2
+ACCESS_DENIED
+ACCESS_DENIED
+--- 13: formatting
+SHOW GRANTS FOR QUERY SELECT 1	1
+SHOW GRANTS FOR u1 WITH IMPLICIT FINAL FOR QUERY SELECT a FROM t2	1
+SHOW GRANTS FOR QUERY SELECT 1 FORMAT TSV SETTINGS max_threads = 1	1
+SHOW GRANTS FOR query	1
+SHOW GRANTS FOR query FOR QUERY SELECT 1	1
+GRANT SELECT(dummy) ON system.one TO u3
+--- 14: dictionary table
+GRANT dictGet ON default.d TO u6
+--- 14b: a check denied for the current user still selects the grants of the target
+GRANT dictGet ON default.d TO u6
+--- 14c: partial revokes are shown as with FINAL
+GRANT SELECT ON default.d TO u8
+REVOKE SELECT(v2) ON default.d FROM u8
+GRANT SELECT ON default.d TO u8
+REVOKE SELECT(v2) ON default.d FROM u8
+--- 15: dictGet
+GRANT dictGet ON default.d TO u6
+--- 16: traceView, with a check that only its internal queries make
+GRANT SELECT ON system.opentelemetry_span_log TO u9
+GRANT SELECT(a) ON default.t2 TO u9

@@ -10904,6 +10904,10 @@ transaction on this replica. On expiry they throw `TIMEOUT_EXCEEDED`.
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_show_grants_for_query, false, R"(
+Allows the `FOR QUERY <select_query>` clause of `SHOW GRANTS`, which shows only the grants that the access checks of the given `SELECT` query consult.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting"}) \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
 Initial number of grace hash join buckets
 )", EXPERIMENTAL) \
