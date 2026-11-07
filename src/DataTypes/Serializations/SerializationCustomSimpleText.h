@@ -19,6 +19,8 @@ public:
     SerializationCustomSimpleText() = delete;
     explicit SerializationCustomSimpleText(const SerializationPtr & nested_);
 
+    bool supportsRowRanges() const override { return nested_serialization->supportsRowRanges(); }
+
     // Methods that subclasses must override in order to get full serialization/deserialization support.
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;
     /// whole = true means that buffer contains only one value, so we should read until EOF.

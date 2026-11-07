@@ -24,6 +24,7 @@ public:
     static bool isElementSubcolumn(const SubstreamPath & path, const String & element_name);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
+    bool supportsRowRanges() const override;
 
     /// Wrap each tuple element into the layout its serialization deserializes into (e.g. a sparse element).
     MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
