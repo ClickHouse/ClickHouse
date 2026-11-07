@@ -769,6 +769,8 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsSubcolumnCodecs() const override { return true; }
 
+    bool hasBucketedMapSerialization() const override;
+
     bool supportsTTL() const override { return true; }
 
     bool supportsStatistics() const override { return true; }
@@ -927,6 +929,11 @@ public:
     /// parts outside `Transaction::renameParts` (insert, merge, mutation) use it to decide
     /// whether to arm the transaction's publish fence (`Transaction::setPublishFenceEpoch`).
     virtual bool hasLeaderElection() const { return false; }
+
+    /// Removes the snapshot of this table from the query-scoped snapshot cache of
+    /// `enable_shared_storage_snapshot_in_query`, so that the next `getStorageSnapshot` in the query
+    /// takes a fresh one. Holders of the removed snapshot keep it.
+    void discardSharedStorageSnapshot(const ContextPtr & query_context) const;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);

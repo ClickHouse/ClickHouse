@@ -50,6 +50,7 @@ static struct InitFiu
     REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(merge_tree_marks_load_sync_sleep) \
     REGULAR(merge_tree_sequential_source_sleep_before_read) \
+    REGULAR(merge_tree_sequential_source_throw_in_constructor) \
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
@@ -309,6 +310,7 @@ static struct InitFiu
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
     PAUSEABLE(database_replicated_stop_entry_execution) \
+    PAUSEABLE_ONCE(database_replicated_pause_before_initial_query_execution) \
     PAUSEABLE_ONCE(database_replicated_pause_after_reading_log_pointer) \
     PAUSEABLE_ONCE(database_replicated_pause_after_snapshot_identity_check) \
     PAUSEABLE(database_replicated_pause_after_database_name_fetch) \
@@ -380,6 +382,7 @@ static struct InitFiu
     PAUSEABLE(merge_task_pause_after_temporary_directory_created) \
     PAUSEABLE(merge_tree_leader_election_pause_after_restore_admission) \
     PAUSEABLE(merge_tree_leader_election_pause_heartbeat) \
+    REGULAR(merge_task_throw_while_preparing_next_column) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_before_rename_part) \
     PAUSEABLE(rmt_mutate_task_pause_after_temporary_part_released) \
