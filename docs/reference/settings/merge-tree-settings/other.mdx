@@ -141,6 +141,10 @@ Compression codec selecting order for a column:
 1. Compression codec defined for the column in the table declaration
 2. Compression codec defined in `default_compression_codec` (this setting)
 3. Default compression codec defined in `compression` settings
+
+The codec combinator `FirstApplicable` selects a codec for the data type of every column (and every stream of it),
+e.g. `FirstApplicable(PCO, ZSTD(3))` compresses numbers with `PCO` and other data with `ZSTD(3)`. At least one of its
+alternatives must be applicable to any data type, and lossy codecs are not allowed among them.
 Default value: an empty string (not defined).
 
 ## disk {#disk}
