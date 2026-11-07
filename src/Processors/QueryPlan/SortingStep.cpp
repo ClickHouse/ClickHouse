@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/scope_guard_safe.h>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 
@@ -448,9 +449,21 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         bool use_virtual_row_per_block = apply_virtual_row_conversions && sort_settings.read_in_order_use_virtual_row_per_block;
         if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block)
         {
-            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            const size_t num_streams = pipeline.getNumStreams();
+            std::shared_ptr<ReadInOrderReadAheadTracker> read_ahead_tracker;
+            bool has_collation = std::ranges::any_of(result_sort_desc, [](const auto & column) { return column.collator != nullptr; });
+            if (limit_ && !always_read_till_end && !has_collation && num_streams <= ReadInOrderReadAheadTracker::max_inputs)
+                read_ahead_tracker = std::make_shared<ReadInOrderReadAheadTracker>(num_streams, pipeline.getHeader(), result_sort_desc);
+
+            size_t next_input_index = 0;
+            pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
-                return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
+                if (!read_ahead_tracker || stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return std::make_shared<BufferChunksTransform>(header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_);
+
+                chassert(next_input_index < num_streams);
+                return std::make_shared<BufferChunksTransform>(
+                    header, sort_settings.max_block_size, sort_settings.max_block_bytes, limit_, read_ahead_tracker, next_input_index++);
             });
         }
 
