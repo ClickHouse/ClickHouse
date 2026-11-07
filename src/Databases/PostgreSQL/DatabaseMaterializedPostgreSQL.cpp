@@ -617,6 +617,14 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 }
 
 
+void DatabaseMaterializedPostgreSQL::assertCanBeDetached(bool cleanup)
+{
+    if (!empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE not allowed, use DETACH PERMANENTLY");
+    DatabaseAtomic::assertCanBeDetached(cleanup);
+}
+
+
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
     /// Cancel the startup retry loop first: `tryStartSynchronization` keeps re-scheduling itself
