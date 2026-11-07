@@ -1,0 +1,12 @@
+pre-support plan version INCORRECT_DATA
+no input stream INCORRECT_DATA
+no WITH FILL column INCORRECT_DATA
+unknown step flags INCORRECT_DATA
+source not in header INCORRECT_DATA
+source not required INCORRECT_DATA
+source type differs INCORRECT_DATA
+too few sources INCORRECT_DATA
+result not in header INCORRECT_DATA
+result type differs INCORRECT_DATA
+well-formed accepted
+3
