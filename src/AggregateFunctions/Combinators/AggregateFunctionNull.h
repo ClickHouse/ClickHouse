@@ -793,15 +793,16 @@ public:
         auto filtered_places = std::make_unique_for_overwrite<AggregateDataPtr[]>(row_end);
         for (size_t row = row_begin; row < row_end; ++row)
         {
+            AggregateDataPtr & place = map[key[row]];
+            if (unlikely(!place))
+                init(place);
+
             if (hasInternalNull(columns, row))
             {
                 filtered_places[row] = nullptr;
                 continue;
             }
 
-            AggregateDataPtr & place = map[key[row]];
-            if (unlikely(!place))
-                init(place);
             filtered_places[row] = this->nestedPlace(place + place_offset);
         }
 
