@@ -230,6 +230,7 @@ static struct InitFiu
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
     PAUSEABLE(database_replicated_stop_entry_execution) \
+    PAUSEABLE_ONCE(database_replicated_pause_before_initial_query_execution) \
     PAUSEABLE_ONCE(database_replicated_pause_after_reading_log_pointer) \
     PAUSEABLE_ONCE(database_replicated_pause_after_snapshot_identity_check) \
     REGULAR(remove_merge_tree_part_delay) \
