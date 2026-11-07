@@ -357,7 +357,93 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -m -q "
     SELECT 'RESTORE TEMPORARY with WRITE on S3: restored', count() FROM system.tables WHERE is_temporary AND name = 't_tmp_backup';
 "
 
+echo "-- Tables sharing a keeper_path, each with its own after_processing"
+
+# Each table applies its own action to the files it reads. Keeper keeps one action for older versions, which only
+# an `ALTER` of the action changes: `shared_a` is created first, so Keeper starts with its `keep`.
+shared_path="${keeper_path}_shared"
+shared_url="http://localhost:11111/test/${db}_shared"
+
+function shared_create()
+{
+    $CLICKHOUSE_CLIENT -q "
+        CREATE TABLE ${db}.shared_$1 (x UInt8) ENGINE = S3Queue('${shared_url}_$1/*.csv', 'clickhouse', 'clickhouse', 'CSV')
+        SETTINGS mode = 'unordered', keeper_path = '${shared_path}', after_processing = '$2', commit_on_select = 1,
+            polling_max_timeout_ms = 500
+    "
+}
+
+function shared_put()
+{
+    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${shared_url}_$1/$2.csv', 'clickhouse', 'clickhouse', 'CSV', 'x UInt8') SELECT $2"
+}
+
+# Files are read by the materialized views: wait until each table has processed its new file.
+function shared_flush()
+{
+    for t in a b; do
+        shared_put "$t" "$1"
+        $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH OBJECT STORAGE QUEUE ${db}.shared_$t PATH '${db}_shared_$t/$1.csv'"
+    done
+}
+
+function shared_state()
+{
+    $CLICKHOUSE_CLIENT -q "
+        SELECT table, value FROM system.s3_queue_settings
+        WHERE database = '${db}' AND table IN ('shared_a', 'shared_b') AND name = 'after_processing' ORDER BY table;
+        SELECT 'keeper', JSONExtractString(value, 'after_processing') FROM system.zookeeper
+        WHERE path = '${shared_path}' AND name = 'metadata';
+        SELECT 'a', arraySort(groupArray(_file)) FROM s3('${shared_url}_a/*.csv', 'clickhouse', 'clickhouse', 'CSV', 'x UInt8');
+        SELECT 'b', arraySort(groupArray(_file)) FROM s3('${shared_url}_b/*.csv', 'clickhouse', 'clickhouse', 'CSV', 'x UInt8');
+    "
+}
+
+shared_create a keep
+shared_create b delete
+shared_put a 1
+shared_put b 1
+$CLICKHOUSE_CLIENT -q "SELECT x FROM ${db}.shared_a SETTINGS stream_like_engine_allow_direct_select = 1"
+$CLICKHOUSE_CLIENT -q "SELECT x FROM ${db}.shared_b SETTINGS stream_like_engine_allow_direct_select = 1"
+shared_state
+
+# An `ALTER` changes only its own table, and Keeper follows the last one.
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.shared_a MODIFY SETTING after_processing = 'delete'"
+shared_state
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.shared_b MODIFY SETTING after_processing = 'keep'"
 $CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${db}.shared_dst (x UInt8) ENGINE = MergeTree ORDER BY x;
+    CREATE MATERIALIZED VIEW ${db}.shared_a_mv TO ${db}.shared_dst AS SELECT x FROM ${db}.shared_a;
+    CREATE MATERIALIZED VIEW ${db}.shared_b_mv TO ${db}.shared_dst AS SELECT x FROM ${db}.shared_b;
+"
+shared_flush 2
+shared_state
+
+# Another server changes the action in Keeper, which the metadata shared by the tables of this server does not see.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO system.zookeeper (name, path, value)
+    SELECT name, path, replaceOne(value, '\"after_processing\":\"keep\"', '\"after_processing\":\"delete\"')
+    FROM system.zookeeper WHERE path = '${shared_path}' AND name = 'metadata'
+"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${db}.shared_b SYNC"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${db}.shared_b"
+
+# After both are detached, `shared_b` attaches first and creates the shared metadata again. An `ALTER` of another
+# setting stored in Keeper must keep Keeper's action.
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${db}.shared_a SYNC"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${db}.shared_b SYNC"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${db}.shared_b"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${db}.shared_a"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.shared_b MODIFY SETTING loading_retries = 5"
+shared_flush 3
+shared_state
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${db}.shared_a_mv SYNC;
+    DROP TABLE IF EXISTS ${db}.shared_b_mv SYNC;
+    DROP TABLE IF EXISTS ${db}.shared_dst SYNC;
+    DROP TABLE IF EXISTS ${db}.shared_a SYNC;
+    DROP TABLE IF EXISTS ${db}.shared_b SYNC;
     DROP TABLE IF EXISTS ${db}.t_alias SYNC;
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;

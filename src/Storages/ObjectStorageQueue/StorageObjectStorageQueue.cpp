@@ -354,6 +354,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .max_processing_time_sec_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processing_time_sec_before_commit],
     })
     , after_processing_settings(AfterProcessingSettings{
+        .after_processing = (*queue_settings_)[ObjectStorageQueueSetting::after_processing],
         .after_processing_retries = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_retries],
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
@@ -1244,20 +1245,20 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
 void StorageObjectStorageQueue::postProcess(
     const StoredObjects & successful_objects,
-    UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-    const ObjectStorageQueueMetadata & metadata) const
+    UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths) const
 {
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
 
     LOG_TEST(log, "Executing post process for {} objects", successful_objects.size());
     {
         std::lock_guard lock(mutex);
+        if (after_processing_settings.after_processing == ObjectStorageQueueAction::KEEP)
+            return;
         post_processor.emplace(
             getContext(),
             type,
             object_storage,
             getName(),
-            metadata.getTableMetadata(),
             after_processing_settings);
     }
 
@@ -1309,10 +1310,9 @@ void StorageObjectStorageQueue::commit(
 
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
-    if (!successful_objects.empty()
-        && metadata.getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+    if (!successful_objects.empty())
     {
-        postProcess(successful_objects, post_processing_failed_paths, metadata);
+        postProcess(successful_objects, post_processing_failed_paths);
     }
 
     /// In exclusive mode nothing is written to Keeper, but the after_processing action may have
@@ -1883,7 +1883,8 @@ void StorageObjectStorageQueue::alter(
             metadata->alterSettings(changed_settings, local_context);
         });
 
-        /// Alter settings which are not stored in keeper.
+        /// Alter settings which are not stored in keeper, and `after_processing`: the copy in Keeper is shared with the
+        /// other tables on the same `keeper_path`, so each table applies its own.
         for (const auto & change : changed_settings)
         {
             std::lock_guard lock(mutex);
@@ -1910,6 +1911,8 @@ void StorageObjectStorageQueue::alter(
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
+            else if (change.name == "after_processing")
+                after_processing_settings.after_processing = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
             else if (change.name == "after_processing_retries")
                 after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
             else if (change.name == "after_processing_move_uri")
@@ -2012,7 +2015,6 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
 
     const auto & table_metadata = metadata->getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
-    settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
         settings[ObjectStorageQueueSetting::keeper_path] = zk_path.string();
     else
@@ -2049,6 +2051,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
         settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
+        settings[ObjectStorageQueueSetting::after_processing] = after_processing_settings.after_processing;
         settings[ObjectStorageQueueSetting::after_processing_retries] = after_processing_settings.after_processing_retries;
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;

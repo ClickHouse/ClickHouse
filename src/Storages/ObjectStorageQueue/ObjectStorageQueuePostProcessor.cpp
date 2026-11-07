@@ -76,13 +76,11 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
     String engine_name_,
-    const ObjectStorageQueueTableMetadata & table_metadata_,
     AfterProcessingSettings settings_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , engine_name(engine_name_)
-    , table_metadata(table_metadata_)
     , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
@@ -104,7 +102,7 @@ void ObjectStorageQueuePostProcessor::process(
                 failed_object_paths.insert(object.remote_path);
     });
 
-    const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
+    const ObjectStorageQueueAction after_processing_action = settings.after_processing;
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
         LOG_TRACE(log, "Removing {} objects", objects.size());
