@@ -267,6 +267,8 @@ void StorageMemory::readImpl(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
+    storage_snapshot->check(column_names);
+
     query_plan.addStep(std::make_unique<ReadFromMemoryStorageStep>(
         column_names, query_info, storage_snapshot, context, shared_from_this(), num_streams, delay_read_for_global_subqueries));
 }
