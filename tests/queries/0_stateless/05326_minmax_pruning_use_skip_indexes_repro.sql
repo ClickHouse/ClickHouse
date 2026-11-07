@@ -1,3 +1,6 @@
+-- Random settings limits: index_granularity=(100, None)
+-- The reference counts granules, so each 24-row daily part must stay a single granule.
+
 -- Reproducer from https://github.com/ClickHouse/ClickHouse/issues/123363:
 -- `use_skip_indexes = 0` must not disable the part-level min-max index on the partition-key columns.
 
