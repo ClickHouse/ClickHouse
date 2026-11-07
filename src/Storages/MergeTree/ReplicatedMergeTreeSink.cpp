@@ -635,8 +635,6 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
         }
     };
 
-    bool keep_non_zero_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
     part->info.mutation = 0;
     part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
     std::vector<DeduplicationHash> deduplication_hashes;
