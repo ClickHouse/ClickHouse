@@ -415,7 +415,7 @@ def test_close_session_closes_named_session():
 
 
 def test_close_session_not_closable_when_disabled():
-    """CloseSession returns NOT_CLOSABLE when enable_arrow_close_session is false."""
+    """CloseSession returns NOT_CLOSEABLE when enable_arrow_close_session is false."""
     config_path = "/etc/clickhouse-server/config.d/disable_arrow_close_session.xml"
     node.replace_config(
         config_path,
@@ -438,8 +438,9 @@ def test_close_session_not_closable_when_disabled():
         new_threads = "7" if default_threads != "7" else "5"
         result = client.set_session_options({"max_threads": new_threads})
         assert len(result.errors) == 0
-        # CloseSessionResult{status=NOT_CLOSABLE} serializes as field 1 varint 2.
-        assert client.close_session() == b"\x08\x02"
+        # CloseSessionResult{status=NOT_CLOSEABLE} serializes as field 1 varint 3.
+        # Varint 2 is CLOSING.
+        assert client.close_session() == b"\x08\x03"
         assert _query_setting(client, "max_threads") == new_threads
     finally:
         node.exec_in_container(["rm", "-f", config_path])
