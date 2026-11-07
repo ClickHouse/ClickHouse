@@ -6,10 +6,8 @@
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
 #include <Common/ZooKeeper/KeeperSpans.h>
-#include <Coordination/KeeperContext.h>
 
 namespace DB::ErrorCodes
 {
@@ -84,11 +82,6 @@ void KeeperOverDispatcher::finalize(const String & /* reason */)
     callback_state->expired = true;
 }
 
-bool KeeperOverDispatcher::isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const
-{
-    return keeper_dispatcher->getKeeperContext()->getFeatureFlags().isEnabled(feature_flag);
-}
-
 void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback)
 {
     request->xid = next_xid++;
@@ -99,7 +92,7 @@ void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCall
     }
 
     if (!keeper_dispatcher->putRequest(request, session_id, false))
-        throw DB::Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session was disconnected");
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session was disconnected");
 }
 
 void KeeperOverDispatcher::create(
@@ -159,7 +152,7 @@ void KeeperOverDispatcher::exists(
     WatchCallbackPtrOrEventPtr watch)
 {
     if (watch)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
 
     const auto request = std::make_shared<ZooKeeperExistsRequest>();
     request->path = path;
@@ -176,7 +169,7 @@ void KeeperOverDispatcher::get(
     WatchCallbackPtrOrEventPtr watch)
 {
     if (watch)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
 
     const auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = path;
@@ -212,29 +205,6 @@ void KeeperOverDispatcher::listRecursive(
     });
 }
 
-void KeeperOverDispatcher::listWithOptions(
-    const String & path,
-    const ListOptions & options,
-    ListWithOptionsCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
-{
-    options.validate();
-    if (watch)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
-    if (!isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_OPTIONS))
-        throw Coordination::Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions is not supported by this Keeper cluster");
-
-    const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
-    request->path = path;
-    request->addRootPath({});
-    request->options_version = requiredListOptionsVersion(options);
-    request->options = options;
-    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
-    {
-        callback(dynamic_cast<const ListWithOptionsResponse &>(*response));
-    });
-}
-
 void KeeperOverDispatcher::set(
     const String & path,
     const String & data,
@@ -261,9 +231,9 @@ void KeeperOverDispatcher::list(
     bool with_data)
 {
     if (watch)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
     if (with_stat || with_data)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "with_stat and with_data are not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "with_stat and with_data are not implemented");
 
     const auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path;
