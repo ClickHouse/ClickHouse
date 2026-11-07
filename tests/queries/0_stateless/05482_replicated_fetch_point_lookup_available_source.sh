@@ -58,15 +58,15 @@ query "
     DROP TABLE IF EXISTS point_fetch_available_s SYNC;
 
     CREATE TABLE point_fetch_available_s (n UInt64)
-    ENGINE = ReplicatedMergeTree('$zk_path', 's') ORDER BY n
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/point_fetch_available', 's') ORDER BY n
     SETTINGS old_parts_lifetime = 0, cleanup_delay_period = 1, max_cleanup_delay_period = 1,
         cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
     CREATE TABLE point_fetch_available_r (n UInt64)
-    ENGINE = ReplicatedMergeTree('$zk_path', 'r') ORDER BY n;
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/point_fetch_available', 'r') ORDER BY n;
 
     CREATE TABLE point_fetch_available_t (n UInt64)
-    ENGINE = ReplicatedMergeTree('$zk_path', 't') ORDER BY n;
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/point_fetch_available', 't') ORDER BY n;
 
     SYSTEM SYNC REPLICA point_fetch_available_r;
     SYSTEM SYNC REPLICA point_fetch_available_t;

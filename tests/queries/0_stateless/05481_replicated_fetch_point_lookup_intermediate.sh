@@ -57,11 +57,11 @@ query "
     DROP TABLE IF EXISTS point_fetch_intermediate_source SYNC;
 
     CREATE TABLE point_fetch_intermediate_source (n UInt64)
-    ENGINE = ReplicatedMergeTree('$zk_path', 'source') ORDER BY tuple()
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/point_fetch_intermediate', 'source') ORDER BY tuple()
     SETTINGS old_parts_lifetime = 3600;
 
     CREATE TABLE point_fetch_intermediate_replica (n UInt64)
-    ENGINE = ReplicatedMergeTree('$zk_path', 'replica') ORDER BY tuple();
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/point_fetch_intermediate', 'replica') ORDER BY tuple();
 
     SYSTEM SYNC REPLICA point_fetch_intermediate_replica;
     SYSTEM STOP MERGES point_fetch_intermediate_source;

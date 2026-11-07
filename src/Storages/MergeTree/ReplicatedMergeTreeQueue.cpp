@@ -134,7 +134,7 @@ bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & 
 String ReplicatedMergeTreeQueue::getVirtualPartCovering(const String & part_name) const
 {
     std::lock_guard lock(state_mutex);
-    const String covering_part = virtual_parts.getContainingPart(part_name);
+    String covering_part = virtual_parts.getContainingPart(part_name);
     if (!covering_part.empty() && MergeTreePartInfo::fromPartName(covering_part, format_version).isFakeDropRangePart())
         return {};
     return covering_part;

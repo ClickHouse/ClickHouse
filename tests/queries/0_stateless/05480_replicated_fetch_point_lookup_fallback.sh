@@ -57,12 +57,12 @@ query "
     DROP TABLE IF EXISTS point_fetch_fallback_source SYNC;
 
     CREATE TABLE point_fetch_fallback_source (n UInt64)
-    ENGINE = ReplicatedMergeTree('$zk_path', 'source') ORDER BY n
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/point_fetch_fallback', 'source') ORDER BY n
     SETTINGS old_parts_lifetime = 0, cleanup_delay_period = 1, max_cleanup_delay_period = 1,
         cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 
     CREATE TABLE point_fetch_fallback_replica (n UInt64)
-    ENGINE = ReplicatedMergeTree('$zk_path', 'replica') ORDER BY n
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/point_fetch_fallback', 'replica') ORDER BY n
     SETTINGS always_fetch_merged_part = 1;
 
     SYSTEM SYNC REPLICA point_fetch_fallback_replica;
