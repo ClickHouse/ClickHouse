@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <functional>
+#include <stdexcept>
 
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
@@ -29,6 +30,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_ALREADY_EXISTS;
     extern const int READONLY;
+    extern const int ZLIB_DEFLATE_FAILED;
 }
 
 namespace
@@ -38,12 +40,11 @@ using WriteErrorThrower = std::function<void(const std::string & path)>;
 using ExistsAnswer = std::function<bool(size_t call)>;
 
 /// `writeMetadataFileAndVersionHint` reports a failed commit as `false`, which every caller reads as
-/// a lost compare-and-swap and retries. A write the storage refused (it cannot express the condition,
-/// or it denies the write) fails the same way on every retry, so it has to propagate instead of being
-/// reported as a lost race; everything else stays retryable. This stub makes both outcomes observable
-/// without an object storage: `exists` answers what the test supplies (absent by default, so the
-/// function proceeds to the write), and `writeObject` throws the error the test supplies. Everything
-/// else throws, so an unexpected call is loud rather than silently absorbed.
+/// a lost compare-and-swap and retries. That is right only while a file holds the version after the
+/// failure (or the check cannot tell); while the path is absent, the failure has to propagate. This stub
+/// makes both outcomes observable without an object storage: `exists` answers what the test supplies
+/// (absent by default, so the function proceeds to the write), and `writeObject` throws the error the
+/// test supplies. Everything else throws, so an unexpected call is loud rather than silently absorbed.
 class ThrowingObjectStorage : public IObjectStorage
 {
 public:
@@ -70,7 +71,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The stub must throw");
     }
 
-    /// Call 0 is the commit's pre-check (absent, so the write is attempted), later calls the check after a refusal.
+    /// Call 0 is the commit's pre-check (absent, so the write is attempted), later calls the check after a failed write.
     bool exists(const StoredObject &) const override { return exists_answer(exists_calls++); }
 
     std::string getName() const override { return "ThrowingObjectStorage"; }
@@ -174,29 +175,85 @@ TEST(IcebergCommitPropagation, RefusedConditionalWriteIsNotReportedAsALostRace)
     }
 }
 
-TEST(IcebergCommitPropagation, OtherWriteFailuresStayRetryable)
+TEST(IcebergCommitPropagation, WriteFailureThatLeavesTheVersionFreeIsNotReportedAsALostRace)
 {
-    /// Any other failure may succeed on a retry, including a genuinely lost race, so it keeps being
-    /// reported as an unsuccessful commit. Without this the other tests would also pass against a
-    /// commit that propagates everything, which would make every transient error fatal.
-    EXPECT_FALSE(commitWithFailingWrite(ErrorCodes::NETWORK_ERROR));
-
-    /// A lost race on local storage.
-    EXPECT_FALSE(commitWithFailingWrite(ErrorCodes::FILE_ALREADY_EXISTS));
-
-    /// An I/O error, which may be transient.
-    EXPECT_FALSE(commitWithFailingWrite([](const std::string & path)
+    /// The metadata file is still absent after the failure, so no other commit took the version: whatever the error,
+    /// the commit must surface it rather than return `false`.
+    for (int code : {ErrorCodes::NETWORK_ERROR, ErrorCodes::ZLIB_DEFLATE_FAILED})
     {
-        ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, path, EIO, "Cannot open file {}", path);
-    }));
+        try
+        {
+            bool committed = commitWithFailingWrite(code);
+            ADD_FAILURE() << "Expected error " << code << " to propagate, got " << committed;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), code) << e.message();
+        }
+    }
+
+    try
+    {
+        bool committed = commitWithFailingWrite([](const std::string & path)
+        {
+            ErrnoException::throwFromPathWithErrno(ErrorCodes::CANNOT_OPEN_FILE, path, EIO, "Cannot open file {}", path);
+        });
+        ADD_FAILURE() << "Expected errno " << EIO << " to propagate, got " << committed;
+    }
+    catch (const ErrnoException & e)
+    {
+        EXPECT_EQ(e.getErrno(), EIO) << e.message();
+    }
+
+    /// An exception that is not a `DB::Exception`, as an object storage SDK throws.
+    try
+    {
+        bool committed = commitWithFailingWrite([](const std::string &) { throw std::runtime_error("SDK error"); });
+        ADD_FAILURE() << "Expected the SDK error to propagate, got " << committed;
+    }
+    catch (const std::runtime_error & e)
+    {
+        EXPECT_STREQ(e.what(), "SDK error");
+    }
+}
+
+TEST(IcebergCommitPropagation, LostRaceStaysRetryable)
+{
+    /// A metadata file is at the path after the failure, so the version is taken and the commit is retried,
+    /// whichever error the storage reports the conflict with.
+    auto taken_after_the_write = [](size_t call) { return call > 0; };
+
+    /// Local storage.
+    EXPECT_FALSE(commitWithFailingWrite(
+        [](const std::string & path) { throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Object {} already exists", path); },
+        taken_after_the_write));
+
+    /// An SDK exception that is not a `DB::Exception`.
+    EXPECT_FALSE(commitWithFailingWrite([](const std::string &) { throw std::runtime_error("Conflict"); }, taken_after_the_write));
 
 #if USE_AWS_S3
-    /// A lost race on S3 (412 `PreconditionFailed`), which the SDK reports without a typed error code.
+    /// S3 (412 `PreconditionFailed`), which the SDK reports without a typed error code.
     EXPECT_FALSE(commitWithFailingWrite([](const std::string &)
     {
         throw S3Exception("At least one of the pre-conditions you specified did not hold", Aws::S3::S3Errors::UNKNOWN);
-    }));
+    }, taken_after_the_write));
 #endif
+}
+
+TEST(IcebergCommitPropagation, FailedExistenceCheckIsNotReportedAsALostRace)
+{
+    /// The check before the write failed, so nothing was written: the commit must surface the error without trying the write.
+    try
+    {
+        bool committed = commitWithFailingWrite(
+            [](const std::string &) { throw Exception(ErrorCodes::LOGICAL_ERROR, "The write must not be attempted"); },
+            [](size_t) -> bool { throw Exception(ErrorCodes::NETWORK_ERROR, "The existence check failed in the test stub"); });
+        FAIL() << "Expected the failed existence check to propagate, got " << committed;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NETWORK_ERROR) << e.message();
+    }
 }
 
 TEST(IcebergCommitPropagation, PermissionErrorIsNotReportedAsALostRace)
