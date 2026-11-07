@@ -31,6 +31,9 @@
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <base/scope_guard.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
@@ -43,6 +46,12 @@
 namespace CurrentMetrics
 {
     extern const Metric DiskSpaceReservedForMerge;
+}
+
+namespace ProfileEvents
+{
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
 }
 
 namespace DB
@@ -58,6 +67,8 @@ namespace ErrorCodes
     extern const int CANNOT_RMDIR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_STAT;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_FSYNC;
 }
 
 namespace
@@ -621,6 +632,40 @@ void DiskLocal::copyDirectoryContent(
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
     return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
+}
+
+void DiskLocal::syncFile(const String & path) const
+{
+    const String full_path = fs::path(disk_path) / path;
+
+    /// O_RDONLY is enough to fsync on Linux, and it keeps this usable for files that are already
+    /// finalized and closed. Since Linux 4.16 a writeback error that nobody has seen yet is reported
+    /// to a descriptor opened after it happened, as long as the inode stays in the cache; if the inode
+    /// is evicted in between, the error is lost. This is documented in `fsync_after_insert_each_part`.
+    /// A missing file is an error too: it does not prove that the data is gone, the file may have
+    /// been renamed (e.g. the directory of a fetched part that is being committed), and its data
+    /// would then be acknowledged without being synced.
+    int fd = ::open(full_path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (-1 == fd)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, full_path, "Cannot open file {}", full_path);
+
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(fd); });
+
+    ProfileEvents::increment(ProfileEvents::FileSync);
+    Stopwatch watch;
+
+    /// Same call as WriteBufferFromFileDescriptor::sync(), so that a file synced here is exactly
+    /// as durable as one synced through its write buffer.
+#if defined(OS_DARWIN)
+    int res = ::fsync(fd);
+#else
+    int res = ::fdatasync(fd);
+#endif
+
+    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+    if (-1 == res)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, full_path, "Cannot fsync {}", full_path);
 }
 
 

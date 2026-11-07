@@ -135,6 +135,9 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
+    void syncFile(const String & path) const override;
+    bool supportsSyncFile() const override { return true; }
+
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
     bool isBroken() const override { return broken; }

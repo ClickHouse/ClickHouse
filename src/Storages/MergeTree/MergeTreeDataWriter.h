@@ -47,6 +47,19 @@ struct MergeTreeTemporaryPart
 
     std::vector<Stream> streams;
 
+    /// The part was not synced when it was finalized, and the INSERT that wrote it has to sync it
+    /// when it finishes, see MergeTreeData::fsyncPartsAfterInsert. Decided from the same snapshot of
+    /// the table settings as the inline sync, so every part gets exactly one of the two even if
+    /// `fsync_after_insert` or `fsync_after_insert_each_part` is changed while the INSERT is running.
+    bool needs_fsync_on_finish = false;
+
+    /// `fsync_after_insert` from the same snapshot of the table settings. A block deduplicated against
+    /// an existing part is acknowledged on the strength of that part, which may have been committed by
+    /// an `INSERT` in the batched mode that failed or was cancelled before its fsync. So when this is
+    /// set, the existing part is synced when the `INSERT` finishes, regardless of whether this part
+    /// was synced inline or not (its files are discarded anyway).
+    bool fsync_after_insert = false;
+
     /// UNIQUE KEY tables only: part row `i` was written from block row `sort_permutation[i]`.
     /// Empty when the part keeps the block's row order.
     IColumn::Permutation sort_permutation;
@@ -117,6 +130,9 @@ public:
     /// For insertion.
     /// `compression_codec` is the codec chosen for the parent part; the projection inherits it so
     /// that a projection of a large (`ZSTD(3)`) part is not always written with `LZ4`.
+    /// `sync` is whether the files of the projection are synced as they are finalized; it must be
+    /// the same as for the parent part, so that the parent part does not become durable without
+    /// its projections.
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
         Block block,
@@ -124,6 +140,7 @@ public:
         IMergeTreeDataPart * parent_part,
         CompressionCodecPtr compression_codec,
         bool merge_is_needed,
+        bool sync,
         ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
@@ -168,6 +185,7 @@ private:
         MergeTreeIndices indices,
         bool merge_is_needed,
         bool try_adaptive_codec,
+        bool sync,
         ContextPtr context,
         bool use_selected_codec = false);
 

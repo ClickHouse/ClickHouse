@@ -92,6 +92,27 @@ protected:
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
 
+    /// Parts committed by this sink, to be fsynced in one batch by onFinish(). Only the parts that
+    /// were not synced when written (MergeTreeTemporaryPart::needs_fsync_on_finish) are collected,
+    /// so that a long-running INSERT without batched fsync does not accumulate them for nothing.
+    /// With `fsync_after_insert`, also the existing parts that blocks of this INSERT were
+    /// deduplicated against, in either mode (MergeTreeTemporaryPart::fsync_after_insert).
+    std::vector<MergeTreePartInfo> committed_parts;
+
+    /// With `fsync_after_insert`, the existing parts from `committed_parts` that blocks of this INSERT
+    /// were deduplicated against. Such a part may exist only on another replica, which (with
+    /// `fsync_after_insert_each_part = 0` there) has published it in Keeper but may not have synced it
+    /// yet, so it does not prove that the data is
+    /// durable. This replica waits until it has a local copy and syncs it, see waitForDeduplicatedParts().
+    std::vector<MergeTreePartInfo> deduplicated_parts;
+
+    /// fsync the parts committed so far and forget them. See MergeTreeData::fsyncPartsAfterInsert().
+    void fsyncCommittedParts();
+
+    /// Wait until every part of `deduplicated_parts` is present or covered locally, or until the
+    /// replication queue has processed the entries that could bring it here. Throws on timeout.
+    void waitForDeduplicatedParts();
+
     struct CommitPartResult
     {
         std::vector<DeduplicationHash> conflicts;

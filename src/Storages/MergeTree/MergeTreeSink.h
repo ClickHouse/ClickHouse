@@ -4,6 +4,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
@@ -75,8 +76,22 @@ protected:
     bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
+    /// Parts committed by this sink, to be fsynced in one batch by onFinish(). Only the parts that
+    /// were not synced when written (MergeTreeTemporaryPart::needs_fsync_on_finish) are collected,
+    /// so that a long-running INSERT without batched fsync does not accumulate them for nothing.
+    /// With `fsync_after_insert`, also the existing parts that blocks of this INSERT were
+    /// deduplicated against, in either mode (MergeTreeTemporaryPart::fsync_after_insert).
+    std::vector<MergeTreePartInfo> committed_parts;
 
-    std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
+    /// fsync the parts committed so far and forget them. See MergeTreeData::fsyncPartsAfterInsert().
+    void fsyncCommittedParts();
+
+    /// Returns the block ids that are already in the deduplication log. If `conflict_parts` is given,
+    /// the parts those block ids belong to are appended to it.
+    std::vector<std::string> commitPart(
+        MutableDataPartPtr & part,
+        const std::vector<DeduplicationHash> & deduplication_hashes,
+        std::vector<MergeTreePartInfo> * conflict_parts = nullptr);
     virtual void finishDelayedChunk();
     virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn);
 

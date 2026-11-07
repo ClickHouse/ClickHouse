@@ -246,7 +246,7 @@ public:
         return *own_part;
     }
 
-    std::vector<std::string> run();
+    UniqueKeyInsertOutcome run();
 
     bool partDiscarded() const { return part_discarded; }
 
@@ -278,6 +278,10 @@ private:
 
     /// Every row conflicted under IGNORE, so nothing is published
     bool part_discarded = false;
+
+    /// The existing parts that hold the rows which won the conflicts under IGNORE. The INSERT is
+    /// acknowledged on the strength of these rows, so with `fsync_after_insert` they have to be durable.
+    std::vector<MergeTreePartInfo> ignore_conflict_parts;
 };
 
 ProbeTargetPartPtr UniqueKeyTxnCommit::InsertCommit::makeSSTProbeTarget(const MergeTreeDataPartPtr & target)
@@ -394,6 +398,8 @@ DeleteBitmapPtr UniqueKeyTxnCommit::InsertCommit::computeOwnKills(const std::vec
 
 bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
 {
+    ignore_conflict_parts.clear();
+
     /// Also registers the block ids in the dedup log.
     allocation = std::make_unique<BlockAllocation>(
         storage.log.load(), storage.allocateBlockNumber(CommittingBlock::Op::NewPart), storage.getDeduplicationLog(), *own_part,
@@ -434,6 +440,10 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
         {
             /// Existing rows win: kill the conflicting rows in the new part
             ProfileEvents::increment(ProfileEvents::UniqueKeyConflictIgnoredRows, conflict_rows.size());
+            for (size_t row : conflict_rows)
+                ignore_conflict_parts.push_back(results[row].part->info);
+            std::ranges::sort(ignore_conflict_parts);
+            ignore_conflict_parts.erase(std::ranges::unique(ignore_conflict_parts).begin(), ignore_conflict_parts.end());
             if (conflict_rows.size() == results.size())
             {
                 part_discarded = true;
@@ -465,25 +475,31 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
     return true;
 }
 
-std::vector<std::string> UniqueKeyTxnCommit::InsertCommit::run()
+UniqueKeyInsertOutcome UniqueKeyTxnCommit::InsertCommit::run()
 {
     const CSN csn = storage.uniqueKeyTxnManager().commitTransaction(transaction, *this);
     if (csn != INVALID_CSN)
         allocation->commit();
 
-    return allocation->dedupConflicts();
+    auto conflicting_parts = allocation->dedupConflictParts();
+    conflicting_parts.insert(conflicting_parts.end(), ignore_conflict_parts.begin(), ignore_conflict_parts.end());
+
+    return {
+        .conflicting_blocks = allocation->dedupConflicts(),
+        .conflicting_parts = std::move(conflicting_parts),
+        .part_discarded = part_discarded};
 }
 
 UniqueKeyInsertOutcome UniqueKeyTxnCommit::insert(InsertRequest request)
 {
     InsertCommit op(request);
-    auto conflicts = op.run();
+    auto outcome = op.run();
 
     LOG_DEBUG(getLogger("UniqueKeyTxnCommit"),
         "UNIQUE KEY INSERT (partition {}): done, {} conflicting block(s), part {}",
-        op.partitionId(), conflicts.size(), op.partDiscarded() ? "discarded" : "published");
+        op.partitionId(), outcome.conflicting_blocks.size(), outcome.part_discarded ? "discarded" : "published");
 
-    return {.conflicting_blocks = std::move(conflicts), .part_discarded = op.partDiscarded()};
+    return outcome;
 }
 
 class UniqueKeyTxnCommit::MergeCommit : public UniqueKeyCommitBase

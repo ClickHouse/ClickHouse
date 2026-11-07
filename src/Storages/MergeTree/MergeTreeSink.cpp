@@ -132,6 +132,16 @@ void MergeTreeSink::onFinish()
         return;
 
     finishDelayedChunk();
+    fsyncCommittedParts();
+}
+
+void MergeTreeSink::fsyncCommittedParts()
+{
+    if (committed_parts.empty())
+        return;
+
+    storage.fsyncPartsAfterInsert(committed_parts, context);
+    committed_parts.clear();
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -288,7 +298,13 @@ void MergeTreeSink::consume(Chunk & chunk)
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
+    {
         finishDelayedChunk();
+        /// Such an INSERT can stay open indefinitely, so it cannot postpone the fsync of what it
+        /// has already committed until onFinish(): make each flushed block durable as it goes.
+        /// This also keeps the pending list from growing without a bound.
+        fsyncCommittedParts();
+    }
 
     if (synchronously_commit_part_for_dependent_views)
         finishDelayedChunk();
@@ -321,9 +337,23 @@ void MergeTreeSink::finishDelayedChunk()
 
             auto & part = partition.temp_part->part;
             auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
-            auto outcome = metadata_snapshot->hasUniqueKey()
-                ? commitUniqueKeyPart(partition, deduplication_hashes)
-                : UniqueKeyInsertOutcome{.conflicting_blocks = commitPart(part, deduplication_hashes)};
+            /// A deduplicated block is acknowledged on the strength of the part that already holds it.
+            /// That part may have been committed by an INSERT that failed or was cancelled before its
+            /// own batched fsync (or that is still running), so it is synced together with the parts
+            /// this query commits. That does not depend on whether this query syncs its own parts
+            /// inline or in a batch: it is the existing part that has to be durable.
+            auto * conflict_parts = partition.temp_part->fsync_after_insert ? &committed_parts : nullptr;
+            UniqueKeyInsertOutcome outcome;
+            if (metadata_snapshot->hasUniqueKey())
+            {
+                outcome = commitUniqueKeyPart(partition, deduplication_hashes);
+                if (conflict_parts)
+                    conflict_parts->insert(conflict_parts->end(), outcome.conflicting_parts.begin(), outcome.conflicting_parts.end());
+            }
+            else
+            {
+                outcome.conflicting_blocks = commitPart(part, deduplication_hashes, conflict_parts);
+            }
 
             /// Every row conflicted under IGNORE: nothing published, no retry.
             if (outcome.part_discarded)
@@ -333,6 +363,8 @@ void MergeTreeSink::finishDelayedChunk()
 
             if (conflicts.empty())
             {
+                if (partition.temp_part->needs_fsync_on_finish)
+                    committed_parts.push_back(part->info);
                 partition.temp_part->prewarmCaches();
 
                 profile_events_scope.reset();
@@ -442,7 +474,10 @@ UniqueKeyInsertOutcome MergeTreeSink::commitUniqueKeyPart(
          .transaction = partition.uk_txn});
 }
 
-std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
+std::vector<std::string> MergeTreeSink::commitPart(
+    MergeTreeMutableDataPartPtr & part,
+    const std::vector<DeduplicationHash> & deduplication_hashes,
+    std::vector<MergeTreePartInfo> * conflict_parts)
 {
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -473,6 +508,8 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             {
                 LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", res.block_id, res.part_info.getPartNameForLogs());
                 conflict_block_ids.push_back(res.block_id);
+                if (conflict_parts)
+                    conflict_parts->push_back(res.part_info);
             }
 
             if (!conflict_block_ids.empty())

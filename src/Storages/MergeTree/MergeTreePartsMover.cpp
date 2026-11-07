@@ -233,6 +233,10 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     auto part = moving_part.part;
     auto disk = moving_part.reserved_space->getDisk();
     LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->getDataPartStorage().getDiskName(), disk->getName());
+
+    /// The destination disk may be unable to sync the clone at the end of the `INSERT` that wrote
+    /// the part, see IMergeTreeDataPart::syncIfPendingFsyncAfterInsert.
+    part->syncIfPendingFsyncAfterInsert();
     TemporaryClonedPart cloned_part;
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
