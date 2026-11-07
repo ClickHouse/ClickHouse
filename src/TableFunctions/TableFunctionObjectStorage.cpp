@@ -39,8 +39,6 @@ namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsInt64 delta_lake_snapshot_start_version;
-    extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
@@ -253,13 +251,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
-    /// A Delta Lake change data feed read (`delta_lake_snapshot_start_version`) is not split into tasks: every replica
-    /// would read the whole feed and return each change several times. The `DeltaLake` table engine rejects the
-    /// feed, and its parallel replicas read is skipped for it the same way (see `getStorageForParallelReplicasRead`).
-    const bool is_delta_lake_change_data_feed = query_settings[Setting::delta_lake_snapshot_start_version] != -1
-        || query_settings[Setting::delta_lake_snapshot_end_version] != -1;
     const auto can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
-        && !is_delta_lake_change_data_feed
         && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
