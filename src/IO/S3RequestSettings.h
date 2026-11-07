@@ -76,9 +76,6 @@ struct S3RequestSettings
     HTTPRequestThrottler request_throttler;
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
-    void serialize(WriteBuffer & out, ContextPtr context) const;
-    static S3RequestSettings deserialize(ReadBuffer & in, ContextPtr context);
-
     /// Returns all effective request settings as a string map, for observability (e.g. `system.backups`).
     std::map<String, String> getSettingsRepresentation() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 

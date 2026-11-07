@@ -338,21 +338,6 @@ void S3RequestSettings::normalizeSettings()
         (*this)[S3RequestSetting::upload_checksum_algorithm] = Poco::toUpperInPlace((*this)[S3RequestSetting::upload_checksum_algorithm].value);
 }
 
-void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const
-{
-    impl->writeChangedBinary(out);
-}
-
-S3RequestSettings S3RequestSettings::deserialize(ReadBuffer & in, ContextPtr context)
-{
-    S3RequestSettings result;
-    result.impl = std::make_unique<S3RequestSettingsImpl>();
-    result.impl->readBinary(in);
-    result.finishInit(context->getSettingsRef(), false);
-    /// TODO Proxy Configuration
-    return result;
-}
-
 std::map<String, String> S3RequestSettings::getSettingsRepresentation() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     std::map<String, String> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS
