@@ -777,7 +777,11 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 
     const auto & self = static_cast<const Derived &>(*this);
     auto raw_data = self.getDataAt(n);
-    memcpy(memory, raw_data.data(), raw_data.size());
+    if constexpr (endian_serialize<Derived> && std::endian::native != std::endian::little)
+        reverseMemcpy(memory, raw_data.data(), raw_data.size());
+    else
+        memcpy(memory, raw_data.data(), raw_data.size());
+
     return memory + raw_data.size();
 }
 

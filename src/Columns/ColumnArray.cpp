@@ -14,7 +14,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/transformEndianness.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <algorithm>
 #include <cstring> // memcpy
 #include <limits>
@@ -267,7 +269,9 @@ ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begi
     size_t offset = offsetAt(n);
 
     char * pos = arena.allocContinue(sizeof(array_size), begin);
-    memcpy(pos, &array_size, sizeof(array_size));
+    auto array_size_le = array_size;
+    transformEndianness<std::endian::little>(array_size_le);
+    memcpy(pos, &array_size_le, sizeof(array_size_le));
 
     std::string_view res(pos, sizeof(array_size));
 
@@ -285,7 +289,9 @@ char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory, const ICol
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
 
-    memcpy(memory, &array_size, sizeof(array_size));
+    auto array_size_le = array_size;
+    transformEndianness<std::endian::little>(array_size_le);
+    memcpy(memory, &array_size_le, sizeof(array_size_le));
     memory += sizeof(array_size);
     for (size_t i = 0; i < array_size; ++i)
         memory = getData().serializeValueIntoMemory(offset + i, memory, settings);
