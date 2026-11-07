@@ -92,6 +92,11 @@ static const ActionsDAG::Node * appendExpression(
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
     PlannerActionsVisitor join_expression_visitor(planner_context, empty_correlated_columns_set);
     auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
+    /// A correlated subquery already evaluated on one side of the JOIN is an input column of that side.
+    std::erase_if(correlated_subtrees.subqueries, [&](const CorrelatedSubquery & correlated_subquery)
+    {
+        return left_header->has(correlated_subquery.action_node_name) || right_header->has(correlated_subquery.action_node_name);
+    });
     correlated_subtrees.assertEmpty("in join expression");
 
     if (join_expression_dag_node_raw_pointers.size() != 1)

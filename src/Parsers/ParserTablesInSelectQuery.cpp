@@ -617,6 +617,8 @@ An `ON` section can contain several conditions combined using the `AND` and `OR`
 
 Other conditions may use other operators and may reference either the left or the right table of a query, or both.
 
+A condition may also contain a correlated scalar or `EXISTS` subquery that references the columns of only the left or only the right table. Such a subquery is decorrelated in the same way as in `WHERE`, so its result is as if it were evaluated for each row of that table before the join, and it can be used as a JOIN key, for example `ON u.id = (SELECT p.owner FROM posts AS p WHERE p.id = r.post_id)`. A subquery that references the columns of both tables is not supported.
+
 Rows are joined if the whole complex condition is met. If the conditions are not met, rows may still be included in the result depending on the `JOIN` type. If the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
 
 JOIN keys combined with `OR` are supported only by the [`hash`](/concepts/features/operations/select/join-algorithms#hash) algorithm, which builds a separate hash table for each `OR` argument that contains JOIN keys.

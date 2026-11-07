@@ -122,10 +122,10 @@ SELECT count() = 3 FROM (EXPLAIN QUERY TREE SELECT 1 FROM t_and_chain_array_join
 --    subquery rather than a column. `optimize_and_compare_chain` does not gate this one -
 --    `tryOptimizeAndCompareChain` skips a chain holding a correlated subquery, while
 --    `tryOptimizeAndCompareNotEqualsChain` has no such guard - so it arrives only via
---    `optimize_redundant_comparisons`. A correlated subquery is not supported in a join expression,
---    so the query must report that handled exception instead of aborting.
-SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1; -- { serverError NOT_IMPLEMENTED }
-SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 0; -- { serverError NOT_IMPLEMENTED }
+--    `optimize_redundant_comparisons`. The subquery reads only the right table, so the query is valid
+--    and returns nothing, like the ones above.
+SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
+SELECT 1 AS x FROM t_and_chain_array_join AS tx ARRAY JOIN [] AS a0 LEFT JOIN t_and_chain_array_join ON (t_and_chain_array_join.c0 = a0) AND (t_and_chain_array_join.c0 != a0) AND (0 > (SELECT t_and_chain_array_join.c0)) SETTINGS optimize_and_compare_chain = 1, optimize_redundant_comparisons = 0;
 -- 8) A contradiction among the convertible comparisons folds the AND to `false`, but a `Nothing`-typed
 --    operand (here from `ARRAY JOIN []`) collapses the AND's own result type to `Nothing`, which cannot
 --    hold that constant. Such an AND must be left untouched instead, so the query stays valid and its
