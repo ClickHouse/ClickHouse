@@ -373,6 +373,8 @@ struct TableInfo
     NamedCollectionDependencies named_collections;
     /// Materialized view only: replay may reach a check that `allow_materialized_view_with_bad_select` relaxes.
     bool needs_bad_select_gate = false;
+    /// Typing settings set right before this CREATE, so its stored expressions get the types they have on the source.
+    std::vector<std::pair<String, bool>> typing_settings;
     /// The user a view runs as (`DEFINER`). A user is not in any database, so the dump does not create it.
     std::optional<String> definer;
     /// Refreshable materialized view only: the views it waits for (`DEPENDS ON`). CREATE does not need them to exist, and
@@ -679,10 +681,16 @@ bool dependsOnUnstoredContext(const IAST & node, const ContextPtr & context)
     bool depends = false;
     forEachNode(node, [&](const IAST & current)
     {
-        /// A nested table function - `cluster(c, merge(db, re))` - is dispatched, never scalar-folded,
-        /// so only its arguments can carry unstored context.
+        if (depends)
+            return;
+        /// Folding runs a scalar subquery, and a function named like a table function, such as `file`, on this machine.
         const auto * function = current.as<ASTFunction>();
-        if (depends || !function || TableFunctionFactory::instance().isTableFunctionName(function->name))
+        if (current.as<ASTSubquery>() || (function && TableFunctionFactory::instance().isTableFunctionName(function->name)))
+        {
+            depends = true;
+            return;
+        }
+        if (!function)
             return;
         const auto resolver = functions.tryGet(function->name);
         depends = !resolver || !resolver->isDeterministic() || resolver->isServerConstant();
@@ -3225,8 +3233,6 @@ struct ReplayGateNeeds
     bool archive_path = false; /// a table engine or table function argument that names a file inside an archive (`a.tar :: f.csv`)
     bool nested_column = false; /// a column of type `Nested`, which CREATE flattens unless `flatten_nested = 0`
     bool column_declaration = false; /// a column, which CREATE makes `Nullable` when `data_type_default_nullable = 1`
-    bool numeric_supertype = false; /// a function whose arguments may need `allow_lossy_numeric_supertype` for a common type
-    bool named_tuple_element = false; /// `tupleElement(..., 'name')` next to a `tuple()` call
 
     /// Carriers of the shared gates, `parse_failed` keeps all of them.
     bool funnel_functions = false;
@@ -4205,7 +4211,6 @@ ReplayGateNeeds collectReplayGateNeeds(
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
                     .data_lake_catalog_database = true, .ytsaurus_table = true, .paimon_table = true,
                     .delta_lake_table = true, .archive_path = true, .nested_column = true, .column_declaration = true,
-                    .numeric_supertype = true, .named_tuple_element = true,
                     .codec_gates = {}, .data_lake_catalog_gates = {}};
         }
 
@@ -4479,21 +4484,6 @@ ReplayGateNeeds collectReplayGateNeeds(
         needs.hyperscan_functions |= hasToken(names, "multimatch", true) || hasToken(names, "multifuzzymatch", true);
         needs.time_series_aggregate_functions |= hasTimeSeriesFunction(names);
         needs.xgboost |= hasToken(names, "predictxgboost");
-        bool calls_tuple = false;
-        bool reads_tuple_element_by_name = false;
-        forEachNode(*create_ast, [&](const IAST & node)
-        {
-            const auto * function = node.as<ASTFunction>();
-            if (!function)
-                return;
-            for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "array", "map"})
-                needs.numeric_supertype |= equalsCaseInsensitive(function->name, name);
-            calls_tuple |= equalsCaseInsensitive(function->name, "tuple");
-            if (equalsCaseInsensitive(function->name, "tupleElement") && function->arguments && function->arguments->children.size() >= 2)
-                if (const auto * literal = function->arguments->children[1]->as<ASTLiteral>())
-                    reads_tuple_element_by_name |= literal->value.getType() == Field::Types::String;
-        });
-        needs.named_tuple_element |= calls_tuple && reads_tuple_element_by_name;
         needs.ipcrypt_functions |= hasToken(names, "ipcrypt", true);
         needs.client_http_header_function |= hasToken(names, "getclienthttpheader");
         /// `flameGraph` also as the function of an `AggregateFunction` type, named by `arrayReduce`, and with combinators.
@@ -4767,9 +4757,6 @@ String replaySettingsPrelude(
         {"flatten_nested", "0"},
         /// Value 0 keeps a column's stored type, instead of making it `Nullable`.
         {"data_type_default_nullable", "0"},
-        /// Stored expressions created with these settings fail to analyze without them.
-        {"allow_lossy_numeric_supertype", "1"},
-        {"enable_named_columns_in_function_tuple", "1"},
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
     const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context, analyzes_on_source, named_collections);
@@ -4801,10 +4788,6 @@ String replaySettingsPrelude(
             return needs.nested_column;
         if (name == "data_type_default_nullable")
             return needs.column_declaration;
-        if (name == "allow_lossy_numeric_supertype")
-            return needs.numeric_supertype;
-        if (name == "enable_named_columns_in_function_tuple")
-            return needs.named_tuple_element;
         return false;
     };
 
@@ -5379,6 +5362,7 @@ struct ProbeCatalog
     /// The analyzer resolves a table named in a query through the refresh task when it is the target of a refreshable
     /// materialized view, which first runs `SYSTEM SYNC REPLICA` on it in a `Replicated` database.
     std::set<std::pair<String, String>> refresh_targets;
+    ContextPtr context;
 };
 
 std::set<std::pair<String, String>> refreshableViewTargets(const ProbedTables & tables)
@@ -5407,6 +5391,7 @@ bool databaseResolvesLocally(const ProbeCatalog & catalog, const String & databa
 
 bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String, String> & table, size_t depth);
 bool tableFunctionAnalyzesPassively(const ASTFunction & function, const ProbeCatalog & catalog, size_t depth);
+bool functionAnalyzesPassively(const ASTFunction & function, const ContextPtr & context);
 
 /// A database or table name written as a string or an identifier.
 std::optional<String> literalName(const ASTPtr & argument)
@@ -5479,7 +5464,7 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
         const auto * function = create->as_table_function->as<ASTFunction>();
         return function && tableFunctionAnalyzesPassively(*function, catalog, depth + 1);
     }
-    /// The analyzer expands and folds an ALIAS column, which loads a dictionary or runs a subquery.
+    /// The analyzer expands and folds an ALIAS column, so it must pass the same function check as the probed query.
     if (create->columns_list && create->columns_list->columns)
         for (const auto & child : create->columns_list->columns->children)
         {
@@ -5490,8 +5475,7 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
             forEachNode(*column->getDefaultExpression(), [&](const IAST & node)
             {
                 const auto * function = node.as<ASTFunction>();
-                may_do_io |= node.as<ASTSubquery>() != nullptr
-                    || (function && (startsWithCaseInsensitive(function->name, "dict") || equalsCaseInsensitive(function->name, "joinGet")));
+                may_do_io |= node.as<ASTSubquery>() != nullptr || (function && !functionAnalyzesPassively(*function, catalog.context));
             });
             if (may_do_io)
                 return false;
@@ -5639,6 +5623,126 @@ bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, con
         }
     });
     return passive;
+}
+
+/// For the settings that change how `if`, `array`, `tuple` and the like type their result, picks for each table the value
+/// its stored expressions analyze with on the source: 0 if they do, else 1 if they do, else the dump session's value.
+void markTypingSettings(
+    std::vector<TableInfo> & tables, const std::map<String, bool> & session_values, const AnalyzesOnSource & analyzes_on_source)
+{
+    for (auto & table : tables)
+    {
+        if (!table.emit)
+            continue;
+        const ASTPtr ast = tryParseCreate(table.create_query);
+        const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+        /// A plain view's query is not analyzed at CREATE.
+        if (!create || (create->select && !create->is_materialized_view))
+            continue;
+
+        bool numeric_supertype = false;
+        bool calls_tuple = false;
+        bool reads_tuple_element_by_name = false;
+        forEachNode(*ast, [&](const IAST & node)
+        {
+            const auto * function = node.as<ASTFunction>();
+            if (!function)
+                return;
+            for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "array", "map"})
+                numeric_supertype |= equalsCaseInsensitive(function->name, name);
+            calls_tuple |= equalsCaseInsensitive(function->name, "tuple");
+            if (equalsCaseInsensitive(function->name, "tupleElement") && function->arguments && function->arguments->children.size() >= 2)
+                if (const auto * literal = function->arguments->children[1]->as<ASTLiteral>())
+                    reads_tuple_element_by_name |= literal->value.getType() == Field::Types::String;
+        });
+        std::vector<String> carried;
+        if (numeric_supertype)
+            carried.push_back("allow_lossy_numeric_supertype");
+        if (calls_tuple && reads_tuple_element_by_name)
+            carried.push_back("enable_named_columns_in_function_tuple");
+        if (carried.empty())
+            continue;
+
+        /// The stored expressions as one query: a materialized view's SELECT, or a table's column expressions, each cast
+        /// to its column's type like CREATE checks it, and its key expressions.
+        String probe;
+        if (create->is_materialized_view)
+        {
+            if (create->select)
+                probe = create->select->formatWithSecretsOneLine();
+        }
+        else
+        {
+            std::vector<String> expressions;
+            if (create->columns_list && create->columns_list->columns)
+                for (const auto & child : create->columns_list->columns->children)
+                {
+                    const auto * column = child->as<ASTColumnDeclaration>();
+                    if (!column || !column->getDefaultExpression())
+                        continue;
+                    String expression = column->getDefaultExpression()->formatWithSecretsOneLine();
+                    if (column->getType())
+                        expression = "CAST(" + expression + ", " + quoteString(column->getType()->formatWithSecretsOneLine()) + ")";
+                    expressions.push_back(expression);
+                }
+            if (create->storage)
+                for (const auto * key : {create->storage->order_by, create->storage->primary_key, create->storage->partition_by,
+                                         create->storage->sample_by})
+                    if (key)
+                        expressions.push_back(key->formatWithSecretsOneLine());
+            for (size_t i = 0; i < expressions.size(); ++i)
+                probe += (i ? ", " : "SELECT ") + expressions[i];
+            if (!probe.empty())
+                probe += " FROM " + backQuoteIfNeed(table.database) + "." + backQuoteIfNeed(table.name);
+        }
+        ASTPtr probe_ast;
+        if (!probe.empty())
+        {
+            try
+            {
+                ParserSelectWithUnionQuery parser;
+                probe_ast = parseQuery(parser, probe, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            }
+            catch (const Exception &) // NOLINT(bugprone-empty-catch)
+            {
+                /// Not probed: the dump session's value is used.
+            }
+        }
+        /// A probe that would run a subquery is not asked, see `analyzes_on_source`.
+        const bool can_probe = probe_ast && analyzes_on_source && !analysisMayRunSubquery(*probe_ast);
+
+        for (const auto & name : carried)
+        {
+            const auto session_value = session_values.find(name);
+            if (session_value == session_values.end())
+                continue;
+            bool value = session_value->second;
+            if (can_probe)
+            {
+                SettingsChanges changes = {{"allow_suspicious_types_in_group_by", Field(true)},
+                    {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
+                changes.setSetting(name, Field(false));
+                if (analyzes_on_source(probe, changes))
+                    value = false;
+                else
+                {
+                    changes.setSetting(name, Field(true));
+                    if (analyzes_on_source(probe, changes))
+                        value = true;
+                }
+            }
+            table.typing_settings.emplace_back(name, value);
+        }
+    }
+}
+
+/// The SET statements that go right before a table's CREATE.
+String typingSettingsPrefix(const TableInfo & table)
+{
+    String res;
+    for (const auto & [name, value] : table.typing_settings)
+        res += "SET " + name + (value ? " = 1;\n" : " = 0;\n");
+    return res;
 }
 
 }
@@ -5819,6 +5923,7 @@ void dumpDatabaseSchema(
     /// analysis runs a subquery, and a query whose analysis may do I/O is not asked (see `analysisStaysOnServer`). The settings
     /// go in the query text, because `LocalConnection` drops the settings argument.
     ProbeCatalog probe_catalog;
+    probe_catalog.context = context;
     probe_catalog.databases = &database_info;
     probe_catalog.predefined_engines = [&, cached = std::optional<std::map<std::pair<String, String>, String>>{}]() mutable
         -> const std::map<std::pair<String, String>, String> &
@@ -5970,6 +6075,22 @@ void dumpDatabaseSchema(
         reportMaskedSecrets(tables, create_database_query_by_db, err);
         order = orderTablesByDependencies(tables);
         markMaterializedViewsNeedingBadSelectGate(tables, context, user_defined_functions, analyzes_on_source, err);
+
+        std::map<String, bool> typing_session_values;
+        executeQuery(connection, timeouts, client_info,
+            "SELECT name, value FROM system.settings "
+            "WHERE name IN ('allow_lossy_numeric_supertype', 'enable_named_columns_in_function_tuple')",
+            [&](const Block & block)
+            {
+                if (block.empty())
+                    return;
+                const Block full = unwrapColumns(block);
+                const auto & name_column = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
+                const auto & value_column = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+                for (size_t i = 0; i < name_column.size(); ++i)
+                    typing_session_values[name_column[i].safeGet<String>()] = value_column[i].safeGet<String>() != "0";
+            }, context->getSettingsRef());
+        markTypingSettings(tables, typing_session_values, analyzes_on_source);
     }
 
     if (output_dir.empty())
@@ -6004,7 +6125,7 @@ void dumpDatabaseSchema(
                 current_database = tables[i].database;
                 out << "USE " << backQuoteIfNeed(current_database) << ";\n\n";
             }
-            out << tables[i].create_query + ";\n\n";
+            out << typingSettingsPrefix(tables[i]) << tables[i].create_query + ";\n\n";
         }
         out.flush();
         if (out.fail())
@@ -6073,7 +6194,7 @@ void dumpDatabaseSchema(
         file << create_database_query_by_db.at(db) << ";\n\nUSE " << backQuoteIfNeed(db) << ";\n\n";
         for (size_t i : order)
             if (tables[i].emit && tables[i].database == db)
-                file << tables[i].create_query << ";\n\n";
+                file << typingSettingsPrefix(tables[i]) << tables[i].create_query << ";\n\n";
         file.flush();
         if (file.fail())
             throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE, "Failed writing {}", path.string());

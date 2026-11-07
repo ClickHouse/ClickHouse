@@ -1493,8 +1493,9 @@ try
 
         /// Re-run drivers for previously persisted ATTACH FUNCTION entries whose
         /// dynamic configuration files are missing.
-        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
-            global_context, global_context->getUserDefinedSQLObjectsStorage());
+        if (!getClientConfiguration().has("dump-schema")) /// A driver runs a command and writes files; a dump changes nothing.
+            UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+                global_context, global_context->getUserDefinedSQLObjectsStorage());
     }
     catch (...)
     {

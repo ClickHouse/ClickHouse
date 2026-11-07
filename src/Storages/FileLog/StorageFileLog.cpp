@@ -764,7 +764,8 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
 
     if (in->eof()) /// File is empty.
     {
-        disk->removeFile(full_path);
+        if (!loadsPassively(getContext()))
+            disk->removeFile(full_path);
         return {};
     }
 

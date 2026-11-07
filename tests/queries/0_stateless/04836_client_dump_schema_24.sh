@@ -27,11 +27,14 @@ src="$work/src"
 # clickhouse-local reads user files from its working directory.
 mkdir -p "$work/logs"
 printf 'a\nb\n' > "$work/logs/app.log"
+printf 'e\n' > "$work/logs/empty.log"
 $CLICKHOUSE_LOCAL --path "$src" -n -q "
 CREATE DATABASE d;
 CREATE TABLE d.mt (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO d.mt VALUES (1);
 INSERT INTO d.mt VALUES (2);
+INSERT INTO d.mt VALUES (3);
+INSERT INTO d.mt VALUES (4);
 CREATE TABLE d.fl (line String) ENGINE = FileLog('logs/', 'LineAsString');
 SELECT count() FROM d.fl SETTINGS stream_like_engine_allow_direct_select = 1 FORMAT Null;
 "
@@ -42,6 +45,11 @@ rm "$mt_dir/format_version.txt"
 rm -rf "$mt_dir/detached"
 # A leftover temporary transaction metadata file, which loading removes.
 : > "$mt_dir/all_2_2_0/txn_version.txt.tmp"
+# A part without columns.txt and one with an empty checksums.txt, which loading writes again.
+rm "$mt_dir/all_3_3_0/columns.txt"
+: > "$mt_dir/all_4_4_0/checksums.txt"
+# An empty offset file, which loading removes.
+: > "$(find "$src/store" -path '*/metadata/empty.log' | head -1)"
 # A rotated log file, whose offset file loading renames, and a removed one, whose offset file loading removes.
 mv "$work/logs/app.log" "$work/logs/app.log.1"
 printf 'c\n' > "$work/logs/other.log"
@@ -65,6 +73,8 @@ replay()
 echo '--- dumps replay ---'
 replay lossy_supertype "CREATE TABLE d.t (a UInt32, x Float64 DEFAULT arraySum([toDecimal64(a, 2), 0.5])) ENGINE = MergeTree ORDER BY a;" \
     --allow_lossy_numeric_supertype 1
+# Valid with the setting off, its default would type as Float64 and fail with it on.
+replay lossy_supertype_off "CREATE TABLE d.t (a UInt64, x String DEFAULT toString(variantType(if(a > 0, toDecimal64(a, 2), 0.5)))) ENGINE = MergeTree ORDER BY a;"
 replay named_tuple "CREATE TABLE d.t (x UInt64, y UInt64 DEFAULT tupleElement(tuple(x), 'x')) ENGINE = MergeTree ORDER BY x;" \
     --enable_named_columns_in_function_tuple 1
 replay computed_key_type "CREATE TABLE d.t (x UInt64) ENGINE = MergeTree ORDER BY CAST(x, concat('Simple', 'AggregateFunction(sum, UInt64)'));" \
@@ -72,6 +82,18 @@ replay computed_key_type "CREATE TABLE d.t (x UInt64) ENGINE = MergeTree ORDER B
 replay eval_filter "CREATE TABLE d.zzz_src (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE d.aaa (x UInt64) ENGINE = Remote('127.0.0.1', eval('SELECT toUInt64(1) AS x SETTINGS filter = ''x IN (SELECT x FROM d.zzz_src)'''));" \
     --allow_experimental_eval_table_function 1
+
+echo '--- a probe does not read the file of an ALIAS column ---'
+echo hi > "$work/payload.txt"
+$CLICKHOUSE_LOCAL --path "$work/alias" -n -q "
+CREATE DATABASE d;
+CREATE TABLE d.m (k UInt64, a String ALIAS file('payload.txt')) ENGINE = Memory;
+CREATE MATERIALIZED VIEW d.mv ENGINE = Memory AS SELECT a FROM d.m;"
+# A FIFO without a writer blocks whoever reads it.
+rm "$work/payload.txt"
+mkfifo "$work/payload.txt"
+timeout 60 $CLICKHOUSE_LOCAL --path "$work/alias" --dump-schema d > /dev/null 2>&1
+echo "alias_file: dump rc=$?"
 
 # clickhouse-local cannot load a table whose constraint runs a subquery, so this dump is taken from the server.
 $CLICKHOUSE_CLIENT -n -q "
