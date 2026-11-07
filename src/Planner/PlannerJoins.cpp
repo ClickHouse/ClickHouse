@@ -1213,13 +1213,15 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     const bool parallel_layout
         = table_join->preferParallelHashLayout(params.hash_join_layout, params.rhs_size_estimation, params.parallel_hash_join_threshold);
-    const auto build_layout = parallel_layout ? HashJoinBuildLayout::twoLevel(params.max_threads) : HashJoinBuildLayout::oneBucket(1);
+    auto build_layout = parallel_layout ? HashJoinBuildLayout::twoLevel(params.max_threads) : HashJoinBuildLayout::oneBucket(1);
 
     /// A small right table makes the threshold choose the serial layout, but says nothing about the size of the probe side.
     /// `parallel` is asked only to tell the kinds that can have a parallel layout from the ones that always build one part.
-    const bool resize_probe_side = params.join_probe_resize_to_max_threads && !parallel_layout
-        && params.hash_join_layout == HashJoinLayout::AUTO
-        && table_join->preferParallelHashLayout(HashJoinLayout::PARALLEL, params.rhs_size_estimation, params.parallel_hash_join_threshold);
+    if (params.join_probe_resize_to_max_threads && !parallel_layout && params.hash_join_layout == HashJoinLayout::AUTO
+        && table_join->preferParallelHashLayout(HashJoinLayout::PARALLEL, params.rhs_size_estimation, params.parallel_hash_join_threshold))
+    {
+        build_layout = build_layout.withWideProbe();
+    }
 
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -1245,7 +1247,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
         {
-            auto spilling_join = std::make_shared<SpillingHashJoin>(
+            return std::make_shared<SpillingHashJoin>(
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
@@ -1255,14 +1257,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 build_layout,
                 stats_collecting_params,
                 params.join_any_take_last_row);
-            spilling_join->setResizeProbeSideToMaxStreams(resize_probe_side);
-            return spilling_join;
         }
 
-        auto hash_join = HashJoin::create(
+        return HashJoin::create(
             table_join, right_table_expression_header, build_layout, params.join_any_take_last_row, stats_collecting_params);
-        hash_join->setResizeProbeSideToMaxStreams(resize_probe_side);
-        return hash_join;
     }
 
     /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a

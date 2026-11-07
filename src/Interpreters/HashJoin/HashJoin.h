@@ -83,15 +83,27 @@ struct HashJoinBuildLayout
     bool two_level;
     size_t num_build_streams;
     size_t num_slots;
+    /// Asks the pipeline to widen a narrow probe side to `max_threads` streams, as the parallel layout always does.
+    bool widen_probe;
 
     /// One-bucket maps behind one slot, whatever the number of build streams.
-    static HashJoinBuildLayout oneBucket(size_t num_build_streams) { return {false, std::max<size_t>(1, num_build_streams), 1}; }
+    static HashJoinBuildLayout oneBucket(size_t num_build_streams)
+    {
+        return {false, std::max<size_t>(1, num_build_streams), 1, false};
+    }
 
     /// Two-level maps with one slot per build stream, rounded up to a power of two and capped at the bucket count.
     static HashJoinBuildLayout twoLevel(size_t num_build_streams)
     {
         const size_t streams = std::max<size_t>(1, num_build_streams);
-        return {true, streams, std::min<size_t>(std::bit_ceil(streams), NUM_HASH_TABLE_BUCKETS)};
+        return {true, streams, std::min<size_t>(std::bit_ceil(streams), NUM_HASH_TABLE_BUCKETS), false};
+    }
+
+    HashJoinBuildLayout withWideProbe() const
+    {
+        HashJoinBuildLayout layout = *this;
+        layout.widen_probe = true;
+        return layout;
     }
 };
 
@@ -219,16 +231,13 @@ public:
     /// The left side is streamed through once, each row emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
 
-    bool resizeProbeSideToMaxStreams() const override { return resize_probe_side_to_max_streams; }
-    void setResizeProbeSideToMaxStreams(bool value) { resize_probe_side_to_max_streams = value; }
+    bool resizeProbeSideToMaxStreams() const override { return build_layout.widen_probe; }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        auto cloned_join = cloneWith(table_join_, right_sample_block_, build_layout);
-        cloned_join->setResizeProbeSideToMaxStreams(resize_probe_side_to_max_streams);
-        return cloned_join;
+        return cloneWith(table_join_, right_sample_block_, build_layout);
     }
 
     /// `joinPipelinesByShards` never installs `NonJoinedBlocksTransform`: a clone reporting parallel
@@ -751,7 +760,7 @@ private:
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
 
-    std::shared_ptr<HashJoin> cloneWith(
+    std::shared_ptr<IJoin> cloneWith(
         const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader right_sample_block_,
         HashJoinBuildLayout build_layout_) const
@@ -767,7 +776,6 @@ private:
     bool from_storage_join = false;
 
     const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
-    bool resize_probe_side_to_max_streams = false;
     const size_t reserve_num;
     const String instance_id;
     const HashJoinBuildLayout build_layout;

@@ -121,11 +121,6 @@ bool SpillingHashJoin::resizeProbeSideToMaxStreams() const
     return hash_join->resizeProbeSideToMaxStreams();
 }
 
-void SpillingHashJoin::setResizeProbeSideToMaxStreams(bool value)
-{
-    hash_join->setResizeProbeSideToMaxStreams(value);
-}
-
 std::string SpillingHashJoin::getAlgorithm() const
 {
     switch (state.load(std::memory_order_acquire))
