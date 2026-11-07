@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Functions/Regexps.h>
@@ -544,6 +545,11 @@ bool isLikePatternFunction(const String & function_name)
         || function_name == "mapContainsValueLike";
 }
 
+bool canTokenizeNeedle(const ITokenizer & tokenizer, std::string_view needle)
+{
+    return !tokenizer.requiresValidUTF8() || UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle.data()), needle.size());
+}
+
 /// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
 Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
 {
@@ -620,9 +626,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows.
-    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String
-        && likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()))
-        return false;
+    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String)
+    {
+        const auto & pattern = const_value.safeGet<String>();
+        if (likePatternHasUnknownBackslashEscape(pattern) || !canTokenizeNeedle(*tokenizer, pattern))
+            return false;
+    }
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
@@ -861,10 +870,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
+        const auto & value = const_value.safeGet<String>();
+        if (!canTokenizeNeedle(*tokenizer, value))
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.safeGet<String>();
         tokenizer->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, true, false);
         return true;
     }
@@ -872,10 +883,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
+        const auto & value = const_value.safeGet<String>();
+        if (!canTokenizeNeedle(*tokenizer, value))
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.safeGet<String>();
         tokenizer->substringToBloomFilter(value.data(), value.size(), *out.bloom_filter, false, true);
         return true;
     }
@@ -892,8 +905,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (element.getType() != Field::Types::String)
                 return false;
 
-            bloom_filters.back().emplace_back(params);
             const auto & value = element.safeGet<String>();
+            if (!canTokenizeNeedle(*tokenizer, value))
+                return false;
+            bloom_filters.back().emplace_back(params);
             tokenizer->substringToBloomFilter(value.data(), value.size(), bloom_filters.back().back(), false, false);
         }
         out.set_bloom_filters = std::move(bloom_filters);
@@ -912,6 +927,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (result.required_substring.empty() && result.alternatives.empty())
+            return false;
+
+        auto can_tokenize = [&](const String & needle) { return canTokenizeNeedle(*tokenizer, needle); };
+        if (result.alternatives.empty() ? !can_tokenize(result.required_substring)
+                                        : !std::ranges::all_of(result.alternatives, can_tokenize))
             return false;
 
         /// out.set_bloom_filters means alternatives exist
