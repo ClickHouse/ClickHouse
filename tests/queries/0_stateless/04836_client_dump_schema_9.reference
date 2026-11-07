@@ -1,0 +1,9 @@
+--- the dump never logs in with a remote() call stored login ---
+aaa_login_reader: no local edge
+aab_collection_reader: no local edge
+readers warned: 2
+masked reader warned: 1
+logins by the stored or default user during the dumps: 0
+--- a remote() read through 0.0.0.0 does log in as the stored user ---
+1
+logins by the stored user: some

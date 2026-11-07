@@ -1,0 +1,6 @@
+--- POPULATE is not a stored replay-time property ---
+stored CREATE keeps POPULATE: 0
+dump keeps POPULATE: 0
+heavy-create gate emitted: 0
+OK: replayed with the default heavy-create gate
+replayed objects present: 2

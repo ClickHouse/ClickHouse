@@ -2641,7 +2641,9 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         /// An empty checksums.txt on disk would be re-read (and rejected) by checkDataPart, so
         /// drop it first. Any leftover .tmp from an interrupted rewrite is skipped by checkDataPart.
-        if (buf && !getDataPartStorage().isReadonly())
+        /// A passive load (`load_tables_readonly`, as `--dump-schema` uses) keeps the part's files as they are.
+        const bool passive = storage.loadsPassively();
+        if (buf && !getDataPartStorage().isReadonly() && !passive)
         {
             buf.reset();
             getDataPartStorage().removeFileIfExists("checksums.txt");
@@ -2655,7 +2657,8 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
-        writeChecksums(checksums, {});
+        if (!passive)
+            writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
         bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
@@ -3038,7 +3041,7 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
                 "Cannot rebuild columns.txt of part {}: it stores columns [{}], the list rebuilt from the table metadata is [{}]",
                 name, fmt::join(recorded_columns, ", "), fmt::join(loaded_columns.getNames(), ", "));
 
-        if (!is_readonly_storage)
+        if (!is_readonly_storage && !storage.loadsPassively())
             writeColumns(loaded_columns, {});
     }
 

@@ -48,6 +48,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -86,6 +87,11 @@ namespace Setting
 {
 extern const SettingsBool optimize_trivial_approximate_count_query;
 extern const SettingsUInt64 max_compress_block_size;
+}
+
+namespace ServerSetting
+{
+extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace RocksDBSetting
@@ -276,7 +282,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     , implicit_path(rocksdb_dir_.empty())
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
-    , read_only(read_only_)
+    /// A writable open of an existing table adds files to its directory, so `load_tables_readonly` opens it read-only.
+    , read_only(read_only_ || (mode >= LoadingStrictnessLevel::ATTACH && context_->getServerSettings()[ServerSetting::load_tables_readonly]))
 {
     setInMemoryMetadata(metadata_.withVirtuals(createVirtuals()));
     setSettings(std::move(settings_));

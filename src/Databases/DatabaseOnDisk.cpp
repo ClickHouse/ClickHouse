@@ -6,6 +6,7 @@
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/UUID.h>
@@ -68,6 +69,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -795,6 +801,8 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     /// Metadata files to load: name and flag for .tmp_drop files
     std::vector<std::pair<String, bool>> metadata_files;
+    /// `load_tables_readonly` removes, renames and restores no file here.
+    const bool load_readonly = getContext()->getServerSettings()[ServerSetting::load_tables_readonly];
 
     for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
@@ -815,16 +823,27 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         if (endsWith(file_name, ".sql.tmp_drop"))
         {
             /// There are files that we tried to delete previously
-            metadata_files.emplace_back(file_name, false);
+            if (!load_readonly)
+                metadata_files.emplace_back(file_name, false);
+            /// Loading restores such an object by renaming its file, or removes the file of one without data.
+            else if (const String object_name = file_name.substr(0, file_name.size() - strlen(".sql.tmp_drop"));
+                     db_disk->existsFileOrDirectory(fs::path(data_path) / object_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot load database {} with `load_tables_readonly`: object {} was not dropped completely, and loading it "
+                    "restores its metadata file {}", backQuote(getDatabaseName()), backQuote(object_name), getMetadataPath() + file_name);
         }
         else if (endsWith(file_name, ".tmp_move_from") || endsWith(file_name, ".tmp_move_to"))
         {
+            if (load_readonly)
+                continue;
             /// There are temp files generated in MetadataStorageFromPlainObjectStorageMoveFileOperation
             LOG_INFO(log, "Removing file {}", sub_path.string());
             db_disk->removeFileIfExists(sub_path);
         }
         else if (endsWith(file_name, ".sql.tmp"))
         {
+            if (load_readonly)
+                continue;
             /// There are files .sql.tmp - delete
             LOG_INFO(log, "Removing file {}", sub_path.string());
             db_disk->removeFileIfExists(sub_path);
@@ -882,7 +901,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
                 continue;
 
             stale_files.insert(file_name);
-            if (db_disk->isReadOnly())
+            if (db_disk->isReadOnly() || load_readonly)
             {
                 LOG_WARNING(log, "Skipping {}: it is a copy of {}", path, *copy);
                 continue;
