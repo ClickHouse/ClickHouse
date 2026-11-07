@@ -5,9 +5,6 @@
             <values>
                 <value>1</value>
                 <value>2</value>
-                <value>4</value>
-                <value>8</value>
-                <value>16</value>
                 <value>64</value>
             </values>
         </substitution>
@@ -28,12 +25,13 @@
         SETTINGS ratio_of_defaults_for_sparse_serialization = 0.8
     </create_query>
 
+    <!-- Keep the payload short: growing long strings by reallocation costs a different amount in each server process. -->
     <fill_query>
         INSERT INTO sparse_column_index_runs_{run_length}
         SELECT
             number,
             number % 20 = 0 ? number : 0,
-            number % 20 = 0 ? repeat(toString(number), 64) : ''
+            number % 20 = 0 ? toString(number) : ''
         FROM numbers(intDiv(10000000, {run_length}))
     </fill_query>
 
