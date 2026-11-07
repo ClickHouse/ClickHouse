@@ -1,0 +1,143 @@
+{
+  "format-version": 2,
+  "table-uuid": "8a1f6545-b999-40af-b71c-30a304f0d15d",
+  "location": "file:///iceberg-deletes/positional",
+  "last-sequence-number": 2,
+  "last-updated-ms": 1782714006198,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "category",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "value",
+          "required": false,
+          "type": "double"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "write.parquet.page-size-bytes": "128",
+    "owner": "root",
+    "write.merge.mode": "merge-on-read",
+    "write.parquet.row-group-size-bytes": "256",
+    "write.delete.mode": "merge-on-read",
+    "write.metadata.compression-codec": "none",
+    "write.parquet.compression-codec": "uncompressed",
+    "write.update.mode": "merge-on-read"
+  },
+  "current-snapshot-id": 1081730361809121150,
+  "refs": {
+    "main": {
+      "snapshot-id": 1081730361809121150,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 2179006011592612113,
+      "timestamp-ms": 1782714005588,
+      "summary": {
+        "operation": "append",
+        "spark.app.id": "local-1782714002367",
+        "added-data-files": "1",
+        "added-records": "1000",
+        "added-files-size": "21862",
+        "changed-partition-count": "1",
+        "total-records": "1000",
+        "total-files-size": "21862",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "engine-version": "3.4.1",
+        "app-id": "local-1782714002367",
+        "engine-name": "spark",
+        "iceberg-version": "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+      },
+      "manifest-list": "file:///iceberg-deletes/positional/metadata/snap-2179006011592612113-1-15ba6152-75a9-4ee1-9037-b0be09545253.avro",
+      "schema-id": 0
+    },
+    {
+      "sequence-number": 2,
+      "snapshot-id": 1081730361809121150,
+      "parent-snapshot-id": 2179006011592612113,
+      "timestamp-ms": 1782714006198,
+      "summary": {
+        "operation": "delete",
+        "spark.app.id": "local-1782714002367",
+        "added-position-delete-files": "1",
+        "added-delete-files": "1",
+        "added-files-size": "4277",
+        "added-position-deletes": "110",
+        "changed-partition-count": "1",
+        "total-records": "1000",
+        "total-files-size": "26139",
+        "total-data-files": "1",
+        "total-delete-files": "1",
+        "total-position-deletes": "110",
+        "total-equality-deletes": "0",
+        "engine-version": "3.4.1",
+        "app-id": "local-1782714002367",
+        "engine-name": "spark",
+        "iceberg-version": "Apache Iceberg 1.7.1 (commit 4a432839233f2343a9eae8255532f911f06358ef)"
+      },
+      "manifest-list": "file:///iceberg-deletes/positional/metadata/snap-1081730361809121150-1-46d6a0a9-8b4e-45b4-82b4-aa4a756aa15d.avro",
+      "schema-id": 0
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1782714005588,
+      "snapshot-id": 2179006011592612113
+    },
+    {
+      "timestamp-ms": 1782714006198,
+      "snapshot-id": 1081730361809121150
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1782714004055,
+      "metadata-file": "file:///iceberg-deletes/positional/metadata/v1.metadata.json"
+    },
+    {
+      "timestamp-ms": 1782714005588,
+      "metadata-file": "file:///iceberg-deletes/positional/metadata/v2.metadata.json"
+    }
+  ]
+}

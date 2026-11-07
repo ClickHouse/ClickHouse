@@ -1,0 +1,101 @@
+{
+  "format-version": 2,
+  "table-uuid": "d81d9b67-d71e-c6b0-aabf-e1605cd77fed",
+  "location": "file:///iceberg-geo-testbed/v2_flat_columns",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1700000000000,
+  "last-column-id": 5,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "schema-id": 0,
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "xmin",
+          "required": false,
+          "type": "double"
+        },
+        {
+          "id": 3,
+          "name": "ymin",
+          "required": false,
+          "type": "double"
+        },
+        {
+          "id": 4,
+          "name": "xmax",
+          "required": false,
+          "type": "double"
+        },
+        {
+          "id": 5,
+          "name": "ymax",
+          "required": false,
+          "type": "double"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "schema.name-mapping.default": "[{\"field-id\": 1, \"names\": [\"id\"]}, {\"field-id\": 2, \"names\": [\"xmin\"]}, {\"field-id\": 3, \"names\": [\"ymin\"]}, {\"field-id\": 4, \"names\": [\"xmax\"]}, {\"field-id\": 5, \"names\": [\"ymax\"]}]"
+  },
+  "current-snapshot-id": 1700000000000,
+  "refs": {
+    "main": {
+      "snapshot-id": 1700000000000,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "snapshot-id": 1700000000000,
+      "sequence-number": 1,
+      "timestamp-ms": 1700000000000,
+      "manifest-list": "file:///iceberg-geo-testbed/v2_flat_columns/metadata/snap-1700000000000-manifest-list.avro",
+      "schema-id": 0,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "10",
+        "added-records": "10000",
+        "added-files-size": "380838",
+        "total-data-files": "10",
+        "total-records": "10000",
+        "total-files-size": "380838",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-position-deletes": "0",
+        "changed-partition-count": "1"
+      }
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 1700000000000,
+      "timestamp-ms": 1700000000000
+    }
+  ],
+  "metadata-log": []
+}
