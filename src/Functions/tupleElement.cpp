@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,6 +12,7 @@
 #include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnQBit.h>
@@ -19,6 +21,9 @@
 #include <Common/assert_cast.h>
 
 #include <memory>
+#include <optional>
+#include <variant>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -35,6 +40,7 @@ namespace
 
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
+  * The same for `FixedArray`: the result is `FixedArray` of the same size, so the default implementation for `FixedArray` is not used.
   * The logic of qbitElement is integrated into this function because AST makes any dot syntax (vec.i) a tupleElement(vec, i) call.
   */
 class FunctionTupleElement final : public IFunction
@@ -54,6 +60,7 @@ public:
     /// subcolumn path `t.a` (which preserves `LowCardinality(...)`). tupleElement only extracts a column, so
     /// it is naturally correct for any element type without the framework's LowCardinality unwrapping.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForFixedArray() const override { return false; }
     bool useDefaultImplementationForDynamic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -95,12 +102,23 @@ public:
                             "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                             getName(), number_of_arguments);
 
-        size_t count_arrays = 0;
+        /// The sizes of the enclosing arrays, from the outermost: `FixedArray(N, ...)` is N and `Array(...)` is nothing.
+        VectorWithMemoryTracking<std::optional<size_t>> arrays;
         const IDataType * input_type = arguments[0].type.get();
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(input_type))
+        while (true)
         {
-            input_type = array->getNestedType().get();
-            ++count_arrays;
+            if (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(input_type))
+            {
+                input_type = array->getNestedType().get();
+                arrays.emplace_back();
+            }
+            else if (const DataTypeFixedArray * fixed_array = checkAndGetDataType<DataTypeFixedArray>(input_type))
+            {
+                input_type = fixed_array->getNestedType().get();
+                arrays.emplace_back(fixed_array->getArraySize());
+            }
+            else
+                break;
         }
 
         /// Need later to decide whether to wrap result_type with Nullable
@@ -124,7 +142,7 @@ public:
                 if (is_input_type_nullable)
                     element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
 
-                return wrapInArrays(std::move(element_type), count_arrays);
+                return wrapInArrays(std::move(element_type), arrays);
             }
             return arguments[2].type;
         }
@@ -141,7 +159,7 @@ public:
 
             std::optional<size_t> index = getQBitElementIndex(arguments[1].column, *qbit, number_of_arguments);
             if (index.has_value())
-                return wrapInArrays(qbit->getNestedTupleElementType(), count_arrays);
+                return wrapInArrays(qbit->getNestedTupleElementType(), arrays);
 
             return arguments[2].type;
         }
@@ -165,7 +183,7 @@ public:
             if (is_input_type_nullable)
                 element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
 
-            return wrapInArrays(std::move(element_type), count_arrays);
+            return wrapInArrays(std::move(element_type), arrays);
         }
 
         throw Exception(
@@ -188,14 +206,28 @@ public:
             input_arg_is_const = true;
         }
 
-        Columns array_offsets;
-        while (const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(input_type))
+        /// The enclosing arrays, from the outermost: the offsets of `Array` or the size of `FixedArray`.
+        VectorWithMemoryTracking<std::variant<ColumnPtr, size_t>> arrays;
+        while (true)
         {
-            const ColumnArray * array_col = assert_cast<const ColumnArray *>(input_col);
+            if (const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(input_type))
+            {
+                const ColumnArray * array_col = assert_cast<const ColumnArray *>(input_col);
 
-            input_type = array_type->getNestedType().get();
-            input_col = &array_col->getData();
-            array_offsets.push_back(array_col->getOffsetsPtr());
+                input_type = array_type->getNestedType().get();
+                input_col = &array_col->getData();
+                arrays.emplace_back(array_col->getOffsetsPtr());
+            }
+            else if (const DataTypeFixedArray * fixed_array_type = checkAndGetDataType<DataTypeFixedArray>(input_type))
+            {
+                const ColumnFixedArray * fixed_array_col = assert_cast<const ColumnFixedArray *>(input_col);
+
+                input_type = fixed_array_type->getNestedType().get();
+                input_col = &fixed_array_col->getData();
+                arrays.emplace_back(fixed_array_col->getArraySize());
+            }
+            else
+                break;
         }
 
         /// Handle Nullable(Tuple)
@@ -271,8 +303,13 @@ public:
         }
 
         /// Wrap into Arrays
-        for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
-            res = ColumnArray::create(res, *it);
+        for (auto it = arrays.rbegin(); it != arrays.rend(); ++it)
+        {
+            if (const auto * offsets = std::get_if<ColumnPtr>(&*it))
+                res = ColumnArray::create(res, *offsets);
+            else
+                res = ColumnFixedArray::create(res, std::get<size_t>(*it));
+        }
 
         if (input_arg_is_const)
             res = ColumnConst::create(res, input_rows_count);
@@ -348,10 +385,15 @@ private:
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant UInt", getName());
     }
 
-    DataTypePtr wrapInArrays(DataTypePtr nested_type, size_t count_arrays) const
+    static DataTypePtr wrapInArrays(DataTypePtr nested_type, const VectorWithMemoryTracking<std::optional<size_t>> & arrays)
     {
-        for (; count_arrays; --count_arrays)
-            nested_type = std::make_shared<DataTypeArray>(nested_type);
+        for (auto it = arrays.rbegin(); it != arrays.rend(); ++it)
+        {
+            if (*it)
+                nested_type = std::make_shared<DataTypeFixedArray>(**it, nested_type);
+            else
+                nested_type = std::make_shared<DataTypeArray>(nested_type);
+        }
 
         return nested_type;
     }

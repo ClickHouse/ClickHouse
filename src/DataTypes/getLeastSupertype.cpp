@@ -10,6 +10,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -424,10 +425,12 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             return getLeastSupertype<on_error>(non_nothing_types);
     }
 
-    /// For Arrays
+    /// For Arrays. The supertype of `FixedArray` of the same size is `FixedArray`, otherwise it is `Array`.
     {
         bool have_array = false;
         bool all_arrays = true;
+        std::optional<size_t> common_fixed_size;
+        bool all_fixed_of_same_size = true;
 
         DataTypes nested_types;
         nested_types.reserve(types.size());
@@ -437,7 +440,16 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))
             {
                 have_array = true;
+                all_fixed_of_same_size = false;
                 nested_types.emplace_back(type_array->getNestedType());
+            }
+            else if (const DataTypeFixedArray * type_fixed_array = typeid_cast<const DataTypeFixedArray *>(type.get()))
+            {
+                have_array = true;
+                if (common_fixed_size && *common_fixed_size != type_fixed_array->getArraySize())
+                    all_fixed_of_same_size = false;
+                common_fixed_size = type_fixed_array->getArraySize();
+                nested_types.emplace_back(type_fixed_array->getNestedType());
             }
             else
                 all_arrays = false;
@@ -454,6 +466,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!nested_type)
                 return nullptr;
 
+            if (all_fixed_of_same_size)
+                return std::make_shared<DataTypeFixedArray>(*common_fixed_size, nested_type);
             return std::make_shared<DataTypeArray>(nested_type);
         }
     }

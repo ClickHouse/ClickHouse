@@ -23,6 +23,11 @@ public:
 
     String getSignatureString() const override { return "(Array(T)) -> Array(T)"; }
 
+    /// The elements keep their type, so the elements of a multidimensional `FixedArray` stay `FixedArray`
+    /// (`LEFT ARRAY JOIN` relies on it). Only the outer `FixedArray` is processed as `Array`.
+    bool useDefaultImplementationForFixedArray() const override { return false; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 };
 

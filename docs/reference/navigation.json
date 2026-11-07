@@ -251,6 +251,7 @@
           "group": "Composite types",
           "pages": [
             "reference/data-types/array",
+            "reference/data-types/fixedarray",
             "reference/data-types/tuple",
             "reference/data-types/map",
             "reference/data-types/nested-data-structures/index"

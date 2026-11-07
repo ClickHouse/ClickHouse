@@ -1,0 +1,23 @@
+-- captured constant FixedArray
+[[0,0],[0,0]]	FixedArray(2, 2, UInt8)
+[[0,0],[0,0]]
+[[0,0],[0,0]]
+[[0,0],[0,0]]
+-- Variant tensors
+[1,4]
+-- scopes of aliases
+[11,22]
+[2,4]
+5
+5
+-- scoped functions
+[2,3]
+[2,4]
+[2,4]
+5
+5
+-- dynamic subcolumns
+[1,2]	FixedArray(2, Dynamic)
+['{"x":1}','{"x":2}']	[1,2]
+[1,2]	['a',NULL]	FixedArray(2, Dynamic)	[1,NULL]	[NULL,'a']	FixedArray(2, Nullable(Int64))
+[1,2]
