@@ -82,3 +82,35 @@ def test_http_commands_cli_response(started_cluster):
     ) as client:
         assert client.get("foo") == "bar"
         client.rm("foo")
+
+
+def test_http_commands_no_host_path_leak_via_proc_cwd(started_cluster):
+    leader: ClickHouseInstance = keeper_utils.get_leader(cluster, [node1, node2, node3])
+    response = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": "cd foo", "cwd": "/proc/self/cwd"},
+    )
+    assert response.status_code == 200
+    assert "/proc/self/cwd/foo" in response.json()["result"]
+    assert "does not exist" in response.json()["result"]
+
+
+def test_http_commands_rejects_invalid_cwd(started_cluster):
+    leader: ClickHouseInstance = keeper_utils.get_leader(cluster, [node1, node2, node3])
+
+    empty_cwd_response = requests.get(
+        "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+        params={"command": "cd foo", "cwd": ""},
+    )
+    assert empty_cwd_response.status_code == 200
+    # `cd` prints the resolved znode in quotes. This fails on master, where an
+    # empty cwd is replaced by the Keeper process working directory.
+    assert '"/foo"' in empty_cwd_response.json()["result"]
+
+    for invalid_cwd in ("..", "relative/path"):
+        response = requests.get(
+            "http://{host}:{port}/api/v1/commands".format(host=leader.ip_address, port=9182),
+            params={"command": "ls", "cwd": invalid_cwd},
+        )
+        assert response.status_code == 400
+        assert response.json()["message"] == "Invalid cwd: must be an absolute path starting with '/'."
