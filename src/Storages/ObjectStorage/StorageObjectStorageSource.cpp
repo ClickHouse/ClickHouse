@@ -4,7 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
-#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
+#include <Storages/ObjectStorage/DataLakes/DeletionVectorBitmap.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
