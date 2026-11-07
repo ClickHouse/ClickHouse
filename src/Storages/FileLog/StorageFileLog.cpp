@@ -36,8 +36,16 @@
 #include <Common/parseGlobs.h>
 #include <Common/re2.h>
 #include <base/errnoToString.h>
+#include <base/scope_guard.h>
 
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
+#if defined(OS_LINUX)
+#include <linux/fs.h>
+#include <sys/ioctl.h>
+#endif
 
 #include <algorithm>
 #include <unordered_map>
@@ -93,6 +101,31 @@ namespace
         new_context->setSetting("input_format_tsv_detect_header", false);
         new_context->setSetting("input_format_custom_detect_header", false);
         return new_context;
+    }
+
+    struct FileIdentity
+    {
+        UInt64 inode = 0; /// 0 if the file cannot be opened.
+        std::optional<UInt32> generation = std::nullopt; /// Changes when the inode number is given to another file; none if not kept.
+    };
+
+    /// Both from one descriptor, so they describe the same file.
+    FileIdentity getFileIdentity(const String & path)
+    {
+        int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+        if (fd < 0)
+            return {};
+        SCOPE_EXIT(::close(fd));
+        struct stat st{};
+        if (fstat(fd, &st) != 0)
+            return {};
+        FileIdentity identity{.inode = st.st_ino};
+#if defined(OS_LINUX)
+        unsigned int generation = 0; /// File systems write an int, not the `long` of the request code.
+        if (ioctl(fd, FS_IOC_GETVERSION, &generation) == 0)
+            identity.generation = generation;
+#endif
+        return identity;
     }
 }
 
@@ -346,8 +379,20 @@ void StorageFileLog::loadFiles()
             struct stat file_stat{};
             if (fileNameMatches(file_name))
                 matching_files.push_back(std::move(file_name));
-            else if (stat(dir_entry.path().c_str(), &file_stat) == 0 && file_infos.meta_by_inode.contains(file_stat.st_ino))
+            else if (stat(dir_entry.path().c_str(), &file_stat) == 0)
+            {
+                auto meta = file_infos.meta_by_inode.find(file_stat.st_ino);
+                if (meta == file_infos.meta_by_inode.end())
+                    continue;
+                if (meta->second.inode_generation)
+                {
+                    /// Another file that got the inode number of the rotated one, which was deleted.
+                    auto identity = getFileIdentity(dir_entry.path().string());
+                    if (identity.inode == file_stat.st_ino && identity.generation && *identity.generation != *meta->second.inode_generation)
+                        continue;
+                }
                 rotated_files.emplace_back(std::move(file_name), file_stat.st_ino);
+            }
         }
     }
 
@@ -466,6 +511,11 @@ String StorageFileLog::writeTemporaryMeta(UInt64 inode, const FileMeta & file_me
         writeIntText(inode, *out);
         writeChar('\n', *out);
         writeIntText(file_meta.last_writen_position, *out);
+        if (file_meta.inode_generation)
+        {
+            writeChar('\n', *out);
+            writeIntText(*file_meta.inode_generation, *out);
+        }
         out->finalize();
     }
     catch (...)
@@ -653,13 +703,46 @@ void StorageFileLog::openFilesAndSetPos()
                 file_ctx.status = FileStatus::UPDATED;
             }
 
+            auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
+            const auto identity = getFileIdentity(getFullDataPath(file));
+            const bool same_inode = identity.inode == file_ctx.inode;
+            if (meta.inode_generation && (!identity.inode || (same_inode && !identity.generation)))
+            {
+                if (!std::exchange(file_ctx.identity_unverified, true))
+                    LOG_WARNING(log, "Cannot check whether file {} is the file its offset was saved for, will retry", file);
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                file_ctx.open_failed = true;
+                any_open_failed = true;
+                has_files_to_reopen = true;
+                continue;
+            }
+            file_ctx.identity_unverified = false;
+            if (same_inode && identity.generation)
+            {
+                if (meta.inode_generation && *meta.inode_generation != *identity.generation)
+                {
+                    if (!fileNameMatches(file))
+                    {
+                        /// A name the glob excludes was kept only to finish the deleted file; dropped by the next `updateFileInfos`.
+                        file_ctx.reader.reset();
+                        file_ctx.status = FileStatus::REMOVED;
+                        continue;
+                    }
+                    LOG_INFO(log, "File {} has the inode of a deleted file, reading it from the beginning", file);
+                    /// Before resetting: `serialize` refuses to store an offset smaller than the one on disk.
+                    disk->removeFileIfExists(getFullMetaPath(meta.file_name));
+                    meta.last_writen_position = 0;
+                }
+                meta.inode_generation = identity.generation;
+            }
+
             reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
             assertStreamGood(reader);
 
-            auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
                 /// Truncated in place, e.g. by `logrotate` with `copytruncate`.
@@ -762,6 +845,14 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
 
     if (!tryReadIntText(last_written_pos, *in))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (3)", full_path);
+
+    if (checkChar('\n', *in) && !in->eof())
+    {
+        UInt32 generation = 0;
+        if (!tryReadIntText(generation, *in))
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (4)", full_path);
+        metadata.inode_generation = generation;
+    }
 
     metadata.file_name = filename;
     metadata.last_writen_position = last_written_pos;
@@ -1119,7 +1210,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links) is read under one of them.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links) is read under one of them. On Linux file systems that keep inode generations (such as ext4, XFS and btrfs), a file that gets the inode number of a deleted file is read from the beginning, also when the file was deleted while the table was not loaded.
 
 A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
@@ -1472,6 +1563,8 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
         {
             FileMeta new_meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             new_meta.last_writen_position = new_offset;
+            if (auto identity = getFileIdentity(getFullDataPath(name)); identity.inode == file_ctx.inode)
+                new_meta.inode_generation = identity.generation;
             targets.push_back({name, &file_ctx, std::move(new_meta)});
         };
 

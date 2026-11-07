@@ -1,0 +1,39 @@
+-- initial scan
+a.csv	1
+a.csv	2
+a.csv	3
+-- other name, while detached
+b.csv	10
+b.csv	20
+b.csv	30
+b.csv	40
+-- same name, while detached
+b.csv	50
+b.csv	60
+b.csv	70
+b.csv	80
+b.csv	90
+-- renamed while detached
+c.csv	100
+-- file to be deleted
+d.csv	1
+d.csv	2
+-- name the glob excludes, while detached
+-- name the glob excludes, next read
+-- file to be rotated
+e.csv	1
+e.csv	2
+-- rotated
+-- hard link under the rotated name, while detached
+f.csv	11
+f.csv	12
+f.csv	13
+-- single-file table
+single.csv	1
+single.csv	2
+single.csv	3
+-- single-file table, deleted and created again
+single.csv	10
+single.csv	20
+single.csv	30
+single.csv	40
