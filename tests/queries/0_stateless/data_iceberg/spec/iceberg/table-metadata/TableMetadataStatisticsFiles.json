@@ -1,0 +1,70 @@
+{
+  "format-version": 2,
+  "table-uuid": "9c12d441-03fe-4693-9a96-a0705ddf69c1",
+  "location": "s3://bucket/test/location",
+  "last-sequence-number": 34,
+  "last-updated-ms": 1602638573590,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "x",
+          "required": true,
+          "type": "long"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 1000,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {},
+  "current-snapshot-id": 3055729675574597004,
+  "snapshots": [
+    {
+      "snapshot-id": 3055729675574597004,
+      "timestamp-ms": 1555100955770,
+      "sequence-number": 1,
+      "summary": {
+        "operation": "append"
+      },
+      "manifest-list": "s3://a/b/2.avro",
+      "schema-id": 0
+    }
+  ],
+  "statistics": [
+    {
+      "snapshot-id": 3055729675574597004,
+      "statistics-path": "s3://a/b/stats.puffin",
+      "file-size-in-bytes": 413,
+      "file-footer-size-in-bytes": 42,
+      "blob-metadata": [
+        {
+          "type": "ndv",
+          "snapshot-id": 3055729675574597004,
+          "sequence-number": 1,
+          "fields": [1]
+        }
+      ]
+    }
+  ],
+  "snapshot-log": [],
+  "metadata-log": []
+}

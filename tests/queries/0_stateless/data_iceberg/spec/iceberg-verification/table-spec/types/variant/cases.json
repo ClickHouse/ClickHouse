@@ -1,0 +1,20 @@
+{
+  "cases": [
+    {
+      "id": "variant",
+      "valid": true,
+      "input": "variant",
+      "decoded": { "type": "variant" },
+      "canonical": "variant",
+      "clause": "Semi-structured Types: variant added in v3; Appendix C canonical string",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    },
+    {
+      "id": "variant-with-params",
+      "valid": false,
+      "input": "variant(x)",
+      "clause": "Appendix C: variant is a bare type name and takes no parameters",
+      "spec_ref": "format/spec.md#appendix-c-json-serialization"
+    }
+  ]
+}
