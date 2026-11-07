@@ -457,7 +457,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Do not move conditions involving all queried columns,
             /// unless the condition can be used as a string filter during the scan:
             /// then it is beneficial on its own, because the reader skips copying the non-matching values,
-            /// or PREWHERE reads its only column anyway for `__topKFilter` and it can be evaluated on more rows.
+            /// or `__topKFilter` reads its only column in PREWHERE anyway, where the query condition cache records each emptied granule.
             && (info.columns.size() < queried_columns.size()
                 || isReadByTopKFilterOnly(conjunct, info.columns, where_optimizer_context.top_k_filter_column)
                 || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
