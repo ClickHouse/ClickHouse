@@ -106,6 +106,8 @@ namespace Setting
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsBool enable_global_with_statement;
     extern const SettingsMap additional_table_filters;
 }
 
@@ -1385,6 +1387,22 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     /// The checks here read the settings of the current scope, while such a subquery runs with its own.
     if (hasSubqueryWithSettingsChanges(in_second_argument))
         throwCorrelatedInNotSupported(" when the subquery has its own SETTINGS clause", node);
+
+    /// The left argument is resolved again inside the new subquery, where its own aliases and the aliases of this
+    /// scope are visible differently under these settings.
+    const auto & unresolved_left_argument = unresolved_in_arguments->as<ListNode &>().getNodes().at(0);
+    if (settings[Setting::prefer_column_name_to_alias]
+        && hasNodeOutsideSubqueries(unresolved_left_argument, [](const QueryTreeNodePtr & left_node) { return left_node->hasAlias(); }))
+        throwCorrelatedInNotSupported(" when the left argument defines an alias and `prefer_column_name_to_alias` is enabled", node);
+
+    if (!settings[Setting::enable_global_with_statement]
+        && hasNodeOutsideSubqueries(unresolved_left_argument, [&scope](const QueryTreeNodePtr & left_node)
+            {
+                const auto * identifier_node = left_node->as<IdentifierNode>();
+                return identifier_node && IdentifierResolver::tryBindIdentifierToAliases(
+                    IdentifierLookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION}, scope);
+            }))
+        throwCorrelatedInNotSupported(" when the left argument refers to an alias and `enable_global_with_statement` is disabled", node);
 
     for (const auto & table_expression : extractTableExpressions(
              std::static_pointer_cast<ITableExpressionNode>(in_second_argument), /*add_array_join=*/ false, /*recursive=*/ true))
