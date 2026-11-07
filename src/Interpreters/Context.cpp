@@ -652,6 +652,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_user_defined_executable_functions_mutex;
+    std::atomic<bool> shared_memory_requires_process_rss{false};
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
@@ -4729,6 +4730,16 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoaderWithLock(cons
         shared->external_dictionaries_loader =
             std::make_unique<ExternalDictionariesLoader>(getGlobalContext());
     return *shared->external_dictionaries_loader;
+}
+
+void Context::setSharedMemoryRequiresProcessRSS(bool value)
+{
+    shared->shared_memory_requires_process_rss.store(value, std::memory_order_relaxed);
+}
+
+bool Context::sharedMemoryRequiresProcessRSS() const
+{
+    return shared->shared_memory_requires_process_rss.load(std::memory_order_relaxed);
 }
 
 const ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader() const

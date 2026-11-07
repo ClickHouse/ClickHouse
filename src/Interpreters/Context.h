@@ -1403,6 +1403,9 @@ public:
 
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    /// Set from the selected `MemoryWorker` source before loading executable UDFs.
+    void setSharedMemoryRequiresProcessRSS(bool value);
+    bool sharedMemoryRequiresProcessRSS() const;
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);

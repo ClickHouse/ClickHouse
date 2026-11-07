@@ -21,7 +21,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <csignal>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
 #include <filesystem>
@@ -88,25 +87,12 @@ std::string getEditor()
     return editor;
 }
 
-/// See comments in ShellCommand::executeImpl()
-/// (for the vfork via dlsym())
+/// `vfork` is called directly, not through a pointer from `dlsym`: only a call the compiler sees as
+/// one to a function that returns twice keeps the stack slots of this frame intact while the child
+/// runs on it - see the comment at the `vfork` in `ShellCommand::executeImpl`.
 int executeCommand(char * const argv[])
 {
-#if !defined(USE_MUSL)
-    /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
-      *  because of the resolving of symbols in the shared library
-      * https://web.archive.org/web/20191016050435/https://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
-      * Therefore, separate the resolving of the symbol from the call.
-      */
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
-#endif
-    if (!real_vfork)
-        throw std::runtime_error("Cannot find vfork symbol");
-
-    pid_t pid = reinterpret_cast<pid_t (*)()>(real_vfork)();
+    pid_t pid = vfork(); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c,clang-analyzer-security.insecureAPI.vfork)
 
     if (-1 == pid)
         throw std::runtime_error(fmt::format("Cannot vfork {}: {}", argv[0], errnoToString()));
@@ -114,6 +100,9 @@ int executeCommand(char * const argv[])
     /// Child
     if (0 == pid)
     {
+        /// Only `sigemptyset` and `sigprocmask` before `exec`: async-signal-safe, touching nothing the parent
+        /// shares - as `posix_spawn` does in its own child.
+        /// NOLINTBEGIN(clang-analyzer-unix.Vfork)
         sigset_t mask;
         sigemptyset(&mask);
         sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
@@ -121,6 +110,7 @@ int executeCommand(char * const argv[])
 
         execvp(argv[0], argv);
         _exit(-1);
+        /// NOLINTEND(clang-analyzer-unix.Vfork)
     }
 
     int status = 0;

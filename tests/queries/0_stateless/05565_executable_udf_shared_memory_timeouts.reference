@@ -1,0 +1,7 @@
+--- a command slow to exit is waited for
+Key 1
+Key 1
+--- a command that stops answering times out
+error: TIMEOUT_EXCEEDED UDF_EXECUTION_FAILED
+error: TIMEOUT_EXCEEDED UDF_EXECUTION_FAILED
+1
