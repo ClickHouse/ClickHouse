@@ -1,0 +1,31 @@
+\N
+5050
+AggregateFunction(sum, Int32)	0
+AggregateFunction(sum, Int32)	5050
+\N	\N
+\N
+5050
+AggregateFunction(sum, Int32)	5050
+\N
+5050
+\N
+5050
+AggregateFunction(sumOrNull, Int32)	\N
+AggregateFunction(sumOrNull, Int32)	5050
+\N
+5050
+\N
+3
+3
+\N
+3
+3
+3
+1
+0
+1
+3	3
+3
+3
+4.5	4.5
+4.5
