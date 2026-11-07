@@ -17,6 +17,10 @@
 #include <unordered_set>
 #include "delta_kernel_ffi.hpp"
 
+#include <atomic>
+#include <future>
+#include <mutex>
+
 namespace DeltaLake
 {
 
@@ -37,6 +41,12 @@ public:
 
     /// Get snapshot version.
     size_t getVersion() const;
+
+    /// Nothing is installed and every waiter gave up on the only load.
+    bool isAbandonedWithoutWaiters() const;
+
+    /// Does not take `mutex`, which a statistics scan may hold for long, so it is safe under other locks.
+    bool isInitialized() const;
 
     std::optional<size_t> getTotalRows() const;
     std::optional<size_t> getTotalBytes() const;
@@ -86,15 +96,44 @@ private:
 
     struct KernelSnapshotState : private boost::noncopyable
     {
-        KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_);
+        /// `used_credentials_fingerprint` is set before the kernel calls, so it is known even if the build fails.
+        KernelSnapshotState(
+            const IKernelHelper & helper_,
+            std::optional<size_t> snapshot_version_,
+            DB::UInt128 & used_credentials_fingerprint);
 
         KernelExternEngine engine;
         KernelSnapshot snapshot;
         KernelScan scan;
         size_t snapshot_version;
+        DB::UInt128 credentials_fingerprint{};
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+    /// Set once `kernel_snapshot_state` is installed; a state is never removed.
+    mutable std::atomic<bool> has_kernel_snapshot_state{false};
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
+    /// Forces a rebuild after a credentials refresh even if the fingerprint did not change.
+    mutable bool kernel_state_needs_rebuild = false;
+
+    /// A kernel snapshot build running on a worker thread. Waiters poll it outside `mutex`,
+    /// each with its own cancellation checks.
+    struct InflightSnapshotLoad : private boost::noncopyable
+    {
+        enum class State
+        {
+            Running,
+            Finished,   /// Set when the worker's job ends, also when it never ran.
+            Abandoned,  /// Set by the first waiter that gave up (KILL QUERY or a timeout).
+        };
+
+        std::shared_future<std::shared_ptr<KernelSnapshotState>> future;
+        std::atomic<State> state{State::Running};
+        /// Registered under `TableSnapshot::mutex`; a load is dead only when nobody waits for it.
+        std::atomic<Int64> waiters{0};
+        /// Written by the worker before the future is ready; the stale-token retry compares against it.
+        DB::UInt128 credentials_fingerprint{};
+    };
+    mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
 
     struct SchemaInfo
     {
@@ -126,10 +165,12 @@ private:
 
     size_t getVersionUnlocked() const TSA_REQUIRES(mutex);
 
-    void initOrUpdateSnapshot() const TSA_REQUIRES(mutex);
+    /// Must be called without `mutex`: it takes the lock itself and releases it while waiting.
+    void initOrUpdateSnapshot() const TSA_NO_THREAD_SAFETY_ANALYSIS;
     void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
 
-    SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
+    /// Takes `mutex` itself, so that a stale-credentials rebuild is not done under the lock.
+    SnapshotStats getSnapshotStats() const;
     SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
 
     /// One-shot recovery from `DELTA_KERNEL_ERROR` with `ExpiredToken`/`InvalidToken`:
@@ -143,6 +184,22 @@ private:
         const char * context_for_log) const TSA_REQUIRES(mutex);
 
     std::shared_ptr<KernelSnapshotState> getKernelSnapshotState() const TSA_REQUIRES(mutex);
+
+    /// Starts a build on a worker thread within the bounded worker permits; never blocks on the kernel.
+    static std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(
+        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build);
+
+    /// The only cancellation point of a snapshot load: `KILL QUERY`, `max_execution_time` and
+    /// `delta_lake_snapshot_load_timeout_ms` abort this waiter only; the build keeps running.
+    static void waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper);
+
+    /// For a shared load, called under `mutex` together with the waiter unregistration.
+    static void markAbandoned(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log);
+
+    /// Every `KernelSnapshotState` is built through this or the helpers above, so no path blocks
+    /// in the kernel without a cancellation point.
+    static std::shared_ptr<KernelSnapshotState> loadKernelSnapshotState(
+        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log);
 };
 
 using TableSnapshotPtr = std::shared_ptr<TableSnapshot>;

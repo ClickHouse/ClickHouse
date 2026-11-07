@@ -122,6 +122,18 @@ private:
     mutable TableSnapshotCache snapshots TSA_GUARDED_BY(snapshots_mutex);
     mutable std::mutex snapshots_mutex;
     mutable std::optional<SnapshotVersion> latest_snapshot_version;
+    /// "Latest" resolutions are numbered in the order they start; only one which started after the
+    /// published one may publish (see `resolveLatestSnapshot`).
+    mutable UInt64 latest_resolutions_started TSA_GUARDED_BY(snapshots_mutex) = 0;
+    mutable UInt64 latest_published_resolution TSA_GUARDED_BY(snapshots_mutex) = 0;
+    /// The "latest" resolution in flight.
+    struct LatestSnapshotInFlight
+    {
+        DeltaLake::TableSnapshotPtr snapshot;
+        UInt64 resolution = 0;
+        size_t users = 0;
+    };
+    mutable std::optional<LatestSnapshotInFlight> latest_snapshot_in_flight TSA_GUARDED_BY(snapshots_mutex);
 
     void logMetadataFiles(ContextPtr context) const;
 
@@ -139,7 +151,16 @@ private:
     DeltaLake::TableSnapshotPtr getTableSnapshot(
         std::optional<SnapshotVersion> version = std::nullopt) const;
 
-    std::string latestSnapshotVersionToStr() const TSA_REQUIRES(snapshots_mutex);
+    std::string latestSnapshotVersionToStr() const;
+
+    struct LatestSnapshot
+    {
+        DeltaLake::TableSnapshotPtr snapshot;
+        SnapshotVersion version;
+        bool created;
+    };
+    /// Loads outside `snapshots_mutex` so the wait stays killable.
+    LatestSnapshot resolveLatestSnapshot() const;
 };
 
 }
