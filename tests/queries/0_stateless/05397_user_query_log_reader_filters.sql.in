@@ -43,6 +43,7 @@ WHERE id > 0 ORDER BY id
 FORMAT Null SETTINGS prefer_localhost_replica = 0, log_comment = '05397_remote_visible';
 
 -- This remote view read ships a serialized plan; its hidden child retains operator attribution.
+SET optimize_use_projections = 1;
 SET force_optimize_projection = 1;
 SET force_optimize_projection_name = 'pn';
 EXECUTE AS user_05397_remote SELECT name
