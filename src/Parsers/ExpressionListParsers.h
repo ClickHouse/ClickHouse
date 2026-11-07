@@ -337,14 +337,15 @@ protected:
 };
 
 /// Whether the parentheses that `pos` points at hold an expression over a column named `from`, rather
-/// than a subquery. Does not move `pos`.
+/// than a subquery. Does not move `pos`, but counts its backtracking in `pos`. Inside the contents of
+/// another such lookahead it returns `false` without looking.
 ///
 /// `from` is a keyword that ClickHouse has always accepted as an unquoted identifier, and a subquery
 /// may omit its SELECT clause and start with the FROM clause instead (`(FROM t)` means
 /// `(SELECT * FROM t)`), so both readings parse for `WHERE (from IN ('a'))`: the expression
 /// `from IN ('a')`, and the subquery `SELECT * FROM IN('a')` over a table function named `IN`. The
 /// column reading is older than the FROM-first form, so it wins the ambiguity.
-bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos);
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos & pos);
 
 }
 

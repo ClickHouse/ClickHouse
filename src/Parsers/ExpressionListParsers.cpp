@@ -3697,23 +3697,27 @@ static bool isEscapeSupportingPredicate(std::string_view function_name)
 /// the subquery reading is the only one: `(FROM t)`, `(FROM numbers(10) |> LIMIT 1)`,
 /// `(FROM (SELECT 1))`. Even then the reading is taken only if the parentheses really do hold an
 /// expression, which keeps a relation named after an operator readable as one: `1 IN (FROM in)`.
-bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos & pos)
 {
-    if (pos->type != TokenType::OpeningRoundBracket)
+    if (pos.in_column_named_from_lookahead)
         return false;
-    ++pos;
+
+    auto token_pos = pos;
+    if (token_pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++token_pos;
 
     /// A clause keyword is always a BareWord token, so a quoted `` `from` `` never starts a FROM clause.
-    auto contents_pos = pos;
-    if (pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from"))
+    auto contents_pos = token_pos;
+    if (token_pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(token_pos->begin, token_pos->size()), "from"))
         return false;
-    ++pos;
+    ++token_pos;
 
     Expected expected;
     bool operator_follows = false;
     for (const auto & [lexeme, unused_operator] : ParserExpressionImpl::operators_table)
     {
-        auto operator_pos = pos;
+        auto operator_pos = token_pos;
         if (parseOperator(operator_pos, lexeme, expected))
         {
             operator_follows = true;
@@ -3727,7 +3731,10 @@ bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
     /// The contents can also be a tuple or carry an alias, so parse them the way RoundBracketsLayer does.
     ASTPtr contents;
     ParserExpressionList contents_parser(/*allow_alias_without_as_keyword*/ false);
-    return contents_parser.parse(contents_pos, contents, expected) && contents_pos->type == TokenType::ClosingRoundBracket;
+    contents_pos.in_column_named_from_lookahead = true;
+    const bool parsed = contents_parser.parse(contents_pos, contents, expected);
+    pos.backtracks = std::max(pos.backtracks, contents_pos.backtracks);
+    return parsed && contents_pos->type == TokenType::ClosingRoundBracket;
 }
 
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
