@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_set>
 
 namespace DB
 {
@@ -82,6 +83,8 @@ struct MaterializedCTE
     bool is_referenced_from_recursive_cte_member = false;
     /// Query Plan for the CTE
     std::unique_ptr<QueryPlan> plan = {};
+    /// The materialized CTEs this CTE's own body reads. Written only while planning, which is single-threaded.
+    std::unordered_set<std::shared_ptr<MaterializedCTE>> dependencies = {};
     /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).
     std::atomic_bool is_materialization_planned{false};
     /// If true, the CTE's pre-built plan has already been passed through

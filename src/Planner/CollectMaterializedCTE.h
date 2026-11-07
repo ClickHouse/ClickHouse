@@ -16,7 +16,17 @@ using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
 
 class QueryPlan;
 
-using OrderedMaterializedCTEs = std::vector<QueryTreeNodes>;
+struct MaterializedCTE;
+using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
+
+/// `subquery` is null when the tree reaches the CTE only by temporary table name: gate here, writer where the body is.
+struct CollectedMaterializedCTE
+{
+    MaterializedCTEPtr cte;
+    QueryTreeNodePtr subquery;
+};
+
+using OrderedMaterializedCTEs = std::vector<std::vector<CollectedMaterializedCTE>>;
 
 OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, const SelectQueryOptions & select_query_options);
 
