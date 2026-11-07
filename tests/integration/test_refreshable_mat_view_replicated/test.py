@@ -86,9 +86,9 @@ def wait_retry_state(replica, database, view, predicate):
 
 def test_cycle_retry_shared_inputs_after_restart(retry_database):
     database = retry_database
-    create_retry_view(database, "a", "EVERY 1 HOUR DEPENDS ON b")
+    create_retry_view(database, "a", f"EVERY 1 HOUR DEPENDS ON {database}.b")
     create_retry_view(database, "ext", "EVERY 1 HOUR")
-    create_retry_view(database, "b", "DEPENDS ON a, ext", fail=True)
+    create_retry_view(database, "b", f"DEPENDS ON {database}.a, {database}.ext", fail=True)
     node.query(f"SYSTEM START VIEW {database}.a; SYSTEM START VIEW {database}.ext")
     # Two completions at the frozen second produce distinct nanosecond dependency timestamps.
     # The second one is newer than the shared, second-rounded attempt time, but is not new input.
@@ -96,6 +96,7 @@ def test_cycle_retry_shared_inputs_after_restart(retry_database):
         node.query(f"SYSTEM REFRESH VIEW {database}.a; SYSTEM WAIT VIEW {database}.a")
     node.query(f"SYSTEM REFRESH VIEW {database}.ext; SYSTEM WAIT VIEW {database}.ext")
     node.query(f"SYSTEM START VIEW {database}.b")
+    wait_retry_state(node, database, "b", "exception != ''")
     scheduled = (
         "exception != '' AND status = 'Scheduled' "
         "AND next_refresh_time >= last_refresh_time + INTERVAL 61 SECOND"
@@ -129,15 +130,16 @@ def test_cycle_retry_shared_inputs_after_restart(retry_database):
 
 def test_cycle_retry_with_detached_transitive_dependency(retry_database):
     database = retry_database
-    create_retry_view(database, "a", "EVERY 1 SECOND DEPENDS ON c")
-    create_retry_view(database, "b", "DEPENDS ON a", fail=True)
-    create_retry_view(database, "c", "DEPENDS ON b")
+    create_retry_view(database, "a", f"EVERY 1 SECOND DEPENDS ON {database}.c")
+    create_retry_view(database, "b", f"DEPENDS ON {database}.a", fail=True)
+    create_retry_view(database, "c", f"DEPENDS ON {database}.b")
     node.query(f"DETACH TABLE {database}.c PERMANENTLY")
     node.query(
         f"SYSTEM START VIEW {database}.a; "
         f"SYSTEM REFRESH VIEW {database}.a; SYSTEM WAIT VIEW {database}.a; "
         f"SYSTEM START VIEW {database}.b"
     )
+    wait_retry_state(node, database, "b", "exception != ''")
     wait_retry_state(
         node,
         database,
