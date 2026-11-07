@@ -10,7 +10,7 @@ SET data_type_default_nullable = 0;
 subcolumn_suspicious_codec: replay rc=0
 subcolumn_suspicious_codec: same definition: 1
 subcolumn_beta_codec: dump rc=0
-SET enable_alp_codec = 1;
+SET enable_pco_codec = 1;
 SET enable_subcolumn_codecs = 1;
 SET data_type_default_nullable = 0;
 subcolumn_beta_codec: replay rc=0

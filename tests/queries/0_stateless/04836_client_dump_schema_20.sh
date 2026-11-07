@@ -45,8 +45,8 @@ round_trip subcolumn_codec t "SET enable_subcolumn_codecs = 1;
 round_trip subcolumn_suspicious_codec t "SET enable_subcolumn_codecs = 1, allow_suspicious_codecs = 1;
     CREATE TABLE d.t (id UInt64, payload Tuple(ts UInt64, value Float64), CODEC payload.ts (Delta))
     ENGINE = MergeTree ORDER BY id;"
-round_trip subcolumn_beta_codec t "SET enable_subcolumn_codecs = 1, enable_alp_codec = 1;
-    CREATE TABLE d.t (id UInt64, payload Tuple(ts String, value Float64), CODEC payload.value (ALP, LZ4))
+round_trip subcolumn_beta_codec t "SET enable_subcolumn_codecs = 1, enable_pco_codec = 1;
+    CREATE TABLE d.t (id UInt64, payload Tuple(ts String, value Float64), CODEC payload.value (Pco))
     ENGINE = MergeTree ORDER BY id;"
 
 round_trip elasticsearch es "SET enable_elasticsearch = 1;
