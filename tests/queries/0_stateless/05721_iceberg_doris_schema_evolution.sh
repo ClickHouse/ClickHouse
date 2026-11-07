@@ -22,7 +22,7 @@ cd "$CUR_DIR/data_iceberg/doris" || exit 1
 # and five more rows are inserted with the new schema.
 # The arrays and maps of the rows with id 5 and 15 are NULL, which is read as empty arrays and maps.
 # Currently any query to these tables fails with "Bad get: has Decimal64, requested Decimal128" in `EvolutionFunctionStruct`
-# because of the widened decimal inside an array (new bug, see the PR description).
+# because of the widened decimal inside an array (https://github.com/ClickHouse/ClickHouse/issues/130024).
 for table in complex_orc_v1_schema_change complex_orc_v2_schema_change complex_parquet_v1_schema_change complex_parquet_v2_schema_change
 do
     echo "$table"

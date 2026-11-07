@@ -53,6 +53,21 @@ $CLICKHOUSE_LOCAL --session_timezone UTC -q "
     SELECT * FROM icebergLocal('warehouse/wh/test_db/tb_ts_ntz_filter') WHERE ts < '2024-06-11 12:34:56.123466';
 "
 
+# The same in the `Asia/Shanghai` session time zone: a `timestamp` without time zone is a wall-clock value,
+# so the values and the filter results must not depend on the session time zone.
+# Currently the values are shifted by the session time zone offset (`20:34:56.123456`) and the filters
+# return nothing (https://github.com/ClickHouse/ClickHouse/issues/130025).
+echo "tb_ts_ntz_filter Asia/Shanghai"
+$CLICKHOUSE_LOCAL --session_timezone Asia/Shanghai -q "
+    SELECT * FROM icebergLocal('warehouse/wh/test_db/tb_ts_ntz_filter');
+    SELECT * FROM icebergLocal('warehouse/wh/test_db/tb_ts_ntz_filter') WHERE ts = '2024-06-11 12:34:56.123456';
+    SELECT * FROM icebergLocal('warehouse/wh/test_db/tb_ts_ntz_filter') WHERE ts > '2024-06-11 12:34:56.123456';
+    SELECT * FROM icebergLocal('warehouse/wh/test_db/tb_ts_ntz_filter') WHERE ts < '2024-06-11 12:34:56.123456';
+    SELECT * FROM icebergLocal('warehouse/wh/test_db/tb_ts_ntz_filter') WHERE ts > '2024-06-11 12:34:56.12345';
+    SELECT * FROM icebergLocal('warehouse/wh/test_db/tb_ts_ntz_filter') WHERE ts < '2024-06-11 12:34:56.123466';
+    SELECT * FROM icebergLocal('warehouse/wh/multi_catalog/tb_ts_filter') WHERE ts = '2024-05-30 20:34:56.1' ORDER BY id;
+"
+
 # Predicates on string, `timestamptz` and date columns, eight rows in eight data files:
 #     insert into tb_predict values ('2023-03-08', timestamp '2023-03-07 20:35:59.123456', date '1997-05-19', 'MAIL');
 #     ...

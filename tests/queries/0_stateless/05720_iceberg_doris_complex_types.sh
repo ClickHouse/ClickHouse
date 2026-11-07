@@ -52,7 +52,7 @@ do
         FROM icebergLocal('be/$table') WHERE id IN (3, 7) ORDER BY id;
         SELECT id, arrayMap(x -> x.name, profile.hobbies) FROM icebergLocal('be/$table') WHERE length(profile.hobbies) > 2 ORDER BY id;
         -- A subcolumn of an array of structs. In the Parquet table it currently reads as empty arrays
-        -- (new bug, see the PR description), while \`arrayMap\` above and the ORC table are correct.
+        -- (https://github.com/ClickHouse/ClickHouse/issues/130023), while \`arrayMap\` above and the ORC table are correct.
         SELECT id, profile.hobbies.name, profile.hobbies.level FROM icebergLocal('be/$table') WHERE id <= 3 ORDER BY id;
     " 2>&1
 done
