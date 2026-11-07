@@ -1,0 +1,12 @@
+-- Read as Dynamic
+[[1],NULL]	Array(Dynamic)
+[[1,'x'],NULL]	Array(Dynamic)
+['{"k":1}',NULL]	Array(Nullable(JSON))
+[[1],[2,3]]	Array(Array(Int16))
+['{"k":1}',NULL]	Array(Nullable(JSON))
+[1,NULL]	Array(Nullable(Int16))
+-- Arrays with nulls inside a JSON path
+{"a":[[1],null],"b":[[1,"x"],null]}	{'a':'Array(Dynamic)','b':'Array(Dynamic)'}
+[[1],NULL]	[[1,'x'],NULL]
+[[1],NULL]	[[1,'x'],NULL]
+-- A top-level array is not an object and cannot be read as JSON

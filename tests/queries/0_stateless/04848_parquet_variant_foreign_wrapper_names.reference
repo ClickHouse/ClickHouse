@@ -1,0 +1,12 @@
+-- with ClickHouse footer metadata
+{"a":{"typed_value":"x","value":1}}
+{"a":{"typed_value":"y","value":2}}
+-- foreign file (no ClickHouse footer metadata)
+{"a":{"typed_value":"x","value":1}}
+{"a":{"typed_value":"y","value":2}}
+-- foreign file, extracted key values
+1	x
+2	y
+-- foreign file, schema inference
+{"a":{"typed_value":"x","value":1}}
+{"a":{"typed_value":"y","value":2}}
