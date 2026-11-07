@@ -259,6 +259,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     number_of_rows_in_part = data_part->getRowCount();
     /// Initialize with sample block until update won't called.
     initialize(sample_block, {}, columns);
+    initial_sample_block = sample_block;
 }
 
 void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update)
@@ -341,7 +342,11 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     if (!is_initialized_in_update)
     {
         /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
-        initialize(sample_block, columns, {}, true);
+        /// Columns read only by PREWHERE are not in the read block, keep their initial estimation.
+        Block block = sample_block.cloneWithColumns(columns);
+        for (const auto & column : initial_sample_block)
+            block.insertUnique(column);
+        initialize(block, block.getColumns(), {}, true);
         is_initialized_in_update = true;
     }
 
@@ -364,7 +369,15 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     max_size_per_row_dynamic = 0;
     for (auto & info : dynamic_columns_infos)
     {
-        size_t new_size = columns[sample_block.getPositionByName(info.name)]->byteSize();
+        auto position = sample_block.findPositionByName(info.name);
+        if (!position)
+        {
+            bytes_per_row_current += info.bytes_per_row;
+            max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
+            continue;
+        }
+
+        size_t new_size = columns[*position]->byteSize();
         size_t diff_size = new_size - info.size_bytes;
 
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
