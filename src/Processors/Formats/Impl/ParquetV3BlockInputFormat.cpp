@@ -274,12 +274,17 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
     }
 }
 
+static std::optional<ParquetMetadataCacheKey> makeMetadataCacheKey(const RelativePathWithMetadata & object)
+{
+    if (!object.metadata.has_value())
+        return std::nullopt;
+    return ParquetMetadataCache::createKey(object.getPath(), object.metadata->getContentCacheToken().value_or(object.metadata->etag));
+}
+
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
-    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(
-            object_with_metadata->getPath(),
-            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
+    if (metadata_cache && object_with_metadata.has_value())
+        return makeMetadataCacheKey(*object_with_metadata);
     return std::nullopt;
 }
 
@@ -694,12 +699,30 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(
+    size_t bucket_size,
+    ReadBuffer & buf,
+    const RelativePathWithMetadata & object,
+    const FormatSettings & format_settings_,
+    const ContextPtr & context)
 {
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
+    auto read_footer = [&] { return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size); };
+
+    ParquetMetadataCachePtr metadata_cache;
+    if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        metadata_cache = context->tryGetParquetMetadataCache();
+    std::optional<ParquetMetadataCacheKey> cache_key;
+    if (metadata_cache && object.metadata && object.metadata->getContentCacheToken())
+        cache_key = makeMetadataCacheKey(object);
+
+    std::shared_ptr<const Parquet::FileFooter> footer;
+    if (cache_key)
+        footer = metadata_cache->getOrSetMetadata(*cache_key, read_footer).first->footer;
+    else
+        footer = read_footer();
     std::vector<size_t> bucket_sizes;
     for (const auto & row_group : footer->metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
