@@ -542,8 +542,10 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             /// Ctrl+C stops the replay instead of exiting the client.
             query_interrupt_handler.start();
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
+            /// The pager is waited for inside `foreground`, so a pager that fails keeps the job.
             result = background_queries.foreground(
-                *id, *result_output, diagnostics, true, [this] { return query_interrupt_handler.cancelled(); });
+                *id, *result_output, diagnostics, true, [this] { return query_interrupt_handler.cancelled(); },
+                [&] { finish_background_pager(true); });
             finish_background_pager(true);
         }
         catch (...)

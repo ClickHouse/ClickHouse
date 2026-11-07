@@ -1490,7 +1490,8 @@ std::optional<BackgroundQueryManager::JobInfo> BackgroundQueryManager::get(JobId
 }
 
 BackgroundQueryManager::ForegroundResult BackgroundQueryManager::foreground(
-    JobId id, WriteBuffer & output, WriteBuffer & diagnostics, bool allow_unsafe_output, const std::function<bool()> & is_cancelled)
+    JobId id, WriteBuffer & output, WriteBuffer & diagnostics, bool allow_unsafe_output, const std::function<bool()> & is_cancelled,
+    const std::function<void()> & finish_output)
 {
     std::shared_ptr<Impl::Job> job;
     JobInfo job_info;
@@ -1522,6 +1523,8 @@ BackgroundQueryManager::ForegroundResult BackgroundQueryManager::foreground(
             replayed = job->diagnostics.replayTo(diagnostics, is_cancelled);
             diagnostics.next();
         }
+        if (replayed && finish_output)
+            finish_output();
     }
     catch (...)
     {

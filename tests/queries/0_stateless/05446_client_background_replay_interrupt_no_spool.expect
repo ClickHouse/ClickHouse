@@ -123,6 +123,23 @@ submit {\jobs}
 expect -re {(?i)\[3\][^\r\n]*succeeded}
 expect ":) "
 
+# A pager that reads the whole result and then fails keeps the job too.
+submit {pager cat >/dev/null && false}
+expect -ex {PAGER set to 'cat >/dev/null && false'}
+expect ":) "
+submit {\fg 3}
+expect {
+    -ex {CHILD_WAS_NOT_EXITED_NORMALLY} {}
+    -ex {Background job 3 succeeded} { exit 1 }
+}
+expect ":) "
+submit {nopager}
+expect -ex {PAGER set to stdout}
+expect ":) "
+submit {\jobs}
+expect -re {(?i)\[3\][^\r\n]*succeeded}
+expect ":) "
+
 # The whole result is replayed again: the numbers from 0 to 999999 with a newline after each take 6888890 bytes.
 submit {pager wc -c}
 expect -ex {PAGER set to 'wc -c'}
