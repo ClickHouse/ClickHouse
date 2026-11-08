@@ -2309,6 +2309,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.4", false, true, "New setting to use statistics for part pruning during query execution."}) \
+    DECLARE(UInt64, min_marks_per_part_to_load_statistics, 64, R"(
+The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
+
+Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
+
+Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
+
+Possible values:
+
+- 0 — Load statistics regardless of the size of the read.
+- Positive integer — The number of marks per data part.
+)", 0, \
+        {"26.11", 0, 64, "New setting to skip loading statistics when the primary key leaves only a small read."}) \
     DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
 Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
 
@@ -5560,7 +5573,7 @@ Disabled by default.
 )", 0, \
         {"26.5", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."}) \
     DECLARE_WITH_ALIAS(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
-Allow S3 and Azure Blob Storage access that originates from user SQL to use server-managed credentials.
+Allow S3, Azure Blob Storage and MongoDB access that originates from user SQL to use server-managed credentials.
 
 Also available under the alias `allow_server_credentials_in_user_queries`, as it applies to Azure as well.
 
@@ -5586,6 +5599,8 @@ Azure Blob Storage is covered by this setting as well. When it is disabled, the 
 
 For Azure, a named collection that relies on workload or managed identity is restricted too, including one defined in the server configuration, and so is `extra_credentials(client_id = '...', tenant_id = '...')`, which exchanges the server's own federated token for the named client. Disks defined in the server configuration keep using workload or managed identity. A dynamic Azure disk is restricted like a table, except for a table in the `system` database with the server setting `s3_allow_server_credentials_for_system_table_disks`; a dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a restart it keeps using the server's identity. The record is written only by the server and is ignored in a `CREATE` or `ATTACH` query. The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys. A persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure disk, that relied on the server's identity is loaded at startup with a client that has no credentials, per `s3_load_table_anonymously_if_credentials_restricted`; `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead.
 
+MongoDB is covered by this setting as well. When it is disabled, a query that reads with the `mongodb` table function or from a `MongoDB` table is rejected with `ACCESS_DENIED` if the connection string makes the server authenticate with its own credentials: with the authentication mechanism `MONGODB-OIDC` (the identity the server runs under: a Kubernetes service account token, or a token from the Azure or GCP instance metadata service), `MONGODB-AWS`, `GSSAPI` or `MONGODB-X509`, or with the connection option `tlsCertificateKeyFile` (or its deprecated alias `sslClientCertificateKeyFile`), which makes the server present a client certificate from its own filesystem. Only `SCRAM-SHA-1`, `SCRAM-SHA-256` and `PLAIN` are accepted, or no `authMechanism` at all. The check uses the settings of the session that reads, also for a table created by another user, so a session where this setting is enabled should not read MongoDB tables, or views of them, defined by untrusted users. Creating a `MongoDB` table is not checked. A MongoDB dictionary created with a DDL query may not use these mechanisms or `tlsCertificateKeyFile` whatever the value of this setting (except in `clickhouse-local`), because the server loads it with its own context, after the named collection it refers to may have changed; define such a dictionary in the server configuration files. Dictionaries defined in the server configuration files are not restricted, also when they refer to a named collection created with a DDL query, so whoever may alter that collection controls their connection string.
+
 To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
 
 ```xml
@@ -5608,7 +5623,7 @@ This setting has no effect in `clickhouse-local`, where the user is the operator
 
 `DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
 )", 0, allow_server_credentials_in_user_queries, \
-        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). Added the alias `allow_server_credentials_in_user_queries`."}, \
+        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). Added the alias `allow_server_credentials_in_user_queries`. Also blocks MongoDB authentication with credentials of the server process (`MONGODB-OIDC`, `MONGODB-AWS`, `GSSAPI`, `MONGODB-X509`, `tlsCertificateKeyFile`) in the `mongodb` table function and the `MongoDB` engine."}, \
         {"26.7", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/GCP-OAuth-metadata). Explicit role_arn-based STS assume-role is still allowed. The previous behavior (allowed) is restored with compatibility settings."}) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0, \
         {"24.10", 0, 1000, "New setting"}) \
@@ -7317,7 +7332,7 @@ Possible values:
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
 Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
-Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot; for object storage, by the set of objects read and their ETags). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
 Possible values:
 
@@ -8173,6 +8188,24 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"23.1", false, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries"}) \
+    DECLARE(Bool, query_plan_use_shuffle_for_order_by_rand, true, R"(
+Toggles a query-plan-level optimization which executes `ORDER BY rand()` and `ORDER BY rand64()` by shuffling the rows
+(the same way as the `SHUFFLE` clause) instead of sorting them, which takes O(n) time instead of O(n * log(n)).
+The result has the same distribution: the values of the `rand()` column are replaced by other random values in sorted order.
+Applies when the `rand()` value is not used in other expressions, and when there is a `LIMIT` or the external sorting is disabled
+(the shuffle does not spill to disk).
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, true, "New setting to execute `ORDER BY rand()` by shuffling the rows instead of sorting them."}) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -8528,7 +8561,7 @@ The version of `visibleWidth` behavior. 0 - only count the number of code points
 )", 0, \
         {"24.1", 0, 1, "We changed the default behavior of `visibleWidth` to be more precise"}) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](/reference/functions/regular-functions/conditional-functions#if), [multiIf](/reference/functions/regular-functions/conditional-functions#multiIf), [and](/reference/functions/regular-functions/logical-functions#and), and [or](/reference/functions/regular-functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](/reference/functions/regular-functions/conditional-functions#if), [multiIf](/reference/functions/regular-functions/conditional-functions#multiIf), [and](/reference/functions/regular-functions/logical-functions#and), [or](/reference/functions/regular-functions/logical-functions#or), [coalesce](/reference/functions/regular-functions/functions-for-nulls#coalesce), and [ifNull](/reference/functions/regular-functions/functions-for-nulls#ifNull) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -9750,6 +9783,10 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
         {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
+    DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
+With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
+)", 0, \
+        {"26.11", false, false, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
@@ -10591,9 +10628,9 @@ Use roaring bitmap for iceberg positional deletes.
 )", 0, \
         {"25.8", false, false, "New setting"}) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
-If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+If enabled, injects `SHUFFLE` into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
-If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+If the top-level construct is UNION, `SHUFFLE` is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
 )", 0, \
         {"25.10", false, false, "New setting"}) \
@@ -10835,10 +10872,6 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 )", EXPERIMENTAL, allow_experimental_unique_key, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_unique_key`."}, \
         {"26.5", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}) \
-    DECLARE(Bool, enable_alp_codec, false, R"(
-Enables the `ALP` compression codec.
-)", BETA, \
-        {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, enable_pco_codec, false, R"(
 Enables the `PCO` compression codec.
 )", BETA, \
@@ -10903,6 +10936,10 @@ If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is me
 Set to false to force the old full-mutation behavior.
 )", 0, \
         {"26.8", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."}) \
+    DECLARE(Bool, allow_experimental_shuffle_query, false, R"(
+Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used in place of `ORDER BY` and returns the rows in a uniformly random order.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected
@@ -11151,11 +11188,6 @@ Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join proces
 Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL, \
         {"25.2", false, false, "New setting. Enable spill memory data into external storage adaptively."}) \
-    DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
-Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
-)", BETA, allow_experimental_delta_kernel_rs, \
-        {"26.8", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}, \
-        {"25.5", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}) \
     DECLARE(Bool, allow_delta_lake_create_table, false, R"(
 Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet. In a `DataLakeCatalog` database the table is registered with its Delta schema, so declared ClickHouse types that map to a wider Delta type (e.g. `UInt8` -> `short`, `FixedString(N)` -> `string`) are read back as the Delta-mapped type rather than the declared one.
 )", EXPERIMENTAL, \
@@ -11583,6 +11615,10 @@ Enable table function `eval`.
         {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
     MAKE_OBSOLETE(M, UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), \
         {"26.10", 137438953472, 137438953472, "Obsolete: the per-query filesystem cache write limit was removed. A query is no longer capped in how much it writes into a filesystem cache; the cache's own `max_size` and eviction policy bound it."}) \
+    ALIAS(Bool, allow_delta_kernel_rs, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, allow_experimental_delta_kernel_rs, \
+        {"26.11", true, true, "Obsolete: the legacy Delta Lake reader was removed, `delta-kernel-rs` is always used."}, \
+        {"26.8", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}, \
+        {"25.5", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
@@ -11691,6 +11727,9 @@ Enable table function `eval`.
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false, \
         {"26.8", false, false, "Obsolete setting, renamed to `use_indexes_refiner_in_read_pools`."}) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
+    MAKE_OBSOLETE(M, Bool, enable_alp_codec, true, \
+        {"26.11", false, true, "Obsolete setting: the `ALP` compression codec is generally available and no longer needs to be enabled."}, \
+        {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
     MAKE_OBSOLETE(M, UInt64, s3_max_connections, 1024) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
