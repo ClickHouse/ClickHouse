@@ -14,6 +14,7 @@
 #include <deque>
 #include <optional>
 #include <unordered_set>
+#include <variant>
 
 namespace DB
 {
@@ -105,6 +106,14 @@ namespace DB::Parquet
 ///    distractions in Reader, which is the most complex part).
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
+
+struct RowGroupByteRange
+{
+    UInt64 offset = 0;
+    UInt64 length = 0;
+};
+
+using RowGroupSelection = std::variant<std::monostate, std::unordered_set<UInt64>, RowGroupByteRange>;
 
 struct Reader
 {
@@ -545,6 +554,8 @@ struct Reader
 
         /// Admitted by ReadManager::admitTopKRowGroups and not fully read yet.
         std::atomic<bool> holds_top_k_admission {false};
+
+        std::atomic<bool> skipped_by_top_k {false};
     };
 
     struct Step
@@ -658,7 +669,7 @@ struct Reader
     static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
     /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
     void setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_ = {});
-    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
     /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
@@ -669,6 +680,9 @@ struct Reader
     /// By Parquet column index, nullptr for the columns that are not parsed.
     const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
     size_t numColumnChunks(size_t row_group_idx) const;
+    std::optional<std::unordered_set<UInt64>> selectRowGroups(const RowGroupSelection & row_group_selection);
+    static std::optional<std::unordered_set<UInt64>> selectRowGroups(
+        const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column);
 
     struct KeyConditionColumnRanges
     {
@@ -822,7 +836,8 @@ private:
     /// unknown, and min/max statistics summarize the non-null values only, so a bbox predicate can
     /// look false for the row group or page while a NULL-bbox row inside it still matches.
     bool spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_key_condition_idx) const;
-    void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
+    /// Returns false if the range is inverted (min > max): such statistics must be ignored.
+    [[nodiscard]] bool adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
     /// Look up the row groups in the columns cache and decide which columns to write to it.
     void initColumnsCache();
@@ -836,7 +851,7 @@ private:
     /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
     void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
-    bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, std::optional<size_t> target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
