@@ -553,21 +553,29 @@ Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
     }
 }
 
+/// The IP version of a raw IP frame of the link type `dlt` whose first byte is `first_byte`, or
+/// `UNKNOWN` when the link type is not a raw IP one or does not carry that version: `DLT_IPV4` and
+/// `DLT_IPV6` carry a single IP version, and `DLT_RAW` tells them apart by the version nibble.
+Tins::PDU::PDUType rawIPLayerType(int dlt, uint8_t first_byte)
+{
+    const int version = first_byte >> 4;
+    if ((dlt == DLT_RAW || dlt == DLT_IPV4) && version == 4)
+        return Tins::PDU::IP;
+    if ((dlt == DLT_RAW || dlt == DLT_IPV6) && version == 6)
+        return Tins::PDU::IPv6;
+    return Tins::PDU::UNKNOWN;
+}
+
 /// Type of the outermost layer of a dissected frame. The link type of a raw IP capture names
 /// the outermost layer even when the IP header was cut by the snapshot length and the frame was
-/// kept raw: `DLT_IPV4` and `DLT_IPV6` carry a single IP version, and `DLT_RAW` tells them apart
-/// by the version nibble, which is the first captured byte.
+/// kept raw (see `rawIPLayerType`).
 Tins::PDU::PDUType outerLayerType(int dlt, const uint8_t * data, UInt32 caplen, const Tins::PDU & root)
 {
     if (root.pdu_type() != Tins::PDU::RAW || caplen == 0)
         return root.pdu_type();
 
-    const int version = data[0] >> 4;
-    if ((dlt == DLT_RAW || dlt == DLT_IPV4) && version == 4)
-        return Tins::PDU::IP;
-    if ((dlt == DLT_RAW || dlt == DLT_IPV6) && version == 6)
-        return Tins::PDU::IPv6;
-    return root.pdu_type();
+    const auto type = rawIPLayerType(dlt, data[0]);
+    return type == Tins::PDU::UNKNOWN ? root.pdu_type() : type;
 }
 
 /// The protocol named by the type field of an Ethernet II header, an 802.1Q tag, a `SNAP` header
@@ -602,7 +610,8 @@ struct CutIPHeader
 
 /// Finds the outermost IP header cut by the snapshot length in a frame without a dissected IP
 /// layer: the raw tail of the frame (see `dissectCompleteOuterHeaders`) is such a header when the
-/// layer before it, or the link type of a raw IP capture, names IP, and its version nibble agrees.
+/// layer before it, the link type of a raw IP capture, or the link type named by a PPI header in
+/// front of it names IP, and its version nibble agrees.
 std::optional<CutIPHeader> findCutIPHeader(int dlt, const uint8_t * data, UInt32 caplen, const Tins::PDU & root)
 {
     const Tins::PDU * carrier = nullptr;
@@ -617,8 +626,15 @@ std::optional<CutIPHeader> findCutIPHeader(int dlt, const uint8_t * data, UInt32
     if (raw == nullptr || raw->payload().empty())
         return {};
 
-    const auto expected = carrier == nullptr ? outerLayerType(dlt, data, caplen, root) : carriedProtocol(*carrier);
-    const UInt8 version = raw->payload()[0] >> 4;
+    const UInt8 first_byte = raw->payload()[0];
+    Tins::PDU::PDUType expected;
+    if (carrier == nullptr)
+        expected = outerLayerType(dlt, data, caplen, root);
+    else if (const auto * ppi = dynamic_cast<const Tins::PPI *>(carrier))
+        expected = rawIPLayerType(pcapLinkTypeToDLT(ppi->dlt()), first_byte);
+    else
+        expected = carriedProtocol(*carrier);
+    const UInt8 version = first_byte >> 4;
     if ((expected == Tins::PDU::IP && version == 4) || (expected == Tins::PDU::IPv6 && version == 6))
         return CutIPHeader{version, raw->payload().data(), raw->payload().size()};
     return {};

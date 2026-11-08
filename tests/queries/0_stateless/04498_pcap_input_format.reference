@@ -120,6 +120,9 @@ truncated_dot3.pcap	2	32	4	64	UDP	\N	\N	\N
 ppi.pcap	1	84	4	64	TCP	::ffff:192.0.2.1	::ffff:192.0.2.2	12345
 ppi.pcap	2	26	4	\N		\N	\N	\N
 truncated_ip_options.pcap	1	22	4	64	UDP	::ffff:192.0.2.1	::ffff:192.0.2.2	\N
+truncated_ppi_raw_ip.pcap	1	24	4	64	TCP	::ffff:192.0.2.1	\N	\N
+truncated_ppi_raw_ip.pcap	2	24	4	64	TCP	::ffff:192.0.2.1	\N	\N
+truncated_ppi_raw_ip.pcap	3	32	6	64	UDP	2001:db8::1	\N	\N
 --- length invariants hold across all fixtures ---
 packets.pcap	0	0	0
 packets.pcapng	0	0	0
@@ -142,6 +145,7 @@ options.pcap	0	0	0
 truncated_ip_options.pcap	0	0	0
 dot11.pcap	0	0	0
 radiotap.pcap	0	0	0
+truncated_ppi_raw_ip.pcap	0	0	0
 --- padded short frame: payload excludes the Ethernet padding ---
 60	4	ping	0	42
 --- tunnels: IP columns describe the outer header ---

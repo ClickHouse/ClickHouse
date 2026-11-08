@@ -58,3 +58,6 @@ rewrite each other's files.
 - `ppi_frames.pcap` — the IEEE 802.3 frame with `SNAP` from `dot3.pcap` and a raw
   IPv4 UDP packet (`LINKTYPE_RAW`) behind a PPI header, so they are dissected
   like the same frames without it.
+- `truncated_ppi_raw_ip.pcap` — raw IPv4 and IPv6 packets behind a PPI header
+  with `LINKTYPE_RAW`, `LINKTYPE_IPV4` and `LINKTYPE_IPV6`, cut inside the IP
+  header after the source address, so the captured IP fields are still filled.

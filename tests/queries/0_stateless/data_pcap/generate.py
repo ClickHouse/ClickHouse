@@ -339,3 +339,14 @@ write_pcap(out_dir / "null_ipv6.pcap", [(packet, len(packet)) for packet in loop
 # and a raw IPv4 UDP packet (`LINKTYPE_RAW`, 101, which is not the value of `DLT_RAW`).
 ppi_frames = [struct.pack("<BBHI", 0, 0, 8, 1) + snap_ip, struct.pack("<BBHI", 0, 0, 8, 101) + ipv4(17, udp)]
 write_pcap(out_dir / "ppi_frames.pcap", [(packet, len(packet)) for packet in ppi_frames], linktype=192)
+
+# Raw IP packets behind a PPI header cut inside the IP header: an IPv4 packet with
+# `LINKTYPE_RAW` (101) and `LINKTYPE_IPV4` (228), cut after the source address, and
+# an IPv6 packet with `LINKTYPE_IPV6` (229), cut after the source address, so the
+# captured IP fields are taken from the bytes the PPI header names as IP.
+truncated_ppi_raw_ip = [
+    (struct.pack("<BBHI", 0, 0, 8, 101) + ipv4(6, tcp)[:16], 8 + len(ipv4(6, tcp))),
+    (struct.pack("<BBHI", 0, 0, 8, 228) + ipv4(6, tcp)[:16], 8 + len(ipv4(6, tcp))),
+    (struct.pack("<BBHI", 0, 0, 8, 229) + ipv6(17, udp)[:24], 8 + len(ipv6(17, udp))),
+]
+write_pcap(out_dir / "truncated_ppi_raw_ip.pcap", truncated_ppi_raw_ip, snaplen=32, linktype=192)
