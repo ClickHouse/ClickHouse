@@ -8,6 +8,7 @@ namespace DB
 {
 
 class IAST;
+class ASTCreateHandlerQuery;
 
 /// The query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` /
 /// `page`) shape the result a query returns. They are not applied by the interpreter; instead they are
@@ -33,10 +34,10 @@ void wrapPerArmConstructionSettings(
 /// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting.
 bool hasConstructionSettings(const IAST & ast);
 
-/// Throw if the query of a new handler definition has construction settings in one of two query-level `SETTINGS`
-/// clauses (`SELECT ... SETTINGS a FORMAT TSV SETTINGS b`), under `EXPLAIN` / `EXECUTE AS` in both of them, together
-/// with `profile`, or for a `SELECT` without `FROM` unless the query sets `implicit_table_at_top_level` to a string literal.
-/// Not for stored definitions: those written by earlier versions must keep loading.
-void checkStoredQueryConstructionSettings(const IAST & query);
+/// Throw if `wrapNestedConstructionSettings` left construction settings in the query of `CREATE HANDLER` /
+/// `ALTER HANDLER ... AS`: in one of two query-level `SETTINGS` clauses (`SELECT ... SETTINGS a FORMAT TSV SETTINGS b`),
+/// under `EXPLAIN` / `EXECUTE AS` in both of them, together with `profile`, or for a `SELECT` without `FROM` unless the
+/// query sets `implicit_table_at_top_level` to a string literal.
+void checkStoredQueryConstructionSettings(const ASTCreateHandlerQuery & query);
 
 }

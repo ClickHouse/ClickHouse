@@ -53,6 +53,9 @@ public:
     /// The query to be executed by the handler (the part after AS). Stored as a child.
     ASTPtr query;
 
+    /// `query` keeps query-construction settings that are not applied when the handler is created (not formatted).
+    bool has_unapplied_construction_settings = false;
+
     String getID(char) const override { return "CreateHandlerQuery"; }
 
     ASTPtr clone() const override;

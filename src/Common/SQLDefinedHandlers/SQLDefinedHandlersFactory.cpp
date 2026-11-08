@@ -219,7 +219,7 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
 
     /// Build (validates the query and computes the canonical statement), then check ambiguity, then persist.
     auto handler = makeSQLDefinedHandler(query);
-    checkStoredQueryConstructionSettings(*query.query);
+    checkStoredQueryConstructionSettings(query);
     checkAmbiguity(*handler, loaded_handlers);
 
     metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false);
@@ -257,7 +257,7 @@ void SQLDefinedHandlersFactory::createReplicated(const ASTCreateHandlerQuery & q
         try
         {
             handler = makeSQLDefinedHandler(query);
-            checkStoredQueryConstructionSettings(*query.query);
+            checkStoredQueryConstructionSettings(query);
             checkAmbiguity(*handler, current);
         }
         catch (...)
@@ -386,8 +386,7 @@ void SQLDefinedHandlersFactory::removeReplicated(const ASTDropHandlerQuery & que
 
 void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alter_query)
 {
-    if (alter_query.query)
-        checkStoredQueryConstructionSettings(*alter_query.query);
+    checkStoredQueryConstructionSettings(alter_query);
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 

@@ -1887,6 +1887,7 @@ bool hasConstructionSettings(const IAST & ast)
 static void wrapStoredQueryConstructionSettings(
     ASTPtr & ast, const std::optional<String> & implicit_table, size_t max_query_size, size_t max_parser_depth,
     size_t max_parser_backtracks);
+static bool hasUnappliedConstructionSettings(const IAST & ast);
 
 /// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
 /// `limit` / `offset` / `page`) that a nested (sub)query carries in its OWN `SETTINGS` clause, by
@@ -1972,6 +1973,8 @@ void wrapNestedConstructionSettings(
                     }
                 create_handler->query = query;
             }
+            /// Before the normalization of `UNION` / `INTERSECT` / `EXCEPT`, which can drop or move `SETTINGS` clauses.
+            create_handler->has_unapplied_construction_settings = hasUnappliedConstructionSettings(*query);
         }
         return;
     }
@@ -2787,21 +2790,19 @@ static bool hasUnmaterializableImplicitTable(const IAST & ast, const std::option
     return hasUnmaterializableImplicitTable(*statement, inner_implicit_table);
 }
 
-void checkStoredQueryConstructionSettings(const IAST & ast)
+static bool hasUnappliedConstructionSettings(const IAST & ast)
 {
-    if (hasUnmaterializableConstructionSettings(ast))
+    return hasUnmaterializableConstructionSettings(ast) || hasConstructionSettingsWithProfile(ast)
+        || hasUnmaterializableImplicitTable(ast, std::nullopt);
+}
+
+void checkStoredQueryConstructionSettings(const ASTCreateHandlerQuery & query)
+{
+    if (query.has_unapplied_construction_settings)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
-            "handler cannot be combined with a second query-level `SETTINGS` clause. Put the settings into one clause.");
-    if (hasConstructionSettingsWithProfile(ast))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
-            "handler cannot be combined with the `profile` setting in its `SETTINGS`. Put them into the profile or remove the profile.");
-    if (hasUnmaterializableImplicitTable(ast, std::nullopt))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
-            "handler cannot be combined with a `SELECT` without `FROM`, unless the query sets `implicit_table_at_top_level` "
-            "to a string literal.");
+            "handler cannot be combined with a second query-level `SETTINGS` clause or with the `profile` setting, and "
+            "in a `SELECT` without `FROM` they need `implicit_table_at_top_level` set to a string literal.");
 }
 
 

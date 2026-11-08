@@ -58,3 +58,11 @@ rejected
 1
 -- construction settings for a SELECT without FROM need a literal implicit_table_at_top_level
 rejected
+-- the rejected forms with UNION DISTINCT and INTERSECT, whose normalization drops or moves a SETTINGS clause
+rejected
+rejected
+rejected
+rejected
+rejected
+1
+2

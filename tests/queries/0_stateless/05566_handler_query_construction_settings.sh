@@ -16,7 +16,7 @@ PROFILE="p_05566_${DB}"
 
 cleanup() {
     local drops=""
-    for i in 1 3 4 5 6 7 8 9 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25; do
+    for i in 1 3 4 5 6 7 8 9 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29; do
         drops+="DROP HANDLER IF EXISTS h${i}_${DB}; "
     done
     ${CLICKHOUSE_CLIENT} -q "${drops}DROP USER IF EXISTS ${APP_USER}; DROP SETTINGS PROFILE IF EXISTS ${PROFILE}"
@@ -131,3 +131,17 @@ ${CLICKHOUSE_CURL} -sS "${BASE}/h24_${DB}"
 echo "-- construction settings for a SELECT without FROM need a literal implicit_table_at_top_level"
 ${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h25_${DB} URL '/h25_${DB}' AS SELECT count() SETTINGS limit = 1" 2>&1 \
     | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+
+echo "-- the rejected forms with UNION DISTINCT and INTERSECT, whose normalization drops or moves a SETTINGS clause"
+UNION_DISTINCT="SELECT a FROM ${DB}.t UNION DISTINCT SELECT a + 10 FROM ${DB}.t"
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h26_${DB} URL '/h26_${DB}' AS ${UNION_DISTINCT} SETTINGS max_threads = 1 FORMAT TSV SETTINGS limit = 1" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h27_${DB} URL '/h27_${DB}' AS ${UNION_DISTINCT} FORMAT TSV SETTINGS profile = '${PROFILE}', limit = 2" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h28_${DB} URL '/h28_${DB}' AS SELECT count() UNION DISTINCT SELECT count() + 1 FORMAT TSV SETTINGS limit = 1" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h29_${DB} URL '/h29_${DB}' AS SELECT a FROM ${DB}.t INTERSECT SELECT a FROM ${DB}.t SETTINGS max_threads = 1 FORMAT TSV SETTINGS limit = 1" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CLIENT} -q "ALTER HANDLER h9_${DB} AS ${UNION_DISTINCT} SETTINGS max_threads = 1 FORMAT TSV SETTINGS limit = 1" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CURL} -sS "${BASE}/h9_${DB}"
