@@ -3,10 +3,9 @@
 # no-fasttest: an Azure disk
 # no-shared-merge-tree: custom disk
 
-# A filtered `READ ON AZURE` grant is matched against the location of an Azure disk described with
-# `storage_account_url` and `container_name` (or `container`): `<storage_account_url>/<container>/`.
-# A `connection_string` wins over the `storage_account_url` when the disk is created, so the URL
-# is not trusted then and the unfiltered grant is required.
+# An Azure disk reads any blob of its container, while a filtered `READ ON AZURE` grant is matched
+# against a blob name (as for `azureBlobStorage`), so the disk needs the unfiltered grant, whichever
+# keys describe its location.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,7 +32,7 @@ ${CLICKHOUSE_CLIENT} --query "
     GRANT CREATE TEMPORARY TABLE ON *.* TO ${USER};
     GRANT READ ON AZURE('${ACCOUNT_URL}/mtpa-allowed/.*') TO ${USER};"
 
-echo "-- READ ON AZURE filtered to one container"
+echo "-- READ ON AZURE filtered"
 check "SELECT count() FROM $(mtp "storage_account_url = '${ACCOUNT_URL}', container_name = 'mtpa-allowed'")"
 check "DESCRIBE $(mtp "storage_account_url = '${ACCOUNT_URL}', container_name = 'mtpa-allowed'")"
 check "SELECT count() FROM $(mtp "storage_account_url = '${ACCOUNT_URL}/', container = 'mtpa-allowed'")"

@@ -574,28 +574,16 @@ void TableFunctionMergeTreeParts::parseArguments(const ASTPtr & ast_function, Co
         /// An object storage disk reads under its location, so that is the URI a filtered source grant
         /// is matched against. Only plain literals are trusted: a substitution or a macro would make the
         /// created disk read from somewhere else than what was checked, and an `endpoint_subpath` moves
-        /// the data below the location. The keys are looked at in the order the disk creators prefer
-        /// them: an `endpoint` wins over everything else, and for Azure a `connection_string` wins over
-        /// a `storage_account_url`. A local disk has no URI, as `file` has none.
-        if (*source_access != AccessTypeObjects::Source::FILE && !source_args.contains("endpoint_subpath"))
+        /// the data below the location. An `endpoint` wins over everything else, the same way the disk
+        /// creators prefer it. A local disk has no URI, as `file` has none. An Azure disk has none either:
+        /// a filtered `READ ON AZURE` grant is matched against a blob name, as `azureBlobStorage` does,
+        /// while the disk reads any blob of its container, so it needs the unfiltered grant.
+        if (*source_access != AccessTypeObjects::Source::FILE
+            && *source_access != AccessTypeObjects::Source::AZURE
+            && !source_args.contains("endpoint_subpath")
+            && source_args.contains("endpoint"))
         {
-            if (source_args.contains("endpoint"))
-            {
-                function_uri = get_source_arg("endpoint");
-            }
-            else if (*source_access == AccessTypeObjects::Source::AZURE
-                && !source_args.contains("connection_string")
-                && source_args.contains("storage_account_url"))
-            {
-                auto storage_account_url = get_source_arg("storage_account_url");
-                auto container = source_args.contains("container_name") ? get_source_arg("container_name") : get_source_arg("container");
-                if (!storage_account_url.empty() && !container.empty())
-                {
-                    if (!storage_account_url.ends_with('/'))
-                        storage_account_url += '/';
-                    function_uri = storage_account_url + container + "/";
-                }
-            }
+            function_uri = get_source_arg("endpoint");
         }
     }
 }
@@ -676,9 +664,9 @@ The `type` of the disk (and `object_storage_type` when `type = object_storage`) 
 value: it decides what kind of source the access of the query is checked for (`READ ON S3`,
 `READ ON FILE`, ...), and the disk is only created after that check passes. A filtered grant, such as
 `GRANT READ ON S3('https://mybucket.s3.amazonaws.com/data/.*')`, is matched against the `endpoint` of
-the disk description - or, for an Azure disk described with `storage_account_url`, against
-`<storage_account_url>/<container_name>/` - which then has to be a literal value as well; a local disk
-needs the unfiltered `READ ON FILE` grant, as the `file` table function does. The keys that decide the
+the disk description, which then has to be a literal value as well; a local disk needs the unfiltered
+`READ ON FILE` grant, as the `file` table function does, and an Azure disk needs the unfiltered
+`READ ON AZURE` grant, because it reads any blob of its container. The keys that decide the
 source and its location (`type`, `object_storage_type`, `endpoint`, `storage_account_url`, ...) can be
 given only once. The disk is local to the query and is not registered on the server.
 
