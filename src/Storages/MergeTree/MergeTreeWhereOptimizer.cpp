@@ -23,6 +23,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -142,6 +143,12 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_sna
     return names;
 }
 
+bool isReadByTopKFilterOnly(const RPNBuilderTreeNode & conjunct, const NameSet & columns, const String & top_k_filter_column)
+{
+    return !top_k_filter_column.empty() && columns.size() == 1 && *columns.begin() == top_k_filter_column
+        && conjunct.getDAGNode() && canBeMovedToTheFrontOfAndChain(conjunct.getDAGNode());
+}
+
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -178,7 +185,8 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final,
-    const NameSet & columns_read_before_filter)
+    const NameSet & columns_read_before_filter,
+    const String & top_k_filter_column)
 {
     const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
@@ -207,6 +215,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
             storage_columns_read_before_filter.insert(column_name);
     }
     where_optimizer_context.columns_read_before_filter = &storage_columns_read_before_filter;
+    where_optimizer_context.top_k_filter_column = top_k_filter_column;
 
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
 
@@ -450,8 +459,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns,
             /// unless the condition can be used as a string filter during the scan:
-            /// then it is beneficial on its own, because the reader skips copying the non-matching values.
+            /// then it is beneficial on its own, because the reader skips copying the non-matching values,
+            /// or `__topKFilter` reads its only column in PREWHERE anyway, where the query condition cache records each emptied granule.
             && (info.columns.size() < queried_columns.size()
+                || isReadByTopKFilterOnly(conjunct, info.columns, where_optimizer_context.top_k_filter_column)
                 || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
 
         info.expensive = isExpensiveExpression(conjunct);
@@ -621,6 +632,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
                 && (columns.size() < queried_columns.size()
+                    || isReadByTopKFilterOnly(conjunct, columns, where_optimizer_context.top_k_filter_column)
                     || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
             res.emplace_back(std::move(cond));
         }

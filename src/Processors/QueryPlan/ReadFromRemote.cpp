@@ -665,6 +665,12 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     return left_out;
 }
 
+static bool shardQueryHasTotals(const ClusterProxy::SelectStreamFactory::Shard & shard)
+{
+    const auto * select = shard.query->as<ASTSelectQuery>();
+    return select && select->group_by_with_totals;
+}
+
 void ReadFromRemote::addLazyPipe(
     Pipes & pipes,
     const ClusterProxy::SelectStreamFactory::Shard & shard,
@@ -680,8 +686,7 @@ void ReadFromRemote::addLazyPipe(
 
     if (stage == QueryProcessingStage::Complete)
     {
-        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
-            add_totals = ast_select->group_by_with_totals;
+        add_totals = shardQueryHasTotals(shard);
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
@@ -870,8 +875,7 @@ void ReadFromRemote::addPipe(
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
     if (stage == QueryProcessingStage::Complete)
     {
-        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
-            add_totals = ast_select->group_by_with_totals;
+        add_totals = shardQueryHasTotals(shard);
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
@@ -1149,6 +1153,11 @@ bool ReadFromRemote::hasSerializedPlan() const
             return true;
 
     return false;
+}
+
+bool ReadFromRemote::hasTotals() const
+{
+    return stage == QueryProcessingStage::Complete && std::ranges::any_of(shards, shardQueryHasTotals);
 }
 
 

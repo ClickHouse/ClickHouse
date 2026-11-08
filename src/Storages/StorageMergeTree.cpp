@@ -1574,6 +1574,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
+    /// A snapshot cached by `enable_shared_storage_snapshot_in_query` before the wait for committing
+    /// inserts above (e.g. by the validation of `IN` operands in `InterpreterUpdateQuery`) would hide
+    /// the parts committed during the wait from the update. See `StorageReplicatedMergeTree::updateLightweight`.
+    discardSharedStorageSnapshot(context_copy);
+
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<MergeTreeSinkPatch>(
@@ -3486,6 +3491,30 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
 
     removePartsFromWorkingSet(txn, {part}, clear_without_timeout, parts_lock);
     return part;
+}
+
+void StorageMergeTree::detachPartAfterFailedFsync(const DataPartPtr & part)
+{
+    /// Merges and mutations select the parts under this mutex, so the part cannot be selected while it is detached.
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// A merge or a mutation that is already running has read the data of the part, and the resulting part
+    /// replaces it. The in-memory record of the failed files still fails the inserts that rely on them.
+    if (part->getState() != DataPartState::Active || currently_merging_mutating_parts.contains(part))
+    {
+        LOG_WARNING(log, "The fsync of part {} failed, but it is not detached, because it is {}",
+            part->name, currently_merging_mutating_parts.contains(part) ? "being merged or mutated" : part->stateString());
+        return;
+    }
+
+    /// The deduplication record is removed first: if detaching fails afterwards, a retry of the insert duplicates the data,
+    /// but if it were the other way around, a retry would be acknowledged without the data.
+    /// The removal is synced before detaching for the same reason: otherwise, after a power loss, the detach could be durable
+    /// while the old deduplication record is restored. If the sync fails, the part is not detached.
+    if (deduplication_log)
+        deduplication_log->dropPart(part->info, /*sync_to_disk=*/ true);
+
+    forcefullyMovePartToDetachedAndRemoveFromMemory(part, "fsync-failed");
 }
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)

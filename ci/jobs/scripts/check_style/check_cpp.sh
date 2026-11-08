@@ -89,12 +89,15 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
+    ProfileEvents::getByName
+    ProfileEvents::tryGetByName
     ProfileEvents::Timer
     ProfileEvents::Type
     ProfileEvents::TypeEnum
     ProfileEvents::ValueType
     ProfileEvents::dumpToMapColumn
     ProfileEvents::getProfileEvents
+    ProfileEvents::subtractIncrements
     ProfileEvents::ThreadIdToCountersSnapshot
     ProfileEvents::LOCAL_NAME
     ProfileEvents::keeper_profile_events

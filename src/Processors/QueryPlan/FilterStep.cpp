@@ -320,10 +320,11 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
 /// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
 /// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
 /// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
-static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
 {
     StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
     nodes.push(node);
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited{node};
     while (!nodes.empty())
     {
         node = nodes.top();
@@ -337,7 +338,7 @@ static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
             DataTypesWithConstInfo arguments;
             arguments.reserve(node->children.size());
             for (const auto * child : node->children)
-                arguments.push_back({child->result_type, child->column != nullptr});
+                arguments.push_back({child->result_type, child->column != nullptr, child->column.get()});
 
             const auto & function = *node->function_base;
             if (function.isStateful()
@@ -349,7 +350,8 @@ static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
         }
 
         for (const auto * child : node->children)
-            nodes.push(child);
+            if (visited.insert(child).second)
+                nodes.push(child);
     }
     return true;
 }
@@ -360,6 +362,7 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
 {
     StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
     nodes.push(node);
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited{node};
     while (!nodes.empty())
     {
         node = nodes.top();
@@ -377,7 +380,8 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
         }
 
         for (const auto * child : node->children)
-            nodes.push(child);
+            if (visited.insert(child).second)
+                nodes.push(child);
     }
     return false;
 }
@@ -389,6 +393,7 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
 {
     StackWithMemoryTracking<const ActionsDAG::Node *> nodes;
     nodes.push(node);
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited{node};
     while (!nodes.empty())
     {
         node = nodes.top();
@@ -401,7 +406,8 @@ static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
             return true;
 
         for (const auto * child : node->children)
-            nodes.push(child);
+            if (visited.insert(child).second)
+                nodes.push(child);
     }
     return false;
 }
