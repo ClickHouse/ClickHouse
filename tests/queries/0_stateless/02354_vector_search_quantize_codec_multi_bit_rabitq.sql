@@ -126,6 +126,72 @@ SELECT 'exact_8bit',
     (SELECT groupArray(id) FROM (SELECT id, cosineDistance(v8, ref) AS d FROM quantize_multi_bit_rabitq ORDER BY d, id LIMIT 10))
     = (SELECT groupArray(id) FROM (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v8, ref) ASC LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 1000));
 
+-- Verify Recall with a limited shortlist (10 * 20 = 200 candidates out of 2000 rows).
+-- The estimator must recover at least 8 of the exact Top-10 neighbors.
+
+WITH (SELECT v2 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref,
+     (SELECT groupArray(id) FROM
+         (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v2, ref), id LIMIT 10)) AS truth
+SELECT 'recall_2bit_ge_8',
+    length(arrayIntersect(truth,
+        (SELECT groupArray(id) FROM
+            (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v2, ref) ASC
+             LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 20)))) >= 8;
+
+WITH (SELECT v3 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref,
+     (SELECT groupArray(id) FROM
+         (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v3, ref), id LIMIT 10)) AS truth
+SELECT 'recall_3bit_ge_8',
+    length(arrayIntersect(truth,
+        (SELECT groupArray(id) FROM
+            (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v3, ref) ASC
+             LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 20)))) >= 8;
+
+WITH (SELECT v4 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref,
+     (SELECT groupArray(id) FROM
+         (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v4, ref), id LIMIT 10)) AS truth
+SELECT 'recall_4bit_ge_8',
+    length(arrayIntersect(truth,
+        (SELECT groupArray(id) FROM
+            (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v4, ref) ASC
+             LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 20)))) >= 8;
+
+WITH (SELECT v5 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref,
+     (SELECT groupArray(id) FROM
+         (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v5, ref), id LIMIT 10)) AS truth
+SELECT 'recall_5bit_ge_8',
+    length(arrayIntersect(truth,
+        (SELECT groupArray(id) FROM
+            (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v5, ref) ASC
+             LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 20)))) >= 8;
+
+WITH (SELECT v6 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref,
+     (SELECT groupArray(id) FROM
+         (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v6, ref), id LIMIT 10)) AS truth
+SELECT 'recall_6bit_ge_8',
+    length(arrayIntersect(truth,
+        (SELECT groupArray(id) FROM
+            (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v6, ref) ASC
+             LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 20)))) >= 8;
+
+WITH (SELECT v7 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref,
+     (SELECT groupArray(id) FROM
+         (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v7, ref), id LIMIT 10)) AS truth
+SELECT 'recall_7bit_ge_8',
+    length(arrayIntersect(truth,
+        (SELECT groupArray(id) FROM
+            (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v7, ref) ASC
+             LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 20)))) >= 8;
+
+WITH (SELECT v8 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref,
+     (SELECT groupArray(id) FROM
+         (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v8, ref), id LIMIT 10)) AS truth
+SELECT 'recall_8bit_ge_8',
+    length(arrayIntersect(truth,
+        (SELECT groupArray(id) FROM
+            (SELECT id FROM quantize_multi_bit_rabitq ORDER BY cosineDistance(v8, ref) ASC
+             LIMIT 10 SETTINGS vector_search_index_fetch_multiplier = 20)))) >= 8;
+
 -- Self-match must be the nearest neighbour.
 
 WITH (SELECT v2 FROM quantize_multi_bit_rabitq WHERE id = 42) AS ref

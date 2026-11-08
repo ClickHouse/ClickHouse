@@ -346,6 +346,8 @@ double bestMultiBitRaBitQScale(const float * work, size_t dimensions, double nor
     if (extra_bits == 0 || norm == 0.0)
         return 0.0;
 
+    /// Scale-search starting ratios from the original multi-bit RaBitQ implementation,
+    /// also adopted by Faiss's extended RaBitQ implementation.
     static constexpr double tight_start[] = {0.0, 0.15, 0.20, 0.52, 0.59, 0.71, 0.75, 0.77, 0.81};
 
     const UInt32 max_level = (UInt32{1} << extra_bits) - 1;
@@ -618,8 +620,8 @@ QuantizationMethod methodToCodec(std::string_view method)
 
 bool VectorQuantizer::supportsL2(std::string_view method)
 {
-    /// `rabitq` and `turboquant` are sign/rotation cosine estimators. They do not retain the vector norm, so their
-    /// approximate distance can only rank by ang.
+    /// `rabitq`, `multi_bit_rabitq` and `turboquant` are sign/rotation cosine estimators.
+    /// They do not retain the vector norm, so their approximate distance can only rank by ang.
     return method == "int8" || method == "prefix_int8" || method == "prefix_bf16";
 }
 
@@ -905,7 +907,6 @@ VectorQuantizer::QueryPtr VectorQuantizer::prepareQuery(std::string_view method,
         case QuantizationMethod::MultiBitRaBitQ:
         {
             query->code_bytes = (dimensions / 8) * bits + sizeof(float);
-            query->bits = bits;
 
             const std::vector<float> projection = generateRandomProjection(dimensions);
             std::vector<float> work(projection.size() / PROJECTION_ROUNDS);
