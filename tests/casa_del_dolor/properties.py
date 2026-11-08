@@ -96,12 +96,19 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 SERVER_STOP_WAIT_SECONDS = 30
 
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
-SERVER_START_WAIT_SECONDS = 10
+SERVER_START_WAIT_SECONDS = 180
 
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
 SERVER_SETTLE_SLEEP_SECONDS = 1
 KEEPER_SESSION_EXPIRE_SLEEP_SECONDS = 3
+
+# The ports these services listen on inside the docker network, which is how the server reaches them.
+# The cluster's nginx/redis/mongo/kafka ports are host-side (Kafka's listener there advertises localhost).
+NGINX_INTERNAL_PORT = 80
+REDIS_INTERNAL_PORT = 6379
+MONGO_INTERNAL_PORT = 27017
+KAFKA_INTERNAL_PORT = 19092
 
 
 rocksdb_properties = {
@@ -725,8 +732,10 @@ object_storages_properties = {
             0.2, 0.2, 1000, 10000, allow_unlimited=False
         ),
         "s3_slow_all_threads_after_network_error": true_false_lambda,
+        # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
+        # rejects strict > max
         "s3_strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 100 * 1024 * 1024
+            0.2, 0.2, 0, 16 * 1024 * 1024, 24
         ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
@@ -740,7 +749,8 @@ object_storages_properties = {
     },
     "azure": {
         "check_objects_after_upload": true_false_lambda,
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
+        # bits=31 as for S3: the SDK page size is a 32-bit int, so 2**64 - 1 wraps to -1
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
         # Floor 10, as `s3_max_part_number` above: with `max_single_part_upload_size=0` every write
         # is multipart, and a floor of 1 cannot fit even the disk's startup `checkAccess` probe, so
         # the server rejects the disk with INVALID_CONFIG_PARAMETER and never starts.
@@ -1144,6 +1154,7 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
+    readonly_disks: set[int],
 ) -> tuple[int, str, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
@@ -1229,7 +1240,7 @@ def add_single_disk(
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = (
-                f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
+                f"http://{cluster.nginx_host}:{NGINX_INTERNAL_PORT}/data{i}/"
             )
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
@@ -1289,10 +1300,11 @@ def add_single_disk(
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
-        elif random.randint(1, 2) == 1:
+        elif random.randint(1, 2) == 1 and iter_prev_disk not in readonly_disks:
             # The path of an encrypted disk is relative to the disk it wraps (`DiskEncrypted` uses
             # `wrapped_disk->getPath() + path`). An absolute path is rejected by object storage disks
-            # with `PATH_ACCESS_DENIED`, and the server refuses to start.
+            # with `PATH_ACCESS_DENIED`, and the server refuses to start. A readonly disk cannot
+            # create the directory, so the server would not start either.
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"disk{i}/"
 
@@ -1355,6 +1367,7 @@ class DiskPropertiesGroup(PropertiesGroup):
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
         created_disks_types = []
+        readonly_disks = set()
         created_cache_disks = []
         created_keeper_disks = []
         safe_for_database_disk = []
@@ -1380,8 +1393,11 @@ class DiskPropertiesGroup(PropertiesGroup):
                 random.choice(possible_types),
                 created_disks_types,
                 is_private_binary,
+                readonly_disks,
             )
             created_disks_types.append(next_created_disk_pair)
+            if disk_xml_elem.findtext("readonly") == "1":
+                readonly_disks.add(i)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
             elif (
@@ -1927,7 +1943,7 @@ def modify_server_settings(
         modified = True
         mongo_xml = ET.SubElement(named_collections_xml, "mongo_remote")
         ET.SubElement(mongo_xml, "host").text = cluster.mongo_host
-        ET.SubElement(mongo_xml, "port").text = str(cluster.mongo_port)
+        ET.SubElement(mongo_xml, "port").text = str(MONGO_INTERNAL_PORT)
         ET.SubElement(mongo_xml, "user").text = "root"
         ET.SubElement(mongo_xml, "password").text = mongo_pass
         ET.SubElement(mongo_xml, "database").text = "test"

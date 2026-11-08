@@ -1091,8 +1091,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
         {
-            /// convert through UInt32 which is the underlying type for native IPv4
-            return static_cast<IPv4>(convertNumericType<UInt32>(src, type, strict, convert_inexact_floats).safeGet<UInt32>());
+            /// Convert through UInt32, which is the underlying type for native IPv4.
+            Field converted = convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
+            if (converted.isNull())
+                return {};
+            return static_cast<IPv4>(converted.safeGet<UInt32>());
         }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
