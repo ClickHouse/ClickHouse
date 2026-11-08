@@ -54,6 +54,12 @@ bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partitio
 bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & bound)
 {
     const RowNumber partition_end = partition.end;
+    if (bound.location == partition_end)
+        return partition.fully_visible;
+
+    if (peerGroupAt(blocks, bound.location) >= group)
+        return true;
+
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
@@ -71,7 +77,8 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & pa
         }
         bound.location = blocks.move(bound.location, row - bound.location.row);
     }
-    return advanceToPartitionEnd(blocks, partition, bound);
+
+    return partition.fully_visible;
 }
 
 /// The first row whose ORDER BY key is at the offset from the current row's key, or past it when `past`.
@@ -100,7 +107,7 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
         bound.location = blocks.move(bound.location, row - bound.location.row);
     }
 
-    return advanceToPartitionEnd(blocks, partition, bound);
+    return partition.fully_visible;
 }
 
 bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RowPoint & start)
