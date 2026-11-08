@@ -36,6 +36,8 @@ SELECT a.id + 1 FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.i
 SELECT '-- case 8: join_use_nulls and group_by_use_nulls';
 SELECT c.id FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id LEFT JOIN values('id Int32', 2) c ON a.id = c.id FORMAT TSVWithNames SETTINGS join_use_nulls = 1;
 SELECT a.id, count() AS cnt FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id GROUP BY a.id WITH ROLLUP ORDER BY a.id NULLS LAST FORMAT TSVWithNames SETTINGS group_by_use_nulls = 1;
+SELECT s.id FROM (SELECT a.* APPLY (x -> x) FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id GROUP BY a.id WITH ROLLUP SETTINGS group_by_use_nulls = 1) AS s ORDER BY s.id NULLS LAST;
+SELECT s.id FROM (SELECT COLUMNS(a.id) APPLY (x -> x) FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id GROUP BY a.id WITH ROLLUP SETTINGS group_by_use_nulls = 1) AS s ORDER BY s.id NULLS LAST;
 
 SELECT '-- case 9: the compatibility setting restores the qualified names';
 SELECT a.id FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames SETTINGS analyzer_compatibility_qualify_ambiguous_column_names = 1;
@@ -93,6 +95,20 @@ SELECT a.id, a.x FROM values('id Int32, x Int32', (1, 10), (1, 20), (1, 30)) a J
 ORDER BY 1 WITH FILL TO 4 INTERPOLATE (id AS id + 1); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT a.* APPLY (x -> x) FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id
 ORDER BY 1 WITH FILL TO 5 INTERPOLATE (id AS id + 10); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT a.id FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id
+ORDER BY a.id WITH FILL TO 5 INTERPOLATE (id AS id + 10); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT a.id FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id
+ORDER BY a.id WITH FILL TO 5 INTERPOLATE (id AS id + 10); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT t_a.id FROM t_a JOIN t_b ON t_a.id = t_b.id JOIN t_c ON t_a.id = t_c.id
+ORDER BY {CLICKHOUSE_DATABASE:Identifier}.t_a.id WITH FILL TO 5 INTERPOLATE (id AS id + 10); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT a.id FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id
+GROUP BY a.id WITH ROLLUP ORDER BY 1 WITH FILL TO 5 INTERPOLATE (id AS id + 10) SETTINGS group_by_use_nulls = 1; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT a.* APPLY (x -> x) FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id
+GROUP BY a.id WITH ROLLUP ORDER BY 1 WITH FILL TO 5 INTERPOLATE (id AS id + 10) SETTINGS group_by_use_nulls = 1; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT a.id, a.id AS k FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id
+ORDER BY k WITH FILL TO 5 INTERPOLATE (id AS id + 10) FORMAT TSVWithNames;
+SELECT a.id, a.id + 100 AS `a.id` FROM values('id Int32', 1, 3) a JOIN values('id Int32', 1, 3) b ON a.id = b.id JOIN values('id Int32', 1, 3) c ON a.id = c.id
+ORDER BY `a.id` WITH FILL TO 105 INTERPOLATE (id AS id + 10) FORMAT TSVWithNames;
 SELECT a.all FROM (SELECT 1 AS id, 2 AS all) AS a JOIN (SELECT 1 AS id, 3 AS all) AS b ON a.id = b.id ORDER BY ALL; -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a.all FROM (SELECT 1 AS id, 2 AS all) AS a JOIN (SELECT 1 AS id, 3 AS all) AS b ON a.id = b.id JOIN (SELECT 1 AS id, 4 AS all) AS c ON a.id = c.id ORDER BY ALL; -- { serverError UNEXPECTED_EXPRESSION }
 SELECT a.id AS all, a.id FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id ORDER BY ALL; -- { serverError UNEXPECTED_EXPRESSION }
