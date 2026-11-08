@@ -112,6 +112,7 @@ namespace ProfileEvents
     extern const Event IcebergMetadataJSONParses;
     extern const Event IcebergMetadataJSONParsedBytes;
     extern const Event IcebergMetadataJSONParseMicroseconds;
+    extern const Event IcebergMetadataJSONValidations;
 }
 
 namespace DB::Setting
@@ -769,7 +770,8 @@ std::string_view typeDescription(MetadataFieldType type)
 void checkField(
     const Poco::JSON::Object & object, const MetadataField & field, Int32 format_version, std::string_view prefix, const String & metadata_file_path)
 {
-    if (object.isNull(field.name))
+    const auto value = object.get(field.name);
+    if (value.isEmpty())
     {
         if (field.required_since && format_version >= field.required_since)
             throw Exception(
@@ -778,7 +780,7 @@ void checkField(
                 metadata_file_path, prefix, field.name);
         return;
     }
-    if (!hasType(object.get(field.name), field.type))
+    if (!hasType(value, field.type))
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "Iceberg table metadata file '{}' has invalid field '{}{}': expected {}",
@@ -790,17 +792,20 @@ void checkEntries(
 {
     if (metadata.isNull(array_name))
         return;
-    const auto & entries = *metadata.getArray(array_name);
-    for (UInt32 i = 0; i < entries.size(); ++i)
+    const auto entries = metadata.getArray(array_name);
+    size_t i = 0;
+    for (const auto & entry : *entries)
     {
-        if (!entries.isObject(i))
+        if (entry.type() != typeid(Poco::JSON::Object::Ptr))
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Iceberg table metadata file '{}' has invalid field '{}[{}]': expected an object",
                 metadata_file_path, array_name, i);
+        const auto & object = *entry.extract<Poco::JSON::Object::Ptr>();
         const String prefix = fmt::format("{}[{}].", array_name, i);
         for (const auto & field : fields)
-            checkField(*entries.getObject(i), field, format_version, prefix, metadata_file_path);
+            checkField(object, field, format_version, prefix, metadata_file_path);
+        ++i;
     }
 }
 
@@ -814,6 +819,7 @@ Int64 getLastUpdatedMs(const Poco::JSON::Object & metadata, const String & metad
 
 void validateTableMetadata(const Poco::JSON::Object & metadata, const String & metadata_file_path)
 {
+    ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONValidations);
     checkField(metadata, {f_format_version, MetadataFieldType::Int32, 1}, 1, "", metadata_file_path);
     const auto format_version = metadata.getValue<Int32>(f_format_version);
     if (format_version < 1)
@@ -912,14 +918,16 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
-static Poco::JSON::Object::Ptr getUnvalidatedMetadataJSONObject(
+/// `validate` is false only for the candidates of the latest metadata file selection, which may be other tables' files.
+static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method,
-    const std::optional<String> & table_uuid)
+    const std::optional<String> & table_uuid,
+    bool validate)
 {
     auto read_fn = [&]()
     {
@@ -927,15 +935,24 @@ static Poco::JSON::Object::Ptr getUnvalidatedMetadataJSONObject(
     };
 
     if (!metadata_cache || !table_uuid.has_value())
-        return parseMetadataJSONString(read_fn());
+    {
+        auto metadata_object = parseMetadataJSONString(read_fn());
+        if (validate)
+            validateTableMetadata(*metadata_object, metadata_file_path);
+        return metadata_object;
+    }
 
+    std::function<void(const Poco::JSON::Object &)> validate_fn;
+    if (validate)
+        validate_fn = [&](const Poco::JSON::Object & metadata) { validateTableMetadata(metadata, metadata_file_path); };
     return metadata_cache->getOrSetTableMetadata(
         IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
         [&]()
         {
             auto metadata_json_str = read_fn();
             return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
-        });
+        },
+        validate_fn);
 }
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
@@ -947,10 +964,8 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid)
 {
-    auto metadata_object = getUnvalidatedMetadataJSONObject(
-        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
-    validateTableMetadata(*metadata_object, metadata_file_path);
-    return metadata_object;
+    return getMetadataJSONObjectImpl(
+        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ true);
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -1813,8 +1828,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             if (need_all_metadata_files_parsing)
             {
                 /// A candidate may be another table's metadata file, so it is checked only once it is chosen.
-                auto metadata_file_object = getUnvalidatedMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                auto metadata_file_object = getMetadataJSONObjectImpl(
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ false);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))

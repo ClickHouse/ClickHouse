@@ -7,6 +7,7 @@
 # or with a field of the wrong type, is rejected with ICEBERG_SPECIFICATION_VIOLATION naming the field.
 # Every case is the valid file of `table()` with one change. Only the file a table uses is checked: another table's
 # metadata file in the same directory, read to select by `table-uuid`, may be invalid.
+# A metadata file served from the metadata cache is validated once.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -196,13 +197,17 @@ QUERIES+="SELECT count() FROM icebergLocal('$DIR/shared', SETTINGS iceberg_metad
 
 $CLICKHOUSE_LOCAL --ignore-error --multiquery --query "$QUERIES" 2>&1 >/dev/null | rejections
 
-echo "--- a table whose next metadata file is invalid"
-TABLE="t_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/persistent/"
+echo "--- a table whose next metadata file is invalid, with and without the metadata cache"
 rm -rf "${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE $TABLE (id Int64) ENGINE = IcebergLocal('$TABLE_PATH')"
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM $TABLE"
-python3 - "${TABLE_PATH}metadata" <<'PY'
+for cache in 1 0
+do
+    name="cache_${cache}"
+    TABLE="t_${name}_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+    TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/${name}/"
+    CLIENT="$CLICKHOUSE_CLIENT --use_iceberg_metadata_files_cache=$cache"
+    $CLIENT --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_${name}_create" --query "CREATE TABLE $TABLE (id Int64) ENGINE = IcebergLocal('$TABLE_PATH')"
+    echo "$name $($CLIENT --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_${name}_read" --query "SELECT count() FROM $TABLE")"
+    python3 - "${TABLE_PATH}metadata" <<'PY'
 import json
 import os
 import re
@@ -216,6 +221,24 @@ del metadata["location"]
 with open(os.path.join(metadata_dir, f"v{version + 1}.metadata.json"), "w") as f:
     json.dump(metadata, f)
 PY
-$CLICKHOUSE_CLIENT --send_logs_level=fatal --iceberg_metadata_staleness_ms=0 --query "SELECT count() FROM $TABLE" 2>&1 | rejections
-$CLICKHOUSE_CLIENT --query "DROP TABLE $TABLE"
+    $CLIENT --send_logs_level=fatal --iceberg_metadata_staleness_ms=0 --query "SELECT count() FROM $TABLE" 2>&1 | rejections
+    $CLICKHOUSE_CLIENT --query "DROP TABLE $TABLE"
+done
 rm -rf "${USER_FILES_PATH:?}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+
+echo "--- a metadata file is validated after it is parsed, and not again when it is served from the metadata cache"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+for cache in 1 0
+do
+    $CLICKHOUSE_CLIENT --query "
+        SELECT 'cache_${cache}', validations > 0, if(${cache}, validations <= parses, validations = parses AND parses > 1)
+        FROM
+        (
+            SELECT
+                sum(ProfileEvents['IcebergMetadataJSONValidations']) AS validations,
+                sum(ProfileEvents['IcebergMetadataJSONParses']) AS parses
+            FROM system.query_log
+            WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+                AND query_id IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_cache_${cache}_create', '${CLICKHOUSE_TEST_UNIQUE_NAME}_cache_${cache}_read')
+        )"
+done

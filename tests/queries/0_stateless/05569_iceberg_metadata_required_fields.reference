@@ -37,6 +37,11 @@ ref_missing_type ICEBERG_SPECIFICATION_VIOLATION 'refs.main.type'
 refs_not_object ICEBERG_SPECIFICATION_VIOLATION 'refs'
 missing_last_updated_ms_by_field ICEBERG_SPECIFICATION_VIOLATION 'last-updated-ms'
 shared ICEBERG_SPECIFICATION_VIOLATION 'location'
---- a table whose next metadata file is invalid
-0
-persistent ICEBERG_SPECIFICATION_VIOLATION 'location'
+--- a table whose next metadata file is invalid, with and without the metadata cache
+cache_1 0
+cache_1 ICEBERG_SPECIFICATION_VIOLATION 'location'
+cache_0 0
+cache_0 ICEBERG_SPECIFICATION_VIOLATION 'location'
+--- a metadata file is validated after it is parsed, and not again when it is served from the metadata cache
+cache_1	1	1
+cache_0	1	1
