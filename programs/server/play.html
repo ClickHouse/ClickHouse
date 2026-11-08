@@ -5003,6 +5003,7 @@ class QueryResultElement extends HTMLElement
         this._flame_data = freshFlameGraphState();
         this._flame_timer = null;
         this._flame_requested = false;
+        this._flame_dirty = false;
         this._flamePeriod.addEventListener('change', () => selectProfilerPeriod(this, this._flamePeriod.value));
         this._flameHost.addEventListener('change', () => this._showFlameGraph());
         this._flameType.addEventListener('change', () => this._showFlameGraph());
@@ -5259,6 +5260,7 @@ class QueryResultElement extends HTMLElement
         this._flame_data = freshFlameGraphState();
         updateFlameHostSelector(this._flameHost, this._flame_data);
         this._flame_requested = false;
+        this._flame_dirty = false;
         clearTimeout(this._flame_timer);
         this._flame_timer = null;
 
@@ -7374,6 +7376,7 @@ class QueryResultElement extends HTMLElement
     {
         if (this._pendingTranspose) { this._pendingTranspose = false; this.transposeIfNeeded(); }
         if (this._pendingChangeLayout) { this._pendingChangeLayout = false; this._changeTableLayout(); }
+        this.paintDeferredFlameGraph();
     }
 
     /// Finish a table whose query failed mid-stream, the same way on every failure path (the live
@@ -7635,6 +7638,8 @@ class QueryResultElement extends HTMLElement
     {
         this._flame_requested = true;
         accumulateProfileTraces(this._flame_data, traces);
+        /// Cleared by `_showFlameGraph`; a background tab repaints it on activation (`paintDeferredFlameGraph`).
+        this._flame_dirty = true;
         this._markFlameAvailable();
         /// Hidden views keep only the aggregate. Paint at most four times a second, including when
         /// many batches arrive in a single network read; the next activation paints immediately.
@@ -7657,8 +7662,18 @@ class QueryResultElement extends HTMLElement
         return !tab || tab.id === activeTabId;
     }
 
+    /// Paint the samples that arrived while this result's tab was hidden. Called on activation for
+    /// every result of the tab (through `applyDeferredLayout`), not only for the cell that owns the
+    /// shared chrome, because no further packet or timer may arrive to refresh a finished query.
+    paintDeferredFlameGraph()
+    {
+        if (this._flame_dirty && this._view === 'flame' && this.isConnected)
+            this._showFlameGraph();
+    }
+
     _showFlameGraph()
     {
+        this._flame_dirty = false;
         const trace_type = this._flameType.value;
         this._flamePeriod.value = profilerPeriodNs(this._ownerCell?.tab);
         updateFlameHostSelector(this._flameHost, this._flame_data);

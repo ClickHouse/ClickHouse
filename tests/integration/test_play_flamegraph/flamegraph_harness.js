@@ -487,6 +487,39 @@ async function main()
     assert.equal(result._flameHost.value, '');
     assert.equal(result._flameHost.children.length, 1);
     console.log('PASS result controls select node/type and clearing resets samples, losses, selection, and zoom');
+
+    /// Two cells of one tab: the first keeps its Flame view while another tab is active, receives
+    /// samples, and finishes. Activation must repaint it although it does not own the shared chrome.
+    const activation = { activeTabId: 'other', painted: [] };
+    const DeferredResult = vm.runInNewContext('(class {'
+        + extract('    applyDeferredLayout()\n', '    /// Finish a table whose query failed')
+        + extract('    appendProfileTraces(', '    _showFlameGraph()\n')
+        + '    _markFlameAvailable() {}\n'
+        + '    _showFlameGraph() { this._flame_dirty = false; painted.push(this.name); }\n'
+        + '})', {
+            accumulateProfileTraces: (state, traces) => state.push(...traces),
+            setTimeout: () => assert.fail('a hidden tab must not schedule a paint'),
+            painted: activation.painted,
+            get activeTabId() { return activation.activeTabId; },
+        });
+    const notebookTab = { id: 'notebook' };
+    const makeDeferredResult = (name, view) => Object.assign(new DeferredResult(), {
+        name, _view: view, isConnected: true, _flame_data: [], _flame_timer: null, _flame_dirty: false,
+        _ownerCell: { tab: notebookTab },
+    });
+    const flameCell = makeDeferredResult('flame', 'flame');
+    const resultCell = makeDeferredResult('result', 'result');
+    flameCell.appendProfileTraces([1]);
+    flameCell.appendProfileTraces([2]);
+    resultCell.appendProfileTraces([3]);
+    assert.deepEqual(activation.painted, []);
+    activation.activeTabId = 'notebook';
+    for (const el of [flameCell, resultCell]) el.applyDeferredLayout();
+    assert.deepEqual(activation.painted, ['flame']);
+    assert.deepEqual(flameCell._flame_data, [1, 2]);
+    for (const el of [flameCell, resultCell]) el.applyDeferredLayout();
+    assert.deepEqual(activation.painted, ['flame']);
+    console.log('PASS activation repaints Flame views of every cell that received samples in the background');
     console.log('All scenarios passed');
 }
 

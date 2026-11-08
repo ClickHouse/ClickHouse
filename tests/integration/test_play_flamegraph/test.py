@@ -74,5 +74,6 @@ def test_play_flamegraph(started_cluster, nodejs_container):
         "PASS shared node, symbol, and depth budgets",
         "PASS host count and host text share bounded storage",
         "PASS result controls select node/type and clearing resets",
+        "PASS activation repaints Flame views of every cell",
     ):
         assert line in out, "scenario '{}' did not run:\n{}".format(line, out)
