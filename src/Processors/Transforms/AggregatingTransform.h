@@ -16,7 +16,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
-#include <deque>
+#include <Common/DequeWithMemoryTracking.h>
 
 
 namespace DB
@@ -248,7 +248,7 @@ private:
 
     /// Results produced per input block in the streaming `group_by_each_block_no_merge` mode,
     /// waiting to be pushed to the output port.
-    std::deque<Chunk> block_results;
+    DequeWithMemoryTracking<Chunk> block_results;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
