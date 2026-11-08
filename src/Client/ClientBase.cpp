@@ -3682,7 +3682,11 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
         /// flight (e.g. a failure after the query is over), while its `receivePacket` then reports
         /// `EndOfStream` at once - so do not wait on it, and it does not block in `receivePacket`
         /// for longer than an executor timeout anyway.
-        if (connection->getConnectionType() != IServerConnection::Type::LOCAL)
+        /// `Connection::poll` looks only at the socket and the read buffer, not at a packet type
+        /// that was already read by `checkPacket` (`receiveLogsAndProfileEvents` peeks at the next
+        /// packet this way, and it may be the final `EndOfStream`). Do not wait for more data then,
+        /// or the client waits for `receive_timeout` with the packet already in hand.
+        if (connection->getConnectionType() != IServerConnection::Type::LOCAL && !connection->hasReadPendingData())
         {
             if (!connection->poll(poll_interval))
             {
@@ -3694,8 +3698,8 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
                         static_cast<size_t>(elapsed), receive_timeout.totalSeconds());
                 continue;
             }
-            receive_watch.restart();
         }
+        receive_watch.restart();
 
         Packet packet = connection->receivePacket();
 

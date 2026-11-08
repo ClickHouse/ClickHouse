@@ -77,6 +77,9 @@ done
 if kill -0 "$CLIENT" 2>/dev/null
 then
     echo "FAIL: client is still running after Ctrl+C"
+    # Do not leave the client to the `wait` in `cleanup`: it would wait for it forever.
+    kill -9 "$CLIENT" 2>/dev/null
+    wait "$CLIENT" 2>/dev/null
 else
     echo "OK: client terminated after Ctrl+C"
 fi
