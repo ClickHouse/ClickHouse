@@ -1,0 +1,7 @@
+r1 has the update	500	21000
+r1 has no patch part left	0
+the only active replica is r2	1	2
+r2 has neither the update nor a patch part	500	0
+the fetch of the partition is refused: 1
+and so is the fetch of the stale part: 1
+nothing was fetched	0
