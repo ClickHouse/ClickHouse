@@ -348,7 +348,8 @@ static bool validateAndAssignCwd(
         return false;
     }
 
-    client.cwd = fs::path(normalizeKeeperPath(cwd_param.empty() ? "/" : cwd_param));
+    /// Empty `cwd` uses the client's default `/`, then the same lexical join as CLI.
+    client.cwd = client.getAbsolutePath(cwd_param);
     return true;
 }
 
