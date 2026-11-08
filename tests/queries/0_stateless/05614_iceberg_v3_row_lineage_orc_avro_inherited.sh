@@ -50,7 +50,7 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO ${TABLE} SELECT number FROM numbers(30000) SETTINGS max_insert_threads = 1;
     INSERT INTO ${TABLE} SELECT number + 30000 FROM numbers(30000) SETTINGS max_insert_threads = 1;
 "
-echo "ORC row groups" "$(ls "${TABLE_PATH}/data" | wc -l)"
+echo "ORC files of 30000 rows" "$(ls "${TABLE_PATH}/data" | wc -l)"
 
 # Rows of 10000-row row groups: the filter skips the first row group of the second file, so the rows read after it
 # must keep their position in the file.

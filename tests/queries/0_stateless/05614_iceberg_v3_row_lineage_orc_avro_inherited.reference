@@ -8,5 +8,5 @@ Avro 2
 5	5
 1234	1234
 2000	2000	2000
-ORC row groups 2
+ORC files of 30000 rows 2
 22	22	22	41000	55010
