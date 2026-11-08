@@ -3215,6 +3215,11 @@ def _current_snapshot(catalog, root_namespace, table_name):
     return snapshot
 
 
+def _count_read_rows(node, table_ref):
+    # The filter makes the count read the manifests and data files, not the snapshot summary.
+    return node.query(f"SELECT count() FROM {table_ref} WHERE NOT ignore(*)").strip()
+
+
 def _setup_catalog_commit_table(started_cluster, node, test_ref):
     """A catalog table with two committed snapshots, so a third commit has a parent to assert on."""
     table_name = f"{test_ref}_table"
@@ -3236,7 +3241,7 @@ def _setup_catalog_commit_table(started_cluster, node, test_ref):
 
     node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'AAA', 1.0, 2.0, tuple('bot'));", settings=write_settings)
     node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'BBB', 1.0, 2.0, tuple('bot'));", settings=write_settings)
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
+    assert _count_read_rows(node, table_ref) == "2"
 
     return catalog, root_namespace, table_name, table_ref, write_settings
 
@@ -3262,7 +3267,7 @@ def test_catalog_commit_response_lost_keeps_committed_snapshot(started_cluster):
     for manifest in snapshot.manifests(catalog.load_table(f"{root_namespace}.{table_name}").io):
         assert _s3_uri_exists(started_cluster.minio_client, manifest.manifest_path), manifest.manifest_path
 
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_superseded_keeps_committed_snapshot(started_cluster):
@@ -3290,7 +3295,7 @@ def test_catalog_commit_superseded_keeps_committed_snapshot(started_cluster):
         f"manifest list {committed.manifest_list} of the committed snapshot was deleted"
     )
 
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_unknown_keeps_files(started_cluster):
@@ -3317,7 +3322,7 @@ def test_catalog_commit_unknown_keeps_files(started_cluster):
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
         f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
     )
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_readback_failure_keeps_files(started_cluster):
@@ -3345,7 +3350,7 @@ def test_catalog_commit_readback_failure_keeps_files(started_cluster):
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
         f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
     )
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_refused_is_not_reported_as_committed(started_cluster):
@@ -3371,7 +3376,7 @@ def test_catalog_commit_refused_is_not_reported_as_committed(started_cluster):
     assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
     assert "Injected net failure" in error, error
     assert _current_snapshot(catalog, root_namespace, table_name).snapshot_id == before
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
+    assert _count_read_rows(node, table_ref) == "2"
 
 
 def test_catalog_commit_transport_failure_keeps_committed_snapshot(started_cluster):
@@ -3397,7 +3402,7 @@ def test_catalog_commit_transport_failure_keeps_committed_snapshot(started_clust
     for manifest in snapshot.manifests(catalog.load_table(f"{root_namespace}.{table_name}").io):
         assert _s3_uri_exists(started_cluster.minio_client, manifest.manifest_path), manifest.manifest_path
 
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_transport_failure_unknown_keeps_files(started_cluster):
@@ -3426,7 +3431,7 @@ def test_catalog_commit_transport_failure_unknown_keeps_files(started_cluster):
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
         f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
     )
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_std_exception_keeps_committed_snapshot(started_cluster):
@@ -3452,7 +3457,7 @@ def test_catalog_commit_std_exception_keeps_committed_snapshot(started_cluster):
     for manifest in snapshot.manifests(catalog.load_table(f"{root_namespace}.{table_name}").io):
         assert _s3_uri_exists(started_cluster.minio_client, manifest.manifest_path), manifest.manifest_path
 
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_std_exception_unknown_keeps_files(started_cluster):
@@ -3481,7 +3486,7 @@ def test_catalog_commit_std_exception_unknown_keeps_files(started_cluster):
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
         f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
     )
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_single_attempt(started_cluster):
@@ -3540,7 +3545,7 @@ def test_catalog_commit_definite_rejection_keeps_error(started_cluster):
     after = _current_snapshot(catalog, root_namespace, table_name)
     assert after.snapshot_id == before.snapshot_id, (before.snapshot_id, after.snapshot_id)
     assert _s3_uri_exists(started_cluster.minio_client, after.manifest_list), after.manifest_list
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
+    assert _count_read_rows(node, table_ref) == "2"
 
 
 def test_catalog_commit_conflict_cleans_up_and_retries(started_cluster):
@@ -3780,7 +3785,7 @@ def test_catalog_commit_unknown_keeps_files_on_optimize(started_cluster):
     assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
         f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
     )
-    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+    assert _count_read_rows(node, table_ref) == "3"
 
 
 def test_catalog_commit_unknown_keeps_files_on_drop_partition(started_cluster):

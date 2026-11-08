@@ -1817,7 +1817,9 @@ bool IcebergStorageSink::initializeMetadata()
     {
         /// The staged files may already belong to the table's current snapshot, so deleting them
         /// would destroy committed data. Leave them behind instead.
-        if (!Iceberg::isCommitStateUnknown(e))
+        if (Iceberg::isCommitStateUnknown(e))
+            committed = true;
+        else
             cleanup(false);
         throw;
     }
