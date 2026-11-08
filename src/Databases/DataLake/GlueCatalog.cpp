@@ -23,10 +23,8 @@
 #include <aws/core/http/HttpResponse.h>
 
 #include <Common/Exception.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
-#include <base/unit.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -64,7 +62,6 @@
 namespace DB::ErrorCodes
 {
     extern const int AMBIGUOUS_COLUMN_NAME;
-    extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
 }
@@ -90,12 +87,6 @@ namespace DB::ServerSetting
 {
     extern const ServerSettingsUInt64 s3_max_redirects;
     extern const ServerSettingsUInt64 s3_retry_attempts;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric GlueCatalogSchemaCacheBytes;
-    extern const Metric GlueCatalogSchemaCacheEntries;
 }
 
 namespace DataLake
@@ -144,7 +135,6 @@ GlueCatalog::GlueCatalog(
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
-    , current_schema(CurrentMetrics::GlueCatalogSchemaCacheBytes, CurrentMetrics::GlueCatalogSchemaCacheEntries, 16_MiB)
 {
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
@@ -455,7 +445,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 {
                     /// Use `metadata.json` because Glue types are lossy and nested names may be unescaped.
                     const auto & metadata_uri = properties->iceberg_metadata_file_location;
-                    result.setSchema(getCachedSchema(metadata_uri, result)->columns);
+                    result.setSchema(loadCurrentSchema(metadata_uri, result));
                     return true;
                 }
             }
@@ -474,12 +464,8 @@ bool GlueCatalog::tryGetTableMetadata(
                     continue;
 
                 String column_type = column.GetType();
-                if (column_type == "timestamp" || column_type == "timestamp_nano")
-                {
-                    if (!result.requiresDataLakeSpecificProperties())
-                        setup_specific_properties();
-                    column_type = getActualTimestampType(column.GetName(), result, column_type);
-                }
+                if (column_type == "timestamp_nano")
+                    column_type = DB::Iceberg::f_timestamp_ns;
 
                 schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
             }
@@ -562,60 +548,6 @@ bool GlueCatalog::empty() const
             return false;
     }
     return true;
-}
-
-String GlueCatalog::getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const
-{
-    auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
-    if (!table_specific_properties.has_value())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Failed to read table metadata, reason why table is unreadable: {}", table_metadata.getReasonWhyTableIsUnreadable());
-
-    const String & metadata_uri = table_specific_properties->iceberg_metadata_file_location;
-    return resolveTimestampType(getCachedSchema(metadata_uri, table_metadata)->field_types, column_name, glue_column_type);
-}
-
-String GlueCatalog::resolveTimestampTypeFromMetadata(
-    const Poco::JSON::Object::Ptr & metadata_object,
-    const String & column_name,
-    const String & glue_column_type)
-{
-    return resolveTimestampType(getCurrentSchemaFieldTypes(metadata_object), column_name, glue_column_type);
-}
-
-GlueCatalog::FieldTypes GlueCatalog::getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object)
-{
-    FieldTypes result;
-    auto schema = getCurrentSchema(metadata_object);
-    if (schema && schema->has(DB::Iceberg::f_fields))
-    {
-        auto fields = schema->getArray(DB::Iceberg::f_fields);
-        for (size_t j = 0; j < fields->size(); ++j)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(j));
-            auto type = field->get(DB::Iceberg::f_type);
-            if (type.isString())
-                result.emplace(field->getValue<String>(DB::Iceberg::f_name), type.extract<String>());
-        }
-    }
-    return result;
-}
-
-String GlueCatalog::resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type)
-{
-    if (auto it = field_types.find(column_name); it != field_types.end())
-        return it->second;
-
-    return glue_column_type == "timestamp_nano" ? "timestamp_ns" : "timestamp";
-}
-
-size_t GlueCatalog::CachedSchemaWeightFunction::operator()(const CachedSchema & schema) const
-{
-    size_t result = 0;
-    for (const auto & [name, type] : schema.field_types)
-        result += sizeof(FieldTypes::value_type) + name.size() + type.size();
-    for (const auto & column : schema.columns)
-        result += sizeof(column) + column.name.size() + column.type->getName().size();
-    return result;
 }
 
 GlueCatalog::EarlyAccessLocation GlueCatalog::resolveEarlyAccessLocation(const String & location, const String & storage_endpoint, DB::S3UriStyle uri_style)
@@ -703,25 +635,17 @@ Poco::JSON::Object::Ptr GlueCatalog::loadMetadataObject(const String & metadata_
         key_prefix + metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
 }
 
-std::shared_ptr<GlueCatalog::CachedSchema> GlueCatalog::getCachedSchema(const String & metadata_uri, const TableMetadata & table_metadata) const
+DB::NamesAndTypesList GlueCatalog::loadCurrentSchema(const String & metadata_uri, const TableMetadata & table_metadata) const
 {
-    auto [cached, _] = current_schema.getOrSet(metadata_uri, [&]
-    {
-        auto metadata_object = loadMetadataObject(metadata_uri, table_metadata);
-        auto schema = getCurrentSchema(metadata_object);
-        if (!schema || !schema->has(DB::Iceberg::f_fields))
-            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", metadata_uri);
+    auto metadata_object = loadMetadataObject(metadata_uri, table_metadata);
+    auto schema = getCurrentSchema(metadata_object);
+    if (!schema || !schema->has(DB::Iceberg::f_fields))
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", metadata_uri);
 
-        /// The catalog context is global and the cache is shared by all queries, so `allow_geo_types_in_iceberg`
-        /// is checked with the query settings by `IcebergMetadata`, not here.
-        DB::Iceberg::IcebergSchemaProcessor processor(/* allow_geo_parser_ = */ true);
-        processor.addIcebergTableSchema(schema);
-        auto result = std::make_shared<CachedSchema>();
-        result->field_types = getCurrentSchemaFieldTypes(metadata_object);
-        result->columns = *processor.getClickHouseTableSchemaById(schema->getValue<Int32>(DB::Iceberg::f_schema_id));
-        return result;
-    });
-    return cached;
+    /// The catalog context is global, so `allow_geo_types_in_iceberg` is checked with the query settings by `IcebergMetadata`, not here.
+    DB::Iceberg::IcebergSchemaProcessor processor(/* allow_geo_parser_ = */ true);
+    processor.addIcebergTableSchema(schema);
+    return *processor.getClickHouseTableSchemaById(schema->getValue<Int32>(DB::Iceberg::f_schema_id));
 }
 
 String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const

@@ -12,7 +12,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/LRUCache.h>
 
-#include <Common/CacheBase.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
@@ -98,25 +97,11 @@ public:
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
-    /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
-    /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
-    /// `"timestamp_nano"`, or `"timestamp"` otherwise, when the column is not found in the metadata.
-    static String resolveTimestampTypeFromMetadata(
-        const Poco::JSON::Object::Ptr & metadata_object,
-        const String & column_name,
-        const String & glue_column_type);
-
     /// Converts top-level Iceberg fields to Glue columns with Hive types and `iceberg.field.*` parameters.
     static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
 
     /// Selects the `schemas` entry referenced by `current-schema-id`, or the top-level v1 `schema` when there is no `schemas`.
     static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
-
-    using FieldTypes = std::unordered_map<String, String>;
-
-    static FieldTypes getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object);
-
-    static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
 
     struct EarlyAccessLocation
     {
@@ -130,17 +115,6 @@ public:
     static EarlyAccessLocation resolveEarlyAccessLocation(const String & location, const String & storage_endpoint, DB::S3UriStyle uri_style);
 
 private:
-    struct CachedSchema
-    {
-        FieldTypes field_types;
-        DB::NamesAndTypesList columns;
-    };
-
-    struct CachedSchemaWeightFunction
-    {
-        size_t operator()(const CachedSchema & schema) const;
-    };
-
     /// Updates `metadata_location` and columns while preserving the rest of the Glue table `existing`.
     /// Columns are rebuilt from `new_schema` if given, otherwise from the current schema of `new_metadata`.
     static Aws::Glue::Model::TableInput buildUpdatedTableInput(
@@ -170,11 +144,6 @@ private:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void setCredentials(TableMetadata & metadata) const;
 
-    /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
-    /// This method allows to clarify the actual type of the timestamp column.
-    /// `glue_column_type` is the raw Glue type (`"timestamp"` or `"timestamp_nano"`) used as a fallback when the column is not found in Iceberg metadata.
-    String getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const;
-
     String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 
     struct ObjectStorageWithPath
@@ -188,9 +157,7 @@ private:
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
     Poco::JSON::Object::Ptr loadMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const;
-    std::shared_ptr<CachedSchema> getCachedSchema(const String & metadata_uri, const TableMetadata & table_metadata) const;
-
-    mutable DB::CacheBase<String, CachedSchema, std::hash<String>, CachedSchemaWeightFunction> current_schema;
+    DB::NamesAndTypesList loadCurrentSchema(const String & metadata_uri, const TableMetadata & table_metadata) const;
 };
 
 }
