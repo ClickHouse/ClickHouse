@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -482,6 +483,18 @@ public:
         {
             /// Move the split step above the expression/filter step and update its header to match
             /// the new child, since the split step just passes data through.
+            std::swap(current_node->step, parent_node->step);
+            parent_node->step->updateInputHeader(current_node->step->getOutputHeader());
+            return;
+        }
+
+        /// A preliminary DISTINCT deduplicates every stream on its own and the final DISTINCT above it
+        /// deduplicates their union, so it runs on a replica exactly as it does on a shard of a `Distributed`
+        /// table: each replica sends only the distinct rows of its share, and the final DISTINCT stays on the
+        /// initiator. Inside the fragment it also lets `optimizeDistinctInOrder` read in order on the replica.
+        const auto * distinct_step = typeid_cast<const DistinctStep *>(parent_step);
+        if (distinct_step && distinct_step->isPreliminary())
+        {
             std::swap(current_node->step, parent_node->step);
             parent_node->step->updateInputHeader(current_node->step->getOutputHeader());
             return;
