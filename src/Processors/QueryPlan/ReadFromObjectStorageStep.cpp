@@ -185,6 +185,11 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             query_info.prewhere_info);
         result->current_schema_column_mapper
             = configuration->getCurrentSchemaColumnMapperForFilters(storage_snapshot->metadata, context);
+        if (result->condition_hash && result->current_schema_column_mapper)
+        {
+            if (const auto & name_mapping = result->current_schema_column_mapper->getIcebergNameMapping())
+                result->condition_hash = queryConditionCacheHash(*result->condition_hash, name_mapping->hash);
+        }
         /// The delete transforms of a data lake need row numbers only for files with attached deletes;
         /// `StorageObjectStorageSource::createReader` asks for them per file in that case.
         result->need_row_numbers = lazy_row_index_registry != nullptr

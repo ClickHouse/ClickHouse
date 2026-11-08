@@ -130,6 +130,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const DB::KeyDescription * partition_key_,
+    const DB::IcebergNameMapping * name_mapping,
     DB::ContextPtr context,
     bool require_ready_sets)
     : schema_processor(schema_processor_)
@@ -176,6 +177,11 @@ ManifestFilesPruner::ManifestFilesPruner(
 
             min_max_column_types.emplace(used_column_id, name_and_type->type);
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
+
+            /// No column of a data file without field ids is bound to an id that the mapping does not name, so
+            /// such a file holds only NULLs for it, whatever metrics were recorded under the mapping of the import.
+            if (name_mapping && !name_mapping->named_field_ids.contains(used_column_id))
+                columns_with_unreliable_statistics.insert(used_column_id);
         }
 
         ExpressionActionsPtr expression
@@ -492,7 +498,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
         }
 
         auto rect_it = entry_hyperrectangles.find(column_id);
-        if (has_no_nulls && rect_it != entry_hyperrectangles.end()
+        if (has_no_nulls && rect_it != entry_hyperrectangles.end() && !columns_with_unreliable_statistics.contains(column_id)
             && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;

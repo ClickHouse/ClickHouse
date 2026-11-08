@@ -1,0 +1,77 @@
+struct, list and map fields
+1	10	100	[(1,'c1')]	{'k1':(1)}
+2	20	200	[]	{}
+3	30	300	[(3,'c3')]	{'k3':(3)}
+4	40	400	[(4,'c4')]	{'k4':(4)}
+5	50	\N	[]	{}
+6	60	\N	[]	{}
+not in the mapping
+1	\N
+2	\N
+3	\N
+4	40
+5	\N
+6	\N
+empty mapping
+6	5	5
+renamed
+1	10
+2	20
+3	30
+4	40
+5	50
+6	60
+renamed, not in the mapping
+1	\N
+2	\N
+3	\N
+4	40
+5	\N
+6	\N
+dropped, in the mapping
+1	10
+2	20
+3	30
+4	40
+5	50
+6	60
+dropped, not in the mapping
+1	\N
+2	\N
+3	\N
+4	40
+5	\N
+6	\N
+lazy materialization
+1	\N
+2	\N
+1
+table format ORC
+1	\N
+2	\N
+3	\N
+4	40
+5	\N
+6	\N
+1	\N
+2	\N
+1
+manifest statistics
+5
+1
+names: []
+6	5
+5
+IcebergMinMaxIndexPrunedFiles > 0
+query condition cache
+0
+5
+invalid mapping
+Code: 743
+compaction
+0
+1	\N
+2	\N
+3	\N
+4	40
+5	\N

@@ -32,6 +32,7 @@ class GenericDatum;
 namespace DB
 {
 struct StorageID;
+struct IcebergNameMapping;
 }
 
 namespace DataLake
@@ -113,6 +114,9 @@ String readMetadataJSONString(
     CompressionMethod compression_method);
 
 Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str);
+
+/// The table property `schema.name-mapping.default` of the metadata, or nullptr when it is absent.
+std::shared_ptr<const IcebergNameMapping> getNameMapping(const Poco::JSON::Object::Ptr & metadata_object);
 
 Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 

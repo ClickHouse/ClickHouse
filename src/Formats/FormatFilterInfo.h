@@ -2,6 +2,8 @@
 
 #include <exception>
 #include <mutex>
+#include <optional>
+#include <unordered_map>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
@@ -51,6 +53,25 @@ struct FormatTopKFilterInfo
     /// If false, the threshold only orders and skips whole row groups by their statistics: no row is compared with it.
     bool filter_rows = true;
 };
+
+/// Iceberg `schema.name-mapping.default`: field ids for the fields of a data file written without field ids,
+/// by the names a field may have in such a file.
+struct IcebergNameMapping
+{
+    struct Field
+    {
+        std::optional<Int64> field_id;
+        /// Mapping of the struct fields, list `element`, map `key` and `value`.
+        std::shared_ptr<const IcebergNameMapping> nested;
+    };
+    std::unordered_map<String, Field> fields;
+    /// The field ids that have at least one name, at any depth (filled at the root only): the ids a file column
+    /// can be bound to. An entry with `names: []` keeps its id out of this set.
+    std::unordered_set<Int64> named_field_ids;
+    /// Of the JSON text, for the query condition cache keys of the files read through the mapping.
+    UInt64 hash = 0;
+};
+using IcebergNameMappingPtr = std::shared_ptr<const IcebergNameMapping>;
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
@@ -107,6 +128,9 @@ public:
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
+    void setIcebergNameMapping(IcebergNameMappingPtr iceberg_name_mapping_) { iceberg_name_mapping = std::move(iceberg_name_mapping_); }
+    const IcebergNameMappingPtr & getIcebergNameMapping() const { return iceberg_name_mapping; }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding) const;
 
@@ -120,6 +144,7 @@ private:
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
     std::optional<Int64> last_assigned_field_id;
+    IcebergNameMappingPtr iceberg_name_mapping;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;

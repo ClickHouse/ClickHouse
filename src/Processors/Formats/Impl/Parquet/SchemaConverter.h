@@ -6,6 +6,7 @@ namespace DB
 {
 
 class ColumnMapper;
+struct IcebergNameMapping;
 
 }
 
@@ -45,6 +46,10 @@ struct SchemaConverter
 
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
+
+    /// Indexed like `file_metadata.schema`: the field ids that an Iceberg name mapping assigns to the elements of
+    /// a file written without field ids. Empty if the file is not read through a name mapping.
+    std::vector<std::optional<Int64>> name_mapped_field_ids;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
@@ -135,6 +140,10 @@ private:
     };
 
     void checkHasColumns();
+
+    void assignFieldIdsFromNameMapping(const IcebergNameMapping & mapping);
+    /// The field id of the element in the file, or the one the name mapping assigns to it.
+    std::optional<Int64> getFieldId(const parq::SchemaElement & element) const;
 
     void processSubtree(TraversalNode & node);
 

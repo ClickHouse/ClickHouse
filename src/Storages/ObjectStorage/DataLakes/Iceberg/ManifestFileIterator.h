@@ -106,7 +106,8 @@ public:
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
-        Int32 table_snapshot_schema_id_);
+        Int32 table_snapshot_schema_id_,
+        IcebergNameMappingPtr name_mapping_);
 
     ManifestFileEntriesHandle getFilesWithoutDeletedHandle() const;
 
@@ -145,7 +146,8 @@ private:
         size_t partition_spec_fields_count,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
-        Int32 table_snapshot_schema_id);
+        Int32 table_snapshot_schema_id,
+        IcebergNameMappingPtr name_mapping);
 
     ProcessedManifestFileEntryPtr processRow(size_t row_index);
 
@@ -181,6 +183,7 @@ private:
     /// Filtering (partition and min-max index pruning)
     const std::shared_ptr<const ActionsDAG> filter_dag;
     IcebergSchemaProcessor * const schema_processor_ptr;
+    const IcebergNameMappingPtr name_mapping;
 
     /// Cache of pruners by schema_id to avoid recreation on each row
     mutable std::mutex pruners_mutex;

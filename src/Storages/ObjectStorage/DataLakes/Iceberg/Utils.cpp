@@ -39,9 +39,12 @@
 #include <Common/DateLUT.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
+#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Formats/FormatFilterInfo.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
 #include <Functions/FunctionFactory.h>
@@ -709,6 +712,93 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
     Poco::Dynamic::Var json = parser.parse(metadata_json_str);
     return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+static void parseNameMappingFields(
+    const Poco::Dynamic::Var & fields_json, IcebergNameMapping & mapping, std::unordered_set<Int64> & named_field_ids)
+{
+    checkStackSize();
+    if (fields_json.type() != typeid(Poco::JSON::Array::Ptr))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Table property `{}` has a list of fields that is not an array: {}",
+            f_name_mapping_default,
+            fields_json.toString());
+
+    for (const auto & field_json : *fields_json.extract<Poco::JSON::Array::Ptr>())
+    {
+        if (field_json.type() != typeid(Poco::JSON::Object::Ptr))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Table property `{}` has a field that is not an object: {}",
+                f_name_mapping_default,
+                field_json.toString());
+        const auto & object = field_json.extract<Poco::JSON::Object::Ptr>();
+
+        IcebergNameMapping::Field field;
+        if (object->has(f_field_id) && !object->isNull(f_field_id))
+        {
+            const auto field_id = object->get(f_field_id);
+            if (!field_id.isInteger())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Table property `{}` has a `{}` that is not an integer: {}",
+                    f_name_mapping_default,
+                    f_field_id,
+                    field_id.toString());
+            field.field_id = field_id.convert<Int64>();
+        }
+
+        if (object->has(f_fields))
+        {
+            auto nested = std::make_shared<IcebergNameMapping>();
+            parseNameMappingFields(object->get(f_fields), *nested, named_field_ids);
+            field.nested = std::move(nested);
+        }
+
+        if (!object->has(f_names))
+            continue;
+        const auto names_json = object->get(f_names);
+        if (names_json.type() != typeid(Poco::JSON::Array::Ptr))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Table property `{}` has `{}` that are not an array: {}",
+                f_name_mapping_default,
+                f_names,
+                names_json.toString());
+
+        for (const auto & name : *names_json.extract<Poco::JSON::Array::Ptr>())
+        {
+            if (!name.isString())
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Table property `{}` has a name that is not a string: {}",
+                    f_name_mapping_default,
+                    name.toString());
+            if (!mapping.fields.emplace(name.extract<String>(), field).second)
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Table property `{}` has the name `{}` more than once in one list of fields",
+                    f_name_mapping_default,
+                    name.extract<String>());
+            if (field.field_id)
+                named_field_ids.insert(*field.field_id);
+        }
+    }
+}
+
+std::shared_ptr<const IcebergNameMapping> getNameMapping(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    const auto properties = metadata_object->getObject(f_properties);
+    if (!properties || !properties->has(f_name_mapping_default) || properties->isNull(f_name_mapping_default))
+        return nullptr;
+
+    const auto mapping_json = properties->getValue<String>(f_name_mapping_default);
+    Poco::JSON::Parser parser;
+    auto mapping = std::make_shared<IcebergNameMapping>();
+    parseNameMappingFields(parser.parse(mapping_json), *mapping, mapping->named_field_ids);
+    mapping->hash = sipHash64(mapping_json);
+    return mapping;
 }
 
 static Poco::Dynamic::Var deepCopyJSONValue(const Poco::Dynamic::Var & value);

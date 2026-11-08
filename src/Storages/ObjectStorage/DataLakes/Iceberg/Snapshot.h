@@ -9,6 +9,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 
+namespace DB
+{
+struct IcebergNameMapping;
+}
+
 namespace DB::Iceberg
 {
 
@@ -26,6 +31,8 @@ struct IcebergDataSnapshot
     Poco::JSON::Array::Ptr partition_specs;
     /// The `statistics` of `metadata.json`, which hold the statistics files of all snapshots; null when absent.
     Poco::JSON::Array::Ptr statistics;
+    /// The table property `schema.name-mapping.default` of the same `metadata.json`; null when absent.
+    std::shared_ptr<const DB::IcebergNameMapping> name_mapping;
 
     std::optional<size_t> getTotalRows() const
     {

@@ -245,6 +245,8 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         /*row_level_filter_=*/ nullptr,
         /*prewhere_info_=*/ nullptr);
+    format_filter_info->current_schema_column_mapper
+        = configuration->getCurrentSchemaColumnMapperForFilters(storage_snapshot->metadata, context);
 
     auto source = std::make_shared<StorageObjectStorageSource>(
         storage_id,
