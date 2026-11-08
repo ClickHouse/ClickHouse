@@ -146,8 +146,14 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         if (!last_object_info)
             return {};
 
-        auto splitter = FormatFactory::instance().getSplitter(configuration->format);
-        if (splitter)
+        /// The format of this file, as the reader sees it: an Iceberg table can mix Parquet and ORC files.
+        auto splitter = FormatFactory::instance().getSplitter(last_object_info->getFileFormat().value_or(configuration->format));
+        if (!splitter)
+        {
+            /// The format cannot be split, so the file is read as a whole.
+            pending_objects_info.push(std::move(last_object_info));
+        }
+        else
         {
             std::vector<size_t> matching_row_groups;
             bool has_cache_entry = false;
