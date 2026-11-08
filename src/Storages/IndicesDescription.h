@@ -88,8 +88,9 @@ struct IndexDescription
 };
 
 /// Checks that the functions referenced by the text index preprocessor and postprocessor expressions
-/// may run with the permissions of `context`. Call only where a user declares an index, on the node
-/// they submitted it to; elsewhere these resolve under the global context.
+/// may run with the permissions of `context`, and that they read no table, set or dictionary. Call only
+/// where a user declares an index, on the node they submitted it to; elsewhere these resolve under the
+/// global context, and stored metadata is not re-checked.
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context);
 
 /// Refuses a transform when the other hosts of an `ON CLUSTER` query do not run it as the initiator.

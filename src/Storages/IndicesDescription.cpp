@@ -2,6 +2,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/misc.h>
 #include <Storages/IndicesDescription.h>
 
 #include <Functions/FunctionFactory.h>
@@ -11,6 +12,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -58,13 +62,36 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
     });
 }
 
-void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
+/// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only: building the
+/// expression would report its type errors from here, not from the validator.
+///
+/// A transform is analysed under the global context, so reading a table or a dictionary during analysis
+/// would happen with full access. Such access depends on the arguments, not the function name, so
+/// authorizing names cannot cover it, and these constructs are refused. Only here, where a user declares
+/// the index: metadata stored by an older version must still load and stay alterable.
+void checkFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
 {
-    if (const auto * func = ast->as<ASTFunction>())
-        FunctionFactory::instance().tryGet(func->name, context);
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTTableIdentifier>())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "A text index transform expression must not contain subqueries or table references");
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto & set = function->arguments->children[1];
+            if (set->as<ASTIdentifier>() || set->as<ASTTableIdentifier>())
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "A text index transform expression must not use a table or a set as the right side of `{}`", function->name);
+        }
+
+        /// Only the name, which for `dictGet` and the like does not touch the dictionary; analysis would.
+        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "A text index transform expression must not contain non-deterministic functions. Got `{}`", function->name);
+    }
 
     for (const auto & child : ast->children)
-        resolveFunctionsAsUser(child, context);
+        checkFunctionsAsUser(child, context);
 }
 
 void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & context)
@@ -76,9 +103,7 @@ void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & cont
         if (!UserDefinedSQLFunctionFactory::instance().empty())
             UserDefinedSQLFunctionVisitor::visit(expression, context);
 
-        /// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only:
-        /// building the expression would report its type errors from here, not from the validator.
-        resolveFunctionsAsUser(expression, context);
+        checkFunctionsAsUser(expression, context);
     });
 }
 
