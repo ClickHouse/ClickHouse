@@ -40,6 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
+    extern const SettingsBool vector_search_cagra_on_cpu;
 }
 
 namespace ErrorCodes
@@ -195,6 +196,7 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index {} is not a vector_similarity index", backQuote(index_name));
 
     const size_t candidates = context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search];
+    const bool cagra_on_cpu = context->getSettingsRef()[Setting::vector_search_cagra_on_cpu];
 
     auto mark_cache = context->getIndexMarkCache();
     auto uncompressed_cache = context->getIndexUncompressedCache();
@@ -252,7 +254,10 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
                         for (size_t q = 0; q < num_queries; ++q)
                             MergeTreeIndexGranuleCagra::normalize(normalized.data() + q * dimensions_of_queries, dimensions_of_queries);
                 }
-                cagra->searchBatch(normalized, num_queries, k, candidates, neighbours, distances);
+                if (cagra_on_cpu)
+                    cagra->searchBatchOnCpu(normalized, num_queries, k, candidates, neighbours, distances);
+                else
+                    cagra->searchBatch(normalized, num_queries, k, candidates, neighbours, distances);
             }
             else
             {

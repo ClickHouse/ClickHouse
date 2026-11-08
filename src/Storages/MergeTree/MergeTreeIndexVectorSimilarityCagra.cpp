@@ -17,9 +17,15 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/HashTable/HashSet.h>
 #include <base/scope_guard.h>
 
+#include <usearch/index_plugins.hpp>
+
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <cmath>
 #include <numeric>
 
@@ -32,6 +38,7 @@ namespace Setting
     extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsBool vector_search_cagra_on_cpu;
 }
 
 namespace ErrorCodes
@@ -496,6 +503,144 @@ void MergeTreeIndexGranuleCagra::searchBatch(const std::vector<float> & queries,
     }
 }
 
+namespace
+{
+
+/// A beam search over the graph for one query, as the single-CTA search of CAGRA does it on the device: a sorted list
+/// of the best `candidates` rows seen so far, from which the best row not expanded yet is expanded - its neighbours in
+/// the graph are measured and merged into the list - until all rows in the list are expanded. The list starts from rows
+/// spread over the granule, as CAGRA starts from random samples.
+class CpuBeamSearch
+{
+public:
+    explicit CpuBeamSearch(const MergeTreeIndexGranuleCagra & granule_)
+        : granule(granule_)
+        , metric(granule.dimensions,
+            granule.metric == CagraMetric::L2 ? unum::usearch::metric_kind_t::l2sq_k : unum::usearch::metric_kind_t::ip_k,
+            unum::usearch::scalar_kind_t::f32_k)
+    {
+    }
+
+    /// Writes up to `limit` rows and distances, best first, and returns how many.
+    size_t search(const float * query, size_t limit, size_t candidates, UInt32 * rows_out, float * distances_out)
+    {
+        const size_t rows = granule.rows;
+        const size_t list_size = std::max(candidates, limit);
+        list.clear();
+        visited.clear();
+
+        /// The `hnsw` method returns `1 - dot` for the inner product and the squared L2 distance, and so does this metric.
+        auto distance = [&](UInt32 row)
+        {
+            return static_cast<float>(metric(
+                reinterpret_cast<const unum::usearch::byte_t *>(query),
+                reinterpret_cast<const unum::usearch::byte_t *>(granule.dataset.data() + row * granule.dimensions)));
+        };
+
+        auto insert = [&](UInt32 row)
+        {
+            if (!visited.insert(row).second)
+                return;
+            const float d = distance(row);
+            if (list.size() == list_size && d >= list.back().distance)
+                return;
+            Entry entry{d, row, false};
+            list.insert(std::upper_bound(list.begin(), list.end(), entry), entry);
+            if (list.size() > list_size)
+                list.pop_back();
+        };
+
+        const size_t num_seeds = std::min(rows, list_size);
+        const size_t step = rows / num_seeds;
+        for (size_t i = 0; i < num_seeds; ++i)
+            insert(static_cast<UInt32>(i * step + (i * 2654435761ULL) % step));
+
+        const UInt32 * graph = granule.graph.data();
+        const size_t degree = granule.graph_degree;
+        while (true)
+        {
+            auto it = std::find_if(list.begin(), list.end(), [](const Entry & entry) { return !entry.expanded; });
+            if (it == list.end())
+                break;
+            it->expanded = true;
+            const UInt32 * neighbours = graph + static_cast<size_t>(it->row) * degree;
+            for (size_t i = 0; i < degree; ++i)
+                if (neighbours[i] < rows)
+                    insert(neighbours[i]);
+        }
+
+        const size_t found = std::min(limit, list.size());
+        for (size_t i = 0; i < found; ++i)
+        {
+            rows_out[i] = list[i].row;
+            distances_out[i] = list[i].distance;
+        }
+        return found;
+    }
+
+private:
+    struct Entry
+    {
+        float distance;
+        UInt32 row;
+        bool expanded;
+        bool operator<(const Entry & other) const { return distance < other.distance; }
+    };
+
+    const MergeTreeIndexGranuleCagra & granule;
+    unum::usearch::metric_punned_t metric;
+    std::vector<Entry> list;
+    HashSet<UInt32> visited;
+};
+
+}
+
+NearestNeighbours MergeTreeIndexGranuleCagra::searchOnCpu(const std::vector<float> & query, size_t limit, size_t candidates, bool return_distances) const
+{
+    if (graph_degree == 0)
+        return searchExact(query, limit, return_distances);
+
+    std::vector<UInt32> rows_found(limit);
+    std::vector<float> distances_found(limit);
+    CpuBeamSearch beam_search(*this);
+    const size_t found = beam_search.search(query.data(), limit, candidates, rows_found.data(), distances_found.data());
+
+    NearestNeighbours result;
+    result.rows.assign(rows_found.begin(), rows_found.begin() + found);
+    if (return_distances)
+        result.distances.emplace(distances_found.begin(), distances_found.begin() + found);
+    return result;
+}
+
+void MergeTreeIndexGranuleCagra::searchBatchOnCpu(const std::vector<float> & queries, size_t num_queries, size_t limit, size_t candidates,
+    std::vector<UInt32> & neighbours, std::vector<float> & distances) const
+{
+    if (graph_degree == 0)
+    {
+        searchBatch(queries, num_queries, limit, candidates, neighbours, distances);
+        return;
+    }
+
+    neighbours.assign(num_queries * limit, invalid_neighbour);
+    distances.assign(num_queries * limit, std::numeric_limits<float>::infinity());
+
+    std::atomic<size_t> next_query = 0;
+    auto work = [&]
+    {
+        CpuBeamSearch beam_search(*this);
+        for (size_t q; (q = next_query.fetch_add(1)) < num_queries;)
+            beam_search.search(queries.data() + q * dimensions, limit, candidates, neighbours.data() + q * limit, distances.data() + q * limit);
+    };
+
+    const size_t num_threads = std::min<size_t>(getNumberOfCPUCoresToUse(), num_queries);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (size_t t = 0; t < num_threads; ++t)
+        threads.emplace_back(work);
+    for (auto & thread : threads)
+        thread.join();
+}
+
 MergeTreeIndexAggregatorCagra::MergeTreeIndexAggregatorCagra(
     const String & index_name_, const Block & index_sample_block_, size_t dimensions_, CagraMetric metric_, CagraParams params_)
     : index_name(index_name_)
@@ -601,6 +746,7 @@ MergeTreeIndexConditionCagra::MergeTreeIndexConditionCagra(
     , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
+    , on_cpu(context->getSettingsRef()[Setting::vector_search_cagra_on_cpu])
 {
     if (candidates == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
@@ -649,6 +795,8 @@ NearestNeighbours MergeTreeIndexConditionCagra::calculateApproximateNearestNeigh
         limit = (scaled_limit >= static_cast<double>(max_limit)) ? max_limit : static_cast<size_t>(scaled_limit);
     }
 
+    if (on_cpu)
+        return granule->searchOnCpu(query, limit, candidates, parameters->return_distances);
     return granule->search(query, limit, candidates, parameters->return_distances);
 }
 
