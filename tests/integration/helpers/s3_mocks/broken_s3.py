@@ -43,7 +43,9 @@ class MockControl:
     def reset(self):
         self._apply(f"http://localhost:{self._port}/mock_settings/reset")
 
-    def setup_action(self, when, count=None, after=None, action=None, action_args=None):
+    def setup_action(
+        self, when, count=None, after=None, action=None, action_args=None, key=None
+    ):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
 
         if count is not None:
@@ -59,6 +61,10 @@ class MockControl:
             for x in action_args:
                 url += f"&action_args={x}"
 
+        # Only `at_object_get` reads it: the rule then applies to the requests for that object key.
+        if key is not None:
+            url += f"&key={urllib.parse.quote(key, safe='')}"
+
         self._apply(url)
 
     def setup_at_object_upload(self, **kwargs):
@@ -69,6 +75,9 @@ class MockControl:
 
     def setup_at_listing(self, **kwargs):
         self.setup_action("at_listing", **kwargs)
+
+    def setup_at_object_get(self, **kwargs):
+        self.setup_action("at_object_get", **kwargs)
 
     def setup_at_create_multi_part_upload(self, **kwargs):
         self.setup_action("at_create_multi_part_upload", **kwargs)
@@ -474,6 +483,8 @@ class _ServerRuntime:
         self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
+        self.at_object_get = None
+        self.at_object_get_by_key = {}
         self.at_complete_multi_part_upload = None
 
     def register_fake_upload(self, upload_id, key):
@@ -498,6 +509,8 @@ class _ServerRuntime:
             self.at_create_multi_part_upload = None
             self.at_complete_multi_part_upload = None
             self.at_listing = None
+            self.at_object_get = None
+            self.at_object_get_by_key = {}
 
 
 _runtime = _ServerRuntime()
@@ -725,6 +738,17 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set at_listing %s", _runtime.at_listing)
             return self._ok()
 
+        if path[1] == "at_object_get":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            rule = _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
+            key = params.get("key", [None])[0]
+            if key is None:
+                _runtime.at_object_get = rule
+            else:
+                _runtime.at_object_get_by_key[key] = rule
+            self.log_message("set at_object_get %s for key %s", rule, key)
+            return self._ok()
+
         if path[1] == "reset":
             _runtime.reset()
             self.log_message("reset")
@@ -746,6 +770,18 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if is_listing and _runtime.at_listing is not None:
             if _runtime.at_listing.has_effect():
                 return _runtime.at_listing.inject_error(self)
+
+        if not is_listing:
+            # `has_effect` takes `_runtime.lock` itself, so the lock must not be held here.
+            for key, rule in list(_runtime.at_object_get_by_key.items()):
+                if key in parts.path and rule.has_effect():
+                    self.log_message("get at_object_get %s for key %s", rule, key)
+                    return rule.inject_error(self)
+
+        if not is_listing and _runtime.at_object_get is not None:
+            if _runtime.at_object_get.has_effect():
+                self.log_message("get at_object_get %s", _runtime.at_object_get)
+                return _runtime.at_object_get.inject_error(self)
 
         if not is_listing and _runtime.slow_get is not None:
             timeout = _runtime.slow_get.get_timeout()

@@ -1,4 +1,10 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Core/Field.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/Logger.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <base/unit.h>
 
@@ -10,6 +16,7 @@
 #include <numeric>
 #include <ranges>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace DB;
@@ -1069,6 +1076,126 @@ TEST(SimpleMergeSelector, ForceMergeByPartitionAgeWaivesMinPartsToMergeAtOnce)
 
     ASSERT_EQ(selected.size(), 1);
     ASSERT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(1), partName(2)}));
+}
+
+TEST(SimpleMergeSelector, PartNewerThanCurrentTimeIsNotOld)
+{
+    /// A part committed after the selection read the clock has a negative age: it is as young as a part
+    /// can be, so neither the age-lowered base nor `min_age_to_force_merge` may apply to it.
+    std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
+
+    const auto count_selected = [&](const std::vector<size_t> & sizes, time_t age, size_t min_age_to_force_merge)
+    {
+        auto parts_range = makePartsRange(sizes, age);
+        auto statistics = makeStatistics(parts_range, /*partition_min_age=*/age);
+
+        SimpleMergeSelector::Settings settings;
+        settings.partitions_stats = &statistics;
+        settings.min_age_to_force_merge = min_age_to_force_merge;
+
+        return SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr).size();
+    };
+
+    /// Two equal parts pass the size ratio only once their age has lowered the base to 2.
+    ASSERT_EQ(count_selected({1024, 1024}, /*age=*/7200, /*min_age_to_force_merge=*/0), 1);
+    ASSERT_EQ(count_selected({1024, 1024}, /*age=*/0, /*min_age_to_force_merge=*/0), 0);
+    ASSERT_EQ(count_selected({1024, 1024}, /*age=*/-1, /*min_age_to_force_merge=*/0), 0);
+
+    /// An unbalanced pair is merged only when forced by age.
+    ASSERT_EQ(count_selected({10 * MiB, 1024}, /*age=*/120, /*min_age_to_force_merge=*/60), 1);
+    ASSERT_EQ(count_selected({10 * MiB, 1024}, /*age=*/-1, /*min_age_to_force_merge=*/60), 0);
+}
+
+TEST(SimpleMergeSelector, PartNewerThanCurrentTimeMakesItsRangeYoung)
+{
+    /// A range is as young as its youngest part, so old parts are merged without a part newer than the clock.
+    std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
+
+    const auto selected_parts = [&](const std::vector<time_t> & ages)
+    {
+        auto parts_range = makePartsRange(std::vector<size_t>(ages.size(), 1024), ages);
+        auto statistics = makeStatistics(parts_range, /*partition_min_age=*/std::ranges::min(ages));
+
+        SimpleMergeSelector::Settings settings;
+        settings.partitions_stats = &statistics;
+
+        auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
+        return selected.empty() ? std::vector<std::string>{} : partNames(selected.front());
+    };
+
+    ASSERT_EQ(selected_parts({7200, 7200, 7200}), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
+    ASSERT_EQ(selected_parts({7200, 7200, -1}), (std::vector<std::string>{partName(0), partName(1)}));
+    ASSERT_EQ(selected_parts({-1, 7200, 7200}), (std::vector<std::string>{partName(1), partName(2)}));
+}
+
+TEST(SimpleMergeSelector, PartNewerThanCurrentTimeIsFreshForSmallPartsAndRightTail)
+{
+    /// The small-parts gate, the post-trim rechecks and the right-tail threshold must treat a negative age as fresh.
+    std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
+
+    const auto lowered_cap_selection_size = [&](const std::vector<time_t> & ages)
+    {
+        auto parts_range = makePartsRange(std::vector<size_t>(8, MiB), ages);
+        PartitionsStatistics statistics;
+        statistics["all"] = PartitionStatistics{.min_age = 1, .part_count = 2990, .total_size = 2990 * MiB};
+
+        SimpleMergeSelector::Settings settings;
+        settings.base = 2;
+        settings.small_parts_min_count = 8;
+        settings.min_age_to_force_merge = 3600;
+        settings.partitions_stats = &statistics;
+
+        auto selected = SimpleMergeSelector(settings).select({parts_range}, constraints, nullptr);
+        return selected.empty() ? 0 : selected.front().size();
+    };
+
+    /// A nearly full partition lowers the max-parts cap to 3, below `small_parts_min_count`; a batch of
+    /// fresh small parts is still formed.
+    ASSERT_EQ(lowered_cap_selection_size({-1, 1, 1, 1, 1, 1, 1, 1}), 8);
+    ASSERT_EQ(lowered_cap_selection_size({1, 1, 1, 1, 1, 1, 1, -1}), 8);
+
+    /// Right-tail trimming leaves 2 of 8 parts, and young parts do not waive `min_parts_to_merge_at_once`.
+    std::vector<size_t> sizes(8, 64 * KiB);
+    sizes[0] = 9 * MiB;
+    auto parts_range = makePartsRange(sizes, -1);
+    SimpleMergeSelector::Settings min_parts_settings;
+    min_parts_settings.base = 2;
+    min_parts_settings.min_parts_to_merge_at_once = 8;
+    min_parts_settings.min_age_to_force_merge = 3600;
+    min_parts_settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
+    ASSERT_TRUE(SimpleMergeSelector(min_parts_settings).select({parts_range}, constraints, nullptr).empty());
+
+    SimpleMergeSelector::Settings right_tail_settings;
+    right_tail_settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
+    auto selected = selectRightTailRange(right_tail_settings, {-1, -1, -1});
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
+}
+
+TEST(MergeTreeDataMergerMutator, PartitionNewerThanCurrentTimeIsNotForceMerged)
+{
+    /// With `min_age_to_force_merge_on_partition_only`, a partition whose youngest part is newer than the
+    /// clock reading (negative age) must not be force-merged in full.
+    const auto & context = getContext().context;
+    /// `getBestPartitionToOptimizeEntire` reads the merge pool size before it looks at the partition age.
+    context->initializeBackgroundExecutorsIfNeeded();
+
+    auto settings = std::make_shared<MergeTreeSettings>();
+    settings->set("min_age_to_force_merge_seconds", Field(UInt64(60)));
+    settings->set("min_age_to_force_merge_on_partition_only", Field(true));
+    /// Do not depend on how busy the shared merge pool is.
+    settings->set("number_of_free_entries_in_pool_to_execute_optimize_entire_partition", Field(UInt64(0)));
+
+    const auto best_partition = [&](time_t min_age)
+    {
+        std::unordered_map<String, PartitionStatistics> stats;
+        stats["p"] = PartitionStatistics{.min_age = min_age, .part_count = 2, .total_size = 2048};
+        return getBestPartitionToOptimizeEntire(
+            /*max_total_size_to_merge=*/0, context, settings, stats, getLogger("PartitionNewerThanCurrentTimeIsNotForceMerged"));
+    };
+
+    ASSERT_EQ(best_partition(/*min_age=*/120), "p");
+    ASSERT_EQ(best_partition(/*min_age=*/-1), "");
 }
 
 TEST(SimpleMergeSelector, RemovesSmallPartsAtRightByDefault)

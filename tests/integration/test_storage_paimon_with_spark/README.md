@@ -27,11 +27,17 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
   after restart, explicit `DETACH`/`ATTACH`, reads under parallel replicas,
   `Paimon` disk autodetection.
 - `test_types.py` — full supported type matrix (composites are `NOT NULL`
-  until ClickHouse#113337 is fixed).
+  until ClickHouse#113337 is fixed) and `ROW` columns read as named `Tuple`s.
 - `test_partition_pruning.py` — INT/DATE/STRING/DECIMAL partitions, pruned
   file counts via `EngineFileLikeReadFiles`, path-escaped partition values.
-- `test_schema_evolution.py` — ADD/RENAME/DROP column across snapshots (pins
-  name-based resolution: pre-rename files read `NULL`).
+- `test_schema_evolution.py`: ADD/DROP COLUMN across snapshots read by name;
+  files written before a RENAME COLUMN or a DROP + re-ADD under the same name
+  (also in another case) are read by field id, in Parquet, ORC and Avro, through
+  the cluster function, and after a copy-on-write UPDATE; rotated column names
+  with the query condition cache, filters and single-column reads; a file with
+  no field of the current schema; incremental and `paimon_target_snapshot_id`
+  reads across a RENAME; tuple elements of a `ROW` column across a RENAME, and
+  the refusal of files written before a rename or re-add inside a `ROW`.
 - `test_snapshot_visibility.py` — new snapshots visible to table functions
   (per query) and engines (metadata refresh).
 - `test_metadata_cache.py` — hit/miss accounting, `SYSTEM DROP PAIMON
@@ -63,7 +69,7 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
   snapshot-by-snapshot into a warehouse consumed by Keeper incremental reads.
 - `test_hdfs.py` — `paimonHDFS` + `PaimonHDFS` against the HDFS namenode
   embedded in the Hive test image (amd64-only image, ARM runners skip).
-- `test_errors.py` — unsupported `ROW` type, unsupported and supported
+- `test_errors.py` — unsupported and supported
   `scan.mode` values, unsupported schema version (hand-corrupted fixture),
   schema-without-snapshots, nonexistent path.
 
@@ -77,7 +83,7 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
 | HA ingestion: replicas as competing consumers on one keeper path | Covered (`test_shared_watermark_competing_consumers`) |
 | GDPR deletes / corrections (Spark UPDATE/DELETE, copy-on-write) | Covered (`test_spark_mutations.py`) |
 | Table maintenance (compaction) | Covered (`test_compaction.py`) |
-| Schema changes on a live pipeline | Covered (`test_schema_evolution.py`) |
+| Schema changes on a live pipeline | Covered for top-level columns: ADD/DROP/RENAME COLUMN and DROP + re-ADD under the same name, columns matched by field id; a rename or re-add inside a `ROW` is refused (fields of a `ROW` are matched by name) (`test_schema_evolution.py`) |
 | CDC/upserts into primary-key tables | **Strict xfail** asserting correct merge semantics — flips when ClickHouse#113360 is fixed |
 | Readers serving while the writer commits | Covered (`test_concurrent_reads.py`; uploads happen in commit order, as real writers commit) |
 | Tables written by newer Paimon versions | Covered for 1.3.2 (`test_reader_compat.py`) |
