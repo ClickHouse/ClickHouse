@@ -10,3 +10,11 @@ correlated subquery
 alias used in the view body
 v	other
 v
+FixedString key shorter than its width
+		full	full	padded
+		full	full	padded
+		full	full	padded
+0
+0
+1
+0

@@ -435,6 +435,11 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     if (!tmp_key_column->tryInsert(key_value))
         return;
 
+    /// A `FixedString` key column pads a shorter string with zero bytes, while `arrayElement` compares
+    /// the needle bytes and length exactly, so the padded key would select a different Map entry.
+    if (key_value.getType() == Field::Types::String && (*tmp_key_column)[0] != key_value)
+        return;
+
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
     WriteBufferFromOwnString buf;

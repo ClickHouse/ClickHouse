@@ -4,7 +4,9 @@
 DROP VIEW IF EXISTS v_shadow;
 DROP VIEW IF EXISTS v_alias;
 DROP VIEW IF EXISTS v_alias_where;
+DROP VIEW IF EXISTS v_fixed;
 DROP TABLE IF EXISTS t_shadow;
+DROP TABLE IF EXISTS t_fixed;
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (id UInt64, m Map(String, String)) ENGINE = MergeTree ORDER BY id
@@ -41,8 +43,28 @@ SELECT attrs['k'], extra FROM v_alias;
 CREATE VIEW v_alias_where SQL SECURITY INVOKER AS SELECT m AS attrs FROM t WHERE attrs['b'] = 'other';
 SELECT attrs['k'] FROM v_alias_where;
 
+SELECT 'FixedString key shorter than its width';
+CREATE TABLE t_fixed (m Map(FixedString(3), String), ml Map(LowCardinality(FixedString(3)), String))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+INSERT INTO t_fixed VALUES ({'k':'padded', 'abc':'full'}, {'k':'padded', 'abc':'full'});
+CREATE VIEW v_fixed SQL SECURITY INVOKER AS SELECT m, ml FROM t_fixed;
+SELECT m['k'], ml['k'], m['abc'], ml['abc'], m[toFixedString('k', 3)] FROM v_fixed;
+SELECT m['k'], ml['k'], m['abc'], ml['abc'], m[toFixedString('k', 3)] FROM (SELECT m, ml FROM t_fixed);
+SELECT m['k'], ml['k'], m['abc'], ml['abc'], m[toFixedString('k', 3)] FROM t_fixed;
+SELECT count() FROM v_fixed WHERE m['k'] = 'padded' OR ml['k'] = 'padded';
+SELECT count() FROM (SELECT m, ml FROM t_fixed) WHERE m['k'] = 'padded' OR ml['k'] = 'padded';
+SELECT count() > 0
+FROM (EXPLAIN PLAN actions = 1 SELECT m['abc'] FROM v_fixed)
+WHERE explain ILIKE '%Output: m.key_abc%';
+SELECT count()
+FROM (EXPLAIN PLAN actions = 1 SELECT m['k'], ml['k'] FROM (SELECT m, ml FROM t_fixed))
+WHERE explain ILIKE '%key_k%';
+
 DROP VIEW v_shadow;
 DROP VIEW v_alias;
 DROP VIEW v_alias_where;
+DROP VIEW v_fixed;
 DROP TABLE t_shadow;
+DROP TABLE t_fixed;
 DROP TABLE t;
