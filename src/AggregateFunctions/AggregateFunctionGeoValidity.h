@@ -8,6 +8,8 @@
 // Licensed under the Boost Software License, Version 1.0.
 // https://www.boost.org/LICENSE_1_0.txt
 
+#include <AggregateFunctions/AggregateFunctionGeoRectangle.h>
+
 #include <boost/geometry/algorithms/detail/is_valid/multipolygon.hpp>
 #include <boost/geometry/policies/is_valid/default_policy.hpp>
 #include <boost/geometry/policies/is_valid/failing_reason_policy.hpp>
@@ -15,6 +17,7 @@
 #include <boost/iterator/indirect_iterator.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <memory>
 #include <sstream>
@@ -50,17 +53,26 @@ class GeoMultiPolygonValidity
         bool apply(const Item & first, const Item & second)
         {
             namespace bg = boost::geometry;
-            if constexpr (std::is_same_v<typename Strategy::cs_tag, bg::cartesian_tag> && bg::dimension<MultiPolygon>::value == 2)
+            if constexpr (
+                std::is_same_v<typename Strategy::cs_tag, bg::cartesian_tag> && bg::dimension<MultiPolygon>::value == 2
+                && std::is_same_v<bg::coordinate_type_t<MultiPolygon>, Float64>)
             {
                 const auto & first_box = first.get_envelope(this->m_strategy);
                 const auto & second_box = second.get_envelope(this->m_strategy);
+                const Float64 magnitude = std::max(
+                    {std::abs(bg::get<bg::min_corner, 0>(first_box)), std::abs(bg::get<bg::min_corner, 1>(first_box)),
+                     std::abs(bg::get<bg::max_corner, 0>(first_box)), std::abs(bg::get<bg::max_corner, 1>(first_box)),
+                     std::abs(bg::get<bg::min_corner, 0>(second_box)), std::abs(bg::get<bg::min_corner, 1>(second_box)),
+                     std::abs(bg::get<bg::max_corner, 0>(second_box)), std::abs(bg::get<bg::max_corner, 1>(second_box))});
+                const Float64 margin = geoSeparationMargin(magnitude);
                 auto separated = [&]<size_t Dimension>()
                 {
-                    return bg::get<bg::max_corner, Dimension>(first_box) <= bg::get<bg::min_corner, Dimension>(second_box)
-                        || bg::get<bg::max_corner, Dimension>(second_box) <= bg::get<bg::min_corner, Dimension>(first_box);
+                    return geoSeparatedBy(bg::get<bg::max_corner, Dimension>(first_box), bg::get<bg::min_corner, Dimension>(second_box), margin)
+                        || geoSeparatedBy(bg::get<bg::max_corner, Dimension>(second_box), bg::get<bg::min_corner, Dimension>(first_box), margin);
                 };
-                /// In phase 5, a boundary-only box contact cannot satisfy any of the three
-                /// interior/interior or interior/boundary masks. Earlier phases reject invalid contacts.
+                /// Skip `relate` only for boxes separated by more than the validator's tolerance. Boxes
+                /// that touch or are a few ULPs apart can still have intersecting interiors under that
+                /// tolerance, and `relate` must reject them as Boost's own `is_valid` does.
                 if (separated.template operator()<0>() || separated.template operator()<1>())
                     return true;
             }
