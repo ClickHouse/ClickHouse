@@ -443,7 +443,15 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     else
     {
         Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        /// `schema-id` of the schema is optional in format version 1: take the header key, else 0 as in Java.
+        if (!schema_object->has(f_schema_id) || schema_object->isNull(f_schema_id))
+        {
+            if (header_schema_id.has_value())
+                schema_object->set(f_schema_id, *header_schema_id);
+            else if (manifest_format_version == 1)
+                schema_object->set(f_schema_id, 0);
+        }
         Int32 embedded_schema_id = schema_object->getValue<int>(f_schema_id);
         if (header_schema_id.has_value() && *header_schema_id != embedded_schema_id)
             throw Exception(

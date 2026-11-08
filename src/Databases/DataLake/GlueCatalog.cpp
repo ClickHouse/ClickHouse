@@ -562,22 +562,13 @@ String GlueCatalog::resolveTimestampTypeFromMetadata(
 GlueCatalog::FieldTypes GlueCatalog::getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object)
 {
     FieldTypes result;
-    auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
-    auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
-    for (size_t i = 0; i < schemas->size(); ++i)
+    auto fields = DB::Iceberg::parseCurrentTableSchema(metadata_object).first->getArray(DB::Iceberg::f_fields);
+    for (size_t j = 0; j < fields->size(); ++j)
     {
-        auto schema = schemas->getObject(static_cast<UInt32>(i));
-        if (schema->getValue<Int64>("schema-id") != current_schema_id)
-            continue;
-
-        auto fields = schema->getArray(DB::Iceberg::f_fields);
-        for (size_t j = 0; j < fields->size(); ++j)
-        {
-            auto field = fields->getObject(static_cast<UInt32>(j));
-            auto type = field->get(DB::Iceberg::f_type);
-            if (type.isString())
-                result.emplace(field->getValue<String>(DB::Iceberg::f_name), type.extract<String>());
-        }
+        auto field = fields->getObject(static_cast<UInt32>(j));
+        auto type = field->get(DB::Iceberg::f_type);
+        if (type.isString())
+            result.emplace(field->getValue<String>(DB::Iceberg::f_name), type.extract<String>());
     }
     return result;
 }

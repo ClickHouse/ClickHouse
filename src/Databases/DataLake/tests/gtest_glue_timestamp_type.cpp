@@ -85,4 +85,28 @@ TEST(GlueCatalog, ResolveTimestampTypeNotFoundFallbackTimestampNano)
     EXPECT_EQ(result, "timestamp_ns");
 }
 
+TEST(GlueCatalog, ResolveTimestampTypeLegacyV1Schema)
+{
+    /// Format version 1 metadata with only the legacy `schema`, which has no `schema-id`.
+    Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+    field->set("id", 1);
+    field->set("name", "ts_col");
+    field->set("required", false);
+    field->set("type", "timestamptz");
+
+    Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+    fields->add(field);
+
+    Poco::JSON::Object::Ptr schema = new Poco::JSON::Object;
+    schema->set("type", "struct");
+    schema->set("fields", fields);
+
+    Poco::JSON::Object::Ptr metadata = new Poco::JSON::Object;
+    metadata->set("format-version", 1);
+    metadata->set("schema", schema);
+
+    auto result = GlueCatalog::resolveTimestampTypeFromMetadata(metadata, "ts_col", "timestamp");
+    EXPECT_EQ(result, "timestamptz");
+}
+
 #endif

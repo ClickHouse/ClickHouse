@@ -1959,16 +1959,25 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    /// we have two ways to get current schema id
-    /// 1. check field schema, which is required in V1 format, and there is schema-id in schema
-    /// 2. check "schemas" and "current-schema-id", which is required in V2 format, but can also exist in V1.
     if (!metadata_object->has(f_schema))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
     Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
-    if (!schema->has(f_schema_id))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
-    auto current_schema_id = schema->getValue<int>(f_schema_id);
-    return {schema, current_schema_id};
+    /// `schema-id` of the legacy `schema` is optional, the schema is then the schema 0 (as in Java).
+    if (!schema->has(f_schema_id) || schema->isNull(f_schema_id))
+    {
+        /// A copy: the metadata object is shared through the metadata files cache.
+        schema = deepCopy(schema);
+        schema->set(f_schema_id, 0);
+    }
+    return {schema, schema->getValue<Int32>(f_schema_id)};
+}
+
+std::pair<Poco::JSON::Object::Ptr, Int32> parseCurrentTableSchema(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    /// `schema` is deprecated and may be stale (a writer that evolved the schema only via `schemas`), so `schemas` wins when present.
+    if (metadata_object->has(f_schemas) || metadata_object->getValue<Int32>(f_format_version) >= 2)
+        return parseTableSchemaV2Method(metadata_object);
+    return parseTableSchemaV1Method(metadata_object);
 }
 
 KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
@@ -1991,7 +2000,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
         return KeyDescription{};
 
     std::unordered_map<Int64, String> source_id_to_column_name;
-    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    auto [schema, current_schema_id] = parseCurrentTableSchema(metadata_object);
 
     auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
     for (const auto & [col_name, source_id] : mapper)
