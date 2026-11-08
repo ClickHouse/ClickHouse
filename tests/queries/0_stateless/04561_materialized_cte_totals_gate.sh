@@ -9,14 +9,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # it. EXPLAIN over an INSERT emits a processor graph whose node numbering is not stable, so the
 # processors are counted instead of compared.
 explain_insert() {
-    $CLICKHOUSE_CLIENT --enable_analyzer 1 --enable_materialized_cte 1 -q "
+    $CLICKHOUSE_CLIENT --enable_materialized_cte 1 -q "
         DROP TABLE IF EXISTS t_04561_plan SYNC;
         CREATE TABLE t_04561_plan (id UInt64) ENGINE = Memory;
     "
     # With the setting disabled the analyzer warns that MATERIALIZED is ignored; keep it out of stderr.
     local quiet_logs=''
     [ "$1" = 0 ] && quiet_logs="SET send_logs_level = 'error';"
-    $CLICKHOUSE_CLIENT --enable_analyzer 1 --enable_materialized_cte "$1" -q "
+    $CLICKHOUSE_CLIENT --enable_materialized_cte "$1" -q "
         $quiet_logs
         EXPLAIN PIPELINE INSERT INTO t_04561_plan
             WITH a AS MATERIALIZED (SELECT number AS id FROM numbers(10))
@@ -36,7 +36,6 @@ $CLICKHOUSE_CLIENT --multiquery -q "$(cat <<'SQL'
 -- gate opened: "Reading from materialized CTE '...' before its materialization completed -
 -- DelayedPortsProcessor gate is missing in the query plan" (LOGICAL_ERROR, STID 2467-2c2d).
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- Each carrier below asserts a row count, which is equal whether the CTE is materialized or
