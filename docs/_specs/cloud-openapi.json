@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1372680",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1384330",
       "email": "support@clickhouse.com"
     }
   },
@@ -1615,6 +1615,241 @@
         "x-mint": {
           "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/previews": {
+      "get": {
+        "summary": "Get list of organization preview features",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the preview features offered to the organization, with whether each one is on and whether the caller can switch it.",
+        "operationId": "organizationPublicPreviewsGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PublicPreview"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/previews/{previewId}": {
+      "patch": {
+        "summary": "Update organization preview feature",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Switches a preview feature on or off for the organization. Use an ID returned by the list endpoint; an unknown ID returns 404. Only previews offered to the organization can be switched on, otherwise the request returns 403; switching off is always allowed.",
+        "operationId": "organizationPublicPreviewPatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "previewId",
+            "description": "ID of the requested preview feature.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicPreviewPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PublicPreview"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services": {
@@ -6168,7 +6403,7 @@
       },
       "patch": {
         "summary": "Update service snapshot configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, the resulting configuration (in minutes) must satisfy: gap must be one of 10, 20, 30, 60; timeFrame must be a whole number of days (a multiple of 1440), at least 1440; and timeFrame / gap (the number of snapshots the configuration keeps) must not exceed 300. Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Gap or timeFrame may be changed on its own; the rules are checked against the configuration that results from merging the request into the stored one. After a change to gap or timeFrame, snapshots taken under the previous configuration expire by the new timeFrame, so more snapshots than the limit can be retained until they age out. Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, the resulting configuration (in minutes) must satisfy: gap must be one of 10, 20, 30, 60; timeFrame must be a whole number of days (a multiple of 1440), at least 1440; and timeFrame / gap (the number of snapshots the configuration keeps) must not exceed 300. Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Gap or timeFrame may be changed on its own; the rules are checked against the configuration that results from merging the request into the stored one. After a change to gap or timeFrame, snapshots taken under the previous configuration expire by the new timeFrame, and cleanup also deletes the oldest snapshots beyond the limit of 300, including ones still inside the new timeFrame. Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
         "operationId": "snapshotConfigurationUpdate",
         "parameters": [
           {
@@ -26696,7 +26931,7 @@
             "example": "*.my-service.example.com"
           },
           "targetId": {
-            "description": "Optional DNS target ID. Supported only for VPC_RESOURCE, where it is the CHILD resource configuration ID (rcfg-…), or the configuration ID for a single resource. Set it at create time to route a custom DNS name to that resource. If the target is not reported in dnsTargets yet, the mapping is not served until it appears; it does not fall back to the default target. If omitted, the default target is used. Once dnsTargets is non-empty, adding or changing a targetId requires an ID in that list; unchanged target IDs are not re-checked.",
+            "description": "Optional DNS target ID. For VPC_RESOURCE, it is the CHILD resource configuration ID (rcfg-…), or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, it is an AWS availability zone ID (for example use1-az1, not the zone name us-east-1a) that the endpoint service offers and ClickPipes supports in the region; if the endpoint is not in that zone yet, ClickPipes adds the zone to the endpoint. Cross-region VPC endpoint services reject targetId. Not supported for other endpoint types. Set it at create time to route a custom DNS name to that target. If the target is not reported in dnsTargets yet, the mapping is not served until it appears; it does not fall back to the default target. If omitted, the default target is used. For VPC_RESOURCE, once dnsTargets is non-empty, adding or changing a targetId requires an ID in that list; unchanged target IDs are not re-checked.",
             "type": "string",
             "example": "rcfg-097648d8068504966"
           }
@@ -26719,16 +26954,13 @@
       "ReversePrivateEndpointDnsTarget": {
         "properties": {
           "id": {
-            "description": "DNS target ID. For VPC_RESOURCE, the associated CHILD resource configuration ID, or the configuration ID for a single resource.",
+            "description": "DNS target ID. For VPC_RESOURCE, the associated CHILD resource configuration ID, or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, the AWS availability zone ID of the zonal endpoint DNS name.",
             "type": "string",
             "example": "rcfg-097648d8068504966"
           },
           "kind": {
-            "description": "DNS target kind.",
+            "description": "DNS target kind. Current values: 'RESOURCE_CONFIGURATION', 'AVAILABILITY_ZONE'. RESOURCE_CONFIGURATION is used for VPC_RESOURCE targets and AVAILABILITY_ZONE for VPC_ENDPOINT_SERVICE zonal targets. New kinds may be added, so clients must accept unknown values.",
             "type": "string",
-            "enum": [
-              "RESOURCE_CONFIGURATION"
-            ],
             "example": "RESOURCE_CONFIGURATION"
           },
           "internalDnsName": {
@@ -26967,7 +27199,7 @@
           },
           "dnsTargets": {
             "type": "array",
-            "description": "Read-only DNS targets the Reverse Private Endpoint currently reports. For VPC_RESOURCE, there is one RESOURCE_CONFIGURATION target per resource configuration association, identified by its CHILD resource configuration ID, or the configuration ID for a single resource. Other endpoint types report an empty list. Targets can appear over time; a custom mapping with a targetId that is not reported yet is not served until it appears.",
+            "description": "Read-only DNS targets the Reverse Private Endpoint currently reports. For VPC_RESOURCE, there is one RESOURCE_CONFIGURATION target per resource configuration association, identified by its CHILD resource configuration ID, or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, there is one AVAILABILITY_ZONE target per zonal endpoint DNS name, identified by its AWS availability zone ID; the regional DNS name is the default target and is not listed. Cross-region VPC endpoint services report no AVAILABILITY_ZONE targets. Other endpoint types report an empty list. Targets can appear over time; a custom mapping with a targetId that is not reported yet is not served until it appears.",
             "items": {
               "$ref": "#/components/schemas/ReversePrivateEndpointDnsTarget"
             },
@@ -30489,6 +30721,13 @@
             "maximum": 10000,
             "example": 100
           },
+          "object_storage_max_file_size": {
+            "description": "Max file size. Files larger than this are skipped and not retried. Can only lower the limit. Private preview. Contact support to enable it for your organization.",
+            "type": "integer",
+            "minimum": 1048576,
+            "maximum": 536870912000,
+            "example": 10737418240
+          },
           "clickhouse_max_threads": {
             "description": "Max threads. Maximum number of concurrent threads for file processing",
             "type": [
@@ -30798,6 +31037,13 @@
             "minimum": 1,
             "maximum": 10000,
             "example": 100
+          },
+          "object_storage_max_file_size": {
+            "description": "Max file size. Files larger than this are skipped and not retried. Can only lower the limit. Private preview. Contact support to enable it for your organization.",
+            "type": "integer",
+            "minimum": 1048576,
+            "maximum": 536870912000,
+            "example": 10737418240
           },
           "clickhouse_max_threads": {
             "description": "Max threads. Maximum number of concurrent threads for file processing",
@@ -40172,6 +40418,44 @@
           "isAvailable"
         ]
       },
+      "PublicPreview": {
+        "properties": {
+          "id": {
+            "description": "Stable identifier of the preview feature.",
+            "type": "string",
+            "example": "preview-id"
+          },
+          "name": {
+            "description": "Name of the preview feature.",
+            "type": "string"
+          },
+          "description": {
+            "description": "What the preview feature does.",
+            "type": "string"
+          },
+          "docsUrl": {
+            "description": "Link to the documentation of the preview feature.",
+            "type": "string",
+            "example": "https://clickhouse.com/docs"
+          },
+          "enabled": {
+            "description": "Whether the preview feature is on for the organization.",
+            "type": "boolean"
+          },
+          "canToggle": {
+            "description": "Whether the caller may switch the preview feature on or off.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "docsUrl",
+          "enabled",
+          "canToggle"
+        ]
+      },
       "OrganizationQuota": {
         "properties": {
           "quotaCode": {
@@ -42576,6 +42860,17 @@
             "type": "boolean"
           }
         }
+      },
+      "PublicPreviewPatchRequest": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the preview feature should be on.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
       },
       "InstanceServiceQueryApiEndpointsPostRequest": {
         "properties": {
