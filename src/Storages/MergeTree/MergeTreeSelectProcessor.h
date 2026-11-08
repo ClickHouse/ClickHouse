@@ -188,7 +188,6 @@ public:
         bool force_short_circuit_execution,
         bool read_ahead_prewhere_columns);
 
-    /// Builds what all processors of one read over `pool_header` share, see `MergeTreeSelectProcessorSharedState`.
     static MergeTreeSelectProcessorSharedStatePtr buildSharedState(
         const Block & pool_header,
         const FilterDAGInfoPtr & row_level_filter,
