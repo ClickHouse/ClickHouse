@@ -42,6 +42,7 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -62,7 +63,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -9468,6 +9469,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     *max_value = quota_maxes[fuzz_rand() % std::size(quota_maxes)];
                 }
             }
+            /// Fuzz the maximums of the limits defined over profile events the same way.
+            for (auto & [_, max_value] : limits.profile_events_max)
+            {
+                if (fuzz_rand() % 10 == 0)
+                {
+                    static const UInt64 quota_maxes[] = {0, 1, 1000, std::numeric_limits<UInt64>::max()};
+                    max_value = quota_maxes[fuzz_rand() % std::size(quota_maxes)];
+                }
+            }
         }
     }
     else if (auto * drop_access = typeid_cast<ASTDropAccessEntityQuery *>(ast.get()))
@@ -9530,6 +9540,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 describe->temporary = !describe->temporary;
         }
         fuzzChildrenWithAlias(*describe, describe->table_expression);
+    }
+    else if (auto * copy_query = typeid_cast<ASTCopyQuery *>(ast.get()))
+    {
+        fuzzChildrenWithAlias(*copy_query, copy_query->subquery_ast);
     }
     else if (auto * drop_function = typeid_cast<ASTDropFunctionQuery *>(ast.get()))
     {
