@@ -1624,9 +1624,9 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
                 }
             }
 
-            /// So far we only support the case of two arguments.
-            /// Both must be curve coordinates: a range mask (`Tuple`) as the first argument makes
-            /// the curve one-dimensional over the second argument, which the 2-D analysis does not handle.
+            /// So far we only support the case of two arguments, both `UInt8`, `UInt16` or `UInt32` coordinates.
+            /// This rejects a range mask (`Tuple`) as the first argument, which makes the curve one-dimensional over
+            /// the second argument, and `UInt64`, `Dynamic` and `Variant` arguments, whose values can exceed 32 bits.
             auto is_supported_coordinate = [](const DataTypePtr & type)
             {
                 WhichDataType which(removeNullable(removeLowCardinality(type)));
