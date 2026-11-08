@@ -162,6 +162,22 @@ std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilt
     return conditions;
 }
 
+/// Whether the read returns the rows of its parts as they are stored, so that the `uniq` statistics of the parts count
+/// the values it returns. `FINAL`, `SAMPLE`, a row policy, a read split between replicas, a `UNIQUE KEY`, deleted rows,
+/// patch parts, mutations applied on the fly and masking policies drop rows or change values inside the read.
+bool readsPartsAsStored(const ReadFromMergeTree & reading)
+{
+    if (reading.isQueryWithFinal() || reading.isQueryWithSampling() || reading.getRowLevelFilter() || reading.getDeferredRowLevelFilter()
+        || reading.isParallelReadingFromReplicas() || reading.getStorageMetadata()->hasUniqueKey())
+        return false;
+    if (const auto & mutations = reading.getMutationsSnapshot();
+        mutations
+        && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()
+            || !mutations->getColumnsChangedOnFly().empty()))
+        return false;
+    return !reading.getMergeTreeData().hasEnabledMaskingPolicies(reading.getContext());
+}
+
 }
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
@@ -259,6 +275,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                if (!readsPartsAsStored(*reading))
+                    clearDistinctValuesFromUniq(relation_profile.column_stats);
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,
@@ -403,6 +421,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
         clearColumnValueRanges(estimated.column_stats);
+        clearDistinctValuesFromUniq(estimated.column_stats);
         return estimated;
     }
 
@@ -444,6 +463,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
+        clearDistinctValuesFromUniq(stats.column_stats);
         return stats;
     }
 
@@ -462,6 +482,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
                 stats.estimated_rows = sorting_step->getLimit();
             clearColumnValueRanges(stats.column_stats);
+            clearDistinctValuesFromUniq(stats.column_stats);
         }
         return stats;
     }

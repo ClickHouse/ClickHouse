@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/HashJoin/DeferredBuild.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Common/Arena.h>
 #include <Common/CacheLine.h>
@@ -75,9 +76,34 @@ public:
         reserved.assign(num_maps, std::vector<char>(slots.size(), 0));
     }
 
+    /// Replaces `setReserve`: bucket `b` of map `m` reserves `bucket_reserves_[m][b]` keys. No cap at the spill budget:
+    /// they come from the keys the build counted, which the maps get anyway.
+    void setBucketReserves(std::vector<std::vector<size_t>> bucket_reserves_)
+    {
+        bucket_reserves = std::move(bucket_reserves_);
+        reserved_cells.assign(bucket_reserves.size(), {});
+        for (size_t map_idx = 0; map_idx < bucket_reserves.size(); ++map_idx)
+            reserved_cells[map_idx].assign(bucket_reserves[map_idx].size(), 0);
+        reserved.assign(bucket_reserves.size(), std::vector<char>(slots.size(), 0));
+    }
+
+    bool hasBucketReserves() const { return !bucket_reserves.empty(); }
+
+    /// After the inserts: the number of buckets of map `map_idx` that grew past the size `setBucketReserves` gave them.
+    template <typename Map>
+    size_t countGrownBuckets(const Map & map, size_t map_idx) const
+    {
+        size_t grown = 0;
+        if constexpr (!is_partitioned_fixed_table<Map>)
+            for (size_t bucket = 0; bucket < Map::NUM_BUCKETS; ++bucket)
+                grown += reserved_cells[map_idx][bucket] && map.impls[bucket].getBufferSizeInCells() > reserved_cells[map_idx][bucket];
+        return grown;
+    }
+
     /// Call under the lock of `slot`; `map` is map `map_idx`. On the first insert of `slot` into it, reserves the
-    /// slot's share of `reserve_keys` over the slot's buckets. Returns that share, or 0 when nothing was reserved.
-    /// The caller uses the returned share only for `HashJoinPreallocatedElementsInHashTables`.
+    /// slot's buckets: each to its size from `setBucketReserves` when that was called, otherwise to its share of
+    /// `reserve_keys`. Returns the keys reserved for the slot, or 0 when nothing was reserved. The caller uses them only
+    /// for the preallocation profile events.
     template <typename Map>
     size_t reserveOnFirstInsert(Map & map, size_t map_idx, size_t slot)
     {
@@ -86,7 +112,21 @@ public:
             return 0;
         else
         {
-            if (!reserve_keys || reserved[map_idx][slot])
+            if (reserved.empty() || reserved[map_idx][slot])
+                return 0;
+            if (!bucket_reserves.empty())
+            {
+                size_t keys = 0;
+                for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
+                {
+                    map.impls[bucket].reserve(deferredReserveKeys<typename Map::Impl::grower_type>(bucket_reserves[map_idx][bucket]));
+                    reserved_cells[map_idx][bucket] = map.impls[bucket].getBufferSizeInCells();
+                    keys += bucket_reserves[map_idx][bucket];
+                }
+                reserved[map_idx][slot] = 1;
+                return keys;
+            }
+            if (!reserve_keys)
                 return 0;
             for (size_t bucket = slot; bucket < Map::NUM_BUCKETS; bucket += slots.size())
                 map.impls[bucket].reserve(reserve_keys / Map::NUM_BUCKETS);
@@ -148,6 +188,10 @@ private:
     size_t reserve_keys = 0;
     /// Per map, per slot. A slot's flags are used only under its lock.
     std::vector<std::vector<char>> reserved;
+    /// Per map, per bucket, see `setBucketReserves`: the keys to reserve, and the buffer size in cells right after the
+    /// reserve, which `countGrownBuckets` compares with. A bucket's entries are used only under the lock of its slot.
+    std::vector<std::vector<size_t>> bucket_reserves;
+    std::vector<std::vector<size_t>> reserved_cells;
 };
 
 }

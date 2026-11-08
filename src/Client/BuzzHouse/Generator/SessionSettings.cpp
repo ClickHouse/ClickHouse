@@ -380,6 +380,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_function_early_short_circuit", trueOrFalseSetting},
        {"enable_group_by_top_k_dynamic_filtering", trueOrFalseSetting},
        {"enable_group_by_top_k_optimization", trueOrFalseSetting},
+       {"enable_hash_join_deferred_build", trueOrFalseSetting},
        {"enable_hash_join_row_store", trueOrFalseSetting},
        {"enable_identifier_resolve_cache", trueOrFalseSetting},
        {"enable_join_fixed_hash_table_conversion", trueOrFalseSetting},

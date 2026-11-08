@@ -1,0 +1,20 @@
+plain	300000
+subquery	300000
+toYear	300000
+intDiv	300000
+cast	300000
+plus	300000
+filter	150000
+limit	1000
+group_by	30000
+union	600000
+05418 neg_cast	0	1
+05418 neg_filter	0	1
+05418 neg_group_by	0	1
+05418 neg_intDiv	0	1
+05418 neg_limit	0	1
+05418 neg_plus	0	1
+05418 neg_toYear	0	1
+05418 neg_union	0	1
+05418 plain	1	0
+05418 subquery	1	0

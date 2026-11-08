@@ -30,6 +30,8 @@ opts=(
     # which keeps the original left-deep tree and yields prealloc=0 even with the fix.
     --query_plan_optimize_join_order_limit=64
     --query_plan_optimize_join_order_randomize=0
+    # Only the statistics of earlier runs may size the builds, not the column statistics.
+    --use_statistics=0
 )
 
 # Use unique table names to avoid colliding with other tests sharing the test database.

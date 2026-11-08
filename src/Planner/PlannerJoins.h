@@ -268,6 +268,8 @@ struct JoinAlgorithmParams
     std::chrono::milliseconds lock_acquire_timeout{};
 
     std::optional<UInt64> rhs_size_estimation;
+    /// See `TableJoin::rightKeyDistinctValuesFromUniq`.
+    std::optional<UInt64> rhs_key_distinct_values_from_uniq;
     std::optional<UInt64> result_rows_estimation;
 
     explicit JoinAlgorithmParams(const Context & context);
