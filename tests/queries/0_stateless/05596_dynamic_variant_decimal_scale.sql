@@ -10,7 +10,13 @@ SELECT toString(m['b']) FROM values('m Map(String, Dynamic)', map('a', toDecimal
 SELECT toString(a) FROM values('a Array(Dynamic)', [toDecimal64(1.23, 2)::Dynamic, toDecimal64(1.234, 3)::Dynamic]) ARRAY JOIN a;
 
 DROP TABLE IF EXISTS t_variant_decimal_scale;
-CREATE TABLE t_variant_decimal_scale (x Variant(Decimal(18, 2), String)) ENGINE = Memory;
+CREATE TABLE t_variant_decimal_scale (x Variant(Decimal(18, 2), Array(String))) ENGINE = Memory;
 INSERT INTO t_variant_decimal_scale VALUES (toDecimal64(1.234, 3)), (toDecimal64(1.2, 1));
 SELECT x, variantType(x) FROM t_variant_decimal_scale;
 DROP TABLE t_variant_decimal_scale;
+
+DROP TABLE IF EXISTS t_variant_datetime64_scale;
+CREATE TABLE t_variant_datetime64_scale (x Variant(DateTime64(6, 'UTC'), String)) ENGINE = Memory;
+INSERT INTO t_variant_datetime64_scale VALUES (toDateTime64('2024-01-01 00:00:00.123', 3, 'UTC'));
+SELECT x, variantType(x) FROM t_variant_datetime64_scale;
+DROP TABLE t_variant_datetime64_scale;
