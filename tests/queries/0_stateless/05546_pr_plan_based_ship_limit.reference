@@ -50,4 +50,4 @@ replicas used	1	at most 150 rows each	1
 50
 
 100
-read rows < 10000	1
+LIMITs that read all data	1

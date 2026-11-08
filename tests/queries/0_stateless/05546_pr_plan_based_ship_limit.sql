@@ -57,14 +57,11 @@ WHERE initial_query_id = (
 
 SELECT '--- an outer WITH TOTALS does not make the inner LIMIT read till the end';
 SELECT count() FROM (SELECT * FROM t_pr_ship_limit LIMIT 100) GROUP BY n % 2 WITH TOTALS LIMIT 1
-SETTINGS parallel_replicas_local_plan = 1, max_threads = 1, max_block_size = 128, log_comment = '05546_inner_limit_totals';
-SYSTEM FLUSH LOGS query_log;
-SELECT 'read rows < 10000', read_rows < 10000
-FROM system.query_log
-WHERE type = 'QueryFinish' AND is_initial_query = 1 AND current_database = currentDatabase()
-  AND log_comment = '05546_inner_limit_totals'
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
-ORDER BY event_time DESC LIMIT 1;
+SETTINGS parallel_replicas_local_plan = 1;
+-- `Reads all data` marks a `LIMIT` that reads till the end. Only the outer `LIMIT 1` does it.
+-- the `Limit` under the inner `LIMIT 100`, which EXPLAIN shows in the local replica's plan, does not.
+SELECT 'LIMITs that read all data', countIf(explain LIKE '%Reads all data%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM (SELECT * FROM t_pr_ship_limit LIMIT 100) GROUP BY n % 2 WITH TOTALS LIMIT 1 SETTINGS parallel_replicas_local_plan = 1);
 
 DROP TABLE t_pr_ship_limit;
 DROP TABLE t_pr_ship_limit_2;
