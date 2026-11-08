@@ -38,6 +38,7 @@ class RunnerLabels:
     MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
     AMD_TINY = ["self-hosted", "amd-tiny"]
     ARM_TINY = ["self-hosted", "arm-tiny"]
+    ARM_SMALL_REVIEW = ["self-hosted", "arm-small-review"]
     RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
@@ -475,12 +476,13 @@ class JobNames:
     # No "++": the job name becomes the GitHub Actions job id via
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
+    DATALAKE_FUZZER = "Data lake fuzzer"
     LLVM_COVERAGE = "LLVM Coverage"
     PROMQL_COMPLIANCE = "PromQL Compliance"
     BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
-    BUZZHOUSE = "BuzzHouse"
+    LACASADELDOLOR = "La Casa Del Dolor"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
     # Per-arch bugfix validation jobs. Each runs the new/modified test on
@@ -888,7 +890,7 @@ class ArtifactConfigs:
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",
             f"{TEMP_DIR}/build/programs/*_fuzzer.options",
-            f"{TEMP_DIR}/build/programs/all.dict",
+            f"{TEMP_DIR}/build/programs/*.dict",
         ],
     )
     fuzzers_corpus = Artifact.Config(

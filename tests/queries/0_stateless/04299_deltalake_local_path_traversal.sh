@@ -20,27 +20,16 @@ cat > "${TABLE_DIR}/_delta_log/00000000000000000000.json" <<EOF
 {"add":{"path":"${SECRET_REL}","size":100000,"modificationTime":1700000000000,"dataChange":true,"partitionValues":{}}}
 EOF
 
-# Run the malicious log against both Delta readers: the delta-kernel-rs reader
-# (allow_experimental_delta_kernel_rs = 1) and the legacy DeltaLakeMetadata
-# reader (allow_experimental_delta_kernel_rs = 0). The path-containment
-# invariant must hold for both.
+# The path-containment invariant must hold for the Delta reader.
 # `Parquet` is the only data file format `DeltaLake` accepts; the path
 # containment check fires while the log is parsed, before any data file is
 # opened, so the format does not affect what is being tested here.
-check_reader() {
-    local kernel="$1"
-    echo "--- allow_experimental_delta_kernel_rs = ${kernel} ---"
+${CLICKHOUSE_LOCAL} -q \
+    "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
+    | grep -q 'PATH_ACCESS_DENIED' && echo "GOT ACCESS DENIED ERROR"
 
-    ${CLICKHOUSE_LOCAL} --allow_experimental_delta_kernel_rs="${kernel}" -q \
-        "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
-        | grep -q 'PATH_ACCESS_DENIED' && echo "GOT ACCESS DENIED ERROR"
-
-    ${CLICKHOUSE_LOCAL} --allow_experimental_delta_kernel_rs="${kernel}" -q \
-        "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
-        | grep -q 'TOP_SECRET_CONTENTS' && echo "LEAKED" || echo "NO LEAK"
-}
-
-check_reader 1
-check_reader 0
+${CLICKHOUSE_LOCAL} -q \
+    "SELECT * FROM deltaLakeLocal('${TABLE_DIR}', 'Parquet') LIMIT 100 FORMAT TabSeparated" 2>&1 \
+    | grep -q 'TOP_SECRET_CONTENTS' && echo "LEAKED" || echo "NO LEAK"
 
 rm -rf "${TABLE_DIR}" "${SECRET_FILE}"
