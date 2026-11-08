@@ -668,6 +668,36 @@ void validateSnapshotForMutation(
                     "but data file `{}` has format `{}`",
                     file_entry->parsed_entry->file_path_key.serialize(),
                     file_format);
+
+            /// A mutation computes `truncate[W]` of an `int` column as an `int`, so its delete file would not be
+            /// paired with a data file whose recorded value does not fit one.
+            const auto & partition_value = file_entry->normalized_partition_key_value;
+            for (const auto & partition_field : *file_entry->common_partition_specification)
+            {
+                if (!Poco::toLower(partition_field.transform_name).starts_with("truncate") || partition_field.tuple_index < 0
+                    || static_cast<size_t>(partition_field.tuple_index) >= partition_value.size())
+                    continue;
+
+                const auto source = persistent_table_components.schema_processor->tryGetFieldCharacteristics(
+                    current_schema_id, partition_field.source_id);
+                if (!source || !WhichDataType(removeNullable(source->type)).isInt32())
+                    continue;
+
+                const auto & value = partition_value[partition_field.tuple_index];
+                if (value.getType() != Field::Types::Int64)
+                    continue;
+
+                const Int64 recorded_value = value.safeGet<Int64>();
+                if (recorded_value < std::numeric_limits<Int32>::min() || recorded_value > std::numeric_limits<Int32>::max())
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Iceberg DELETE and UPDATE are not supported for this table: data file `{}` has `{}` partition value {}, "
+                        "which does not fit the Iceberg `int` type (written by an older ClickHouse version). "
+                        "Copy the rows into a new table to mutate them",
+                        file_entry->parsed_entry->file_path_key.serialize(),
+                        partition_field.partition_name,
+                        recorded_value);
+            }
         }
 
         for (const auto & file_entry : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))

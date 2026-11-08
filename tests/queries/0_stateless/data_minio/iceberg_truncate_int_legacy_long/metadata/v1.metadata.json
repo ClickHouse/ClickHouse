@@ -1,0 +1,68 @@
+{
+    "current-schema-id" : 0,
+    "current-snapshot-id" : -1,
+    "default-sort-order-id" : 0,
+    "default-spec-id" : 0,
+    "format-version" : 2,
+    "last-column-id" : 2,
+    "last-partition-id" : 1000,
+    "last-sequence-number" : 0,
+    "last-updated-ms" : 1794171533807,
+    "location" : "/tmp/iceberg_data_05615/legacy/",
+    "metadata-log" : [
+
+    ],
+    "partition-specs" : [
+        {
+            "fields" : [
+                {
+                    "field-id" : 1000,
+                    "name" : "x",
+                    "source-id" : 2,
+                    "transform" : "truncate[10]"
+                }
+            ],
+            "spec-id" : 0
+        }
+    ],
+    "refs" : {
+    },
+    "schemas" : [
+        {
+            "fields" : [
+                {
+                    "id" : 1,
+                    "name" : "id",
+                    "required" : true,
+                    "type" : "int"
+                },
+                {
+                    "id" : 2,
+                    "name" : "x",
+                    "required" : true,
+                    "type" : "int"
+                }
+            ],
+            "schema-id" : 0,
+            "type" : "struct"
+        }
+    ],
+    "snapshot-log" : [
+
+    ],
+    "snapshots" : [
+
+    ],
+    "sort-orders" : [
+        {
+            "fields" : [
+
+            ],
+            "order-id" : 0
+        }
+    ],
+    "statistics" : [
+
+    ],
+    "table-uuid" : "08b7c117-fd75-4d00-ae13-99b331638c22"
+}

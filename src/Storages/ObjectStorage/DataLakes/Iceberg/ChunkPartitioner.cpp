@@ -6,7 +6,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -23,6 +26,28 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+bool isTruncateOfInt(const String & transform_function_name, const String & source_iceberg_type)
+{
+    return transform_function_name == "icebergTruncate" && source_iceberg_type == "int";
+}
+
+/// `truncate[W]` keeps the Iceberg type of its source, while `icebergTruncate` widens `Int32` to `Int64`.
+DataTypePtr icebergPartitionFieldType(
+    const String & transform_function_name, const DataTypePtr & transform_result_type, const String & source_iceberg_type)
+{
+    if (!isTruncateOfInt(transform_function_name, source_iceberg_type))
+        return transform_result_type;
+
+    DataTypePtr field_type = std::make_shared<DataTypeInt32>();
+    return transform_result_type->isNullable() ? makeNullable(field_type) : field_type;
+}
+
 }
 
 ChunkPartitioner::ChunkPartitioner(
@@ -31,11 +56,15 @@ ChunkPartitioner::ChunkPartitioner(
     , max_partitions_count(context->getSettingsRef()[Setting::iceberg_insert_max_partitions])
 {
     std::unordered_map<Int32, String> id_to_column;
+    std::unordered_map<Int32, String> id_to_iceberg_type;
     {
         for (size_t i = 0; i < schema_fields->size(); ++i)
         {
             auto field = schema_fields->getObject(static_cast<UInt32>(i));
-            id_to_column[field->getValue<Int32>(Iceberg::f_id)] = field->getValue<String>(Iceberg::f_name);
+            auto field_id = field->getValue<Int32>(Iceberg::f_id);
+            id_to_column[field_id] = field->getValue<String>(Iceberg::f_name);
+            if (const auto & field_type = field->get(Iceberg::f_type); field_type.isString())
+                id_to_iceberg_type[field_id] = field_type.extract<String>();
         }
     }
     for (size_t i = 0; i != partition_specification->size(); ++i)
@@ -63,7 +92,14 @@ ChunkPartitioner::ChunkPartitioner(
             columns_for_function.push_back(ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), ""));
         columns_for_function.push_back(sample_block_->getByName(column_name));
 
-        result_data_types.push_back(function->getReturnType(columns_for_function));
+        String source_iceberg_type;
+        if (auto it = id_to_iceberg_type.find(source_id); it != id_to_iceberg_type.end())
+            source_iceberg_type = it->second;
+
+        auto transform_result_type = function->getReturnType(columns_for_function);
+        transform_result_data_types.push_back(transform_result_type);
+        result_data_types.push_back(icebergPartitionFieldType(transform_and_argument->transform_name, transform_result_type, source_iceberg_type));
+        is_truncate_of_int.push_back(isTruncateOfInt(transform_and_argument->transform_name, source_iceberg_type));
         functions.push_back(function);
         function_params.push_back(transform_and_argument->argument);
         columns_to_apply.push_back(column_name);
@@ -99,6 +135,15 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     Columns functions_columns;
     for (size_t transform_ind = 0; transform_ind < functions.size(); ++transform_ind)
     {
+        /// The final cast equals Java's 32-bit `v - (((v % W) + W) % W)` only while `2W - 1` fits in `int`.
+        if (is_truncate_of_int[transform_ind] && function_params[transform_ind].value_or(0) > (1ULL << 30))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Writing an Iceberg `truncate[{}]` partition of the `int` column {} is not supported for widths above 2^30: "
+                "Iceberg implementations compute different values for them",
+                *function_params[transform_ind],
+                columns_to_apply[transform_ind]);
+
         ColumnsWithTypeAndName arguments;
         if (function_params[transform_ind].has_value())
         {
@@ -109,8 +154,13 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             arguments.push_back(ColumnWithTypeAndName(const_column->clone(), type, "#"));
         }
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
+        const auto & transform_result_type = transform_result_data_types[transform_ind];
+        const auto & partition_field_type = result_data_types[transform_ind];
         auto result
-            = functions[transform_ind]->build(arguments)->execute(arguments, result_data_types[transform_ind], chunk.getNumRows(), false);
+            = functions[transform_ind]->build(arguments)->execute(arguments, transform_result_type, chunk.getNumRows(), false);
+        /// A wrapping cast: it stores the 32-bit value Iceberg Java and iceberg-rust compute for an `int` near -2147483648.
+        if (!transform_result_type->equals(*partition_field_type))
+            result = castColumn(ColumnWithTypeAndName(result, transform_result_type, ""), partition_field_type);
         functions_columns.push_back(result);
         raw_columns.push_back(result.get());
 
