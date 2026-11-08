@@ -38,11 +38,20 @@ public:
 
     static SharedHeader addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_);
 
-    /// The columns whose `DEFAULT` or `MATERIALIZED` expression a transform built with the same arguments
-    /// evaluates: the expired ones, the ones whose column TTL is due, which `TTLColumnAlgorithm` resets to their
-    /// default, and the dependents that it recomputes. A stale dependent that is expired, read by a key or
-    /// non-deterministic is not recomputed.
-    static NameSet getColumnsWithEvaluatedDefaults(
+    /// What a transform built with the same arguments evaluates.
+    struct EvaluatedExpressions
+    {
+        /// The columns whose `DEFAULT` or `MATERIALIZED` expression it evaluates: the expired ones, the ones whose
+        /// column TTL is due, which `TTLColumnAlgorithm` resets to their default, and the dependents that it
+        /// recomputes. A stale dependent that is expired, read by a key or non-deterministic is not recomputed.
+        NameSet columns_with_evaluated_defaults;
+
+        /// The columns that its `DELETE` rules and column TTLs read. Such a rule is evaluated only once it is due,
+        /// unlike a `GROUP BY`, move or `RECOMPRESS` rule, which is evaluated by every merge.
+        NameSet columns_read_by_due_ttls;
+    };
+
+    static EvaluatedExpressions getEvaluatedExpressions(
         const MergeTreeData & storage,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeDataPartTTLInfos & ttl_infos,

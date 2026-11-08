@@ -436,37 +436,49 @@ NameSet getColumnsWithDefaultsEvaluatedByMerge(
     return result;
 }
 
-/// The columns that the expressions evaluated by a merge may read: the TTL rules, the skip indices, the
-/// projections and the `DEFAULT` and `MATERIALIZED` expressions of @columns_with_evaluated_defaults. An `ALIAS` or
-/// `EPHEMERAL` column, which is not stored, stands for the columns its expression reads, a subcolumn for its column
-/// and a flattened `Nested` for all of its arrays. A stored column stands for itself: its own default is evaluated
-/// only if it is in @columns_with_evaluated_defaults too. The ASTs are walked syntactically, so an identifier that
-/// is not a column of the table (a lambda argument, a column of a subquery) at worst adds a column that is then
-/// read for nothing.
+/// The columns that the expressions evaluated by a merge may read: the TTL rules that are evaluated, the skip
+/// indices that are built, the projections that are rebuilt and the `DEFAULT` and `MATERIALIZED` expressions of
+/// @columns_with_evaluated_defaults. A `DELETE` rule or a column TTL counts only through @columns_read_by_due_ttls,
+/// the other rules of the table always. An `ALIAS` or `EPHEMERAL` column, which is not stored, stands for the columns
+/// its expression reads, a subcolumn for its column and a flattened `Nested` for all of its arrays. A stored column
+/// stands for itself: its own default is evaluated only if it is in @columns_with_evaluated_defaults too. The ASTs are
+/// walked syntactically, so an identifier that is not a column of the table (a lambda argument, a column of a subquery)
+/// at worst adds a column that is then read for nothing.
 class ColumnsReadByMergeExpressions
 {
 public:
-    ColumnsReadByMergeExpressions(const StorageInMemoryMetadata & metadata, const NameSet & columns_with_evaluated_defaults)
+    ColumnsReadByMergeExpressions(
+        const StorageInMemoryMetadata & metadata,
+        const NameSet & columns_with_evaluated_defaults,
+        const NameSet & columns_read_by_due_ttls,
+        const std::vector<const IndicesDescription *> & built_indices,
+        const std::vector<ProjectionDescriptionRawPtr> & rebuilt_projections)
         : columns(metadata.getColumns())
     {
         if (const auto & table_ttl = metadata.getTableTTLs().definition_ast)
-            addIdentifiers(*table_ttl);
-
-        for (const auto & column : columns)
         {
-            if (column.ttl)
-                addIdentifiers(*column.ttl);
-
-            if (hasStoredDefault(column) && columns_with_evaluated_defaults.contains(column.name))
-                addIdentifiers(*column.default_desc.expression);
+            for (const auto & element : table_ttl->children)
+            {
+                const auto * ttl_element = element->as<ASTTTLElement>();
+                if (!ttl_element || ttl_element->mode != TTLMode::DELETE)
+                    addIdentifiers(*element);
+            }
         }
 
-        for (const auto & index : metadata.getSecondaryIndices())
-            for (const auto & name : index.expression->getRequiredColumns())
-                addColumn(name);
+        for (const auto & name : columns_read_by_due_ttls)
+            addColumn(name);
 
-        for (const auto & projection : metadata.getProjections())
-            for (const auto & name : projection.getRequiredColumns())
+        for (const auto & column : columns)
+            if (hasStoredDefault(column) && columns_with_evaluated_defaults.contains(column.name))
+                addIdentifiers(*column.default_desc.expression);
+
+        for (const auto * indices : built_indices)
+            for (const auto & index : *indices)
+                for (const auto & name : index.expression->getRequiredColumns())
+                    addColumn(name);
+
+        for (const auto * projection : rebuilt_projections)
+            for (const auto & name : projection->getRequiredColumns())
                 addColumn(name);
     }
 
@@ -3683,20 +3695,28 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             if (std::find(merging_column_names.begin(), merging_column_names.end(), column.name) == merging_column_names.end())
             {
                 if (!columns_read_by_expressions)
+                {
+                    const auto evaluated_by_ttl = TTLTransform::getEvaluatedExpressions(
+                        *global_ctx->data,
+                        global_ctx->metadata_snapshot,
+                        global_ctx->new_data_part->ttl_infos,
+                        global_ctx->merging_columns_expired_by_ttl,
+                        global_ctx->time_of_merge,
+                        ctx->force_ttl);
+
+                    /// A horizontal merge builds every index in `merging_skip_indexes` and `text_indexes_to_merge`.
                     columns_read_by_expressions.emplace(
                         *global_ctx->metadata_snapshot,
                         getColumnsWithDefaultsEvaluatedByMerge(
                             *global_ctx->metadata_snapshot,
                             global_ctx->future_part->parts,
                             global_ctx->alter_conversions,
-                            TTLTransform::getColumnsWithEvaluatedDefaults(
-                                *global_ctx->data,
-                                global_ctx->metadata_snapshot,
-                                global_ctx->new_data_part->ttl_infos,
-                                global_ctx->merging_columns_expired_by_ttl,
-                                global_ctx->time_of_merge,
-                                ctx->force_ttl),
-                            /* share_nested_offsets = */ true));
+                            evaluated_by_ttl.columns_with_evaluated_defaults,
+                            /* share_nested_offsets = */ true),
+                        evaluated_by_ttl.columns_read_by_due_ttls,
+                        std::vector<const IndicesDescription *>{&global_ctx->merging_skip_indexes, &global_ctx->text_indexes_to_merge},
+                        global_ctx->projections_to_rebuild);
+                }
 
                 if (!columns_read_by_expressions->contains(column.name))
                     continue;

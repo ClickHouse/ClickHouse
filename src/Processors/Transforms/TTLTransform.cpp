@@ -139,7 +139,7 @@ NameSet TTLTransform::getResetColumns(const StorageMetadataPtr & metadata_snapsh
     return reset_columns;
 }
 
-NameSet TTLTransform::getColumnsWithEvaluatedDefaults(
+TTLTransform::EvaluatedExpressions TTLTransform::getEvaluatedExpressions(
     const MergeTreeData & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartTTLInfos & ttl_infos,
@@ -147,16 +147,41 @@ NameSet TTLTransform::getColumnsWithEvaluatedDefaults(
     time_t current_time,
     bool force)
 {
-    NameSet result = expired_columns_.getNameSet();
+    EvaluatedExpressions result;
+    const auto expired_column_names = expired_columns_.getNameSet();
+    result.columns_with_evaluated_defaults = expired_column_names;
 
-    /// `TTLColumnAlgorithm::execute` evaluates the default only once the minimum TTL of the column is due,
-    /// as `ITTLAlgorithm::isMinTTLExpired` states. Its bound is the one this transform reads from the new part.
-    for (const auto & [name, _] : metadata_snapshot->getColumnTTLs())
+    /// `TTLDeleteAlgorithm` and `TTLColumnAlgorithm` evaluate nothing until the minimum bound of their rule is due,
+    /// as `ITTLAlgorithm::isMinTTLExpired` states. The bounds are the ones this transform reads from the new part.
+    auto is_due = [&](const MergeTreeDataPartTTLInfo * info) { return force || (info && info->min && info->min <= current_time); };
+    auto find_info = [](const TTLInfoMap & infos, const String & key) -> const MergeTreeDataPartTTLInfo *
     {
-        auto it = ttl_infos.columns_ttl.find(name);
-        const time_t min_ttl = it == ttl_infos.columns_ttl.end() ? 0 : it->second.min;
-        if (force || (min_ttl && min_ttl <= current_time))
-            result.insert(name);
+        auto it = infos.find(key);
+        return it == infos.end() ? nullptr : &it->second;
+    };
+    auto add_columns_read_by = [&](const TTLDescription & description)
+    {
+        for (const auto & column : description.expression_columns)
+            result.columns_read_by_due_ttls.insert(column.name);
+        for (const auto & column : description.where_expression_columns)
+            result.columns_read_by_due_ttls.insert(column.name);
+    };
+
+    if (metadata_snapshot->hasRowsTTL() && is_due(&ttl_infos.table_ttl))
+        add_columns_read_by(metadata_snapshot->getRowsTTL());
+
+    for (const auto & where_ttl : metadata_snapshot->getRowsWhereTTLs())
+        if (is_due(find_info(ttl_infos.rows_where_ttl, where_ttl.result_column)))
+            add_columns_read_by(where_ttl);
+
+    /// No `TTLColumnAlgorithm` is built for an expired column.
+    for (const auto & [name, description] : metadata_snapshot->getColumnTTLs())
+    {
+        if (!expired_column_names.contains(name) && is_due(find_info(ttl_infos.columns_ttl, name)))
+        {
+            add_columns_read_by(description);
+            result.columns_with_evaluated_defaults.insert(name);
+        }
     }
 
     /// The dependents are recomputed whether the TTL is due or not. The dependency on a shared offsets
@@ -165,10 +190,9 @@ NameSet TTLTransform::getColumnsWithEvaluatedDefaults(
     if (reset_columns.empty())
         return result;
 
-    for (const auto & level : analyzeDependentMaterializedColumns(
-             storage, metadata_snapshot, reset_columns, expired_columns_.getNameSet(), {}))
+    for (const auto & level : analyzeDependentMaterializedColumns(storage, metadata_snapshot, reset_columns, expired_column_names, {}))
         for (const auto & dependent : level)
-            result.insert(dependent.name);
+            result.columns_with_evaluated_defaults.insert(dependent.name);
     return result;
 }
 

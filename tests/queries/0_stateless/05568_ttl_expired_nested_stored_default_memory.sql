@@ -80,3 +80,59 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 'ttl_nested_stored_future_ttl' AND event_type = 'MergeParts';
 
 DROP TABLE ttl_nested_stored_future_ttl;
+
+-- An index that the merge does not build: `materialize_skip_indexes_on_merge = 0`, so `n.d` is not read for it.
+DROP TABLE IF EXISTS ttl_nested_index_not_built;
+CREATE TABLE ttl_nested_index_not_built (id UInt64, ts DateTime, n Nested(a UInt8))
+ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 100 YEAR
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, merge_max_block_size = 8192,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0,
+    materialize_skip_indexes_on_merge = 0;
+INSERT INTO ttl_nested_index_not_built SELECT number, '2000-01-01', range(16) FROM numbers(8192);
+INSERT INTO ttl_nested_index_not_built SELECT number + 8192, '2000-01-01', range(16) FROM numbers(8192);
+ALTER TABLE ttl_nested_index_not_built ADD COLUMN n.d Array(FixedString(256));
+ALTER TABLE ttl_nested_index_not_built ADD INDEX i length(n.d) TYPE minmax;
+
+OPTIMIZE TABLE ttl_nested_index_not_built FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT count(), sum(length(n.a)), sum(length(n.d)) FROM ttl_nested_index_not_built;
+SELECT arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_index_not_built' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
+
+SYSTEM FLUSH LOGS part_log;
+SELECT (peak_memory_usage < 40 * 1024 * 1024 AS ok) ? ok : peak_memory_usage FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND database = currentDatabase() AND table = 'ttl_nested_index_not_built' AND event_type = 'MergeParts';
+
+DROP TABLE ttl_nested_index_not_built;
+
+-- A `DELETE` rule that is not due: `TTLDeleteAlgorithm` does not evaluate it, so `n.d` is not read for it. The
+-- rule is added after the inserts, so the first merge forces it and stores its bound, and the second one is checked.
+-- Without the rule, the second merge peaks at about 11 MiB; reading `n.d` for it takes it to about 38 MiB.
+DROP TABLE IF EXISTS ttl_nested_delete_not_due;
+CREATE TABLE ttl_nested_delete_not_due (id UInt64, ts DateTime, n Nested(a UInt8))
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, merge_max_block_size = 8192,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+INSERT INTO ttl_nested_delete_not_due SELECT number, '2000-01-01', range(16) FROM numbers(8192);
+INSERT INTO ttl_nested_delete_not_due SELECT number + 8192, '2000-01-01', range(16) FROM numbers(8192);
+ALTER TABLE ttl_nested_delete_not_due ADD COLUMN n.d Array(FixedString(256));
+ALTER TABLE ttl_nested_delete_not_due MODIFY TTL ts + INTERVAL 100 YEAR DELETE WHERE length(n.d) = 16
+SETTINGS materialize_ttl_after_modify = 0;
+
+OPTIMIZE TABLE ttl_nested_delete_not_due FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT length(rows_where_ttl_info.min), arrayAll(x -> x > now(), rows_where_ttl_info.min) FROM system.parts
+WHERE database = currentDatabase() AND table = 'ttl_nested_delete_not_due' AND active;
+OPTIMIZE TABLE ttl_nested_delete_not_due FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT count(), sum(length(n.a)), sum(length(n.d)) FROM ttl_nested_delete_not_due;
+SELECT arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_delete_not_due' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
+
+SYSTEM FLUSH LOGS part_log;
+SELECT (peak_memory_usage < 24 * 1024 * 1024 AS ok) ? ok : peak_memory_usage FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND database = currentDatabase() AND table = 'ttl_nested_delete_not_due' AND event_type = 'MergeParts'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE ttl_nested_delete_not_due;
