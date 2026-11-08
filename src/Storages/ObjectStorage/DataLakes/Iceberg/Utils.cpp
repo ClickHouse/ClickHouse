@@ -871,7 +871,7 @@ void validateTableMetadata(const Poco::JSON::Object & metadata, const String & m
         checkField(metadata, {f_default_sort_order_id, MetadataFieldType::Int32, 1}, format_version, "", metadata_file_path);
 
     checkEntries(metadata, f_partition_specs, partition_spec_fields, format_version, metadata_file_path, "", partition_field_fields);
-    /// Java reads the deprecated `partition-spec` only when `partition-specs` is absent.
+    /// The deprecated `partition-spec` is ignored when `partition-specs` is present.
     if (metadata.isNull(f_partition_specs))
         checkEntries(metadata, f_partition_spec, partition_field_fields, format_version, metadata_file_path);
     checkEntries(metadata, f_sort_orders, sort_order_fields, format_version, metadata_file_path, "", sort_field_fields);
@@ -948,7 +948,6 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
-/// `validate` is false only for the candidates of the latest metadata file selection, which may be other tables' files.
 static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
