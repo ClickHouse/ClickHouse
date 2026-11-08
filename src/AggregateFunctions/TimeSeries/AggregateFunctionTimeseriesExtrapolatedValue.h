@@ -59,6 +59,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         Float64 resets_error = 0;
         /// Set when an addition to `resets_error` was rounded, so `resets + resets_error` may no longer be exact.
         bool resets_error_inexact = false;
+        /// Set in the exact mode, the only one that keeps `resets_error`.
+        bool exact = false;
 
         void merge(const Summary & added)
         {
@@ -72,11 +74,14 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             if constexpr (check_resets)
             {
                 if (last_value > added.first_value)
-                    addToResets(static_cast<Float64>(last_value));     /// reset across the bucket boundary
+                    addToResets(static_cast<Float64>(last_value), added.exact);     /// reset across the bucket boundary
             }
-            addToResets(added.resets);
-            addToResetsError(added.resets_error);
-            resets_error_inexact |= added.resets_error_inexact;
+            addToResets(added.resets, added.exact);
+            if (added.exact)
+            {
+                addToResetsError(added.resets_error);
+                resets_error_inexact |= added.resets_error_inexact;
+            }
             last_timestamp = added.last_timestamp;
             last_value = added.last_value;
             count += added.count;
@@ -84,26 +89,27 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void unmerge(const Summary & leaving, const Summary * new_first)
         {
-            addToResets(-leaving.resets);
-            addToResetsError(-leaving.resets_error);
+            addToResets(-leaving.resets, leaving.exact);
+            if (leaving.exact)
+                addToResetsError(-leaving.resets_error);
             count -= leaving.count;
             if (new_first)
             {
                 if constexpr (check_resets)
                 {
                     if (leaving.last_value > new_first->first_value)
-                        addToResets(-static_cast<Float64>(leaving.last_value));     /// drop the cross-boundary reset
+                        addToResets(-static_cast<Float64>(leaving.last_value), leaving.exact);     /// drop the cross-boundary reset
                 }
                 first_timestamp = new_first->first_timestamp;
                 first_value = new_first->first_value;
             }
         }
 
-        /// `resets += value`, with the rounding error of the addition added to `resets_error` (the TwoSum algorithm).
-        void addToResets(Float64 value)
+        /// `resets += value`, with the rounding error of the addition added to `resets_error` (the TwoSum algorithm) if `exact_mode`.
+        void addToResets(Float64 value, bool exact_mode)
         {
             const Float64 sum = resets + value;
-            if (std::isfinite(sum))
+            if (exact_mode && std::isfinite(sum))
             {
                 const Float64 value_part = sum - resets;
                 addToResetsError((resets - (sum - value_part)) + (value - value_part));
@@ -137,6 +143,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         Int64 grid_ticks_per_second;
         Int64 column_to_grid_multiplier;
         bool exact_rate;
+        /// The exact mode: the last sample that left the window, with its timestamp on the grid scale.
+        std::optional<std::pair<GridScaleTimestampType, Summary>> last_removed;
 
         Aggregator(GridScaleIntervalType window_, Int64 grid_ticks_per_second_, Int64 column_to_grid_multiplier_, bool exact_rate_)
             : window(window_), grid_ticks_per_second(grid_ticks_per_second_), column_to_grid_multiplier(column_to_grid_multiplier_)
@@ -158,6 +166,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                     summary.last_timestamp = timestamp;
                     summary.last_value = value;
                     summary.count = 1;
+                    summary.exact = true;
                     /// The sample is in a bucket, so its timestamp converted to the scale of the grid can't overflow.
                     const GridScaleTimestampType grid_timestamp{static_cast<Int64>(timestamp) * column_to_grid_multiplier};
                     sliding_sum.add(std::move(summary), grid_timestamp);
@@ -194,21 +203,32 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
+            if (!exact_rate)
+            {
+                sliding_sum.removeBefore(cut_off);
+                return;
+            }
+
+            /// The exact mode measures from the last sample that left the window.
+            for (const auto & timestamp_and_value : sliding_sum.getWindow())
+            {
+                if (timestamp_and_value.first > cut_off)
+                    break;
+                last_removed = timestamp_and_value;
+            }
+
             /// The exact mode sums the window again only if the reset sum overflowed or its error term was rounded.
             /// Otherwise `resets + resets_error` is still exact after big resets left.
             if constexpr (check_resets)
             {
-                if (exact_rate)
-                {
-                    const Float64 resets_before = sliding_sum.getCurrentSum().resets;
-                    const bool removed = sliding_sum.removeBefore(cut_off);
-                    /// An addition can set the flag too, so check it even when nothing left the window.
-                    if ((removed && !std::isfinite(resets_before)) || sliding_sum.getCurrentSum().resets_error_inexact)
-                        sliding_sum.recomputeCurrentSum();
-                    return;
-                }
+                const Float64 resets_before = sliding_sum.getCurrentSum().resets;
+                const bool removed = sliding_sum.removeBefore(cut_off);
+                /// An addition can set the flag too, so check it even when nothing left the window.
+                if ((removed && !std::isfinite(resets_before)) || sliding_sum.getCurrentSum().resets_error_inexact)
+                    sliding_sum.recomputeCurrentSum();
             }
-            sliding_sum.removeBefore(cut_off);
+            else
+                sliding_sum.removeBefore(cut_off);
         }
 
         std::optional<ResultType> getResult(GridScaleTimestampType grid_timestamp) const
@@ -301,7 +321,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             Float64 start_value = first_value;
 
             bool has_previous_sample = false;
-            if (const auto & last_removed = sliding_sum.getLastRemoved())
+            if (last_removed)
             {
                 const Summary & previous = last_removed->second;
                 /// Subtract in `Int128` for the same reason as in `getResult`.

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <utility>
 
 #include <base/Decimal.h>
@@ -86,11 +85,9 @@ public:
         {
             while (!window.empty() && window.front().first <= cut_off)
             {
-                SummaryType leaving = std::move(window.front().second);
-                GridScaleTimestampType ts = window.front().first;
+                const SummaryType leaving = std::move(window.front().second);
                 window.pop_front();
                 current_sum.unmerge(leaving, window.empty() ? nullptr : &window.front().second);
-                last_removed = {ts, std::move(leaving)};
                 removed = true;
             }
         }
@@ -173,13 +170,6 @@ public:
         }
     }
 
-    /// The value that last left the window, with its timestamp, for a rate that needs the sample
-    /// before the window to measure from. Empty until the window has dropped one.
-    const std::optional<std::pair<GridScaleTimestampType, SummaryType>> & getLastRemoved() const
-    {
-        return last_removed;
-    }
-
 private:
     struct StackEntry
     {
@@ -191,7 +181,6 @@ private:
     bool use_two_stacks;
     mutable SummaryType current_sum;
     mutable bool current_sum_valid;
-    std::optional<std::pair<GridScaleTimestampType, SummaryType>> last_removed;
     VectorWithMemoryTracking<StackEntry> back_stack;   /// two-stacks: newer values; pushed here
     VectorWithMemoryTracking<StackEntry> front_stack;  /// two-stacks: older values; popped here
     DequeWithMemoryTracking<std::pair<GridScaleTimestampType, SummaryType>> window;  /// invertible/recompute: in-window values in time order
