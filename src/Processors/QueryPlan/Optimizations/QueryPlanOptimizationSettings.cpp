@@ -39,6 +39,8 @@ namespace Setting
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool cascades_aggregation_pushdown;
     extern const SettingsUInt64 cascades_join_order_alternatives;
+    extern const SettingsString cascades_join_enumeration;
+    extern const SettingsUInt64 cascades_join_enumeration_max_splits;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -413,6 +415,17 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
     cascades_join_order_alternatives = from[Setting::cascades_join_order_alternatives];
+    const String & join_enumeration = from[Setting::cascades_join_enumeration].value;
+    if (join_enumeration == "off")
+        cascades_join_enumeration = JoinEnumeration::Off;
+    else if (join_enumeration == "candidates")
+        cascades_join_enumeration = JoinEnumeration::Candidates;
+    else if (join_enumeration == "all_splits")
+        cascades_join_enumeration = JoinEnumeration::AllSplits;
+    else
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value '{}' of setting `cascades_join_enumeration`, expected 'off', 'candidates' or 'all_splits'", join_enumeration);
+    cascades_join_enumeration_max_splits = from[Setting::cascades_join_enumeration_max_splits];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

@@ -174,6 +174,15 @@ struct QueryPlanOptimizationSettings
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
     size_t cascades_join_order_alternatives = 4;
+    /// See setting `cascades_join_enumeration`.
+    enum class JoinEnumeration : uint8_t
+    {
+        Off,
+        Candidates,
+        AllSplits,
+    };
+    JoinEnumeration cascades_join_enumeration = JoinEnumeration::Off;
+    size_t cascades_join_enumeration_max_splits = 20000;
     /// Set by the second pass while the plan will go through Cascades: join reordering then also builds a
     /// other join orders for Cascades to choose from, see `JoinGraphStep`.
     mutable bool build_join_order_alternatives = false;

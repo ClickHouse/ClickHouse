@@ -1,6 +1,8 @@
 #pragma once
 
 #include <concepts>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -91,6 +93,36 @@ struct ConflictJoinOp
     JoinStrictness strictness = JoinStrictness::All;
 };
 
+/// Every split of a set of relations that the DPsub search accepted, with what is needed to build a join over each of
+/// them. The Cascades optimizer gets one memo group per set and one join expression per split, see `JoinGraphStep`.
+struct RecordedJoinSplits
+{
+    struct Split
+    {
+        UInt64 left = 0;
+        UInt64 right = 0;
+        /// Positions in `edges` of the predicates that DPsub places at this split.
+        std::vector<size_t> edges;
+    };
+    /// In the order the search accepted them.
+    std::vector<Split> splits;
+    /// Calls of the acceptor; the splits are the calls it accepted.
+    size_t considered_splits = 0;
+
+    /// The edges of the graph, and per edge the relations that must be joined before it applies.
+    std::vector<JoinActionRef> edges;
+    std::vector<UInt64> edge_relations;
+
+    /// The column equivalences of the graph; empty when transitive predicates are off.
+    EquivalenceClasses<JoinActionRef> column_equivalences;
+
+    /// The DPsub winner of every set that has a split. It carries the estimates of the set.
+    std::unordered_map<UInt64, DPJoinEntryPtr> winners;
+
+    /// Set when DPsub planned the graph; otherwise nothing above is complete.
+    bool complete = false;
+};
+
 struct QueryGraph
 {
     std::vector<RelationStats> relation_stats;
@@ -179,6 +211,8 @@ struct QueryGraph
     size_t max_join_order_alternatives = 0;
     /// The kept plans by cost, the best plan among them; filled while a solver runs.
     mutable std::vector<DPJoinEntryPtr> full_set_alternatives;
+    /// When set, DPsub records every split it accepts here.
+    std::shared_ptr<RecordedJoinSplits> recorded_splits;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

@@ -530,6 +530,8 @@ JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiz
     {
         query_graph.buildColumnEquivalences();
         column_equivalences = query_graph.column_equivalences;
+        if (query_graph.recorded_splits)
+            query_graph.recorded_splits->column_equivalences = column_equivalences;
     }
     auto prepared_storage_relations = query_graph.prepared_storage_relations;
 

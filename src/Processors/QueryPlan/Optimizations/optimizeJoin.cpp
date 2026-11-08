@@ -5,6 +5,7 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 
 #include <Functions/FunctionsMiscellaneous.h>
@@ -42,6 +43,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <map>
+#include <set>
 #include <unordered_set>
 #include <vector>
 #include <base/types.h>
@@ -50,6 +53,8 @@ namespace ProfileEvents
 {
     extern const Event JoinOptimizeMicroseconds;
     extern const Event JoinOrderJoinsCostedWithoutRowEstimate;
+    extern const Event JoinEnumerationSetPlans;
+    extern const Event JoinEnumerationSplits;
 }
 
 namespace DB
@@ -1187,6 +1192,20 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
     DPJoinEntryPtr chosen_order;
     std::vector<DPJoinEntryPtr> other_orders;
 
+    /// The splits of every set that Cascades gets with `cascades_join_enumeration`, see `selectSetSplits`.
+    std::shared_ptr<RecordedJoinSplits> recorded_splits;
+    struct SetSplits
+    {
+        UInt64 relations = 0;
+        /// Positions in `recorded_splits->splits`; the winner of the set first.
+        std::vector<size_t> splits;
+    };
+    std::vector<SetSplits> set_splits;
+
+    /// Chooses the splits Cascades gets for `mode` and returns true, or returns false with `reason` when the graph
+    /// gets its orders imported instead.
+    bool selectSetSplits(QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, String & reason);
+
     /// Builds the plan of the join tree `optimized` over `input_nodes`, in `nodes`, and returns its root. The plan of
     /// a subtree that an order built before is not built again: the node of that plan is used.
     QueryPlan::Node * build(const DPJoinEntryPtr & optimized, const std::vector<QueryPlan::Node *> & input_nodes, QueryPlan::Nodes & nodes);
@@ -1199,6 +1218,8 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join order {} is not available", index);
         return build(other_orders[index], inputs, nodes);
     }
+
+    std::optional<JoinGraphStep::SetPlan> buildSetPlan(const std::vector<QueryPlan::Node *> & inputs) override;
 
 private:
     /// The plan of a join entry, and the columns of its relations after it, see `current_input_nodes` in `build`.
@@ -1222,6 +1243,19 @@ private:
         const DPJoinEntryPtr & root,
         const std::vector<DPJoinEntry *> & sequence,
         const std::unordered_map<const ActionsDAG::Node *, size_t> & usage_level_map) const;
+
+    /// The predicates of the join of `left` and `right`, see `buildSetPlan`.
+    std::vector<JoinActionRef> splitPredicates(const RecordedJoinSplits::Split & split);
+    /// The input columns a set of two or more relations outputs, see `buildSetPlan`.
+    std::vector<const ActionsDAG::Node *> setColumns(UInt64 relations) const;
+    /// The global inputs `node` is computed from.
+    const std::vector<const ActionsDAG::Node *> & inputsOf(const ActionsDAG::Node * node);
+
+    std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>> inputs_of;
+    std::vector<std::vector<const ActionsDAG::Node *>> edge_inputs;
+    std::vector<const ActionsDAG::Node *> output_inputs;
+    /// Equalities made for an equivalence class, by the two members they compare.
+    std::map<std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>, JoinActionRef> class_equalities;
 };
 
 JoinOrderPlanBuilder::ReusableJoins JoinOrderPlanBuilder::findReusableJoins(
@@ -1652,6 +1686,453 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
     return node_stack.top();
 }
 
+const std::vector<const ActionsDAG::Node *> & JoinOrderPlanBuilder::inputsOf(const ActionsDAG::Node * node)
+{
+    if (auto it = inputs_of.find(node); it != inputs_of.end())
+        return it->second;
+
+    std::vector<const ActionsDAG::Node *> inputs;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+        if (!visited.insert(current).second)
+            continue;
+        if (current->type == ActionsDAG::ActionType::INPUT)
+            inputs.push_back(current);
+        for (const auto * child : current->children)
+            stack.push_back(child);
+    }
+    return inputs_of.emplace(node, std::move(inputs)).first->second;
+}
+
+static UInt64 toRelationMask(const BitSet & relations)
+{
+    UInt64 mask = 0;
+    for (auto relation : relations)
+        mask |= UInt64(1) << relation;
+    return mask;
+}
+
+/// The members of the equivalence classes, one list per class, each in the order of the global inputs.
+static std::vector<std::vector<JoinActionRef>> sortedEquivalenceClasses(
+    const EquivalenceClasses<JoinActionRef> & classes, const std::unordered_map<const ActionsDAG::Node *, size_t> & input_node_map)
+{
+    std::unordered_set<const void *> seen;
+    std::vector<std::vector<JoinActionRef>> result;
+    for (const auto & [member, members] : classes.getMemberToClassMap())
+    {
+        if (!seen.insert(members.get()).second)
+            continue;
+        std::vector<JoinActionRef> sorted(members->begin(), members->end());
+        std::ranges::sort(sorted, {}, [&](const JoinActionRef & ref) { return input_node_map.at(ref.getNode()); });
+        result.push_back(std::move(sorted));
+    }
+    std::ranges::sort(result, {}, [&](const auto & members) { return input_node_map.at(members.front().getNode()); });
+    return result;
+}
+
+static std::optional<size_t> singleRelation(const JoinActionRef & ref)
+{
+    return ref.getSourceRelations().getSingleBit();
+}
+
+bool JoinOrderPlanBuilder::selectSetSplits(QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, String & reason)
+{
+    using JoinEnumeration = QueryPlanOptimizationSettings::JoinEnumeration;
+
+    if (!recorded_splits || !recorded_splits->complete)
+    {
+        reason = "DPsub did not plan the graph";
+        return false;
+    }
+
+    /// The equalities of a class connect columns of different relations only; two columns of one relation in a class
+    /// would never be compared to each other, see `splitPredicates`.
+    for (const auto & members : sortedEquivalenceClasses(recorded_splits->column_equivalences, input_node_map))
+    {
+        std::unordered_set<size_t> relations;
+        for (const auto & member : members)
+        {
+            auto relation = singleRelation(member);
+            if (!relation || !relations.insert(*relation).second)
+            {
+                reason = "an equivalence class has two columns of one relation";
+                return false;
+            }
+        }
+    }
+
+    const auto & splits = recorded_splits->splits;
+    if (mode == JoinEnumeration::AllSplits && 2 * splits.size() > max_join_expressions)
+    {
+        reason = fmt::format("{} splits are more than `cascades_join_enumeration_max_splits` allows", splits.size());
+        return false;
+    }
+
+    std::unordered_map<UInt64, std::vector<size_t>> splits_by_set;
+    for (size_t i = 0; i < splits.size(); ++i)
+        splits_by_set[splits[i].left | splits[i].right].push_back(i);
+
+    auto find_split = [&](UInt64 relations, UInt64 left) -> std::optional<size_t>
+    {
+        auto it = splits_by_set.find(relations);
+        if (it == splits_by_set.end())
+            return std::nullopt;
+        for (size_t index : it->second)
+            if (splits[index].left == left || splits[index].right == left)
+                return index;
+        return std::nullopt;
+    };
+
+    std::unordered_map<UInt64, std::vector<size_t>> selected;
+    if (mode == JoinEnumeration::AllSplits)
+    {
+        selected = splits_by_set;
+    }
+    else
+    {
+        /// The splits of the chosen order and of the other orders.
+        std::vector<const DPJoinEntry *> stack{chosen_order.get()};
+        for (const auto & order : other_orders)
+            stack.push_back(order.get());
+        std::unordered_set<const DPJoinEntry *> visited;
+        while (!stack.empty())
+        {
+            const auto * entry = stack.back();
+            stack.pop_back();
+            if (entry->isLeaf() || !visited.insert(entry).second)
+                continue;
+            const UInt64 relations = toRelationMask(entry->relations);
+            auto index = find_split(relations, toRelationMask(entry->left->relations));
+            if (!index)
+            {
+                reason = "a join of the orders is not a recorded split";
+                return false;
+            }
+            auto & set = selected[relations];
+            if (std::ranges::find(set, *index) == set.end())
+                set.push_back(*index);
+            stack.push_back(entry->left.get());
+            stack.push_back(entry->right.get());
+        }
+    }
+
+    set_splits.clear();
+    for (auto & [relations, indexes] : selected)
+    {
+        /// The winner of the set first: Cascades derives the statistics of a group from its first expression.
+        const auto & winner = recorded_splits->winners.at(relations);
+        auto winner_index = find_split(relations, toRelationMask(winner->left->relations));
+        if (!winner_index)
+        {
+            reason = "the winner of a set is not a recorded split";
+            return false;
+        }
+        std::erase(indexes, *winner_index);
+        indexes.insert(indexes.begin(), *winner_index);
+        set_splits.push_back({relations, std::move(indexes)});
+    }
+    std::ranges::sort(set_splits, {}, [](const SetSplits & set) { return std::pair{std::popcount(set.relations), set.relations}; });
+
+    edge_inputs.clear();
+    for (const auto & edge : recorded_splits->edges)
+        edge_inputs.push_back(edge ? inputsOf(edge.getNode()) : std::vector<const ActionsDAG::Node *>{});
+    output_inputs.clear();
+    std::unordered_set<const ActionsDAG::Node *> seen_outputs;
+    for (const auto * output : global_actions_dag->getOutputs())
+        for (const auto * input : inputsOf(output))
+            if (seen_outputs.insert(input).second)
+                output_inputs.push_back(input);
+    std::ranges::sort(output_inputs, {}, [&](const auto * input) { return input_node_map.at(input); });
+    return true;
+}
+
+std::vector<JoinActionRef> JoinOrderPlanBuilder::splitPredicates(const RecordedJoinSplits::Split & split)
+{
+    const auto & classes = recorded_splits->column_equivalences;
+    std::vector<JoinActionRef> predicates;
+
+    /// An equality between columns of two relations is replaced by the equalities of its class below: the members of
+    /// a class are made equal by one equality at every join whose two sides both have members, so every join order of
+    /// a set compares the same columns. An equality within one relation is a filter on its values and stays.
+    for (size_t index : split.edges)
+    {
+        const auto & edge = recorded_splits->edges[index];
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op == JoinConditionOperator::Equals)
+        {
+            auto lhs_input = lhs.resolveAliases();
+            auto rhs_input = rhs.resolveAliases();
+            auto lhs_relation = singleRelation(lhs_input);
+            auto rhs_relation = singleRelation(rhs_input);
+            if (lhs_input.getNode()->type == ActionsDAG::ActionType::INPUT && rhs_input.getNode()->type == ActionsDAG::ActionType::INPUT
+                && lhs_relation && rhs_relation && *lhs_relation != *rhs_relation)
+            {
+                auto lhs_class = classes.getClass(lhs_input);
+                if (lhs_class && lhs_class == classes.getClass(rhs_input))
+                    continue;
+            }
+        }
+        predicates.push_back(edge);
+    }
+
+    auto side_member = [](const std::vector<JoinActionRef> & members, UInt64 relations) -> const JoinActionRef *
+    {
+        for (const auto & member : members)
+            if ((relations >> *singleRelation(member)) & 1)
+                return &member;
+        return nullptr;
+    };
+    for (const auto & members : sortedEquivalenceClasses(classes, input_node_map))
+    {
+        const auto * left_member = side_member(members, split.left);
+        const auto * right_member = side_member(members, split.right);
+        if (!left_member || !right_member)
+            continue;
+        auto key = std::pair{left_member->getNode(), right_member->getNode()};
+        if (input_node_map.at(key.second) < input_node_map.at(key.first))
+            std::swap(key.first, key.second);
+        auto it = class_equalities.find(key);
+        if (it == class_equalities.end())
+            it = class_equalities.emplace(key, JoinActionRef::transform(
+                {*left_member, *right_member}, JoinActionRef::AddFunction(JoinConditionOperator::Equals))).first;
+        predicates.push_back(it->second);
+    }
+    return predicates;
+}
+
+std::vector<const ActionsDAG::Node *> JoinOrderPlanBuilder::setColumns(UInt64 relations) const
+{
+    std::set<size_t> positions;
+    auto add = [&](const ActionsDAG::Node * input)
+    {
+        const size_t position = input_node_map.at(input);
+        if ((relations >> initial_input_nodes[position].first) & 1)
+            positions.insert(position);
+    };
+
+    /// The inputs of the predicates that apply above the set and of the graph's outputs.
+    for (size_t i = 0; i < edge_inputs.size(); ++i)
+        if (recorded_splits->edge_relations[i] & ~relations)
+            for (const auto * input : edge_inputs[i])
+                add(input);
+    for (const auto * input : output_inputs)
+        add(input);
+
+    /// The members of a class that a join above the set compares, see `splitPredicates`.
+    for (const auto & members : sortedEquivalenceClasses(recorded_splits->column_equivalences, input_node_map))
+    {
+        const bool outside = std::ranges::any_of(members, [&](const JoinActionRef & member) { return !((relations >> *singleRelation(member)) & 1); });
+        if (outside)
+            for (const auto & member : members)
+                add(member.getNode());
+    }
+
+    /// One input of the lowest relation is always kept, so that a set has a column to carry its rows. The input with
+    /// the lowest position of that relation is kept by every set that has the relation, so a join always finds it in
+    /// one of its inputs.
+    const size_t lowest_relation = std::countr_zero(relations);
+    for (size_t position = 0; position < initial_input_nodes.size(); ++position)
+    {
+        if (initial_input_nodes[position].first == lowest_relation)
+        {
+            positions.insert(position);
+            break;
+        }
+    }
+
+    std::vector<const ActionsDAG::Node *> columns;
+    for (size_t position : positions)
+        columns.push_back(initial_input_nodes[position].second);
+    return columns;
+}
+
+/// All joins of a set have the same predicates and output columns, whatever the split:
+/// - the predicates are the recorded edges of the split, with the equalities between relations replaced by the
+///   equalities of their classes, see `splitPredicates`;
+/// - the outputs are the inputs that a join above the set needs, see `setColumns`; the set of all relations outputs
+///   what the graph outputs.
+/// Every join of a set also gets the estimates of the set's DPsub winner.
+std::optional<JoinGraphStep::SetPlan> JoinOrderPlanBuilder::buildSetPlan(const std::vector<QueryPlan::Node *> & inputs)
+{
+    if (set_splits.empty())
+        return std::nullopt;
+
+    const UInt64 all_relations = (UInt64(1) << inputs.size()) - 1;
+    std::unordered_map<UInt64, SharedHeader> headers;
+    std::unordered_map<UInt64, std::vector<const ActionsDAG::Node *>> columns;
+    std::unordered_map<UInt64, RelationEstimateInfo> relation_infos;
+    for (size_t relation = 0; relation < inputs.size(); ++relation)
+    {
+        const UInt64 mask = UInt64(1) << relation;
+        headers[mask] = inputs[relation]->step->getOutputHeader();
+        for (const auto & [input_relation, input] : initial_input_nodes)
+            if (input_relation == relation)
+                columns[mask].push_back(input);
+        relation_infos[mask] = leaf_relation_infos.at(BitSet().set(relation));
+    }
+
+    JoinGraphStep::SetPlan plan;
+    for (const auto & set : set_splits)
+    {
+        const bool is_all_relations = set.relations == all_relations;
+        const auto set_columns = is_all_relations ? output_inputs : setColumns(set.relations);
+        const auto & winner = recorded_splits->winners.at(set.relations);
+
+        bool imprecise_estimate = false;
+        for (size_t i = 0; i < leaf_imprecise.size(); ++i)
+            if ((set.relations >> i) & 1)
+                imprecise_estimate |= leaf_imprecise[i] || leaf_without_estimate[i];
+
+        JoinGraphStep::SetPlan::Set planned_set{.relations = set.relations, .splits = {}};
+        for (size_t index : set.splits)
+        {
+            const auto & split = recorded_splits->splits[index];
+            const auto & left_header = headers.at(split.left);
+            const auto & right_header = headers.at(split.right);
+
+            auto predicates = splitPredicates(split);
+
+            ActionsDAG::NodeMapping current_inputs;
+            ActionsDAG::NodeRawConstPtrs required_output_nodes;
+            for (UInt64 side : {split.left, split.right})
+            {
+                for (const auto * input : columns.at(side))
+                {
+                    current_inputs[input] = input;
+                    required_output_nodes.push_back(input);
+                }
+            }
+            for (const auto & predicate : predicates)
+                required_output_nodes.push_back(predicate.getNode());
+            if (is_all_relations)
+                for (const auto * output : global_actions_dag->getOutputs())
+                    required_output_nodes.push_back(output);
+
+            JoinExpressionActions expression_actions(*left_header, *right_header,
+                ActionsDAG::foldActionsByProjection(current_inputs, required_output_nodes));
+            auto dag = expression_actions.getActionsDAG();
+            auto & dag_outputs = dag->getOutputs();
+            if (required_output_nodes.size() != dag_outputs.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required output nodes size {} does not match current output nodes size in dag {}",
+                    required_output_nodes.size(), dag->dumpDAG());
+            auto mapping = std::ranges::to<ActionsDAG::NodeMapping>(std::views::zip(required_output_nodes, dag_outputs));
+
+            JoinOperator join_operator(predicates.empty() ? JoinKind::Cross : JoinKind::Inner, JoinStrictness::All, JoinLocality::Unspecified);
+            for (const auto & predicate : predicates)
+                join_operator.expression.push_back(JoinActionRef(mapping.at(predicate.getNode()), expression_actions));
+
+            dag_outputs.clear();
+            ActionsDAG::NodeRawConstPtrs actions_after_join;
+            for (const auto * input : set_columns)
+                actions_after_join.push_back(mapping.at(input));
+            if (is_all_relations)
+            {
+                for (const auto * output : global_actions_dag->getOutputs())
+                {
+                    const auto * mapped = mapping.at(output);
+                    dag_outputs.push_back(mapped);
+                    if (mapped->type == ActionsDAG::ActionType::COLUMN)
+                        actions_after_join.push_back(mapped);
+                }
+                if (actions_after_join.empty())
+                    actions_after_join.push_back(mapping.at(columns.at(split.left).front()));
+            }
+            else
+            {
+                dag_outputs = actions_after_join;
+            }
+
+            auto join_step = std::make_unique<JoinStepLogical>(
+                left_header, right_header, std::move(join_operator), std::move(expression_actions), actions_after_join,
+                join_settings, sorting_settings);
+            join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
+            join_step->setInputRelations(relation_infos.at(split.left), relation_infos.at(split.right));
+            join_step->setJoinOrderEstimation(
+                winner->estimated_rows, winner->column_stats, imprecise_estimate, winner->cost, winner->selectivity, cluster_id,
+                winner->max_rows, winner->estimate_from_defaults);
+
+            if (planned_set.splits.empty())
+            {
+                headers[set.relations] = join_step->getOutputHeader();
+                relation_infos[set.relations] = RelationEstimateInfo{
+                    .name = join_step->getReadableRelationName(),
+                    .estimated_rows = winner->estimated_rows,
+                    .max_rows = winner->max_rows,
+                    .imprecise_estimate = imprecise_estimate,
+                    .estimate_from_defaults = winner->estimate_from_defaults,
+                    .composite = true};
+            }
+            else if (!blocksHaveEqualStructure(*headers.at(set.relations), *join_step->getOutputHeader()))
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Joins of one set of relations have different headers: {} and {}",
+                    headers.at(set.relations)->dumpStructure(), join_step->getOutputHeader()->dumpStructure());
+            }
+            planned_set.splits.push_back({.left = split.left, .right = split.right, .step = std::move(join_step)});
+        }
+        columns[set.relations] = set_columns;
+        ProfileEvents::increment(ProfileEvents::JoinEnumerationSplits, planned_set.splits.size());
+        plan.sets.push_back(std::move(planned_set));
+    }
+    ProfileEvents::increment(ProfileEvents::JoinEnumerationSetPlans);
+    return plan;
+}
+
+}
+
+/// A type whose equal values have equal bytes: a join compares it the same way as a hash key and as a value.
+static bool comparesSameAsHashKey(const DataTypePtr & type)
+{
+    WhichDataType which(type);
+    return which.isInteger() || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64() || which.isDecimal()
+        || which.isEnum() || which.isUUID() || which.isIPv4() || which.isIPv6() || which.isString() || which.isFixedString();
+}
+
+/// Whether every join order of a set of the graph's relations gives the same rows when the predicates are placed by
+/// `JoinOrderPlanBuilder::buildSetPlan`, so that Cascades may choose between all of them:
+/// - a predicate may be applied at several joins, or at different joins in different orders, so it must be a filter
+///   whose result and side effects do not depend on where and how often it runs; `arrayJoin` changes the number of
+///   rows, so it is not such a filter;
+/// - an equality is a hash key at a join whose two inputs give its two operands and a condition on values otherwise,
+///   and join orders differ in that. The two compare floating-point values differently (NaN, -0 and 0), so the
+///   operands must be of one type that both compare the same way, and each operand must come from one relation.
+static bool canEnumerateJoinSplits(const QueryGraph & query_graph, const ActionsDAG & global_actions_dag, String & reason)
+{
+    if (query_graph.requires_conflict_detector)
+        reason = "the graph needs a conflict detector";
+    else if (global_actions_dag.hasArrayJoin())
+        reason = "an expression has `arrayJoin`";
+    else if (std::ranges::any_of(global_actions_dag.getNodes(), [](const auto & node) { return node.type == ActionsDAG::ActionType::PLACEHOLDER; }))
+        reason = "an expression has a correlated column";
+    else if (isSensitiveToEvaluationCount(global_actions_dag))
+        reason = "an expression depends on how often it runs";
+    if (!reason.empty())
+        return false;
+
+    for (const auto & edge : query_graph.edges)
+    {
+        if (!edge)
+            continue;
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if (lhs.getSourceRelations().count() > 1 || rhs.getSourceRelations().count() > 1)
+        {
+            reason = fmt::format("an operand of `{}` depends on several relations", edge.getColumnName());
+            return false;
+        }
+        auto lhs_type = removeLowCardinalityAndNullable(lhs.getType());
+        auto rhs_type = removeLowCardinalityAndNullable(rhs.getType());
+        if (!lhs_type->equals(*rhs_type) || !comparesSameAsHashKey(lhs_type))
+        {
+            reason = fmt::format("`{}` compares types {} and {}", edge.getColumnName(), lhs_type->getName(), rhs_type->getName());
+            return false;
+        }
+    }
+    return true;
 }
 
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
@@ -1742,6 +2223,22 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     if (optimization_settings.build_join_order_alternatives && inner_joins_only && query_graph.relation_stats.size() > 2)
         query_graph.max_join_order_alternatives = optimization_settings.cascades_join_order_alternatives;
 
+    /// With `cascades_join_enumeration`, DPsub records the splits it accepts, and Cascades gets one memo group per set.
+    const auto join_enumeration = optimization_settings.cascades_join_enumeration;
+    std::shared_ptr<RecordedJoinSplits> recorded_splits;
+    if (join_enumeration != QueryPlanOptimizationSettings::JoinEnumeration::Off && optimization_settings.build_join_order_alternatives
+        && inner_joins_only && query_graph.relation_stats.size() > 2)
+    {
+        String reason;
+        if (canEnumerateJoinSplits(query_graph, *global_actions_dag, reason))
+        {
+            recorded_splits = std::make_shared<RecordedJoinSplits>();
+            query_graph.recorded_splits = recorded_splits;
+        }
+        else
+            LOG_DEBUG(getLogger("optimizeJoin"), "Cascades gets the join orders of the graph, not its sets: {}", reason);
+    }
+
     const auto join_order = optimizeJoinOrder(std::move(query_graph), optimization_settings);
 
     if (!query_graph_builder.context)
@@ -1791,12 +2288,25 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     const auto & leaf_input_nodes = builder->query_graph_builder.inputs;
     builder->chosen_order = join_order.best;
     QueryPlan::Node * best_root = builder->build(join_order.best, leaf_input_nodes, nodes);
+    builder->other_orders = join_order.alternatives;
+
+    bool import_sets = false;
+    if (recorded_splits)
+    {
+        builder->recorded_splits = recorded_splits;
+        String reason;
+        import_sets = builder->selectSetSplits(join_enumeration, optimization_settings.cascades_join_enumeration_max_splits, reason);
+        if (import_sets)
+            LOG_DEBUG(getLogger("optimizeJoin"), "Cascades gets {} sets of the join graph from {} accepted of {} considered splits",
+                builder->set_splits.size(), recorded_splits->splits.size(), recorded_splits->considered_splits);
+        else
+            LOG_DEBUG(getLogger("optimizeJoin"), "Cascades gets the join orders of the graph, not its sets: {}", reason);
+    }
 
     /// Cascades chooses between the orders: the graph becomes one step over its inputs, and the plans of the other
-    /// orders are built when Cascades imports it, see `JoinGraphStep`.
-    if (!join_order.alternatives.empty())
+    /// orders, or the joins of its sets, are built when Cascades imports it, see `JoinGraphStep`.
+    if (!join_order.alternatives.empty() || import_sets)
     {
-        builder->other_orders = join_order.alternatives;
         SharedHeaders input_headers;
         for (const auto * input : leaf_input_nodes)
             input_headers.push_back(input->step->getOutputHeader());

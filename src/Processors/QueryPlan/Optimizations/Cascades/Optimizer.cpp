@@ -251,9 +251,55 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
     return {group_id, {}};
 }
 
+std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinSets(QueryPlan::Node & node, JoinGraphStep::SetPlan set_plan)
+{
+    std::unordered_map<UInt64, GroupId> set_groups;
+    std::unordered_map<UInt64, ExpressionProperties> input_pending_props;
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
+        auto [group_id, pending_props] = addGroup(*node.children[i]);
+        set_groups[UInt64(1) << i] = group_id;
+        input_pending_props[UInt64(1) << i] = std::move(pending_props);
+    }
+
+    std::optional<GroupId> last_group_id;
+    for (auto & set : set_plan.sets)
+    {
+        std::optional<GroupId> group_id;
+        for (auto & split : set.splits)
+        {
+            auto expression = std::make_shared<GroupExpression>(std::move(split.step));
+            for (UInt64 side : {split.left, split.right})
+            {
+                auto it = input_pending_props.find(side);
+                expression->inputs.push_back({set_groups.at(side), it != input_pending_props.end() ? it->second : ExpressionProperties{}});
+            }
+            if (group_id)
+                memo.getGroup(*group_id)->addLogicalExpression(expression);
+            else
+                group_id = memo.addGroup(expression);
+        }
+        set_groups[set.relations] = *group_id;
+        last_group_id = group_id;
+    }
+    if (!last_group_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A join graph without sets of relations");
+    return {*last_group_id, {}};
+}
+
 std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinGraph(QueryPlan::Node & node, const JoinGraphStep & graph_step)
 {
     const std::vector<QueryPlan::Node *> inputs = node.children;
+
+    /// The joins are built before anything is imported: building reads the headers of the inputs, and importing moves
+    /// the steps out of the nodes.
+    if (auto set_plan = graph_step.getOrderBuilder().buildSetPlan(inputs))
+    {
+        if (!blocksHaveEqualStructure(*set_plan->sets.back().splits.front().step->getOutputHeader(), *graph_step.getOutputHeader()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The joins of all relations of a join graph have header {}, the graph has {}",
+                set_plan->sets.back().splits.front().step->getOutputHeader()->dumpStructure(), graph_step.getOutputHeader()->dumpStructure());
+        return addJoinSets(node, std::move(*set_plan));
+    }
 
     /// The plans of the other orders are built before anything is imported: building reads the headers of the inputs
     /// and of the joins the orders share, and importing moves the steps out of the nodes.

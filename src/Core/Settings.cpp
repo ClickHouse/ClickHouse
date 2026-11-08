@@ -11252,6 +11252,23 @@ counts only rows, while Cascades also counts the data moved between nodes, so it
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", BETA, \
         {"26.11", 0, 4, "New setting to give the Cascades optimizer other join orders to choose from."}) \
+    DECLARE(String, cascades_join_enumeration, "off", R"(
+Experimental. How the Cascades optimizer gets the join orders of a join graph:
+- `off`: the join order optimizer's chosen order and the orders of `cascades_join_order_alternatives`;
+- `candidates`: the same orders, imported with one memo group per set of joined tables;
+- `all_splits`: every split of every set of joined tables that the join order optimizer accepted, one memo group per
+  set, so that Cascades costs each split with the data moved between nodes.
+
+`candidates` and `all_splits` take effect only for graphs of inner joins whose join keys compare the same way as
+hash keys and as values (no floating-point keys), and that `DPsub` plans; other graphs use `off`.
+Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
+)", EXPERIMENTAL, \
+        {"26.11", "off", "off", "New experimental setting."}) \
+    DECLARE(UInt64, cascades_join_enumeration_max_splits, 20000, R"(
+With `cascades_join_enumeration = 'all_splits'`: the largest number of join expressions (two per split) that a join
+graph may add to the Cascades memo. A larger graph uses `off`.
+)", EXPERIMENTAL, \
+        {"26.11", 20000, 20000, "New experimental setting."}) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", 0, \

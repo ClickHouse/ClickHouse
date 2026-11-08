@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -16,6 +17,26 @@ namespace DB
 class JoinGraphStep : public IQueryPlanStep
 {
 public:
+    /// A join over a set of the graph's relations for every split of the set into two sets: every join of a set has the
+    /// same output columns and rows, so Cascades keeps them in one memo group. Bit `i` of a set is input `i`.
+    struct SetPlan
+    {
+        struct Split
+        {
+            UInt64 left = 0;
+            UInt64 right = 0;
+            QueryPlanStepPtr step;
+        };
+        struct Set
+        {
+            UInt64 relations = 0;
+            /// Cascades derives the statistics of the set from the first split.
+            std::vector<Split> splits;
+        };
+        /// A set comes after every set it is split into; the set of all relations is the last.
+        std::vector<Set> sets;
+    };
+
     /// Builds the plans of the other join orders over the step's inputs.
     class OrderBuilder
     {
@@ -25,6 +46,10 @@ public:
         /// Builds other order `index` in `nodes` and returns its root. The orders share the plans of their common
         /// subtrees: a subtree some order has already is not built again.
         virtual QueryPlan::Node * buildOtherOrder(size_t index, const std::vector<QueryPlan::Node *> & inputs, QueryPlan::Nodes & nodes) = 0;
+
+        /// The joins of every set of the graph's relations that Cascades chooses between, see `SetPlan`. Empty when
+        /// Cascades imports the orders instead.
+        virtual std::optional<SetPlan> buildSetPlan(const std::vector<QueryPlan::Node *> & inputs) = 0;
     };
 
     /// `chosen_order_root` is the root of the chosen order's plan; its leaves are the nodes in `inputs` order.

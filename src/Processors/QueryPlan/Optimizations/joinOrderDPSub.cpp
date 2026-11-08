@@ -99,6 +99,10 @@ private:
     /// their common subsets.
     template <typename DPTable, std::unsigned_integral TUInt>
     DPJoinEntryPtr buildPhysicalPlan(const DPTable & dptable, const TUInt & S, std::unordered_map<TUInt, DPJoinEntryPtr> & built) const;
+    /// Fills the rest of `recorded_splits` once the search is done: the winner of every set with a split, the edges
+    /// and the relations each edge needs.
+    template <typename DPTable, std::unsigned_integral TUInt>
+    void recordWinners(RecordedJoinSplits & recorded_splits, const DPTable & dptable, std::unordered_map<TUInt, DPJoinEntryPtr> & built) const;
     DPJoinEntryPtr makeJoinEntry(
         JoinKind kind,
         JoinStrictness strictness,
@@ -828,6 +832,27 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(
     return result;
 }
 
+template <typename DPTable, std::unsigned_integral TUInt>
+void DPSubJoinOrderOptimizer::recordWinners(
+    RecordedJoinSplits & recorded_splits, const DPTable & dptable, std::unordered_map<TUInt, DPJoinEntryPtr> & built) const
+{
+    for (const auto & split : recorded_splits.splits)
+    {
+        const auto relations = static_cast<TUInt>(split.left | split.right);
+        if (!recorded_splits.winners.contains(relations))
+            recorded_splits.winners.emplace(relations, buildPhysicalPlan(dptable, relations, built));
+    }
+
+    recorded_splits.edges = query_graph.edges;
+    recorded_splits.edge_relations.resize(query_graph.edges.size());
+    for (size_t i = 0; i < query_graph.edges.size(); ++i)
+    {
+        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : dpsub_data.edge_outstanding_mask[i];
+        recorded_splits.edge_relations[i] = dpsub_data.edge_source_mask[i] | pin;
+    }
+    recorded_splits.complete = true;
+}
+
 DPJoinEntryPtr DPSubJoinOrderOptimizer::makeJoinEntry(
     JoinKind kind,
     JoinStrictness strictness,
@@ -996,6 +1021,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 
     std::unordered_map<Bitvector, DPJoinEntryPtr> built;
     auto best = buildPhysicalPlan(dptable, full_set, built);
+    if (auto & recorded_splits = query_graph.recorded_splits)
+        recordWinners(*recorded_splits, dptable, built);
     for (const auto & alternative : full_set_alternatives)
     {
         auto left = buildPhysicalPlan(dptable, alternative.left, built);

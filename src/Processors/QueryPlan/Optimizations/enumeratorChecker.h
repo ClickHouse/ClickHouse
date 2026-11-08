@@ -107,6 +107,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     if (!is_buildable(lhs_subset) || !is_buildable(rhs_subset))
         return;
 
+    auto & recorded_splits = optimizer.query_graph.recorded_splits;
+    if (recorded_splits)
+        ++recorded_splits->considered_splits;
+
     const UInt32 left_mask = static_cast<UInt32>(lhs_subset);
     const UInt32 right_mask = static_cast<UInt32>(rhs_subset);
 
@@ -134,6 +138,14 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         kind = JoinKind::Inner;
     else if (kind == JoinKind::Inner && !connected)
         kind = JoinKind::Cross;
+
+    if (recorded_splits)
+    {
+        RecordedJoinSplits::Split split{.left = lhs_subset, .right = rhs_subset, .edges = {}};
+        for (const auto * recorded_edge : edge)
+            split.edges.push_back(recorded_edge - optimizer.query_graph.edges.data());
+        recorded_splits->splits.push_back(std::move(split));
+    }
 
     auto keys = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys, kind, strictness);
