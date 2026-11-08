@@ -397,7 +397,8 @@ def current_snapshot_manifests(started_cluster, table_name):
 
 
 def drop_struct_field_from_data_file(started_cluster, s3_uri, column, field):
-    """Rewrite the data file at `s3_uri` in place, keeping `column` but without its `field`."""
+    """Rewrite the data file at `s3_uri` in place, keeping `column` but without its `field`, and
+    record its new size in the manifests."""
     assert s3_uri.startswith("s3://"), s3_uri
     bucket, key = s3_uri[len("s3://") :].split("/", 1)
 
@@ -435,6 +436,7 @@ def drop_struct_field_from_data_file(started_cluster, s3_uri, column, field):
     started_cluster.minio_client.put_object(
         bucket, key, io.BytesIO(payload), len(payload)
     )
+    set_file_size_in_manifests(started_cluster, bucket, key, len(payload))
 
 
 def test_identity_partition_column_not_stored_in_data_files(
