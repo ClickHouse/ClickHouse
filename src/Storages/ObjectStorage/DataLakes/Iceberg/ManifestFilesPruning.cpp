@@ -434,7 +434,17 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 {
     const auto & partition_value = entry->normalized_partition_key_value;
 
-    if (partition_key_condition.has_value())
+    /// The partition values of a data file without field ids may describe a binding the mapping no longer gives to a
+    /// column of the filter.
+    bool partition_values_reliable = true;
+    if (!columns_with_unreliable_statistics.empty() && entry->common_partition_specification)
+    {
+        for (const auto & partition_field : *entry->common_partition_specification)
+            if (columns_with_unreliable_statistics.contains(partition_field.source_id))
+                partition_values_reliable = false;
+    }
+
+    if (partition_key_condition.has_value() && partition_values_reliable)
     {
         /// A spec field whose source column or transform cannot be modelled is left out of the
         /// partition key, so the key is narrower than the tuple and the two are not index-aligned.

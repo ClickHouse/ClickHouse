@@ -12,6 +12,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/convertFieldToType.h>
 
 using namespace DB;
@@ -100,6 +101,7 @@ ManifestListPruner::ManifestListPruner(
     Int32 partition_schema_id_,
     const Poco::JSON::Array::Ptr & partition_specs,
     const DB::ActionsDAG * filter_dag,
+    const DB::IcebergNameMapping * name_mapping,
     DB::ContextPtr context,
     bool require_ready_sets)
 {
@@ -125,6 +127,17 @@ ManifestListPruner::ManifestListPruner(
         if (!partition_key.key_description.has_value() || partition_key.key_description->data_types.size() != fields->size())
             continue;
 
+        std::vector<bool> unbound_fields(fields->size(), false);
+        if (name_mapping)
+        {
+            for (UInt32 j = 0; j < fields->size(); ++j)
+            {
+                const auto field = fields->getObject(j);
+                unbound_fields[j]
+                    = field->has(f_source_id) && name_mapping->unbound_field_ids.contains(field->getValue<Int64>(f_source_id));
+            }
+        }
+
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         DB::KeyCondition condition(
             inverted_dag,
@@ -135,7 +148,8 @@ ManifestListPruner::ManifestListPruner(
             /* skip_analysis_ */ false,
             require_ready_sets);
         conditions_by_spec_id.emplace(
-            spec->getValue<Int32>(f_spec_id), SpecCondition{*partition_key.key_description, std::move(condition)});
+            spec->getValue<Int32>(f_spec_id),
+            SpecCondition{*partition_key.key_description, std::move(condition), std::move(unbound_fields)});
     }
 }
 
@@ -157,6 +171,13 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
     hyperrectangle.reserve(partition_summaries.size());
     for (size_t i = 0; i < partition_summaries.size(); ++i)
     {
+        if (condition_it->second.unbound_fields[i])
+        {
+            /// A data file without field ids may not hold the values this summary bounds.
+            hyperrectangle.push_back(Range::createWholeUniverse());
+            continue;
+        }
+
         const auto & summary = partition_summaries[i];
         auto bounds = boundsOfPartitionFieldSummary(summary, partition_key.data_types.at(i), partition_spec_id, i);
         if (!bounds)

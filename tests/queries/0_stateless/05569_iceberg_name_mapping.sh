@@ -11,6 +11,9 @@
 # an `append` (with field ids, `id` 4), the `add_files` snapshot expired and the schema of its manifest removed.
 # `data_iceberg/name_mapping_struct_swap` (PyIceberg 0.11.1): `add_files` of one file without field ids with a struct
 # `s` of two fields, then the names of the two fields swapped in the mapping.
+# `data_iceberg/name_mapping_rewritten_manifest` (PyIceberg 0.11.1): `add_files` of one file without field ids, `b`
+# renamed to `b_old` and a new `b` added, then a merging `append` that rewrites the manifest under the new schema and
+# the `add_files` snapshot expired.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -43,6 +46,14 @@ function S()
     echo "icebergLocal('name_mapping_struct_swap', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
 }
 
+# R <metadata version>: the table with the rewritten manifest at that version.
+function R()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_rewritten_manifest/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_rewritten_manifest', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
 V_BOTH=00004             # all fields mapped, `x`, `a`, `v` also under their old names
 V_UNMAPPED_B=00005       # `b` is not in the mapping
 V_B_NAMELESS=00006       # `b` is in the mapping with `names: []`
@@ -59,6 +70,7 @@ V_P_REASSIGNED=00005     # `b` renamed to `b_old`, the name `b` given to a new c
 V_P_CLEANED=00008        # the schema of the manifest of the file without field ids removed
 V_S_MAPPED=00001         # all fields mapped
 V_S_SWAPPED=00002        # the names of the fields of `s` swapped
+V_R_REWRITTEN=00006      # `b` renamed to `b_old`, `b` added, the manifest rewritten, the add_files snapshot expired
 
 LAZY="query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_object_storage = 1"
 
@@ -94,14 +106,19 @@ SELECT 'partition values';
 SELECT count() FROM $(P $V_P_MAPPED) WHERE d IS NULL SETTINGS use_query_condition_cache = 0;
 SELECT count(), countIf(d IS NULL) FROM $(P $V_P_UNMAPPED_D);
 SELECT count() FROM $(P $V_P_UNMAPPED_D) WHERE d IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT count() FROM $(P $V_P_UNMAPPED_D) WHERE icebergDay(d) IS NULL SETTINGS use_query_condition_cache = 0;
 SELECT 'name given to a new column';
 SELECT id, b_old FROM $(P $V_P_REASSIGNED) ORDER BY id;
 SELECT count() FROM $(P $V_P_REASSIGNED) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
 SELECT 'import-time schema removed';
 SELECT id, b_old FROM $(P $V_P_CLEANED) ORDER BY id;
 SELECT count() FROM $(P $V_P_CLEANED) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'rewritten manifest';
+SELECT id, b_old FROM $(R $V_R_REWRITTEN) ORDER BY id;
+SELECT count() FROM $(R $V_R_REWRITTEN) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
 SELECT 'columns cache';
 SELECT id, s FROM $(S $V_S_MAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
+SELECT count() > 0 FROM system.columns_cache WHERE database = '';
 SELECT id, s FROM $(S $V_S_SWAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
 "
 

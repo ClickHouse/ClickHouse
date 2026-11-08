@@ -1767,6 +1767,7 @@ IcebergMetadata::estimateRead(
             data_snapshot->schema_id_on_snapshot_commit,
             data_snapshot->partition_specs,
             pruning_filter,
+            data_snapshot->name_mapping.get(),
             context,
             /* require_ready_sets */ true);
 
