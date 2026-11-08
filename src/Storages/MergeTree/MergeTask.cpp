@@ -23,6 +23,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -381,6 +382,84 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
+}
+
+namespace
+{
+
+/// The columns that the expressions evaluated by a merge may read: the TTL rules, the `DEFAULT` and
+/// `MATERIALIZED` expressions, the skip indices and the projections. An `ALIAS` column stands for the columns
+/// its expression reads, a subcolumn for its column and a flattened `Nested` for all of its arrays. The ASTs
+/// are walked syntactically, so an identifier that is not a column of the table (a lambda argument, a column of
+/// a subquery) at worst adds a column that is then read for nothing.
+class ColumnsReadByMergeExpressions
+{
+public:
+    explicit ColumnsReadByMergeExpressions(const StorageInMemoryMetadata & metadata)
+        : columns(metadata.getColumns())
+    {
+        if (const auto & table_ttl = metadata.getTableTTLs().definition_ast)
+            addIdentifiers(*table_ttl);
+
+        for (const auto & column : columns)
+        {
+            if (column.ttl)
+                addIdentifiers(*column.ttl);
+
+            const auto & default_desc = column.default_desc;
+            if (default_desc.expression
+                && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
+                addIdentifiers(*default_desc.expression);
+        }
+
+        for (const auto & index : metadata.getSecondaryIndices())
+            for (const auto & name : index.expression->getRequiredColumns())
+                addColumn(name);
+
+        for (const auto & projection : metadata.getProjections())
+            for (const auto & name : projection.getRequiredColumns())
+                addColumn(name);
+    }
+
+    bool contains(const String & column_name) const { return result.contains(column_name); }
+
+private:
+    void addIdentifiers(const IAST & ast)
+    {
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+            addColumn(identifier->name());
+
+        for (const auto & child : ast.children)
+            addIdentifiers(*child);
+    }
+
+    void addColumn(const String & name)
+    {
+        if (const auto * column = columns.tryGet(name))
+        {
+            if (column->default_desc.kind != ColumnDefaultKind::Alias)
+                result.insert(name);
+            else if (column->default_desc.expression && expanded_aliases.insert(name).second)
+                addIdentifiers(*column->default_desc.expression);
+        }
+        else if (auto column_or_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        {
+            addColumn(column_or_subcolumn->getNameInStorage());
+        }
+        else
+        {
+            const String prefix = name + '.';
+            for (const auto & nested_column : columns)
+                if (nested_column.name.starts_with(prefix))
+                    addColumn(nested_column.name);
+        }
+    }
+
+    const ColumnsDescription & columns;
+    NameSet result;
+    NameSet expanded_aliases;
+};
+
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
@@ -3530,14 +3609,26 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         /// Read expired arrays for TTL evaluation using each part's own offsets, before missing sibling defaults
         /// are evaluated. Keep them out of `merging_columns`, so the writer still leaves them expired and unwritten.
+        /// Only the arrays that an expression of the merge reads are worth it: the default of any other one is
+        /// never looked at, and reading it would allocate a value for every element of the stored sibling.
+        std::optional<ColumnsReadByMergeExpressions> columns_read_by_expressions;
         for (const auto & column : global_ctx->merging_columns_expired_by_ttl)
         {
             if (!isArray(column.type))
                 continue;
 
-            columns_with_reader_defaults.insert(column.name);
             if (std::find(merging_column_names.begin(), merging_column_names.end(), column.name) == merging_column_names.end())
+            {
+                if (!columns_read_by_expressions)
+                    columns_read_by_expressions.emplace(*global_ctx->metadata_snapshot);
+
+                if (!columns_read_by_expressions->contains(column.name))
+                    continue;
+
                 merging_column_names.push_back(column.name);
+            }
+
+            columns_with_reader_defaults.insert(column.name);
         }
     }
 
