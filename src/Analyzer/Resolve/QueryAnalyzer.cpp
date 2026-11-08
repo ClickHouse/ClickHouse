@@ -2587,6 +2587,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                     array_join_column.getColumnName());
         }
 
+        updateMatchedColumnsFromJoinUsing(
+            matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
+
         return matched_column_nodes_with_names;
     }
 

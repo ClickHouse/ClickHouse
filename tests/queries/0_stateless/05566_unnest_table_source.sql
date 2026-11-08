@@ -157,6 +157,8 @@ SELECT '-- chains';
 SELECT t.id, x FROM t_unnest AS t JOIN t_unnest AS s ON s.id = t.id, unnest(s.arr) AS x ORDER BY ALL;
 SELECT t.id, u.tag, m.v FROM t_unnest AS t, unnest(t.tags) AS u(tag) JOIN (SELECT 'a' AS k, 'A' AS v) AS m ON m.k = u.tag ORDER BY ALL;
 SELECT t.id, tag, m.v FROM t_unnest AS t, unnest(t.tags) AS u(tag) JOIN (SELECT 'a' AS tag, 'A' AS v) AS m USING (tag) ORDER BY ALL;
+SELECT u.* APPLY toTypeName, toTypeName(u.x) FROM numbers(1) AS t, unnest([1::UInt8]) AS u(x) JOIN (SELECT 1::UInt64 AS x) AS r USING (x);
+SELECT u.* APPLY toTypeName, toTypeName(u.x), toTypeName(u.n) FROM numbers(1) AS t, unnest([1::UInt8]) WITH ORDINALITY AS u(x, n) JOIN (SELECT 1::UInt64 AS x) AS r USING (x);
 SELECT id, a, b FROM t_unnest AS t, unnest(t.arr) AS a, unnest(t.tags) AS b ORDER BY ALL;
 SELECT x FROM unnest([[1, 2], [3]]) AS u(arr), unnest(u.arr) AS x ORDER BY ALL;
 SELECT j.x FROM (t_unnest AS t, unnest(t.arr) AS x) AS j ORDER BY ALL;
