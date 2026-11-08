@@ -572,6 +572,9 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
     {
         const RangeState & range = ranges[idx];
         RequestState * req = range.request;
+        /// A cancelled request may have had a task, which `PrefetchHandle::reset` reads without the mutex.
+        if (req->state.load(std::memory_order_relaxed) == RequestState::State::Cancelled)
+            continue;
         req->task = &task;
         /// `task.offset` is the minimum over the ranges in state `HasRange`; a cancelled range in
         /// this span took no part in that minimum and can start before the task. Its `task_offset`
