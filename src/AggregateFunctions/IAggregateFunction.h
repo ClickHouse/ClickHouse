@@ -1222,6 +1222,10 @@ struct AggregateFunctionProperties
     bool is_window_function = false;
 
     VariantArgumentsConversion variant_arguments_conversion = VariantArgumentsConversion::None;
+
+    /// Keep DISTINCT keys in their first-seen order when replaying them must preserve that order.
+    /// Opt in explicitly, so existing DISTINCT state formats remain unchanged.
+    bool preserve_distinct_input_order = false;
 };
 
 

@@ -3,8 +3,6 @@
 
 #include <AggregateFunctions/Helpers.h>
 
-#include <boost/algorithm/string/predicate.hpp>
-
 namespace DB
 {
 struct Settings;
@@ -38,15 +36,12 @@ public:
         const Array & params) const override
     {
         AggregateFunctionPtr res;
-        /// Combinator names retain the aggregate's base name. In particular,
-        /// Tuple has multiple nested functions and no getNestedFunction().
-        /// Only product needs an ordered distinct history here, because its
-        /// Float64 multiplication may change when unique keys are replayed.
-        const bool ordered_product = properties.is_order_dependent && boost::istarts_with(nested_function->getName(), "product");
+        /// Only opt-in functions need a persisted first-seen order for DISTINCT keys.
+        const bool preserve_history_order = properties.preserve_distinct_input_order;
 
         if (arguments.size() == 1)
         {
-            if (ordered_product)
+            if (preserve_history_order)
             {
                 res.reset(createWithNumericType<
                     AggregateFunctionDistinct,
@@ -79,7 +74,7 @@ public:
                 nested_function, arguments, params, properties.is_order_dependent);
         }
 
-        if (ordered_product)
+        if (preserve_history_order)
             return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericOrderedData>>(
                 nested_function, arguments, params, true);
 

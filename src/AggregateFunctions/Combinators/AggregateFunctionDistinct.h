@@ -180,39 +180,31 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
 };
 
 
-/** Keep the first-seen order for non-numeric arguments of productDistinct,
-  * including Decimal and Nullable. The serialized representation remains a
-  * count followed by serialized keys, as in the regular generic Distinct set.
+/** Shared ordered history for generic DISTINCT keys. Keep the same serialized key format,
+  * but write and replay keys in their first-seen order.
   */
-template <bool is_plain_column>
-struct AggregateFunctionDistinctSingleGenericOrderedData : AggregateFunctionDistinctSingleGenericData<is_plain_column>
+struct AggregateFunctionDistinctGenericOrderedData : AggregateFunctionDistinctGenericData
 {
-    using Base = AggregateFunctionDistinctSingleGenericData<is_plain_column>;
-    using Set = typename Base::Set;
     VectorWithMemoryTracking<std::string_view> insertion_order;
 
-    bool add(const IColumn ** columns, size_t, size_t row_num, Arena * arena)
+    void recordInserted(Set::LookupResult it, bool inserted)
     {
-        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
-        typename Set::LookupResult it = nullptr;
-        bool inserted = false;
-        this->history.emplace(key_holder, it, inserted);
         if (inserted)
             insertion_order.push_back(it->getValue());
-        return inserted;
     }
 
-    void merge(const AggregateFunctionDistinctSingleGenericOrderedData & rhs, MutableColumns & argument_columns, Arena * arena)
+    template <typename AppendToColumns>
+    void mergeOrdered(const AggregateFunctionDistinctGenericOrderedData & rhs, Arena * arena, AppendToColumns && append_to_columns)
     {
         for (const auto & key : rhs.insertion_order)
         {
-            typename Set::LookupResult it = nullptr;
+            Set::LookupResult it = nullptr;
             bool inserted = false;
-            this->history.emplace(ArenaKeyHolder{key, *arena}, it, inserted);
+            history.emplace(ArenaKeyHolder{key, *arena}, it, inserted);
             if (inserted)
             {
                 insertion_order.push_back(it->getValue());
-                deserializeAndInsert<is_plain_column>(it->getValue(), *argument_columns[0]);
+                append_to_columns(it->getValue());
             }
         }
     }
@@ -230,10 +222,32 @@ struct AggregateFunctionDistinctSingleGenericOrderedData : AggregateFunctionDist
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
         {
-            const auto [it, inserted] = this->history.insert(readStringBinaryInto(*arena, buf));
-            if (inserted)
-                insertion_order.push_back(it->getValue());
+            /// The decoded key already belongs to the Arena.
+            const auto [it, inserted] = history.insert(readStringBinaryInto(*arena, buf));
+            recordInserted(it, inserted);
         }
+    }
+};
+
+template <bool is_plain_column>
+struct AggregateFunctionDistinctSingleGenericOrderedData : AggregateFunctionDistinctGenericOrderedData
+{
+    bool add(const IColumn ** columns, size_t, size_t row_num, Arena * arena)
+    {
+        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
+        Set::LookupResult it = nullptr;
+        bool inserted = false;
+        history.emplace(key_holder, it, inserted);
+        recordInserted(it, inserted);
+        return inserted;
+    }
+
+    void merge(const AggregateFunctionDistinctSingleGenericOrderedData & rhs, MutableColumns & argument_columns, Arena * arena)
+    {
+        mergeOrdered(rhs, arena, [&](std::string_view key)
+        {
+            deserializeAndInsert<is_plain_column>(key, *argument_columns[0]);
+        });
     }
 
     void insertOrderedValues(MutableColumns & argument_columns) const
@@ -284,15 +298,11 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
 };
 
 
-/** Ordered multi-argument Distinct history for product combinators such as
-  * productIfDistinct and productArgMaxDistinct. Keys use the same serialized
-  * representation as AggregateFunctionDistinctMultipleGenericData, but are
-  * replayed in the order in which their distinct tuples were first seen.
+/** Ordered multi-argument DISTINCT keys use the same shared history as the unary
+  * generic case, but deserialize each key into multiple argument columns.
   */
-struct AggregateFunctionDistinctMultipleGenericOrderedData : AggregateFunctionDistinctMultipleGenericData
+struct AggregateFunctionDistinctMultipleGenericOrderedData : AggregateFunctionDistinctGenericOrderedData
 {
-    VectorWithMemoryTracking<std::string_view> insertion_order;
-
     static void insertColumns(std::string_view key, MutableColumns & argument_columns)
     {
         ReadBufferFromString in(key);
@@ -315,45 +325,16 @@ struct AggregateFunctionDistinctMultipleGenericOrderedData : AggregateFunctionDi
         Set::LookupResult it = nullptr;
         bool inserted = false;
         history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
-        if (inserted)
-            insertion_order.push_back(it->getValue());
+        recordInserted(it, inserted);
         return inserted;
     }
 
     void merge(const AggregateFunctionDistinctMultipleGenericOrderedData & rhs, MutableColumns & argument_columns, Arena * arena)
     {
-        for (const auto & key : rhs.insertion_order)
+        mergeOrdered(rhs, arena, [&](std::string_view key)
         {
-            Set::LookupResult it = nullptr;
-            bool inserted = false;
-            history.emplace(ArenaKeyHolder{key, *arena}, it, inserted);
-            if (inserted)
-            {
-                insertion_order.push_back(it->getValue());
-                insertColumns(it->getValue(), argument_columns);
-            }
-        }
-    }
-
-    void serialize(WriteBuffer & buf) const
-    {
-        writeVarUInt(insertion_order.size(), buf);
-        for (const auto & key : insertion_order)
-            writeStringBinary(key, buf);
-    }
-
-    void deserialize(ReadBuffer & buf, Arena * arena)
-    {
-        size_t size = 0;
-        readVarUInt(size, buf);
-        for (size_t i = 0; i < size; ++i)
-        {
-            /// readStringBinaryInto already owns the key in the Arena.
-            /// Avoid copying every persisted key into the same Arena again.
-            const auto [it, inserted] = history.insert(readStringBinaryInto(*arena, buf));
-            if (inserted)
-                insertion_order.push_back(it->getValue());
-        }
+            insertColumns(key, argument_columns);
+        });
     }
 
     void insertOrderedValues(MutableColumns & argument_columns) const

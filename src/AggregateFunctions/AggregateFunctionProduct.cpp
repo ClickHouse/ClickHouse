@@ -365,7 +365,10 @@ FROM VALUES('x Float64', (1.5), (2), (4));
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    AggregateFunctionProperties properties = {
+        .returns_default_when_only_null = false,
+        .is_order_dependent = true,
+        .preserve_distinct_input_order = true};
     factory.registerFunction("product", {createAggregateFunctionProduct, documentation, properties}, AggregateFunctionFactory::Case::Insensitive);
 }
 
