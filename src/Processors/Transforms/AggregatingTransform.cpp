@@ -1029,8 +1029,13 @@ private:
         const size_t bytes_per_cell = std::max<size_t>(source_memory / std::max<size_t>(source_cells, 1), 1);
         plan.rows_per_chunk = std::clamp<size_t>(MEMORY_PER_CHUNK / bytes_per_cell, 1, params->params.max_block_size);
 
-        /// A worker's table takes its share of the keys, which the largest source table bounds from below, up to a chunk.
-        plan.destination_size_hint = std::min<size_t>(max_source_table_size / plan.workers, plan.rows_per_chunk);
+        /// A worker's table takes the keys of one chunk: the worker's share of the partitions, or the smaller
+        /// share at which the fan-out of the output ends the chunk, which is at least one partition (see
+        /// `Aggregator::singleLevelPartitionChunkEndsForFanOut`). For example, 4 workers that merge 512
+        /// partitions for 64 output streams end their chunks at 8 partitions, a 64th of the keys. The largest
+        /// source table bounds those keys from below by the same share, up to `rows_per_chunk`.
+        const size_t shares = std::max(plan.workers, std::min(output_streams, plan.partitions));
+        plan.destination_size_hint = std::min<size_t>(max_source_table_size / shares, plan.rows_per_chunk);
         LOG_TRACE(
             getLogger("AggregatingTransform"),
             "Use parallel hash-partition merge for single level aggregation data: {} tables of {} cells and {} bytes by {} "
