@@ -92,8 +92,7 @@ static bool hasNonDeterministicOutput(const ActionsDAG & dag)
         dag.getOutputs(), [](const ActionsDAG::Node * output) { return !VirtualColumnUtils::isDeterministic(output); });
 }
 
-/// The defaults the reader evaluates for the read columns that some part lacks (a part written before `ALTER ADD COLUMN`, or any part while
-/// a column mutation is pending), built the way the reader builds them. Throws if a default does not resolve.
+/// The defaults the reader evaluates, with its context, for the read columns some part lacks. Throws if one does not resolve.
 static std::optional<ActionsDAG> buildMissingDefaults(const ReadFromMergeTree & read)
 {
     const auto & columns = read.getStorageMetadata()->getColumns();
@@ -129,7 +128,6 @@ static std::optional<ActionsDAG> buildMissingDefaults(const ReadFromMergeTree & 
         if (!missing_in_some_part(column.name))
             present_in_all_parts.insert(ColumnWithTypeAndName(column.type, column.name));
 
-    /// The context the reader evaluates defaults with (`IMergeTreeReader::createContextForDefaultExpressions`).
     auto context = Context::createCopy(read.getMergeTreeData().getContext());
     enableAllExperimentalSettings(context);
     return evaluateMissingDefaults(present_in_all_parts, missing_read_columns, columns, context);
@@ -177,10 +175,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     QueryPlan::Node * node = aggregating_node->children.front();
     FilterStep * closest_filter_step = nullptr;
     ReadFromMergeTree * read_step = nullptr;
-    /// An expression deterministic only within one query (`__applyFilter`, `now`, `joinGet`), also as a column default the reader evaluates
-    /// for a part that lacks the column, or a virtual column like `_disk_name`, changes the boundary, but what it depends on is not in the
-    /// query condition cache key: as a filter it changes which rows reach the heap, as a grouping key the number of groups per value of the
-    /// first key.
+    /// An expression deterministic only within one query (`__applyFilter`, `now`, `joinGet`, also as a column default or a virtual column
+    /// like `_disk_name`) changes the boundary, as a filter or a grouping key, through data the query condition cache key does not include.
     bool has_non_deterministic_expression = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
     std::vector<const ActionsDAG *> path_expressions;
@@ -280,7 +276,6 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         return nullptr;
     }
 
-    /// The reader evaluates such a default on the block the filter shrank, like the steps above.
     std::optional<ActionsDAG> missing_defaults;
     try
     {
@@ -292,6 +287,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         return nullptr;
     }
 
+    /// The reader evaluates the defaults on the block the filter shrank, like the steps above.
     if (missing_defaults && dependsOnItsBlock(*missing_defaults))
     {
         LOG_TRACE(log, "No dynamic filter: a column default of the read depends on its block");
@@ -301,7 +297,6 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     if (missing_defaults && hasNonDeterministicOutput(*missing_defaults))
         has_non_deterministic_expression = true;
 
-    /// A virtual column such as `_disk_name` can change its value while the part stays the same.
     const auto & virtuals = read_step->getStorageMetadata()->virtuals;
     for (const auto & name : read_columns)
     {
@@ -358,8 +353,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// grouping keys with their types and the order of every ranked key, not only the first one. Only the first
     /// key has to be passed through unchanged, the others may be computed between the read and the aggregation
     /// (`GROUP BY a, g` over `SELECT a, b % 100 AS g`), and the name of a computed key does not always identify its
-    /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation,
-    /// and the defaults the reader evaluates.
+    /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation.
     SipHash hash;
     hash.update(std::string_view("group_by_top_k"));
     hash.update(info.column_name);
