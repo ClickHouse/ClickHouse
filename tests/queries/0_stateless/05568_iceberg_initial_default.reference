@@ -82,8 +82,12 @@ schema ids	[1]
 1
 1	(10,5)	[(11,5)]	7	8	(6)	[1,NULL]
 readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
 readd, current schema	1	(9)	9
 readd, current schema	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
 dotted	7	(11)
 ORC
 schema ids	[0]
@@ -96,8 +100,12 @@ schema ids	[1]
 1
 1
 readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
 readd, current schema	1	(9)	9
 readd, current schema	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
 dotted	7	(11)
 Avro
 schema ids	[0]
@@ -107,6 +115,8 @@ Avro, current schema
 schema ids	[1]
 1	7	8	(6)	(NULL)	[1,NULL]
 readd	1	(9)	9
+t.j = 9	(9)
+t.j = 9	(9)
 readd, current schema	1	9
 readd, current schema	1	9
 Code: 743

@@ -1385,9 +1385,9 @@ void NativeORCBlockInputFormat::prepareFileReader()
     const ColumnMapper * column_mapper = format_filter_info ? format_filter_info->column_mapper.get() : nullptr;
     NameSet absent_columns;
     std::unordered_map<String, Field> absent_column_defaults;
+    ORCFieldIdsCache field_ids_cache;
     if (column_mapper)
     {
-        ORCFieldIdsCache field_ids_cache;
         for (const auto & column : header)
         {
             const auto [absent, default_applies] = getORCFieldAbsence(column.name, *column_mapper, file_schema, field_ids_cache);
@@ -1414,6 +1414,24 @@ void NativeORCBlockInputFormat::prepareFileReader()
             updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids);
     }
     include_indices.assign(include_typeids.begin(), include_typeids.end());
+
+    /// The filter names the columns of the current schema, also tuple elements that the header has only through their parent.
+    const ColumnMapper * filter_column_mapper = format_filter_info && format_filter_info->current_schema_column_mapper
+        ? format_filter_info->current_schema_column_mapper.get()
+        : column_mapper;
+    if (filter_column_mapper && format_filter_info->filter_actions_dag && !absent_column_has_namesake)
+    {
+        for (const auto & required : format_filter_info->filter_actions_dag->getRequiredColumns())
+        {
+            auto adjusted_type = required.type;
+            if (getORCFieldAbsence(required.name, *filter_column_mapper, file_schema, field_ids_cache).first
+                && traverseDownORCTypeByName(required.name, &file_schema, adjusted_type, ignore_case))
+            {
+                absent_column_has_namesake = true;
+                break;
+            }
+        }
+    }
 
     orc_column_to_ch_column = std::make_unique<ORCColumnToCHColumn>(
         header,

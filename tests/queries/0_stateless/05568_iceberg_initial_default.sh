@@ -275,7 +275,13 @@ for format in Parquet ORC Avro; do
         INSERT INTO t VALUES (1, 100, (100));
     "
     add_fields "${table}" readd
-    ${LOCAL} -q "SELECT 'readd', * FROM icebergLocal('${table}/')"
+    # The filter on `t.j` is not pushed down to the dropped field `t.j`.
+    nested_filter="SELECT 't.j = 9', t FROM icebergLocal('${table}/') WHERE t.j = 9 SETTINGS optimize_move_to_prewhere = 0"
+    ${LOCAL} -q "
+        SELECT 'readd', * FROM icebergLocal('${table}/');
+        ${nested_filter}, input_format_orc_filter_push_down = 1;
+        ${nested_filter}, input_format_orc_filter_push_down = 0;
+    "
     bind_to_current_schema "${table}"
     # A field of an Avro record is still matched by name.
     columns=$([ "${format}" = Avro ] && echo 'a, j' || echo '*')
@@ -283,6 +289,12 @@ for format in Parquet ORC Avro; do
         SELECT 'readd, current schema', ${columns} FROM icebergLocal('${table}/');
         SELECT 'readd, current schema', ${columns} FROM icebergLocal('${table}/') WHERE j = 9;
     "
+    if [ "${format}" != Avro ]; then
+        ${LOCAL} -q "
+            ${nested_filter}, input_format_orc_filter_push_down = 1;
+            ${nested_filter}, input_format_orc_filter_push_down = 0;
+        "
+    fi
 
     # A top-level field whose name has a dot is not a field of the struct named by its prefix.
     if [ "${format}" != Avro ]; then
