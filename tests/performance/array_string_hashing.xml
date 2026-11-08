@@ -1,0 +1,51 @@
+<test>
+    <!-- Materialize deterministic, nonperiodic `String` payloads before timing `arrayDistinct` and `arrayUniq`.
+         Each array has 16 distinct strings, or four strings repeated four times. The first
+         byte identifies the element, so distinctness does not depend on hash collisions.
+         Include short controls and both sides of the scalar and polynomial-folding thresholds. -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>length</name>
+            <values>
+                <value>8</value>
+                <value>16</value>
+                <value>32</value>
+                <value>33</value>
+                <value>1023</value>
+                <value>1024</value>
+                <value>1025</value>
+                <value>16383</value>
+                <value>16384</value>
+                <value>16385</value>
+                <value>65536</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE array_string_hashing_{length}
+        (distinct_values Array(String), duplicate_values Array(String)) ENGINE = Memory
+    </create_query>
+    <!-- About 8 MiB per column for short/medium keys and 64 MiB for long keys,
+         to amortize fixed query planning costs in the folding cases. -->
+    <fill_query>
+        INSERT INTO array_string_hashing_{length}
+        WITH i -> concat(char(i), substring(arrayStringConcat(arrayMap(
+            j -> leftPad(hex(cityHash64(number, i, j)), 16, '0'), range(intDiv({length} + 14, 16)))), 1, {length} - 1)) AS key
+        SELECT arrayMap(i -> key(i), range(16)), arrayMap(i -> key(i % 4), range(16))
+        FROM numbers(intDiv(if({length} >= 16383, 67108864, 8388608), 16 * {length}))
+        SETTINGS max_block_size = 64
+    </fill_query>
+
+    <query>SELECT sum(length(arrayDistinct(distinct_values))) FROM array_string_hashing_{length}</query>
+    <query>SELECT sum(length(arrayDistinct(duplicate_values))) FROM array_string_hashing_{length}</query>
+
+    <query>SELECT sum(arrayUniq(distinct_values)) FROM array_string_hashing_{length}</query>
+    <query>SELECT sum(arrayUniq(duplicate_values)) FROM array_string_hashing_{length}</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_string_hashing_{length}</drop_query>
+</test>
