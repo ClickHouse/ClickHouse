@@ -24,6 +24,7 @@
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -388,10 +389,10 @@ namespace
 {
 
 /// The columns that the expressions evaluated by a merge may read: the TTL rules, the `DEFAULT` and
-/// `MATERIALIZED` expressions, the skip indices and the projections. An `ALIAS` column stands for the columns
-/// its expression reads, a subcolumn for its column and a flattened `Nested` for all of its arrays. The ASTs
-/// are walked syntactically, so an identifier that is not a column of the table (a lambda argument, a column of
-/// a subquery) at worst adds a column that is then read for nothing.
+/// `MATERIALIZED` expressions, the skip indices and the projections. An `ALIAS` or `EPHEMERAL` column, which is
+/// not stored, stands for the columns its expression reads, a subcolumn for its column and a flattened `Nested`
+/// for all of its arrays. The ASTs are walked syntactically, so an identifier that is not a column of the table
+/// (a lambda argument, a column of a subquery) at worst adds a column that is then read for nothing.
 class ColumnsReadByMergeExpressions
 {
 public:
@@ -429,6 +430,15 @@ private:
         if (const auto * identifier = ast.as<ASTIdentifier>())
             addColumn(identifier->name());
 
+        /// The `GROUP BY` keys and the `SET` assignments of a TTL rule are not among its children.
+        if (const auto * ttl_element = ast.as<ASTTTLElement>())
+        {
+            for (const auto & key : ttl_element->group_by_key)
+                addIdentifiers(*key);
+            for (const auto & assignment : ttl_element->group_by_assignments)
+                addIdentifiers(*assignment);
+        }
+
         for (const auto & child : ast.children)
             addIdentifiers(*child);
     }
@@ -437,10 +447,11 @@ private:
     {
         if (const auto * column = columns.tryGet(name))
         {
-            if (column->default_desc.kind != ColumnDefaultKind::Alias)
+            const auto & default_desc = column->default_desc;
+            if (default_desc.kind != ColumnDefaultKind::Alias && default_desc.kind != ColumnDefaultKind::Ephemeral)
                 result.insert(name);
-            else if (column->default_desc.expression && expanded_aliases.insert(name).second)
-                addIdentifiers(*column->default_desc.expression);
+            else if (default_desc.expression && expanded_columns.insert(name).second)
+                addIdentifiers(*default_desc.expression);
         }
         else if (auto column_or_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
         {
@@ -457,7 +468,7 @@ private:
 
     const ColumnsDescription & columns;
     NameSet result;
-    NameSet expanded_aliases;
+    NameSet expanded_columns;
 };
 
 }

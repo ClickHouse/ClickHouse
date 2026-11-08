@@ -37,6 +37,20 @@ rollup compact projection	4
 1	4	4
 2	0	0
 rollup compact stored	0
+rollup set wide	0	2	2
+rollup set wide	1	0	3
+rollup set wide	2	1	1
+rollup set wide stored	0
+rollup set compact	0	2	2
+rollup set compact	1	0	3
+rollup set compact	2	1	1
+rollup set compact stored	0
+through alias	0	20	2
+through alias	2	30	3
+through alias stored	['id','m','n.a','ts']
+through ephemeral	0	20	2
+through ephemeral	2	30	3
+through ephemeral stored	['id','n.a','ts','x']
 default source wide base	4
 default source wide projection	4
 0	2	2
