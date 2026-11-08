@@ -35,6 +35,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDeletionVectorReader.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -300,6 +301,43 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
         table_state_snapshot->schema_id);
 }
 
+struct IcebergIterator::PuffinFooterOnce
+{
+    std::once_flag read;
+    std::shared_ptr<const Iceberg::PuffinBlobDescriptors> descriptors;
+};
+
+void IcebergIterator::checkDeletionVectorBlob(
+    const Iceberg::DeletionVectorObject & deletion_vector,
+    const Iceberg::IcebergPathFromMetadata & puffin_file,
+    const Iceberg::IcebergPathFromMetadata & data_file)
+{
+    /// A Puffin file starts with its magic, so a vector at offset 0 is a bare blob without a footer.
+    if (deletion_vector.content_offset == 0)
+        return;
+
+    std::shared_ptr<PuffinFooterOnce> footer;
+    {
+        std::lock_guard lock(puffin_footers_mutex);
+        auto & slot = puffin_footers[deletion_vector.file_path];
+        if (!slot)
+            slot = std::make_shared<PuffinFooterOnce>();
+        footer = slot;
+    }
+    std::call_once(
+        footer->read,
+        [&]
+        { footer->descriptors = Iceberg::readPuffinBlobDescriptors(deletion_vector.file_path, object_storage, local_context, logger); });
+
+    Iceberg::checkIcebergDeletionVectorBlob(
+        *footer->descriptors,
+        deletion_vector.content_offset,
+        deletion_vector.content_size_in_bytes,
+        data_file,
+        puffin_file,
+        persistent_components.table_location);
+}
+
 Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
 {
     /// The threads calling `next` share the data manifests: each one continues an idle partially read
@@ -431,7 +469,11 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     upper.has_value() ? upper->serialize() : "[no upper bound]");
                 const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
                 if (position_delete->parsed_entry->isDeletionVector())
+                {
                     object_info->addDeletionVector(position_delete, resolved_delete_path);
+                    checkDeletionVectorBlob(
+                        *object_info->info.deletion_vector, position_delete->parsed_entry->file_path_key, data_file_path);
+                }
                 else
                     object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
             }

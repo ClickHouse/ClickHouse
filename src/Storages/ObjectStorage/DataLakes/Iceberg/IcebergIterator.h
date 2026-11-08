@@ -17,6 +17,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 #include <base/defines.h>
 
@@ -58,6 +59,10 @@ private:
     Iceberg::ProcessedManifestFileEntryPtr nextDataFileEntry();
     Iceberg::ManifestIteratorPtr createManifestIterator(
         const ManifestFileCacheKey & manifest_list_entry, const Iceberg::ManifestFileCacheableInfo & manifest_file) const;
+    void checkDeletionVectorBlob(
+        const Iceberg::DeletionVectorObject & deletion_vector,
+        const Iceberg::IcebergPathFromMetadata & puffin_file,
+        const Iceberg::IcebergPathFromMetadata & data_file);
 
     LoggerPtr logger;
     ObjectStoragePtr object_storage;
@@ -89,6 +94,11 @@ private:
     std::vector<Iceberg::ManifestIteratorPtr> idle_data_manifests TSA_GUARDED_BY(data_files_mutex);
     size_t data_manifests_in_use TSA_GUARDED_BY(data_files_mutex) = 0;
     std::exception_ptr data_files_exception TSA_GUARDED_BY(data_files_mutex);
+
+    struct PuffinFooterOnce;
+    std::mutex puffin_footers_mutex;
+    /// Footers of the Puffin files of the attached deletion vectors, read once per query.
+    std::unordered_map<String, std::shared_ptr<PuffinFooterOnce>> puffin_footers TSA_GUARDED_BY(puffin_footers_mutex);
 };
 }
 
