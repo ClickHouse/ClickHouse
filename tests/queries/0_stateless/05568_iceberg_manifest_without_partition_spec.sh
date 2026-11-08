@@ -77,5 +77,10 @@ for manifest in "$table"/metadata/*.avro; do
 done
 q "SELECT b FROM icebergLocal('$table') ORDER BY b"
 $ch --query "CREATE TABLE t ENGINE = IcebergLocal('$table', 'ORC'); ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" > /dev/null
-q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'the table has several schemas' -e 'ICEBERG_SPECIFICATION_VIOLATION'
+q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'other than its initial schema 0' -e 'ICEBERG_SPECIFICATION_VIOLATION'
+# Java's expiry with `clean_expired_metadata` also drops the schemas no retained snapshot uses, leaving only schema 1.
+python3 -c 'import glob, json, os, re, sys
+p = max(glob.glob(sys.argv[1] + "/metadata/v*.metadata.json"), key=lambda f: int(re.match(r"v(\d+)", os.path.basename(f)).group(1)))
+m = json.load(open(p)); m["schemas"] = [s for s in m["schemas"] if s["schema-id"] == m["current-schema-id"]]; json.dump(m, open(p, "w"))' "$table"
+q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'other than its initial schema 0' -e 'ICEBERG_SPECIFICATION_VIOLATION'
 rm -rf "./${work_dir}"

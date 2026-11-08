@@ -26,5 +26,7 @@ dry_run	1
 failed_deletions_count	0
 7
 8
-the table has several schemas
+other than its initial schema 0
+ICEBERG_SPECIFICATION_VIOLATION
+other than its initial schema 0
 ICEBERG_SPECIFICATION_VIOLATION

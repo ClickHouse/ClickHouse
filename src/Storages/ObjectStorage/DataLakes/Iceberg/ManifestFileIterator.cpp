@@ -546,13 +546,13 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             manifest_schema_id = *header_schema_id;
         else if (auto snapshot_schema_id = schema_processor.tryGetSchemaIdForSnapshot(inherited_snapshot_id_))
             manifest_schema_id = *snapshot_schema_id;
-        else if (auto only_schema_id = schema_processor.tryGetOnlySchemaIdFromMetadata())
-            manifest_schema_id = *only_schema_id;
+        else if (schema_processor.hasOnlyInitialSchemaFromMetadata())
+            manifest_schema_id = 0;
         else
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Manifest file '{}' has no '{}' in its Avro metadata, the snapshot {} that added it is not in the table metadata, "
-                "and the table has several schemas, so the schema of its data files is unknown",
+                "and the table has a schema other than its initial schema 0, so the schema of its data files is unknown",
                 path_to_manifest_file_,
                 f_schema,
                 inherited_snapshot_id_);
