@@ -8,6 +8,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
@@ -176,7 +177,12 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
 TEST(AllocationInterceptors, SizedDeleteCreditsWhatNewCharged)
 {
     MainThreadStatus::getInstance();
+#if USE_JEMALLOC
+    /// jemalloc's page can be larger than the OS page (64 KiB by default on aarch64).
+    const size_t page_size = Jemalloc::getValue<size_t>("arenas.page");
+#else
     const size_t page_size = getPageSize();
+#endif
 
     auto check = [](size_t size, std::optional<size_t> alignment)
     {
