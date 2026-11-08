@@ -7,6 +7,7 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/Hex.h>
@@ -55,7 +56,6 @@
 
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
-#include <base/wide_integer_to_string.h>
 #include <Core/UUID.h>
 
 namespace DB
@@ -1169,7 +1169,7 @@ static std::optional<String> rewriteAsPlainDecimalNumeral(std::string_view token
             return {};
         value = (value << 4) | UInt256(unhex(c));
     }
-    return wide::to_string(value);
+    return toString(value);
 }
 
 /// True if a plain decimal numeral is written without a fractional part and without an exponent.
