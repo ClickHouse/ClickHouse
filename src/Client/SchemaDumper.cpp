@@ -5752,6 +5752,7 @@ void markTypingSettings(
         std::vector<String> session_expressions;
         std::vector<String> storage_expressions;
         std::vector<String> projection_probes;
+        std::vector<String> constraint_probes;
         auto add = [&](const IAST * part, const String & text, std::vector<String> & to)
         {
             std::set<const IAST *> found;
@@ -5783,9 +5784,34 @@ void markTypingSettings(
                 for (const auto & child : create->columns_list->indices->children)
                     if (const auto * index = child->as<ASTIndexDeclaration>(); index && index->getExpression())
                         add(index->getExpression().get(), index->getExpression()->formatWithSecretsOneLine(), storage_expressions);
-            /// CREATE does not analyze a constraint.
+            /// CREATE analyzes no constraint, but runs each scalar subquery in one, not an `IN` set or `exists` argument.
             if (create->columns_list->constraints)
+            {
                 collect_carriers(*create->columns_list->constraints, probed_carriers);
+                std::set<const IAST *> not_run;
+                forEachNode(*create->columns_list->constraints, [&](const IAST & node)
+                {
+                    const auto * function = node.as<ASTFunction>();
+                    if (!function || !function->arguments)
+                        return;
+                    const auto & arguments = function->arguments->children;
+                    if (functionIsInOrGlobalInOperator(function->name) && arguments.size() >= 2 && arguments[1]->as<ASTSubquery>())
+                        not_run.insert(arguments[1].get());
+                    else if (function->name == "exists" && !arguments.empty() && arguments[0]->as<ASTSubquery>())
+                        not_run.insert(arguments[0].get());
+                });
+                std::function<void(const IAST &)> add_scalar_subqueries = [&](const IAST & node)
+                {
+                    if (not_run.contains(&node))
+                        return;
+                    if (node.as<ASTSubquery>() && !node.children.empty())
+                        add(&node, node.children[0]->formatWithSecretsOneLine(), constraint_probes);
+                    else
+                        for (const auto & child : node.children)
+                            add_scalar_subqueries(*child);
+                };
+                add_scalar_subqueries(*create->columns_list->constraints);
+            }
             if (create->columns_list->projections)
                 for (const auto & child : create->columns_list->projections->children)
                 {
@@ -5851,6 +5877,7 @@ void markTypingSettings(
             session_probes.push_back(select_of(session_expressions, session_relation));
         else if (create->is_materialized_view && create->select)
             session_probes.push_back(create->select->formatWithSecretsOneLine());
+        session_probes.insert(session_probes.end(), constraint_probes.begin(), constraint_probes.end());
 
         /// A carrier outside the probes, or a probe that would run a subquery (see `analyzes_on_source`), leaves no proof.
         bool can_probe = analyzes_on_source

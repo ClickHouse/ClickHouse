@@ -1,0 +1,6 @@
+probed: dump rc=0
+SET allow_lossy_numeric_supertype = 1;
+probed: unverified warnings: 0
+probed: replay rc=0
+nested: dump rc=0
+nested: unverified warnings: 1
