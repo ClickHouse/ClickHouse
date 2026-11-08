@@ -61,6 +61,10 @@ ManifestFileCacheKeys getManifestList(
     const IcebergPathFromMetadata & filename,
     LoggerPtr log);
 
+/// The manifests that a snapshot without `manifest-list` lists in `manifests` (format version 1),
+/// with the values Java gives them: partition spec 0, sequence number 0, added by this snapshot, no summaries and counts.
+ManifestFileCacheKeys getEmbeddedManifests(const Poco::JSON::Object::Ptr & snapshot_object);
+
 /// Reads manifest files ahead, in order, on the IO thread pool. Not thread-safe.
 class ManifestFilesPrefetcher : private boost::noncopyable
 {

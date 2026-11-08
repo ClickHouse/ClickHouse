@@ -1,0 +1,25 @@
+--- format version 1
+1	alpha	10
+2	beta	20
+3	alpha	\N
+2	20
+2456114553637229296	0	1
+NOT_IMPLEMENTED
+3	6	30
+1
+--- upgraded to format version 2
+1	alpha	10
+2	beta	20
+3	alpha	\N
+deleted_data_files_count	0
+deleted_position_delete_files_count	0
+deleted_equality_delete_files_count	0
+deleted_manifest_files_count	0
+deleted_manifest_lists_count	0
+deleted_metadata_files_count	0
+deleted_statistics_files_count	0
+skipped_missing_metadata_count	0
+failed_deletions_count	0
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+1

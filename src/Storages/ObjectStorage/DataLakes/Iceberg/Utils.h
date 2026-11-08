@@ -113,6 +113,8 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
 
 Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 
+/// The `manifest-list` of a snapshot that a writer builds on; writing on top of a snapshot that lists its `manifests` itself is not supported.
+String getManifestListPathForWrite(const Poco::JSON::Object::Ptr & snapshot);
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id);

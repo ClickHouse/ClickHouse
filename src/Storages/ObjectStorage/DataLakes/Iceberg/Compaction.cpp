@@ -172,7 +172,7 @@ static bool isCurrentManifestListAboveThreshold(
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == current_snapshot_id)
         {
-            current_manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
+            current_manifest_list_path = getManifestListPathForWrite(snapshot);
             break;
         }
     }
@@ -244,6 +244,11 @@ static Plan getPlan(
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)
     {
+        if (snapshot.manifest_list_path.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Writing to an Iceberg table is not supported when its snapshot {} lists its manifests in '{}' instead of a manifest list",
+                snapshot.snapshot_id, Iceberg::f_manifests);
         auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log);
         for (const auto & manifest_file : manifest_list)
         {
@@ -555,7 +560,7 @@ static bool writeConsolidatedManifestFile(
             const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
             if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == current_snapshot_id)
             {
-                current_manifest_list_path = snapshot->getValue<String>(Iceberg::f_manifest_list);
+                current_manifest_list_path = getManifestListPathForWrite(snapshot);
                 break;
             }
         }
