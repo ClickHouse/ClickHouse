@@ -611,6 +611,16 @@ public:
     /// to leave the result as is.
     static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
+    /// Decides where a merge by hash partitions (see `mergeSingleLevelPartitionsAndConvertToChunk`) ends its
+    /// chunks for the fan-out of the output, as `singleLevelChunkRowsForFanOut` splits a merged result. Such
+    /// a merge cannot count the rows of its result in advance: the sizes of the source tables overstate it by
+    /// the keys they share. Hash partitions hold equal shares of the keys instead, so a chunk ends once it
+    /// holds at least 512 rows and its share of the partitions for one chunk per output stream: 128 of 1024
+    /// partitions for 8 streams. No chunk then holds more than the larger of its share of the result and 512
+    /// rows, plus a partition, in whatever order the partitions are merged. Returns whether a chunk of `rows`
+    /// rows from `claimed_partitions` of the `partitions` ends.
+    static bool singleLevelPartitionChunkEndsForFanOut(size_t rows, size_t claimed_partitions, size_t partitions, size_t output_streams);
+
     /// Records the adaptive verdict of the run in the hash-table statistics when the run measured one (see
     /// `adaptiveStagingVerdict`). The in-memory merge records it inside `prepareVariantsToMerge`; the external merge
     /// never reaches that, so its finish path calls this instead.

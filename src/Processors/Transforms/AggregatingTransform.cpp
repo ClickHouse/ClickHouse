@@ -519,6 +519,7 @@ public:
         SharedDataPtr shared_data_,
         UInt32 num_partitions_,
         size_t rows_per_chunk_,
+        size_t output_streams_,
         size_t destination_size_hint_,
         Aggregator::ParallelMergeThreshold parallel_merge_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
@@ -528,6 +529,7 @@ public:
         , shared_data(std::move(shared_data_))
         , num_partitions(num_partitions_)
         , rows_per_chunk(rows_per_chunk_)
+        , output_streams(output_streams_)
         , destination_size_hint(destination_size_hint_)
         , parallel_merge(parallel_merge_)
         , updater(std::move(updater_))
@@ -549,15 +551,19 @@ public:
 protected:
     Chunk generate() override
     {
-        /// The worker merges the partitions it claims into one table, which goes downstream as one chunk once it holds
-        /// `rows_per_chunk` rows (see `planPartitionMerge`), so that an early `LIMIT` stops the merge, or once the
-        /// partitions run out. The transform forwards the chunks of all workers one at a time, so a chunk per partition
-        /// would make every partition pay a hop of the pipeline. A call claims its first partition before the merge
+        /// The worker merges the partitions it claims into one table, which goes downstream as one chunk once
+        /// it holds `rows_per_chunk` rows (see `planPartitionMerge`), or its share of the result for the
+        /// fan-out of the output (see `Aggregator::singleLevelPartitionChunkEndsForFanOut`), or once the
+        /// partitions run out. The chunks go downstream before the merge ends, so an early `LIMIT` stops it.
+        /// The transform forwards the chunks of all workers one at a time, so a chunk per partition would
+        /// make every partition pay a hop of the pipeline. A call claims its first partition before the merge
         /// builds the table, so a worker whose claims ran out finishes without building one.
         size_t claimed = 0;
         const auto claim = [&](size_t rows) -> std::optional<size_t>
         {
             if (rows >= rows_per_chunk)
+                return std::nullopt;
+            if (Aggregator::singleLevelPartitionChunkEndsForFanOut(rows, claimed, num_partitions, output_streams))
                 return std::nullopt;
 
             /// The serial merge stops merging further tables once the group limit breaks; the parallel
@@ -610,6 +616,7 @@ private:
     SharedDataPtr shared_data;
     UInt32 num_partitions;
     size_t rows_per_chunk;
+    size_t output_streams;
     size_t destination_size_hint;
     Aggregator::ParallelMergeThreshold parallel_merge;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
@@ -938,8 +945,10 @@ private:
         return true;
     }
 
-    /// How the parallel single-level merge by hash partitions runs: the partitions, the workers that claim them, the rows
-    /// at which a worker emits its table as a chunk, and the initial size of that table.
+    /// How the parallel single-level merge by hash partitions runs: the partitions, the workers that claim
+    /// them, the rows at which a worker emits its table as a chunk, and the initial size of that table. The
+    /// fan-out of the output can end a chunk earlier (see
+    /// `Aggregator::singleLevelPartitionChunkEndsForFanOut`).
     struct PartitionMergePlan
     {
         size_t partitions = 0;
@@ -1025,13 +1034,14 @@ private:
         LOG_TRACE(
             getLogger("AggregatingTransform"),
             "Use parallel hash-partition merge for single level aggregation data: {} tables of {} cells and {} bytes by {} "
-            "partitions in {} workers, {} rows per chunk",
+            "partitions in {} workers, {} rows per chunk, for {} output streams",
             data->size(),
             source_cells,
             source_memory,
             plan.partitions,
             plan.workers,
-            plan.rows_per_chunk);
+            plan.rows_per_chunk,
+            output_streams);
         return plan;
     }
 
@@ -1410,6 +1420,7 @@ private:
                 shared_data,
                 static_cast<UInt32>(plan.partitions),
                 plan.rows_per_chunk,
+                output_streams,
                 plan.destination_size_hint,
                 parallel_merge,
                 updater);

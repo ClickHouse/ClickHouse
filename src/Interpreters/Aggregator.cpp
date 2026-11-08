@@ -4955,14 +4955,27 @@ Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants 
     return chunks;
 }
 
+namespace
+{
+
+/// The fewest rows at which the fan-out of a single-level result ends a chunk. A chunk that ends because the
+/// result runs out can hold fewer.
+constexpr size_t min_rows_per_fan_out_chunk = 512;
+
+}
+
 size_t Aggregator::singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams)
 {
-    static constexpr size_t MIN_ROWS_PER_CHUNK{512};
-    const size_t num_chunks = std::clamp<size_t>(rows / MIN_ROWS_PER_CHUNK, 1, std::max<size_t>(output_streams, 1));
+    const size_t num_chunks = std::clamp<size_t>(rows / min_rows_per_fan_out_chunk, 1, std::max<size_t>(output_streams, 1));
     if (num_chunks <= 1)
         return 0;
 
     return (rows + num_chunks - 1) / num_chunks;
+}
+
+bool Aggregator::singleLevelPartitionChunkEndsForFanOut(size_t rows, size_t claimed_partitions, size_t partitions, size_t output_streams)
+{
+    return claimed_partitions * output_streams >= partitions && rows >= min_rows_per_fan_out_chunk;
 }
 
 
