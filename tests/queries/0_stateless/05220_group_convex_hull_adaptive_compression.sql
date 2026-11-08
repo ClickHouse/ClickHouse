@@ -21,13 +21,13 @@ SELECT
     abs(polygonAreaCartesian(finalizeAggregation(s)) - 35004 * sin(2 * pi() / 35004) / 2) < 1e-10
 FROM hull_adaptive_state;
 
--- Copying a restored state into an empty accumulator must preserve the adaptive watermark.
+-- Merging a restored state into an empty accumulator reproduces it byte for byte.
 SELECT 'adaptive_first_merge';
 SELECT any(hex(s)) = hex(groupConvexHullMergeState(
     CAST(unhex(hex(s)) AS AggregateFunction(groupConvexHull, Point))))
 FROM hull_adaptive_state;
 
--- Partial states and both merge orders produce the same mathematical hull.
+-- Partial states merged in descending order produce the full hull.
 SELECT 'adaptive_partial_merge';
 SELECT length(groupConvexHullMerge(s)) = 35005
 FROM

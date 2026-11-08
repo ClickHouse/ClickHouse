@@ -41,7 +41,7 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
 ); -- { serverError INCORRECT_DATA }
 
 -- 3. Self-intersecting (bowtie) polygon: finite coordinates but invalid topology.
---    Outer ring: (0,0) -> (2,2) -> (2,0) -> (0,2) -> (0,0) — a figure-8.
+--    Outer ring: (0,0) -> (2,2) -> (2,0) -> (0,2) -> (0,0): a figure-8.
 --    The add path rejects this via boost::geometry::is_valid; deserialization
 --    must now apply the same invariant.
 SELECT 'union_invalid_topology';

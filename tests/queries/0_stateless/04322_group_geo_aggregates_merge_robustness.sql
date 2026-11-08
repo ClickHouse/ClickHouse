@@ -186,7 +186,7 @@ FROM (
                 ]) AS p
             )
         )) AS flat_m,
-        -- Tree merge: pair (AB, C) — 2 + 1
+        -- Tree merge: pair (AB, C): 2 + 1
         (SELECT groupPolygonIntersectionMerge(l2) FROM (
             SELECT groupPolygonIntersectionMergeState(l1) AS l2 FROM (
                 SELECT groupPolygonIntersectionState(p) AS l1 FROM (
@@ -242,7 +242,7 @@ FROM (
             )
         )) AS flat_m,
         (SELECT groupPolygonIntersectionMerge(l2) FROM (
-            -- Group A: disjoint → effectively empty
+            -- Group A: disjoint, so the intersection is empty
             SELECT groupPolygonIntersectionMergeState(l1) AS l2 FROM (
                 SELECT groupPolygonIntersectionState(p) AS l1 FROM (
                     SELECT readWKTPolygon('POLYGON ((0 0, 0 2, 2 2, 2 0, 0 0))') AS p
@@ -253,7 +253,7 @@ FROM (
                 )
             )
             UNION ALL
-            -- Group B: overlapping → non-empty
+            -- Group B: overlapping, so the intersection is not empty
             SELECT groupPolygonIntersectionMergeState(l1) AS l2 FROM (
                 SELECT groupPolygonIntersectionState(p) AS l1 FROM (
                     SELECT readWKTPolygon('POLYGON ((0 0, 0 10, 10 10, 10 0, 0 0))') AS p

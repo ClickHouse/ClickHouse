@@ -1,4 +1,4 @@
--- Test merge-side reduction paths (union threshold and eager running intersection)
+-- Test merge-side reduction paths (union size tiers and eager running intersection)
 
 -- 1. Union: 17 individual states merged must equal direct result
 SELECT 'polygon_union_merge_threshold_equivalence';

@@ -7,7 +7,7 @@ SELECT round(polygonAreaCartesian(groupConvexHull(g)), 2) FROM (
         readWKT('POINT (0 0)'),
         readWKT('POINT (10 0)'),
         readWKT('POINT (10 10)'),
-        readWKT('POINT (0 10)')
+        readWKT('POLYGON ((0 10, 5 5, 0 5, 0 10))')
     ]) AS g
 );
 

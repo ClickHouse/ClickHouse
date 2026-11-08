@@ -125,7 +125,7 @@ FROM (
         )) AS merged
 );
 
--- 6. groupPolygonIntersection: disjoint states merged in different order
+-- 6. groupPolygonIntersection: merging disjoint states gives an empty result, whichever state is listed first
 SELECT 'intersect_merge_disjoint_order_variants';
 SELECT
     round(polygonAreaCartesian(r1), 4) AS area1,
@@ -152,7 +152,7 @@ FROM (
         )) AS r2
 );
 
--- 7. Merge with empty state (single polygon union should return itself)
+-- 7. Merge of a single state: the union of one polygon is that polygon
 SELECT 'merge_with_single_state';
 SELECT round(polygonAreaCartesian(groupPolygonUnionMerge(state)), 2) FROM (
     SELECT groupPolygonUnionState(p) AS state FROM (

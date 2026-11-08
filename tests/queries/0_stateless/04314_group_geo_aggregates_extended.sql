@@ -49,7 +49,7 @@ SELECT abs(polygonAreaCartesian(groupConvexHull(pt)) - 4) < 0.001 FROM
     FROM numbers(10005)
 );
 
--- groupPolygonUnion reduction path (> 16 chunks)
+-- groupPolygonUnion over many inputs: equal size tiers merge as they fill
 SELECT 'polygon_union_reduction_threshold';
 SELECT round(polygonAreaCartesian(groupPolygonUnion(p)), 2) FROM
 (

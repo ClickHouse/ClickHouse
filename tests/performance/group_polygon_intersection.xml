@@ -29,15 +29,15 @@
     <create_query>CREATE TABLE bench_polygon_intersection_holes (id UInt64, separated Polygon, overlapping Polygon) ENGINE = Memory</create_query>
     <fill_query>
         INSERT INTO bench_polygon_intersection_holes
-        WITH [(0., 0.), (0., 8.), (196612., 8.), (196612., 0.)] AS exterior,
+        WITH [(0., 0.), (0., 8.), (393220., 8.), (393220., 0.)] AS exterior,
             arrayRotateLeft(exterior, toInt64(number % 4)) AS shifted
         SELECT number,
             [arrayPushBack(shifted, shifted[1]),
              [(3. * number + 1, 1.), (3. * number + 2, 1.), (3. * number + 2, 2.), (3. * number + 1, 2.), (3. * number + 1, 1.)]],
-            [[(0., 0.), (0., 8.), (196612., 8.), (196612., 0.), (0., 0.)],
+            [[(0., 0.), (0., 8.), (393220., 8.), (393220., 0.), (0., 0.)],
              [(1.5 * number + 1, 1. + number % 2), (1.5 * number + 3, 1. + number % 2), (1.5 * number + 3, 4. + number % 2),
               (1.5 * number + 1, 4. + number % 2), (1.5 * number + 1, 1. + number % 2)]]
-        FROM numbers(65536)
+        FROM numbers(131072)
         SETTINGS max_threads = 1
     </fill_query>
 
@@ -59,17 +59,17 @@
         FORMAT Null SETTINGS max_threads = 1
     </query>
     <!-- Input order matters for the monotone path: natural, reversed, shuffled, alternating and center-out. -->
-    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT * FROM bench_polygon_intersection_holes ORDER BY id) FORMAT Null SETTINGS max_threads = 1</query>
-    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT * FROM bench_polygon_intersection_holes ORDER BY id DESC) FORMAT Null SETTINGS max_threads = 1</query>
-    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT * FROM bench_polygon_intersection_holes ORDER BY cityHash64(id), id) FORMAT Null SETTINGS max_threads = 1</query>
-    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT * FROM bench_polygon_intersection_holes ORDER BY id % 2, id) FORMAT Null SETTINGS max_threads = 1</query>
-    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT * FROM bench_polygon_intersection_holes ORDER BY abs(toInt64(id) - 32768), id) FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT id, overlapping FROM bench_polygon_intersection_holes ORDER BY id) FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT id, overlapping FROM bench_polygon_intersection_holes ORDER BY id DESC) FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT id, overlapping FROM bench_polygon_intersection_holes ORDER BY cityHash64(id), id) FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT id, overlapping FROM bench_polygon_intersection_holes ORDER BY id % 2, id) FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersection(overlapping) FROM (SELECT id, overlapping FROM bench_polygon_intersection_holes ORDER BY abs(toInt64(id) - 65536), id) FORMAT Null SETTINGS max_threads = 1</query>
     <query>
         SELECT groupPolygonIntersectionMerge(s)
         FROM
         (
             SELECT id % 32 AS part, groupPolygonIntersectionState(overlapping) AS s
-            FROM (SELECT * FROM bench_polygon_intersection_holes ORDER BY cityHash64(id), id)
+            FROM (SELECT id, overlapping FROM bench_polygon_intersection_holes ORDER BY cityHash64(id), id)
             GROUP BY part ORDER BY cityHash64(part), part
         )
         FORMAT Null SETTINGS max_threads = 1

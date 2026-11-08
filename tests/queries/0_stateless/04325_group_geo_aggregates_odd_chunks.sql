@@ -1,6 +1,6 @@
 -- Test reduction with odd numbers of inputs and partial states
 
--- 1. Union: 5 states (odd) -> pairwise reduction handles tail correctly
+-- 1. Union: 5 states (odd) merge correctly
 SELECT 'union_5_states_odd';
 SELECT round(polygonAreaCartesian(polygonsSymDifferenceCartesian(direct, merged)), 4) < 0.001 AS equiv
 FROM (

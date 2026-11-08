@@ -16,8 +16,8 @@ SELECT round(polygonAreaCartesian(groupConvexHullMerge(state)), 2) FROM
     )
 );
 
--- Preserve the compression watermark as part of the serialized state. The first 10,001 points
--- trigger compression; the remaining 500 points must stay counted as growth after it.
+-- The writer emits a compacted state (the hull, with the watermark equal to the point count),
+-- so its binary round trip is byte-stable.
 SELECT 'convex_hull_watermark_roundtrip';
 SELECT serialized = hex(CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point)))
 FROM
@@ -27,7 +27,7 @@ FROM
     FROM numbers(10501)
 );
 
--- The first merge into a fresh accumulator must preserve the restored watermark as well.
+-- Merging a restored state into a fresh accumulator reproduces it byte for byte.
 SELECT 'convex_hull_watermark_merge_state';
 SELECT any(serialized) = hex(groupConvexHullMergeState(
     CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point))))
