@@ -824,7 +824,7 @@ static String chooseNestedSizesReference(const Names & members, const ColumnsDes
     return members.front();
 }
 
-bool MutationsInterpreter::isStoredInSourcePart(const String & name) const
+bool MutationsInterpreter::isStoredAsArrayInSourcePart(const String & name) const
 {
     const auto & part = source.getMergeTreeDataPart();
     if (!part)
@@ -835,7 +835,8 @@ bool MutationsInterpreter::isStoredInSourcePart(const String & name) const
     if (alter_conversions && alter_conversions->isColumnRenamed(name_in_part))
         name_in_part = alter_conversions->getColumnOldName(name_in_part);
 
-    if (!part->getColumnsDescription().has(name_in_part))
+    auto column_in_part = part->getColumnsDescription().tryGetPhysical(name_in_part);
+    if (!column_in_part || !isArray(column_in_part->type))
         return false;
 
     bool share_nested = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::share_nested_offsets];
@@ -857,7 +858,7 @@ Names MutationsInterpreter::getStoredNestedMembers(const String & group, const N
     for (const auto & column : columns_desc.getAllPhysical())
     {
         if (!excluded.contains(column.name) && getNestedGroupOfMember(columns_desc, column.name) == group
-            && isStoredInSourcePart(column.name))
+            && isStoredAsArrayInSourcePart(column.name))
             members.push_back(column.name);
     }
 
@@ -872,7 +873,7 @@ std::set<String> MutationsInterpreter::getNestedGroupsToCheck(const NameSet & wr
     for (const auto & name : written)
     {
         auto group = getNestedGroupOfMember(columns_desc, name);
-        if (group && (!isStoredInSourcePart(name) || nested_written_without_size_check.contains(name)))
+        if (group && (!isStoredAsArrayInSourcePart(name) || nested_written_without_size_check.contains(name)))
             groups.insert(*group);
     }
 
@@ -1335,9 +1336,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                     auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, column_to_update);
                     if (!nested_update_exprs)
                     {
-                        /// An unstored member's old value is its DEFAULT, whose sizes may differ from the stored members'.
+                        /// The old value of a member not stored as an array is its DEFAULT or a conversion,
+                        /// whose sizes may differ from the stored members'.
                         String sizes_reference = column_name;
-                        if (!isStoredInSourcePart(column_name))
+                        if (!isStoredAsArrayInSourcePart(column_name))
                         {
                             auto stored_members = getStoredNestedMembers(Nested::splitName(column_name).first, {});
                             if (!stored_members.empty())
@@ -1702,10 +1704,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 {
-                    /// A conversion, e.g. from `String`, may produce other array sizes.
-                    if (getNestedGroupOfMember(columns_desc, command.column_name))
-                        nested_written_without_size_check.insert(command.column_name);
-
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
                         const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();

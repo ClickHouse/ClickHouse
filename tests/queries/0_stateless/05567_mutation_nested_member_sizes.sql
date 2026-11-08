@@ -170,11 +170,25 @@ SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM syste
 KILL MUTATION WHERE database = currentDatabase() AND table = 't14' SYNC FORMAT Null;
 SELECT id, n.a, n.c, n.x FROM t14 ORDER BY id;
 
+SELECT 'rewrite after the conversion is killed';
+ALTER TABLE t14 DELETE WHERE id = 1 SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
+SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't14' AND NOT is_done;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't14' SYNC FORMAT Null;
+ALTER TABLE t14 UPDATE `n.y` = [] WHERE 1 SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
+SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't14' AND NOT is_done;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't14' SYNC FORMAT Null;
+ALTER TABLE t14 UPDATE `n.y` = arrayMap(v -> v * 10, `n.a`) WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE t14 DELETE WHERE id = 1 SETTINGS mutations_sync = 2;
+SELECT id, n.a, n.c, n.x, n.y FROM t14 ORDER BY id;
+
 SELECT 'convert a stored column of a compact part to an array of other sizes';
 CREATE TABLE t15 (id UInt64, n Nested(a UInt64, c String), `n.y` String) ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '10G';
 INSERT INTO t15 VALUES (0, [1, 2], ['p', 'q'], '[]'), (1, [3], ['r'], '[]');
 ALTER TABLE t15 MODIFY COLUMN `n.y` Array(UInt64) SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
+SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't15' AND NOT is_done;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't15' SYNC FORMAT Null;
+ALTER TABLE t15 DELETE WHERE id = 1 SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
 SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't15' AND NOT is_done;
 KILL MUTATION WHERE database = currentDatabase() AND table = 't15' SYNC FORMAT Null;
 SELECT id, n.a, n.c FROM t15 ORDER BY id;
