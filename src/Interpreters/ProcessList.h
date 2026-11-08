@@ -340,8 +340,7 @@ public:
     /// Removes a pipeline to the QueryStatus
     void removePipelineExecutor(IExecutor * e);
 
-    /// CPU slot allocations of the query outside its pipeline executors (index analysis). `cancelQuery` frees them,
-    /// which wakes their preempted threads.
+    /// Allocations outside the pipeline executors (index analysis); `cancelQuery` frees them, which wakes their preempted threads
     void addSlotAllocation(const SlotAllocationPtr & allocation);
     void removeSlotAllocation(const SlotAllocationPtr & allocation);
 

@@ -1167,8 +1167,7 @@ void MergeTreeDataSelectExecutor::checkForcedSkipIndexes(const UsefulSkipIndexes
 namespace
 {
 
-/// Set while this thread analyzes parts in `filterPartsByPrimaryKeyAndSkipIndexes`: the in-part renewal points apply
-/// only to index analysis, not to the same functions called at read time
+/// Set during `filterPartsByPrimaryKeyAndSkipIndexes`: the functions with in-part renewal points also run at read time
 thread_local bool analyzing_parts = false;
 
 /// Starts worker threads for granted slots; set only on the thread that starts the analysis's workers
@@ -1180,7 +1179,6 @@ struct AnalyzingPartsScope
     ~AnalyzingPartsScope() { analyzing_parts = prev; }
 };
 
-/// Renews the lease of an analyzing thread every `period` steps of a long loop inside one part
 struct InPartRenewal
 {
     static constexpr size_t period = 256;
@@ -1197,7 +1195,6 @@ struct InPartRenewal
     }
 };
 
-/// The CPU slots of index analysis under preemptive workload CPU scheduling, or nullptr.
 SlotAllocationPtr allocateIndexAnalysisCPU(const Settings & settings, size_t num_threads, const QueryStatusPtr & query_status)
 {
     if (num_threads == 0 || !settings[Setting::use_concurrency_control])
@@ -1716,7 +1713,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 }
             };
 
-            /// A worker thread starts only for a granted slot
             spawn_granted_workers = [&]
             {
                 while (pool && !pool->isFinished() && next_part_index.load(std::memory_order_relaxed) < parts_with_ranges.size())
