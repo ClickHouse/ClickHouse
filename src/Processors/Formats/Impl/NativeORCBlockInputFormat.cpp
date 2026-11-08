@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -53,6 +54,7 @@
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
 #include <base/arithmeticOverflow.h>
+#include <base/unaligned.h>
 #include <Common/memory.h>
 #include <Common/AllocationInterceptors.h>
 
@@ -295,6 +297,13 @@ static bool isDictionaryEncoded(const ORC::Proto::StripeFooter * stripe_footer, 
     return encoding == ORC::Proto::ColumnEncodingKind::DICTIONARY || encoding == ORC::Proto::ColumnEncodingKind::DICTIONARY_V2;
 }
 
+/// Iceberg writes a `uuid` field to ORC as `binary` with this attribute, 16 big-endian bytes per value.
+static bool isIcebergUUIDBinary(const ORC::Type & orc_type)
+{
+    return orc_type.getKind() == ORC::TypeKind::BINARY && orc_type.hasAttributeKey("iceberg.binary-type")
+        && orc_type.getAttributeValue("iceberg.binary-type") == "UUID";
+}
+
 static DataTypePtr parseORCType(
     const ORC::Type * orc_type,
     bool skip_columns_with_unsupported_types,
@@ -423,6 +432,9 @@ static DataTypePtr parseORCType(
         case ORC::TypeKind::VARCHAR:
         case ORC::TypeKind::BINARY:
         case ORC::TypeKind::STRING: {
+            if (isIcebergUUIDBinary(*orc_type))
+                return std::make_shared<DataTypeUUID>();
+
             DataTypePtr type;
             if (orc_type->getKind() == ORC::TypeKind::CHAR)
                 type = std::make_shared<DataTypeFixedString>(orc_type->getMaximumLength());
@@ -1872,6 +1884,31 @@ readIPv6ColumnFromBinaryData(const ORC::ColumnVectorBatch * orc_column, const St
 }
 
 static ColumnWithTypeAndName
+readUUIDColumnFromIcebergBinaryData(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
+{
+    ColumnPtr holder;
+    const auto & strings = getStringColumnFromBatch(orc_column, holder);
+
+    auto internal_type = std::make_shared<DataTypeUUID>();
+    auto internal_column = internal_type->createColumn();
+    auto & data = assert_cast<ColumnUUID &>(*internal_column).getData();
+    data.resize_fill(orc_column->numElements);
+
+    for (size_t i = 0; i < orc_column->numElements; ++i)
+    {
+        if (orc_column->hasNulls && !orc_column->notNull[i])
+            continue;
+        auto value = strings.getDataAt(i);
+        if (value.size() != sizeof(UUID))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Value of Iceberg uuid column {} in ORC has {} bytes, expected {}", column_name, value.size(), sizeof(UUID));
+        UUIDHelpers::getHighBytes(data[i]) = unalignedLoadBigEndian<UInt64>(value.data());
+        UUIDHelpers::getLowBytes(data[i]) = unalignedLoadBigEndian<UInt64>(value.data() + sizeof(UInt64));
+    }
+    return {std::move(internal_column), internal_type, column_name};
+}
+
+static ColumnWithTypeAndName
 readIPv4ColumnWithInt32Data(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
 {
     const auto & data = typeid_cast<const ORC::IntVectorBatch &>(*orc_column).getData();
@@ -2227,7 +2264,7 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
             return which.isStringOrFixedString();
         case ORC::TypeKind::BINARY:
             return which.isStringOrFixedString() || which.isIPv6() || which.isInt128() || which.isUInt128() || which.isInt256()
-                || which.isUInt256() || which.isDecimal256();
+                || which.isUInt256() || which.isDecimal256() || (which.isUUID() && isIcebergUUIDBinary(*orc_branch_type));
         case ORC::TypeKind::CHAR:
             return which.isStringOrFixedString() || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256()
                 || which.isDecimal256();
@@ -2691,6 +2728,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(orc_column, column_name, type_hint);
+                    case TypeIndex::UUID:
+                        if (isIcebergUUIDBinary(*orc_type))
+                            return readUUIDColumnFromIcebergBinaryData(orc_column, column_name);
+                        break;
                     default:;
                 }
             }
