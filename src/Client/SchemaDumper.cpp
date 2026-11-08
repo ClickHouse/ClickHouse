@@ -2050,6 +2050,9 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
         collectNamedCollectionsFromTableFunction(*function, clusters, dependencies);
     if (create->select)
         collectNamedCollectionsFromTableExpressions(*create->select, clusters, dependencies);
+    /// CREATE runs the subqueries of a constraint, so a table function in one resolves its collection there.
+    if (create->columns_list)
+        collectNamedCollectionsFromTableExpressions(*create->columns_list, clusters, dependencies);
     if (create->dictionary)
         collectDictionaryNamedCollection(create->dictionary->source, clusters, dependencies);
     return dependencies;

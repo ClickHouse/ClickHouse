@@ -1,0 +1,8 @@
+scalar subquery warned: 1
+IN subquery warned: 1
+tables dumped: 2
+collections emitted: 0
+Code: 669
+replay with the collection: rc=0
+hidden, scalar subquery warned: 1
+hidden, IN subquery warned: 1
