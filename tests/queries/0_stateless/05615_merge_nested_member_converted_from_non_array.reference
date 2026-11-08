@@ -1,0 +1,56 @@
+-- wide part, horizontal merge
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+-- wide part, vertical merge settings
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+-- compact parts, then a merge into a wide part
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+-- converted member declared after the other members
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+-- single part
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+-- projection
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+-- control: converted sizes match the other members
+0	[1,2]	['p','q']	[7,8]
+1	[3]	['r']	[9]
+2	[4]	['s']	[4]
+1	Array(UInt64)
+-- control: share_nested_offsets = 0
+0	[1,2]	['p','q']	[]
+1	[3]	['r']	[]
+2	[4]	['s']	[4]
+-- recovery: MODIFY COLUMN back to the stored type
+0	[1,2]	['p','q']	[]	String
+1	[3]	['r']	[]	String
+2	[4]	['s']	[4]	String
+-- control: ordinary Nested table keeps the vertical merge
+0	[1,2]	[3,4]
+1	[5]	[6]
+-- merge outcomes
+t_compact	1	0	0
+t_member_last	1	0	0
+t_no_shared_offsets	0	1	0
+t_projection	1	0	0
+t_recovery	1	1	0
+t_single_part	1	0	0
+t_sizes_match	0	1	0
+t_vertical	1	0	0
+t_vertical_normal	0	1	1
+t_wide	1	0	0
