@@ -3,12 +3,11 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnIndex.h>
 
-#include <memory>
-
 class Collator;
 
 namespace DB
 {
+
 
 /** Column for replicated representation.
  *  It stores original column and indexes in this column.
@@ -22,12 +21,10 @@ private:
     explicit ColumnReplicated(MutableColumnPtr && nested_column_);
     ColumnReplicated(MutableColumnPtr && nested_column_, MutableColumnPtr && indexes_);
     ColumnReplicated(MutableColumnPtr && nested_column_, ColumnIndex && indexes_);
-    ColumnReplicated(const ColumnReplicated & other);
+    ColumnReplicated(const ColumnReplicated &) = default;
 
 public:
     using Base = COWHelper<IColumnHelper<ColumnReplicated>, ColumnReplicated>;
-
-    ~ColumnReplicated() override;
 
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & indexes_)
     {
@@ -54,7 +51,7 @@ public:
         return Base::create(std::move(nested_column_), std::move(indexes_));
     }
 
-    static Ptr create(const ColumnPtr & nested_column_, ColumnIndex && indexes_)
+    static Ptr create(ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
         return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
     }
@@ -78,7 +75,6 @@ public:
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
-    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
 
@@ -87,6 +83,7 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -159,7 +156,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
@@ -187,10 +184,10 @@ public:
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }
@@ -200,17 +197,7 @@ public:
     const ColumnPtr & getNestedColumn() const { return nested_column; }
     WrappedPtr & getNestedColumn() { return nested_column; }
 
-    /// Frees the insertion cache once no more inserts from other ColumnReplicated are expected.
-    void dropInsertionCache();
-
 private:
-    struct InsertionCache;
-
-    InsertionCache & getInsertionCache();
-    /// Returns the row of `nested_column` holding row `src_row` of the nested column of `src`,
-    /// copying the value on the first request.
-    size_t getOrInsertSourceRow(const ColumnReplicated & src, size_t src_row);
-
     WrappedPtr nested_column;
     ColumnIndex indexes;
 
@@ -222,37 +209,18 @@ private:
     /// of insertFrom/insertRangeFrom/insertManyFrom.
     /// It helps to reduce memory usage during sorting/merge-sorting of replicated columns where
     /// we create empty ColumnReplicated and do insertFrom/insertRangeFrom/insertManyFrom from
-    /// source columns. Created on the first such insert.
-    std::unique_ptr<InsertionCache> insertion_cache;
+    /// source columns.
+    /// Mapping is the following: id -> (source_index -> inserted_index).
+    std::unordered_map<UInt64, std::unordered_map<size_t, size_t>> insertion_cache;
 
     /// Global counter used to create a unique id for each ColumnReplicated instance.
     static std::atomic<UInt64> global_id_counter;
 };
 
+ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);
 ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
 bool isLazyReplicationUseful(const ColumnPtr & column);
-/// Apply transformation on replicated columns with shared index only once.
-void transformColumnsWithSharedIndex(
-    Columns & columns,
-    std::function<ColumnPtr(const ColumnPtr &)> index_transform,
-    std::function<void(ColumnPtr &)> non_replicated_transform,
-    std::span<size_t> positions = {});
-/// Same as above, but apply the same transformation to replicated and non replicated columns.
-void transformColumnsWithSharedIndex(
-    Columns & columns,
-    std::function<ColumnPtr(const ColumnPtr &)> transform,
-    std::span<size_t> positions = {});
-/// Materializes ColumnReplicated where lazy replication is not useful:
-/// - `isLazyReplicationUseful` returns false.
-/// - index size <= nested data size, when size check is enabled.
-ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check = true);
-/// Optimize ColumnReplicated columns memory layout:
-/// 1. Materializes columns where replication provides no benefit.
-/// 2. Compacts remaining ColumnReplicated columns by removing unreferenced nested rows.
-void compactReplicatedColumns(Columns & columns);
-/// For a column a merge has finished filling: drops the insertion cache and, when the indexes are
-/// 0, 1, ..., size - 1 (nothing was deduplicated), replaces it with its nested column at no copy cost.
-void finishMergedReplicatedColumn(MutableColumnPtr & column);
+
 }

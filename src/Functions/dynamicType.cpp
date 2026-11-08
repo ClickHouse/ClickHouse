@@ -25,7 +25,7 @@ namespace
 {
 
 /// Return String with type name for each row in Dynamic column.
-class FunctionDynamicType final : public IFunction
+class FunctionDynamicType : public IFunction
 {
 public:
     static constexpr auto name = "dynamicType";
@@ -39,7 +39,15 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Dynamic) -> LowCardinality(String)"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors mandatory_args{
+            {"dynamic", isDynamic, nullptr, "Dynamic"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -78,7 +86,7 @@ public:
     }
 };
 
-class FunctionIsDynamicElementInSharedData final : public IFunction
+class FunctionIsDynamicElementInSharedData : public IFunction
 {
 public:
     static constexpr auto name = "isDynamicElementInSharedData";
@@ -91,7 +99,16 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Dynamic) -> Bool"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors mandatory_args{
+            {"dynamic", isDynamic, nullptr, "Dynamic"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return DataTypeFactory::instance().get("Bool");
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -188,7 +205,7 @@ SELECT d, isDynamicElementInSharedData(d) FROM test;
 ┌─d─────────────┬─isDynamicElementInSharedData(d)─┐
 │ ᴺᵁᴸᴸ          │ false                           │
 │ 42            │ false                           │
-│ Hello, World! │ false                           │
+│ Hello, World! │ true                            │
 │ [1,2,3]       │ true                            │
 └───────────────┴─────────────────────────────────┘
         )"

@@ -10,9 +10,9 @@ namespace DB
 
 class SerializationDynamicElement;
 
-class SerializationDynamic final : public ISerialization
+class SerializationDynamic : public ISerialization
 {
-private:
+public:
     explicit SerializationDynamic(
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
         const SerializationInfoSettings & serialization_info_settings_ = {})
@@ -20,10 +20,6 @@ private:
         , serialization_info_settings(serialization_info_settings_)
     {
     }
-
-public:
-    static UInt128 getHash(size_t max_dynamic_types_, const SerializationInfoSettings & serialization_info_settings_ = {});
-    static SerializationPtr create(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES, const SerializationInfoSettings & serialization_info_settings_ = {});
 
     struct SerializationVersion
     {
@@ -103,7 +99,8 @@ public:
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -119,9 +116,6 @@ public:
 
     void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     static void serializeVariantForHashCalculation(const IColumn & column, const SerializationPtr & serialization, const DataTypePtr & type, size_t row_num, WriteBuffer & ostr);
-
-    /// Serialize as JSON a value in the binary format of Dynamic (encoded type and value), e.g. a value of a path in the shared data of JSON.
-    static void serializeBinaryEncodedValueTextJSON(std::string_view value, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent);
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -159,7 +153,7 @@ private:
     {
         SerializationVersion structure_version;
         DataTypePtr variant_type;
-        size_t num_dynamic_types{};
+        size_t num_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;
 
         /// For flattened serialization only.
@@ -171,7 +165,7 @@ private:
         {
         }
 
-        ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
+        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(*this);
         }
