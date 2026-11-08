@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
 }
@@ -154,65 +155,36 @@ void AggregateFunctionPostingList::mergeImpl(AggregateDataPtr __restrict place, 
     auto & lhs_posting_list_data = data(place);
     auto & rhs_posting_list_data = const_cast<PostingListData &>(data(rhs));
 
-    /// Both sides must be in stream state for merge.
-    /// During projection rebuild (mutation), states are created via custom deserialization
-    /// which produces stream states. If either side is not stream, it's an unexpected state.
+    auto doc_count = [](const PostingListData & posting_list_data)
+    {
+        return posting_list_data.isStream() ? posting_list_data.stream.doc_count : posting_list_data.writer.doc_count;
+    };
+
+    /// An empty state on either side (a state from `create`, or the placeholder of a block without tokens)
+    /// carries nothing, whichever representation it has.
+    if (doc_count(rhs_posting_list_data) == 0)
+        return;
+
+    if (doc_count(lhs_posting_list_data) == 0)
+    {
+        lhs_posting_list_data = std::move(rhs_posting_list_data);
+        return;
+    }
+
+    /// Posting lists read from parts are merged by concatenating their streams of document ids.
     if (lhs_posting_list_data.isStream() && rhs_posting_list_data.isStream())
     {
         lhs_posting_list_data.stream.merge(rhs_posting_list_data.stream);
+        return;
     }
-    else if (lhs_posting_list_data.isWriter() && rhs_posting_list_data.isWriter())
-    {
-        /// Both Writer: append rhs chunks to lhs.
-        auto & lhs_w = lhs_posting_list_data.writer;
-        auto & rhs_w = rhs_posting_list_data.writer;
 
-        if (rhs_w.doc_count == 0)
-            return;
-
-        if (lhs_w.doc_count == 0)
-        {
-            lhs_w.doc_count = rhs_w.doc_count;
-            lhs_w.first_doc_id = rhs_w.first_doc_id;
-            lhs_w.first_doc_freq = rhs_w.first_doc_freq;
-            lhs_w.blocks_head = rhs_w.blocks_head;
-            return;
-        }
-
-        auto * tail = lhs_w.blocks_head;
-        if (tail)
-        {
-            while (tail->next)
-                tail = tail->next;
-            tail->next = rhs_w.blocks_head;
-        }
-        else
-        {
-            lhs_w.blocks_head = rhs_w.blocks_head;
-        }
-        lhs_w.doc_count += rhs_w.doc_count;
-    }
-    else if (lhs_posting_list_data.isStream() && lhs_posting_list_data.stream.doc_count == 0
-             && rhs_posting_list_data.isWriter())
-    {
-        /// lhs is empty Stream (from create()), rhs is Writer.
-        /// Convert lhs to Writer by replacing the union content.
-        lhs_posting_list_data.destroy();
-        new (&lhs_posting_list_data.writer) PostingListWriter;
-        auto & lhs_w = lhs_posting_list_data.writer;
-        auto & rhs_w = rhs_posting_list_data.writer;
-        lhs_w.doc_count = rhs_w.doc_count;
-        lhs_w.first_doc_id = rhs_w.first_doc_id;
-        lhs_w.first_doc_freq = rhs_w.first_doc_freq;
-        lhs_w.blocks_head = rhs_w.blocks_head;
-    }
-    else
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "PostingList merge: incompatible states (lhs.isStream={}, lhs.isWriter={}, rhs.isStream={}, rhs.isWriter={})",
-            lhs_posting_list_data.isStream(), lhs_posting_list_data.isWriter(),
-            rhs_posting_list_data.isStream(), rhs_posting_list_data.isWriter());
-    }
+    /// A `PostingListWriter` holds a posting list being built in memory: its first document separately and the
+    /// rest as abpfor-encoded chunks with partial tail blocks, so two of them cannot be merged by concatenation.
+    /// Every calculated block of a projection text index has unique terms and is written to its own part,
+    /// so two non-empty posting lists being built are never merged.
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "PostingList merge: cannot merge non-empty posting lists of incompatible states (lhs.isStream={}, rhs.isStream={})",
+        lhs_posting_list_data.isStream(), rhs_posting_list_data.isStream());
 }
 
 void AggregateFunctionPostingList::insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * /* arena */) const
@@ -306,43 +278,26 @@ public:
                 ? settings.projection_index_context->index_getter(settings.path)
                 : nullptr;
 
-            /// Invariant: posting list data in this range is homogeneous
-            if (reinterpret_cast<const PostingListData *>(vec[offset])->isWriter())
+            LargePostingListWriterStream * pos_stream = nullptr;
+            if (function->params.enable_phrase_query_support)
             {
-                LargePostingListWriterStream * pos_stream = nullptr;
-                if (function->params.enable_phrase_query_support)
-                {
-                    chassert(settings.projection_index_context->position_getter);
-                    pos_stream = settings.projection_index_context->position_getter(settings.path);
-                    chassert(pos_stream);
-                }
-
-                WriteBuffer * idx_buf = idx_stream ? &idx_stream->plain_hashing : nullptr;
-
-                for (size_t i = offset; i < end; ++i)
-                {
-                    const auto * posting_list_data = reinterpret_cast<const PostingListData *>(vec[i]);
-                    chassert(posting_list_data->isWriter());
-                    posting_list_data->writer.finish(*stream, *large_posting_stream, function->params, idx_buf, pos_stream);
-                }
+                chassert(settings.projection_index_context->position_getter);
+                pos_stream = settings.projection_index_context->position_getter(settings.path);
+                chassert(pos_stream);
             }
-            else if (reinterpret_cast<const PostingListData *>(vec[offset])->isStream())
-            {
-                LargePostingListWriterStream * pos_stream = nullptr;
-                if (function->params.enable_phrase_query_support)
-                {
-                    chassert(settings.projection_index_context->position_getter);
-                    pos_stream = settings.projection_index_context->position_getter(settings.path);
-                    chassert(pos_stream);
-                }
-                WriteBuffer * pos_buf = pos_stream ? &pos_stream->plain_hashing : nullptr;
 
-                for (size_t i = offset; i < end; ++i)
-                {
-                    const auto * posting_list_data = reinterpret_cast<const PostingListData *>(vec[i]);
-                    chassert(posting_list_data->isStream());
+            WriteBuffer * idx_buf = idx_stream ? &idx_stream->plain_hashing : nullptr;
+            WriteBuffer * pos_buf = pos_stream ? &pos_stream->plain_hashing : nullptr;
+
+            /// The range can contain both representations, e.g. the empty placeholder of a block without tokens
+            /// next to posting lists being built, so dispatch on each state.
+            for (size_t i = offset; i < end; ++i)
+            {
+                const auto * posting_list_data = reinterpret_cast<const PostingListData *>(vec[i]);
+                if (posting_list_data->isWriter())
+                    posting_list_data->writer.finish(*stream, *large_posting_stream, function->params, idx_buf, pos_stream);
+                else
                     posting_list_data->stream.write(*stream, *large_posting_stream, function->params, idx_stream, pos_buf);
-                }
             }
         }
     }

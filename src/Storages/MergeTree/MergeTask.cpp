@@ -1805,10 +1805,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
 
     auto & projection_squash_plan = ctx->projection_squashes[projection_idx];
     projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
-    projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()});
-    Chunk squashed_chunk = Squashing::squash(
-        projection_squash_plan.generate(),
-        projection_squash_plan.getHeader());
+    Chunk squashed_chunk;
+    if (projection.index)
+    {
+        /// A calculated block of a projection index has unique terms with posting lists being built,
+        /// which cannot be merged with the posting lists of the same terms from another block.
+        /// Write each block to its own temporary part: the parts are merged from their on-disk form.
+        squashed_chunk = Chunk(block_to_squash.getColumns(), block_to_squash.rows());
+    }
+    else
+    {
+        projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()});
+        squashed_chunk = Squashing::squash(
+            projection_squash_plan.generate(),
+            projection_squash_plan.getHeader());
+    }
 
     if (squashed_chunk)
     {

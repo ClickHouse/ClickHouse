@@ -3292,10 +3292,20 @@ void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & 
             return;
 
         projection_squashes[projection_idx].setHeader(block_to_squash.cloneEmpty());
-        projection_squashes[projection_idx].add({block_to_squash.getColumns(), block_to_squash.rows()});
-        squashed_chunk = Squashing::squash(
-            projection_squashes[projection_idx].generate(),
-            projection_squashes[projection_idx].getHeader());
+        if (projection.index)
+        {
+            /// A calculated block of a projection index has unique terms with posting lists being built,
+            /// which cannot be merged with the posting lists of the same terms from another block.
+            /// Write each block to its own temporary part: the parts are merged from their on-disk form.
+            squashed_chunk = Chunk(block_to_squash.getColumns(), block_to_squash.rows());
+        }
+        else
+        {
+            projection_squashes[projection_idx].add({block_to_squash.getColumns(), block_to_squash.rows()});
+            squashed_chunk = Squashing::squash(
+                projection_squashes[projection_idx].generate(),
+                projection_squashes[projection_idx].getHeader());
+        }
     }
 
     if (squashed_chunk)
