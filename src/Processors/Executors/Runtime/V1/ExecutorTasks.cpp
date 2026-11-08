@@ -69,17 +69,13 @@ void ExecutorTasks::freeCPU()
     slots->free();
 }
 
-void ExecutorTasks::rethrowFirstThreadException(const LoggerPtr & log)
+void ExecutorTasks::logLogicalErrors(const LoggerPtr & log)
 {
     /// Log all of the LOGICAL_ERROR exceptions.
     for (auto & executor_context : executor_contexts)
         if (auto exception = executor_context->getException())
             if (getExceptionErrorCode(exception) == ErrorCodes::LOGICAL_ERROR)
                 tryLogException(exception, log);
-
-    /// Rethrow the first exception.
-    for (auto & executor_context : executor_contexts)
-        executor_context->rethrowExceptionIfHas();
 }
 
 void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock)
