@@ -139,7 +139,7 @@ UnityV2Catalog::UnityV2Catalog(
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
     DB::ContextPtr context_,
-    const std::string & snapshot_loading_mode_)
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
     , base_url_str(base_url_)

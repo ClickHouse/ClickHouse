@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: the `DataLakeCatalog` database engine needs the Avro and Parquet libraries.
 
--- `snapshot_loading_mode` accepts only an empty value, 'all' and 'refs'.
+-- `snapshot_loading_mode` accepts only 'auto', 'all' and 'refs'.
 -- `ATTACH` does not connect to the catalog, so the endpoint does not have to exist.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
@@ -13,6 +13,22 @@ SETTINGS catalog_type = 'rest', warehouse = 'demo', snapshot_loading_mode = 'bog
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
 ENGINE = DataLakeCatalog('http://localhost:18181/v1')
 SETTINGS catalog_type = 'rest', warehouse = 'demo', snapshot_loading_mode = 'REFS'; -- { serverError BAD_ARGUMENTS }
+
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+ENGINE = DataLakeCatalog('http://localhost:18181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'demo', snapshot_loading_mode = ''; -- { serverError BAD_ARGUMENTS }
+
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+ENGINE = DataLakeCatalog('http://localhost:18181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'demo', snapshot_loading_mode = 'auto';
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+ENGINE = DataLakeCatalog('http://localhost:18181/v1')
+SETTINGS catalog_type = 'rest', warehouse = 'demo', snapshot_loading_mode = 'all';
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
 ENGINE = DataLakeCatalog('http://localhost:18181/v1')

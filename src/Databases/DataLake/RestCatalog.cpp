@@ -251,7 +251,7 @@ RestCatalog::RestCatalog(
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
     DB::ContextPtr context_,
-    const std::string & snapshot_loading_mode_)
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -289,7 +289,7 @@ RestCatalog::RestCatalog(
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
     DB::ContextPtr context_,
-    const std::string & snapshot_loading_mode_)
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : ICatalog(warehouse_)
     , DB::WithContext(context_)
     , base_url(correctAPIURI(base_url_))
@@ -406,7 +406,7 @@ OneLakeCatalog::OneLakeCatalog(
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
     DB::ContextPtr context_,
-    const std::string & snapshot_loading_mode_)
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : RestCatalog(
         warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
         snapshot_loading_mode_)
@@ -727,7 +727,7 @@ HorizonCatalog::HorizonCatalog(
     bool oauth_server_use_request_body_,
     bool flat_namespaces_,
     DB::ContextPtr context_,
-    const std::string & snapshot_loading_mode_)
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : RestCatalog(
         warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_,
         snapshot_loading_mode_)
@@ -1019,7 +1019,7 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_quota_project_id_,
     DB::ContextPtr context_,
     bool allow_server_credentials_in_user_queries_,
-    const std::string & snapshot_loading_mode_)
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_)
     : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_, snapshot_loading_mode_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
@@ -1381,8 +1381,8 @@ Poco::URI::QueryParameters RestCatalog::getLoadTableParams(const Config & config
 {
     /// The REST spec merge order: server overrides, then the client configuration, then server defaults.
     std::string mode = config.override_snapshot_loading_mode;
-    if (mode.empty())
-        mode = snapshot_loading_mode;
+    if (mode.empty() && snapshot_loading_mode != DB::DatabaseDataLakeSnapshotLoadingMode::AUTO)
+        mode = DB::SettingFieldDatabaseDataLakeSnapshotLoadingModeTraits::toString(snapshot_loading_mode);
     if (mode.empty())
         mode = config.default_snapshot_loading_mode;
 

@@ -545,7 +545,9 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
 }
 
 std::unique_ptr<RestCatalog> makeRestCatalog(
-    const RestCatalogTestServer & server, const DB::ContextMutablePtr & context, const std::string & snapshot_loading_mode = {})
+    const RestCatalogTestServer & server,
+    const DB::ContextMutablePtr & context,
+    DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO)
 {
     /// Collapse the retry backoff: the arms that exercise a retriable status would otherwise sleep
     /// through the default ladder, which is about 33 seconds. The attempt count is left alone so
@@ -567,7 +569,7 @@ std::unique_ptr<RestCatalog> makeRestCatalog(
 }
 
 /// Whether the one load-table request of a catalog with `snapshot_loading_mode` on a server of `shape` asked for `snapshots=refs`.
-bool loadTableRequestsReferencedSnapshots(CatalogShape shape, const std::string & snapshot_loading_mode)
+bool loadTableRequestsReferencedSnapshots(CatalogShape shape, DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode)
 {
     RequestCounters counters;
     RestCatalogTestServer server(shape, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
@@ -847,7 +849,7 @@ TEST(RestCatalog, LoadTableRequestsReferencedSnapshotsWhenConfigured)
     RestCatalogTestServer server(CatalogShape::TopLevelTable, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
     auto context = DB::Context::createCopy(getContext().context);
     context->makeQueryContext();
-    auto catalog = makeRestCatalog(server, context, "refs");
+    auto catalog = makeRestCatalog(server, context, DB::DatabaseDataLakeSnapshotLoadingMode::REFS);
 
     auto metadata = TableMetadata().withLocation().withDataLakeSpecificProperties();
     EXPECT_TRUE(catalog->tryGetTableMetadata("namespace", "snapshots_table", metadata));
@@ -868,9 +870,12 @@ TEST(RestCatalog, LoadTableRequestsReferencedSnapshotsWhenConfigured)
 TEST(RestCatalog, LoadTableFollowsSnapshotLoadingModeOfCatalogConfig)
 {
     /// The catalog's `overrides` win over the setting, which wins over the catalog's `defaults`.
-    EXPECT_TRUE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, ""));
-    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeRefsDefault, "all"));
-    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(CatalogShape::SnapshotLoadingModeAllOverride, "refs"));
+    EXPECT_TRUE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeRefsDefault, DB::DatabaseDataLakeSnapshotLoadingMode::AUTO));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeRefsDefault, DB::DatabaseDataLakeSnapshotLoadingMode::ALL));
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeAllOverride, DB::DatabaseDataLakeSnapshotLoadingMode::REFS));
 }
 
 /// The tests below cover a namespace that another client drops after it was listed but before its
