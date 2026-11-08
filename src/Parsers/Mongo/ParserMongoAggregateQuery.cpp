@@ -975,6 +975,9 @@ bool ParserMongoAggregateQuery::parseImpl(ASTPtr & node)
     /// A constant key of a `$group` - `{_id: 0}` or `{_id: 2}` - is a value to group by, never the
     /// position of a column of the select list.
     settings->changes.emplace_back("enable_positional_arguments", Field(UInt64(0)));
+    /// `$divide` of two integers is a double in Mongo, whatever the setting of the user says about
+    /// the `divide` of SQL it is translated into.
+    settings->changes.emplace_back("sql_compatible_division_for_integers", Field(UInt64(0)));
     select->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
 
     node = std::move(select);

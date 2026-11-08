@@ -316,6 +316,19 @@ ASTPtr makeLambda(const std::string & parameter, ASTPtr body)
     return makeASTFunction("lambda", std::move(parameters), std::move(body));
 }
 
+/** The distinct elements of an array, `null` among them: `arrayDistinct` leaves out the elements
+  * that are `null`, while a set of Mongo holds `null` as one more element. Each element is wrapped
+  * into a tuple, which is never `null` itself, for the time of `arrayDistinct`.
+  */
+ASTPtr makeSetOfElements(ASTPtr array)
+{
+    auto wrap = makeLambda("__mongo_element", makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_element")));
+    auto unwrap = makeLambda(
+        "__mongo_element", makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("__mongo_element"), makeLiteral(Field(UInt64(1)))));
+    return makeASTFunction(
+        "arrayMap", std::move(unwrap), makeASTFunction("arrayDistinct", makeASTFunction("arrayMap", std::move(wrap), std::move(array))));
+}
+
 /** The lambda parameter a variable `$$<name>` is translated into. A field path `$<name>` reads the
   * field of the document even inside the body of the operator that binds `<name>`, so the variable
   * cannot be the identifier of the same name, which is the field: `$$x` and `$x` are different
@@ -695,10 +708,18 @@ ASTPtr makeToDate(ASTPtr argument)
     /// `short_circuit_function_evaluation = 'disable'` it still runs. `toFloat64OrZero` over
     /// `toString` reads any type without throwing; the string it produces for a number is the
     /// number itself, and the branch taken for a string never uses it.
-    auto milliseconds = makeASTFunction(
-        "fromUnixTimestamp64Milli",
-        makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", makeASTFunction("toString", argument->clone()))),
-        makeLiteral(Field(String("UTC"))));
+    auto text = makeASTFunction("toString", argument->clone());
+    /// A decimal is truncated in its text, as `$toLong` does: through a `Float64` it would be rounded
+    /// first, into the next millisecond for `1546300800000.999999999`.
+    auto decimal_count = makeASTFunction(
+        "toInt64OrZero",
+        makeASTFunction("replaceRegexpOne", text, makeLiteral(Field(String("\\.[0-9]*$"))), makeLiteral(Field(String()))));
+    auto count = makeASTFunction(
+        "if",
+        makeASTFunction("match", makeRowType(argument), makeLiteral(Field(String("^Decimal")))),
+        std::move(decimal_count),
+        makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", text->clone())));
+    auto milliseconds = makeASTFunction("fromUnixTimestamp64Milli", std::move(count), makeLiteral(Field(String("UTC"))));
     auto is_a_number = makeASTFunction("match", makeRowType(argument), makeLiteral(Field(String("^(U?Int|Float|Decimal)"))));
     return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
 }
@@ -1056,10 +1077,25 @@ ASTPtr makeAdd(const std::vector<ASTPtr> & arguments)
         numbers.push_back(isNumericLiteral(argument) ? argument->clone() : makeNumberAsFloat(argument));
     auto rounded = [](ASTPtr value) { return makeASTFunction("toInt64", makeASTFunction("round", std::move(value))); };
 
-    /// Every term that can be the date has a sum of all the terms of its own, so the translation
-    /// grows with the product of the two counts: bound it before building it.
-    const size_t possible_dates = std::count_if(arguments.begin(), arguments.end(), [](const auto & argument) { return !isNumericLiteral(argument); });
-    checkExpressionSize(possible_dates * arguments.size());
+    /** Every term that can be the date has a sum of copies of all the other terms of its own, and
+      * copies itself three times more, so the translation grows with the product of the count of
+      * such terms and the size of all of them. Each term was checked alone, but many of them, each
+      * just under the bound, would be copied into a tree many times larger than it before the bound
+      * is checked again on the result: the size is counted before anything is copied. The count
+      * leaves out the parts of the result that are not copies, so it is never more than the size
+      * of the result, which is checked as well once it is built.
+      */
+    size_t numbers_size = 0;
+    for (const auto & number : numbers)
+        numbers_size += number->size();
+    size_t expanded_size = 0;
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (isNumericLiteral(arguments[i]))
+            continue;
+        expanded_size += numbers_size - numbers[i]->size() + 3 * arguments[i]->size();
+        checkExpressionSize(expanded_size);
+    }
 
     ASTPtr any_date;
     std::vector<ASTPtr> date_of_term;
@@ -1425,8 +1461,18 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         if (argument.FindMember("chars") != argument.MemberEnd())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'chars' of '{}' is not supported", name);
-        const char * function = name == "$trim" ? "trimBoth" : (name == "$ltrim" ? "trimLeft" : "trimRight");
-        return makeASTFunction(function, std::move(input));
+        /** Mongo trims its own set of whitespace code points, while `trimBoth` and its siblings trim
+          * only the ASCII space, and with an explicit set of characters they trim bytes, which would
+          * cut a multi-byte character apart. A class of code points of a regular expression does
+          * neither.
+          */
+        static constexpr std::string_view whitespace = "[\\x00\\t\\n\\x0B\\f\\r \\x{00A0}\\x{1680}\\x{2000}-\\x{200A}]+";
+        String pattern;
+        if (name != "$rtrim")
+            pattern = "^" + String(whitespace);
+        if (name != "$ltrim")
+            pattern += (pattern.empty() ? "" : "|") + String(whitespace) + "$";
+        return makeASTFunction("replaceRegexpAll", std::move(input), makeLiteral(Field(pattern)), makeLiteral(Field(String())));
     }
 
     if (name == "$replaceOne" || name == "$replaceAll")
@@ -1460,7 +1506,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     }
 
     if (name == "$setUnion")
-        return makeASTFunction("arrayDistinct", makeFunction("arrayConcat", parseArguments(argument)));
+        return makeSetOfElements(makeFunction("arrayConcat", parseArguments(argument)));
 
     if (name == "$setDifference")
     {
@@ -1470,15 +1516,14 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto body = makeASTFunction("not", makeASTFunction("has", arguments[1], element));
         /// A set operator answers a set: the elements the second array does not hold, each of them
         /// once, the way the neighbouring `$setUnion` and `$setEquals` answer.
-        return makeASTFunction(
-            "arrayDistinct", makeASTFunction("arrayFilter", makeLambda("__mongo_element", std::move(body)), arguments[0]));
+        return makeSetOfElements(makeASTFunction("arrayFilter", makeLambda("__mongo_element", std::move(body)), arguments[0]));
     }
 
     if (name == "$setEquals")
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 2);
-        auto sorted = [](ASTPtr array) { return makeASTFunction("arraySort", makeASTFunction("arrayDistinct", std::move(array))); };
+        auto sorted = [](ASTPtr array) { return makeASTFunction("arraySort", makeSetOfElements(std::move(array))); };
         return makeASTFunction("equals", sorted(arguments[0]), sorted(arguments[1]));
     }
 

@@ -9,6 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
@@ -99,6 +100,19 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         }
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by_node->clone());
     }
+
+    /** The filter and the sort of a `find` read the fields of the input, while the projection
+      * computes the fields of the output in the same select, under the names of the fields it
+      * produces: `{a: {$literal: 99}}` must not turn the filter `{a: 99}` into a test of the literal.
+      * A document collection has no column but the object id, and its paths are qualified (see
+      * `rewriteFieldsAsDocumentPaths`), so this is about tables with columns. `$divide` of two
+      * integers is a double, whatever `sql_compatible_division_for_integers` the user has.
+      */
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->is_standalone = false;
+    settings->changes.emplace_back("prefer_column_name_to_alias", Field(UInt64(1)));
+    settings->changes.emplace_back("sql_compatible_division_for_integers", Field(UInt64(0)));
+    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
 
     /// Traverse data tree for WHERE operator
     ASTPtr where_condition;
