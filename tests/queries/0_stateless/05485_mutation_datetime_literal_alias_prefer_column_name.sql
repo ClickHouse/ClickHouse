@@ -26,5 +26,25 @@ ALTER TABLE t_prefer_other DELETE WHERE isNotNull(identity(other) AS event) AND 
 SELECT extract(command, 'event = [^)]*\\)') FROM system.mutations WHERE database = currentDatabase() AND table = 't_prefer_other';
 SELECT id FROM t_prefer_other ORDER BY id;
 
+-- A `Memory` table runs the mutation in the session, where the identifier names the `DateTime64(3)` column, while the alias is
+-- a `DateTime`: a conversion with the type of the alias would drop the fraction of a second, so the literal keeps its string.
+SELECT '--- an alias with another precision than the column';
+DROP TABLE IF EXISTS t_prefer_precision;
+CREATE TABLE t_prefer_precision (id UInt8, event DateTime64(3)) ENGINE = Memory;
+INSERT INTO t_prefer_precision VALUES (1, '2020-01-01 00:00:00.500'), (2, '2020-01-01 00:00:00.000');
+ALTER TABLE t_prefer_precision DELETE WHERE isNotNull(toDateTime(event) AS event) AND event = '2020-01-01 00:00:00.500';
+SELECT id FROM t_prefer_precision ORDER BY id;
+
+-- The analysis of the expression of an alias with the name of a column keeps the aliases inside its lambdas and subqueries.
+SELECT '--- aliases inside the expression of an alias with the name of a column';
+DROP TABLE IF EXISTS t_prefer_nested;
+CREATE TABLE t_prefer_nested (id UInt8, flag UInt8, arr Array(UInt8)) ENGINE = Memory;
+INSERT INTO t_prefer_nested VALUES (1, 1, [1]), (2, 1, [2]), (3, 0, [3]);
+ALTER TABLE t_prefer_nested DELETE WHERE (arrayExists(x -> isNotNull(identity(x) AS y) AND y = x, arr) AS flag) AND flag = 1 AND id = 1;
+ALTER TABLE t_prefer_nested DELETE WHERE ((SELECT identity(1) AS y WHERE y = 1) AS flag) = 1 AND flag = 1 AND id = 2;
+SELECT id FROM t_prefer_nested ORDER BY id;
+
 DROP TABLE t_prefer_temporal;
 DROP TABLE t_prefer_other;
+DROP TABLE t_prefer_precision;
+DROP TABLE t_prefer_nested;

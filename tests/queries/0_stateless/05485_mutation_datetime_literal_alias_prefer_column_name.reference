@@ -5,3 +5,7 @@ event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
 --- an alias that refers to another alias with the name of a column
 event = \'2020-01-01 00:00:00\')
 1
+--- an alias with another precision than the column
+2
+--- aliases inside the expression of an alias with the name of a column
+3

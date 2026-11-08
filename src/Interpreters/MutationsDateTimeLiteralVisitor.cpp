@@ -384,15 +384,6 @@ bool hasIdentifierWithName(const ASTPtr & ast, const NameSet & names)
     return std::ranges::any_of(ast->children, [&](const ASTPtr & child) { return hasIdentifierWithName(child, names); });
 }
 
-/// Removes the aliases of `ast` and of its descendants.
-void removeAliases(const ASTPtr & ast)
-{
-    if (!ast->tryGetAlias().empty())
-        ast->setAlias({});
-    for (const auto & child : ast->children)
-        removeAliases(child);
-}
-
 /// Adds the names of the identifiers and of the functions in `ast` to `names`, also in the assignments of
 /// `TTL ... GROUP BY ... SET` and in lambdas and subqueries, to find the aliases of lambdas that the expression invokes. A name
 /// that is not such an invocation, such as that of a column, only makes the lambda with that alias count as invoked.
@@ -429,7 +420,11 @@ AliasTypes getUnknownAliasTypes(const NameSet & names)
 /// those of the server), where it names the alias. The type of such an alias is then analyzed from its expression rather than
 /// from an identifier. The expression has that type with either setting if it does not refer to another alias with the name of
 /// a column, which the two settings bind differently (an identifier with the name of its own alias names the column with both,
-/// as in `identity(event) AS event`); otherwise the types of the aliases are not known.
+/// as in `identity(event) AS event`); otherwise the types of the aliases are not known. A literal compared with the identifier
+/// is converted with the type of the alias, so if the alias and the column are a `DateTime` or a `DateTime64` with different
+/// precisions, such as `toDateTime(event) AS event` of a `DateTime64(3)` column, the type of the alias is not known either:
+/// a conversion with it would not read the literal as the comparison with the column does, such as dropping the fraction of a
+/// second of a `DateTime64(3)` column.
 AliasTypes getAliasTypes(
     const ASTs & expressions,
     const NameSet & aliases,
@@ -465,15 +460,16 @@ AliasTypes getAliasTypes(
     }
 
     /// The identifiers, or the expressions of the aliases with the names of columns, go first, because an expression of the
-    /// list, such as a matcher, may be expanded to several nodes. The aliases are removed from the copies of the expressions,
-    /// which the expressions of the list define.
+    /// list, such as a matcher, may be expanded to several nodes. The copy of an expression does not define its alias again,
+    /// while the aliases inside it, which it repeats with the same expressions, stay, since its lambdas and subqueries
+    /// refer to them in their own scopes.
     auto list = make_intrusive<ASTExpressionList>();
     for (const auto & name : names)
     {
         if (aliases_of_columns.contains(name))
         {
             auto aliased_expression = aliased_expressions.at(name)->clone();
-            removeAliases(aliased_expression);
+            aliased_expression->setAlias({});
             list->children.push_back(std::move(aliased_expression));
         }
         else
@@ -493,6 +489,16 @@ AliasTypes getAliasTypes(
     const auto & nodes = query_tree->as<const ListNode &>().getNodes();
     for (size_t i = 0; i < names.size(); ++i)
         alias_types[names[i]] = nodes[i]->getResultType();
+
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    for (const auto & name : aliases_of_columns)
+    {
+        const auto alias_datetime_type = getZonelessDateTimeType(alias_types[name]);
+        const auto column_datetime_type
+            = getZonelessDateTimeType(columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name)->type);
+        if (alias_datetime_type && column_datetime_type && !alias_datetime_type->equals(*column_datetime_type))
+            alias_types[name] = nullptr;
+    }
     return alias_types;
 }
 
