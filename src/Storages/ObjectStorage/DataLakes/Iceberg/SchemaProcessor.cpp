@@ -1100,8 +1100,9 @@ std::vector<std::optional<Int32>> getPartitionSpecFieldIds(const Poco::JSON::Arr
     bool has_any_field_id = false;
     for (UInt32 i = 0; i < spec_fields->size(); ++i)
     {
-        result.push_back(tryGetInt32Value(spec_fields->getObject(i), f_field_id));
-        has_any_field_id |= result.back().has_value();
+        const auto field = spec_fields->getObject(i);
+        result.push_back(tryGetInt32Value(field, f_field_id));
+        has_any_field_id |= field && field->has(f_field_id);
     }
     if (!has_any_field_id)
         for (size_t i = 0; i < result.size(); ++i)

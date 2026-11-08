@@ -279,8 +279,13 @@ namespace
         record_fields_count = record_fields->size();
 
         std::vector<std::optional<Int32>> record_field_ids;
+        bool record_has_field_ids = false;
         for (UInt32 i = 0; i < record_fields->size(); ++i)
-            record_field_ids.push_back(tryGetInt32Value(record_fields->getObject(i), f_field_id));
+        {
+            const auto field = record_fields->getObject(i);
+            record_field_ids.push_back(tryGetInt32Value(field, f_field_id));
+            record_has_field_ids |= field && field->has(f_field_id);
+        }
         const auto spec_field_ids = getPartitionSpecFieldIds(spec_fields);
 
         const auto are_complete_and_unique = [](const std::vector<std::optional<Int32>> & ids)
@@ -289,11 +294,11 @@ namespace
             return std::ranges::all_of(ids, [&](const auto & id) { return id.has_value() && seen.insert(*id).second; });
         };
         if (!are_complete_and_unique(spec_field_ids))
-            throw_mismatch("the field ids of the partition spec are incomplete or not unique");
-        if (std::ranges::none_of(record_field_ids, [](const auto & id) { return id.has_value(); }) && !record_field_ids.empty())
+            throw_mismatch("the field ids of the partition spec are incomplete, invalid or not unique");
+        if (!record_has_field_ids && !record_field_ids.empty())
             return {};
         if (!are_complete_and_unique(record_field_ids))
-            throw_mismatch("the field ids of the partition record are incomplete or not unique");
+            throw_mismatch("the field ids of the partition record are incomplete, invalid or not unique");
         if (record_field_ids.empty() && !spec_field_ids.empty())
             throw_mismatch("the partition record is empty");
 

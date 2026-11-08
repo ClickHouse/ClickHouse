@@ -69,6 +69,21 @@ for t in reversed_spec no_field_ids; do
 done
 rm -rf "./${work_dir}"
 
+# A field id that is not an integer is refused, in the partition record and in the partition spec.
+work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_invalid_field_id"
+rm -rf "./${work_dir}"
+mkdir -p "./${work_dir}"
+cp -r "$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete_equality_partitioned" "./${work_dir}/record"
+cp -r "$DATA/impala/hadoop_catalog/ice/iceberg_v2_delete_equality_partitioned" "./${work_dir}/spec"
+for manifest in "./${work_dir}"/record/metadata/*.avro; do
+    python3 -c 'import sys; p = sys.argv[1]; d = open(p, "rb").read(); open(p, "wb").write(d.replace(b"\"field-id\":1000}", b"\"field-id\":\"10\"}"))' "$manifest"
+done
+sed -i -e 's/"field-id" : 1000/"field-id" : "1000"/' "./${work_dir}/spec/metadata/v5.metadata.json"
+for t in record spec; do
+    q "SELECT * FROM icebergLocal('$PWD/${work_dir}/$t')" 2>&1 | grep -o -m1 -e "field ids of the partition $t are incomplete, invalid or not unique" -e 'ICEBERG_SPECIFICATION_VIOLATION'
+done
+rm -rf "./${work_dir}"
+
 # A maintenance operation that is the first to read the manifests of the table object.
 work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_expire"
 rm -rf "./${work_dir}"
