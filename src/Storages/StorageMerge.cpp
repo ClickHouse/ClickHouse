@@ -2075,18 +2075,13 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
         auto ast = modified_query_info.query_tree->toAST();
-        /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
-        /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
-        auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
-        if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-        {
-            modified_context->clearViewSource();
-            view_source = nullptr;
-        }
+        /// The analyzer replaces the source table of a materialized view with the inserted block only when it is given
+        /// the view source. Pass it for every child, so the source table reads the same data in the child's own query
+        /// and in its subqueries, like `x IN (SELECT x FROM src)`.
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
             child_select_query_options,
-            view_source);
+            modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource());
 
         auto & planner = interpreter.getPlanner();
         planner.buildQueryPlanIfNeeded();
