@@ -41,4 +41,16 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM $F, 'id Int64, m Map(String, String), l Arra
 $CLICKHOUSE_LOCAL -q "SELECT s FROM $F, 's Tuple(value String, other Int32)')"
 $CLICKHOUSE_LOCAL -q "SELECT id FROM $F, 'id Int64, m Tuple(value Nullable(String))')"
 
+DICT_FILE="$(realpath "$CLICKHOUSE_TMP")/${CLICKHOUSE_TEST_UNIQUE_NAME}_dict.orc"
+$CLICKHOUSE_LOCAL --output_format_orc_dictionary_key_size_threshold=1 -q "SELECT map('key', 'profile') AS m, [map('k', 'v')] AS lm FORMAT ORC" > "$DICT_FILE"
+D="file('$DICT_FILE', ORC"
+S="SETTINGS input_format_orc_dictionary_as_low_cardinality = 1"
+
+# A dictionary-encoded map key.
+error "SELECT * FROM $D, 'm Tuple(value Nullable(String))') $S"
+error "SELECT * FROM $D, 'lm Array(Tuple(value String))') $S"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM $D, 'm String') $S"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM $D, 'm Map(String, String), lm Array(Map(String, String))') $S"
+
 rm -f "$FILE"
+rm -f "$DICT_FILE"

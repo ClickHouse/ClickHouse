@@ -2798,6 +2798,9 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_value_type = orc_type->getSubtype(1);
 
             auto key_column = readColumnFromORCColumn(orc_key_column, orc_key_type, "key", false, key_type_hint);
+            /// A map key cannot be Nullable.
+            if (!key_type_hint && !DataTypeMap::isValidKeyType(key_column.type))
+                key_type_hint = removeNullableOrLowCardinalityNullable(key_column.type);
             if (key_type_hint && !key_type_hint->equals(*key_column.type))
             {
                 /// Cast key column to target type, because it can happen
