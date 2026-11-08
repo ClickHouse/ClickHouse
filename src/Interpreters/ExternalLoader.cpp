@@ -921,12 +921,10 @@ private:
         return results;
     }
 
-    /// Waits until `pred` holds or `timeout` expires. The CPU lease of this thread is parked meanwhile:
-    /// the loading may run in the same workload and need this thread's CPU slot.
+    /// Parks this thread's CPU lease while waiting: the loading may run in the same workload and need its CPU slot.
     template <typename Pred>
     void waitForLoading(std::unique_lock<std::mutex> & lock, Duration timeout, Pred & pred)
     {
-        /// `NO_WAIT` is a non-blocking probe, so nothing is parked for it
         if (pred() || timeout == NO_WAIT)
             return;
 
