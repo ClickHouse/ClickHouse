@@ -624,27 +624,18 @@ void QueryStatus::ExecutorHolder::remove()
 
 CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_ptr exception)
 {
-    bool already_killed = false;
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
 
-        already_killed = is_killed;
-        if (!already_killed)
-        {
-            LOG_TRACE(getLogger("ProcessList"), "Cancelling the query (reason: {})", reason);
+        if (is_killed)
+            return CancellationCode::CancelSent;
 
-            is_killed = true;
-            cancel_reason = reason;
-            /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
-            cancellation_exception = exception ? copyMutableException(exception) : nullptr;
-        }
-    }
+        LOG_TRACE(getLogger("ProcessList"), "Cancelling the query (reason: {})", reason);
 
-    /// `replace_running_query` sets only `is_killed`
-    if (already_killed)
-    {
-        freeSlotAllocations();
-        return CancellationCode::CancelSent;
+        is_killed = true;
+        cancel_reason = reason;
+        /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
+        cancellation_exception = exception ? copyMutableException(exception) : nullptr;
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -670,21 +661,7 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
     for (const auto & e : executors_snapshot)
         e->cancel();
 
-    freeSlotAllocations();
-
     return CancellationCode::CancelSent;
-}
-
-void QueryStatus::freeSlotAllocations()
-{
-    std::vector<SlotAllocationPtr> slot_allocations_snapshot;
-    {
-        std::lock_guard lock(executors_mutex);
-        slot_allocations_snapshot = slot_allocations;
-    }
-
-    for (const auto & allocation : slot_allocations_snapshot)
-        allocation->free();
 }
 
 void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns)
@@ -735,24 +712,6 @@ void QueryStatus::removePipelineExecutor(IExecutor * e)
     /// Invalidate executor pointer inside holder.
     /// We should do it with released executors_mutex to avoid possible lock order inversion.
     executor_holder->remove();
-}
-
-void QueryStatus::addSlotAllocation(const SlotAllocationPtr & allocation)
-{
-    {
-        std::lock_guard lock(executors_mutex);
-        slot_allocations.push_back(allocation);
-    }
-
-    /// `cancelQuery` sets `is_killed` before it takes its snapshot, so one of the two frees an allocation added concurrently
-    if (is_killed)
-        allocation->free();
-}
-
-void QueryStatus::removeSlotAllocation(const SlotAllocationPtr & allocation)
-{
-    std::lock_guard lock(executors_mutex);
-    std::erase(slot_allocations, allocation);
 }
 
 bool QueryStatus::checkTimeLimit()

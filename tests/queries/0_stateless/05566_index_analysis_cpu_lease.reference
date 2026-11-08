@@ -19,8 +19,10 @@ starved: 1
 1
 replaced: 1
 1
-kill after replace: 0
 1
 --- the client's cancellation (Ctrl-C) stops an analysis starved by a higher priority query
 cancelled: 1
 QUERY_WAS_CANCELLED_BY_CLIENT
+--- a soft time limit stops the wait of an analysis starved by a higher priority query
+break: 0
+1

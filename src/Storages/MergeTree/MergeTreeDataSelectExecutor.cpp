@@ -1192,7 +1192,7 @@ struct InPartRenewal
 };
 
 SlotAllocationPtr allocateIndexAnalysisCPU(
-    const Settings & settings, size_t num_threads, const QueryStatusPtr & query_status, const std::function<bool()> & cancel_callback)
+    const Settings & settings, size_t num_threads, const QueryStatusPtr & query_status, const std::function<void()> & on_master_wait)
 {
     if (num_threads == 0 || !settings[Setting::use_concurrency_control])
         return nullptr;
@@ -1209,8 +1209,7 @@ SlotAllocationPtr allocateIndexAnalysisCPU(
     auto lease_settings = getCPULeaseSettings(query_context);
     /// A preempted thread may hold a part it cannot give away, so it waits for a grant instead of stopping
     lease_settings.preemption_timeout = std::chrono::milliseconds::max();
-    if (cancel_callback)
-        lease_settings.on_master_wait = [cancel_callback] { cancel_callback(); };
+    lease_settings.on_master_wait = on_master_wait;
     return std::make_shared<CPULeaseAllocation>(num_threads, links.master_thread, links.worker_thread, std::move(lease_settings));
 }
 
@@ -1663,30 +1662,32 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         const size_t analysis_threads = std::max<size_t>(1, std::min(num_threads, parts_with_ranges.size()));
         SlotAllocationPtr cpu;
-        /// While the analysis waits for a CPU slot, this thread keeps reading the client's `Cancel` packet
         std::function<bool()> cancel_callback;
+        /// While this thread waits for a CPU slot or for the workers, it reads the client's `Cancel` packet and checks
+        /// the query's kill flag and time limit; past a soft limit (`timeout_overflow_mode = 'break'`) the analysis
+        /// finishes without the allocation
+        auto poll_while_waiting = [&]
+        {
+            if (cancel_callback)
+                cancel_callback();
+            if (query_status && !query_status->checkTimeLimit())
+                cpu->free();
+        };
         /// On a thread that already runs on a CPU lease (an executor thread) a second allocation can hang a one-slot workload
         if (!getCurrentCPULease() && !parts_with_ranges.empty())
         {
             if (context->hasQueryContext())
                 cancel_callback = context->getQueryContext()->getInteractiveCancelCallback();
-            cpu = allocateIndexAnalysisCPU(settings, analysis_threads, query_status, cancel_callback);
+            cpu = allocateIndexAnalysisCPU(settings, analysis_threads, query_status, poll_while_waiting);
         }
 
         if (cpu)
         {
-            if (query_status)
-                query_status->addSlotAllocation(cpu);
-            SCOPE_EXIT({
-                if (query_status)
-                    query_status->removeSlotAllocation(cpu);
-            });
-
             std::atomic<size_t> next_part_index = 0;
             std::optional<ThreadPool> pool;
             std::function<void()> spawn_granted_workers;
 
-            /// `lease` is a slot of `cpu`; nullptr only after a cancellation freed it
+            /// `lease` is a slot of `cpu`; nullptr once the allocation is freed (a soft time limit or a failed worker)
             auto process_parts = [&](ISlotLease * lease, bool is_worker, bool spawns_workers)
             {
                 lease->startConsumption();
@@ -1709,7 +1710,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     process_part(part_index);
 
-                    /// Reports the part; false only after a cancellation freed the allocation
+                    /// Reports the part; false once the allocation is freed
                     if (lease && !lease->renew())
                     {
                         if (is_worker)
@@ -1774,8 +1775,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             if (pool)
             {
-                while (cancel_callback && !pool->waitUntil(std::chrono::steady_clock::now() + CPULeaseSettings::default_master_wait_period))
-                    cancel_callback();
+                while (!pool->waitUntil(std::chrono::steady_clock::now() + CPULeaseSettings::default_master_wait_period))
+                    poll_while_waiting();
                 pool->wait();
             }
         }

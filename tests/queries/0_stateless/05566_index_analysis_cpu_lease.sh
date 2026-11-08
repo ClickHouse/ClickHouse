@@ -8,7 +8,8 @@
 
 # Index analysis of MergeTree runs under the workload's preemptive CPU scheduling: its CPU is reported to the
 # workload, it is preempted inside a part (the primary key search, a skip index, the top-K path), it never hangs a
-# one-slot workload (also not in a dictionary load), and KILL QUERY or a cancellation by the client wakes it up.
+# one-slot workload (also not in a dictionary load), and KILL QUERY, a cancellation by the client or a soft time limit
+# wakes it up.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -121,7 +122,7 @@ timeout 300 $CLICKHOUSE_CLIENT --query_id "${P}_oneslot_5" -q "SELECT count() FR
 
 echo "--- KILL QUERY wakes up an analysis starved by a higher priority query"
 # Without the limits of the CI profile, which stop it at once
-$CLICKHOUSE_CLIENT --query_id "${P}_hog" -q "SELECT count() FROM numbers_mt(1e13) SETTINGS workload = '${P}_hi', max_threads = 1, use_concurrency_control = 1, max_rows_to_read = 0, max_estimated_execution_time = 0" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id "${P}_hog" -q "SELECT count() FROM numbers_mt(1e13) SETTINGS workload = '${P}_hi', max_threads = 1, use_concurrency_control = 1, max_rows_to_read = 0, max_bytes_to_read = 0, max_estimated_execution_time = 0" >/dev/null 2>&1 &
 for _ in {1..300}; do
     [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${P}_hog'")" = 1 ] && break
     sleep 0.1
@@ -140,7 +141,7 @@ echo "starved: ${preempted:-finished}"
 wait $starved_pid
 grep -c -m1 'QUERY_WAS_CANCELLED' "${CLICKHOUSE_TMP}/${P}_starved.out"
 
-# A failed replace_running_query marks the query killed without waking it, a later KILL QUERY must still wake it
+# replace_running_query only marks the query killed, the analysis notices it while it waits for a slot
 timeout 300 $CLICKHOUSE_CLIENT --query_id "${P}_starved_r" -q "SELECT count() FROM t WHERE ${T_COND} SETTINGS workload = '${P}_lo', max_threads = 8, ${COMMON}" > "${CLICKHOUSE_TMP}/${P}_starved_r.out" 2>&1 &
 starved_pid=$!
 preempted=""
@@ -151,8 +152,7 @@ for _ in {1..600}; do
     sleep 0.1
 done
 echo "replaced: ${preempted:-finished}"
-$CLICKHOUSE_CLIENT --query_id "${P}_starved_r" --replace_running_query 1 --replace_running_query_max_wait_ms 200 -q "SELECT 1" 2>&1 | grep -c -m1 'QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING'
-timeout 120 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${P}_starved_r' SYNC FORMAT Null"; echo "kill after replace: $?"
+$CLICKHOUSE_CLIENT --query_id "${P}_starved_r" --replace_running_query 1 --replace_running_query_max_wait_ms 60000 -q "SELECT 1"
 wait $starved_pid
 grep -c -m1 'QUERY_WAS_CANCELLED' "${CLICKHOUSE_TMP}/${P}_starved_r.out"
 
@@ -179,6 +179,14 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT errorCodeToName(exception_code) FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '${P}_starved_c' AND type != 'QueryStart'"
+
+echo "--- a soft time limit stops the wait of an analysis starved by a higher priority query"
+timeout 120 $CLICKHOUSE_CLIENT --query_id "${P}_starved_b" -q "SELECT count() FROM t WHERE ${T_COND} SETTINGS workload = '${P}_lo', max_threads = 8, max_execution_time = 1, timeout_overflow_mode = 'break', ${COMMON}" >/dev/null; echo "break: $?"
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${P}_starved_b' SYNC FORMAT Null" 2>/dev/null
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT ProfileEvents['ConcurrencyControlPreemptions'] > 0 FROM system.query_log
+    WHERE current_database = currentDatabase() AND query_id = '${P}_starved_b' AND type = 'QueryFinish'"
 
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${P}_hog' SYNC FORMAT Null"
 wait
