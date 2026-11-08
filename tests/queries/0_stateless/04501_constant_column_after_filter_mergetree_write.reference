@@ -1,0 +1,7 @@
+insert-select
+pageview	a
+pageview	c
+projection
+pageview	2024-01-01 00:00:00	a
+pageview	2024-01-03 00:00:00	c
+2
