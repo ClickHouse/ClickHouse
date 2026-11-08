@@ -7,7 +7,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -34,11 +33,7 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
-namespace
-{
-
-/// The family name and the arguments of an element of a codec chain.
-std::pair<String, ASTPtr> getCodecNameAndArguments(const ASTPtr & element)
+std::pair<String, ASTPtr> CompressionCodecFactory::getCodecNameAndArguments(const ASTPtr & element)
 {
     if (const auto * identifier = element->as<ASTIdentifier>())
         return {identifier->name(), nullptr};
@@ -47,173 +42,12 @@ std::pair<String, ASTPtr> getCodecNameAndArguments(const ASTPtr & element)
     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec: {}", element->formatForErrorMessage());
 }
 
-bool isFirstApplicable(const String & name)
+const CompressionCodecFamilyProperties & CompressionCodecFactory::getFamilyProperties(const String & family_name) const
 {
-    return equalsCaseInsensitive(name, FIRST_APPLICABLE_CODEC_NAME);
-}
-
-bool isMultiple(const String & name)
-{
-    return equalsCaseInsensitive(name, "Multiple");
-}
-
-/// The arguments of `FirstApplicable` or `Multiple`, which must not be empty.
-const ASTs & getCombinatorArguments(const String & name, const ASTPtr & arguments)
-{
-    if (!arguments || arguments->children.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec {} requires at least one codec as an argument", name);
-    return arguments->children;
-}
-
-/// A codec chain that has a `FirstApplicable` resolved without a data type depends on the data type.
-bool codecHasFirstApplicable(const CompressionCodecPtr & codec)
-{
-    if (typeid_cast<const CompressionCodecFirstApplicable *>(codec.get()))
-        return true;
-    if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
-        return std::ranges::any_of(multiple->getCodecs(), [](const auto & inner) { return codecHasFirstApplicable(inner); });
-    return false;
-}
-
-/// A copy of the chain element `element` with every `Default` inside replaced by the description of `current_default`.
-ASTPtr replaceDefaultCodec(const ASTPtr & element, const CompressionCodecPtr & current_default)
-{
-    const auto [name, arguments] = getCodecNameAndArguments(element);
-    if (equalsCaseInsensitive(name, DEFAULT_CODEC_NAME))
-    {
-        ASTPtr description = current_default->getCodecDescription();
-        /// The description of a chain is a list of codecs, which is `Multiple` as an alternative of `FirstApplicable`.
-        if (const auto * list = description->as<ASTExpressionList>())
-            return makeASTFunction("Multiple", ASTs(list->children.begin(), list->children.end()));
-        return description;
-    }
-
-    if (!arguments || !(isFirstApplicable(name) || isMultiple(name)))
-        return element->clone();
-
-    ASTs replaced_arguments;
-    replaced_arguments.reserve(arguments->children.size());
-    for (const auto & argument : arguments->children)
-        replaced_arguments.push_back(replaceDefaultCodec(argument, current_default));
-    return makeASTFunction(name, std::move(replaced_arguments));
-}
-
-}
-
-bool CompressionCodecFactory::isApplicable(const ASTPtr & element, const IDataType * type) const
-{
-    const auto [name, arguments] = getCodecNameAndArguments(element);
-
-    /// `Default` is resolved for the data type by itself.
-    if (equalsCaseInsensitive(name, DEFAULT_CODEC_NAME))
-        return true;
-
-    if (isMultiple(name))
-        return std::ranges::all_of(getCombinatorArguments(name, arguments), [&](const auto & codec) { return isApplicable(codec, type); });
-
-    if (isFirstApplicable(name))
-        return std::ranges::any_of(getCombinatorArguments(name, arguments), [&](const auto & codec) { return isApplicable(codec, type); });
-
-    const String * canonical_family_name = tryGetCanonicalFamilyName(name);
+    const String * canonical_family_name = tryGetCanonicalFamilyName(family_name);
     if (!canonical_family_name)
-        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", name);
-
-    const auto & properties = family_name_with_properties.at(*canonical_family_name);
-    /// A declarative codec takes effect only through the serialization of the column, which is chosen from the codecs
-    /// of the column declaration, not from the alternatives of `FirstApplicable`.
-    if (properties.is_declarative)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec {} cannot be used inside {}", name, FIRST_APPLICABLE_CODEC_NAME);
-
-    if (!properties.is_applicable_to_type)
-        return true;
-    return type && properties.is_applicable_to_type(*type);
-}
-
-void CompressionCodecFactory::appendResolvedChainElement(const ASTPtr & element, const IDataType * type, ASTs & out) const
-{
-    const auto [name, arguments] = getCodecNameAndArguments(element);
-
-    if (isMultiple(name))
-    {
-        for (const auto & codec : getCombinatorArguments(name, arguments))
-            appendResolvedChainElement(codec, type, out);
-        return;
-    }
-
-    if (isFirstApplicable(name))
-    {
-        for (const auto & alternative : getCombinatorArguments(name, arguments))
-        {
-            if (isApplicable(alternative, type))
-            {
-                appendResolvedChainElement(alternative, type, out);
-                return;
-            }
-        }
-
-        if (type)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "None of the codecs in {} is applicable to the data type {}",
-                element->formatForErrorMessage(), type->getName());
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "None of the codecs in {} is applicable when the data type is unknown, e.g. as a default, marks or primary key "
-            "compression codec. Add a codec that is applicable to any data type as the last alternative, like ZSTD",
-            element->formatForErrorMessage());
-    }
-
-    out.push_back(element);
-}
-
-ASTPtr CompressionCodecFactory::resolveFirstApplicable(const ASTPtr & ast, const IDataType * type) const
-{
-    const auto * func = ast->as<ASTFunction>();
-    if (!func || !func->arguments)
-        return ast;
-
-    const auto & elements = func->arguments->children;
-    const auto is_first_applicable = [](const ASTPtr & element) { return isFirstApplicable(getCodecNameAndArguments(element).first); };
-    if (!std::ranges::any_of(elements, is_first_applicable))
-        return ast;
-
-    ASTs resolved;
-    for (const auto & element : elements)
-    {
-        if (is_first_applicable(element))
-            appendResolvedChainElement(element, type, resolved);
-        else
-            resolved.push_back(element);
-    }
-    return makeASTFunction("CODEC", std::move(resolved));
-}
-
-void CompressionCodecFactory::checkFirstApplicableHasNoLossyAlternative(const ASTPtr & element) const
-{
-    const auto [name, arguments] = getCodecNameAndArguments(element);
-
-    if (isFirstApplicable(name) || isMultiple(name))
-    {
-        for (const auto & codec : getCombinatorArguments(name, arguments))
-            checkFirstApplicableHasNoLossyAlternative(codec);
-        return;
-    }
-
-    /// `Default` is not allowed without a data type, and the default codec itself is validated where it is set.
-    if (equalsCaseInsensitive(name, DEFAULT_CODEC_NAME))
-        return;
-
-    if (getImpl(name, arguments, nullptr)->isLossyCompression())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Codec {} is lossy and cannot be an alternative of {} where the data type is unknown, e.g. as a default or "
-            "TTL recompression codec, or for a column with dynamic subcolumns (Dynamic, JSON): it would be selected for the type of every column, including the ones where lossy "
-            "compression is not allowed (a sorting key, the keys of a Map or a LowCardinality dictionary)",
-            name, FIRST_APPLICABLE_CODEC_NAME);
-}
-
-CompressionCodecPtr CompressionCodecFactory::getFirstApplicableWithoutType(const ASTPtr & element, const CompressionCodecPtr & current_default) const
-{
-    ASTs selected_codecs;
-    appendResolvedChainElement(element, nullptr, selected_codecs);
-    CompressionCodecPtr selected = get(makeASTFunction("CODEC", std::move(selected_codecs)), nullptr, current_default);
-    return std::make_shared<CompressionCodecFirstApplicable>(replaceDefaultCodec(element, current_default), std::move(selected));
+        throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", family_name);
+    return family_name_with_properties.at(*canonical_family_name);
 }
 
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
@@ -256,10 +90,10 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & compression_code
     checkCodecChainIsNotColumnLevelOnly(ast);
     /// A codec given as a string (e.g. `default_compression_codec`) has no data type, and `FirstApplicable` in it is
     /// selected again for the type of every column, where the restrictions of lossy codecs are not checked.
-    if (hasFirstApplicable(ast))
+    if (CompressionCodecFirstApplicable::isInChain(ast))
         for (const auto & element : ast->as<const ASTFunction &>().arguments->children)
-            if (isFirstApplicable(getCodecNameAndArguments(element).first))
-                checkFirstApplicableHasNoLossyAlternative(element);
+            if (CompressionCodecFirstApplicable::isFirstApplicable(element))
+                validateFirstApplicableAlternative(element, /*settings=*/ nullptr, /*reject_lossy=*/ true);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
@@ -269,56 +103,31 @@ CompressionCodecPtr CompressionCodecFactory::get(
     if (current_default == nullptr)
         current_default = default_codec;
 
-    /// With a known data type, `FirstApplicable` is replaced by the codecs it selects; without one, it is kept as
-    /// `CompressionCodecFirstApplicable`, so that it can be resolved again once the data type is known.
-    const ASTPtr resolved_ast = column_type ? resolveFirstApplicable(ast, column_type) : ast;
-
-    if (const auto * func = resolved_ast->as<ASTFunction>())
+    if (const auto * func = ast->as<ASTFunction>())
     {
         Codecs codecs;
         codecs.reserve(func->arguments->children.size());
         for (const auto & inner_codec_ast : func->arguments->children)
         {
-            String codec_family_name;
-            ASTPtr codec_arguments;
-            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
-            {
-                codec_family_name = family_name->name();
-                codec_arguments = {};
-            }
-            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
-            {
-                codec_family_name = ast_func->name;
-                codec_arguments = ast_func->arguments;
-            }
-            else
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
+            const auto [codec_family_name, codec_arguments] = getCodecNameAndArguments(inner_codec_ast);
 
             CompressionCodecPtr codec;
             if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
             {
                 codec = current_default;
                 /// E.g. `default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))'`: select for the data type.
-                if (column_type && codecHasFirstApplicable(codec))
+                if (column_type && codec->dependsOnDataType())
                     codec = get(codec->getFullCodecDescription(), column_type);
             }
-            else if (isFirstApplicable(codec_family_name))
+            else if (CompressionCodecFirstApplicable::isFirstApplicable(inner_codec_ast))
             {
-                /// Only without a data type: with one, `resolveFirstApplicable` has replaced it.
-                chassert(!column_type);
-                /// A structural substream (e.g. the sizes of an array) keeps only generic codecs. If no alternative is
-                /// applicable without a data type, there is no generic codec to keep, the same as for a specialized codec.
-                if (only_generic && !isApplicable(inner_codec_ast, nullptr))
+                codec = CompressionCodecFirstApplicable::create(inner_codec_ast, column_type, current_default, only_generic);
+                /// No generic codec to keep for a structural substream.
+                if (!codec)
                     continue;
-                codec = getFirstApplicableWithoutType(inner_codec_ast, current_default);
             }
             else
                 codec = getImpl(codec_family_name, codec_arguments, column_type);
-
-            /// The structural substreams keep only the generic codecs of the ones that actually compress.
-            if (only_generic)
-                if (const auto * first_applicable = typeid_cast<const CompressionCodecFirstApplicable *>(codec.get()))
-                    codec = first_applicable->getSelected();
 
             std::span<const CompressionCodecPtr> expanded_codecs(&codec, 1);
 
