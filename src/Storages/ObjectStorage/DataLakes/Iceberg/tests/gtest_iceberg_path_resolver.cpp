@@ -330,6 +330,9 @@ TEST(IcebergPathResolver, MatchPositionDeleteBounds)
 
     EXPECT_EQ(scope("/x/data/a", "/x/data/z", "/x/data/m"), PositionDeleteScope::Range);
     EXPECT_EQ(scope("/x/data/n", "/x/data/z", "/x/data/m"), PositionDeleteScope::None);
+    /// Bounds under other top-level directories prove the range too.
+    EXPECT_EQ(scope("/a/x", "/s/z", "/t/data/m"), PositionDeleteScope::None);
+    EXPECT_EQ(scope("/a/x", "/z/z", "/t/data/m"), PositionDeleteScope::Range);
     /// Bounds truncated inside a component still prove the range.
     EXPECT_EQ(scope("/tmp/iceberg/dat", "/tmp/iceberg/dau", "/tmp/iceberg/data/a.parquet"), PositionDeleteScope::Range);
 
@@ -339,8 +342,8 @@ TEST(IcebergPathResolver, MatchPositionDeleteBounds)
     EXPECT_EQ(scope("s3a://b/x/data/a", "s3a://b/x/data/z", "s3://b/x/data/m"), PositionDeleteScope::ThisFile);
     EXPECT_EQ(scope("hdfs://localhost", "hdfs://localhosu", "/test-warehouse/t/data/a"), PositionDeleteScope::ThisFile);
     EXPECT_EQ(scope("/x/data/", "/x/data/z", "/x/data/m"), PositionDeleteScope::ThisFile);
-    /// Bounds straddling `/` may hold `file:///t/data/m`.
-    EXPECT_EQ(scope("file:/!/a", "file:/s/z", "file:/t/data/m"), PositionDeleteScope::ThisFile);
+    /// A lower bound continuing the prefix with a byte below `/` may hold `file:///t/data/m`.
+    EXPECT_EQ(scope("file:/!/a", "file:/s/z", "file:/t/data/m"), PositionDeleteScope::Range);
     /// A relative path has no canonical prefix.
     EXPECT_EQ(scope("x/data/n", "x/data/z", "x/data/m"), PositionDeleteScope::ThisFile);
     /// One bound or none proves no range.
@@ -352,11 +355,11 @@ TEST(IcebergPathResolver, MatchPositionDeleteBounds)
 TEST(IcebergPathResolver, CanonicalPrefix)
 {
     using Prefix = std::optional<std::string_view>;
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/data/a"), Prefix("/t"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("hdfs://nn:8020/t/a"), Prefix("hdfs://nn:8020/t"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:/t/a"), Prefix("file:/t"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:///t/m"), Prefix("file:///t"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("s3a://b/t/a"), Prefix("s3a://b/t"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/data/a"), Prefix("/"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("hdfs://nn:8020/t/a"), Prefix("hdfs://nn:8020/"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:/t/a"), Prefix("file:/"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:///t/m"), Prefix("file:///"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("s3a://b/t/a"), Prefix("s3a://b/"));
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("t/a"), std::nullopt);
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("s3://b"), std::nullopt);
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t//a"), std::nullopt);

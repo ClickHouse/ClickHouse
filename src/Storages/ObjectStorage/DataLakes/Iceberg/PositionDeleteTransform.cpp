@@ -82,19 +82,20 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
     if (auto name = fileNameOf(iceberg_data_path))
         data_file_name = String(*name);
     /// Row groups are pruned by the min/max of their raw `file_path` values. A row group is skipped only if all its
-    /// values lie in [prefix, prefix_end) of the data file path's `canonicalPrefix` and its range excludes the raw path;
-    /// a value spelling the data file with another scheme, authority or number of slashes lies outside that range.
+    /// values continue the data file path's `canonicalPrefix` with a byte above `/` and its range excludes the raw path;
+    /// a value spelling the data file with another scheme, authority or number of leading slashes does not.
     ASTPtr where_ast;
     if (auto prefix = IcebergPathResolver::canonicalPrefix(iceberg_data_path))
     {
-        String prefix_end(*prefix);
-        ++prefix_end.back();
+        String pruned_begin = String(*prefix) + '0';
+        String pruned_end(*prefix);
+        pruned_end.back() = '0';
         auto file_path_column = [] { return make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name); };
         where_ast = makeASTFunction(
             "or",
             makeASTFunction("equals", file_path_column(), make_intrusive<ASTLiteral>(Field(iceberg_data_path))),
-            makeASTFunction("less", file_path_column(), make_intrusive<ASTLiteral>(Field(String(*prefix)))),
-            makeASTFunction("greaterOrEquals", file_path_column(), make_intrusive<ASTLiteral>(Field(prefix_end))));
+            makeASTFunction("less", file_path_column(), make_intrusive<ASTLiteral>(Field(pruned_begin))),
+            makeASTFunction("greaterOrEquals", file_path_column(), make_intrusive<ASTLiteral>(Field(pruned_end))));
     }
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)

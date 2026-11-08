@@ -123,6 +123,23 @@ ${CLICKHOUSE_LOCAL} -q "
     SELECT groupArray(x) FROM (SELECT x FROM icebergLocal('r/warehouse/db/t') ORDER BY x);
     SELECT countIf(event = 'ParquetPrunedRowGroups' AND value > 0) FROM system.events" < /dev/null
 
+echo "row groups of a delete file naming files under another top-level directory are still pruned"
+create_table s "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
+deletes=$(find s/warehouse/db/t/data -name '*-deletes.parquet')
+local_query "
+    INSERT INTO FUNCTION file('${deletes}.new', Parquet)
+    SELECT file_path, pos FROM
+    (
+        SELECT file_path, pos FROM file('${deletes}', Parquet)
+        UNION ALL SELECT '/zz/elsewhere/x.parquet', toInt64(0)
+    )
+    ORDER BY file_path, pos
+    SETTINGS output_format_parquet_row_group_size = 1"
+mv "${deletes}.new" "${deletes}"
+${CLICKHOUSE_LOCAL} -q "
+    SELECT groupArray(x) FROM (SELECT x FROM icebergLocal('s/warehouse/db/t') ORDER BY x);
+    SELECT value FROM system.events WHERE event = 'ParquetPrunedRowGroups'" < /dev/null
+
 echo "position deletes naming data files with a leading //"
 create_table q "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
 deletes=$(find q/warehouse/db/t/data -name '*-deletes.parquet')

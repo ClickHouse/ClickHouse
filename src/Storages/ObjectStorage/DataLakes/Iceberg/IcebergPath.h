@@ -141,10 +141,10 @@ public:
     /// Same, but throws as `resolve` does.
     String storageIdentityOrThrow(const IcebergPathFromMetadata & metadata_path) const;
 
-    /// The raw text in front of the first component of an absolute `path` (scheme and authority, or `/`) and the first
-    /// byte of that component, if the components are separated by single `/` and none is empty, `.` or `..`;
-    /// otherwise `std::nullopt`. The strings starting with it form one contiguous range, and of the spellings of one
-    /// file only those with an empty, `.` or `..` component can share it.
+    /// The raw text in front of the first component of an absolute `path` (scheme and authority, or `/`; it ends with
+    /// `/`), if the components are separated by single `/` and none is empty, `.` or `..`; otherwise `std::nullopt`.
+    /// Another spelling of the same file continues it with a byte other than `/` only if it has an empty, `.` or `..`
+    /// component.
     static std::optional<std::string_view> canonicalPrefix(std::string_view path);
 
     PositionDeleteMatchKey positionDeleteMatchKey(const IcebergPathFromMetadata & path) const;

@@ -385,7 +385,8 @@ std::optional<std::string_view> IcebergPathResolver::canonicalPrefix(std::string
     for (const auto & component : parsed.components)
         if (auto name = componentOf(path, component); name.empty() || name == "." || name == "..")
             return std::nullopt;
-    return path.substr(0, parsed.path_begin + 1);
+    chassert(path[parsed.path_begin - 1] == '/');
+    return path.substr(0, parsed.path_begin);
 }
 
 PositionDeleteMatchKey IcebergPathResolver::positionDeleteMatchKey(const IcebergPathFromMetadata & path) const
@@ -415,8 +416,10 @@ PositionDeleteScope IcebergPathResolver::matchPositionDeleteBounds(
     if (!data_file_key.canonical_prefix || (lower && !spelled_like_data_file(lower_key)) || (upper && !spelled_like_data_file(upper_key)))
         return PositionDeleteScope::ThisFile;
 
-    /// Only two bounds prove a range: Iceberg Java writes none for a delete file of several data files.
-    if (lower && upper && !(*lower <= data_file_path && data_file_path <= *upper))
+    /// Only two bounds prove a range (Iceberg Java writes none for a delete file of several data files), and only if
+    /// the lower one continues the prefix with a byte above `/`: a value continuing it with `/` may be the data file.
+    if (lower && upper && lower->serialize() >= *data_file_key.canonical_prefix + '0'
+        && !(*lower <= data_file_path && data_file_path <= *upper))
         return PositionDeleteScope::None;
     return PositionDeleteScope::Range;
 }
