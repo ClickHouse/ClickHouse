@@ -2157,8 +2157,9 @@ void IcebergMetadata::addDeleteTransformers(
                 = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
             const ActionsDAG::Node * in_lhs_arg
                 = left_columns.size() == 1 ? left_columns.front() : &dag.addFunction(func_tuple_builder, std::move(left_columns), {});
-            /// we got the NOT IN function
-            auto func_not_in = FunctionFactory::instance().get("notIn", nullptr);
+            /// Iceberg compares equality-delete keys null-safely: a NULL key matches only a NULL delete value.
+            /// The set above keeps NULLs (transform_null_in), and `notNullIn` looks NULL keys up in it.
+            auto func_not_in = FunctionFactory::instance().get("notNullIn", nullptr);
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
