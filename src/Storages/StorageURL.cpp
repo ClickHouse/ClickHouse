@@ -236,6 +236,12 @@ namespace
             /// Only name resolution has run on this subtree. Complete the remaining semantic and
             /// optimization passes without resolving positions or inlined view contexts again.
             pass_manager.runFrom(query_tree, 1);
+            /// In a materialized view triggered by an insert, the body must read the inserted block instead of the
+            /// source table, as other subqueries of the view do. The enclosing query substitutes the view source
+            /// only outside table function arguments, so it has not reached the body. The substitution skips the
+            /// inner queries of views, so their security contexts are preserved.
+            if (auto view_source = body_context->getViewSource(); view_source && !body_context->isViewInnerQuery())
+                replaceStorageInQueryTree(query_tree, body_context, view_source);
             return InterpreterSelectQueryAnalyzer(query_tree, body_context, subquery_options).buildQueryPipeline();
         }
 
@@ -243,6 +249,9 @@ namespace
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             /// The analyzer accepts the `ASTSubquery` wrapper directly (it unwraps it internally).
+            /// Pass the view source of a materialized view, so that the body reads the inserted block (see above).
+            if (auto view_source = body_context->getViewSource(); view_source && !body_context->isViewInnerQuery())
+                return InterpreterSelectQueryAnalyzer(query, body_context, subquery_options, view_source).buildQueryPipeline();
             return InterpreterSelectQueryAnalyzer(query, body_context, subquery_options).buildQueryPipeline();
         }
 
