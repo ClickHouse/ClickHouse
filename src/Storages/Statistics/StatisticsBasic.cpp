@@ -139,7 +139,7 @@ struct StatisticsBasic::Sum
     Sum & operator=(const Sum &) = delete;
 
     const SumFunction & function;
-    alignas(StatisticsBasicSumStateAlignment) char state[StatisticsBasicSumStateSize];
+    alignas(StatisticsBasicSumStateAlignment) char state[StatisticsBasicSumStateSize]{};
 };
 
 StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
