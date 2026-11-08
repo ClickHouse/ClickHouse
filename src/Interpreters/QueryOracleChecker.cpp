@@ -19,8 +19,17 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/FieldVisitorToString.h>
+#include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageLog.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageStripeLog.h>
+#include <Common/assert_cast.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
@@ -29,6 +38,8 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Core/Joins.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/FunctionFactory.h>
@@ -59,7 +70,12 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool ast_fuzzer_oracle;
+extern const SettingsBool enable_global_with_statement;
 extern const SettingsJoinStrictness join_default_strictness;
+extern const SettingsUInt64 max_expanded_ast_elements;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
 }
 
 namespace ErrorCodes
@@ -1210,6 +1226,111 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
     return anyChild(ast, [&](const ASTPtr & child) { return referencesUnscreenedDefinitionAnywhere(child, context, depth); });
 }
 
+void removeWithClauses(const ASTPtr & ast)
+{
+    if (auto * select = ast->as<ASTSelectQuery>())
+        select->setExpression(ASTSelectQuery::Expression::WITH, {});
+    for (const auto & child : ast->children)
+        removeWithClauses(child);
+}
+
+/// A copy of `ast` in which every reference to a common table expression (and every `IN` operand naming
+/// a `WITH` alias) is replaced by its definition, as the query's own `WITH` processing does.
+/// The `WITH` clauses are then dropped, so a table read only through a `WITH` alias is not recorded.
+ASTPtr expandWithElements(const ASTPtr & ast, const ContextPtr & context)
+{
+    ASTPtr expanded = ast->clone();
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::enable_global_with_statement])
+        ApplyWithGlobalVisitor::visit(expanded, settings[Setting::max_expanded_ast_elements]);
+    ExpandedASTBudget budget(settings[Setting::max_expanded_ast_elements], *expanded);
+    ApplyWithSubqueryVisitor::visit(expanded, context, budget);
+    removeWithClauses(expanded);
+    return expanded;
+}
+
+/// The aliases of the table expressions of one `FROM`, except an unqualified table aliased as its own name.
+/// A table name in that `FROM` resolves to such an alias before the database catalog.
+NameSet getTableExpressionAliases(const ASTTablesInSelectQuery & tables)
+{
+    NameSet aliases;
+    for (const auto & element : tables.children)
+    {
+        const auto * table_element = element->as<ASTTablesInSelectQueryElement>();
+        if (!table_element || !table_element->table_expression)
+            continue;
+        for (const auto & child : table_element->table_expression->children)
+        {
+            const String alias = child->tryGetAlias();
+            const auto * table_id = child->as<ASTTableIdentifier>();
+            if (!alias.empty() && !(table_id && !table_id->compound() && table_id->shortName() == alias))
+                aliases.insert(alias);
+        }
+    }
+    return aliases;
+}
+
+/// Appends each table a read of `ast` (an `expandWithElements` output) reaches, then a version of its data that changes with
+/// each committed write of rows: the active part names of a `MergeTree` table (immutable, never reused), the generation, first
+/// block number and row count of a `Memory` one, the file sizes of a `Log`, `TinyLog` or `StripeLog` one.
+/// Not recorded: other engines, `APPLY` members (not reached by the `WITH` expansion) and a name as an `IN` operand (may be a column).
+void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & parts, size_t depth = 0, const NameSet & from_aliases = {})
+{
+    if (!ast || depth > MAX_DEFINITION_SCREEN_DEPTH)
+        return;
+
+    if (const auto * table_id = ast->as<ASTTableIdentifier>();
+        table_id && (table_id->compound() || !from_aliases.contains(table_id->shortName())))
+    {
+        const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
+        if (auto storage = resolved ? DatabaseCatalog::instance().tryGetTable(resolved, context) : nullptr)
+        {
+            if (const auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))
+            {
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                for (const auto & part : merge_tree->getDataPartsVectorForInternalUsage(
+                         {MergeTreeData::DataPartState::Active},
+                         {MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch}))
+                    parts.push_back(part->name);
+            }
+            else if (const auto memory = castStorage<StorageMemory>(storage, DeferredTable::Load))
+            {
+                const auto metadata = memory->getInMemoryMetadataPtr(nullptr, /* bypass_metadata_cache = */ false);
+                const auto snapshot = memory->getStorageSnapshot(metadata, nullptr);
+                const auto & data = assert_cast<const StorageMemory::SnapshotData &>(*snapshot->data);
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(fmt::format("{}_{}_{}", data.generation, data.first_block_number, data.rows));
+            }
+            else if (const auto log_table = castStorage<StorageLog>(storage, DeferredTable::Load))
+            {
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(std::to_string(log_table->totalBytes(context).value_or(0)));
+            }
+            else if (const auto stripe_log_table = castStorage<StorageStripeLog>(storage, DeferredTable::Load))
+            {
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(std::to_string(stripe_log_table->totalBytes(context).value_or(0)));
+            }
+            else if (storage->getName() == "View")
+            {
+                const auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+                collectReadParts(expandWithElements(metadata->getSelectQuery().inner_query, context), context, parts, depth + 1);
+            }
+        }
+    }
+
+    if (const auto * tables = ast->as<ASTTablesInSelectQuery>())
+    {
+        const NameSet aliases = getTableExpressionAliases(*tables);
+        for (const auto & child : ast->children)
+            collectReadParts(child, context, parts, depth, aliases);
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        collectReadParts(child, context, parts, depth, from_aliases);
+}
+
 /// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
 /// ASTs. The default visitor calls `node.getColumnName()` for deduplication,
 /// which recursively invokes `appendColumnName` on every child. Some AST node
@@ -1546,6 +1667,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 {
     auto oracle_context = makeOracleContext(context);
     oracle_context->setDefaultFormat("TabSeparated");
+    recordReadParts(query, oracle_context);
     auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
@@ -1582,6 +1704,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
     auto oracle_context = makeOracleContext(context);
+    recordReadParts(query, oracle_context);
     auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
@@ -1629,6 +1752,7 @@ QueryOracleChecker::executeWithSettings(
     oracle_context->setDefaultFormat("TabSeparated");
     for (const auto & [name, value] : settings)
         oracle_context->setSetting(name, value);
+    recordReadParts(query, oracle_context);
     auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     ReadBufferFromString istr(query);
@@ -1651,6 +1775,33 @@ QueryOracleChecker::executeWithSettings(
     auto rows = splitIntoRows(output);
     std::sort(rows.begin(), rows.end());
     return rows;
+}
+
+
+void QueryOracleChecker::recordReadParts(const String & query, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    ParserQuery parser(query.data() + query.size());
+    const ASTPtr ast = parseQuery(
+        parser, query, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+    ASTPtr read_ast = expandWithElements(ast, context);
+    Strings parts;
+    collectReadParts(read_ast, context, parts);
+    read_parts.emplace_back(std::move(read_ast), std::move(parts));
+}
+
+
+bool QueryOracleChecker::readPartsChanged(const ContextPtr & context) const
+{
+    for (const auto & [read_ast, parts_before] : read_parts)
+    {
+        Strings parts;
+        collectReadParts(read_ast, context, parts);
+        if (parts != parts_before)
+            return true;
+    }
+    return false;
 }
 
 
@@ -1704,8 +1855,6 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-
         String message = fmt::format(
             "TLP WHERE oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -1822,8 +1971,6 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
 
     if (opt_count != unopt_count)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "NoREC oracle mismatch!\n"
             "Optimized query (count={}): {}\n"
@@ -1908,7 +2055,6 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP DISTINCT oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -1990,7 +2136,6 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP GROUP BY oracle mismatch!\n"
             "Reference query ({} unique rows): {}\n"
@@ -2058,7 +2203,6 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
 
     if (ref_rows != part_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP HAVING oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -2139,7 +2283,6 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
 
         if (default_rows != variant_rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "DQP oracle mismatch! Setting: {}\n"
                 "Default ({} rows): {}\n"
@@ -2458,8 +2601,6 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 
     if (ref_rows != meta_rows)
     {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP Aggregate oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -2602,7 +2743,6 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     {
         if (ref_rows != rows)
         {
-            ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "Identity WHERE ({}) oracle mismatch!\n"
                 "Reference query ({} rows): {}\n"
@@ -2708,7 +2848,6 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
         if (!ref_rows_again_opt || *ref_rows_again_opt != ref_rows)
             return false;
 
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "Subquery wrap oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
@@ -2911,6 +3050,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     /// remaining oracles still run. `name` reproduces the per-oracle log wording.
     auto run_oracle = [&](std::string_view name, auto && check_fn)
     {
+        read_parts.clear();
         try
         {
             if (check_fn())
@@ -2918,7 +3058,18 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+            {
+                /// A merge, insert or mutation between the reads means they compared different data.
+                if (readPartsChanged(context))
+                {
+                    LOG_TRACE(logger, "{} oracle mismatch skipped: the data of a table it reads changed", name);
+                    return;
+                }
+                ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
+                throw;
+            }
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 throw;
             LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
         }
