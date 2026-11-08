@@ -89,6 +89,8 @@ void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
     arrow_settings.output_datetime_as_timestamp = true;
     /// The `Nothing` type (`SELECT NULL`) has a counterpart of its own: the Vortex `Null` type.
     arrow_settings.output_nothing_as_null = true;
+    /// A chunk is handed to Vortex as Arrow record batches, which have the same 32-bit offset limit.
+    arrow_settings.output_max_record_batch_bytes = format_settings.arrow.output_max_record_batch_bytes;
 
     ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(getPort(PortKind::Main).getHeader(), "Vortex", arrow_settings);
     ch_column_to_arrow_column->initializeArrowSchema(chunk);
@@ -121,16 +123,24 @@ void VortexBlockOutputFormat::consume(Chunk chunk)
     chunks.push_back(std::move(chunk));
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
 
-    auto batch = arrow_table->CombineChunksToBatch(ArrowMemoryPool::instance());
-    throwFromArrowStatusIfFailed(batch.status());
+    /// A chunk too large for one Arrow record batch comes back as several table chunks. Recombining them
+    /// would hit the same 32-bit offset limit, so write each record batch separately.
+    arrow::TableBatchReader batch_reader(*arrow_table);
+    while (true)
+    {
+        std::shared_ptr<arrow::RecordBatch> batch;
+        throwFromArrowStatusIfFailed(batch_reader.ReadNext(&batch));
+        if (!batch)
+            break;
 
-    ArrowArray c_array{};
-    ArrowSchema c_schema{};
-    throwFromArrowStatusIfFailed(arrow::ExportRecordBatch(**batch, &c_array, &c_schema));
+        ArrowArray c_array{};
+        ArrowSchema c_schema{};
+        throwFromArrowStatusIfFailed(arrow::ExportRecordBatch(*batch, &c_array, &c_schema));
 
-    char * error = nullptr;
-    if (vortex_ffi_writer_write(writer, &c_array, &c_schema, &error) != 0)
-        throwVortexError(error, write_context->exception);
+        char * error = nullptr;
+        if (vortex_ffi_writer_write(writer, &c_array, &c_schema, &error) != 0)
+            throwVortexError(error, write_context->exception);
+    }
 }
 
 void VortexBlockOutputFormat::finalizeImpl()
