@@ -388,8 +388,7 @@ private:
 
     std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> node_to_scope_map;
 
-    /// The arguments before resolution of an IN function rewritten by `resolveInWithCorrelatedSubquery`, for a repeated
-    /// resolution of the same function node (as for a condition of `if`), whose arguments are resolved by then.
+    /// Unresolved arguments of a rewritten correlated IN, for a function node resolved again (as a condition of `if` is).
     std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> correlated_in_function_to_unresolved_arguments;
 
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)

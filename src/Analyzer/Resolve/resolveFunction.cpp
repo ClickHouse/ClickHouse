@@ -1282,7 +1282,6 @@ bool hasLimitClause(const QueryNode & query_node)
         || query_node.hasLimitAfter() || query_node.hasLimitUntil();
 }
 
-/// Whether `predicate` holds for a node of the expression, not looking into its subqueries.
 bool hasNodeOutsideSubqueries(const QueryTreeNodePtr & node, const std::function<bool(const QueryTreeNodePtr &)> & predicate)
 {
     if (predicate(node))
@@ -1329,13 +1328,8 @@ QueryTreeNodePtr makeFunctionNode(String function_name, QueryTreeNodes arguments
 
 }
 
-/** Rewrite `x [NOT] IN (Q)` with a correlated `Q` into
-  * `[if(isNull(x), NULL,] [not] exists(SELECT 1 FROM (Q) WHERE x = <the column of Q>) [)]`, which the planner decorrelates.
-  * It returns exactly what the regular IN returns, or throws: the comparison mirrors how `Set::execute` converts the
-  * left value to the key type, and every shape for which the decorrelated subquery would differ from the set is refused.
-  * `unresolved_in_arguments` are the arguments of IN before resolution: the rewrite resolves them again inside the new
-  * subquery, which registers their correlated columns there.
-  */
+/// Returns what the regular IN returns, or throws for a shape where the decorrelated subquery would differ from the set.
+/// `unresolved_in_arguments` are resolved again inside the new subquery, which registers their correlated columns there.
 ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     QueryTreeNodePtr & node,
     const String & function_name,
@@ -1362,15 +1356,13 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     if (settings[Setting::max_rows_to_group_by] && settings[Setting::group_by_overflow_mode] != OverflowMode::THROW)
         throwCorrelatedInNotSupported(" with `max_rows_to_group_by` and `group_by_overflow_mode` other than 'throw'", node);
 
-    /// The left argument is resolved again inside a new subquery, which does not see the aliases and CTEs of this
-    /// scope with this setting.
+    /// With this setting disabled, the new subquery that resolves the left argument does not see this scope's aliases and CTEs.
     if (!settings[Setting::enable_global_with_statement])
         throwCorrelatedInNotSupported(" with `enable_global_with_statement` disabled", node);
 
     if (in_first_argument->getResultType()->onlyNull())
         throwCorrelatedInNotSupported(" when the left argument is NULL", node);
 
-    /// Such a function must not move into another query: `arrayJoin` is matched under any of its names.
     if (hasNodeOutsideSubqueries(in_first_argument, [](const QueryTreeNodePtr & argument_node)
         {
             const auto * function_node = argument_node->as<FunctionNode>();
@@ -1379,7 +1371,6 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         }))
         throwCorrelatedInNotSupported(" when the left argument contains an aggregate function, a window function or arrayJoin", node);
 
-    /// The subquery is evaluated once per distinct value of the correlated columns, as for `LATERAL`.
     if (containsFunctionVolatileInScopeOfQuery(in_first_argument) || containsFunctionVolatileInScopeOfQuery(in_second_argument)
         || lateralSubqueryHasVolatileHiddenFilter(in_first_argument, scope.context)
         || lateralSubqueryHasVolatileHiddenFilter(in_second_argument, scope.context))
@@ -1393,8 +1384,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     if (hasSubqueryWithSettingsChanges(in_second_argument))
         throwCorrelatedInNotSupported(" when the subquery has its own SETTINGS clause", node);
 
-    /// The left argument is resolved again inside the new subquery, where an alias defined in it is found before
-    /// a column of this scope with this setting.
+    /// With this setting, inside the new subquery an alias defined in the left argument is found before a column of this scope.
     const auto & unresolved_left_argument = unresolved_in_arguments->as<ListNode &>().getNodes().at(0);
     if (settings[Setting::prefer_column_name_to_alias]
         && hasNodeOutsideSubqueries(unresolved_left_argument, [](const QueryTreeNodePtr & left_node) { return left_node->hasAlias(); }))
@@ -1420,8 +1410,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
             throwCorrelatedInNotSupported(" when the subquery aggregates without GROUP BY keys", node);
     }
 
-    /// The result of the decorrelated subquery is joined to the outer rows by `=` on the correlated columns,
-    /// so an outer row whose correlated value is NULL would get no subquery rows.
+    /// Decorrelation joins by `=` on the correlated columns, so an outer row with a NULL correlated value gets no subquery rows.
     const auto & correlated_columns = in_second_argument->as<QueryNode>()
         ? in_second_argument->as<QueryNode &>().getCorrelatedColumns().getNodes()
         : in_second_argument->as<UnionNode &>().getCorrelatedColumns().getNodes();
@@ -1450,7 +1439,6 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     const auto unresolved_left = unresolved_arguments.at(0);
     auto unresolved_subquery = std::move(unresolved_arguments.at(1));
 
-    /// The keys of the set: the whole left value, or the elements of the left tuple for a subquery with several columns.
     const auto & left_type = in_first_argument->getResultType();
     DataTypes key_types;
     QueryTreeNodes resolved_keys;
@@ -1494,8 +1482,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
             || (left_key_type->getName() != right_key_type->getName() && !(isNumber(left_key_type) && isNumber(right_key_type))))
             throwCorrelatedInNotSupported(fmt::format(" for a key of type {} compared with {}", key_types[i]->getName(), right_columns[i].type->getName()), node);
 
-        /// The columns of `x` become correlated columns of the new subquery. A NULL in a bare column key never
-        /// matches, but a non-bare key such as `coalesce(r.v, 0)` can have a value for a NULL `r.v`.
+        /// The columns of `x` become correlated columns: a NULL in them gets no rows, wrong only for a key like `coalesce(r.v, 0)`.
         if (!resolved_keys[i]->as<ColumnNode>() && hasNodeOutsideSubqueries(resolved_keys[i], [](const QueryTreeNodePtr & key_node)
             {
                 const auto * column_node = key_node->as<ColumnNode>();
@@ -1585,8 +1572,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         else if (left_key_type->getName() == right_key_type->getName()
             || (isNativeInteger(left_key_type) && isNativeInteger(right_key_type) && !isBool(left_key_type) && !isBool(right_key_type)))
         {
-            /// A float on the left goes to the conversion below instead: a comparison merged into a join
-            /// condition compares floats by their bits, so `-0. = 0` would not match there.
+            /// Not for a float on the left: `equals` merged into a join condition compares floats by bits, so `-0. = 0` fails.
             comparisons.push_back(makeFunctionNode("equals", {make_unresolved_key(i), std::move(right_value)}));
         }
         else
@@ -1606,7 +1592,6 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     if (isNegativeInFunctionName(function_name))
         result = makeFunctionNode("not", {std::move(result)});
 
-    /// A NULL single key gives NULL, like the regular IN.
     if (keys_count == 1 && isNullableOrLowCardinalityNullable(left_type))
         result = makeFunctionNode("if",
             {makeFunctionNode("isNull", {in_first_argument}),
@@ -2338,8 +2323,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 allow_niladic_functions
             );
 
-            /// A correlated subquery is rewritten into EXISTS by `resolveInWithCorrelatedSubquery` below:
-            /// moving it into the FROM clause here would lose the registration of its correlated columns.
+            /// A correlated subquery is left to `resolveInWithCorrelatedSubquery`, which keeps its correlated columns registered.
             const bool in_second_argument_is_correlated = isCorrelatedQueryOrUnionNode(in_second_argument);
 
             if (in_second_argument->as<QueryNode>())
@@ -2825,8 +2809,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    /// A correlated subquery on the right of IN is rewritten into EXISTS once the arguments are resolved, and the
-    /// rewrite resolves them again inside the new subquery, so it needs them unresolved.
+    /// The correlated IN rewrite resolves the IN arguments again inside a new subquery, so it needs them unresolved.
     QueryTreeNodePtr unresolved_in_arguments;
     if (is_special_function_in && scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
     {
