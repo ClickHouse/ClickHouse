@@ -2156,6 +2156,41 @@ void replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(ASTPtr & ast, const Columns
         replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(child, columns, lambda_arguments);
 }
 
+/// Whether `name` occurs in `ast` as an identifier that is not rooted at an argument of an enclosing lambda.
+/// `RequiredSourceColumnsVisitor` masks only identifiers that are exactly a lambda argument, so it reports
+/// a field of a lambda argument (`z.v` in `arrayExists(z -> z.v = 'a', arr)`) as a required column.
+bool occursOutsideLambdaArguments(const ASTPtr & ast, const String & name, const NameSet & lambda_arguments)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name() != name || lambda_arguments.contains(name))
+            return false;
+
+        for (auto [prefix, _] : Nested::getAllColumnAndSubcolumnPairs(name))
+            if (lambda_arguments.contains(String(prefix)))
+                return false;
+
+        return true;
+    }
+
+    if (ast->as<ASTSubquery>())
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet body_lambda_arguments = lambda_arguments;
+        for (auto & argument_name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            body_lambda_arguments.insert(std::move(argument_name));
+        return occursOutsideLambdaArguments(function->arguments->children[1], name, body_lambda_arguments);
+    }
+
+    for (const auto & child : ast->children)
+        if (occursOutsideLambdaArguments(child, name, lambda_arguments))
+            return true;
+
+    return false;
+}
+
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2195,7 +2230,8 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
         const auto required_columns = required_columns_data.requiredColumns();
         bool reads_only_storage_columns = std::ranges::all_of(required_columns, [&](const auto & column_name)
         {
-            return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+            return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name)
+                || !occursOutsideLambdaArguments(expanded_expr, column_name, {});
         });
 
         if (reads_only_storage_columns)
