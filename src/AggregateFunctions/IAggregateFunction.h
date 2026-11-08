@@ -179,16 +179,12 @@ public:
     /// Delete data for aggregation.
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
-    /** Create `count` states at `place + i * stride` for a combinator holding an array of states of this function;
-      * on exception destroys the ones already created. Throws if the states that occupy no memory
-      * (`stride == 0`) created within one `NestedStatesScope` (this call opens one if none is open) would be too
-      * many: the memory limit does not bound those.
-      */
+    /// Create `count` states at `place + i * stride`; on exception, destroy the ones already created.
+    /// Zero-sized states (`stride == 0`) are not bounded by memory, so their number is limited per `NestedStatesScope`.
     void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
 
-    /// While alive, the zero-sized states created by `createNestedStates` on this thread count against one limit.
-    /// A combinator whose `create` creates states of several nested functions (`-Tuple`) opens one around them
-    /// and counts the zero-sized ones itself.
+    /// While alive, the zero-sized states created on this thread count against one limit. A `create` that creates
+    /// states of several nested functions (`-Tuple`) opens one around them and counts the zero-sized ones itself.
     class NestedStatesScope
     {
     public:
@@ -210,7 +206,6 @@ public:
         NestedStatesScope(const NestedStatesScope &) = delete;
         NestedStatesScope & operator=(const NestedStatesScope &) = delete;
 
-        /// Counts `count` states of `function` that occupy no memory against the limit; throws if it is exceeded.
         void addZeroSizedStates(size_t count, const IAggregateFunction & function);
 
     private:

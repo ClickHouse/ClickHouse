@@ -51,7 +51,6 @@ private:
     VectorWithMemoryTracking<size_t> state_offsets;
     size_t total_state_size = 0;
     size_t max_state_align = 1;
-    /// Number of nested functions whose state occupies no memory.
     size_t num_zero_sized_states = 0;
     String nested_func_name;
 
