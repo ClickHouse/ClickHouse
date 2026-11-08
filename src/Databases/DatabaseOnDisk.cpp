@@ -378,7 +378,6 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     {
         createDirectories();
 
-        /// Written before the table is attached, so that a failed write leaves no table behind.
         if (table_metadata_tmp_path.empty())
         {
             writeMetadataFile(db_disk, table_metadata_path, statement, query_context->getSettingsRef()[Setting::fsync_metadata]);

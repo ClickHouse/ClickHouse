@@ -485,7 +485,6 @@ public:
     virtual bool prefersRecursiveRemoval() const { return false; }
 
     /// Whether a new file written by `writeFile` appears at once: a reader sees either no file or the complete one.
-    /// Then a file that must not be seen half-written can be written in place instead of a temporary file and a rename.
     virtual bool supportsAtomicFileCreation() const { return false; }
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
