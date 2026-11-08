@@ -3514,6 +3514,29 @@ void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) con
         query_privileges_info->missing_privileges.emplace(privilege);
 }
 
+void ContextData::QueryPrivilegesInfo::startRecordingAccess()
+{
+    std::lock_guard lock(mutex);
+    if (!recorded_access)
+        recorded_access = std::make_shared<AccessRightsElements>();
+    recording_access.store(true, std::memory_order_relaxed);
+}
+
+void ContextData::QueryPrivilegesInfo::recordAccess(const AccessRightsElement & element)
+{
+    std::lock_guard lock(mutex);
+    if (recorded_access)
+        recorded_access->push_back(element);
+}
+
+AccessRightsElements ContextData::QueryPrivilegesInfo::getRecordedAccess() const
+{
+    std::lock_guard lock(mutex);
+    if (!recorded_access)
+        return {};
+    return *recorded_access;
+}
+
 static bool findIdentifier(const ASTFunction * function)
 {
     if (!function || !function->arguments)

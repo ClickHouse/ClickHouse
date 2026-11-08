@@ -13,18 +13,34 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <base/sort.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_show_grants_for_query;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
+    extern const SettingsBool use_skip_indexes_on_data_read;
+}
+
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -88,12 +104,25 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode = false,
         bool with_implicit = false,
-        bool final = false)
+        bool final = false,
+        const AccessRights * for_query_access = nullptr)
     {
         ASTs res;
 
         boost::intrusive_ptr<ASTRolesOrUsersSet> grantees = make_intrusive<ASTRolesOrUsersSet>();
         grantees->names = make_intrusive<ASTUserNamesWithHost>(grantee.getName());
+
+        if (for_query_access)
+        {
+            /// `FOR QUERY` implies `FINAL`, and the implicit grants are added before they are filtered.
+            AccessRights access = grantee.access;
+            unionAccessFromRoles(access, grantee, access_control);
+            if (with_implicit)
+                access = ContextAccess::addImplicitAccessRights(access, *access_control);
+            access.makeIntersection(*for_query_access);
+            getGrantsFromAccess(res, access, grantees, access_control);
+            return res;
+        }
 
         AccessRights access_copy;
 
@@ -140,12 +169,13 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode = false,
         bool with_implicit = false,
-        bool final = false)
+        bool final = false,
+        const AccessRights * for_query_access = nullptr)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
-            return getGrantQueriesImpl(*user, access_control, attach_mode, with_implicit, final);
+            return getGrantQueriesImpl(*user, access_control, attach_mode, with_implicit, final, for_query_access);
         if (const Role * role = typeid_cast<const Role *>(&entity))
-            return getGrantQueriesImpl(*role, access_control, attach_mode, with_implicit, final);
+            return getGrantQueriesImpl(*role, access_control, attach_mode, with_implicit, final, for_query_access);
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
     }
 
@@ -174,7 +204,7 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
 
     /// Prepare description of the result column.
     const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
-    String desc = show_query.formatWithSecretsOneLine();
+    String desc = show_query.for_query ? show_query.formatForLogging() : show_query.formatWithSecretsOneLine();
     String prefix = "SHOW ";
     if (desc.starts_with(prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
@@ -221,17 +251,78 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 }
 
 
+AccessRights InterpreterShowGrantsQuery::getAccessCheckedByQuery() const
+{
+    const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
+
+    /// Analyzed like `EXPLAIN PIPELINE`, in its own query context so that only its checks are recorded.
+    auto analysis_context = Context::createCopy(getContext());
+    analysis_context->makeQueryContext();
+    analysis_context->getQueryPrivilegesInfoPtr()->startRecordingAccess();
+
+    QueryPlan plan;
+    ContextPtr context;
+    {
+        InterpreterSelectQueryAnalyzer interpreter(show_query.for_query, analysis_context, SelectQueryOptions{});
+        interpreter.applyDistributedPlanFallbackIfNeeded();
+        context = interpreter.getContext();
+        plan = std::move(interpreter).extractQueryPlan();
+    }
+
+    /// Some storages check access only when their pipeline is built. The pipeline is never executed.
+    auto optimization_settings = QueryPlanOptimizationSettings(context);
+    optimization_settings.is_explain = true;
+    optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
+    optimization_settings.max_step_description_length = getContext()->getSettingsRef()[Setting::query_plan_max_step_description_length];
+    auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
+
+    AccessRights res;
+    for (const auto & element : analysis_context->getQueryPrivilegesInfo().getRecordedAccess())
+        res.grantWithGrantOption(element);
+    return res;
+}
+
+
 ASTs InterpreterShowGrantsQuery::getGrantQueries() const
 {
+    const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
+    if (show_query.for_query)
+    {
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_show_grants_for_query])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "SHOW GRANTS ... FOR QUERY is experimental. Set `allow_experimental_show_grants_for_query` = 1 to enable it");
+        if (!dynamic_cast<const ASTSelectWithUnionQuery *>(show_query.for_query.get()))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported in SHOW GRANTS ... FOR QUERY");
+    }
+
     auto entities = getEntities();
     const auto & access_control = getContext()->getAccessControl();
 
-    const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
+    std::optional<AccessRights> for_query_access;
+    if (show_query.for_query)
+        for_query_access = getAccessCheckedByQuery();
+
     ASTs grant_queries;
     for (const auto & entity : entities)
-        boost::range::push_back(grant_queries, getGrantQueries(*entity, access_control, show_query.with_implicit, show_query.final));
+    {
+        boost::range::push_back(grant_queries, getGrantQueriesImpl(*entity, &access_control, /* attach_mode= */ false,
+            show_query.with_implicit, show_query.final, for_query_access ? &*for_query_access : nullptr));
+    }
 
     return grant_queries;
+}
+
+
+bool InterpreterShowGrantsQuery::ignoreQuota() const
+{
+    /// Analyzing the query of `FOR QUERY` costs as much as `EXPLAIN PIPELINE`.
+    return !query_ptr->as<const ASTShowGrantsQuery &>().for_query;
+}
+
+
+bool InterpreterShowGrantsQuery::ignoreLimits() const
+{
+    return !query_ptr->as<const ASTShowGrantsQuery &>().for_query;
 }
 
 

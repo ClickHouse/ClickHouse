@@ -613,10 +613,21 @@ public:
 
         QueryPrivilegesInfo(QueryPrivilegesInfo && rhs) = delete;
 
+        /// The record of access checks is used by `SHOW GRANTS ... FOR QUERY`: when enabled, every access check
+        /// except grant option checks is kept, whether it passed or not. The copy constructor does not copy it.
+        void startRecordingAccess();
+        bool isRecordingAccess() const { return recording_access.load(std::memory_order_relaxed); }
+        void recordAccess(const AccessRightsElement & element);
+        AccessRightsElements getRecordedAccess() const;
+
         std::unordered_set<std::string> used_privileges TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> missing_privileges TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
+
+    private:
+        std::atomic<bool> recording_access = false;
+        std::shared_ptr<AccessRightsElements> recorded_access TSA_GUARDED_BY(mutex);
     };
 
     using QueryPrivilegesInfoPtr = std::shared_ptr<QueryPrivilegesInfo>;
@@ -1264,7 +1275,7 @@ public:
         bool prev;
     };
 
-    const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
+    const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *query_privileges_info; }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
     /// Share the privilege-accounting object with another context, so privileges checked on this context are
     /// reported for the same query in `system.query_log`. Used when a background worker (e.g. RESTORE) runs on

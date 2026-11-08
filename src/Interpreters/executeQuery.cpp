@@ -44,6 +44,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
@@ -1920,6 +1921,14 @@ void wrapNestedConstructionSettings(
         }
         return;
     }
+    /// The construction settings of the query itself are applied where the statement runs, by `applyQueryConstructionSettings`.
+    if (auto * show_grants_query = ast->as<ASTShowGrantsQuery>())
+    {
+        if (show_grants_query->for_query)
+            for (auto & child : show_grants_query->for_query->children)
+                wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+        return;
+    }
     if (auto * create_query = ast->as<ASTCreateQuery>())
     {
         /// A view definition (ordinary / materialized / window, including a `POPULATE` materialized view)
@@ -2156,6 +2165,19 @@ static void applyQueryConstructionSettings(
             applyQueryConstructionSettings(wrapped, context, max_query_size, max_parser_depth, max_parser_backtracks);
             if (wrapped != explained)
                 explain_query->replaceExplainedQuery(wrapped);
+        }
+        return;
+    }
+
+    /// The query of `SHOW GRANTS ... FOR QUERY` is analyzed as the query of `EXPLAIN` is.
+    if (auto * show_grants_query = ast->as<ASTShowGrantsQuery>())
+    {
+        if (show_grants_query->for_query)
+        {
+            ASTPtr wrapped = show_grants_query->for_query;
+            applyQueryConstructionSettings(wrapped, context, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (wrapped != show_grants_query->for_query)
+                show_grants_query->replace(show_grants_query->for_query, wrapped);
         }
         return;
     }

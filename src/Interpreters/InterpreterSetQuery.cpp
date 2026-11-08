@@ -18,6 +18,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
@@ -347,6 +348,10 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
             InterpreterSetQuery(explain_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 
         applySettingsFromQuery(explain_query->getExplainedQuery(), context_);
+    }
+    else if (const auto * show_grants_query = ast->as<ASTShowGrantsQuery>())
+    {
+        applySettingsFromQuery(show_grants_query->for_query, context_);
     }
     else if (auto * insert_query = ast->as<ASTInsertQuery>())
     {
