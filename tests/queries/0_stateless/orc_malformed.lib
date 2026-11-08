@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2154
+
+# Helpers to read (possibly malformed) ORC files from the tests: locally with `file` in clickhouse-local, and remotely
+# with `s3` in the server, with the filter pushdown and the lazy dictionaries both enabled and disabled.
+
+ORC_S3_URL="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+# The values of `input_format_orc_filter_push_down` to check.
+ORC_PUSH_DOWN_VALUES="0 1"
+
+# Prints the result in one line, or the name of the error code (with the message if it does not match `expected_error`).
+function orc_result()
+{
+    local output=$1 status=$2 expected_error=$3
+    if [ "$status" -eq 0 ]; then
+        echo "$output" | tr '\n' ' ' | sed 's/ $//'
+        return
+    fi
+    local code
+    code=$(echo "$output" | grep -oE '\([A-Z_]{3,}\)' | tail -n1)
+    if [ -z "$code" ]; then
+        echo "unexpected failure with status $status: $(echo "$output" | head -n3)"
+    elif [ -z "$expected_error" ] || echo "$output" | grep -qE "$expected_error"; then
+        echo "$code"
+    else
+        echo "$code with an unexpected message: $(echo "$output" | head -n1 | cut -c1-300)"
+    fi
+}
+
+# orc_check <label> <file> <structure, empty for the schema inference> <query with SOURCE in place of the table function> [<expected error regex>] [<extra settings>]
+function orc_check()
+{
+    local label=$1 file=$2 structure=$3 query=$4 expected_error=${5:-} extra_settings=${6:-}
+    local name
+    name=$(basename "$file")
+    $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${ORC_S3_URL}/${name}', 'test', 'testtest', 'RawBLOB') SETTINGS s3_truncate_on_insert = 1 FORMAT RawBLOB" < "$file"
+
+    local source push_down lazy table client output status
+    for source in local remote; do
+        for push_down in $ORC_PUSH_DOWN_VALUES; do
+            for lazy in 0 1; do
+                if [ "$source" = local ]; then
+                    table="file('${file}', 'ORC'${structure:+, '${structure}'})"
+                    client=$CLICKHOUSE_LOCAL
+                else
+                    table="s3('${ORC_S3_URL}/${name}', 'test', 'testtest', 'ORC'${structure:+, '${structure}'})"
+                    client=$CLICKHOUSE_CLIENT
+                fi
+                output=$($client -q "${query//SOURCE/$table} SETTINGS input_format_orc_filter_push_down = ${push_down}, input_format_orc_dictionary_as_low_cardinality = ${lazy}${extra_settings:+, $extra_settings}" 2>&1)
+                status=$?
+                echo "${label} ${source} push_down=${push_down} lazy=${lazy}: $(orc_result "$output" "$status" "$expected_error")"
+            done
+        done
+    done
+}
