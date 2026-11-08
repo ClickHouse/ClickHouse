@@ -250,6 +250,11 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
+    if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
@@ -518,6 +523,11 @@ SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     assertNotReadonly();
+
+    if (metadata_snapshot->hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
 
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
@@ -1564,6 +1574,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
+    /// A snapshot cached by `enable_shared_storage_snapshot_in_query` before the wait for committing
+    /// inserts above (e.g. by the validation of `IN` operands in `InterpreterUpdateQuery`) would hide
+    /// the parts committed during the wait from the update. See `StorageReplicatedMergeTree::updateLightweight`.
+    discardSharedStorageSnapshot(context_copy);
+
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<MergeTreeSinkPatch>(
@@ -1996,8 +2011,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions,
-    const std::function<void()> & on_wait_for_running_merges,
-    bool merge_forced_horizontal)
+    const std::function<void()> & on_wait_for_running_merges)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -2133,8 +2147,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID(),
-                /*merge_forced_horizontal_=*/merge_forced_horizontal
+                /*storage_id_=*/getStorageID()
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -2315,8 +2328,7 @@ bool StorageMergeTree::merge(
                 lock,
                 txn,
                 optimize_skip_merged_partitions,
-                release_slot_before_wait,
-                /*merge_forced_horizontal=*/deduplicate || cleanup);
+                release_slot_before_wait);
         }();
 
         if (!merge_select_result.has_value())
@@ -3481,6 +3493,30 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     return part;
 }
 
+void StorageMergeTree::detachPartAfterFailedFsync(const DataPartPtr & part)
+{
+    /// Merges and mutations select the parts under this mutex, so the part cannot be selected while it is detached.
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// A merge or a mutation that is already running has read the data of the part, and the resulting part
+    /// replaces it. The in-memory record of the failed files still fails the inserts that rely on them.
+    if (part->getState() != DataPartState::Active || currently_merging_mutating_parts.contains(part))
+    {
+        LOG_WARNING(log, "The fsync of part {} failed, but it is not detached, because it is {}",
+            part->name, currently_merging_mutating_parts.contains(part) ? "being merged or mutated" : part->stateString());
+        return;
+    }
+
+    /// The deduplication record is removed first: if detaching fails afterwards, a retry of the insert duplicates the data,
+    /// but if it were the other way around, a retry would be acknowledged without the data.
+    /// The removal is synced before detaching for the same reason: otherwise, after a power loss, the detach could be durable
+    /// while the old deduplication record is restored. If the sync fails, the part is not detached.
+    if (deduplication_log)
+        deduplication_log->dropPart(part->info, /*sync_to_disk=*/ true);
+
+    forcefullyMovePartToDetachedAndRemoveFromMemory(part, "fsync-failed");
+}
+
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
@@ -3626,22 +3662,22 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
         if (!not_removed_parts.empty())
         {
             /// Put the warning into the error returned to the client as well, because only a manual detach fixes it.
-            String warning = fmt::format("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
+            auto warning = PreformattedMessage::create("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
                 " parts after a restart, which can make the table fail to load. Detach them manually.",
                 fmt::join(not_removed_parts, ", "));
-            LOG_ERROR(log, "{}", warning);
+            LOG_ERROR(log, warning);
             try
             {
                 throw;
             }
             catch (Exception & e)
             {
-                e.addMessage(warning);
+                e.addMessage(warning.text);
                 throw;
             }
             catch (...)
             {
-                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning);
+                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning.text);
             }
         }
     }
@@ -4709,7 +4745,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 NameSet StorageMergeTree::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations())
+    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
         return res;
 
     for (const auto & [version, commands] : mutations_by_version)
