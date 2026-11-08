@@ -38,6 +38,7 @@
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <base/EnumReflection.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -50,6 +51,7 @@
 #include <Types.hh>
 #include <ValidSchema.hh>
 
+#include <array>
 #include <unordered_set>
 
 namespace DB
@@ -283,6 +285,31 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
         default:
             return false;
     }
+}
+
+AvroDeserializer::DeserializeFn AvroDeserializer::tryCreateVariantDeserializeFn(const avro::NodePtr & node, const DataTypePtr & target_type)
+{
+    /// Iceberg v3 stores a `variant` in Avro as a record of two `bytes` fields, `metadata` and `value`.
+    if (!isDynamic(target_type) && !isObject(removeNullable(target_type)))
+        return {};
+    if (node->type() != avro::AVRO_RECORD || node->leaves() != 2
+        || node->leafAt(0)->type() != avro::AVRO_BYTES || node->leafAt(1)->type() != avro::AVRO_BYTES)
+        return {};
+    size_t metadata_position = 0;
+    if (node->nameAt(0) == "value" && node->nameAt(1) == "metadata")
+        metadata_position = 1;
+    else if (node->nameAt(0) != "metadata" || node->nameAt(1) != "value")
+        return {};
+
+    return [variant_decoder = Parquet::VariantValueDecoder(target_type, current_column_name, settings),
+            metadata_position,
+            blobs = std::array<std::string, 2>()](IColumn & column, avro::Decoder & decoder) mutable
+    {
+        decoder.decodeString(blobs[0]);
+        decoder.decodeString(blobs[1]);
+        variant_decoder.decode(blobs[metadata_position], blobs[1 - metadata_position], column);
+        return true;
+    };
 }
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
@@ -609,6 +636,17 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 && (root_node->leafAt(0)->type() == avro::AVRO_NULL || root_node->leafAt(1)->type() == avro::AVRO_NULL))
             {
                 int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
+                if (auto variant_deserialize = tryCreateVariantDeserializeFn(root_node->leafAt(non_null_union_index), target_type))
+                {
+                    return [non_null_union_index, variant_deserialize](IColumn & column, avro::Decoder & decoder)
+                    {
+                        if (readUnionIndex(decoder, 2) == static_cast<size_t>(non_null_union_index))
+                            return variant_deserialize(column, decoder);
+                        /// NULL, or an empty object for `JSON`, the same as a variant null.
+                        column.insertDefault();
+                        return true;
+                    };
+                }
                 if (target.isNullable())
                 {
                     auto nested_deserialize = createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
@@ -881,6 +919,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
             }
+            if (auto variant_deserialize = tryCreateVariantDeserializeFn(root_node, target_type))
+                return variant_deserialize;
             break;
         }
         case avro::AVRO_MAP:
@@ -1139,6 +1179,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         const auto & column = header.getByPosition(target_column_idx);
         try
         {
+            current_column_name = column.name;
             AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type));
             column_found[target_column_idx] = true;
             return action;
@@ -1200,6 +1241,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
                 return AvroDeserializer::Action(createSkipFn(node));
             size_t nested_column_index = header.getPositionByName(Nested::concatenateName(current_path, name));
             column_found[nested_column_index] = true;
+            current_column_name = Nested::concatenateName(current_path, name);
             auto nested_deserializer = createDeserializeFn(nested_avro_node->leafAt(i), nested_types[name]);
             nested_deserializers.emplace_back(nested_deserializer);
             nested_indexes.push_back(nested_column_index);
@@ -1728,6 +1770,8 @@ To find the correspondence between table columns and fields of Avro schema, Clic
 This comparison is case-sensitive and unused fields are skipped.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the corresponding column type.
+
+A record of exactly two `bytes` fields named `metadata` and `value`, which is how Iceberg v3 stores a `variant` in Avro, is read into a [`Dynamic`](/reference/data-types/dynamic) or [`JSON`](/reference/data-types/newjson) column with the [variant binary encoding](https://github.com/apache/parquet-format/blob/master/VariantEncoding.md), the same way as a `VARIANT` column of the `Parquet` format.
 
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
