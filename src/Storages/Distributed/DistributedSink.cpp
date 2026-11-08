@@ -730,7 +730,8 @@ bool DistributedSink::localJobsRequireSequentialQuorum()
             auto target = DatabaseCatalog::instance().tryGetTable(target_id, context);
             local_jobs_require_sequential_quorum = target
                 ? InsertDependenciesBuilder::mayCreateSequentialQuorumPart(target, context)
-                    || InsertDependenciesBuilder::dependentViewMayCreateSequentialQuorumPart(target, context)
+                    || (!target->noPushingToViewsOnInserts()
+                        && InsertDependenciesBuilder::dependentViewMayCreateSequentialQuorumPart(target, context))
                 : isSequentialQuorumInsert(context->getSettingsRef());
         }
     }

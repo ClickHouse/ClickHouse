@@ -1166,7 +1166,14 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || forwardedInsertReachesDependentView(target, context, depth + 1);
+        if (!target)
+            return true;
+        /// The nested `INSERT` into a storage that does not push the inserted rows to its dependent views
+        /// (`Kafka`, `NATS`, `RabbitMQ`, also behind further `Alias` and proxy hops) runs none of them,
+        /// see `createChainWithDependencies`.
+        if (target->noPushingToViewsOnInserts())
+            return false;
+        return forwardedInsertReachesDependentView(target, context, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
@@ -1425,6 +1432,9 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
         auto target = alias->tryGetTargetTable();
         if (!target)
             return true;
+        /// The nested `INSERT` into a storage that does not push to its dependent views runs none of them.
+        if (target->noPushingToViewsOnInserts())
+            return false;
         return dependentViewForwardsInsertToSeparateContext(target, context, depth + 1)
             || forwardedInsertHidesDependentViewForwardingToSeparateContext(target, context, depth + 1);
     }
@@ -1502,7 +1512,7 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
     {
         auto target = alias->tryGetTargetTable();
         return !target || storageMayWriteToReplicatedTable(target, context, depth + 1)
-            || dependentViewMayWriteToReplicatedTable(target, context, depth + 1);
+            || (!target->noPushingToViewsOnInserts() && dependentViewMayWriteToReplicatedTable(target, context, depth + 1));
     }
 
     /// A forwarding storage runs a nested `INSERT` whose destination graph is not visible here: an
@@ -1619,9 +1629,11 @@ bool InsertDependenciesBuilder::mayCreateSequentialQuorumPart(const StoragePtr &
 
     auto forwarded_to = [&](const StoragePtr & target, const ContextPtr & target_context)
     {
+        /// The nested `INSERT` into a storage that does not push to its dependent views runs none of them.
         return target
             && (mayCreateSequentialQuorumPart(target, target_context, depth + 1)
-                || dependentViewMayCreateSequentialQuorumPart(target, target_context, depth + 1));
+                || (!target->noPushingToViewsOnInserts()
+                    && dependentViewMayCreateSequentialQuorumPart(target, target_context, depth + 1)));
     };
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
@@ -1702,7 +1714,7 @@ bool InsertDependenciesBuilder::storageHidesQuorumWriteTarget(const StoragePtr &
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || dependentViewMayWriteToReplicatedTable(target, depth + 1)
+        return !target || (!target->noPushingToViewsOnInserts() && dependentViewMayWriteToReplicatedTable(target, depth + 1))
             || storageHidesQuorumWriteTarget(target, depth + 1);
     }
 
