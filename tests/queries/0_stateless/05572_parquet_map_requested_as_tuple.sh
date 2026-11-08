@@ -42,7 +42,7 @@ $CLICKHOUSE_LOCAL -q "SELECT id FROM $F, 'id Int64, payload Tuple(value Nullable
 rm -f "$FILE"
 
 # An Iceberg table whose schema has `payload struct<value: string>`, with a data file that stores `payload` as a map.
-# The table comes from the DuckDB Iceberg extension tests (duckdb/duckdb-iceberg, test/sql/local/mapping_failure_variations.test).
+# The table comes from the DuckDB Iceberg extension tests (test/sql/local/mapping_failure_variations.test), see data_iceberg/duckdb/README.md.
 cd "$CUR_DIR/data_iceberg/duckdb" || exit 1
 MF="icebergLocal('data/persistent/mapping_failures/map_to_struct', SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json')"
 error "SELECT * FROM $MF ORDER BY ALL"
