@@ -2366,6 +2366,10 @@ def test_detach_table_with_pending_buffer(started_cluster):
     # throw on every insert: `syncTables()` then fails to flush the buffered row, so the table stays
     # in `tables_to_sync` and the consumer retries. `DETACH` removes its storage while that stale
     # entry remains - the exact precondition for the crash.
+    #
+    # The consumer must also back off between these failed retries instead of rescheduling itself
+    # immediately: retrying in a tight loop kept re-acquiring the task's mutex and could starve
+    # `DETACH TABLE` (which deactivates the task) for minutes.
     cursor = pg_manager.get_db_cursor()
     cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
     cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
@@ -2379,8 +2383,8 @@ def test_detach_table_with_pending_buffer(started_cluster):
         port=started_cluster.postgres_port,
         settings=[
             "materialized_postgresql_tables_list = 'test_detach_stuck,test_detach_healthy'",
-            "materialized_postgresql_backoff_min_ms = 100",
-            "materialized_postgresql_backoff_max_ms = 100",
+            "materialized_postgresql_backoff_min_ms = 1000",
+            "materialized_postgresql_backoff_max_ms = 1000",
         ],
     )
     # The initial snapshot must synchronize for both tables.
@@ -2392,19 +2396,28 @@ def test_detach_table_with_pending_buffer(started_cluster):
     )
 
     # A materialized view that always throws on insert. It is created without POPULATE, so it only
-    # affects rows replicated from now on (not the already-synchronized snapshot row).
-    instance.query("DROP VIEW IF EXISTS poison_mv")
+    # affects rows replicated from now on (not the already-synchronized snapshot row). Its name is
+    # unique, so that the log lines below cannot match the lines of an earlier run of this test.
+    poison_mv = f"poison_mv_{uuid.uuid4().hex}"
     instance.query(
-        "CREATE MATERIALIZED VIEW poison_mv ENGINE = MergeTree ORDER BY tuple() AS "
+        f"CREATE MATERIALIZED VIEW {poison_mv} ENGINE = MergeTree ORDER BY tuple() AS "
         "SELECT throwIf(value >= 0, 'poison') AS x FROM test_database.test_detach_stuck"
     )
 
     # This row cannot be flushed: the MV throws inside syncTables(), so test_detach_stuck stays queued
-    # in tables_to_sync and the consumer keeps retrying it. Wait for the actual push failure (a real
-    # progress signal that the sync was attempted and failed) - not the substring "poison" alone, which
-    # would also match the logged text of the CREATE MATERIALIZED VIEW query above and fire prematurely.
+    # in tables_to_sync and the consumer keeps retrying it. Wait for several actual push failures (a
+    # real progress signal that the sync was attempted and failed) - not the substring "poison" alone,
+    # which would also match the logged text of the CREATE MATERIALIZED VIEW query above.
+    start_time = time.time()
     cursor.execute("INSERT INTO test_detach_stuck VALUES (2, 2)")
-    instance.wait_for_log_line("while pushing to view default.poison_mv", timeout=60)
+    instance.wait_for_log_line(
+        f"while pushing to view default.{poison_mv}", timeout=60, repetitions=6
+    )
+    # With a fixed backoff of 1000 ms, six log lines (at most two per failed attempt) take at least
+    # two backoff intervals. Without the backoff the consumer retried back-to-back, producing these
+    # lines in a small fraction of a second.
+    elapsed = time.time() - start_time
+    assert elapsed >= 1.5, f"failed synchronization was retried without a backoff: {elapsed:.3f} s"
 
     # Before the fix this crashed the server (SIGSEGV in MaterializedPostgreSQLConsumer::syncTables()),
     # because DETACH removed the storage while the table was still queued in tables_to_sync.
@@ -2425,7 +2438,7 @@ def test_detach_table_with_pending_buffer(started_cluster):
     # a crashed `clickhouse-server`.
     assert "1" == instance.query("SELECT 1").strip()
 
-    instance.query("DROP VIEW IF EXISTS poison_mv")
+    instance.query(f"DROP VIEW IF EXISTS {poison_mv}")
     pg_manager.drop_materialized_db()
     cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
     cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
