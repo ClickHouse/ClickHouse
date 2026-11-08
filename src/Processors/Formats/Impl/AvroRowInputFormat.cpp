@@ -728,16 +728,6 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         case avro::AVRO_NULL:
             if (target.isNullable())
             {
-                auto nested_type = removeNullable(target_type);
-                if (nested_type->getTypeId() == TypeIndex::Nothing)
-                {
-                    return [](IColumn &, avro::Decoder & decoder)
-                    {
-                        decoder.decodeNull();
-                        return true;
-                    };
-                }
-
                 return [](IColumn & column, avro::Decoder & decoder)
                 {
                     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
@@ -1385,7 +1375,17 @@ void AvroRowInputFormat::readPrefix()
         std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     NameSet absent_columns;
     if (column_mapper)
+    {
         absent_columns = getColumnsAbsentFromIcebergFile(output.getHeader(), *column_mapper, file_reader_ptr->metadata());
+        /// Iceberg row lineage columns are stored only by a rewritten data file: a file without them reads them as NULL.
+        size_t index = 0;
+        for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
+        {
+            if (output.getHeader().has(name) && !column_mapper->getStorageColumnEncoding().contains(name)
+                && !file_reader_ptr->dataSchema().root()->nameIndex(name, index))
+                absent_columns.insert(name);
+        }
+    }
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings,
         absent_columns, column_mapper.get());

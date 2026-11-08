@@ -332,6 +332,23 @@ TEST(IcebergSchemaProcessor, ConflictingManifestHeadersWithoutMetadataSchemaReje
     EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().type->getName(), "Nullable(DateTime64(6, 'UTC'))");
 }
 
+/// Databricks UniForm writes a placeholder schema without fields into manifest headers, under the schema-id of the
+/// real schema in metadata.json. The placeholder is ignored whether it is read before or after the real schema.
+TEST(IcebergSchemaProcessor, EmptyManifestSchemaIsIgnored)
+{
+    auto placeholder = parseSchema(R"json({"schema-id":0,"fields":[]})json");
+    auto real = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"int"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(
+        placeholder, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false);
+    EXPECT_FALSE(processor.hasClickHouseTableSchemaById(0));
+
+    processor.addIcebergTableSchema(real);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(
+        placeholder, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/false));
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().name, "a");
+}
+
 /// A renamed field bound to the same schema-id must still be rejected (issue #107316).
 TEST(IcebergSchemaProcessor, RebindingSchemaIdToRenamedFieldStillRejected)
 {

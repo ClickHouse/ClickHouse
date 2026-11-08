@@ -140,7 +140,8 @@ namespace
     {
         Names result;
 #if USE_AVRO
-        if (Poco::toLower(format_name) != "parquet" || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+        const auto format = Poco::toLower(format_name);
+        if ((format != "parquet" && format != "orc" && format != "avro") || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
             return result;
 
         for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
