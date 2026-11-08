@@ -282,6 +282,12 @@ public:
     /// The result of `getEstimates(required_columns)` if it needs nothing read from disk, otherwise `std::nullopt`.
     std::optional<Estimates> tryGetEstimatesFromMemory(const NameSet & required_columns) const;
 
+    /// Whether the dictionaries of a `LowCardinality` column were read and found not to contain all its values,
+    /// so `filterPartsByLowCardinalityDictionaries` does not read them again. The part is immutable, so the
+    /// result stays valid; the parts written before the marker of complete dictionaries existed are read only once.
+    bool hasIncompleteLowCardinalityDictionaries(const String & column_name) const;
+    void setIncompleteLowCardinalityDictionaries(const String & column_name) const;
+
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version = true);
@@ -952,6 +958,9 @@ private:
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized per column on a first access.
+    mutable std::mutex incomplete_low_cardinality_dictionaries_mutex;
+    mutable NameSet incomplete_low_cardinality_dictionaries TSA_GUARDED_BY(incomplete_low_cardinality_dictionaries_mutex);
+
     mutable std::mutex estimates_mutex;
     mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
     /// The columns whose statistics were already looked up, including the columns without statistics.

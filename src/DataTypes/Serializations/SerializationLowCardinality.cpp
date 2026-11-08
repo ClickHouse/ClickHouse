@@ -36,11 +36,8 @@ namespace
     }
 
     /// The key count comes from the stream and must not size an allocation, so the keys are read in batches.
-    MutableColumnPtr deserializeDictionaryKeys(const IDataType & keys_type, const ISerialization & keys_serialization, ReadBuffer & istr)
+    MutableColumnPtr deserializeDictionaryKeys(const IDataType & keys_type, const ISerialization & keys_serialization, ReadBuffer & istr, UInt64 num_keys)
     {
-        UInt64 num_keys = 0;
-        readBinaryLittleEndian(num_keys, istr);
-
         auto keys = keys_type.createColumn();
         while (keys->size() < num_keys)
         {
@@ -51,6 +48,13 @@ namespace
                     "Cannot read all keys of a LowCardinality dictionary: read {} of {}", keys_read, num_keys);
         }
         return keys;
+    }
+
+    MutableColumnPtr deserializeDictionaryKeys(const IDataType & keys_type, const ISerialization & keys_serialization, ReadBuffer & istr)
+    {
+        UInt64 num_keys = 0;
+        readBinaryLittleEndian(num_keys, istr);
+        return deserializeDictionaryKeys(keys_type, keys_serialization, istr, num_keys);
     }
 }
 
@@ -117,6 +121,10 @@ void SerializationLowCardinality::enumerateStreams(
     callback(settings.path);
     settings.path.pop_back();
 }
+
+/// Written instead of the number of keys of the next dictionary after the last dictionary in the `DictionaryKeys`
+/// stream, if all keys of the column are in its dictionaries. See `serializeBinaryBulkStateSuffix`.
+constexpr UInt64 COMPLETE_DICTIONARIES_MARKER = 0;
 
 struct KeysSerializationVersion
 {
@@ -253,6 +261,10 @@ struct SerializeStateLowCardinality : public ISerialization::SerializeBinaryBulk
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
+    /// Whether some keys were written as additional keys into the `DictionaryIndexes` stream,
+    /// so that the dictionaries in the `DictionaryKeys` stream do not contain all keys of the column.
+    bool has_additional_keys = false;
+
     explicit SerializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
@@ -330,6 +342,62 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
         dict_inner_serialization->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
         low_cardinality_state->shared_dictionary = nullptr;
     }
+
+    /// A dictionary always contains the default value, so a dictionary of zero keys is never written,
+    /// and the zero number of keys after the last dictionary marks that the dictionaries contain all keys.
+    /// Readers never read past the last dictionary, so the marker is invisible to them.
+    /// Only a top-level column is marked: its dictionaries are what `deserializeCompleteDictionaries` reads.
+    if (settings.low_cardinality_write_complete_dictionaries_marker && settings.path.empty()
+        && settings.low_cardinality_max_dictionary_size && !low_cardinality_state->has_additional_keys)
+    {
+        settings.path.push_back(Substream::DictionaryKeys);
+        auto * stream = settings.getter(settings.path);
+        settings.path.pop_back();
+
+        if (!stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix");
+
+        writeBinaryLittleEndian(COMPLETE_DICTIONARIES_MARKER, *stream);
+    }
+}
+
+ColumnPtr SerializationLowCardinality::deserializeCompleteDictionaries(ReadBuffer & keys_stream) const
+{
+    UInt64 keys_version = 0;
+    readBinaryLittleEndian(keys_version, keys_stream);
+    KeysSerializationVersion::checkVersion(keys_version);
+
+    auto result = std::make_shared<DataTypeLowCardinality>(dictionary_type)->createColumn();
+    auto keys_type = removeNullable(dictionary_type);
+
+    while (!keys_stream.eof())
+    {
+        UInt64 num_keys = 0;
+        readBinaryLittleEndian(num_keys, keys_stream);
+
+        if (num_keys == COMPLETE_DICTIONARIES_MARKER)
+        {
+            if (!keys_stream.eof())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected data after the marker of complete LowCardinality dictionaries");
+            return result;
+        }
+
+        auto keys = deserializeDictionaryKeys(*keys_type, *dict_inner_serialization, keys_stream, num_keys);
+        auto dictionary = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(keys));
+
+        /// All positions of the dictionary, including the default value and `NULL`.
+        auto positions = ColumnUInt64::create(dictionary->size());
+        auto & positions_data = positions->getData();
+        for (size_t i = 0; i < positions_data.size(); ++i)
+            positions_data[i] = i;
+
+        ColumnPtr dictionary_ptr = std::move(dictionary);
+        ColumnPtr positions_ptr = std::move(positions);
+        auto dictionary_column = ColumnLowCardinality::create(dictionary_ptr, positions_ptr, /*is_shared=*/ false);
+        result->insertRangeFrom(*dictionary_column, 0, dictionary_column->size());
+    }
+
+    return nullptr;
 }
 
 void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
@@ -388,7 +456,18 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         /// bound to the next different mark or to the file end. So this `eof`
         /// check is not limited by the current task range in the only case where
         /// `might_have_single_dictionary` can prove useful.
-        if (stream->eof())
+        /// The dictionary can be followed by the marker of complete dictionaries (see `serializeBinaryBulkStateSuffix`).
+        /// If anything else follows it, the stream is read again from the start below.
+        auto is_last_dictionary = [&]
+        {
+            if (stream->eof())
+                return true;
+            UInt64 next_num_keys = 0;
+            readBinaryLittleEndian(next_num_keys, *stream);
+            return next_num_keys == COMPLETE_DICTIONARIES_MARKER && stream->eof();
+        };
+
+        if (is_last_dictionary())
         {
             new_state->single_dictionary_for_part = true;
             new_state->global_dictionary = std::move(global_dictionary);
@@ -632,6 +711,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
     if (need_additional_keys)
     {
+        low_cardinality_state->has_additional_keys = true;
         UInt64 num_keys = keys->size();
         writeBinaryLittleEndian(num_keys, *indexes_stream);
         dict_inner_serialization->serializeBinaryBulk(*keys, *indexes_stream, 0, num_keys);

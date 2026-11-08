@@ -59,6 +59,13 @@ public:
             DeserializeBinaryBulkStatePtr & state,
             SubstreamsCache * cache) const override;
 
+    /// Reads the whole `DictionaryKeys` stream of a top-level `LowCardinality` column of a `Wide` part.
+    /// If the stream ends with the marker written with `low_cardinality_write_complete_dictionaries_marker`,
+    /// returns a `LowCardinality` column with every key of all dictionaries, which is a superset of the values
+    /// of the column (it also has the default value and `NULL`). Otherwise returns nullptr: the column can have
+    /// keys that are not in the dictionaries, or the part was written without the marker.
+    ColumnPtr deserializeCompleteDictionaries(ReadBuffer & keys_stream) const;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

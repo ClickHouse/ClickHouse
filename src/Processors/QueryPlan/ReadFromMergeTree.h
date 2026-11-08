@@ -148,6 +148,7 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        LowCardinalityDictionary,
     };
 
     struct DistributedIndexStat

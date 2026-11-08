@@ -15,6 +15,9 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexSet.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <DataTypes/Serializations/SerializationLowCardinality.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/GenericExclusionSearch.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -133,6 +136,8 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsBool use_low_cardinality_dictionaries_for_part_pruning;
+    extern const SettingsUInt64 max_low_cardinality_dictionaries_bytes_for_part_pruning;
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
@@ -1138,6 +1143,171 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     return res_parts;
 }
 
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictionaries(
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t min_marks_per_part_to_load_statistics,
+    const ContextPtr & context,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// The dictionaries describe the values as they are stored in the part, so they are not used in the same cases
+    /// as statistics, see `filterPartsByStatistics`: with `FINAL`, with on-the-fly mutations or patch parts, with
+    /// masking policies and row policies. Pending alter and metadata mutations are checked per part below.
+    if (!settings[Setting::use_low_cardinality_dictionaries_for_part_pruning]
+        || parts.empty()
+        || !query_info.filter_actions_dag
+        || query_info.isFinal()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || parts.front().data_part->storage.hasEnabledMaskingPolicies(context)
+        || query_info.row_level_filter
+        || getEffectiveRowPolicyFilter(parts.front().data_part->storage, context))
+    {
+        return parts;
+    }
+
+    const auto * predicate = query_info.filter_actions_dag->getOutputs().front();
+
+    /// A skip index of type `set` on each top-level `LowCardinality` column used by the filter.
+    struct ColumnCondition
+    {
+        NameAndTypePair column;
+        std::shared_ptr<const SerializationLowCardinality> serialization;
+        MergeTreeIndexPtr index;
+        MergeTreeIndexConditionPtr condition;
+    };
+    std::vector<ColumnCondition> conditions;
+
+    const auto & columns = metadata_snapshot->getColumns();
+    NameSet used_columns;
+    for (const auto * input : query_info.filter_actions_dag->getInputs())
+    {
+        if (!used_columns.insert(input->result_name).second)
+            continue;
+
+        auto column = columns.tryGetPhysical(input->result_name);
+        if (!column || !column->type->lowCardinality())
+            continue;
+
+        auto serialization = std::dynamic_pointer_cast<const SerializationLowCardinality>(column->type->getDefaultSerialization());
+        if (!serialization)
+            continue;
+
+        auto index_description = createImplicitSetIndexDescription(column->name, columns, context);
+        auto index = std::make_shared<MergeTreeIndexSet>(metadata_snapshot, index_description, /*max_rows=*/ 0);
+        auto condition = index->createIndexCondition(predicate, context);
+        if (!condition || condition->alwaysUnknownOrTrue())
+            continue;
+
+        conditions.push_back({*column, std::move(serialization), std::move(index), std::move(condition)});
+    }
+
+    if (conditions.empty())
+        return parts;
+
+    /// Reading the dictionaries costs a read per part and column, which is more than a small read could save.
+    const size_t num_wide_parts = std::ranges::count_if(parts, [](const auto & part) { return isWidePart(part.data_part); });
+    if (num_wide_parts == 0
+        || hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition,
+            getMinMarksToLoadStatistics(min_marks_per_part_to_load_statistics, num_wide_parts), settings, log))
+        return parts;
+
+    const UInt64 max_dictionaries_bytes = settings[Setting::max_low_cardinality_dictionaries_bytes_for_part_pruning];
+    ISerialization::SubstreamPath dictionary_keys_path;
+    dictionary_keys_path.emplace_back(ISerialization::Substream::DictionaryKeys);
+
+    /// Whether the part can match the filter by the dictionaries of its columns.
+    auto part_can_match = [&](const MergeTreeData::DataPartPtr & part)
+    {
+        if (!isWidePart(part) || partHasPendingAlterOrMetadataMutations(part, mutations_snapshot))
+            return true;
+
+        for (const auto & condition : conditions)
+        {
+            /// The column is converted on read if the part stores it with another type, and absent in old parts.
+            auto part_column = part->tryGetColumn(condition.column.name);
+            if (!part_column || !part_column->type->equals(*condition.column.type))
+                continue;
+
+            if (part->hasIncompleteLowCardinalityDictionaries(part_column->name))
+                continue;
+
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                *part_column, dictionary_keys_path, ".bin", part->checksums, part->storage.getSettings());
+            if (!stream_name)
+                continue;
+
+            const auto file_name = *stream_name + ".bin";
+            const size_t file_size = part->checksums.files.at(file_name).file_size;
+            if (file_size > max_dictionaries_bytes)
+                continue;
+
+            auto file = part->getDataPartStorage().readFile(file_name, context->getReadSettings().adjustBufferSize(file_size), file_size);
+            CompressedReadBufferFromFile keys_stream(std::move(file));
+            auto values = condition.serialization->deserializeCompleteDictionaries(keys_stream);
+            if (!values)
+            {
+                part->setIncompleteLowCardinalityDictionaries(part_column->name);
+                continue;
+            }
+
+            const auto & index_description = condition.index->index;
+            auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_description.name, index_description.sample_block, /*max_rows=*/ 0);
+            granule->block = index_description.sample_block.cloneWithColumns(Columns{std::move(values)});
+            granule->fillHyperrectangle();
+
+            if (!condition.condition->mayBeTrueOnGranule(granule, {}))
+            {
+                LOG_TRACE(log, "Part {} pruned by the dictionaries of column {}", part->name, condition.column.name);
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    std::vector<char> can_match(parts.size(), true);
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [](size_t) { return false; },
+        [&](size_t part_index) { can_match[part_index] = part_can_match(parts[part_index].data_part); },
+        [](size_t) {});
+
+    RangesInDataParts res_parts;
+    size_t total_granules_after = 0;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (can_match[i])
+        {
+            res_parts.push_back(parts[i]);
+            total_granules_after += parts[i].getMarksCount();
+        }
+    }
+
+    if (res_parts.size() < parts.size())
+    {
+        Names used_keys;
+        for (const auto & condition : conditions)
+            used_keys.push_back(condition.column.name);
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::LowCardinalityDictionary,
+            .used_keys = std::move(used_keys),
+            .num_parts_after = res_parts.size(),
+            .num_granules_after = total_granules_after});
+
+        LOG_DEBUG(log, "Pruning by LowCardinality dictionaries: {} parts -> {} parts", parts.size(), res_parts.size());
+    }
+
+    return res_parts;
+}
 
 /// The minmax skip index reflects the physical rows of a part as they were written, so it goes
 /// stale when a pending or materialized change is not yet merged into the part:

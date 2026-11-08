@@ -298,6 +298,23 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         RangesInDataParts * deferred_parts = nullptr);
 
+    /// Filter parts using the dictionaries of `LowCardinality` columns as skip indexes of type `set` that cover
+    /// whole parts: a part is skipped if no value of the dictionaries of a column can satisfy the filter.
+    /// Only `Wide` parts with dictionaries that contain all values of the column are filtered,
+    /// see `SerializationLowCardinality::deserializeCompleteDictionaries`.
+    /// Like statistics, the dictionaries are not read if `key_condition` leaves fewer than `min_marks_per_part_to_load_statistics`
+    /// marks to read per part.
+    static RangesInDataParts filterPartsByLowCardinalityDictionaries(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+        size_t min_marks_per_part_to_load_statistics,
+        const ContextPtr & context,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     struct IndexAnalysisContext
     {
         StorageMetadataPtr metadata_snapshot;
