@@ -164,8 +164,8 @@ public:
 
         /// Move the values to their rows from the back: the k-th value goes to a row i >= k, so it is not overwritten before it is moved.
         size_t next_value = num_present;
-        for (size_t i = num_values; i-- > 0;)
-            out[i] = not_null[i] ? out[--next_value] : 0;
+        for (size_t i = num_values; i > 0; --i)
+            out[i - 1] = not_null[i - 1] ? out[--next_value] : 0;
     }
 
     void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
