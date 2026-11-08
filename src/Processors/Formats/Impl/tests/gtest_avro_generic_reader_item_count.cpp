@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <DataFile.hh>
+#include <Decoder.hh>
 #include <Exception.hh>
 #include <Generic.hh>
 #include <GenericDatum.hh>
@@ -203,6 +204,161 @@ TEST(AvroGenericReader, ArrayOfRecursiveNullableRecordsIsRead)
     const std::string type = R"({"type":"array","items":{"type":"record","name":"Node","fields":[{"name":"next","type":["null","Node"]}]}})";
     EXPECT_NO_THROW(readAllDatums(makeFile(makeRecordSchema(type), {0x02, 0x00, 0x00})));
     EXPECT_NO_THROW(readAllDatums(makeFile(makeRecordSchema(type), {0x02, 0x02, 0x00, 0x00})));
+}
+
+TEST(AvroGenericReader, NestedArraysOfItemsThatTakeNoBytesAreBoundedByTheInput)
+{
+    /// Every outer item is backed by the count and the end of its own array, so 70000 of them are valid however
+    /// many items that take no bytes they contain in total.
+    constexpr int64_t items = 70000;
+    std::vector<uint8_t> block_data;
+    appendLong(block_data, items);
+    for (int64_t i = 0; i < items; ++i)
+    {
+        appendLong(block_data, 1);
+        appendLong(block_data, 0);
+    }
+    appendLong(block_data, 0);
+
+    const std::string type = R"({"type":"array","items":{"type":"array","items":"null"}})";
+    EXPECT_NO_THROW(readAllDatums(makeFile(makeRecordSchema(type), block_data)));
+}
+
+TEST(AvroGenericReader, NestedArrayOfItemsThatTakeNoBytesWithoutInputIsStillLimited)
+{
+    /// An inner array that declares a huge count without any input is limited, though its enclosing items read input.
+    std::vector<uint8_t> block_data;
+    appendLong(block_data, 1);
+    appendLong(block_data, huge_item_count);
+    const std::string type = R"({"type":"array","items":{"type":"array","items":"null"}})";
+    EXPECT_THROW(readAllDatums(makeFile(makeRecordSchema(type), block_data)), avro::Exception);
+}
+
+TEST(AvroGenericReader, ResolvingArrayOfItemsThatTakeBytesWithDefaultedArrayIsNotLimited)
+{
+    /// Each of the 70000 records reads `x` from the input, so the array `y` that is filled by a default is backed by it.
+    constexpr int64_t items = 70000;
+    std::vector<uint8_t> block_data;
+    appendLong(block_data, items);
+    for (int64_t i = 0; i < items; ++i)
+        appendLong(block_data, i);
+    appendLong(block_data, 0);
+
+    const std::string writer_type = R"({"type":"array","items":{"type":"record","name":"e","fields":[{"name":"x","type":"int"}]}})";
+    const std::string reader_type = R"({"type":"array","items":{"type":"record","name":"e","fields":[{"name":"x","type":"int"},{"name":"y","type":{"type":"array","items":"null"},"default":[null]}]}})";
+    EXPECT_NO_THROW(readAllDatumsResolving(makeFile(makeRecordSchema(writer_type), block_data), reader_type));
+}
+
+namespace
+{
+
+/// A file with `items` empty records of a record `e` without fields.
+std::vector<uint8_t> makeFileOfEmptyRecords(int64_t items)
+{
+    std::vector<uint8_t> block_data;
+    appendLong(block_data, items);
+    appendLong(block_data, 0);
+    return makeFile(makeRecordSchema(R"({"type":"array","items":{"type":"record","name":"e","fields":[]}})"), block_data);
+}
+
+/// The reader schema that adds to the empty record `e` a field `f` of type `field_type` with the given default.
+std::string readerArrayOfRecordWithDefault(const std::string & field_type, const std::string & default_value)
+{
+    return R"({"type":"array","items":{"type":"record","name":"e","fields":[{"name":"f","type":)" + field_type
+        + R"(,"default":)" + default_value + "}]}}";
+}
+
+std::string mapDefaultOfNulls(size_t keys)
+{
+    std::string result = "{";
+    for (size_t i = 0; i < keys; ++i)
+        result += (i ? R"(,"k)" : R"("k)") + std::to_string(i) + R"(":null)";
+    return result + "}";
+}
+
+/// Reads `items` empty records of the record `e` through a resolving decoder, without a data file: `DataFileReader`
+/// writes the reader schema back as JSON, which cannot print a default map of more than two entries.
+void readEmptyRecordsResolving(int64_t items, const std::string & reader_type)
+{
+    std::vector<uint8_t> data;
+    appendLong(data, items);
+    appendLong(data, 0);
+    avro::ValidSchema writer_schema = avro::compileJsonSchemaFromString(R"({"type":"array","items":{"type":"record","name":"e","fields":[]}})");
+    avro::ValidSchema reader_schema = avro::compileJsonSchemaFromString(reader_type);
+    avro::DecoderPtr decoder = avro::resolvingDecoder(writer_schema, reader_schema, avro::binaryDecoder());
+    auto in = avro::memoryInputStream(data.data(), data.size());
+    decoder->init(*in);
+    avro::GenericDatum datum;
+    avro::GenericReader::read(*decoder, datum, reader_schema);
+}
+
+}
+
+TEST(AvroGenericReader, ResolvingDefaultMapIsBoundedByTheDatumsItCreates)
+{
+    /// 1000 empty records, each given a default map of 1000 keys, take 3 bytes and would create a million datums.
+    const std::string reader_type = readerArrayOfRecordWithDefault(R"({"type":"map","values":"null"})", mapDefaultOfNulls(1000));
+    EXPECT_THROW(readEmptyRecordsResolving(1000, reader_type), avro::Exception);
+    EXPECT_NO_THROW(readEmptyRecordsResolving(10, reader_type));
+}
+
+TEST(AvroGenericReader, ResolvingDefaultStringIsBoundedByItsSize)
+{
+    /// 1000 empty records, each given a default string of 4 KiB, take 3 bytes and would create 4 MiB of strings.
+    const std::string reader_type = readerArrayOfRecordWithDefault(R"("string")", '"' + std::string(4096, 'a') + '"');
+    EXPECT_THROW(readAllDatumsResolving(makeFileOfEmptyRecords(1000), reader_type), avro::Exception);
+    EXPECT_NO_THROW(readAllDatumsResolving(makeFileOfEmptyRecords(10), reader_type));
+}
+
+TEST(AvroGenericReader, ResolvingDefaultArrayOfArraysIsBoundedByTheDatumsItCreates)
+{
+    /// A default array that holds an array of 300 nulls creates 300 datums for every one of the 1000 empty records.
+    std::string inner = "[null";
+    for (int i = 1; i < 300; ++i)
+        inner += ",null";
+    const std::string reader_type = readerArrayOfRecordWithDefault(
+        R"({"type":"array","items":{"type":"array","items":"null"}})", "[" + inner + "]]");
+    EXPECT_THROW(readAllDatumsResolving(makeFileOfEmptyRecords(1000), reader_type), avro::Exception);
+    EXPECT_NO_THROW(readAllDatumsResolving(makeFileOfEmptyRecords(10), reader_type));
+}
+
+namespace
+{
+
+/// Reads `json` as a value of `schema_json` with the JSON decoder.
+void readJson(const std::string & schema_json, const std::string & json)
+{
+    avro::ValidSchema schema = avro::compileJsonSchemaFromString(schema_json);
+    avro::DecoderPtr decoder = avro::jsonDecoder(schema);
+    auto in = avro::memoryInputStream(reinterpret_cast<const uint8_t *>(json.data()), json.size());
+    decoder->init(*in);
+    avro::GenericDatum datum;
+    avro::GenericReader::read(*decoder, datum, schema);
+}
+
+}
+
+TEST(AvroGenericReader, JsonArrayOfScalarsIsBoundedByTheInput)
+{
+    /// The JSON decoder peeks at the next token to find the end of an array. The token is not consumed input yet.
+    constexpr int items = 70000;
+    std::string ints = "[";
+    std::string nulls = "[";
+    for (int i = 0; i < items; ++i)
+    {
+        ints += (i ? "," : "") + std::to_string(i);
+        nulls += i ? ",null" : "null";
+    }
+    EXPECT_NO_THROW(readJson(R"({"type":"array","items":"int"})", ints + "]"));
+    EXPECT_NO_THROW(readJson(R"({"type":"array","items":"null"})", nulls + "]"));
+}
+
+TEST(AvroGenericReader, JsonArrayOfArraysOfNullsIsBoundedByTheInput)
+{
+    std::string json = "[";
+    for (int i = 0; i < 70000; ++i)
+        json += i ? ",[null]" : "[null]";
+    EXPECT_NO_THROW(readJson(R"({"type":"array","items":{"type":"array","items":"null"}})", json + "]"));
 }
 
 #endif
