@@ -6,7 +6,7 @@ endif ()
 
 configure_file(GitHash.cpp.in GitHash.generated.cpp)
 
-option(ENABLE_EXPERIMENTAL_LONG_CRC32_HASH "Enable experimental long-string `CRC32Hash` folding for benchmark validation" OFF)
+option (ENABLE_EXPERIMENTAL_LONG_CRC32_HASH "Enable exact long-string `CRC32Hash` acceleration" ON)
 
 set (SRCS
     argsToConfig.cpp
