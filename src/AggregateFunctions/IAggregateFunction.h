@@ -575,6 +575,15 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
+    /** Call `callback` for every directly nested aggregate function.
+      * Most combinators wrap one function, while combinators such as `-Tuple` have several.
+      */
+    virtual void forEachNestedFunction(const std::function<void(const AggregateFunctionPtr &)> & callback) const
+    {
+        if (auto nested = getNestedFunction())
+            callback(nested);
+    }
+
     /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
       * seed draws from a thread-local generator for every state it creates, so it does not - and an
       * expression that runs it (`arrayReduce('groupArraySample(2)', ...)`) must not be presented to the
