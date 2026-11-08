@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, no-replicated-database, no-parallel-replicas
+# Tags: no-parallel, no-fasttest, no-flaky-check, no-replicated-database, no-parallel-replicas
 # no-parallel: the server allows only one MASTER THREAD / WORKER THREAD resource at a time
 # no-fasttest: multi-second index analyses
+# no-flaky-check: with its thread fuzzer the inserts into the index_granularity = 1 tables alone exceed the timeout
 # no-replicated-database: query_log lookups by query_id on one node
 # no-parallel-replicas: parallel replicas move the index analysis to the replicas
 
@@ -14,7 +15,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 P="${CLICKHOUSE_DATABASE}_ia"
-RES="${P}_cpu"
+# Not per database: CREATE OR REPLACE then also replaces the resource of a killed run
+RES="test_05566_ia_cpu"
 
 cleanup() {
     $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE '${P}_%' SYNC FORMAT Null" 2>/dev/null
@@ -28,7 +30,7 @@ trap cleanup EXIT
 BIG_COND="b IN (1, 62501, 125001, 187501, 250001, 312501, 375001, 437501, 500001, 562501, 625001, 687501, 750001, 812501, 875001, 937501)"
 
 $CLICKHOUSE_CLIENT -m -q "
-    CREATE RESOURCE ${RES} (MASTER THREAD, WORKER THREAD);
+    CREATE OR REPLACE RESOURCE ${RES} (MASTER THREAD, WORKER THREAD);
     CREATE WORKLOAD ${P}_all;
     CREATE WORKLOAD ${P}_wl IN ${P}_all;
     -- No burst, so a short analysis is throttled from its first quantum
@@ -118,7 +120,8 @@ timeout 300 $CLICKHOUSE_CLIENT --query_id "${P}_oneslot_4" -q "SELECT count() FR
 timeout 300 $CLICKHOUSE_CLIENT --query_id "${P}_oneslot_5" -q "SELECT count() FROM numbers(1) WHERE dictHas('${P}_dict', number + 1) SETTINGS ${ONE}"
 
 echo "--- KILL QUERY wakes up an analysis starved by a higher priority query"
-$CLICKHOUSE_CLIENT --query_id "${P}_hog" -q "SELECT count() FROM numbers_mt(1e13) SETTINGS workload = '${P}_hi', max_threads = 1, use_concurrency_control = 1" >/dev/null 2>&1 &
+# Without the limits of the CI profile, which stop it at once
+$CLICKHOUSE_CLIENT --query_id "${P}_hog" -q "SELECT count() FROM numbers_mt(1e13) SETTINGS workload = '${P}_hi', max_threads = 1, use_concurrency_control = 1, max_rows_to_read = 0, max_estimated_execution_time = 0" >/dev/null 2>&1 &
 for _ in {1..300}; do
     [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${P}_hog'")" = 1 ] && break
     sleep 0.1

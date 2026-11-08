@@ -1167,17 +1167,11 @@ void MergeTreeDataSelectExecutor::checkForcedSkipIndexes(const UsefulSkipIndexes
 namespace
 {
 
-/// Set during `filterPartsByPrimaryKeyAndSkipIndexes`: the functions with in-part renewal points also run at read time
-thread_local bool analyzing_parts = false;
+/// The lease of the thread in `filterPartsByPrimaryKeyAndSkipIndexes`: the functions with in-part renewal points also run at read time
+thread_local ISlotLease * in_part_lease = nullptr;
 
 /// Starts worker threads for granted slots; set only on the thread that starts the analysis's workers
 thread_local const std::function<void()> * in_part_spawner = nullptr;
-
-struct AnalyzingPartsScope
-{
-    const bool prev = std::exchange(analyzing_parts, true);
-    ~AnalyzingPartsScope() { analyzing_parts = prev; }
-};
 
 struct InPartRenewal
 {
@@ -1186,9 +1180,11 @@ struct InPartRenewal
 
     void tick()
     {
-        if (analyzing_parts && ++steps % period == 0)
+        if (in_part_lease && ++steps % period == 0)
         {
-            renewCurrentCPULeaseInTask();
+            /// A nested pipeline on this thread renews its own lease
+            if (getCurrentCPULease() == in_part_lease)
+                in_part_lease->renew();
             if (in_part_spawner)
                 (*in_part_spawner)();
         }
@@ -1211,6 +1207,8 @@ SlotAllocationPtr allocateIndexAnalysisCPU(
     if (!links.master_thread && !links.worker_thread)
         return nullptr;
     auto lease_settings = getCPULeaseSettings(query_context);
+    /// A preempted thread may hold a part it cannot give away, so it waits for a grant instead of stopping
+    lease_settings.preemption_timeout = std::chrono::milliseconds::max();
     if (cancel_callback)
         lease_settings.on_master_wait = [cancel_callback] { cancel_callback(); };
     return std::make_shared<CPULeaseAllocation>(num_threads, links.master_thread, links.worker_thread, std::move(lease_settings));
@@ -1695,7 +1693,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ISlotLease * prev_lease = getCurrentCPULease();
                 setCurrentCPULease(lease);
                 SCOPE_EXIT({ setCurrentCPULease(prev_lease); });
-                AnalyzingPartsScope analyzing;
+                ISlotLease * prev_in_part_lease = std::exchange(in_part_lease, lease);
+                SCOPE_EXIT({ in_part_lease = prev_in_part_lease; });
                 const auto * prev_spawner = std::exchange(in_part_spawner, spawns_workers && pool ? &spawn_granted_workers : nullptr);
                 SCOPE_EXIT({ in_part_spawner = prev_spawner; });
 
@@ -1710,7 +1709,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     process_part(part_index);
 
-                    /// Reports the part and is the preemption point; a preempted thread holds no part
+                    /// Reports the part; false only after a cancellation freed the allocation
                     if (lease && !lease->renew())
                     {
                         if (is_worker)

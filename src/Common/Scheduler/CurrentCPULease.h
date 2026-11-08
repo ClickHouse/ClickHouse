@@ -11,10 +11,6 @@ namespace DB
 ISlotLease * getCurrentCPULease();
 void setCurrentCPULease(ISlotLease * lease);
 
-/// Renews the current thread's CPU lease without leaving the task (see `ISlotLease::renewInTask`).
-/// No-op without a lease or while it is parked.
-void renewCurrentCPULeaseInTask();
-
 /// RAII: parks the current thread's CPU lease (if any and parkable) for a non-CPU wait and unparks it on scope exit.
 /// Nesting-safe: only the outermost guard parks.
 class CPULeaseParkGuard

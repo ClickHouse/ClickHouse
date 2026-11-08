@@ -119,7 +119,6 @@ private:
         ~Lease() override;
         void startConsumption() override;
         bool renew() override;
-        void renewInTask() override;
         bool park() override;
         void unpark() override;
         bool isParkingEnabled() const override;
@@ -242,11 +241,10 @@ private:
     /// Report real CPU consumption by a thread.
     /// Returns true if renewal has been successful,
     /// otherwise the thread should be stopped (timeout during lease renewal).
-    /// `in_task`: see `ISlotLease::renewInTask`, the result is true unless the allocation is shut down.
-    bool renew(Lease & lease, bool in_task);
+    bool renew(Lease & lease);
 
     /// Preemption. Block CPU consumption: waits for a slot to be granted to this thread.
-    bool waitForGrant(std::unique_lock<std::mutex> & lock, size_t thread_num, bool in_task);
+    bool waitForGrant(std::unique_lock<std::mutex> & lock, size_t thread_num);
 
     /// Accounts consumed resource
     void consume(std::unique_lock<std::mutex> & lock, ResourceCost delta_ns);

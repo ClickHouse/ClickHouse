@@ -29,13 +29,6 @@ void setCurrentCPULease(ISlotLease * lease)
     current_cpu_lease = lease;
 }
 
-void renewCurrentCPULeaseInTask()
-{
-    ISlotLease * lease = current_cpu_lease;
-    if (lease && cpu_park_depth == 0)
-        lease->renewInTask();
-}
-
 CPULeaseParkGuard::CPULeaseParkGuard()
     : lease(getParkableCPULease())
     , parked(false)
