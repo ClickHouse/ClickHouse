@@ -32,6 +32,10 @@ local_query "SELECT count(), countIf(id > 10), countIf(action != 'click') FROM i
 local_query "SELECT action, count() FROM icebergLocal('$T') WHERE event_time >= '2020-01-01 10:00:00' GROUP BY action ORDER BY action"
 local_query "SELECT count() FROM icebergLocal('$T') SETTINGS iceberg_snapshot_id = 8270633197658268308"
 local_query "SELECT count() FROM icebergLocal('$T') SETTINGS iceberg_timestamp_ms = 1598853488440"
+local_query "
+    CREATE TABLE t_legacy ENGINE = IcebergLocal('$T');
+    SELECT groupUniqArray(schema_id) FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_legacy';
+"
 
 # The legacy `schema` with a non-empty sort order, as written by Iceberg 0.11.
 echo '--- legacy, sorted'
@@ -53,6 +57,34 @@ local_query "
     SELECT count() FROM t_unsorted FORMAT Null;
     SELECT name, sorting_key FROM system.tables WHERE database = currentDatabase() AND name IN ('t_sorted', 't_unsorted') ORDER BY name;
 "
+
+# The legacy `schema` renamed `user`, or dropped it and added another `user`, while the manifest keeps the old schema without
+# `schema-id`, which the files are read with, and which `system.iceberg_files` shows as schema 0.
+# `data_iceberg/legacy_v1_orc` is three data files of `iceberg_partitioned` rewritten as ORC, which is read by name.
+echo '--- legacy, evolved'
+for table in "$T" "$CUR_DIR/data_iceberg/legacy_v1_orc"; do
+    for mode in renamed readded; do
+        rm -rf "$TMP_DIR/evolved"
+        cp -r "$table" "$TMP_DIR/evolved"
+        python3 -c "
+import glob, json, sys
+path = max(glob.glob(sys.argv[1] + '/metadata/*.metadata.json'))
+metadata = json.load(open(path))
+fields = metadata['schema']['fields']
+if sys.argv[2] == 'renamed':
+    fields[1]['name'] = 'user_name'
+else:
+    metadata['schema']['fields'] = [field for field in fields if field['name'] != 'user'] + [{'id': 5, 'name': 'user', 'required': False, 'type': 'string'}]
+    metadata['last-column-id'] = 5
+json.dump(metadata, open(path, 'w'))
+" "$TMP_DIR/evolved" "$mode"
+        local_query "SELECT * FROM icebergLocal('$TMP_DIR/evolved') ORDER BY id LIMIT 3"
+        local_query "
+            CREATE TABLE t_evolved ENGINE = IcebergLocal('$TMP_DIR/evolved');
+            SELECT groupUniqArray(schema_id) FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_evolved';
+        "
+    done
+done
 
 # Format version 2 snapshots whose `schema-id` is absent or null: the data files keep the schema of their manifest, and time travel
 # to the first snapshot returns the current schema.

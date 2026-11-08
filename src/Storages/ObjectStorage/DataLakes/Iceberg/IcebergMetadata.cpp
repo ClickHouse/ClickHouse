@@ -1480,7 +1480,8 @@ IcebergFileRecord buildIcebergFileRecord(
     record.record_count = parsed.record_count;
     record.file_size_in_bytes = parsed.file_size_in_bytes;
     record.partition = formatPartitionKeyValue(processed->normalized_partition_key_value);
-    record.schema_id = processed->resolved_schema_id;
+    /// A negative id is an internal one of a manifest schema without `schema-id`, which is 0 by default.
+    record.schema_id = std::max(processed->resolved_schema_id, 0);
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
     record.first_row_id = processed->first_row_id;

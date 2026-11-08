@@ -450,7 +450,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             if (header_schema_id.has_value())
                 schema_object->set(f_schema_id, *header_schema_id);
             else if (manifest_format_version == 1)
-                schema_object->set(f_schema_id, 0);
+                schema_processor.addIcebergTableSchemaWithoutId(schema_object);
         }
         Int32 embedded_schema_id = schema_object->getValue<int>(f_schema_id);
         if (header_schema_id.has_value() && *header_schema_id != embedded_schema_id)

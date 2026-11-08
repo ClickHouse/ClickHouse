@@ -580,6 +580,28 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     current_schema_id = std::nullopt;
 }
 
+Int32 IcebergSchemaProcessor::addIcebergTableSchemaWithoutId(Poco::JSON::Object::Ptr schema_ptr)
+{
+    std::lock_guard schemas_without_id_lock(schemas_without_id_mutex);
+    Int32 schema_id = 0;
+    /// A schema without fields is a placeholder that addIcebergTableSchema does not register.
+    if (schema_ptr->isArray(f_fields) && schema_ptr->getArray(f_fields)->size() != 0)
+    {
+        SharedLockGuard lock(mutex);
+        auto it = iceberg_table_schemas_by_ids.find(0);
+        bool found = it != iceberg_table_schemas_by_ids.end() && !manifest_sourced_schema_ids.contains(0)
+            && schemasAreIdentical(*it->second, *schema_ptr, {});
+        while (!found)
+        {
+            it = iceberg_table_schemas_by_ids.find(--schema_id);
+            found = it == iceberg_table_schemas_by_ids.end() || schemasAreIdentical(*it->second, *schema_ptr, {});
+        }
+    }
+    schema_ptr->set(f_schema_id, schema_id);
+    addIcebergTableSchema(schema_ptr, SchemaSource::ManifestFile);
+    return schema_id;
+}
+
 NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
 {
     SharedLockGuard lock(mutex);

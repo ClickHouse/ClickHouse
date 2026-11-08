@@ -512,3 +512,29 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
 }
+
+/// A manifest schema without `schema-id` gets 0 only when metadata.json binds 0 to the same fields; every other distinct
+/// schema gets its own negative id, which a repeated schema gets again.
+TEST(IcebergSchemaProcessor, ManifestSchemasWithoutIdGetDistinctIds)
+{
+    const std::string current = R"json({"fields":[{"id":1,"name":"new_name","required":false,"type":"int"}]})json";
+    const std::string old = R"json({"fields":[{"id":1,"name":"old_name","required":false,"type":"int"}]})json";
+    const std::string older = R"json({"fields":[{"id":1,"name":"oldest_name","required":false,"type":"int"}]})json";
+
+    IcebergSchemaProcessor without_metadata;
+    EXPECT_EQ(without_metadata.addIcebergTableSchemaWithoutId(parseSchema(current)), -1);
+
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"new_name","required":false,"type":"int"}]})json"));
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(current)), 0);
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(old)), -1);
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(older)), -2);
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(old)), -1);
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().name, "new_name");
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(-1)->front().name, "old_name");
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(-2)->front().name, "oldest_name");
+
+    /// A placeholder without fields is not registered.
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(R"json({"fields":[]})json")), 0);
+    EXPECT_FALSE(processor.hasClickHouseTableSchemaById(-3));
+}
