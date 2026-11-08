@@ -2,7 +2,7 @@
 -- so `*` is expanded into the generated column while the table function itself stays in the query,
 -- the same way `view` is handled.
 
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 
 SELECT
     countIf(explain ILIKE '%Function eval%') AS table_function_kept,
