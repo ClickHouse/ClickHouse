@@ -9,6 +9,7 @@
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
 #include <Processors/ISource.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -17,6 +18,7 @@ namespace DB
 class BlockMissingValues;
 struct SelectQueryInfo;
 class ColumnMapper;
+struct RelativePathWithMetadata;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
@@ -74,7 +76,12 @@ struct IBucketSplitter
 {
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual std::vector<FileBucketInfoPtr> splitToBuckets(
+        size_t bucket_size,
+        ReadBuffer & buf,
+        const RelativePathWithMetadata & object,
+        const FormatSettings & format_settings_,
+        const ContextPtr & context) = 0;
 
     virtual std::vector<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const std::vector<UInt64> & /*split_offsets*/)
     {
