@@ -7,6 +7,8 @@
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
@@ -24,7 +26,6 @@
 #include <numeric>
 #include <span>
 #include <string_view>
-#include <unordered_map>
 
 namespace DB
 {
@@ -141,7 +142,7 @@ void ensureAggregateStateOwnership(
 
 UInt64 computeBucketHash(
     const MutableColumns & merged_columns,
-    const std::vector<size_t> & non_cluster_key_positions,
+    const VectorWithMemoryTracking<size_t> & non_cluster_key_positions,
     size_t row,
     Int64 bucket_id)
 {
@@ -187,7 +188,7 @@ void readClusterValues(
     const IColumn & col,
     const DataTypePtr & type,
     size_t total_rows,
-    std::vector<Float64> & out)
+    VectorWithMemoryTracking<Float64> & out)
 {
     out.resize(total_rows);
 
@@ -298,7 +299,7 @@ void readExactBucketKeys(
     const IColumn & col,
     const DataTypePtr & type,
     size_t total_rows,
-    std::vector<Int64> & out)
+    VectorWithMemoryTracking<Int64> & out)
 {
     out.resize(total_rows);
 
@@ -434,7 +435,7 @@ Chunk ClusterMergingTransform::generate1D()
 
     size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
 
-    std::vector<size_t> non_cluster_key_positions;
+    VectorWithMemoryTracking<size_t> non_cluster_key_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (!aggregates_mask[i] && i != cluster_key_pos)
@@ -444,7 +445,7 @@ Chunk ClusterMergingTransform::generate1D()
     if constexpr (!USE_BUCKET_OPTIMIZATION)
     {
         /// Reference O(n log n) sort-merge implementation, kept around for benchmarks.
-        std::vector<size_t> row_order(total_rows);
+        VectorWithMemoryTracking<size_t> row_order(total_rows);
         std::iota(row_order.begin(), row_order.end(), 0);
 
         std::sort(row_order.begin(), row_order.end(), [&](size_t a, size_t b)
@@ -458,8 +459,8 @@ Chunk ClusterMergingTransform::generate1D()
             return merged_columns[cluster_key_pos]->compareAt(a, b, *merged_columns[cluster_key_pos], 1) < 0;
         });
 
-        std::vector<bool> alive(total_rows, true);
-        std::vector<Float64> max_cluster(total_rows);
+        VectorWithMemoryTracking<bool> alive(total_rows, true);
+        VectorWithMemoryTracking<Float64> max_cluster(total_rows);
         for (size_t i = 0; i < total_rows; ++i)
             max_cluster[i] = merged_columns[cluster_key_pos]->getFloat64(row_order[i]);
 
@@ -521,18 +522,18 @@ Chunk ClusterMergingTransform::generate1D()
 
     /// Phase A: bucket each row by `floor(cluster_key / distance)`. Rows sharing a bucket
     /// are unconditionally within `distance` of each other.
-    std::vector<BucketState> buckets;
+    VectorWithMemoryTracking<BucketState> buckets;
     /// On a hash hit we still verify `bucket_id` and the non-cluster key values before
     /// merging — guards against SipHash collisions.
-    std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> bucket_map;
+    UnorderedMapWithMemoryTracking<UInt64, absl::InlinedVector<size_t, 1>> bucket_map;
 
     /// At `distance > 0` we bucket by `floor(cluster_key / distance)`, which needs the keys in
     /// Float64's exact-integer range (hence the translation and the `2^53` guards). At
     /// `distance == 0` we bucket by exact equality only, so we read collision-free integer keys
     /// directly and skip the Float64 translation entirely — otherwise wide 64-bit keys would be
     /// wrongly rejected with `BAD_ARGUMENTS` even though no arithmetic is needed.
-    std::vector<Float64> cluster_vals;
-    std::vector<Int64> exact_bucket_ids;
+    VectorWithMemoryTracking<Float64> cluster_vals;
+    VectorWithMemoryTracking<Int64> exact_bucket_ids;
     const auto key_view = makeClusterKeyView(*merged_columns[cluster_key_pos],
                                              header.getByPosition(cluster_key_pos).type);
     if (cluster_distance > 0)
@@ -612,7 +613,7 @@ Chunk ClusterMergingTransform::generate1D()
 
     /// Phase B: sort buckets by `(non_cluster_keys, bucket_id)`, then merge adjacent
     /// buckets whose `[min, max]` ranges are within `cluster_distance`.
-    std::vector<size_t> bucket_order(buckets.size());
+    VectorWithMemoryTracking<size_t> bucket_order(buckets.size());
     std::iota(bucket_order.begin(), bucket_order.end(), 0);
 
     std::sort(bucket_order.begin(), bucket_order.end(), [&](size_t a, size_t b)
@@ -697,8 +698,8 @@ namespace
 /// Union-find with path compression + union-by-size.
 struct DisjointSetUnion
 {
-    std::vector<size_t> parent;
-    std::vector<size_t> size;
+    VectorWithMemoryTracking<size_t> parent;
+    VectorWithMemoryTracking<size_t> size;
 
     explicit DisjointSetUnion(size_t n) : parent(n), size(n, 1)
     {
@@ -746,8 +747,8 @@ bool isWithinEditDistance(std::string_view a, std::string_view b, size_t max_edi
 
     /// Values above `max_edits` are saturated to `inf`, which marks cells outside the band too.
     const size_t inf = max_edits + 1;
-    std::vector<size_t> prev(n + 1);
-    std::vector<size_t> curr(n + 1);
+    VectorWithMemoryTracking<size_t> prev(n + 1);
+    VectorWithMemoryTracking<size_t> curr(n + 1);
     for (size_t j = 0; j <= n; ++j)
         prev[j] = std::min(j, inf);
 
@@ -786,7 +787,7 @@ struct CellState
     size_t leader_row_index;
     Int64 cx;
     Int64 cy;
-    std::vector<size_t> row_indices;
+    VectorWithMemoryTracking<size_t> row_indices;
     Float64 min_x;
     Float64 max_x;
     Float64 min_y;
@@ -795,7 +796,7 @@ struct CellState
 
 UInt64 computeCellHash(
     const MutableColumns & merged_columns,
-    const std::vector<size_t> & non_cluster_key_positions,
+    const VectorWithMemoryTracking<size_t> & non_cluster_key_positions,
     size_t row,
     Int64 cx,
     Int64 cy)
@@ -841,7 +842,7 @@ Chunk ClusterMergingTransform::generate2D()
     const IColumn & x_col = *merged_columns[x_pos];
     const IColumn & y_col = *merged_columns[y_pos];
 
-    std::vector<size_t> non_cluster_key_positions;
+    VectorWithMemoryTracking<size_t> non_cluster_key_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (!aggregates_mask[i] && i != x_pos && i != y_pos)
@@ -853,9 +854,9 @@ Chunk ClusterMergingTransform::generate2D()
 
     /// Phase A: bucket each row into a cell of side `a`. Two rows in the same cell are
     /// unconditionally within `d` of each other (the cell diagonal equals `d`).
-    std::vector<CellState> cells;
+    VectorWithMemoryTracking<CellState> cells;
     /// On a hash hit we still verify `(cx, cy)` and the non-cluster keys — guards SipHash collisions.
-    std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> cell_map;
+    UnorderedMapWithMemoryTracking<UInt64, absl::InlinedVector<size_t, 1>> cell_map;
 
     auto lookup_cell = [&](Int64 cx, Int64 cy, size_t probe_row, UInt64 h) -> size_t
     {
@@ -885,10 +886,10 @@ Chunk ClusterMergingTransform::generate2D()
     /// As in `generate1D`, the Float64 coordinates (and their range guard) are only needed for
     /// the `d > 0` cell arithmetic. At `d == 0` we bucket by exact per-axis equality, so we read
     /// collision-free integer keys directly and skip the lossy Float64 translation.
-    std::vector<Float64> x_vals;
-    std::vector<Float64> y_vals;
-    std::vector<Int64> x_exact;
-    std::vector<Int64> y_exact;
+    VectorWithMemoryTracking<Float64> x_vals;
+    VectorWithMemoryTracking<Float64> y_vals;
+    VectorWithMemoryTracking<Int64> x_exact;
+    VectorWithMemoryTracking<Int64> y_exact;
     const auto x_view = makeClusterKeyView(x_col, header.getByPosition(x_pos).type);
     const auto y_view = makeClusterKeyView(y_col, header.getByPosition(y_pos).type);
     if (d > 0)
@@ -1046,12 +1047,12 @@ Chunk ClusterMergingTransform::generate2D()
     /// leader) makes both the emitted key and order-sensitive aggregates such as `any`
     /// independent of input (Aggregator hash-table) order. `component_rep_row` is indexed by
     /// cell; only entries for root cells are read.
-    std::vector<bool> is_root(cells.size(), false);
+    VectorWithMemoryTracking<bool> is_root(cells.size(), false);
     for (size_t ci = 0; ci < cells.size(); ++ci)
         if (dsu.find(ci) == ci)
             is_root[ci] = true;
 
-    std::vector<size_t> component_rep_row(cells.size());
+    VectorWithMemoryTracking<size_t> component_rep_row(cells.size());
     for (size_t ci = 0; ci < cells.size(); ++ci)
         component_rep_row[ci] = cells[ci].leader_row_index;
 
@@ -1127,7 +1128,7 @@ Chunk ClusterMergingTransform::generateString()
                                              header.getByPosition(cluster_key_pos).type);
     const IColumn & key_col = *key_view.column;
 
-    std::vector<size_t> non_cluster_key_positions;
+    VectorWithMemoryTracking<size_t> non_cluster_key_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (!aggregates_mask[i] && i != cluster_key_pos)
@@ -1159,7 +1160,7 @@ Chunk ClusterMergingTransform::generateString()
         return result;
     }
 
-    std::vector<std::string_view> strings;
+    VectorWithMemoryTracking<std::string_view> strings;
     strings.reserve(total_rows);
     for (size_t i = 0; i < total_rows; ++i)
         strings.emplace_back(key_col.getDataAt(i));
@@ -1219,9 +1220,9 @@ Chunk ClusterMergingTransform::generateString()
         /// Multiset semantics on posting lists are required for the Ukkonen bound.
         /// `small_rows` tracks rows where the bound collapses to zero — these need a
         /// pairwise fallback because pairs may share zero q-grams yet still merge.
-        std::unordered_map<UInt32, std::vector<size_t>> index;
-        std::vector<size_t> short_rows;
-        std::vector<size_t> small_rows;
+        UnorderedMapWithMemoryTracking<UInt32, VectorWithMemoryTracking<size_t>> index;
+        VectorWithMemoryTracking<size_t> short_rows;
+        VectorWithMemoryTracking<size_t> small_rows;
         /// `Q * max_edits` saturated to `size_t` max — silent overflow would turn the
         /// filter into a false-negative source on pathological `max_edits` inputs.
         const size_t small_qgrams_bound =
@@ -1242,8 +1243,8 @@ Chunk ClusterMergingTransform::generateString()
         }
 
         /// `counter[j]` is reset via the per-i `dirty` list so the clear is O(touched).
-        std::vector<size_t> counter(total_rows, 0);
-        std::vector<size_t> dirty;
+        VectorWithMemoryTracking<size_t> counter(total_rows, 0);
+        VectorWithMemoryTracking<size_t> dirty;
         /// A posting list of a frequent q-gram can be as long as the total number of q-grams, and
         /// one row may traverse it many times, so cancellation is polled inside the traversal too.
         constexpr size_t CANCELLATION_CHECK_PERIOD = 65536;
@@ -1322,7 +1323,7 @@ Chunk ClusterMergingTransform::generateString()
     /// before merging (rather than the first-seen DSU root) makes both the emitted key and
     /// order-sensitive aggregates such as `any` independent of input (Aggregator hash-table)
     /// order. `component_rep_row` is indexed by row; only roots are read.
-    std::vector<size_t> component_rep_row(total_rows);
+    VectorWithMemoryTracking<size_t> component_rep_row(total_rows);
     std::iota(component_rep_row.begin(), component_rep_row.end(), size_t{0});
 
     for (size_t i = 0; i < total_rows; ++i)
@@ -1332,7 +1333,7 @@ Chunk ClusterMergingTransform::generateString()
             component_rep_row[root] = i;
     }
 
-    std::vector<bool> is_rep(total_rows, false);
+    VectorWithMemoryTracking<bool> is_rep(total_rows, false);
     for (size_t i = 0; i < total_rows; ++i)
         is_rep[component_rep_row[dsu.find(i)]] = true;
 
