@@ -86,6 +86,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -622,7 +623,7 @@ enum class MostRecentMetadataFileSelectionWay
 struct ShortMetadataFileInfo
 {
     Int32 version;
-    UInt64 last_updated_ms;
+    Int64 last_updated_ms;
     String path;
 };
 
@@ -672,6 +673,190 @@ String readMetadataJSONString(
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
     return json_str;
+}
+
+namespace
+{
+
+enum class MetadataFieldType : uint8_t
+{
+    Int32,
+    Int64,
+    String,
+    Array,
+    Object,
+};
+
+struct MetadataField
+{
+    const char * name;
+    MetadataFieldType type;
+    /// The first format version that requires the field, 0 if the field is optional.
+    Int32 required_since;
+};
+
+/// The fields of a table metadata file and of its entries that the Iceberg spec requires or types,
+/// except the schemas, which are checked when they are parsed.
+constexpr MetadataField table_metadata_fields[] = {
+    {f_location, MetadataFieldType::String, 1},
+    {f_last_updated_ms, MetadataFieldType::Int64, 1},
+    {f_last_column_id, MetadataFieldType::Int32, 1},
+    {f_table_uuid, MetadataFieldType::String, 2},
+    {f_last_sequence_number, MetadataFieldType::Int64, 2},
+    {f_partition_specs, MetadataFieldType::Array, 2},
+    {f_last_partition_id, MetadataFieldType::Int32, 2},
+    {f_sort_orders, MetadataFieldType::Array, 2},
+    {f_current_snapshot_id, MetadataFieldType::Int64, 0},
+    {f_next_row_id, MetadataFieldType::Int64, 0},
+    {f_snapshots, MetadataFieldType::Array, 0},
+    {f_snapshot_log, MetadataFieldType::Array, 0},
+    {f_metadata_log, MetadataFieldType::Array, 0},
+    {f_refs, MetadataFieldType::Object, 0},
+};
+constexpr MetadataField partition_spec_fields[] = {{f_spec_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
+constexpr MetadataField sort_order_fields[] = {{f_order_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
+constexpr MetadataField snapshot_fields[] = {
+    {f_metadata_snapshot_id, MetadataFieldType::Int64, 1},
+    {f_timestamp_ms, MetadataFieldType::Int64, 1},
+    {f_parent_snapshot_id, MetadataFieldType::Int64, 0},
+    {f_metadata_sequence_number, MetadataFieldType::Int64, 0},
+    {f_schema_id, MetadataFieldType::Int32, 0},
+    {f_first_row_id, MetadataFieldType::Int64, 0},
+    {f_added_rows, MetadataFieldType::Int64, 0},
+};
+constexpr MetadataField snapshot_log_fields[] = {{f_metadata_snapshot_id, MetadataFieldType::Int64, 1}, {f_timestamp_ms, MetadataFieldType::Int64, 1}};
+constexpr MetadataField metadata_log_fields[] = {{f_metadata_file, MetadataFieldType::String, 1}, {f_timestamp_ms, MetadataFieldType::Int64, 1}};
+constexpr MetadataField ref_fields[] = {{f_metadata_snapshot_id, MetadataFieldType::Int64, 1}, {f_type, MetadataFieldType::String, 1}};
+
+bool isIntegerInRange(const Poco::Dynamic::Var & value, Int64 min, Int64 max)
+{
+    /// The JSON parser keeps an integer as `Poco::Int64`, and as `Poco::UInt64` only if it does not fit `Poco::Int64`.
+    if (value.type() != typeid(Poco::Int64))
+        return false;
+    const Int64 integer = value.extract<Poco::Int64>();
+    return min <= integer && integer <= max;
+}
+
+bool hasType(const Poco::Dynamic::Var & value, MetadataFieldType type)
+{
+    switch (type)
+    {
+        case MetadataFieldType::Int32:
+            return isIntegerInRange(value, std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
+        case MetadataFieldType::Int64:
+            return isIntegerInRange(value, std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max());
+        case MetadataFieldType::String:
+            return value.type() == typeid(std::string);
+        case MetadataFieldType::Array:
+            return value.type() == typeid(Poco::JSON::Array::Ptr);
+        case MetadataFieldType::Object:
+            return value.type() == typeid(Poco::JSON::Object::Ptr);
+    }
+}
+
+std::string_view typeDescription(MetadataFieldType type)
+{
+    switch (type)
+    {
+        case MetadataFieldType::Int32: return "a 32-bit integer";
+        case MetadataFieldType::Int64: return "a 64-bit integer";
+        case MetadataFieldType::String: return "a string";
+        case MetadataFieldType::Array: return "an array";
+        case MetadataFieldType::Object: return "an object";
+    }
+}
+
+void checkField(
+    const Poco::JSON::Object & object, const MetadataField & field, Int32 format_version, std::string_view prefix, const String & metadata_file_path)
+{
+    if (object.isNull(field.name))
+    {
+        if (field.required_since && format_version >= field.required_since)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata file '{}' doesn't contain required field '{}{}'",
+                metadata_file_path, prefix, field.name);
+        return;
+    }
+    if (!hasType(object.get(field.name), field.type))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata file '{}' has invalid field '{}{}': expected {}",
+            metadata_file_path, prefix, field.name, typeDescription(field.type));
+}
+
+void checkEntries(
+    const Poco::JSON::Object & metadata, const char * array_name, std::span<const MetadataField> fields, Int32 format_version, const String & metadata_file_path)
+{
+    if (metadata.isNull(array_name))
+        return;
+    const auto & entries = *metadata.getArray(array_name);
+    for (UInt32 i = 0; i < entries.size(); ++i)
+    {
+        if (!entries.isObject(i))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata file '{}' has invalid field '{}[{}]': expected an object",
+                metadata_file_path, array_name, i);
+        const String prefix = fmt::format("{}[{}].", array_name, i);
+        for (const auto & field : fields)
+            checkField(*entries.getObject(i), field, format_version, prefix, metadata_file_path);
+    }
+}
+
+Int64 getLastUpdatedMs(const Poco::JSON::Object & metadata, const String & metadata_file_path)
+{
+    checkField(metadata, {f_last_updated_ms, MetadataFieldType::Int64, 1}, 1, "", metadata_file_path);
+    return metadata.getValue<Int64>(f_last_updated_ms);
+}
+
+}
+
+void validateTableMetadata(const Poco::JSON::Object & metadata, const String & metadata_file_path)
+{
+    checkField(metadata, {f_format_version, MetadataFieldType::Int32, 1}, 1, "", metadata_file_path);
+    const auto format_version = metadata.getValue<Int32>(f_format_version);
+    if (format_version < 1)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata file '{}' has invalid field '{}': expected 1, 2 or 3, got {}",
+            metadata_file_path, f_format_version, format_version);
+    if (format_version > 3)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg format version {} is not supported, only versions 1, 2 and 3 are supported",
+            format_version);
+
+    for (const auto & field : table_metadata_fields)
+        checkField(metadata, field, format_version, "", metadata_file_path);
+    /// Format version 1 may have only the deprecated `partition-spec`.
+    if (metadata.isNull(f_partition_specs))
+        checkField(metadata, {f_partition_spec, MetadataFieldType::Array, 1}, format_version, "", metadata_file_path);
+    else
+        checkField(metadata, {f_default_spec_id, MetadataFieldType::Int32, 1}, format_version, "", metadata_file_path);
+    if (!metadata.isNull(f_sort_orders))
+        checkField(metadata, {f_default_sort_order_id, MetadataFieldType::Int32, 1}, format_version, "", metadata_file_path);
+
+    checkEntries(metadata, f_partition_specs, partition_spec_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_sort_orders, sort_order_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_snapshots, snapshot_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_snapshot_log, snapshot_log_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_metadata_log, metadata_log_fields, format_version, metadata_file_path);
+
+    if (!metadata.isNull(f_refs))
+    {
+        for (const auto & [name, ref] : *metadata.getObject(f_refs))
+        {
+            if (ref.type() != typeid(Poco::JSON::Object::Ptr))
+                throw Exception(
+                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                    "Iceberg table metadata file '{}' has invalid field '{}.{}': expected an object",
+                    metadata_file_path, f_refs, name);
+            const String prefix = fmt::format("{}.{}.", f_refs, name);
+            for (const auto & field : ref_fields)
+                checkField(*ref.extract<Poco::JSON::Object::Ptr>(), field, format_version, prefix, metadata_file_path);
+        }
+    }
 }
 
 Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str)
@@ -727,7 +912,7 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
-Poco::JSON::Object::Ptr getMetadataJSONObject(
+static Poco::JSON::Object::Ptr getUnvalidatedMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
     IcebergMetadataFilesCachePtr metadata_cache,
@@ -751,6 +936,21 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
             auto metadata_json_str = read_fn();
             return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
         });
+}
+
+Poco::JSON::Object::Ptr getMetadataJSONObject(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid)
+{
+    auto metadata_object = getUnvalidatedMetadataJSONObject(
+        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+    validateTableMetadata(*metadata_object, metadata_file_path);
+    return metadata_object;
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -1612,7 +1812,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
             if (need_all_metadata_files_parsing)
             {
-                auto metadata_file_object = getMetadataJSONObject(
+                /// A candidate may be another table's metadata file, so it is checked only once it is chosen.
+                auto metadata_file_object = getUnvalidatedMetadataJSONObject(
                     metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
@@ -1622,7 +1823,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                         if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
                         {
                             metadata_files_with_versions.emplace_back(
-                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                                version, getLastUpdatedMs(*metadata_file_object, metadata_file_path), metadata_file_path);
                         }
                     }
                     else
@@ -1636,7 +1837,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 }
                 else
                 {
-                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                    metadata_files_with_versions.emplace_back(version, getLastUpdatedMs(*metadata_file_object, metadata_file_path), metadata_file_path);
                 }
             }
             else
