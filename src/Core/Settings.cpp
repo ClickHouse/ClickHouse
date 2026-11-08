@@ -5573,7 +5573,7 @@ Disabled by default.
 )", 0, \
         {"26.5", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."}) \
     DECLARE_WITH_ALIAS(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
-Allow S3 and Azure Blob Storage access that originates from user SQL to use server-managed credentials.
+Allow S3, Azure Blob Storage and MongoDB access that originates from user SQL to use server-managed credentials.
 
 Also available under the alias `allow_server_credentials_in_user_queries`, as it applies to Azure as well.
 
@@ -5599,6 +5599,8 @@ Azure Blob Storage is covered by this setting as well. When it is disabled, the 
 
 For Azure, a named collection that relies on workload or managed identity is restricted too, including one defined in the server configuration, and so is `extra_credentials(client_id = '...', tenant_id = '...')`, which exchanges the server's own federated token for the named client. Disks defined in the server configuration keep using workload or managed identity. A dynamic Azure disk is restricted like a table, except for a table in the `system` database with the server setting `s3_allow_server_credentials_for_system_table_disks`; a dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a restart it keeps using the server's identity. The record is written only by the server and is ignored in a `CREATE` or `ATTACH` query. The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys. A persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure disk, that relied on the server's identity is loaded at startup with a client that has no credentials, per `s3_load_table_anonymously_if_credentials_restricted`; `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead.
 
+MongoDB is covered by this setting as well. When it is disabled, a query that reads with the `mongodb` table function or from a `MongoDB` table is rejected with `ACCESS_DENIED` if the connection string makes the server authenticate with its own credentials: with the authentication mechanism `MONGODB-OIDC` (the identity the server runs under: a Kubernetes service account token, or a token from the Azure or GCP instance metadata service), `MONGODB-AWS`, `GSSAPI` or `MONGODB-X509`, or with the connection option `tlsCertificateKeyFile` (or its deprecated alias `sslClientCertificateKeyFile`), which makes the server present a client certificate from its own filesystem. Only `SCRAM-SHA-1`, `SCRAM-SHA-256` and `PLAIN` are accepted, or no `authMechanism` at all. The check uses the settings of the session that reads, also for a table created by another user, so a session where this setting is enabled should not read MongoDB tables, or views of them, defined by untrusted users. Creating a `MongoDB` table is not checked. A MongoDB dictionary created with a DDL query may not use these mechanisms or `tlsCertificateKeyFile` whatever the value of this setting (except in `clickhouse-local`), because the server loads it with its own context, after the named collection it refers to may have changed; define such a dictionary in the server configuration files. Dictionaries defined in the server configuration files are not restricted, also when they refer to a named collection created with a DDL query, so whoever may alter that collection controls their connection string.
+
 To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
 
 ```xml
@@ -5621,7 +5623,7 @@ This setting has no effect in `clickhouse-local`, where the user is the operator
 
 `DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
 )", 0, allow_server_credentials_in_user_queries, \
-        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). Added the alias `allow_server_credentials_in_user_queries`."}, \
+        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). Added the alias `allow_server_credentials_in_user_queries`. Also blocks MongoDB authentication with credentials of the server process (`MONGODB-OIDC`, `MONGODB-AWS`, `GSSAPI`, `MONGODB-X509`, `tlsCertificateKeyFile`) in the `mongodb` table function and the `MongoDB` engine."}, \
         {"26.7", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/GCP-OAuth-metadata). Explicit role_arn-based STS assume-role is still allowed. The previous behavior (allowed) is restored with compatibility settings."}) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0, \
         {"24.10", 0, 1000, "New setting"}) \
@@ -8186,6 +8188,24 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"23.1", false, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries"}) \
+    DECLARE(Bool, query_plan_use_shuffle_for_order_by_rand, true, R"(
+Toggles a query-plan-level optimization which executes `ORDER BY rand()` and `ORDER BY rand64()` by shuffling the rows
+(the same way as the `SHUFFLE` clause) instead of sorting them, which takes O(n) time instead of O(n * log(n)).
+The result has the same distribution: the values of the `rand()` column are replaced by other random values in sorted order.
+Applies when the `rand()` value is not used in other expressions, and when there is a `LIMIT` or the external sorting is disabled
+(the shuffle does not spill to disk).
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, true, "New setting to execute `ORDER BY rand()` by shuffling the rows instead of sorting them."}) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -9763,6 +9783,10 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
         {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
+    DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
+With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
+)", 0, \
+        {"26.11", false, false, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
@@ -10604,9 +10628,9 @@ Use roaring bitmap for iceberg positional deletes.
 )", 0, \
         {"25.8", false, false, "New setting"}) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
-If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+If enabled, injects `SHUFFLE` into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
-If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+If the top-level construct is UNION, `SHUFFLE` is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
 )", 0, \
         {"25.10", false, false, "New setting"}) \
@@ -10912,6 +10936,10 @@ If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is me
 Set to false to force the old full-mutation behavior.
 )", 0, \
         {"26.8", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."}) \
+    DECLARE(Bool, allow_experimental_shuffle_query, false, R"(
+Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used in place of `ORDER BY` and returns the rows in a uniformly random order.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected

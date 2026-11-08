@@ -73,6 +73,7 @@ const std::vector<std::string> & allExperimentalSettingNames()
         "allow_experimental_database_paimon_rest_catalog",
         "allow_experimental_object_storage_queue_hive_partitioning",
         "allow_experimental_json_lazy_type_hints",
+        "allow_experimental_shuffle_query",
         "allow_experimental_url_wildcard_from_index_pages",
         "allow_experimental_full_text_index",
         "allow_experimental_time_series_table",
