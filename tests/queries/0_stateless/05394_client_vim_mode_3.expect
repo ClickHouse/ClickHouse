@@ -3,7 +3,7 @@
 # Editing with the `--vim` keymap of the client. Every query is edited so that its result differs
 # from any text displayed while typing it, so that matching the result checks the edit.
 # Escape is followed by a pause much longer than the escape delay of the vim mode (10 ms), so that it
-# is not read as Meta. The pause is short, and the cases are split between `05394_client_vim_mode_{1,2,3,4}.expect`,
+# is not read as Meta. The pause is short, and the cases are split between `05394_client_vim_mode_{1,2,3,4,5}.expect`,
 # so that each test fits into the time limit of the fast test (60 seconds), also on macOS.
 
 set basedir [file dirname $argv0]

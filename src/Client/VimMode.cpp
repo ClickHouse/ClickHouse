@@ -709,7 +709,11 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
         && (pos == static_cast<int>(text.length()) || text[pos] == '\n'))
     {
         pos = wordForward(text, pos, reps, bigword, true);
-        if (pos > oldpos && text[pos - 1] == '\n')
+        if (inclusivity_flip)
+            /* Like vim, `v` makes the motion inclusive: it also changes the character where it ends,
+             * e.g. `cvw` on an empty line changes its line break and the first character of the next line. */
+            pos = std::min(pos + 1, static_cast<int>(text.length()));
+        else if (pos > oldpos && text[pos - 1] == '\n')
             pos--;
         text.erase(oldpos, pos - oldpos);
         pos = oldpos;
@@ -770,6 +774,8 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
                 count -= inclusivity_flip;
             else
                 count += inclusivity_flip;
+            if (vimDeleteLinewise(pos, text, oldpos, oldpos + count))
+                return;
             if (count > 0)
                 text.erase(oldpos, count);
             pos = oldpos;
@@ -792,8 +798,10 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
                 else
                     text.erase(pos, oldpos - 1 - pos);
             }
-            else
+            else if (!vimDeleteLinewise(pos, text, pos, oldpos))
                 text.erase(pos, oldpos - pos + inclusivity_flip);
+            else
+                return;
         }
     }
     if (op == OPERATOR_C && selected)
@@ -920,6 +928,8 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
     /* Like vim, `v` after the operator makes the inclusive text object exclusive, e.g. `dviw`. */
     if (inclusivity_flip)
         end--;
+    if (end >= start && vimDeleteLinewise(pos, text, start, end + 1))
+        return;
     if (end >= start)
         text.erase(start, end - start + 1);
     pos = start;
@@ -987,6 +997,8 @@ void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32
         else
             count = close_line - 1 - start;
     }
+    if (count > 0 && !linewise && vimDeleteLinewise(pos, text, start, start + count))
+        return;
     if (count > 0)
         text.erase(start, count);
     pos = linewise && op != OPERATOR_C ? firstNonBlank(text, start) : start;
@@ -1088,6 +1100,35 @@ void ReplxxLineReader::vimLinewise(int & pos, std::u32string & text, int oldpos)
         rx.set_editing_mode(MODE_NORMAL);
         resetVim(&pos, &text);
     }
+}
+
+bool ReplxxLineReader::vimDeleteLinewise(int & pos, std::u32string & text, int start, int end)
+{
+    /* Like vim, a characterwise delete without `v` over several lines becomes linewise when only
+     * blanks precede its start and follow its end on their lines, e.g. `d%` over whole lines. */
+    if (op != OPERATOR_D || inclusivity_flip || end <= start)
+        return false;
+    if (std::find(text.begin() + start, text.begin() + end, U'\n') == text.begin() + end)
+        return false;
+    auto is_blank = [](char32_t c) { return c == ' ' || c == '\t'; };
+    int line_start = start;
+    for (; line_start > 0 && text[line_start - 1] != '\n'; line_start--)
+        ;
+    if (!std::all_of(text.begin() + line_start, text.begin() + start, is_blank))
+        return false;
+    /* A range that ends with a line break ends at the end of that line. */
+    if (text[end - 1] != '\n')
+    {
+        int length = static_cast<int>(text.length());
+        int i = end;
+        for (; i < length && is_blank(text[i]); i++)
+            ;
+        if (i < length && text[i] != '\n')
+            return false;
+    }
+    pos = start;
+    vimLinewise(pos, text, end - 1);
+    return true;
 }
 
 void ReplxxLineReader::vimForcedDoubledOperator(int & pos, std::u32string & text)
@@ -1314,8 +1355,9 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                 pos--;
                 /* Like vim, with an operator a wrap lands after the last character of the previous
                  * line, so the line break is one step of the motion. Without an operator the wrap
-                 * lands on the last character, so the line break is not a step. */
-                if (text[pos] == '\n' && !op)
+                 * lands on the last character, so the line break is not a step, unless the previous
+                 * line is empty: then the cursor stops on that line. */
+                if (text[pos] == '\n' && !op && pos > 0 && text[pos - 1] != '\n')
                     rep--;
             }
             vimCharwise(pos, text, oldpos);
@@ -1665,6 +1707,21 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         {
             int oldpos = pos;
             int length = static_cast<int>(text.length());
+            if (vimbuffer || vimbufferinner)
+            {
+                /* Like vim, a count is a percentage of the input: `50%` goes to the first non-blank
+                 * of the line halfway through it, linewise. A count above 100 fails. */
+                int percent = vimReps();
+                if (percent > 100)
+                {
+                    resetVim(&pos, &text);
+                    return;
+                }
+                int lines = 1 + static_cast<int>(std::count(text.begin(), text.end(), U'\n'));
+                pos = firstNonBlank(text, lineStart(text, (percent * lines + 99) / 100));
+                vimLinewise(pos, text, oldpos);
+                return;
+            }
             /* Like vim, use the first bracket from the cursor to the end of the line. The operator
              * range still starts at the original cursor position. Angle brackets are not in vim's
              * default `matchpairs`, and in SQL they are comparison operators. */
@@ -1729,11 +1786,15 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             {
                 if (pos > oldpos)
                 {
+                    if (vimDeleteLinewise(pos, text, oldpos, pos + 1))
+                        return;
                     text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
                     pos = oldpos;
                 }
                 else if (pos < oldpos)
                 {
+                    if (vimDeleteLinewise(pos, text, pos, std::min(oldpos + 1, length)))
+                        return;
                     text.erase(pos, oldpos - pos + 1 - inclusivity_flip);
                 }
             }

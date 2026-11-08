@@ -84,6 +84,8 @@ private:
     void resetVimForNewInput();
     void vimCharwise(int & pos, std::u32string & text, int oldpos, bool allow_empty = false);
     void vimLinewise(int & pos, std::u32string & text, int oldpos);
+    /// If a characterwise delete of `[start, end)` becomes linewise, like in vim, delete the lines and return true.
+    bool vimDeleteLinewise(int & pos, std::u32string & text, int start, int end);
     /// `dvd` and `cvc`.
     void vimForcedDoubledOperator(int & pos, std::u32string & text);
     /// `cc`, also used by `S`.
