@@ -260,18 +260,35 @@ namespace
         /// the wrapped disk treats a path that already starts with its own `path` as wrapped and does not prefix it
         /// (see `DiskEncryptedTransaction::wrappedPath`). So with such an `out_path` the files would not be where the
         /// joined path below says: `enc/` over a disk with `path = 'enc/'` would share the files of the wrapped disk,
-        /// and `enc/../other/` would leave it. Reject it, so that the joined path is where the files are.
-        if (const auto * wrapped_encrypted = dynamic_cast<const DiskEncrypted *>(out_disk.get()))
+        /// and `enc/../other/` would leave it.
+        ///
+        /// The same happens further down a chain of `encrypted` disks: every one of them prefixes what it receives with
+        /// its own `path` and passes it on, so each `encrypted` ancestor receives the concatenation of the paths of the
+        /// disks above it. Walk down the chain and reject the configuration if that concatenation starts with the path
+        /// of the ancestor (then every path of this disk would be taken as already prefixed), or if the path of the
+        /// ancestor starts with it (then the paths of this disk that continue it would be). Otherwise every ancestor
+        /// prefixes the paths of this disk, and the joined path below is where the files are.
+        String passed_path = out_path;
+        for (DiskPtr wrapped = out_disk; !passed_path.empty();)
         {
+            const auto * wrapped_encrypted = dynamic_cast<const DiskEncrypted *>(wrapped.get());
+            if (!wrapped_encrypted)
+                break;
+
             const String & wrapped_disk_path = wrapped_encrypted->getPathInWrappedDisk();
-            if (!wrapped_disk_path.empty() && out_path.starts_with(wrapped_disk_path))
+            if (!wrapped_disk_path.empty()
+                && (passed_path.starts_with(wrapped_disk_path) || wrapped_disk_path.starts_with(passed_path)))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "Disk path '{}' must not start with the path '{}' of the wrapped encrypted disk {}, "
-                    "because the wrapped disk would take it for a path it has already prefixed",
+                    "Disk path {} cannot be used over the encrypted disk {}: the path {} it passes to that disk "
+                    "overlaps with the path {} of that disk, which would take it for a path it has already prefixed",
                     quoteString(out_path),
-                    quoteString(wrapped_disk_path),
-                    backQuote(out_disk->getName()));
+                    backQuote(wrapped->getName()),
+                    quoteString(passed_path),
+                    quoteString(wrapped_disk_path));
+
+            passed_path = wrapped_disk_path + passed_path;
+            wrapped = wrapped_encrypted->getDelegateDiskIfExists();
         }
 
         /// Normalize the effective path before checking that it stays under the delegate's root. When the delegate's

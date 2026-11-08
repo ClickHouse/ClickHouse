@@ -848,3 +848,45 @@ TEST_F(DiskEncryptedTest, ConfigurationRejectsPathStartingWithPathOfWrappedEncry
     EXPECT_EQ(outer->getPath(), inner->getPath() + "other/");
     EXPECT_FALSE(haveSameStorageNamespace(outer, inner));
 }
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsPathOverlappingWithPathsDownTheChainOfEncryptedDisks)
+{
+    /// Every `encrypted` disk in a chain prefixes the path it receives with its own `path`, unless the received path
+    /// already starts with it. A disk whose `path` is a prefix of the `path` of the disk it wraps would therefore share
+    /// some files with it: with `inner` at `a/b/` and `middle` at `a/` over it, `outer` at `b/` over `middle` would
+    /// pass `a/b/...` to `inner`, which would not prefix it, so `outer` and `inner` would access the same files.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "inner", "local_disk", "a/b/");
+    configureEncryptedDisk(*config, "middle_prefix", "inner", "a/");
+    configureEncryptedDisk(*config, "middle", "inner", "c/");
+    configureEncryptedDisk(*config, "outer", "middle", "d/");
+    configureEncryptedDisk(*config, "outer_escape", "middle", "c/../outside/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto inner = makeConfiguredEncryptedDisk("inner", *config, disks);
+    disks.emplace("inner", inner);
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("middle_prefix", *config, disks), DB::Exception);
+
+    auto middle = makeConfiguredEncryptedDisk("middle", *config, disks);
+    disks.emplace("middle", middle);
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("outer_escape", *config, disks), DB::Exception);
+
+    /// In an accepted chain, the files are where the reported path says.
+    auto outer = makeConfiguredEncryptedDisk("outer", *config, disks);
+    EXPECT_EQ(outer->getPath(), getDirectory() + "a/b/c/d/");
+    EXPECT_FALSE(haveSameStorageNamespace(outer, middle));
+    EXPECT_FALSE(haveSameStorageNamespace(outer, inner));
+
+    outer->createDirectories("store");
+    {
+        auto buf = outer->writeFile("store/file.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        writeString(std::string_view{"Some text"}, *buf);
+        buf->finalize();
+    }
+    EXPECT_TRUE(fs::exists(getDirectory() + "a/b/c/d/store/file.txt"));
+    EXPECT_TRUE(middle->existsFile("d/store/file.txt"));
+    EXPECT_TRUE(inner->existsFile("c/d/store/file.txt"));
+    EXPECT_FALSE(inner->existsFile("store/file.txt"));
+}
