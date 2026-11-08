@@ -1553,6 +1553,7 @@ After identifying candidate files using the above rules, the system determines w
 * Otherwise:
   * The file with the highest version number is selected
   * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
+  * When reading, a file whose name has no version number (a name other than `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`) is skipped
 
 **Note**: All mentioned settings (unless explicitly specified otherwise) are engine-level settings and must be specified during table creation as shown below:
 

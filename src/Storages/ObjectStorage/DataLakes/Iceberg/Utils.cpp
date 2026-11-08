@@ -229,6 +229,39 @@ static Int32 parseMetadataVersion(const String & version_str, const String & fil
     return version;
 }
 
+/// The version a metadata file name carries: `N` of `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+static std::optional<Int32> tryGetMetadataFileVersion(const String & file_name)
+{
+    String version_str;
+    /// `vN.metadata.json` or `vN-<uuid>.metadata.json` (the latter is what
+    /// `apache/iceberg-rest-fixture` and other iceberg-java REST catalogs
+    /// write when committing a new metadata file).
+    if (file_name.starts_with('v'))
+    {
+        auto end_pos = file_name.find_first_of(".-");
+        if (end_pos == String::npos || end_pos <= 1)
+            return {};
+        version_str = String(file_name.begin() + 1, file_name.begin() + end_pos);
+    }
+    /// <V>-<random-uuid>.metadata.json
+    else
+    {
+        auto dash_pos = file_name.find_first_of('-');
+        if (dash_pos == String::npos || dash_pos == 0)
+            return {};
+        version_str = String(file_name.begin(), file_name.begin() + dash_pos);
+    }
+
+    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
+        return {};
+    Int32 version = 0;
+    const char * end = version_str.data() + version_str.size();
+    auto [ptr, ec] = std::from_chars(version_str.data(), end, version);
+    if (ec != std::errc{} || ptr != end)
+        return {};
+    return version;
+}
+
 MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
@@ -239,40 +272,9 @@ MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             "Temporary metadata file '{}' should not be used for reading. It is created during commit operation and should be ignored",
             path);
     }
-    String version_str;
-    /// `vN.metadata.json` or `vN-<uuid>.metadata.json` (the latter is what
-    /// `apache/iceberg-rest-fixture` and other iceberg-java REST catalogs
-    /// write when committing a new metadata file).
-    if (file_name.starts_with('v'))
-    {
-        auto end_pos = file_name.find_first_of(".-");
-        if (end_pos == String::npos || end_pos <= 1)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
-                file_name);
-        version_str = String(file_name.begin() + 1, file_name.begin() + end_pos);
-    }
-    /// <V>-<random-uuid>.metadata.json
-    else
-    {
-        auto dash_pos = file_name.find_first_of('-');
-        if (dash_pos == String::npos || dash_pos == 0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
-                file_name);
-        version_str = String(file_name.begin(), file_name.begin() + dash_pos);
-    }
-
-    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Bad metadata file name: '{}'. Expected `vN.metadata.json`, `vN-<uuid>.metadata.json`, or `N-<uuid>.metadata.json` where N is a version number",
-            file_name);
 
     return MetadataFileWithInfo{
-        .version = parseMetadataVersion(version_str, file_name),
+        .version = tryGetMetadataFileVersion(file_name).value_or(-1),
         .path = path,
         .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
@@ -1457,6 +1459,7 @@ static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
  * has one of 2 formats:
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
+ *   Any other name has no version: it is skipped when ranking by version.
 
 On S3 and Azure, with `iceberg_list_only_v_prefixed_metadata_files`, a read with no pointer setting takes the files named `v...` as the only candidates whenever any exist.
 
@@ -1601,6 +1604,8 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
+        String unversioned_metadata_file;
+        bool has_versioned_candidate = false;
         for (const auto & path : metadata_files)
         {
             String filename = std::filesystem::path(path).filename();
@@ -1608,6 +1613,25 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 continue;
             if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
+            if (!tryGetMetadataFileVersion(filename))
+            {
+                if (ignore_metadata_pointer_overrides)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Iceberg table with path {} has metadata file '{}', whose name has no version number, so it "
+                        "cannot be ordered against the other metadata files. Refusing, because this operation deletes "
+                        "or rewrites metadata. Remove or rename it",
+                        table_path,
+                        path);
+                if (selection_way == MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION)
+                {
+                    LOG_DEBUG(log, "Skipping metadata file {}, its name has no version number", path);
+                    unversioned_metadata_file = path;
+                    continue;
+                }
+            }
+            else
+                has_versioned_candidate = true;
             auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
             if (need_all_metadata_files_parsing)
@@ -1644,6 +1668,16 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
             }
         }
+
+        if (!has_versioned_candidate && !unversioned_metadata_file.empty())
+            throw Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "Iceberg table with path {} has no metadata file named `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` "
+                "or `<N>-<uuid>.metadata.json`, so the latest one cannot be found by its version number. Read one of the "
+                "other metadata files, such as '{}', with `iceberg_metadata_file_path`, or select the latest by "
+                "`iceberg_recent_metadata_file_by_last_updated_ms_field`",
+                table_path,
+                unversioned_metadata_file);
 
         if (metadata_files_with_versions.empty())
         {
