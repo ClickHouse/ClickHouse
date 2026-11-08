@@ -141,6 +141,7 @@ private:
         std::optional<UInt64> inherited_first_row_id,
         DB::ContextPtr context,
         Int32 manifest_schema_id,
+        bool manifest_schema_covers_all_entries,
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
         std::optional<DB::KeyDescription> partition_key_description,
         size_t partition_spec_fields_count,
@@ -163,6 +164,8 @@ private:
     std::vector<std::optional<UInt64>> entry_first_row_ids;
     const DB::ContextPtr context;
     const Int32 manifest_schema_id;
+    /// Whether `manifest_schema_id` is the schema of every entry, not only of those added by `inherited_snapshot_id`.
+    const bool manifest_schema_covers_all_entries;
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
     const std::shared_ptr<const DB::KeyDescription> partition_key_description;
     const size_t partition_spec_fields_count;

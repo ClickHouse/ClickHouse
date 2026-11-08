@@ -539,6 +539,11 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     if (auto schema_id_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema_id))
         header_schema_id = parse<Int32>(*schema_id_string);
 
+    /// `schema-id` and the snapshot that added the manifest name the schema it was written with: that of its ADDED entries,
+    /// not of the EXISTING entries a manifest rewrite carries over from older snapshots.
+    const bool manifest_schema_covers_all_entries
+        = schema_json_string.has_value() || schema_processor.hasOnlyInitialSchemaFromMetadata();
+
     Int32 manifest_schema_id = 0;
     if (header_schema_id.has_value() && tolerate_conflicting_manifest_schemas
         && schema_processor.isSchemaRegisteredFromMetadata(*header_schema_id))
@@ -551,7 +556,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             manifest_schema_id = *header_schema_id;
         else if (auto snapshot_schema_id = schema_processor.tryGetSchemaIdForSnapshot(inherited_snapshot_id_))
             manifest_schema_id = *snapshot_schema_id;
-        else if (schema_processor.hasOnlyInitialSchemaFromMetadata())
+        else if (manifest_schema_covers_all_entries)
             manifest_schema_id = 0;
         else
             throw Exception(
@@ -609,6 +614,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         inherited_first_row_id_,
         context_,
         manifest_schema_id,
+        manifest_schema_covers_all_entries,
         std::make_shared<const PartitionSpecification>(std::move(partition_key.partition_specification)),
         std::move(partition_key.key_description),
         partition_spec_fields_count,
@@ -630,6 +636,7 @@ ManifestFileIterator::ManifestFileIterator(
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
+    bool manifest_schema_covers_all_entries_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
     std::optional<DB::KeyDescription> partition_key_description_,
     size_t partition_spec_fields_count_,
@@ -646,6 +653,7 @@ ManifestFileIterator::ManifestFileIterator(
     , inherited_snapshot_id(inherited_snapshot_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
+    , manifest_schema_covers_all_entries(manifest_schema_covers_all_entries_)
     , common_partition_specification(std::move(common_partition_specification_))
     , partition_key_description(
           partition_key_description_ ? std::make_shared<const DB::KeyDescription>(std::move(*partition_key_description_)) : nullptr)
@@ -752,6 +760,15 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
+    if (!schema_id_opt.has_value() && !manifest_schema_covers_all_entries && resolved_snapshot_id != inherited_snapshot_id)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Manifest file '{}' has no '{}' in its Avro metadata and the snapshot {} of its entry for data file '{}' is not in "
+            "the table metadata, so the schema of that data file is unknown",
+            path_to_manifest_file,
+            f_schema,
+            resolved_snapshot_id,
+            parsed_entry->file_path_key);
     if (!schema_id_opt.has_value())
     {
         /// This is expected when the referenced snapshot was expired by the catalog (snapshot expiry is a

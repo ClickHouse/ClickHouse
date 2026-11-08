@@ -36,7 +36,18 @@ dry_run	1
 failed_deletions_count	0
 7
 8
+9
+7
+8
+9
 other than its initial schema 0
 ICEBERG_SPECIFICATION_VIOLATION
 other than its initial schema 0
+ICEBERG_SPECIFICATION_VIOLATION
+7
+8
+9
+the schema of that data file is unknown
+ICEBERG_SPECIFICATION_VIOLATION
+the schema of that data file is unknown
 ICEBERG_SPECIFICATION_VIOLATION
