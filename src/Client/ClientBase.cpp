@@ -68,6 +68,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
@@ -738,6 +739,26 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     }
     else
     {
+        /// The polyglot parser below gets no lexer size cap (see there), so without this check the lexical
+        /// preflight in `tryParseQuery` would tokenize (and retain the tokens of) the whole remaining input
+        /// before the parser reaches its size guard, and an oversized inline `INSERT` could exhaust the
+        /// client's memory before being rejected. Apply the dedicated size check first, to the same text the
+        /// parser would transpile: from the first significant token to the end of the input. This lexer
+        /// does not retain tokens, so the scan needs constant memory. A plain `SET` is not affected: it is
+        /// parsed by `ParserQuery` (`is_set_escape`).
+        const auto check_polyglot_query_size = [&]()
+        {
+            const size_t max_query_size = settings[Setting::max_query_size];
+            if (dialect != Dialect::polyglot || is_set_escape || !max_query_size)
+                return;
+            Lexer lexer(pos, end);
+            Token token = lexer.nextToken();
+            while (!token.isSignificant() && !token.isEnd())
+                token = lexer.nextToken();
+            if (!token.isEnd())
+                checkPolyglotQuerySize(std::string_view(token.begin, static_cast<size_t>(end - token.begin)), max_query_size);
+        };
+
         if (is_set_escape)
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
         else if (dialect == Dialect::prql)
@@ -781,6 +802,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             String message;
             try
             {
+                check_polyglot_query_size();
                 if (dialect == Dialect::logsql)
                     res = tryParseLogsQLQuery(*parser, pos, end, message, nullptr, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
                 else
@@ -801,6 +823,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         }
         else
         {
+            check_polyglot_query_size();
             if (dialect == Dialect::logsql)
                 res = parseLogsQLQueryAndMovePosition(*parser, pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             else

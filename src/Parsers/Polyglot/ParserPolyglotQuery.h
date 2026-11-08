@@ -13,6 +13,12 @@ namespace DB
 /// why the server transpiles up front (see executeQuery) rather than inside a parser.
 String transpilePolyglotToClickHouse(std::string_view query, std::string_view source_dialect, size_t max_query_size);
 
+/// Throw the dedicated polyglot size error if `query` is longer than `max_query_size` (0 disables the limit).
+/// In the polyglot dialect the whole query, inline `INSERT` data included, is transpiled at once, so it must
+/// fit within `max_query_size`. Used by `transpilePolyglotToClickHouse` and by the client, which has to
+/// reject an oversized query before tokenizing it.
+void checkPolyglotQuerySize(std::string_view query, size_t max_query_size);
+
 /// Parse the statements that the polyglot dialect takes as ClickHouse SQL instead of transpiling them:
 /// `SET`, `SET ROLE` / `SET DEFAULT ROLE` and `SET TRANSACTION SNAPSHOT`, so that `dialect` and
 /// `polyglot_dialect` can always be changed back. Returns false, leaving `pos` unchanged, when the

@@ -27,6 +27,18 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+void checkPolyglotQuerySize(std::string_view query, size_t max_query_size)
+{
+    if (max_query_size && query.size() > max_query_size)
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "Polyglot query size {} exceeds max_query_size {}. In the polyglot dialect the whole "
+            "query is transpiled at once, so any inline INSERT data counts towards max_query_size too "
+            "(unlike a native ClickHouse INSERT, whose inline data is streamed and is not subject to "
+            "this limit). Increase max_query_size to submit larger inline payloads in this dialect.",
+            query.size(), max_query_size);
+}
+
 String transpilePolyglotToClickHouse(
     [[maybe_unused]] std::string_view query,
     [[maybe_unused]] std::string_view source_dialect,
@@ -46,14 +58,7 @@ String transpilePolyglotToClickHouse(
     /// of the experimental dialect: the feature is scoped to inline payloads that fit the parser
     /// size limit. Reject oversized input up front with a dedicated, actionable error (fail-close)
     /// instead of silently truncating it or amplifying memory/CPU usage in the transpiler.
-    if (max_query_size && query.size() > max_query_size)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "Polyglot query size {} exceeds max_query_size {}. In the polyglot dialect the whole "
-            "query is transpiled at once, so any inline INSERT data counts towards max_query_size too "
-            "(unlike a native ClickHouse INSERT, whose inline data is streamed and is not subject to "
-            "this limit). Increase max_query_size to submit larger inline payloads in this dialect.",
-            query.size(), max_query_size);
+    checkPolyglotQuerySize(query, max_query_size);
 
     uint8_t * sql_query_ptr{nullptr};
     uint64_t sql_query_size{0};
