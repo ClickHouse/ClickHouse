@@ -188,14 +188,22 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
-Poco::JSON::Array::Ptr namespaceToJSON(const String & namespace_name)
+/// The levels that `parseNamespaces` joins with a dot. The last one can be empty: `a.` is `["a", ""]`.
+std::vector<String> splitNamespaceLevels(const String & namespace_name)
 {
     std::vector<String> levels;
+    splitInto<'.'>(levels, namespace_name);
+    if (namespace_name.ends_with('.'))
+        levels.emplace_back();
+    return levels;
+}
+
+Poco::JSON::Array::Ptr namespaceToJSON(const String & namespace_name)
+{
     /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
     /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
-    splitInto<'.'>(levels, namespace_name);
     Poco::JSON::Array::Ptr result = new Poco::JSON::Array;
-    for (const auto & level : levels)
+    for (const auto & level : splitNamespaceLevels(namespace_name))
         result->add(level);
     return result;
 }
@@ -1360,18 +1368,9 @@ void RestCatalog::getNamespacesRecursive(
 
 Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::string & base_namespace) const
 {
-    std::vector<std::string_view> parts;
-    splitInto<'.'>(parts, base_namespace);
-    std::string parent_param;
-    for (const auto & part : parts)
-    {
-        /// 0x1F is a unit separator
-        /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
-        if (!parent_param.empty())
-            parent_param += static_cast<char>(0x1F);
-        parent_param += part;
-    }
-    return {{"parent", parent_param}};
+    /// 0x1F is a unit separator
+    /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
+    return {{"parent", fmt::format("{}", fmt::join(splitNamespaceLevels(base_namespace), "\x1F"))}};
 }
 
 bool RestCatalog::hasFlatNamespaces() const
