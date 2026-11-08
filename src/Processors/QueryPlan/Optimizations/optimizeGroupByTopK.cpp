@@ -1,7 +1,10 @@
 #include <DataTypes/DataTypeTuple.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -11,6 +14,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -82,6 +86,55 @@ static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, cons
     return node->result_name;
 }
 
+static bool hasNonDeterministicOutput(const ActionsDAG & dag)
+{
+    return std::ranges::any_of(
+        dag.getOutputs(), [](const ActionsDAG::Node * output) { return !VirtualColumnUtils::isDeterministic(output); });
+}
+
+/// The defaults the reader evaluates for the read columns that some part lacks (a part written before `ALTER ADD COLUMN`, or any part while
+/// a column mutation is pending), built the way the reader builds them. Throws if a default does not resolve.
+static std::optional<ActionsDAG> buildMissingDefaults(const ReadFromMergeTree & read)
+{
+    const auto & columns = read.getStorageMetadata()->getColumns();
+    const auto & parts = read.getParts();
+    /// While a `DROP COLUMN` or `MODIFY COLUMN` mutation is pending, the reader may fill a column a part stores from its default.
+    const bool has_pending_column_mutations
+        = MergeTreeDataSelectExecutor::hasPendingAlterOrMetadataMutations(parts, read.getMutationsSnapshot());
+    auto missing_in_some_part = [&](const String & name)
+    {
+        return columns.getDefault(name)
+            && (has_pending_column_mutations
+                || !std::ranges::all_of(
+                    parts, [&](const RangesInDataPart & part) { return part.data_part->getColumnPosition(name).has_value(); }));
+    };
+
+    NameSet read_columns;
+    NamesAndTypesList missing_read_columns;
+    for (const auto & name : read.getAllColumnNames())
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column)
+            continue;
+        String name_in_storage = column->getNameInStorage();
+        if (read_columns.insert(name_in_storage).second && missing_in_some_part(name_in_storage))
+            missing_read_columns.push_back(columns.getPhysical(name_in_storage));
+    }
+
+    if (missing_read_columns.empty())
+        return {};
+
+    Block present_in_all_parts;
+    for (const auto & column : columns.getAllPhysical())
+        if (!missing_in_some_part(column.name))
+            present_in_all_parts.insert(ColumnWithTypeAndName(column.type, column.name));
+
+    /// The context the reader evaluates defaults with (`IMergeTreeReader::createContextForDefaultExpressions`).
+    auto context = Context::createCopy(read.getMergeTreeData().getContext());
+    enableAllExperimentalSettings(context);
+    return evaluateMissingDefaults(present_in_all_parts, missing_read_columns, columns, context);
+}
+
 /// Links the top-K heap of the aggregation to the `ReadFromMergeTree` step below it.
 ///
 /// The heap admits only keys not worse than its boundary once it holds `LIMIT` of them, so a row whose
@@ -124,10 +177,11 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     QueryPlan::Node * node = aggregating_node->children.front();
     FilterStep * closest_filter_step = nullptr;
     ReadFromMergeTree * read_step = nullptr;
-    /// A filter that is deterministic only within one query (a join runtime filter `__applyFilter` pushed below
-    /// the aggregation, `now`) changes which rows reach the heap, and so the boundary, but its contents are not
-    /// part of the query condition cache key.
-    bool has_non_deterministic_filter = false;
+    /// An expression deterministic only within one query (`__applyFilter`, `now`, `joinGet`), also as a column default the reader evaluates
+    /// for a part that lacks the column, or a virtual column like `_disk_name`, changes the boundary, but what it depends on is not in the
+    /// query condition cache key: as a filter it changes which rows reach the heap, as a grouping key the number of groups per value of the
+    /// first key.
+    bool has_non_deterministic_expression = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
     std::vector<const ActionsDAG *> path_expressions;
 
@@ -151,6 +205,9 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             }
             key_name = std::move(*input_name);
             path_expressions.push_back(&expression_step->getExpression());
+
+            if (hasNonDeterministicOutput(expression_step->getExpression()))
+                has_non_deterministic_expression = true;
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
@@ -173,8 +230,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             path_expressions.push_back(&filter_step->getExpression());
 
             const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
-            if (!filter_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(filter_node))
-                has_non_deterministic_filter = true;
+            if (!filter_node || hasNonDeterministicOutput(filter_step->getExpression()))
+                has_non_deterministic_expression = true;
         }
         else if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
@@ -221,6 +278,37 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     {
         LOG_TRACE(log, "No dynamic filter: the key {} has type {}", key_name, key_column.type->getName());
         return nullptr;
+    }
+
+    /// The reader evaluates such a default on the block the filter shrank, like the steps above.
+    std::optional<ActionsDAG> missing_defaults;
+    try
+    {
+        missing_defaults = buildMissingDefaults(*read_step);
+    }
+    catch (const Exception &)
+    {
+        LOG_TRACE(log, "No dynamic filter: a column default of the read does not resolve");
+        return nullptr;
+    }
+
+    if (missing_defaults && dependsOnItsBlock(*missing_defaults))
+    {
+        LOG_TRACE(log, "No dynamic filter: a column default of the read depends on its block");
+        return nullptr;
+    }
+
+    if (missing_defaults && hasNonDeterministicOutput(*missing_defaults))
+        has_non_deterministic_expression = true;
+
+    /// A virtual column such as `_disk_name` can change its value while the part stays the same.
+    const auto & virtuals = read_step->getStorageMetadata()->virtuals;
+    for (const auto & name : read_columns)
+    {
+        const auto * virtual_column
+            = virtuals.tryGetDescription(name, VirtualsKind::All, VirtualsMaterializationPlace::All);
+        if (virtual_column && !virtual_column->deterministic)
+            has_non_deterministic_expression = true;
     }
 
     SortColumnDescription key_sort_description(key_name, direction, nulls_direction);
@@ -270,7 +358,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// grouping keys with their types and the order of every ranked key, not only the first one. Only the first
     /// key has to be passed through unchanged, the others may be computed between the read and the aggregation
     /// (`GROUP BY a, g` over `SELECT a, b % 100 AS g`), and the name of a computed key does not always identify its
-    /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation.
+    /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation,
+    /// and the defaults the reader evaluates.
     SipHash hash;
     hash.update(std::string_view("group_by_top_k"));
     hash.update(info.column_name);
@@ -291,6 +380,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     hash.update(path_expressions.size());
     for (const auto * expression : path_expressions)
         expression->updateHash(hash);
+    if (missing_defaults)
+        missing_defaults->updateHash(hash);
 
     hash.update(directions.size());
     for (size_t i = 0; i < directions.size(); ++i)
@@ -303,17 +394,17 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     read_step->setTopKColumn(info);
 
     /// This pass runs after `disableTopKQueryConditionCacheUnderNonDeterministicFilters`, so it applies the same
-    /// protection itself: under such a filter the boundary-dependent PREWHERE entries must be neither reused nor written.
-    if (has_non_deterministic_filter)
+    /// protection itself: under such an expression the boundary-dependent PREWHERE entries must be neither reused nor written.
+    if (has_non_deterministic_expression)
         read_step->disableTopKPrewhereQueryConditionCache();
 
     /// `updateQueryConditionCache` tagged the WHERE filter with the hash of the plain predicate. Under the running
     /// filter the granules it sees are only those the boundary let through, so the entry must be salted with the
     /// top-K parameters (the same way `updateQueryConditionCache` salts a read stamped by `tryOptimizeTopK`), or
-    /// dropped when the cache is not to be used for top-K reads at all or a filter above the read is not deterministic.
+    /// dropped when the cache is not to be used for top-K reads at all or an expression above the read is not deterministic.
     if (closest_filter_step && closest_filter_step->hasConditionForQueryConditionCache())
     {
-        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_filter)
+        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_expression)
             closest_filter_step->saltConditionForQueryConditionCache(read_step->getTopKFilterInfo()->condition_hash);
         else
             closest_filter_step->resetConditionForQueryConditionCache();
