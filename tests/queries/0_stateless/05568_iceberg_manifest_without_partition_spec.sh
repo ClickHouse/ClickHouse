@@ -51,6 +51,24 @@ sed -i -e 's/"field-id" : 1000/"field-id" : 1005/' "./${work_dir}/iceberg_v2_del
 q "SELECT * FROM icebergLocal('$PWD/${work_dir}/iceberg_v2_delete_equality_partitioned')" 2>&1 | grep -o -m1 -e 'cannot be matched to the partition spec with id 0' -e 'ICEBERG_SPECIFICATION_VIOLATION'
 rm -rf "./${work_dir}"
 
+# Partition values are matched to the spec fields by field id: the Dremio table with its spec fields reversed. A partition
+# record without field ids is read by position: the Dremio table with the field ids removed from its two-field records.
+work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_record_order"
+rm -rf "./${work_dir}"
+mkdir -p "./${work_dir}"
+cp -r "$DATA/dremio/internal_metadata_inconsistent_partitions" "./${work_dir}/reversed_spec"
+cp -r "$DATA/dremio/internal_metadata_inconsistent_partitions" "./${work_dir}/no_field_ids"
+python3 -c 'import json, sys; p = sys.argv[1]; m = json.load(open(p)); m["partition-specs"][0]["fields"].reverse(); json.dump(m, open(p, "w"))' "./${work_dir}"/reversed_spec/metadata/*.metadata.json
+for manifest in "./${work_dir}"/no_field_ids/metadata/*.avro; do
+    python3 -c 'import sys; p = sys.argv[1]; d = open(p, "rb").read()
+if b"\"field-id\":1001}" in d and b"manifest_entry" in d:
+    open(p, "wb").write(d.replace(b"\"field-id\":1000}", b"\"field-iX\":1000}").replace(b"\"field-id\":1001}", b"\"field-iX\":1001}"))' "$manifest"
+done
+for t in reversed_spec no_field_ids; do
+    q "CREATE TABLE t ENGINE = IcebergLocal('$PWD/${work_dir}/$t'); SELECT partition FROM system.iceberg_files WHERE table = 't' ORDER BY partition"
+done
+rm -rf "./${work_dir}"
+
 # A maintenance operation that is the first to read the manifests of the table object.
 work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_expire"
 rm -rf "./${work_dir}"
