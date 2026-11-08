@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 -- This test validates Statistics-based part pruning functionality when some parts have basic statistics
 -- and other parts don't (parts inserted before statistics were added).
+SET min_marks_per_part_to_load_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning_partial;
@@ -37,8 +38,7 @@ INSERT INTO test_stats_pruning_partial SELECT number + 300, number + 3000 FROM n
 -- Part1、Part2 can not be pruned
 -- =============================================================================
 SELECT '-- Test 1: value > 3000';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000 SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000;
 
 -- MATERIALIZE STATISTICS basic
@@ -50,8 +50,7 @@ ALTER TABLE test_stats_pruning_partial MATERIALIZE STATISTICS ALL;
 -- Part1、Part2 should be pruned
 -- =============================================================================
 SELECT '-- Test 2 after MATERIALIZE: value > 3000';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000 SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000;
 
 DROP TABLE test_stats_pruning_partial;

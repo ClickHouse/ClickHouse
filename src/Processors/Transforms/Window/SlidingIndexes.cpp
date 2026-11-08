@@ -1,4 +1,5 @@
 #include <Processors/Transforms/Window/SlidingIndexes.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/SortCursor.h>
 
@@ -12,7 +13,7 @@ namespace DB
 namespace
 {
 
-bool haveSameKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row, const std::vector<size_t> & key_indices)
+bool haveSameKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row, const VectorWithMemoryTracking<size_t> & key_indices)
 {
     for (const size_t key : key_indices)
         if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
@@ -21,9 +22,9 @@ bool haveSameKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size
     return true;
 }
 
-std::vector<bool> markPartitionStarts(const Columns & columns, size_t rows_count, const std::vector<size_t> & partition_by_indices, const std::optional<Columns> & previous_partition_key)
+VectorWithMemoryTracking<bool> markPartitionStarts(const Columns & columns, size_t rows_count, const VectorWithMemoryTracking<size_t> & partition_by_indices, const std::optional<Columns> & previous_partition_key)
 {
-    std::vector<bool> starts(rows_count, false);
+    VectorWithMemoryTracking<bool> starts(rows_count, false);
     starts[0] = !previous_partition_key || !haveSameKeys(*previous_partition_key, 0, columns, 0, partition_by_indices);
 
     size_t next_start = getEqualRangeEndAssumeSorted(columns, partition_by_indices, 0, rows_count, /*nan_direction_hint=*/1);
@@ -36,16 +37,16 @@ std::vector<bool> markPartitionStarts(const Columns & columns, size_t rows_count
     return starts;
 }
 
-std::vector<int64_t> assignPeerGroupIndexes(
+VectorWithMemoryTracking<int64_t> assignPeerGroupIndexes(
     const Columns & columns,
     size_t rows_count,
     const WindowTransformParams & params,
-    const std::vector<bool> & partition_starts,
+    const VectorWithMemoryTracking<bool> & partition_starts,
     const std::optional<Columns> & previous_order_key,
     int64_t last_peer_group_index)
 {
-    std::vector<int64_t> peer_group_indexes(rows_count);
-    const std::vector<size_t> & order_by_indices = params.order_by_indices;
+    VectorWithMemoryTracking<int64_t> peer_group_indexes(rows_count);
+    const VectorWithMemoryTracking<size_t> & order_by_indices = params.order_by_indices;
     const bool every_row_is_a_group = params.window_description.frame.type == WindowFrame::FrameType::ROWS;
     if (!every_row_is_a_group && order_by_indices.empty())
         return peer_group_indexes;
@@ -79,7 +80,7 @@ std::vector<int64_t> assignPeerGroupIndexes(
     return peer_group_indexes;
 }
 
-Columns cutLastKey(const Columns & columns, size_t rows_count, const std::vector<size_t> & key_indices)
+Columns cutLastKey(const Columns & columns, size_t rows_count, const VectorWithMemoryTracking<size_t> & key_indices)
 {
     Columns last_row(columns.size());
     for (const size_t key : key_indices)
