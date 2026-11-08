@@ -27,6 +27,7 @@ struct WindowTransformParams
     const VectorWithMemoryTracking<bool> should_materialize;
     const RangeOffsetComparator range_offset_comparator;
     const WindowFunctionRequirements requirements;
+    const bool needs_peer_group_indexes;
 
 public:
     static WindowTransformParams create(

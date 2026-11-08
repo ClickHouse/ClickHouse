@@ -246,8 +246,14 @@ WindowFunctionRequirements collectRequirements(const WindowDescription & descrip
             requirements = unionOf(requirements, WindowFunctionRequirements{.frame = true});
     }
 
-    const bool frame_reads_peers = requirements.frame && description.frame.type != WindowFrame::FrameType::ROWS;
-    return unionOf(requirements, WindowFunctionRequirements{.peers = frame_reads_peers});
+    return requirements;
+}
+
+bool needsPeerGroupIndexes(const WindowDescription & description, const WindowFunctionRequirements & requirements)
+{
+    const bool functions_read_peer_groups = requirements.peers;
+    const bool frame_reads_peer_groups = requirements.frame && description.frame.type != WindowFrame::FrameType::ROWS;
+    return functions_read_peer_groups || frame_reads_peer_groups;
 }
 
 }
@@ -265,6 +271,7 @@ WindowTransformParams WindowTransformParams::create(
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
     auto requirements = collectRequirements(description, functions);
+    auto needs_peer_group_indexes = needsPeerGroupIndexes(description, requirements);
 
     return WindowTransformParams{
         std::move(header),
@@ -274,6 +281,7 @@ WindowTransformParams WindowTransformParams::create(
         std::move(should_materialize),
         std::move(range_offset_comparator),
         std::move(requirements),
+        std::move(needs_peer_group_indexes),
     };
 }
 
