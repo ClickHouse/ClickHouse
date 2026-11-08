@@ -232,7 +232,8 @@ private:
     void clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context);
 
     /// Outdate the empty parts that `DETACH PART` or `DETACH PARTITION` committed over the detached parts,
-    /// regardless of `remove_empty_parts` and `empty_parts_lifetime`. Must run while merges are stopped.
+    /// regardless of `remove_empty_parts` and `empty_parts_lifetime`, and queue them and the outdated parts
+    /// they cover to be removed without timeout. Must run while merges are stopped.
     void dropEmptyPartsCoveringDetachedParts(const Strings & empty_part_names);
 
     /// Make part state outdated and queue it to remove without timeout

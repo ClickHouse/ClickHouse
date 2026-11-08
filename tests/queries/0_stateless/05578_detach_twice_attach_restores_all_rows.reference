@@ -9,3 +9,6 @@ remove_empty_parts = 0
 DETACH PART
 2	3
 0
+DETACH TABLE
+4	10
+0

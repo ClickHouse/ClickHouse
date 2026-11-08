@@ -3785,12 +3785,29 @@ void StorageMergeTree::dropEmptyPartsCoveringDetachedParts(const Strings & empty
     /// An empty part that stays active covers the block range of the part just copied to `detached/`.
     /// A later `DETACH` would copy that empty part, or a part merged from it, to `detached/` as well,
     /// and `ATTACH` would then treat the earlier detached part as covered and rename it to `inactive_`.
+    ///
+    /// Outdating it is not enough: while it is on disk, a restart loads it as active again, and
+    /// `remove_empty_parts = 0` or `empty_parts_lifetime` keep it. So it is removed without waiting for
+    /// `old_parts_lifetime`, and so are the outdated parts it covers, because `grabOldParts` removes it only
+    /// after them. Their rows are in `detached/` or were removed from the table before.
+    /// While outdated parts are still loading, some of the covered ones are not known yet, so the empty part is kept.
+    if (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
+        return;
+
     for (const auto & part_name : empty_part_names)
     {
-        if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}); part && isPinnedByDeleteBitmap(*part))
-            continue;
+        {
+            auto parts_lock = lockParts();
+            auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
+            if (!part || isPinnedByDeleteBitmap(*part, parts_lock))
+                continue;
 
-        dropPartNoWaitNoThrow(part_name);
+            for (const auto & covered_part : getCoveredOutdatedParts(part, parts_lock))
+                covered_part->remove_time.store(0, std::memory_order_relaxed);
+        }
+
+        if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ true); part && deduplication_log)
+            deduplication_log->dropPart(part->info);
     }
 }
 
@@ -3855,6 +3872,10 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
+    /// `dropEmptyPartsCoveringDetachedParts` needs all outdated parts.
+    if (detach)
+        waitForOutdatedPartsToBeLoaded();
+
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -3930,11 +3951,18 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
     }
 
     clearOldPartsFromFilesystem();
+    /// `grabOldParts` skips an empty part while the outdated parts it covers are not removed yet.
+    if (detach)
+        clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
 {
+    /// `dropEmptyPartsCoveringDetachedParts` needs all outdated parts.
+    if (detach)
+        waitForOutdatedPartsToBeLoaded();
+
     {
         const auto * partition_ast = partition->as<ASTPartition>();
 
@@ -4052,6 +4080,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     }
 
     clearOldPartsFromFilesystem();
+    /// `grabOldParts` skips an empty part while the outdated parts it covers are not removed yet.
+    if (detach)
+        clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
 

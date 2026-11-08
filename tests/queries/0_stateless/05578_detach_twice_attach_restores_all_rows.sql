@@ -5,10 +5,12 @@
 -- DETACH covers the detached parts with empty parts. An empty part that stays active (younger than
 -- `empty_parts_lifetime`, or kept by `remove_empty_parts = 0`) was copied to `detached/` by a later DETACH,
 -- directly or through a part merged from it, and ATTACH then renamed the earlier detached part to `inactive_`.
+-- An empty part that is only outdated in memory is loaded as active again after a reload of the table.
 
 DROP TABLE IF EXISTS t_detach_lifetime;
 DROP TABLE IF EXISTS t_detach_keep_empty;
 DROP TABLE IF EXISTS t_detach_part;
+DROP TABLE IF EXISTS t_detach_reload;
 
 SELECT 'empty_parts_lifetime';
 CREATE TABLE t_detach_lifetime (p UInt8, k UInt32) ENGINE = MergeTree PARTITION BY p ORDER BY k
@@ -52,6 +54,23 @@ ALTER TABLE t_detach_part ATTACH PARTITION tuple();
 SELECT count(), sum(k) FROM t_detach_part;
 SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_detach_part';
 
+SELECT 'DETACH TABLE';
+CREATE TABLE t_detach_reload (p UInt8, k UInt32) ENGINE = MergeTree PARTITION BY p ORDER BY k
+SETTINGS remove_empty_parts = 0;
+INSERT INTO t_detach_reload SETTINGS async_insert = 0 VALUES (1, 1);
+INSERT INTO t_detach_reload SETTINGS async_insert = 0 VALUES (1, 2), (1, 3);
+-- The merged parts stay on disk as outdated parts covered by the empty part of the DETACH below.
+OPTIMIZE TABLE t_detach_reload PARTITION 1 FINAL;
+ALTER TABLE t_detach_reload DETACH PARTITION 1;
+DETACH TABLE t_detach_reload;
+ATTACH TABLE t_detach_reload;
+INSERT INTO t_detach_reload SETTINGS async_insert = 0 VALUES (1, 4);
+ALTER TABLE t_detach_reload DETACH PARTITION 1;
+ALTER TABLE t_detach_reload ATTACH PARTITION 1;
+SELECT count(), sum(k) FROM t_detach_reload;
+SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_detach_reload';
+
 DROP TABLE t_detach_lifetime;
 DROP TABLE t_detach_keep_empty;
 DROP TABLE t_detach_part;
+DROP TABLE t_detach_reload;
