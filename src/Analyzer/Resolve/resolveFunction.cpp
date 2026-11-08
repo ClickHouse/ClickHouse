@@ -1400,8 +1400,11 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
             || (query_node->hasQualify() && hasAggregateFunctionNodes(query_node->getQualify()));
 
         /// Decorrelation groups by the correlated columns, so an outer row without inner rows gets no row,
-        /// while an aggregation without keys returns one.
-        if (aggregates && !query_node->hasGroupBy())
+        /// while an aggregation without keys returns one. So does an empty grouping set.
+        const bool has_empty_grouping_set = query_node->isGroupByWithGroupingSets()
+            && std::ranges::any_of(query_node->getGroupBy().getNodes(),
+                [](const QueryTreeNodePtr & grouping_set) { return grouping_set->as<ListNode &>().getNodes().empty(); });
+        if (aggregates && (!query_node->hasGroupBy() || has_empty_grouping_set))
             throwCorrelatedInNotSupported(" when the subquery aggregates without GROUP BY keys", node);
 
         /// With this setting disabled, so does an aggregation by constant keys, which the planner removes.
@@ -1493,7 +1496,11 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
             throwCorrelatedInNotSupported(fmt::format(" for a key of type {} compared with {}", key_types[i]->getName(), right_columns[i].type->getName()), node);
 
         /// The columns of `x` become correlated columns: a NULL in them gets no rows, wrong only for a key like `coalesce(r.v, 0)`.
-        if (!resolved_keys[i]->as<ColumnNode>() && hasNodeOutsideSubqueries(resolved_keys[i], [](const QueryTreeNodePtr & key_node)
+        /// An ALIAS column is checked by its expression.
+        QueryTreeNodePtr key = resolved_keys[i];
+        for (const auto * key_column = key->as<ColumnNode>(); key_column && key_column->hasExpression(); key_column = key->as<ColumnNode>())
+            key = key_column->getExpression();
+        if (!key->as<ColumnNode>() && hasNodeOutsideSubqueries(key, [](const QueryTreeNodePtr & key_node)
             {
                 const auto * column_node = key_node->as<ColumnNode>();
                 return column_node && isNullableOrLowCardinalityNullable(column_node->getColumnType());

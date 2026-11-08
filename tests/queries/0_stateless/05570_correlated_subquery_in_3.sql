@@ -6,7 +6,7 @@ SET allow_correlated_subqueries = 1;
 DROP TABLE IF EXISTS o;
 DROP TABLE IF EXISTS i;
 DROP TABLE IF EXISTS j;
-CREATE TABLE o (k UInt8, x Int32, tags String, xn Nullable(Int32), kn Nullable(UInt8), arr Array(Int32)) ENGINE = Memory;
+CREATE TABLE o (k UInt8, x Int32, tags String, xn Nullable(Int32), kn Nullable(UInt8), arr Array(Int32), xa Int32 ALIAS coalesce(xn, 0), xz Nullable(Int32) ALIAS xn) ENGINE = Memory;
 CREATE TABLE i (k UInt8, e Int32, f Float64) ENGINE = Memory;
 CREATE TABLE j (e Int32, a Int32) ENGINE = Memory;
 INSERT INTO o VALUES (1, 1, 'a,b', 1, 1, [1]), (1, 2, 'c', NULL, NULL, [2]), (2, 2, 'b', 2, 2, [3]), (2, 3, '', 3, 2, []), (3, 1, 'b', NULL, 3, [1]);
@@ -101,9 +101,17 @@ SELECT k, x,
     got_not = multiIf(k = 1, (x, k) NOT IN (SELECT e, k FROM i WHERE k = 1), k = 2, (x, k) NOT IN (SELECT e, k FROM i WHERE k = 2), (x, k) NOT IN (SELECT e, k FROM i WHERE k = 3))
 FROM o ORDER BY k, x;
 
+-- An ALIAS column key is a column of `o` as well.
+SELECT 'alias columns';
+SELECT k, x, xz IN (SELECT e FROM i WHERE i.k = o.k) AS got,
+    isNotDistinctFrom(got, multiIf(k = 1, xz IN (SELECT e FROM i WHERE i.k = 1), k = 2, xz IN (SELECT e FROM i WHERE i.k = 2), xz IN (SELECT e FROM i WHERE i.k = 3)))
+FROM o ORDER BY k, x;
+
 SELECT 'refusals';
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.kn); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE coalesce(o.xn, 0) IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE xa IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE (xa, k) NOT IN (SELECT e, i.k FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE rand() % 3 IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE toInt32(rowNumberInAllBlocks()) IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k AND rand() % 2 = 0); -- { serverError NOT_IMPLEMENTED }
@@ -126,6 +134,8 @@ SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_rows_i
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_bytes_in_set = 1000000, set_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k GROUP BY tuple()) SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE x IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k GROUP BY GROUPING SETS (())); -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE x NOT IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k GROUP BY GROUPING SETS (()) HAVING count() = 0); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k GROUP BY e) SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k SETTINGS additional_table_filters = {'i': 'rand() % 2 = 0'}); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT DISTINCT e FROM i WHERE i.k = o.k SETTINGS max_rows_in_distinct = 1); -- { serverError NOT_IMPLEMENTED }

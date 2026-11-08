@@ -120,6 +120,12 @@ shadowing
 2	2	1	0	1	1
 2	3	0	1	1	1
 3	1	0	1	1	1
+alias columns
+1	1	1	1
+1	2	\N	1
+2	2	1	1
+2	3	1	1
+3	1	\N	1
 refusals
 1	1
 2	2
