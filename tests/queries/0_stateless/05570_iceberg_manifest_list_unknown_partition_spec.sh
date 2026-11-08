@@ -84,6 +84,10 @@ echo "v1_without_partition_specs $(query "SELECT count(), sum(id) FROM ${TABLE_V
 publish "${TABLE_V1_DIR}" 'del m["partition-spec"]'
 echo "v1_without_any_partition_spec $(rejected "SELECT count() FROM ${TABLE_V1}" 0)"
 
+# A null `partition-spec` declares no spec either.
+publish "${TABLE_V1_DIR}" 'm["partition-spec"] = None'
+echo "v1_with_null_partition_spec $(rejected "SELECT count() FROM ${TABLE_V1}" 0)"
+
 # Format version 2 requires `partition-specs`, so without it no spec is known.
 query "CREATE TABLE ${TABLE_V2} (id Int32) ENGINE = IcebergLocal('${TABLE_V2_DIR}/')"
 query "INSERT INTO ${TABLE_V2} VALUES (1), (2)"
