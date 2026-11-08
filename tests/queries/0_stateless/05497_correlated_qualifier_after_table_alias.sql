@@ -92,7 +92,7 @@ FROM squality_alias_scope_semi_left LEFT SEMI JOIN squality_alias_scope_semi_rig
 CREATE TABLE squality_alias_scope_nested (n Nested(x UInt64, y String)) ENGINE = Memory;
 INSERT INTO squality_alias_scope_nested VALUES ([1, 2], ['a', 'b']);
 
-SELECT n.x, (SELECT squality_alias_scope_nested.* FROM squality_alias_scope_nested AS inner_table LIMIT 1)
+SELECT n.x, (SELECT tuple(squality_alias_scope_nested.*) FROM squality_alias_scope_nested AS inner_table LIMIT 1)
 FROM squality_alias_scope_nested ARRAY JOIN n
 ORDER BY n.x;
 
@@ -106,7 +106,7 @@ SELECT x, (
     LIMIT 1
 )
 FROM squality_alias_scope_wildcard
-ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+ORDER BY x; -- { serverError NOT_AN_AGGREGATE }
 
 -- Discarded columns are neither resolved nor registered as correlated.
 CREATE TABLE squality_alias_scope_dict_src (id UInt64, v String) ENGINE = Memory;
@@ -127,7 +127,7 @@ INSERT INTO squality_alias_scope_alias VALUES (1, 10);
 DROP DICTIONARY squality_alias_scope_dict SETTINGS check_table_dependencies = 0;
 
 SET asterisk_include_alias_columns = 1;
-SELECT id, (SELECT squality_alias_scope_alias.* EXCEPT (al)
+SELECT id, (SELECT tuple(squality_alias_scope_alias.* EXCEPT (al))
             FROM squality_alias_scope_alias AS inner_table LIMIT 1)
 FROM squality_alias_scope_alias;
 
