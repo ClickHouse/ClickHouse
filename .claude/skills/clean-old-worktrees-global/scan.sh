@@ -39,12 +39,17 @@ supported_name()
         *$'\t'*|*$'\n'*) printf 'unsupported name\t%q\n' "$1" >> "$SKIPPED"; return 1 ;;
     esac
 }
-# A `.git` file of a worktree points to `.../worktrees/<name>`, unlike the one of a submodule (`.../modules/<path>`,
-# which for a submodule of a worktree is `.../worktrees/<name>/modules/<path>`). This also holds for orphaned worktrees,
-# whose metadata is already pruned.
+# A `.git` file of a worktree points to `<main>/.git/worktrees/<name>`, unlike the one of a submodule
+# (`<main>/.git/modules/<name>`, which for a submodule of a worktree is `<main>/.git/worktrees/<wt>/modules/<name>`).
+# Submodule names may contain `worktrees/`, so the whole part after the first `.git` component is checked. This also
+# holds for orphaned worktrees, whose metadata is already pruned. Anything else (e.g. worktrees of a bare repository or
+# of a submodule) is not considered a worktree, so it is kept.
 is_worktree()
 {
-    grep -qs '^gitdir: .*/worktrees/[^/]*$' "$1/.git"
+    local g
+    g=$(sed -n '1s/^gitdir: //p' "$1/.git" 2>/dev/null)
+    g=${g#*/.git/}
+    [[ $g == worktrees/?* && ${g#worktrees/} != */* ]]
 }
 export -f age_of supported_name is_worktree
 
