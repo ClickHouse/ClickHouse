@@ -100,10 +100,6 @@ public:
         const double cx = boost::geometry::get<0>(third);
         const double cy = boost::geometry::get<1>(third);
 
-        if ((ax == bx && ay == by) || (ax == cx && ay == cy) || (bx == cx && by == cy)
-            || (ax == bx && bx == cx) || (ay == by && by == cy))
-            return 0;
-
         const double left = (ax - cx) * (by - cy);
         const double right = (ay - cy) * (bx - cx);
         const double determinant = left - right;
@@ -114,6 +110,12 @@ public:
         /// Overflow, cancellation, and smaller magnitudes are resolved exactly below.
         if (std::isfinite(magnitude) && magnitude >= 0x1p-968 && std::abs(determinant) > magnitude * 0x1p-48)
             return determinant > 0 ? 1 : -1;
+
+        /// Coincident points and axis-parallel collinear triples are exactly zero; checking them only
+        /// after the filter keeps these branches off the common path, where the filter cannot pass for them.
+        if ((ax == bx && ay == by) || (ax == cx && ay == cy) || (bx == cx && by == cy)
+            || (ax == bx && bx == cx) || (ay == by && by == cy))
+            return 0;
 
         return exactSign({ax, ay, bx, by, cx, cy});
     }
@@ -135,31 +137,52 @@ void computeGeoConvexHullImpl(const MultiPoint & points, const MultiPoint * addi
         const auto bx = boost::geometry::get<0>(second);
         return ax < bx || (ax == bx && boost::geometry::get<1>(first) < boost::geometry::get<1>(second));
     };
-    const auto [left_it, right_it] = std::minmax_element(points.begin(), points.end(), less);
-    auto left = *left_it;
-    auto right = *right_it;
-    if constexpr (HasAdditional)
+    /// `bottom` and `top` are any points with the smallest and largest y. They are only used to
+    /// discard points strictly inside the hull quadrilateral (Akl-Toussaint), so ties do not matter.
+    auto left = points.front();
+    auto right = points.front();
+    auto bottom = points.front();
+    auto top = points.front();
+    auto find_extremes = [&](const MultiPoint & input)
     {
-        const auto [additional_left, additional_right] = std::minmax_element(additional->begin(), additional->end(), less);
-        if (less(*additional_left, left))
-            left = *additional_left;
-        if (!less(*additional_right, right))
-            right = *additional_right;
-    }
+        for (const auto & point : input)
+        {
+            if (less(point, left))
+                left = point;
+            if (!less(point, right))
+                right = point;
+            if (boost::geometry::get<1>(point) < boost::geometry::get<1>(bottom))
+                bottom = point;
+            if (boost::geometry::get<1>(point) > boost::geometry::get<1>(top))
+                top = point;
+        }
+    };
+    find_extremes(points);
+    if constexpr (HasAdditional)
+        find_extremes(*additional);
 
     MultiPoint lower;
     MultiPoint upper;
     lower.push_back(left);
     upper.push_back(left);
+    /// A point strictly inside the triangle (left, bottom, right) or (right, top, left) is strictly inside
+    /// the hull, so it cannot be a vertex. The predicate is exact and a degenerate triangle yields zero,
+    /// which keeps the point, so dropping these points before the sort does not change the result.
     auto partition_points = [&](const MultiPoint & input)
     {
         for (const auto & point : input)
         {
             const int side = GeoHullSide::apply(left, right, point);
             if (side < 0)
-                lower.push_back(point);
+            {
+                if (GeoHullSide::apply(left, bottom, point) <= 0 || GeoHullSide::apply(bottom, right, point) <= 0)
+                    lower.push_back(point);
+            }
             else if (side > 0)
-                upper.push_back(point);
+            {
+                if (GeoHullSide::apply(right, top, point) <= 0 || GeoHullSide::apply(top, left, point) <= 0)
+                    upper.push_back(point);
+            }
         }
     };
     partition_points(points);
