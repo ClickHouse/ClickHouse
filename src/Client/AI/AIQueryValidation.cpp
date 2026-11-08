@@ -43,6 +43,7 @@
 #include <Poco/String.h>
 
 #include <algorithm>
+#include <set>
 #include <string_view>
 #include <unordered_set>
 
@@ -91,6 +92,12 @@ bool isProtectedSetting(const String & name)
         /// this is on, and those expressions were never validated (`ALTER TABLE t UPDATE e =
         /// aiEmbed(text, ...)`), so the sandbox turns it off and the query must not turn it on.
         || name == "apply_mutations_on_fly"
+        /// With `convert_query_to_cnf` the server optimizes the filters of a query with the
+        /// `CHECK` and `ASSUME` constraints of the tables it reads, and analyzing a constraint
+        /// evaluates its scalar subqueries, which the validation has not seen (`ASSUME x <
+        /// (SELECT generateSerialID('counter'))`). Every optimization that uses constraints is
+        /// gated by it, so the sandbox turns it off and the query must not turn it back on.
+        || name == "convert_query_to_cnf"
         /// The server logs quote the query and its errors and are written to the terminal unsanitized,
         /// so the sandbox turns them off and the query must not turn them back on.
         || name == "send_logs_level";
@@ -755,6 +762,20 @@ std::vector<AIQueryTableReference> collectNamedTablesForAIAgent(const IAST & ast
     std::vector<AIQueryTableReference> result;
     collectNamedTables(ast, result);
     return result;
+}
+
+Strings collectFunctionNamesForAIAgent(const IAST & ast)
+{
+    std::set<String> names;
+    const auto collect = [&names](const auto & self, const IAST & node) -> void
+    {
+        if (const auto * function = node.as<ASTFunction>())
+            names.insert(function->name);
+        for (const auto & child : node.children)
+            self(self, *child);
+    };
+    collect(collect, ast);
+    return Strings(names.begin(), names.end());
 }
 
 bool isServerOwnedDatabaseForAIAgent(const String & database)

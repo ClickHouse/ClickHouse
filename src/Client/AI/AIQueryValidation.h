@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <base/types.h>
 
 #include <string_view>
@@ -88,6 +89,13 @@ struct AIQueryTableReference
 /// ambiguous between a column and a table, and a CTE name is indistinguishable from a table name
 /// here. Both are collected; a name that does not resolve to a table is simply not checked.
 std::vector<AIQueryTableReference> collectNamedTablesForAIAgent(const IAST & ast);
+
+/// The names of the functions called in the statement, deduplicated and sorted.
+/// `validateReadOnlyQueryForAIAgent` accepts a function when the client knows it as a builtin, but
+/// the server resolves the name on its own: a server that predates a builtin of this client can
+/// have a user-defined function of the same name, which it expands instead. The caller asks the
+/// server whether any of these names is a user-defined function there.
+Strings collectFunctionNamesForAIAgent(const IAST & ast);
 
 /// Whether the database is owned by the server, so that its tables are judged by name
 /// (`isAllowedServerOwnedTableForAIAgent`) rather than by engine: `system` and the two spellings

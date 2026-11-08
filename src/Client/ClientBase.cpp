@@ -4940,6 +4940,15 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// engines - this is a round trip, so it is skipped when the query names no tables.
         checkNamedTablesForAIReadOnlyTool(collectNamedTablesForAIAgent(*ast), allow_schema_access);
 
+        /// The static validation accepts a function that the client knows as a builtin, but the
+        /// server resolves the name itself, and expands a user-defined function of that name first.
+        /// The server refuses to create one that shadows a builtin of its own, but a server that
+        /// predates a builtin of this client can have one (`CREATE FUNCTION lengthCartesian AS s ->
+        /// file(s)` on a server without `lengthCartesian`). So the server is asked whether any of
+        /// the called names is a user-defined function there; a server that cannot answer fails
+        /// the query.
+        checkFunctionsForAIReadOnlyTool(collectFunctionNamesForAIAgent(*ast));
+
         /// Queries going through the confirmation prompt were already shown there.
         echoQueryForAI(query);
     }
@@ -5065,6 +5074,15 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// which disabling parallel replicas does not prevent. It is turned off the same way; the
         /// validation refuses a `SETTINGS` clause that touches it.
         client_context->setSetting("make_distributed_plan", false);
+
+        /// With `convert_query_to_cnf` the filters of the query are optimized with the `CHECK` and
+        /// `ASSUME` constraints of the tables it reads (`optimize_using_constraints`,
+        /// `optimize_substitute_columns`, `optimize_append_index`), and analyzing a constraint
+        /// evaluates its scalar subqueries - stored SQL the validation has not seen, which can call
+        /// anything (`ASSUME x < (SELECT generateSerialID('counter'))`). Every one of those
+        /// optimizations is gated by this setting, so it is turned off for the query whatever the
+        /// session has; it is a protected setting, so the query cannot turn it back on.
+        client_context->setSetting("convert_query_to_cnf", false);
 
         static constexpr UInt64 max_execution_time_limit = 30;
         static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
@@ -5503,6 +5521,35 @@ String ClientBase::aiSessionRestrictions()
     if (readonly == 0)
         return {};
     return readonly == 1 ? AIPrompts::SESSION_READONLY_NOTE : AIPrompts::SESSION_READ_ONLY_QUERIES_NOTE;
+}
+
+void ClientBase::checkFunctionsForAIReadOnlyTool(const Strings & functions)
+{
+    if (functions.empty())
+        return;
+
+    Strings name_literals;
+    name_literals.reserve(functions.size());
+    for (const auto & name : functions)
+        name_literals.push_back(quoteString(name));
+
+    /// A user-defined function is any function whose origin is not `System`: a SQL one, which
+    /// the server expands into its stored expression, or an executable one, which runs a program.
+    const String query = fmt::format(
+        "SELECT name FROM system.functions WHERE name IN ({}) AND origin != 'System'",
+        fmt::join(name_literals, ", "));
+
+    const Block result = materializeBlock(fetchInternalQueryResult(query, {}, /*from_ai_agent=*/ true));
+    if (result.rows() == 0)
+        return;
+    if (result.columns() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of the function resolution query of the AI agent");
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "The function `{}` is a user-defined function on the server, although the client knows a builtin of that "
+        "name, so what it does cannot be verified before execution. Use the run_query tool for this query",
+        result.getByPosition(0).column->getDataAt(0));
 }
 
 void ClientBase::checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables, bool allow_schema_access)

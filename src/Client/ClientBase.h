@@ -327,6 +327,8 @@ protected:
     /// model when a table does not qualify. Without `allow_schema_access`, a name resolving to a
     /// database the server owns is refused as well, including through the current database.
     void checkNamedTablesForAIReadOnlyTool(const std::vector<AIQueryTableReference> & tables, bool allow_schema_access);
+    /// Refuses the query when a function it calls is a user-defined function on the server.
+    void checkFunctionsForAIReadOnlyTool(const Strings & functions);
 
     /// The text of a query to record into the AI context buffer. The buffer is sent to the provider
     /// of the model with a later `?` turn, so the text is masked like `query_for_logging` on the
