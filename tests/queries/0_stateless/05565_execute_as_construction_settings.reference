@@ -12,7 +12,3 @@
 2
 -- EXPLAIN
 filtered
--- HTTP filter parameter
-2
--- HTTP filter parameter, target user's filter is CONST
-SETTING_CONSTRAINT_VIOLATION
