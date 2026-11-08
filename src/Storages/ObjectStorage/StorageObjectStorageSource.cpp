@@ -1491,8 +1491,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             const auto & sort_column = format_filter_info->top_k_filter->column_name;
             for (const auto & column : iceberg_info->info.identity_partition_columns)
-                if (column.first == sort_column)
-                    return false;
+                for (const auto & site : column.injection_sites)
+                    if (site.first == sort_column)
+                        return false;
         }
 #endif
         return true;
