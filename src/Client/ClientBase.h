@@ -167,7 +167,7 @@ protected:
 
     virtual void processError(std::string_view query) const = 0;
 
-    /// Print an error report of the last query (the text of processError) to `stderr`. After a
+    /// Print an error report of the last query (the text of processError) to `error_stream`. After a
     /// Ctrl+C `stderr` may be the very terminal that stopped draining, and the interrupt handler is
     /// already stopped here, so a plain blocking write could hang the client right after the
     /// cancellation was handled - see the definition.

@@ -3842,11 +3842,10 @@ void ClientBase::printErrorReport(std::string_view message) const
         return;
     }
 
-    /// musl defines `stderr` as `(stderr)` which triggers `-Wdisabled-macro-expansion`.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-    fmt::print(stderr, "{}", message);
-#pragma clang diagnostic pop
+    /// `error_stream` is the stream paired with `stderr_fd`: `std::cerr` for the standalone client
+    /// and `clickhouse-local`, the session's own stream for `ClientEmbedded`.
+    error_stream << message;
+    error_stream.flush();
 }
 
 void ClientBase::cancelQuery()

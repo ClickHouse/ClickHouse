@@ -79,10 +79,13 @@ void ClientEmbedded::processError(std::string_view query) const
             message = client_exception->message();
         }
 
+        /// The report goes through printErrorReport, like in the standalone client: after a Ctrl+C
+        /// the session's terminal may be exactly what stopped draining, and a plain blocking write
+        /// would hang the session right after the cancellation was handled.
         if (is_interactive)
-            error_stream << fmt::format("Received exception\n{}\n\n", message);
+            printErrorReport(fmt::format("Received exception\n{}\n\n", message));
         else
-            error_stream << fmt::format("Received exception\n{}\n(query: {})\n", message, query);
+            printErrorReport(fmt::format("Received exception\n{}\n(query: {})\n", message, query));
     }
     else
     {
