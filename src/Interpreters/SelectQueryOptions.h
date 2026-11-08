@@ -80,6 +80,10 @@ struct SelectQueryOptions
     /// The query as received from the initiator of a distributed read, not a subquery of it.
     bool is_secondary_query_root = false;
 
+    /// Under a materialized view, the table in the join tree of this query reads the catalog table even if it is the
+    /// view source. Tables in its subqueries still read the inserted block. It is not inherited by subqueries.
+    bool root_table_reads_catalog = false;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -101,6 +105,7 @@ struct SelectQueryOptions
         out.is_local_shard_plan = false;
         out.is_local_plan_for_distributed_query = false;
         out.is_secondary_query_root = false;
+        out.root_table_reads_catalog = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
