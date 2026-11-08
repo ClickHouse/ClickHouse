@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -283,6 +284,13 @@ private:
         /// S3 credentials.
         credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
 
+        /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
+        {
+            HTTPHeaderEntries gcp_oauth_headers{{"Authorization", "Bearer"}};
+            context->getHTTPHeaderFilter().checkHeaders(gcp_oauth_headers);
+        }
+
         auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
 
         return S3::ClientFactory::instance().create(
@@ -386,6 +394,7 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , disk_client_factory(S3BackupClientCreator(context_))
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -474,9 +483,16 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
                                 blob_path.size(), mode);
 
             const auto src_key = fs::path(s3_uri.key) / path_in_backup;
-            auto dest_client = destination_disk->getS3StorageClient();
+            /// The native copy below issues its requests with the backup client, so `backup_restore_s3_retry_*`
+            /// already covers it. `dest_client` is used only by the fallback, which uploads to the destination
+            /// with it, so it is cloned with the same settings instead of keeping the ones of the disk.
+            auto dest_client = disk_client_factory.getOrCreate(destination_disk);
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
-            auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
+            auto create_read_buffer = [&, this]
+            {
+                LOG_TRACE(log, "Falling back to copy file {} from S3 to disk {} through buffers", path_in_backup, destination_disk->getName());
+                return readFile(path_in_backup);
+            };
             auto copy_blob_storage_log = BlobStorageLogWriter::create(destination_disk->getName());
             if (copy_blob_storage_log)
                 copy_blob_storage_log->local_path = destination_path;

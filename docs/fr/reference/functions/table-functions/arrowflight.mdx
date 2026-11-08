@@ -34,6 +34,7 @@ Un objet table représentant le jeu de données distant. Le schéma est inféré
 **Paramètres**
 
 * `arrow_flight_request_descriptor_type` — Contrôle la façon dont le nom du jeu de données est envoyé au serveur Flight. Valeurs : `path` (par défaut) ou `command`. Voir le [moteur de table ArrowFlight](/fr/reference/engines/table-engines/integrations/arrowflight#settings) pour plus de détails.
+* `arrow_flight_request_timeout_sec` — Délai d’expiration en secondes pour une requête Arrow Flight, `300` par défaut ; `0` signifie qu’aucun délai d’expiration ne s’applique. Voir le [moteur de table ArrowFlight](/fr/reference/engines/table-engines/integrations/arrowflight#settings) pour plus de détails.
 
 **Exemples**
 
