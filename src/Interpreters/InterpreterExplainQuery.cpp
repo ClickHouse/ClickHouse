@@ -1126,7 +1126,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
                 ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ true);
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ false);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -1461,7 +1461,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// previously done here), so invalid settings are still rejected, just without re-parsing.
             /// EXPLAIN ANALYZE executes the inner SELECT, so quota and result limits must follow the same
             /// rules as running that SELECT directly; the inner interpreter resolves the effective
-            /// ignore_quota / ignore_limits during planning (e.g. exempt system tables such as `system.one`).
+            /// ignore_quota / ignore_limits during planning (e.g. `system.one` is exempt from the quota).
             auto & analyzed = getAnalyzedInnerQuery();
 
             /// A query that fell back to local execution is a plain local query and is analyzable.
