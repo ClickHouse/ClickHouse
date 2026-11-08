@@ -3398,12 +3398,13 @@ public:
         time_t current_time,
         bool force_,
         bool ttl_delete_applied_by_merge_,
-        const NameSet & columns_with_reader_defaults_)
+        const NameSet & columns_with_reader_defaults_,
+        const NameSet & expired_arrays_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
             context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
-            ttl_delete_applied_by_merge_, columns_with_reader_defaults_);
+            ttl_delete_applied_by_merge_, columns_with_reader_defaults_, expired_arrays_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3677,6 +3678,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     Names merging_column_names = global_ctx->merging_columns.getNames();
     merging_column_names.append_range(global_ctx->merging_subcolumns);
     NameSet columns_with_reader_defaults;
+    NameSet expired_arrays;
     if (global_ctx->metadata_snapshot->hasAnyTTL()
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Horizontal
         && (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets])
@@ -3685,12 +3687,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// are evaluated. Keep them out of `merging_columns`, so the writer still leaves them expired and unwritten.
         /// Only the arrays that an expression of the merge reads are worth it: the default of any other one is
         /// never looked at, and reading it would allocate a value for every element of the stored sibling.
+        /// All of them still decide whether `TTLTransform` keeps the sibling that writes their offsets.
         std::optional<ColumnsReadByMergeExpressions> columns_read_by_expressions;
         for (const auto & column : global_ctx->merging_columns_expired_by_ttl)
         {
             if (!isArray(column.type))
                 continue;
 
+            expired_arrays.insert(column.name);
             if (std::find(merging_column_names.begin(), merging_column_names.end(), column.name) == merging_column_names.end())
             {
                 if (!columns_read_by_expressions)
@@ -3959,7 +3963,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->time_of_merge,
             ctx->force_ttl,
             global_ctx->vertical_ttl_delete,
-            columns_with_reader_defaults);
+            columns_with_reader_defaults,
+            expired_arrays);
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));

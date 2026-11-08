@@ -287,3 +287,57 @@ SELECT 'default source compact stored', arraySort(groupUniqArray(column)) FROM s
 WHERE database = currentDatabase() AND table = 'ttl_nested_default_source_compact' AND active
     AND column IN ('id', 'ts', 'n.a', 'n.d', 'm');
 DROP TABLE ttl_nested_default_source_compact;
+
+-- Nothing reads `n.d` during the merge, or only a skip index does. The base table must still keep `n.a`,
+-- whose offsets `n.d` follows, exactly as it does with the projection above.
+DROP TABLE IF EXISTS ttl_nested_default_source_unread_wide;
+CREATE TABLE ttl_nested_default_source_unread_wide (id UInt64, ts DateTime, n Nested(a UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+INSERT INTO ttl_nested_default_source_unread_wide VALUES (0, '2000-01-01', [7, 8]);
+INSERT INTO ttl_nested_default_source_unread_wide VALUES (1, '2000-01-01', [9]);
+ALTER TABLE ttl_nested_default_source_unread_wide ADD COLUMN n.d Array(UInt8);
+ALTER TABLE ttl_nested_default_source_unread_wide MODIFY COLUMN n.a Array(UInt64) DEFAULT [1, 2] TTL ts + INTERVAL 1 DAY;
+
+OPTIMIZE TABLE ttl_nested_default_source_unread_wide FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'default source unread wide', id, n.a, length(n.d) FROM ttl_nested_default_source_unread_wide ORDER BY id;
+SELECT 'default source unread wide stored', arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_default_source_unread_wide' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
+DROP TABLE ttl_nested_default_source_unread_wide;
+
+DROP TABLE IF EXISTS ttl_nested_default_source_unread_compact;
+CREATE TABLE ttl_nested_default_source_unread_compact (id UInt64, ts DateTime, n Nested(a UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+INSERT INTO ttl_nested_default_source_unread_compact VALUES (0, '2000-01-01', [7, 8]);
+INSERT INTO ttl_nested_default_source_unread_compact VALUES (1, '2000-01-01', [9]);
+ALTER TABLE ttl_nested_default_source_unread_compact ADD COLUMN n.d Array(UInt8);
+ALTER TABLE ttl_nested_default_source_unread_compact MODIFY COLUMN n.a Array(UInt64) DEFAULT [1, 2] TTL ts + INTERVAL 1 DAY;
+
+OPTIMIZE TABLE ttl_nested_default_source_unread_compact FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'default source unread compact', id, n.a, length(n.d) FROM ttl_nested_default_source_unread_compact ORDER BY id;
+SELECT 'default source unread compact stored', arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_default_source_unread_compact' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
+DROP TABLE ttl_nested_default_source_unread_compact;
+
+DROP TABLE IF EXISTS ttl_nested_default_source_index;
+CREATE TABLE ttl_nested_default_source_index (id UInt64, ts DateTime, n Nested(a UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+INSERT INTO ttl_nested_default_source_index VALUES (0, '2000-01-01', [7, 8]);
+INSERT INTO ttl_nested_default_source_index VALUES (1, '2000-01-01', [9]);
+ALTER TABLE ttl_nested_default_source_index ADD COLUMN n.d Array(UInt8);
+ALTER TABLE ttl_nested_default_source_index ADD INDEX i length(n.d) TYPE minmax;
+ALTER TABLE ttl_nested_default_source_index MODIFY COLUMN n.a Array(UInt64) DEFAULT [1, 2] TTL ts + INTERVAL 1 DAY;
+
+OPTIMIZE TABLE ttl_nested_default_source_index FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'default source index', id, n.a, length(n.d) FROM ttl_nested_default_source_index ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT 'default source index stored', arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_default_source_index' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
+DROP TABLE ttl_nested_default_source_index;

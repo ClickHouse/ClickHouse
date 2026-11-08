@@ -157,7 +157,8 @@ TTLTransform::TTLTransform(
     time_t current_time_,
     bool force_,
     bool ttl_delete_applied_by_merge_,
-    const NameSet & columns_with_reader_defaults_)
+    const NameSet & columns_with_reader_defaults_,
+    const NameSet & expired_arrays_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
@@ -218,6 +219,7 @@ TTLTransform::TTLTransform(
         if (columns_with_reader_defaults_.contains(expired_column.name))
         {
             chassert(header_->has(expired_column.name));
+            chassert(expired_arrays_.contains(expired_column.name));
             continue;
         }
 
@@ -240,7 +242,9 @@ TTLTransform::TTLTransform(
     ISerialization::StreamFileNameSettings stream_settings;
     stream_settings.share_nested_offsets = true;
     const ISerialization::SubstreamPath offsets_path{{ISerialization::Substream::ArraySizes}};
-    for (const auto & name : columns_with_reader_defaults_)
+    /// The reader fills only the expired arrays that an expression reads, but the merged part reconstructs
+    /// every one of them from the offsets of the same sibling, so all of them decide whether it is kept.
+    for (const auto & name : expired_arrays_)
     {
         const auto offsets_stream = ISerialization::getFileNameForStream(name, offsets_path, stream_settings);
         /// The first non-expired output array writes the shared offsets stream. Its computed default is not a
@@ -251,7 +255,9 @@ TTLTransform::TTLTransform(
                 continue;
             if (ISerialization::getFileNameForStream(column.name, offsets_path, stream_settings) == offsets_stream)
             {
-                shared_offsets_sources.emplace(name, column.name);
+                if (columns_with_reader_defaults_.contains(name))
+                    shared_offsets_sources.emplace(name, column.name);
+                shared_offsets_writers.insert(column.name);
                 break;
             }
         }
@@ -414,9 +420,9 @@ void TTLTransform::executeAlgorithms(Block & block)
         recomputeDependentColumns(block, recompute_stages[next_stage].columns);
 
     refreshSharedOffsetsColumns(block);
-    for (const auto & [name, source] : shared_offsets_sources)
+    for (const auto & source : shared_offsets_writers)
     {
-        if (!block.has(name) || !block.has(source))
+        if (!block.has(source))
             continue;
 
         const auto & offsets = assert_cast<const ColumnArray &>(*block.getByName(source).column).getOffsets();

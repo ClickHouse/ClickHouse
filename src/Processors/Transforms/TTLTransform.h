@@ -26,7 +26,8 @@ public:
         time_t current_time,
         bool force_,
         bool ttl_delete_applied_by_merge_ = false,
-        const NameSet & columns_with_reader_defaults_ = {}
+        const NameSet & columns_with_reader_defaults_ = {},
+        const NameSet & expired_arrays_ = {}
     );
 
     String getName() const override { return "TTL"; }
@@ -67,6 +68,8 @@ private:
     };
     UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
     UnorderedMapWithMemoryTracking<String, String> shared_offsets_sources;
+    /// The siblings that write the offsets of an expired array, whether or not a reader filled that array.
+    NameSet shared_offsets_writers;
     /// Writer-eligible sources with nonempty offsets in at least one post-TTL output block.
     NameSet shared_offsets_columns_to_keep;
 

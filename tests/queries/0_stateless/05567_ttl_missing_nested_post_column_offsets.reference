@@ -65,3 +65,12 @@ default source compact projection	4
 0	2	2
 1	2	2
 default source compact stored	['id','m','n.a','ts']
+default source unread wide	0	[1,2]	2
+default source unread wide	1	[1,2]	2
+default source unread wide stored	['id','n.a','ts']
+default source unread compact	0	[1,2]	2
+default source unread compact	1	[1,2]	2
+default source unread compact stored	['id','n.a','ts']
+default source index	0	[1,2]	2
+default source index	1	[1,2]	2
+default source index stored	['id','n.a','ts']
