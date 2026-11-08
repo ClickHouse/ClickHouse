@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <array>
 
 
 namespace DB
@@ -77,6 +78,29 @@ inline UInt32 findClosestNumBits(Int64 value)
     return getClosestFixedBits(count);
 }
 
+/// The bits of a byte, most significant first, as eight bytes 0 or 1.
+constexpr auto bits_to_bytes = []
+{
+    std::array<std::array<char, 8>, 256> table{};
+    for (size_t byte = 0; byte < 256; ++byte)
+        for (size_t bit = 0; bit < 8; ++bit)
+            table[byte][bit] = static_cast<char>((byte >> (7 - bit)) & 1);
+    return table;
+}();
+
+size_t countNotNull(const char * not_null, size_t num_values)
+{
+    return std::count_if(not_null, not_null + num_values, [](char c) { return c != 0; });
+}
+
+/// Moves the first `num_present` values to the positions where `not_null` is non-zero and sets the others to zero.
+/// The k-th value goes to a position i >= k, so moving from the back never overwrites a value before it is moved.
+void moveToNotNullPositions(char * data, size_t num_values, size_t num_present, const char * not_null)
+{
+    for (size_t i = num_values; i-- > 0;)
+        data[i] = not_null[i] ? data[--num_present] : 0;
+}
+
 }
 
 
@@ -118,62 +142,25 @@ void ByteRleDecoder::readHeader()
 void ByteRleDecoder::next(char * data, size_t num_values, const char * not_null)
 {
     if (not_null)
-        memset(data, 0, num_values);
+    {
+        size_t num_present = countNotNull(not_null, num_values);
+        next(data, num_present, nullptr);
+        moveToNotNullPositions(data, num_values, num_present, not_null);
+        return;
+    }
+
     size_t position = 0;
     while (position < num_values)
     {
-        if (not_null)
-        {
-            while (position < num_values && !not_null[position])
-                ++position;
-            if (position == num_values)
-                return;
-        }
-
         if (remaining_values == 0)
             readHeader();
 
         size_t count = std::min(num_values - position, remaining_values);
-        size_t consumed = 0;
         if (repeating)
-        {
-            if (not_null)
-            {
-                for (size_t i = 0; i < count; ++i)
-                {
-                    if (not_null[position + i])
-                    {
-                        data[position + i] = value;
-                        ++consumed;
-                    }
-                }
-            }
-            else
-            {
-                memset(data + position, value, count);
-                consumed = count;
-            }
-        }
+            memset(data + position, value, count);
         else
-        {
-            if (not_null)
-            {
-                for (size_t i = 0; i < count; ++i)
-                {
-                    if (not_null[position + i])
-                    {
-                        data[position + i] = static_cast<char>(stream->readByte());
-                        ++consumed;
-                    }
-                }
-            }
-            else
-            {
-                stream->readBytes(data + position, count);
-                consumed = count;
-            }
-        }
-        remaining_values -= consumed;
+            stream->readBytes(data + position, count);
+        remaining_values -= count;
         position += count;
     }
 }
@@ -202,24 +189,44 @@ void ByteRleDecoder::seek(PositionProvider & positions)
 
 void BooleanRleDecoder::next(char * data, size_t num_values, const char * not_null)
 {
-    for (size_t i = 0; i < num_values; ++i)
+    if (not_null)
     {
-        if (not_null && !not_null[i])
-        {
-            /// The PRESENT stream of a child column is read with the mask of its parent,
-            /// and the masked positions must be null.
-            data[i] = 0;
-            continue;
-        }
-        if (remaining_bits == 0)
-        {
-            char byte = 0;
-            byte_decoder.next(&byte, 1, nullptr);
-            last_byte = static_cast<UInt8>(byte);
-            remaining_bits = 8;
-        }
+        /// The PRESENT stream of a child column is read with the mask of its parent,
+        /// and the masked positions must be null.
+        size_t num_present = countNotNull(not_null, num_values);
+        next(data, num_present, nullptr);
+        moveToNotNullPositions(data, num_values, num_present, not_null);
+        return;
+    }
+
+    size_t i = 0;
+    for (; i < num_values && remaining_bits; ++i)
+    {
         --remaining_bits;
         data[i] = (last_byte >> remaining_bits) & 1;
+    }
+
+    static constexpr size_t BUFFER_SIZE = 1024;
+    char bytes[BUFFER_SIZE];
+    while (num_values - i >= 8)
+    {
+        size_t num_bytes = std::min((num_values - i) / 8, BUFFER_SIZE);
+        byte_decoder.next(bytes, num_bytes, nullptr);
+        for (size_t j = 0; j < num_bytes; ++j, i += 8)
+            memcpy(data + i, bits_to_bytes[static_cast<UInt8>(bytes[j])].data(), 8);
+    }
+
+    if (i < num_values)
+    {
+        char byte = 0;
+        byte_decoder.next(&byte, 1, nullptr);
+        last_byte = static_cast<UInt8>(byte);
+        remaining_bits = 8;
+        for (; i < num_values; ++i)
+        {
+            --remaining_bits;
+            data[i] = (last_byte >> remaining_bits) & 1;
+        }
     }
 }
 
