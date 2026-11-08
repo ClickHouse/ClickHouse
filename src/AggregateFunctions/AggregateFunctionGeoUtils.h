@@ -64,11 +64,18 @@ GeometryColumnValue getGeometryColumnValue(
 /// typed columns.
 GeometryColumnType normalizePolygonalVariantType(GeometryColumnType type);
 
+/// `valid_by_construction` skips the topology validation for results that a shortcut built from
+/// already validated operands, keeping only the point budget check.
 void normalizeAndValidatePolygonalResult(
-    CartesianMultiPolygon & geometry, const char * function_name, std::optional<size_t> max_result_points = {});
+    CartesianMultiPolygon & geometry,
+    const char * function_name,
+    std::optional<size_t> max_result_points = {},
+    bool valid_by_construction = false);
 
 /// Evaluate overlays with wider coordinates when `Float64` intermediates could overflow.
-void unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
+/// Returns true when the result is valid by construction: the envelope of two rectangles, or the
+/// concatenation of two valid operands separated by more than the validator's tolerance.
+bool unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
 void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
 
 size_t countMultiPolygonPoints(const CartesianMultiPolygon & mp);

@@ -56,11 +56,11 @@ struct GroupPolygonUnionData
         const Chunk & lhs, const Chunk & rhs, const char * function_name, std::optional<size_t> max_result_points = {})
     {
         CartesianMultiPolygon result;
-        unionPolygonalGeometries(lhs.geometry, rhs.geometry, result);
+        const bool valid_by_construction = unionPolygonalGeometries(lhs.geometry, rhs.geometry, result);
         if (result.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} produced an empty union from non-empty inputs", function_name);
-        normalizeAndValidatePolygonalResult(result, function_name, max_result_points);
+        normalizeAndValidatePolygonalResult(result, function_name, max_result_points, valid_by_construction);
         size_t points = countMultiPolygonPoints(result);
         return {std::move(result), points};
     }

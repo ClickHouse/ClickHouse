@@ -532,11 +532,13 @@ GeometryColumnType normalizePolygonalVariantType(GeometryColumnType type)
 
 
 void normalizeAndValidatePolygonalResult(
-    CartesianMultiPolygon & geometry, const char * function_name, std::optional<size_t> max_result_points)
+    CartesianMultiPolygon & geometry, const char * function_name, std::optional<size_t> max_result_points, bool valid_by_construction)
 {
     /// A caller can bound a final state before the more expensive topology validation. Intermediate
     /// overlays may still shrink in a later reduction and retain their existing uncapped contract.
     checkPolygonalPointBudget(geometry, max_result_points, function_name);
+    if (valid_by_construction)
+        return;
 
     auto validate_result_point = [function_name](const CartesianPoint & point)
     {
@@ -572,7 +574,7 @@ void normalizeAndValidatePolygonalResult(
             reason);
 }
 
-void unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
+bool unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
 {
     if (left.size() == 1 && right.size() == 1 && left[0].inners().empty() && right[0].inners().empty())
     {
@@ -587,17 +589,19 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
             if (same_height || same_width || first->contains(*second) || second->contains(*first))
             {
                 /// These sufficient conditions make the union exactly its envelope. In particular,
-                /// a diagonal overlap alone is not sufficient. The caller retains result validation.
+                /// a diagonal overlap alone is not sufficient. The envelope of two valid rectangles
+                /// is a valid clockwise closed rectangle, so it needs no topology validation.
                 const GeoRectangle united{
                     std::min(first->min_x, second->min_x), std::min(first->min_y, second->min_y),
                     std::max(first->max_x, second->max_x), std::max(first->max_y, second->max_y)};
                 result.push_back(united.polygon());
-                return;
+                return true;
             }
         }
     }
 
-    evaluatePolygonalOverlay(left, right, result, [](const auto & first, const auto & second, auto & output)
+    bool valid_by_construction = false;
+    evaluatePolygonalOverlay(left, right, result, [&valid_by_construction](const auto & first, const auto & second, auto & output)
     {
         if constexpr (std::is_same_v<std::decay_t<decltype(first)>, CartesianMultiPolygon>)
         {
@@ -626,8 +630,8 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                 };
                 /// Separation by more than the margin excludes boundary contacts and interior
                 /// intersections, also under the tolerances of the geometry validator; nearly
-                /// adjacent boundaries use the general overlay. The caller still normalizes and
-                /// validates the complete result and its point budget.
+                /// adjacent boundaries use the general overlay. Both operands are already valid,
+                /// so their concatenation is valid by construction and only its budget is checked.
                 bool disjoint = separated.template operator()<0>() || separated.template operator()<1>();
                 if (!disjoint && first.size() + second.size() >= 64)
                 {
@@ -669,12 +673,14 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                     output.reserve(first.size() + second.size());
                     output.insert(output.end(), first.begin(), first.end());
                     output.insert(output.end(), second.begin(), second.end());
+                    valid_by_construction = true;
                     return;
                 }
             }
         }
         boost::geometry::union_(first, second, output);
     });
+    return valid_by_construction;
 }
 
 void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
