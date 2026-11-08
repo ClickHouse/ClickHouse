@@ -118,6 +118,13 @@ if (ENABLE_GPU)
     add_subdirectory (GPU)
 
     add_headers_and_sources(dbms GPU)
+
+    # The DLPack tensors of the C API of cuVS, for the `cagra` method of the vector similarity index. Only for the sources
+    # which call cuVS: an include directory of the whole of `dbms` would change the command line of each of its files.
+    set_source_files_properties (
+        GPU/CuvsLibrary.cpp
+        Storages/MergeTree/MergeTreeIndexVectorSimilarityCagra.cpp
+        PROPERTIES INCLUDE_DIRECTORIES "${ClickHouse_SOURCE_DIR}/contrib/dlpack/include")
 endif ()
 
 if (ENABLE_EXAMPLES)
