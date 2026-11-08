@@ -63,8 +63,20 @@ bool isCredentialProperty(std::string_view name)
     return name == "user" || name == "password";
 }
 
+void validateNoDuplicateProperties(const Properties & properties, std::string_view scope)
+{
+    std::unordered_set<std::string_view> seen;
+    for (const auto & change : properties)
+    {
+        if (!seen.insert(change.name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate property `{}` {}", change.name, scope);
+    }
+}
+
 void validateClusterLevelProperties(const Properties & properties)
 {
+    validateNoDuplicateProperties(properties, "at cluster level");
+
     for (const auto & change : properties)
     {
         if (!clusterPropertyKeys().contains(change.name) && !isCredentialProperty(change.name))
@@ -74,6 +86,8 @@ void validateClusterLevelProperties(const Properties & properties)
 
 void validateShardProperties(const Properties & properties, bool has_replicas)
 {
+    validateNoDuplicateProperties(properties, "in SHARD");
+
     for (const auto & change : properties)
     {
         if (has_replicas)
@@ -90,6 +104,8 @@ void validateShardProperties(const Properties & properties, bool has_replicas)
 
 void validateReplicaProperties(const Properties & properties)
 {
+    validateNoDuplicateProperties(properties, "in REPLICA");
+
     for (const auto & change : properties)
     {
         if (!replicaPropertyKeys().contains(change.name))

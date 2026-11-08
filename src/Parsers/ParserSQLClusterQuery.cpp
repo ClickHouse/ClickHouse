@@ -13,6 +13,15 @@ namespace DB
 namespace
 {
 
+bool parsePropertyAssignment(SettingsChanges & properties, IParser::Pos & pos, Expected & expected)
+{
+    SettingChange change;
+    if (!ParserSetQuery::parseNameValuePair(change, pos, expected))
+        return false;
+    properties.push_back(std::move(change));
+    return true;
+}
+
 bool parsePropertiesList(SettingsChanges & properties, IParser::Pos & pos, Expected & expected)
 {
     ParserToken s_comma(TokenType::Comma);
@@ -22,8 +31,7 @@ bool parsePropertiesList(SettingsChanges & properties, IParser::Pos & pos, Expec
         if (!properties.empty() && !s_comma.ignore(pos, expected))
             break;
 
-        properties.push_back(SettingChange{});
-        if (!ParserSetQuery::parseNameValuePair(properties.back(), pos, expected))
+        if (!parsePropertyAssignment(properties, pos, expected))
             return false;
     }
 
@@ -36,10 +44,14 @@ bool parseReplica(IParser::Pos & pos, Expected & expected, ASTPtr & replica)
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
 
+    IParser::Pos begin = pos;
     if (!s_replica.ignore(pos, expected))
         return false;
     if (!s_lparen.ignore(pos, expected))
+    {
+        pos = begin;
         return false;
+    }
 
     auto replica_ast = make_intrusive<ASTSQLClusterReplica>();
     if (!parsePropertiesList(replica_ast->properties, pos, expected))
@@ -55,14 +67,19 @@ bool parseReplica(IParser::Pos & pos, Expected & expected, ASTPtr & replica)
 bool parseShard(IParser::Pos & pos, Expected & expected, ASTPtr & shard)
 {
     ParserKeyword s_shard(Keyword::SHARD);
+    ParserKeyword s_replica(Keyword::REPLICA);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserToken s_comma(TokenType::Comma);
 
+    IParser::Pos begin = pos;
     if (!s_shard.ignore(pos, expected))
         return false;
     if (!s_lparen.ignore(pos, expected))
+    {
+        pos = begin;
         return false;
+    }
 
     auto shard_ast = make_intrusive<ASTSQLClusterShard>();
 
@@ -77,9 +94,11 @@ bool parseShard(IParser::Pos & pos, Expected & expected, ASTPtr & shard)
                 return false;
         }
 
-        ASTPtr replica;
-        if (parseReplica(pos, expected, replica))
+        if (s_replica.checkWithoutMoving(pos, expected))
         {
+            ASTPtr replica;
+            if (!parseReplica(pos, expected, replica))
+                return false;
             shard_ast->replicas.push_back(replica);
             continue;
         }
@@ -87,8 +106,7 @@ bool parseShard(IParser::Pos & pos, Expected & expected, ASTPtr & shard)
         if (!shard_ast->replicas.empty())
             return false;
 
-        shard_ast->properties.push_back(SettingChange{});
-        if (!ParserSetQuery::parseNameValuePair(shard_ast->properties.back(), pos, expected))
+        if (!parsePropertyAssignment(shard_ast->properties, pos, expected))
             return false;
     }
 
@@ -98,6 +116,7 @@ bool parseShard(IParser::Pos & pos, Expected & expected, ASTPtr & shard)
 
 bool parseClusterDefinition(IParser::Pos & pos, Expected & expected, ASTPtr & definition)
 {
+    ParserKeyword s_shard(Keyword::SHARD);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserToken s_comma(TokenType::Comma);
@@ -118,9 +137,11 @@ bool parseClusterDefinition(IParser::Pos & pos, Expected & expected, ASTPtr & de
                 return false;
         }
 
-        ASTPtr shard;
-        if (parseShard(pos, expected, shard))
+        if (s_shard.checkWithoutMoving(pos, expected))
         {
+            ASTPtr shard;
+            if (!parseShard(pos, expected, shard))
+                return false;
             definition_ast->shards.push_back(shard);
             continue;
         }
@@ -128,8 +149,7 @@ bool parseClusterDefinition(IParser::Pos & pos, Expected & expected, ASTPtr & de
         if (!definition_ast->shards.empty())
             return false;
 
-        definition_ast->cluster_properties.push_back(SettingChange{});
-        if (!ParserSetQuery::parseNameValuePair(definition_ast->cluster_properties.back(), pos, expected))
+        if (!parsePropertyAssignment(definition_ast->cluster_properties, pos, expected))
             return false;
     }
 
