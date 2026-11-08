@@ -329,7 +329,7 @@ void validateFileMetadataProperties(const Poco::JSON::Object::Ptr & footer_obj)
     parseStringValuedProperties(props_obj, /*out=*/nullptr, /*for_blob=*/false, /*blob_index=*/0);
 }
 
-std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)
+std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end, bool other_blob_types_allowed)
 {
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var root;
@@ -386,6 +386,12 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
             parseBlobProperties(blob_obj, blob, i, /*required=*/true);
             requireDeletionVectorV1Properties(blob, i);
         }
+        else if (other_blob_types_allowed)
+        {
+            parseBlobProperties(blob_obj, blob, i, /*required=*/false);
+            if (blob_obj->has("compression-codec") && !blob_obj->isNull("compression-codec"))
+                blob.compression_codec = requireBlobMetadataString(blob_obj, "compression-codec", i);
+        }
         else
         {
             throw Exception(
@@ -411,7 +417,7 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
     return blobs;
 }
 
-std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size, bool other_blob_types_allowed)
 {
     if (file_size < 16)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
@@ -474,10 +480,12 @@ std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekab
         footer_json = std::move(footer_payload);
 
     const size_t blob_region_end = payload_start - sizeof(PUFFIN_MAGIC);
-    return parseFooterJSON(footer_json, blob_region_end);
+    return parseFooterJSON(footer_json, blob_region_end, other_blob_types_allowed);
 }
 
-PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
+}
+
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read, bool other_blob_types_allowed)
 {
     PuffinFooter result;
 
@@ -486,7 +494,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
 
     if (seekable_read && seekable && seekable->checkIfActuallySeekable() && file_size_opt)
     {
-        result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt);
+        result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt, other_blob_types_allowed);
     }
     else
     {
@@ -504,11 +512,14 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
         }
 
         ReadBufferFromMemory mem_buf(result.data.data(), result.data.size());
-        result.blobs = readPuffinFooterFromSeekable(mem_buf, result.data.size());
+        result.blobs = readPuffinFooterFromSeekable(mem_buf, result.data.size(), other_blob_types_allowed);
     }
 
     return result;
 }
+
+namespace
+{
 
 String readPuffinBlobBytes(
     const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)

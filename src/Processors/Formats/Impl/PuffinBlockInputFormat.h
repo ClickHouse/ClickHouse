@@ -28,6 +28,9 @@ struct PuffinFooter
     std::vector<UInt8> data;
 };
 
+/// Blobs of a type other than `deletion-vector-v1` are rejected unless `other_blob_types_allowed`.
+PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read, bool other_blob_types_allowed = false);
+
 class PuffinMetadataInputFormat : public IInputFormat
 {
 public:
