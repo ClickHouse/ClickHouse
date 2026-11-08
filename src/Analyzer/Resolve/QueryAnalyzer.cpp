@@ -2137,6 +2137,27 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
     return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
+static bool isMatcherColumnDiscardedByTransformers(const MatcherNode & matcher_node, const std::string & column_name)
+{
+    for (const auto & transformer : matcher_node.getColumnTransformers().getNodes())
+    {
+        if (transformer->as<ApplyColumnTransformerNode>())
+            return false;
+        if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
+        {
+            if (except_transformer->isColumnMatching(column_name))
+                return true;
+        }
+        else if (auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+        {
+            if (replace_transformer->findReplacementExpression(column_name))
+                return true;
+        }
+    }
+
+    return false;
+}
+
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
     const TableExpressionNodePtr & table_expression_node,
     const NamesAndTypes & matched_columns,
@@ -2156,26 +2177,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
       * (an `APPLY` before them uses the column). Such a column does not need to be resolved,
       * so the expression of an ALIAS column is not analyzed for `SELECT * EXCEPT (alias_column)`.
       */
-    auto is_column_discarded_by_transformers = [&](const std::string & column_name)
-    {
-        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
-        {
-            if (transformer->as<ApplyColumnTransformerNode>())
-                return false;
-            if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
-            {
-                if (except_transformer->isColumnMatching(column_name))
-                    return true;
-            }
-            else if (auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
-            {
-                if (replace_transformer->findReplacementExpression(column_name))
-                    return true;
-            }
-        }
-        return false;
-    };
-
     QueryTreeNodes matched_column_nodes;
 
     for (const auto & column : matched_columns)
@@ -2184,7 +2185,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         if (!matcher_node_typed.isMatchingColumn(column_name))
             continue;
 
-        if (table_expression_data && !is_column_discarded_by_transformers(column_name))
+        if (table_expression_data && !isMatcherColumnDiscardedByTransformers(matcher_node_typed, column_name))
         {
             if (auto column_node = table_expression_data->tryGetColumnNode(column_name))
             {
@@ -2434,7 +2435,10 @@ static void checkSemiAntiJoinTableAccess(
   * qualified identifier did not match any expression in the query tree, try to lookup qualified identifier in table context.
   * Only if neither a compound expression nor a table expression matches, throw an exception.
   */
-QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
+QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(
+    QueryTreeNodePtr & matcher_node,
+    IdentifierResolveScope & scope,
+    IdentifierResolveScope *& matched_expression_scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
     chassert(matcher_node_typed.isQualified());
@@ -2658,6 +2662,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         /// registered as correlated in the current scope.
         for (auto & [matched_column_node, column_name] : result_matched_column_nodes_with_names)
         {
+            if (isMatcherColumnDiscardedByTransformers(matcher_node_typed, column_name))
+                continue;
+
             Identifier explicit_identifier = matcher_node_typed.getQualifiedIdentifier();
             explicit_identifier.push_back(column_name);
             auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
@@ -2678,17 +2685,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 false /*allow_table_expression*/);
             node_to_projection_name.emplace(matched_column_node, explicit_identifier.getFullName());
         }
-
-        bool has_correlated_columns = false;
-        for (const auto & column_with_name : result_matched_column_nodes_with_names)
-            has_correlated_columns |= checkCorrelatedColumn(&scope, column_with_name.first);
-
-        if (has_correlated_columns && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} resolved to correlated columns"
-                " (Enable `allow_correlated_subqueries` setting to allow correlated subqueries execution). In scope {}",
-                matcher_node->formatASTForErrorMessage(),
-                scope.scope_node->formatASTForErrorMessage());
     }
     else
     {
@@ -2698,6 +2694,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             matcher_node_typed.getQualifiedIdentifier(),
             *table_expression_scope);
     }
+
+    matched_expression_scope = table_expression_scope;
 
     return result_matched_column_nodes_with_names;
 }
@@ -3049,13 +3047,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     std::unordered_map<std::string, QueryTreeNodePtr> replace_transformer_mappings;
 
     QueryTreeNodesWithNames matched_expression_nodes_with_names;
+    auto * matched_expression_scope = &scope;
 
     if (matcher_node_typed.isQualified())
-        matched_expression_nodes_with_names = resolveQualifiedMatcher(matcher_node, scope);
+        matched_expression_nodes_with_names = resolveQualifiedMatcher(matcher_node, scope, matched_expression_scope);
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    auto * join_tree_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::registered_table_expression_nodes);
+    auto * join_tree_scope = findNearestScopeWithNonEmpty(
+        *matched_expression_scope,
+        &IdentifierResolveScope::registered_table_expression_nodes);
 
     if (join_tree_scope && join_tree_scope->join_use_nulls)
     {
@@ -3155,7 +3156,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
+    auto * group_by_keys_scope = findNearestScopeWithNonEmpty(
+        *matched_expression_scope,
+        &IdentifierResolveScope::nullable_group_by_keys);
 
     if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_apply_transformer)
     {
@@ -3529,6 +3532,17 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             strict_transformer->formatASTForErrorMessage(),
             fmt::join(non_matched_column_names, ", "),
             scope.scope_node->formatASTForErrorMessage());
+    }
+
+    if (matched_expression_scope != &scope)
+    {
+        CorrelatedColumnsCollector correlated_columns_collector{list, &scope, node_to_scope_map};
+        if (correlated_columns_collector.has() && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Qualified matcher {} resolved to correlated columns"
+                " (Enable `allow_correlated_subqueries` setting to allow correlated subqueries execution). In scope {}",
+                matcher_node_typed.formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
     }
 
     auto original_ast = matcher_node->getOriginalAST();

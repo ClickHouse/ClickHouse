@@ -88,9 +88,63 @@ SELECT (SELECT sum(squality_alias_scope_semi_right.x) FROM squality_alias_scope_
 FROM squality_alias_scope_semi_left LEFT SEMI JOIN squality_alias_scope_semi_right
     ON squality_alias_scope_semi_left.x = squality_alias_scope_semi_right.x;
 
+-- Correlation is collected from column descendants when owning-scope resolution produces an expression.
+CREATE TABLE squality_alias_scope_nested (n Nested(x UInt64, y String)) ENGINE = Memory;
+INSERT INTO squality_alias_scope_nested VALUES ([1, 2], ['a', 'b']);
+
+SELECT n.x, (SELECT squality_alias_scope_nested.* FROM squality_alias_scope_nested AS inner_table LIMIT 1)
+FROM squality_alias_scope_nested ARRAY JOIN n
+ORDER BY n.x;
+
+-- Matcher post-processing must not substitute an identically shaped grouping key from the inner scope.
+SELECT x, (
+    SELECT squality_alias_scope_wildcard.*
+    FROM squality_alias_scope_wildcard AS inner_table
+    WHERE inner_table.x = 3
+    GROUP BY ROLLUP(inner_table.x)
+    HAVING GROUPING(inner_table.x) = 0
+    LIMIT 1
+)
+FROM squality_alias_scope_wildcard
+ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+
+-- Discarded columns are neither resolved nor registered as correlated.
+CREATE TABLE squality_alias_scope_dict_src (id UInt64, v String) ENGINE = Memory;
+CREATE DICTIONARY squality_alias_scope_dict
+    (id UInt64, v String)
+    PRIMARY KEY id
+    SOURCE(CLICKHOUSE(TABLE 'squality_alias_scope_dict_src'))
+    LAYOUT(FLAT())
+    LIFETIME(0);
+CREATE TABLE squality_alias_scope_alias
+(
+    id UInt64,
+    x UInt64,
+    al String ALIAS dictGet('squality_alias_scope_dict', 'v', id)
+)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO squality_alias_scope_alias VALUES (1, 10);
+DROP DICTIONARY squality_alias_scope_dict SETTINGS check_table_dependencies = 0;
+
+SET asterisk_include_alias_columns = 1;
+SELECT id, (SELECT squality_alias_scope_alias.* EXCEPT (al)
+            FROM squality_alias_scope_alias AS inner_table LIMIT 1)
+FROM squality_alias_scope_alias;
+
+SET allow_correlated_subqueries = 0;
+SELECT (SELECT squality_alias_scope_wildcard.* REPLACE (1 AS x)
+        FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
+FROM squality_alias_scope_wildcard LIMIT 1;
+SELECT count(), (SELECT squality_alias_scope_wildcard.* REPLACE (1 AS x)
+                 FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
+FROM squality_alias_scope_wildcard;
+
 DROP TABLE squality_alias_scope;
 DROP TABLE squality_alias_scope_wildcard;
 DROP TABLE squality_alias_scope_outer;
 DROP TABLE squality_alias_scope_array;
 DROP TABLE squality_alias_scope_semi_left;
 DROP TABLE squality_alias_scope_semi_right;
+DROP TABLE squality_alias_scope_nested;
+DROP TABLE squality_alias_scope_alias;
+DROP TABLE squality_alias_scope_dict_src;
