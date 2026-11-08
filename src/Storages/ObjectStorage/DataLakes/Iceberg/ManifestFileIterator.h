@@ -104,6 +104,7 @@ public:
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         std::optional<UInt64> inherited_first_row_id,
+        Int32 partition_spec_id,
         DB::ContextPtr context,
         std::shared_ptr<const ActionsDAG> filter_dag_,
         Int32 table_snapshot_schema_id_);
@@ -143,6 +144,8 @@ private:
         std::shared_ptr<const PartitionSpecification> common_partition_specification,
         std::optional<DB::KeyDescription> partition_key_description,
         size_t partition_spec_fields_count,
+        std::vector<std::optional<size_t>> partition_value_positions,
+        size_t partition_record_fields_count,
         size_t total_rows,
         std::shared_ptr<const ActionsDAG> filter_dag,
         Int32 table_snapshot_schema_id);
@@ -163,6 +166,9 @@ private:
     const std::shared_ptr<const PartitionSpecification> common_partition_specification;
     const std::shared_ptr<const DB::KeyDescription> partition_key_description;
     const size_t partition_spec_fields_count;
+    /// Position in the partition record of the value of each spec field, nullopt for NULL. Empty if no reordering is needed.
+    const std::vector<std::optional<size_t>> partition_value_positions;
+    const size_t partition_record_fields_count;
     const Int32 table_snapshot_schema_id;
 
     /// Iteration state

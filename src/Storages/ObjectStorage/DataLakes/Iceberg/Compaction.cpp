@@ -224,6 +224,7 @@ static Plan getPlan(
     /// next_row_id).
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
+    persistent_table_components.schema_processor->registerMetadata(initial_metadata_object);
 
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
@@ -1530,6 +1531,7 @@ void compactIcebergManifests(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
                 "row-lineage 'first_row_id' round-trip is not implemented");
+        persistent_table_components.schema_processor->registerMetadata(metadata_object);
 
         /// Cheap pre-check: read just the current manifest list to decide whether the table is above the configured threshold.
         if (!isCurrentManifestListAboveThreshold(

@@ -105,7 +105,9 @@ Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() con
     /// Older ClickHouse versions wrote both manifest lists and manifest files without the
     /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
     /// `sequence_number` field appears at the top level of v2 manifest lists and v2
-    /// manifest entries, but is absent from their v1 counterparts.
+    /// manifest entries, but is absent from their v1 counterparts, and v3 adds `first_row_id`.
+    if (hasPath(f_manifest_first_row_id) || hasPath(c_data_file_first_row_id))
+        return 3;
     if (hasPath(f_sequence_number))
         return 2;
     return 1;

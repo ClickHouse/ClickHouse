@@ -295,6 +295,7 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
         manifest_list_entry.added_sequence_number,
         manifest_list_entry.added_snapshot_id,
         manifest_list_entry.first_row_id,
+        manifest_list_entry.partition_spec_id,
         local_context,
         manifest_filter_dag,
         table_state_snapshot->schema_id);
