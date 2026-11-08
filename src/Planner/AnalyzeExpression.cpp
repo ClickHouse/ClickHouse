@@ -404,7 +404,7 @@ static CoreAnalysisResult buildExpressionCoreDAG(
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     QueryAnalyzer analyzer(
-        /* only_analyze */ true, /* positional_arguments_already_resolved */ false, identifier_typo_hint_columns, typo_correction_columns);
+        /* only_analyze */ true, /* positional_arguments_already_resolved */ false, /* replaced_storage */ nullptr, identifier_typo_hint_columns, typo_correction_columns);
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
 
