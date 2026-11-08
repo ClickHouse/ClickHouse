@@ -437,8 +437,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     if (partition_key_condition.has_value())
     {
-        /// A NULL partition value is the point +inf, which only the Nullable key holds: the stripped
-        /// key drops the NULL elements of a set, which is exact only for a tuple without NULL.
+        /// The stripped key drops a set's NULL elements, so a tuple holding NULL (+inf) needs the Nullable key.
         bool holds_null = false;
         for (size_t i = 0; i < partition_value.size() && i < nullable_partition_key->data_types.size(); ++i)
             holds_null |= partition_value[i].isNull() && nullable_partition_key->data_types[i]->isNullable();
