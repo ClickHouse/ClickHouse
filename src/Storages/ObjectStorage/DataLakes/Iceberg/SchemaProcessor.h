@@ -178,6 +178,10 @@ private:
         bool is_subfield_of_root = false);
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+    /// Returns `new_holder[key]` in which every nested primitive changed by a legal promotion is replaced by the
+    /// type at the same place in `old_holder` (struct fields are matched by id). The arguments are not modified.
+    Poco::Dynamic::Var getTypeWithOldPrimitives(
+        const Poco::JSON::Object::Ptr & old_holder, const Poco::JSON::Object::Ptr & new_holder, const String & key);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
 
     std::shared_ptr<ActionsDAG> getSchemaTransformationDag(

@@ -1,11 +1,17 @@
 #include <gtest/gtest.h>
 
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -456,6 +462,33 @@ TEST(IcebergSchemaProcessor, WidenDecimalAcrossSchemaIdsWithInnerWhitespace)
     const auto & outputs = dag->getOutputs();
     ASSERT_EQ(outputs.size(), 1u);
     EXPECT_EQ(outputs[0]->result_type->getName(), "Nullable(Decimal(20, 2))");
+}
+
+/// Iceberg writers refuse map key updates, but a promoted map key from other metadata is converted like a map value.
+TEST(IcebergSchemaProcessor, WidenMapKeyDecimalAcrossSchemaIds)
+{
+    auto old_schema = parseSchema(
+        R"json({"schema-id":0,"fields":[{"id":1,"name":"m","required":false,"type":{"type":"map","key-id":2,"key":"decimal(9, 2)","value-id":3,"value-required":false,"value":"int"}}]})json");
+    auto new_schema = parseSchema(
+        R"json({"schema-id":1,"fields":[{"id":1,"name":"m","required":false,"type":{"type":"map","key-id":2,"key":"decimal(18, 2)","value-id":3,"value-required":false,"value":"int"}}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(old_schema);
+    processor.addIcebergTableSchema(new_schema);
+
+    auto dag = processor.getSchemaTransformationDagByIds(0, 1);
+    ASSERT_TRUE(dag);
+
+    auto old_type = DB::DataTypeFactory::instance().get("Map(Decimal(9, 2), Nullable(Int32))");
+    auto column = old_type->createColumn();
+    column->insert(DB::Map{DB::Tuple{DB::DecimalField<DB::Decimal32>(125, 2), DB::Field(Int64(7))}});
+    DB::Block block{{std::move(column), old_type, "m"}};
+    size_t num_rows = 1;
+    DB::ExpressionActions(dag->clone()).execute(block, num_rows);
+
+    const auto & result = block.getByName("m");
+    EXPECT_EQ(result.type->getName(), "Map(Decimal(18, 2), Nullable(Int32))");
+    DB::Field expected = DB::Map{DB::Tuple{DB::DecimalField<DB::Decimal64>(125, 2), DB::Field(Int64(7))}};
+    EXPECT_EQ(DB::applyVisitor(DB::FieldVisitorToString(), (*result.column)[0]), DB::applyVisitor(DB::FieldVisitorToString(), expected));
 }
 
 /// A genuinely different nested type inside a list wrapper must still be rejected.
