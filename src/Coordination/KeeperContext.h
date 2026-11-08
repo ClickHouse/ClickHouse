@@ -14,6 +14,11 @@
 #include <memory>
 #include <variant>
 
+namespace Coordination
+{
+struct ZooKeeperRequest;
+}
+
 namespace DB
 {
 
@@ -131,6 +136,10 @@ public:
     void setBlockACL(bool block_acl_);
 
     bool isOperationSupported(Coordination::OpNum operation) const;
+    /// Like `isOperationSupported`, but also rejects `ListWithOptions` V2 when
+    /// `LIST_WITH_OPTIONS_V2` is off. V2 reuses the V1 opcode, so the opnum gate
+    /// alone would still enqueue it and write it to the Raft log.
+    bool isRequestSupported(const Coordination::ZooKeeperRequest & request) const;
 
     bool shouldLogRequests() const;
     void setLogRequests(bool log_requests_);

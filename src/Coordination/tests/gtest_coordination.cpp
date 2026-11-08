@@ -1916,6 +1916,35 @@ TEST_P(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2));
 }
 
+TEST_P(CoordinationTest, ListWithOptionsV2IsRejectedWhenFeatureFlagDisabled)
+{
+    using namespace Coordination;
+
+    auto v1 = std::make_shared<ZooKeeperListWithOptionsRequest>();
+    v1->path = "/";
+    v1->options_version = ListOptionsVersion::V1;
+
+    auto v2 = std::make_shared<ZooKeeperListWithOptionsRequest>();
+    v2->path = "/";
+    v2->options_version = ListOptionsVersion::V2;
+    v2->options.start_after = "";
+
+    EXPECT_TRUE(this->keeper_context->isRequestSupported(*v1));
+    EXPECT_TRUE(this->keeper_context->isRequestSupported(*v2));
+
+    this->keeper_context->disableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
+    EXPECT_TRUE(this->keeper_context->isRequestSupported(*v1));
+    EXPECT_FALSE(this->keeper_context->isRequestSupported(*v2));
+
+    ZooKeeperMultiRequest multi_v2(Requests{v2}, ACLs{});
+    EXPECT_FALSE(this->keeper_context->isRequestSupported(multi_v2));
+
+    ZooKeeperMultiRequest multi_v1(Requests{v1}, ACLs{});
+    EXPECT_TRUE(this->keeper_context->isRequestSupported(multi_v1));
+
+    this->keeper_context->enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
+}
+
 TEST(CoordinationFeatureFlags, ShortFeatureStringsDoNotReadPastTheEnd)
 {
     DB::KeeperFeatureFlags empty_flags("");

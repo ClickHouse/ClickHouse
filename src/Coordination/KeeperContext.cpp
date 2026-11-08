@@ -15,6 +15,7 @@
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
@@ -849,6 +850,34 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
         case Coordination::OpNum::SessionID:
             return true;
     }
+}
+
+bool KeeperContext::isRequestSupported(const Coordination::ZooKeeperRequest & request) const
+{
+    if (const auto * multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(&request))
+    {
+        if (!isOperationSupported(request.getOpNum()))
+            return false;
+
+        for (const auto & subrequest : multi->requests)
+        {
+            if (!isRequestSupported(*subrequest))
+                return false;
+        }
+        return true;
+    }
+
+    if (!isOperationSupported(request.getOpNum()))
+        return false;
+
+    if (const auto * list_with_options = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest *>(&request))
+    {
+        if (list_with_options->options_version == Coordination::ListOptionsVersion::V2
+            && !feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
+            return false;
+    }
+
+    return true;
 }
 
 uint64_t KeeperContext::lastCommittedIndex() const

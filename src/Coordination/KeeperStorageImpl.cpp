@@ -1318,7 +1318,6 @@ static Coordination::ZooKeeperResponsePtr processLocal(
     };
 
     if (!zk_request.options.recursive && zk_request.options.filter == Coordination::ListRequestType::ALL
-        && !zk_request.options.shuffle
         && (zk_request.options_version == Coordination::ListOptionsVersion::V2 || (!zk_request.options.with_stat && !zk_request.options.with_data)))
     {
         /// V2 is cursor pagination: `start_after` empty means the first page, still in lexicographic order.
