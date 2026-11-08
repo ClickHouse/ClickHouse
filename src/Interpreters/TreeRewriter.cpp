@@ -313,7 +313,9 @@ struct UniquePredicateData
 
     static void visit(ASTFunction & func, ASTPtr)
     {
-        if (func.name == "__unique")
+        /// Only the parser-produced predicate form is rejected; an ordinary call `__unique(...)`
+        /// (e.g. an executable UDF with this name) goes through the usual function resolution.
+        if (func.name == "__unique" && func.isOperator())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The UNIQUE predicate is not supported in this context. It can only be used in the expressions of a query.");
     }
