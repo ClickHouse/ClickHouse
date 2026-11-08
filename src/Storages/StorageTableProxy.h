@@ -34,13 +34,12 @@ public:
     }
 
     /// The proxy is an implementation detail, so report the engine from the `CREATE` query until
-    /// the real storage can answer for itself.
+    /// the real storage can answer for itself. `DETACH` asks this with the database mutex held (to update the
+    /// attached-table metrics), so it does not wait for a load in progress, like `storesDataOnDisk`.
     std::string getName() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getName();
-        return engine_name;
+        auto storage = nestedIfResolved();
+        return storage ? storage->getName() : engine_name;
     }
 
     /// Same forwarding as `getInMemoryMetadataPtr` below, for the same reason: the proxy's own
