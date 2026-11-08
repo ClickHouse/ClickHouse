@@ -1,0 +1,11 @@
+materialized view
+[0,2,4,10,12]
+modify query
+[0,3]
+NOT_IMPLEMENTED
+handler
+1
+{"number":0}
+{"number":1}
+[0]
+[1]
