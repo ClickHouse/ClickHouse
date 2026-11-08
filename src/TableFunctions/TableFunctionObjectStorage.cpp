@@ -1779,8 +1779,6 @@ After identifying candidate files using the above rules, the system determines w
 * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 * A file whose name has no version number (a name other than `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`) is skipped. `iceberg_metadata_file_path` reads a file of any name
 
-Without a catalog, operations that write to the table refuse to run while its `metadata` directory holds a file whose name has no version number.
-
 **Note**: All mentioned settings except `iceberg_list_only_v_prefixed_metadata_files` are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
