@@ -1,6 +1,7 @@
 #include <base/types.h>
 
 #include <IO/ReadBufferFromMemory.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>

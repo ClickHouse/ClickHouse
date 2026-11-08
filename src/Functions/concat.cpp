@@ -10,6 +10,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <ranges>
 
