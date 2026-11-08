@@ -162,6 +162,11 @@ ManifestFilesPruner::ManifestFilesPruner(
             require_ready_sets);
     }
 
+    std::unordered_set<Int64> unbound_in_file_schema;
+    if (name_mapping)
+        collectUnboundFieldIds(
+            schema_processor.getIcebergTableSchemaById(initial_schema_id)->getArray(f_fields), name_mapping, unbound_in_file_schema);
+
     for (Int32 used_column_id : used_columns_in_filter)
     {
         std::optional<NameAndTypePair> name_and_type;
@@ -179,8 +184,10 @@ ManifestFilesPruner::ManifestFilesPruner(
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
 
             /// A data file without field ids binds this column through the mapping, which does not map every name the column
-            /// had in the schemas of the table to it, so the manifest metadata of such a file may describe another column.
-            if (name_mapping && name_mapping->unbound_field_ids.contains(used_column_id))
+            /// had in the schemas of the table (or of this file's manifest) to it, so the manifest metadata of such a file may
+            /// describe another column.
+            if (name_mapping
+                && (name_mapping->unbound_field_ids.contains(used_column_id) || unbound_in_file_schema.contains(used_column_id)))
                 columns_with_unreliable_statistics.insert(used_column_id);
         }
 

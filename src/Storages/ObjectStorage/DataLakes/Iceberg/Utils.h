@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
@@ -117,6 +118,11 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
 
 /// The table property `schema.name-mapping.default` of the metadata, or nullptr when it is absent.
 std::shared_ptr<const IcebergNameMapping> getNameMapping(const Poco::JSON::Object::Ptr & metadata_object);
+
+/// Adds the field ids of `fields` (the `fields` of a schema; top level and in structs) to which `fields` gives a
+/// name that `scope` does not map to them.
+void collectUnboundFieldIds(
+    const Poco::JSON::Array::Ptr & fields, const IcebergNameMapping * scope, std::unordered_set<Int64> & unbound_field_ids);
 
 Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object);
 

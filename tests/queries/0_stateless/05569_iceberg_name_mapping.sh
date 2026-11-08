@@ -7,7 +7,10 @@
 # fields under old names, list element named `item`) and `import_1.parquet` (`id` and `b` only), both without field
 # ids, then an `append` (with field ids, `id` 4), then one metadata file per change of the mapping or the schema.
 # `data_iceberg/name_mapping_partitioned` (PyIceberg 0.11.1, partitioned by `day(d)`): `add_files` of one file without
-# field ids, then `d` removed from the mapping and put back, then `b` renamed to `b_old` and a new column `b` added.
+# field ids, then `d` removed from the mapping and put back, then `b` renamed to `b_old` and a new column `b` added, then
+# an `append` (with field ids, `id` 4), the `add_files` snapshot expired and the schema of its manifest removed.
+# `data_iceberg/name_mapping_struct_swap` (PyIceberg 0.11.1): `add_files` of one file without field ids with a struct
+# `s` of two fields, then the names of the two fields swapped in the mapping.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,6 +35,14 @@ function P()
     echo "icebergLocal('name_mapping_partitioned', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
 }
 
+# S <metadata version>: the table with a struct at that version.
+function S()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_struct_swap/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_struct_swap', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
 V_BOTH=00004             # all fields mapped, `x`, `a`, `v` also under their old names
 V_UNMAPPED_B=00005       # `b` is not in the mapping
 V_B_NAMELESS=00006       # `b` is in the mapping with `names: []`
@@ -45,6 +56,9 @@ SNAPSHOT_WITH_B=7321918627603401030
 V_P_MAPPED=00001         # all fields mapped
 V_P_UNMAPPED_D=00002     # `d` is not in the mapping
 V_P_REASSIGNED=00005     # `b` renamed to `b_old`, the name `b` given to a new column
+V_P_CLEANED=00008        # the schema of the manifest of the file without field ids removed
+V_S_MAPPED=00001         # all fields mapped
+V_S_SWAPPED=00002        # the names of the fields of `s` swapped
 
 LAZY="query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_object_storage = 1"
 
@@ -83,6 +97,12 @@ SELECT count() FROM $(P $V_P_UNMAPPED_D) WHERE d IS NULL SETTINGS use_query_cond
 SELECT 'name given to a new column';
 SELECT id, b_old FROM $(P $V_P_REASSIGNED) ORDER BY id;
 SELECT count() FROM $(P $V_P_REASSIGNED) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'import-time schema removed';
+SELECT id, b_old FROM $(P $V_P_CLEANED) ORDER BY id;
+SELECT count() FROM $(P $V_P_CLEANED) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'columns cache';
+SELECT id, s FROM $(S $V_S_MAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
+SELECT id, s FROM $(S $V_S_SWAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
 "
 
 # The query above prunes the data file of `id` 4 by its manifest statistics.

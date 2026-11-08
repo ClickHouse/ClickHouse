@@ -784,7 +784,7 @@ static void parseNameMappingFields(const Poco::Dynamic::Var & fields_json, Icebe
     }
 }
 
-static void collectUnboundFieldIds(
+void collectUnboundFieldIds(
     const Poco::JSON::Array::Ptr & fields, const IcebergNameMapping * scope, std::unordered_set<Int64> & unbound_field_ids)
 {
     checkStackSize();
