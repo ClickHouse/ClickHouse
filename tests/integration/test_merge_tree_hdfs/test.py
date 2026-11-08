@@ -479,6 +479,11 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         "disk(name = 'old_hdfs', type = 'hdfs', "
         "endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/filter_named/')"
     )
+    read_only_disk = (
+        "disk(type = 'hdfs', endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/filter_ro/', read_only = 1)"
+    )
+    include_wrapper_disk = "disk(type = 'encrypted', include = 'encrypted_old_hdfs')"
+    include_config = "/etc/clickhouse-server/config.d/hdfs_locations.xml"
     wrapper_disks = [
         "disk(type = 'encrypted', disk = 'old_hdfs', key = '0123456789abcdef', path = 'bypass/')",
         "disk(type = 'cache', disk = 'old_hdfs', path = 'hdfs_bypass_cache/', max_size = '1Mi')",
@@ -510,6 +515,11 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
     create("t_locations_hdfs_disk", locations_disk, settings=include_settings)
     create("t_named_hdfs_disk", named_disk)
     create("t_macro_hdfs_disk", macro_disk)
+    create("t_include_wrapper_disk", include_wrapper_disk, settings=include_settings)
+    # The disk is cached when it is created, even if a MergeTree table on an empty read-only disk then fails.
+    node.query_and_get_answer_with_error(
+        f"CREATE TABLE t_ro_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {read_only_disk}"
+    )
 
     with ConfigManager() as cm:
         cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
@@ -519,6 +529,16 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
         assert not fs.exists("/sql_disk_filter/filter_blocked")
         # Identical definitions reuse the disks created before the list was tightened.
         assert_reuse_rejected()
+        assert_rejected(read_only_disk)
+
+        # The cached wrapper still delegates to old_hdfs even though its include now names a server disk.
+        node.replace_in_config(include_config, "<disk>old_hdfs</disk>", "<disk>default</disk>")
+        try:
+            assert_rejected(include_wrapper_disk, settings=include_settings)
+        finally:
+            node.replace_in_config(include_config, "<disk>default</disk>", "<disk>old_hdfs</disk>")
+        # Its disk wraps the disk of another table, which may not be loaded yet on restart.
+        node.query("DROP TABLE t_include_wrapper_disk SYNC")
 
         # The macro now expands to an allowed host, but the reused disk still points at hdfs1.
         cm.add_main_config(node, "configs/macros_override.xml")
@@ -542,3 +562,4 @@ def test_sql_hdfs_disk_remote_host_filter(cluster):
 
     for table in ["t_existing_hdfs_disk", "t_locations_hdfs_disk", "t_named_hdfs_disk"]:
         node.query(f"DROP TABLE {table} SYNC")
+    node.query("DROP TABLE IF EXISTS t_ro_hdfs_disk SYNC")

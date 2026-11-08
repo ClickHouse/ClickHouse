@@ -10,4 +10,9 @@
             </main>
         </locations>
     </hdfs_locations>
+    <encrypted_old_hdfs>
+        <disk>old_hdfs</disk>
+        <key>0123456789abcdef</key>
+        <path>bypass_include/</path>
+    </encrypted_old_hdfs>
 </clickhouse>

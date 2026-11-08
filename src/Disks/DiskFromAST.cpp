@@ -3,6 +3,7 @@
 #include <Disks/DiskSelector.h>
 #include <Disks/IStoragePolicy.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ReadOnlyDiskWrapper.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/RemoteHostFilter.h>
@@ -39,17 +40,33 @@ namespace ErrorCodes
 static void checkCustomDiskRemoteHosts(DiskPtr disk, const ContextPtr & context)
 {
     const auto & filter = context->getGlobalContext()->getRemoteHostFilter();
-    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
+    while (disk && disk->isCustomDisk())
     {
-        const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(disk.get());
+        DiskPtr inner = disk;
+        /// `read_only = true` wraps the disk built for the same definition; only the wrapper is marked as custom.
+        if (dynamic_cast<const ReadOnlyDiskWrapper *>(inner.get()))
+            inner = inner->getDelegateDiskIfExists();
+
+        const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(inner.get());
         if (!object_disk)
+        {
+            disk = inner->getDelegateDiskIfExists();
             continue;
+        }
+
+        /// A `cache` layer holds copies of the object storages of the disk it wraps, which may come from the server config.
+        if (auto wrapped = object_disk->getWrappedDisk())
+        {
+            disk = std::const_pointer_cast<DiskObjectStorage>(wrapped);
+            continue;
+        }
 
         for (const auto & [_, storage] : object_disk->getObjectStorages())
         {
             if (storage->getType() == ObjectStorageType::HDFS)
                 filter.checkURL(Poco::URI(storage->getDescription()));
         }
+        return;
     }
 }
 
@@ -263,14 +280,9 @@ static std::vector<std::pair<size_t, std::string>> getOrCreateCustomDisk(
             , disk_name);
 
     /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
-    /// A short `ATTACH` reuses the disk of its own stored definition, which is exempt like loading at start.
+    /// Check the disks it holds, not those its definition names now. A short `ATTACH` is exempt like loading at start.
     if (!created && !attach && !stored_definition)
-    {
-        if (is_wrapper)
-            check_wrapped_disk(context->getDisksMap());
-        else
-            checkCustomDiskRemoteHosts(disk, context);
-    }
+        checkCustomDiskRemoteHosts(disk, context);
 
     return matches;
 }
