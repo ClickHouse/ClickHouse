@@ -623,7 +623,7 @@ public:
                 /// key expression. Exceptions from that expression, such as an explicit user-supplied
                 /// cast or the `UInt64` conversion this pass inserts for a signed simple-key probe,
                 /// are therefore skipped together with the lookup.
-                /// A key with an aggregate function or arrayJoin decides the query's rows, so it is kept by the membership below.
+                /// A key with an aggregate function or `arrayJoin` changes the row count, so it is kept by the membership below.
                 if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type)
                     && !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin"))
                 {
