@@ -37,11 +37,13 @@ struct PartitionKeyFromSpec
     std::optional<DB::KeyDescription> key_description;
 };
 
+/// With keep_nullable the key columns keep the Nullable type of an optional source column.
 PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context);
+    DB::ContextPtr context,
+    bool keep_nullable = false);
 
 /// NOTE: tricky part to support RENAME column.
 /// Takes ActionDAG representation of user's WHERE expression and

@@ -213,7 +213,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    bool keep_nullable)
 {
     PartitionKeyFromSpec result;
 
@@ -248,7 +249,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
         /// against these input columns, which must contain each source column at most once.
         if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(column_characteristics->type));
+            partition_columns_description.emplace_back(
+                numeric_column_name, keep_nullable ? column_characteristics->type : removeNullable(column_characteristics->type));
     }
 
     if (!partition_columns_description.empty())
