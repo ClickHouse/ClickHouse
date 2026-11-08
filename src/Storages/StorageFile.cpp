@@ -3699,7 +3699,7 @@ private:
     /// thread (`Pretty` formats write the squashed blocks there), so the count is read under the writing lock.
     size_t getWrittenBytes()
     {
-        auto lock = writer->lockWriting();
+        auto writing_lock = writer->lockWriting();
         return naked_buffer->count();
     }
 

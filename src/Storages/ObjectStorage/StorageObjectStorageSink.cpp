@@ -158,7 +158,7 @@ size_t StorageObjectStorageSink::getWrittenBytes()
 {
     /// A format can write into the buffer from its own thread (`Pretty` formats write the squashed blocks there),
     /// so the count is read under the writing lock. It is released before finalizing, which takes it again.
-    auto lock = writer->lockWriting();
+    auto writing_lock = writer->lockWriting();
     return destination_buf->count();
 }
 
