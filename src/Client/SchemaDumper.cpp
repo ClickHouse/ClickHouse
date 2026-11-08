@@ -5725,11 +5725,92 @@ bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, con
     return passive;
 }
 
+/// The typing settings that can change the result type of a function call in `ast`.
+std::set<String> typingSettingsCarriedBy(const IAST & ast)
+{
+    std::set<String> res;
+    forEachNode(ast, [&](const IAST & node)
+    {
+        const auto * function = node.as<ASTFunction>();
+        if (!function)
+            return;
+        for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "ifNotFinite", "array", "map"})
+            if (equalsCaseInsensitive(function->name, name))
+                res.insert("allow_lossy_numeric_supertype");
+        /// Any element name lookup can depend on the names `tuple` gives, so every `tuple` with arguments is a carrier.
+        if (equalsCaseInsensitive(function->name, "tuple") && function->arguments && !function->arguments->children.empty())
+            res.insert("enable_named_columns_in_function_tuple");
+    });
+    return res;
+}
+
+/// Adds the typing settings of the stored queries that reading the tables `query` names analyzes: the query of a view and
+/// the ALIAS columns. A table that the dump does not know adds every typing setting.
+void addTypingSettingsOfReads(
+    const IAST & query, const String & database, const ProbeCatalog & catalog, size_t depth, std::set<String> & out)
+{
+    const std::set<String> all = {"allow_lossy_numeric_supertype", "enable_named_columns_in_function_tuple"};
+    std::set<String> cte_names;
+    forEachNode(query, [&](const IAST & node)
+    {
+        if (const auto * with = node.as<ASTWithElement>())
+            cte_names.insert(with->name);
+    });
+    forEachNode(query, [&](const IAST & node)
+    {
+        const auto * table_expression = node.as<ASTTableExpression>();
+        if (!table_expression || !table_expression->database_and_table_name)
+            return;
+        const ASTIdentifier * identifier = table_expression->database_and_table_name->as<ASTTableIdentifier>();
+        if (!identifier)
+            identifier = table_expression->database_and_table_name->as<ASTIdentifier>();
+        if (!identifier || identifier->name_parts.empty() || identifier->name_parts.size() > 2
+            || (identifier->name_parts.size() == 1 && cte_names.contains(identifier->name_parts[0])))
+            return;
+        const std::pair<String, String> table = identifier->name_parts.size() == 2
+            ? std::pair(identifier->name_parts[0], identifier->name_parts[1])
+            : std::pair(database, identifier->name_parts[0]);
+        String create_query;
+        if (DatabaseCatalog::isPredefinedDatabase(table.first))
+        {
+            const auto & tables = catalog.predefined_tables();
+            const auto it = tables.find(table);
+            if (it != tables.end() && it->second.first.starts_with("System"))
+                return;
+            if (it != tables.end())
+                create_query = it->second.second;
+        }
+        else if (const auto it = catalog.tables.find(table); it != catalog.tables.end())
+            create_query = it->second.create_query;
+        const ASTPtr ast = depth < 16 ? tryParseCreate(create_query) : nullptr;
+        const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+        if (!create)
+        {
+            out.insert(all.begin(), all.end());
+            return;
+        }
+        if (create->select && !create->is_materialized_view)
+        {
+            const auto carried = typingSettingsCarriedBy(*create->select);
+            out.insert(carried.begin(), carried.end());
+            addTypingSettingsOfReads(*create->select, table.first, catalog, depth + 1, out);
+        }
+        if (create->columns_list && create->columns_list->columns)
+            for (const auto & child : create->columns_list->columns->children)
+                if (const auto * column = child->as<ASTColumnDeclaration>();
+                    column && column->default_specifier == ColumnDefaultSpecifier::Alias && column->getDefaultExpression())
+                {
+                    const auto carried = typingSettingsCarriedBy(*column->getDefaultExpression());
+                    out.insert(carried.begin(), carried.end());
+                }
+    });
+}
+
 /// For the settings that change how `if`, `array`, `tuple` and the like type their result, picks for each table the values all its
 /// analyzed expressions analyze with together, else warns and keeps the dump session's, and warns when its storage needs non-defaults.
 void markTypingSettings(
     std::vector<TableInfo> & tables, const std::map<String, bool> & session_values, const std::map<String, bool> & default_values,
-    const AnalyzesOnSource & analyzes_on_source, std::ostream & err)
+    const AnalyzesOnSource & analyzes_on_source, const ProbeCatalog & catalog, std::ostream & err)
 {
     for (auto & table : tables)
     {
@@ -5741,23 +5822,42 @@ void markTypingSettings(
         if (!create || (create->select && !create->is_materialized_view))
             continue;
 
-        bool numeric_supertype = false;
-        bool calls_tuple = false;
-        forEachNode(*ast, [&](const IAST & node)
+        /// CREATE runs each scalar subquery of a constraint, not an `IN` set or `exists` argument, and so does every ATTACH.
+        std::vector<const IAST *> constraint_subqueries;
+        if (create->columns_list && create->columns_list->constraints)
         {
-            const auto * function = node.as<ASTFunction>();
-            if (!function)
-                return;
-            for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "ifNotFinite", "array", "map"})
-                numeric_supertype |= equalsCaseInsensitive(function->name, name);
-            /// Any element name lookup can depend on the names `tuple` gives, so every `tuple` with arguments is a carrier.
-            calls_tuple |= equalsCaseInsensitive(function->name, "tuple") && function->arguments && !function->arguments->children.empty();
-        });
-        std::vector<String> carried;
-        if (numeric_supertype)
-            carried.push_back("allow_lossy_numeric_supertype");
-        if (calls_tuple)
-            carried.push_back("enable_named_columns_in_function_tuple");
+            std::set<const IAST *> not_run;
+            forEachNode(*create->columns_list->constraints, [&](const IAST & node)
+            {
+                const auto * function = node.as<ASTFunction>();
+                if (!function || !function->arguments)
+                    return;
+                const auto & arguments = function->arguments->children;
+                if (functionIsInOrGlobalInOperator(function->name) && arguments.size() >= 2 && arguments[1]->as<ASTSubquery>())
+                    not_run.insert(arguments[1].get());
+                else if (function->name == "exists" && !arguments.empty() && arguments[0]->as<ASTSubquery>())
+                    not_run.insert(arguments[0].get());
+            });
+            std::function<void(const IAST &)> collect_subqueries = [&](const IAST & node)
+            {
+                if (not_run.contains(&node))
+                    return;
+                if (node.as<ASTSubquery>() && !node.children.empty())
+                    constraint_subqueries.push_back(&node);
+                else
+                    for (const auto & child : node.children)
+                        collect_subqueries(*child);
+            };
+            collect_subqueries(*create->columns_list->constraints);
+        }
+        const std::set<String> own_carried = typingSettingsCarriedBy(*ast);
+        /// The probes do not inline a view, so the stored queries that such a subquery reads stay unproven.
+        std::set<String> read_carried;
+        for (const auto * subquery : constraint_subqueries)
+            addTypingSettingsOfReads(*subquery, table.database, catalog, 0, read_carried);
+        std::set<String> carried_names = own_carried;
+        carried_names.insert(read_carried.begin(), read_carried.end());
+        const std::vector<String> carried(carried_names.begin(), carried_names.end());
         if (carried.empty())
             continue;
 
@@ -5829,33 +5929,12 @@ void markTypingSettings(
                 for (const auto & child : create->columns_list->indices->children)
                     if (const auto * index = child->as<ASTIndexDeclaration>(); index && index->getExpression())
                         add(index->getExpression().get(), index->getExpression()->formatWithSecretsOneLine(), storage_expressions);
-            /// CREATE analyzes no constraint, but runs each scalar subquery in one, not an `IN` set or `exists` argument.
+            /// CREATE analyzes no constraint, but runs its scalar subqueries, which are probed apart from the rest.
             if (create->columns_list->constraints)
             {
                 collect_carriers(*create->columns_list->constraints, probed_carriers);
-                std::set<const IAST *> not_run;
-                forEachNode(*create->columns_list->constraints, [&](const IAST & node)
-                {
-                    const auto * function = node.as<ASTFunction>();
-                    if (!function || !function->arguments)
-                        return;
-                    const auto & arguments = function->arguments->children;
-                    if (functionIsInOrGlobalInOperator(function->name) && arguments.size() >= 2 && arguments[1]->as<ASTSubquery>())
-                        not_run.insert(arguments[1].get());
-                    else if (function->name == "exists" && !arguments.empty() && arguments[0]->as<ASTSubquery>())
-                        not_run.insert(arguments[0].get());
-                });
-                std::function<void(const IAST &)> add_scalar_subqueries = [&](const IAST & node)
-                {
-                    if (not_run.contains(&node))
-                        return;
-                    if (node.as<ASTSubquery>() && !node.children.empty())
-                        add(&node, node.children[0]->formatWithSecretsOneLine(), constraint_probes);
-                    else
-                        for (const auto & child : node.children)
-                            add_scalar_subqueries(*child);
-                };
-                add_scalar_subqueries(*create->columns_list->constraints);
+                for (const auto * subquery : constraint_subqueries)
+                    add(subquery, subquery->children[0]->formatWithSecretsOneLine(), constraint_probes);
             }
             if (create->columns_list->projections)
                 for (const auto & child : create->columns_list->projections->children)
@@ -5922,27 +6001,29 @@ void markTypingSettings(
             session_probes.push_back(select_of(session_expressions, session_relation));
         else if (create->is_materialized_view && create->select)
             session_probes.push_back(create->select->formatWithSecretsOneLine());
-        session_probes.insert(session_probes.end(), constraint_probes.begin(), constraint_probes.end());
 
         /// A carrier outside the probes, or a probe that would run a subquery (see `analyzes_on_source`), leaves no proof.
-        bool can_probe = analyzes_on_source
-            && std::includes(probed_carriers.begin(), probed_carriers.end(), carriers.begin(), carriers.end());
-        for (const auto * probes : {&session_probes, &storage_probes})
-            for (const auto & probe : *probes)
+        auto probes_run_no_subquery = [](const std::vector<String> & probes)
+        {
+            return std::all_of(probes.begin(), probes.end(), [](const String & probe)
             {
-                if (!can_probe)
-                    break;
                 try
                 {
                     ParserSelectWithUnionQuery parser;
-                    can_probe = !analysisMayRunSubquery(
+                    return !analysisMayRunSubquery(
                         *parseQuery(parser, probe, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
                 }
                 catch (const Exception &)
                 {
-                    can_probe = false;
+                    return false;
                 }
-            }
+            });
+        };
+        const bool can_probe = analyzes_on_source
+            && std::includes(probed_carriers.begin(), probed_carriers.end(), carriers.begin(), carriers.end())
+            && probes_run_no_subquery(session_probes);
+        /// A constraint subquery that cannot be proven leaves the proof of the rest of the table as it is.
+        const bool can_probe_constraints = can_probe && read_carried.empty() && probes_run_no_subquery(constraint_probes);
 
         std::vector<std::pair<String, bool>> values;
         for (const auto & name : carried)
@@ -5970,36 +6051,56 @@ void markTypingSettings(
             return std::nullopt;
         };
         /// The analyzer gates are tried off first; a combination that needs one also sets it right before the CREATE.
-        std::optional<size_t> mask;
         std::vector<String> gates_needed;
-        if (can_probe && !session_probes.empty())
+        auto solve = [&](const std::vector<String> & probes) -> std::optional<size_t>
         {
-            mask = find_combination(session_probes, gates_off);
-            if (!mask)
-            {
-                mask = find_combination(session_probes, gates_on);
-                if (mask)
-                    for (const auto & gate : gates_on)
-                    {
-                        SettingsChanges changes = gates_on;
-                        changes.setSetting(gate.name, Field(false));
-                        if (!analyzes_with(session_probes, *mask, changes))
-                            gates_needed.push_back(gate.name);
-                    }
-            }
+            gates_needed.clear();
+            if (const auto without_gates = find_combination(probes, gates_off))
+                return without_gates;
+            const auto with_gates = find_combination(probes, gates_on);
+            if (with_gates)
+                for (const auto & gate : gates_on)
+                {
+                    SettingsChanges changes = gates_on;
+                    changes.setSetting(gate.name, Field(false));
+                    if (!analyzes_with(probes, *with_gates, changes))
+                        gates_needed.push_back(gate.name);
+                }
+            return with_gates;
+        };
+        std::optional<size_t> mask;
+        bool constraints_proven = constraint_probes.empty() && read_carried.empty();
+        if (can_probe_constraints && !constraint_probes.empty())
+        {
+            std::vector<String> probes = session_probes;
+            probes.insert(probes.end(), constraint_probes.begin(), constraint_probes.end());
+            mask = solve(probes);
+            constraints_proven = mask.has_value();
         }
+        if (!mask && can_probe && !session_probes.empty())
+            mask = solve(session_probes);
+        /// A setting that only a stored query read by a constraint subquery carries keeps the session's value.
         if (mask)
             for (size_t i = 0; i < values.size(); ++i)
-                values[i].second = ((*mask >> i) & 1) != 0;
-        else if (!values.empty() && (!can_probe || !session_probes.empty()))
+                if (own_carried.contains(values[i].first))
+                    values[i].second = ((*mask >> i) & 1) != 0;
+        const bool unverified = !mask && !values.empty() && (!can_probe || !session_probes.empty());
+        if (unverified)
             err << "Warning: the typing settings of " << table_relation
                 << " could not be verified, so the dump keeps the session's values.\n";
+        else if (!constraints_proven && !values.empty())
+            err << "Warning: the typing settings of the constraint subqueries of " << table_relation
+                << " could not be verified, so replaying the table or attaching it later may fail.\n";
         size_t default_mask = 0;
         for (size_t i = 0; i < values.size(); ++i)
             default_mask |= size_t{default_values.at(values[i].first)} << i;
+        /// A constraint subquery runs again at every ATTACH, under the server's settings profile, as a storage expression does.
+        std::vector<String> profile_probes = storage_probes;
+        if (constraints_proven)
+            profile_probes.insert(profile_probes.end(), constraint_probes.begin(), constraint_probes.end());
         /// Only an answer is a proof: a probe that was not sent fails under every combination.
-        if (can_probe && !storage_probes.empty() && !analyzes_with(storage_probes, default_mask, gates_on))
-            if (const auto storage_mask = find_combination(storage_probes, gates_on))
+        if (can_probe && !profile_probes.empty() && !analyzes_with(profile_probes, default_mask, gates_on))
+            if (const auto storage_mask = find_combination(profile_probes, gates_on))
             {
                 err << "Warning: the storage expressions of " << table_relation;
                 for (size_t i = 0; i < values.size(); ++i)
@@ -6372,7 +6473,7 @@ void dumpDatabaseSchema(
                     typing_default_values[name_column[i].safeGet<String>()] = default_column[i].safeGet<String>() != "0";
                 }
             }, context->getSettingsRef());
-        markTypingSettings(tables, typing_session_values, typing_default_values, analyzes_on_source, err);
+        markTypingSettings(tables, typing_session_values, typing_default_values, analyzes_on_source, probe_catalog, err);
     }
 
     if (output_dir.empty())
