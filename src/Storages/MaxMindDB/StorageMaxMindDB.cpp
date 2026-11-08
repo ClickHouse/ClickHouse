@@ -17,6 +17,7 @@
 #include <Storages/KVStorageUtils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <base/sort.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
@@ -419,6 +420,7 @@ void registerStorageMaxMindDB(StorageFactory & factory)
                 args.storage_def->primary_key ? args.storage_def->primary_key->ptr() : ASTPtr{},
                 local_context);
         },
+        SecretArgumentsSpec{},
         {
             .supports_settings = true,
             .supports_sort_order = true,
