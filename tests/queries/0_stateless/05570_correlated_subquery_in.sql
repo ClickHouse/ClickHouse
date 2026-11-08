@@ -310,6 +310,14 @@ SELECT k, x,
 FROM o ORDER BY k, x;
 -- `<=>`, because a lambda named `equals` replaces the `=` of the query as well.
 WITH (a, b) -> 1 AS equals SELECT k, x FROM o WHERE x IN (SELECT e FROM i WHERE i.k <=> o.k) ORDER BY k, x;
+-- A lambda named `tuple` gives the left argument its value, here the swapped pair, as in the regular IN.
+WITH (a, b) -> arrayZip([b], [a])[1] AS tuple
+SELECT k, x,
+    (x, k) IN (SELECT e, i.k FROM i WHERE i.k = o.k) AS got,
+    (x, k) NOT IN (SELECT e, i.k FROM i WHERE i.k = o.k) AS got_not,
+    got = multiIf(k = 1, (x, k) IN (SELECT e, k FROM i WHERE k = 1), k = 2, (x, k) IN (SELECT e, k FROM i WHERE k = 2), (x, k) IN (SELECT e, k FROM i WHERE k = 3)),
+    got_not = multiIf(k = 1, (x, k) NOT IN (SELECT e, k FROM i WHERE k = 1), k = 2, (x, k) NOT IN (SELECT e, k FROM i WHERE k = 2), (x, k) NOT IN (SELECT e, k FROM i WHERE k = 3))
+FROM o ORDER BY k, x;
 
 SELECT 'refusals';
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.kn); -- { serverError NOT_IMPLEMENTED }

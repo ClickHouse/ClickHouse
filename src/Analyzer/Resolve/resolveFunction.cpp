@@ -1470,9 +1470,11 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         else
             resolved_keys.assign(keys_count, in_first_argument);
 
+        /// The arguments of `tuple` are the keys only if it is not a lambda of the scope with this name.
         const auto * unresolved_tuple = unresolved_left->as<FunctionNode>();
         const bool is_unresolved_tuple = unresolved_tuple && unresolved_tuple->getFunctionName() == "tuple"
-            && unresolved_tuple->getArguments().getNodes().size() == keys_count;
+            && unresolved_tuple->getArguments().getNodes().size() == keys_count
+            && !tryResolveIdentifier({Identifier{"tuple"}, IdentifierLookupContext::FUNCTION}, scope).isResolved();
         make_unresolved_key = [unresolved_left, is_unresolved_tuple, make_function_node](size_t i) -> QueryTreeNodePtr
         {
             if (is_unresolved_tuple)
