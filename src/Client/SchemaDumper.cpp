@@ -1990,6 +1990,26 @@ void collectDictionaryNamedCollection(
     for (const auto & element : source->elements->children)
     {
         const auto * pair = element->as<ASTPair>();
+        /// A `CLICKHOUSE` source runs these queries, so a table function in one resolves its collection on load.
+        const auto * text = pair && pair->second ? pair->second->as<ASTLiteral>() : nullptr;
+        if (equalsCaseInsensitive(source->name, "clickhouse") && text && text->value.getType() == Field::Types::String
+            && (pair->first == "query" || pair->first == "where" || pair->first == "invalidate_query"))
+        {
+            try
+            {
+                const String & value = text->value.safeGet<String>();
+                ParserSelectWithUnionQuery select_parser;
+                ParserExpression expression_parser;
+                IParser & parser = pair->first == "where" ? static_cast<IParser &>(expression_parser) : select_parser;
+                const ASTPtr query = parseQuery(parser, value, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+                collectNamedCollectionsFromTableExpressions(*query, clusters, dependencies);
+            }
+            catch (const Exception &)
+            {
+                dependencies.unscannable = true;
+            }
+            continue;
+        }
         if (!pair || pair->first != "name" || !pair->second)
             continue;
         String name;
@@ -2046,6 +2066,31 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
         if (const Field * value = create->storage->settings->changes.tryGet("collection_name");
             value && value->getType() == Field::Types::String && !value->safeGet<String>().empty())
             addNamedCollectionDependency(value->safeGet<String>(), clusters, dependencies);
+    /// A cache disk defined in a `disk = disk(...)` setting reads the collection its `cache_name` key names when it is created.
+    if (create->storage && create->storage->settings)
+        for (const auto & change : create->storage->settings->changes)
+        {
+            CustomType custom;
+            if (change.name != "disk" || !change.value.tryGet<CustomType>(custom)
+                || std::string_view(custom.getTypeName()) != FieldFromASTImpl::name)
+                continue;
+            forEachNode(*dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, [&](const IAST & node)
+            {
+                const auto * function = node.as<ASTFunction>();
+                if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+                    return;
+                const auto * key = function->arguments->children[0]->as<ASTIdentifier>();
+                const auto & value = function->arguments->children[1];
+                String name;
+                if (const auto * literal = value->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                    name = literal->value.safeGet<String>();
+                else
+                    tryGetIdentifierNameInto(value, name);
+                /// A masked name is reported with the other masked secrets.
+                if (key && key->name() == "cache_name" && !name.empty() && name != "[HIDDEN]")
+                    addNamedCollectionDependency(name, clusters, dependencies);
+            });
+        }
     if (const auto * function = create->as_table_function ? create->as_table_function->as<ASTFunction>() : nullptr)
         collectNamedCollectionsFromTableFunction(*function, clusters, dependencies);
     if (create->select)
