@@ -1425,6 +1425,33 @@ void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
         default_spec_id);
 }
 
+template <typename LoadFunc>
+static MetadataFileWithInfo getOrLoadLatestMetadataFileAndVersion(
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const String & table_path,
+    const std::optional<String> & table_uuid,
+    const ContextPtr & local_context,
+    bool force_fetch_latest_metadata,
+    LoadFunc && load_fn)
+{
+    /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
+    size_t tolerated_staleness_ms = static_cast<size_t>(local_context->getSettingsRef()[Setting::iceberg_metadata_staleness_ms]);
+    /// If the force is been requested (normally it's required by certain types of operations), the tolerance will be 0 and we'll go to the remote catalog
+    if (force_fetch_latest_metadata)
+        tolerated_staleness_ms = 0;
+
+    if (metadata_cache)
+    {
+        return metadata_cache->getOrSetLatestMetadataVersion(
+            table_path,
+            table_uuid,
+            load_fn,
+            tolerated_staleness_ms
+        )->latest_metadata;
+    }
+    return load_fn();
+}
+
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
@@ -1727,22 +1754,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
     };
 
-    /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
-    size_t tolerated_staleness_ms = static_cast<size_t>(local_context->getSettingsRef()[Setting::iceberg_metadata_staleness_ms]);
-    /// If the force is been requested (normally it's required by certain types of operations), the tolerance will be 0 and we'll go to the remote catalog
-    if (force_fetch_latest_metadata)
-        tolerated_staleness_ms = 0;
-
-    if (metadata_cache)
-    {
-        return metadata_cache->getOrSetLatestMetadataVersion(
-            table_path,
-            table_uuid,
-            load_fn,
-            tolerated_staleness_ms
-        )->latest_metadata;
-    }
-    return load_fn();
+    return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -1805,21 +1817,35 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value && !ignore_metadata_pointer_overrides)
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
-        auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
-        std::string metadata_file;
-        StoredObject version_hint(version_hint_path);
-        auto buf = object_storage->readObject(version_hint, ReadSettings{});
-        readString(metadata_file, *buf);
-        auto resolved
-            = resolveMetadataFilenameFromVersionHint(metadata_file, table_path, object_storage, known_compression_method, local_context);
-        if (resolved.has_value())
+        auto load_fn = [&]
         {
-            LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", *resolved);
-            ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-            return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(*resolved).filename());
-        }
-        LOG_WARNING(log, "Version hint content '{}' could not be resolved to a metadata file, falling back to listing", metadata_file);
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergVersionHintReadMicroseconds);
+            auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
+            std::string metadata_file;
+            StoredObject version_hint(version_hint_path);
+            auto buf = object_storage->readObject(version_hint, ReadSettings{});
+            readString(metadata_file, *buf);
+            auto resolved
+                = resolveMetadataFilenameFromVersionHint(metadata_file, table_path, object_storage, known_compression_method, local_context);
+            if (resolved.has_value())
+            {
+                LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", *resolved);
+                ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
+                return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(*resolved).filename());
+            }
+            LOG_WARNING(log, "Version hint content '{}' could not be resolved to a metadata file, falling back to listing", metadata_file);
+            return getLatestMetadataFileAndVersion(
+                object_storage,
+                table_path,
+                data_lake_settings,
+                metadata_cache,
+                local_context,
+                table_uuid,
+                false,
+                /* force_fetch_latest_metadata */ true,
+                ignore_metadata_pointer_overrides);
+        };
+        return getOrLoadLatestMetadataFileAndVersion(metadata_cache, table_path, table_uuid, local_context, force_fetch_latest_metadata, load_fn);
     }
 
     {
