@@ -663,36 +663,79 @@ bool unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                 }
                 else if (!disjoint && first.size() + second.size() >= 64)
                 {
-                    /// A global envelope can hide gaps between components. Probe those gaps only
-                    /// for larger operands, where avoiding the overlay pays for a temporary index.
-                    const auto & smaller = first.size() <= second.size() ? first : second;
-                    const auto & larger = first.size() <= second.size() ? second : first;
-                    const auto probe_box = boost::geometry::return_envelope<Box>(larger.front());
-                    const auto first_component_box = boost::geometry::return_envelope<Box>(smaller.front());
-                    if (boost::geometry::disjoint(probe_box, first_component_box))
+                    /// A global envelope can hide gaps between components, and a single contact would send
+                    /// every component through the overlay, whose cost grows with all of them. Overlay only
+                    /// the components within the margin of the other operand and append the rest unchanged.
+                    const bool first_is_smaller = first.size() <= second.size();
+                    const auto & smaller = first_is_smaller ? first : second;
+                    const auto & larger = first_is_smaller ? second : first;
+                    using Entry = std::pair<Box, size_t>;
+                    using Index = boost::geometry::index::rtree<
+                        Entry,
+                        boost::geometry::index::quadratic<16>,
+                        boost::geometry::index::indexable<Entry>,
+                        boost::geometry::index::equal_to<Entry>,
+                        AllocatorWithMemoryTracking<Entry>>;
+                    auto widen = [margin](const Box & box)
                     {
-                        using Index = boost::geometry::index::rtree<
-                            Box,
-                            boost::geometry::index::quadratic<16>,
-                            boost::geometry::index::indexable<Box>,
-                            boost::geometry::index::equal_to<Box>,
-                            AllocatorWithMemoryTracking<Box>>;
-                        Index index;
-                        /// Incremental insertion keeps node allocation under memory tracking.
-                        for (const auto & polygon : smaller)
-                            index.insert(boost::geometry::return_envelope<Box>(polygon));
-                        disjoint = true;
-                        for (const auto & polygon : larger)
+                        return Box{
+                            {box.min_corner().template get<0>() - margin, box.min_corner().template get<1>() - margin},
+                            {box.max_corner().template get<0>() + margin, box.max_corner().template get<1>() + margin}};
+                    };
+                    Index index;
+                    /// Incremental insertion keeps node allocation under memory tracking.
+                    for (size_t i = 0; i < smaller.size(); ++i)
+                        index.insert({boost::geometry::return_envelope<Box>(smaller[i]), i});
+                    std::vector<UInt8, AllocatorWithMemoryTracking<UInt8>> smaller_near(smaller.size()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+                    std::vector<UInt8, AllocatorWithMemoryTracking<UInt8>> larger_near(larger.size()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+                    size_t near_count = 0;
+                    for (size_t j = 0; j < larger.size(); ++j)
+                    {
+                        const auto widened = widen(boost::geometry::return_envelope<Box>(larger[j]));
+                        for (auto it = index.qbegin(boost::geometry::index::intersects(widened)); it != index.qend(); ++it)
                         {
-                            const auto box = boost::geometry::return_envelope<Box>(polygon);
-                            const Box widened{
-                                {box.min_corner().template get<0>() - margin, box.min_corner().template get<1>() - margin},
-                                {box.max_corner().template get<0>() + margin, box.max_corner().template get<1>() + margin}};
-                            if (index.qbegin(boost::geometry::index::intersects(widened)) != index.qend())
-                            {
-                                disjoint = false;
-                                break;
-                            }
+                            near_count += !smaller_near[it->second] + !larger_near[j];
+                            smaller_near[it->second] = 1;
+                            larger_near[j] = 1;
+                        }
+                    }
+                    if (near_count == 0)
+                        disjoint = true;
+                    else if (near_count < first.size() + second.size())
+                    {
+                        CartesianMultiPolygon smaller_part;
+                        CartesianMultiPolygon larger_part;
+                        CartesianMultiPolygon far;
+                        for (size_t i = 0; i < smaller.size(); ++i)
+                            (smaller_near[i] ? smaller_part : far).push_back(smaller[i]);
+                        for (size_t j = 0; j < larger.size(); ++j)
+                            (larger_near[j] ? larger_part : far).push_back(larger[j]);
+                        CartesianMultiPolygon overlay;
+                        boost::geometry::union_(smaller_part, larger_part, overlay);
+                        /// The far components are separated from the other operand and valid among themselves,
+                        /// so only the overlay and the far components within the margin of it need validation.
+                        String reason;
+                        bool valid = !overlay.empty() && correctAndValidatePolygonalGeometry(overlay, reason);
+                        if (valid)
+                        {
+                            Index overlay_index;
+                            for (size_t i = 0; i < overlay.size(); ++i)
+                                overlay_index.insert({boost::geometry::return_envelope<Box>(overlay[i]), i});
+                            CartesianMultiPolygon neighbourhood = overlay;
+                            for (const auto & polygon : far)
+                                if (overlay_index.qbegin(boost::geometry::index::intersects(widen(boost::geometry::return_envelope<Box>(polygon))))
+                                    != overlay_index.qend())
+                                    neighbourhood.push_back(polygon);
+                            valid = neighbourhood.size() == overlay.size()
+                                || isValidGeoMultiPolygon<AllocatorWithMemoryTracking>(neighbourhood, reason);
+                        }
+                        /// Otherwise keep the general overlay of the whole operands and its full validation.
+                        if (valid)
+                        {
+                            output = std::move(overlay);
+                            output.insert(output.end(), far.begin(), far.end());
+                            valid_by_construction = true;
+                            return;
                         }
                     }
                 }
