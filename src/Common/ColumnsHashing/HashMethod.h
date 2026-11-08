@@ -889,8 +889,6 @@ struct HashMethodHashed
     static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
     size_t last_row = no_last_row;
 
-    /// With `prepare_keys`: the keys of the rows [begin, begin + size), the rows to hash next time, and the end of the rows the state is
-    /// asked about. `enabled` is false when the caller skips rows.
     struct PreparedKeys /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only keys[0, size) is read
     {
         static constexpr size_t min_rows = 8;
@@ -914,7 +912,6 @@ struct HashMethodHashed
         if constexpr (prepare_keys)
         {
             prepared.rows_end = std::min(rows.end, key_columns.empty() ? 0 : key_columns[0]->size());
-            /// A state asked about fewer than `min_rows` rows has no lookups to overlap.
             prepared.enabled = !rows.skips_rows && prepared.rows_end >= rows.begin + PreparedKeys::min_rows;
         }
     }
@@ -972,7 +969,6 @@ private:
             return false;
     }
 
-    /// Hashes the rows from `row` on, `next_rows` of them at most. A row equal to the row before it gets that row's key.
     NO_INLINE void prepareKeys(size_t row) requires (prepare_keys)
     {
         const size_t end = std::min(prepared.rows_end, row + prepared.next_rows);
