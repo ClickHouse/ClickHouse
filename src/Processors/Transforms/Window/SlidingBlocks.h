@@ -54,7 +54,6 @@ public:
     RowNumber prev(RowNumber row) const;
     RowNumber move(RowNumber row, int64_t offset) const;
     int64_t positionOf(RowNumber row) const;
-    int64_t rowsBetween(RowNumber start, RowNumber end) const;
 
 private:
     DevectorWithMemoryTracking<SlidingBlock> blocks;

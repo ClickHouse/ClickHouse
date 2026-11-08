@@ -4,13 +4,13 @@ namespace DB
 {
 
 Partition::Partition()
-    : partition_bounds{.start = RowNumber{0, 0}, .end = RowNumber{0, 0}, .fully_visible = true}
+    : partition_bounds{.start = RowNumber{0, 0}, .end = RowNumber{0, 0}, .rows_count = 0, .fully_visible = true}
 {
 }
 
 void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
-    partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .fully_visible = false};
+    partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .rows_count = 1, .fully_visible = false};
     advance(blocks);
 }
 
@@ -25,7 +25,9 @@ void Partition::advance(const SlidingBlocks & blocks)
         while (next_start < block.rows_count && !block.index.partition_starts[next_start])
             ++next_start;
 
-        end = blocks.move(end, next_start - end.row);
+        const int64_t rows_passed = next_start - end.row;
+        partition_bounds.rows_count += rows_passed;
+        end = blocks.move(end, rows_passed);
         if (next_start < block.rows_count)
             finish();
     }

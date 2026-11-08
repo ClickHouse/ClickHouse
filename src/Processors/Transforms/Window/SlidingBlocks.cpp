@@ -84,9 +84,4 @@ int64_t SlidingBlocks::positionOf(RowNumber row) const
     return blockAt(row.block).begin_position + row.row;
 }
 
-int64_t SlidingBlocks::rowsBetween(RowNumber start, RowNumber end) const
-{
-    return positionOf(end) - positionOf(start);
-}
-
 }

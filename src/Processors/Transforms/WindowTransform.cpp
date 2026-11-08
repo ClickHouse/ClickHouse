@@ -184,7 +184,7 @@ void WindowTransform::recordCurrentRowBounds()
     }
     if (params.requirements.partition)
     {
-        bounds.partition_end.push_back(current.row_index_in_partition + blocks.rowsBetween(current.location, partition.bounds().end));
+        bounds.partition_end.push_back(partition.bounds().rows_count);
     }
     ++bounds.rows;
 }

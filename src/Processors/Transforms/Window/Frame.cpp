@@ -27,21 +27,21 @@ int64_t peerGroupAt(const SlidingBlocks & blocks, RowNumber row)
     return blocks.blockAt(row.block).index.peer_group_indexes[row.row];
 }
 
-bool advanceToPartitionEnd(const SlidingBlocks & blocks, const PartitionBounds & partition, RowPoint & bound)
+bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
 {
     if (!partition.fully_visible)
         return false;
 
-    bound.row_index_in_partition += blocks.rowsBetween(bound.location, partition.end);
     bound.location = partition.end;
+    bound.row_index_in_partition = partition.rows_count;
     return true;
 }
 
 /// The bound of a ROWS frame at a row index, cut to the partition.
 bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t target_row_index, RowPoint & bound)
 {
-    if (target_row_index >= bound.row_index_in_partition + blocks.rowsBetween(bound.location, partition.end))
-        return advanceToPartitionEnd(blocks, partition, bound);
+    if (target_row_index >= partition.rows_count)
+        return advanceToPartitionEnd(partition, bound);
 
     const int64_t row_index = std::max<int64_t>(target_row_index, 0);
     chassert(bound.row_index_in_partition <= row_index);
@@ -149,7 +149,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
     switch (frame.end_type)
     {
         case WindowFrame::BoundaryType::Unbounded:
-            return advanceToPartitionEnd(blocks, partition, end);
+            return advanceToPartitionEnd(partition, end);
         case WindowFrame::BoundaryType::Current:
             switch (frame.type)
             {

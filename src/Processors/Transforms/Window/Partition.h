@@ -10,6 +10,7 @@ struct PartitionBounds
 {
     RowNumber start;
     RowNumber end;
+    int64_t rows_count = 0;
     bool fully_visible = false;
 };
 
