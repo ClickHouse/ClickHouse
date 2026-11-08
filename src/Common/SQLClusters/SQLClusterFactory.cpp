@@ -464,10 +464,14 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
 
     validateSQLClusterDefinition(query.definition->as<const ASTSQLClusterDefinition &>());
 
+    /// Build the in-memory cluster first, then persist, as named collections and handlers do.
+    /// A definition that `materializeCluster` rejects (missing `host`, invalid `weight`, ...)
+    /// must not leave a file or Keeper znode that then fails `CREATE CLUSTER` with
+    /// `CLUSTER_ALREADY_EXISTS` and blocks other servers at `loadIfNot`.
     auto create_statement = query.formatWithSecretsOneLine();
+    auto cluster = materializeCluster(query, context, create_statement);
     metadata_storage->writeCreateQuery(query.cluster_name, create_statement, false);
-
-    context->setCluster(query.cluster_name, materializeCluster(query, context, create_statement));
+    context->setCluster(query.cluster_name, cluster);
     stored_cluster_names.insert(query.cluster_name);
 }
 
@@ -499,9 +503,9 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
     validateSQLClusterDefinition(create_query.definition->as<const ASTSQLClusterDefinition &>());
 
     auto create_statement = create_query.formatWithSecretsOneLine();
+    auto cluster = materializeCluster(create_query, context, create_statement);
     metadata_storage->writeCreateQuery(query.cluster_name, create_statement, true);
-
-    context->setCluster(query.cluster_name, materializeCluster(create_query, context, create_statement));
+    context->setCluster(query.cluster_name, cluster);
     /// The cluster may have been created on another replica and not yet loaded here by the background reload.
     /// Register it, so that a later reload or `DROP CLUSTER` removes it once it is gone from the metadata storage.
     stored_cluster_names.insert(query.cluster_name);
