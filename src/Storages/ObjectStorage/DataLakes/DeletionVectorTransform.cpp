@@ -15,18 +15,20 @@ namespace DB
 
 DeletionVectorTransform::DeletionVectorTransform(
     const DB::SharedHeader & header_,
-    ExcludedRowsPtr excluded_rows_)
+    ExcludedRowsPtr rows_,
+    bool rows_are_selection_)
     : ISimpleTransform(header_, header_, /* skip_empty_chunks */false)
-    , excluded_rows(excluded_rows_)
+    , rows(rows_)
+    , rows_are_selection(rows_are_selection_)
 {
 }
 
 void DeletionVectorTransform::transform(DB::Chunk & chunk)
 {
-    transform(chunk, *excluded_rows);
+    transform(chunk, *rows, rows_are_selection);
 }
 
-void DeletionVectorTransform::transform(DB::Chunk & chunk, const ExcludedRows & excluded_rows)
+void DeletionVectorTransform::transform(DB::Chunk & chunk, const ExcludedRows & rows, bool rows_are_selection)
 {
     auto chunk_info = chunk.getChunkInfos().get<DB::ChunkInfoRowNumbers>();
     if (!chunk_info)
@@ -44,7 +46,7 @@ void DeletionVectorTransform::transform(DB::Chunk & chunk, const ExcludedRows & 
     {
         if (!applied_filter.has_value() || applied_filter.value()[i])
         {
-            if (excluded_rows.rb_contains(chunk_info->row_num_offset + i))
+            if (rows.rb_contains(chunk_info->row_num_offset + i) != rows_are_selection)
             {
                 filter[idx_in_chunk] = false;
                 --num_rows_after;

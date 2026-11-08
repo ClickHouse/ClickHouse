@@ -27,6 +27,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -76,27 +77,6 @@ bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
 {
     return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
 }
-
-/// A data file with the size its `add` action records.
-struct DataObjectInfo : public DB::ObjectInfo
-{
-    DataObjectInfo(std::string path_, int64_t size_)
-        : DB::ObjectInfo(DB::RelativePathWithMetadata(std::move(path_)))
-        , size(size_)
-    {
-    }
-
-    std::shared_ptr<DB::ObjectInfo> clone() const override { return std::make_shared<DataObjectInfo>(*this); }
-
-    std::optional<size_t> getFileSizeHint() const override
-    {
-        if (size > 0)
-            return static_cast<size_t>(size);
-        return std::nullopt;
-    }
-
-    const int64_t size;
-};
 
 }
 

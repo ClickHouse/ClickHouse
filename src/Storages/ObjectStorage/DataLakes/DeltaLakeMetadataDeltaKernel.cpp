@@ -167,6 +167,21 @@ getSnapshotVersion(const Settings & settings)
         value);
 }
 
+/// The version range of the change data feed, if the settings request it. A range without an end version ends at
+/// `snapshot_version` if it is known, so that the change data feed and the schema are read at the same version.
+static std::optional<DeltaLake::TableChangesVersionRange> getChangeDataFeedVersionRange(
+    const Settings & settings, std::optional<DeltaLakeMetadataDeltaKernel::SnapshotVersion> snapshot_version)
+{
+    const auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+    if (start_version == DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+        return std::nullopt;
+
+    auto version_range = DeltaLake::TableChanges::getVersionRange(start_version, settings[Setting::delta_lake_snapshot_end_version].value);
+    if (!version_range.second.has_value() && snapshot_version.has_value())
+        version_range.second = *snapshot_version;
+    return version_range;
+}
+
 DeltaLake::TableSnapshotPtr
 DeltaLakeMetadataDeltaKernel::getTableSnapshot(std::optional<SnapshotVersion> version) const
 {
@@ -286,13 +301,9 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
     }
 }
 
-DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
-    const DeltaLake::TableChangesVersionRange & version_range,
-    const Block & header,
-    const std::optional<FormatSettings> & format_settings,
-    ContextPtr context) const
+DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(const DeltaLake::TableChangesVersionRange & version_range) const
 {
-    return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper, header, format_settings, format_name, context);
+    return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper);
 }
 
 std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTableStateSnapshot(ContextPtr context) const
@@ -348,28 +359,23 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No version found in table state snapshot");
     }
 
+    /// The change data feed (`delta_lake_snapshot_start_version`): delta-kernel-rs lists the data files with the changes,
+    /// which are read like the data files of a snapshot. The column mapping is that of the last version of the range.
+    if (auto version_range = getChangeDataFeedVersionRange(context->getSettingsRef(), snapshot_version))
+    {
+        const auto & physical_names_map = getTableSnapshot(version_range->second)->getPhysicalNamesMap();
+        return getTableChanges(*version_range)->iterate(filter_dag, physical_names_map, callback, context);
+    }
+
     return getTableSnapshot(snapshot_version)->iterate(filter_dag, callback, list_batch_size, context);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
-        start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
-    {
-        auto version_range = DeltaLake::TableChanges::getVersionRange(
-            start_version,
-            settings[Setting::delta_lake_snapshot_end_version].value);
+    if (auto version_range = getChangeDataFeedVersionRange(settings, /* snapshot_version */ std::nullopt))
+        return getTableChanges(*version_range)->getSchema();
 
-        /// TODO: Once we support passing metadata state via metadata snapshot
-        /// (already done in iceberg),
-        /// then need to put table changes there as well to reuse.
-        return getTableChanges(
-            version_range,
-            /* source_header */{},
-            /* format_settings */{},
-            local_context)->getSchema();
-    }
     const auto snapshot_version = getSnapshotVersion(local_context->getSettingsRef());
     return getTableSnapshot(snapshot_version)->getTableSchema();
 }
@@ -690,19 +696,40 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             snapshot_version.has_value() ? toString(snapshot_version.value()) : "Latest");
     }
 
+    /// The change data feed is read with the schema of the last version of its range.
+    const auto change_data_feed_version_range = getChangeDataFeedVersionRange(context->getSettingsRef(), snapshot_version);
+    if (change_data_feed_version_range)
+        snapshot_version = change_data_feed_version_range->second;
+
     auto snapshot = getTableSnapshot(snapshot_version);
 
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
-    const auto physical_names_map = snapshot->getPhysicalNamesMap();
+    auto physical_names_map = snapshot->getPhysicalNamesMap();
     const auto & delta_schema = snapshot->getTableSchema();
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto read_columns_desc = ColumnsDescription(snapshot->getReadSchema());
+    /// Columns that are not read from the data files.
     std::unordered_set<std::string> partition_columns;
     {
         auto columns = snapshot->getPartitionColumns();
         partition_columns.insert(columns.begin(), columns.end());
+    }
+
+    /// The columns of the change data feed (`_change_type`, ...) are added by the schema transform of each data file
+    /// (CDC files contain `_change_type`, but they read it as an additional column of the file). They are not in the
+    /// column mapping, and keep their names.
+    if (change_data_feed_version_range)
+    {
+        for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+        {
+            if (!DeltaLake::TableChanges::isChangeDataFeedColumn(column.name))
+                continue;
+            partition_columns.insert(column.name);
+            if (!physical_names_map.empty())
+                physical_names_map.emplace(DeltaLake::appendToLogicalPath({}, column.name), column.name);
+        }
     }
 
     Names columns_to_read;

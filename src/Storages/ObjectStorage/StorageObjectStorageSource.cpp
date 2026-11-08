@@ -270,8 +270,10 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
             return true;
     }
 #endif
-    return object_info.data_lake_metadata && object_info.data_lake_metadata->excluded_rows
-        && object_info.data_lake_metadata->excluded_rows->size() > 0;
+    if (!object_info.data_lake_metadata)
+        return false;
+    const auto & metadata = *object_info.data_lake_metadata;
+    return (metadata.excluded_rows && metadata.excluded_rows->size() > 0) || metadata.selected_rows;
 }
 
 static bool readsIdentityPartitionColumn(
@@ -1884,6 +1886,26 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_inputs(stripped_prewhere_info->prewhere_actions);
         }
 
+        /// Columns that only this object contains, e.g. `_change_type` of a CDC file of the Delta Lake change data feed.
+        /// Read them only if the query needs them: the schema transform of the object takes them from the file, but it
+        /// keeps only the needed columns (see below), and a column it does not consume would pass through it.
+        if (!schema_changed && object_info->data_lake_metadata)
+        {
+            auto is_needed = [&](const String & column_name)
+            {
+                if (read_from_format_info.requested_columns.contains(column_name))
+                    return true;
+                if (stripped_row_level_filter && stripped_row_level_filter->actions.getRequiredColumns().contains(column_name))
+                    return true;
+                return stripped_prewhere_info && stripped_prewhere_info->prewhere_actions.getRequiredColumns().contains(column_name);
+            };
+            for (const auto & column : object_info->data_lake_metadata->additional_file_columns)
+            {
+                if (!initial_header.has(column.name) && is_needed(column.name))
+                    initial_header.insert({column.type->createColumn(), column.type, column.name});
+            }
+        }
+
         chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
@@ -1978,6 +2000,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<DeletionVectorTransform>(header, object_info->data_lake_metadata->excluded_rows);
+            });
+        }
+
+        if (object_info->data_lake_metadata && object_info->data_lake_metadata->selected_rows)
+        {
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<DeletionVectorTransform>(
+                    header, object_info->data_lake_metadata->selected_rows, /* rows_are_selection */ true);
             });
         }
 
