@@ -107,6 +107,7 @@ namespace Setting
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
+    extern const SettingsBool query_plan_use_shuffle_for_order_by_rand;
     extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
@@ -254,6 +255,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
 
     remove_redundant_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_sorting];
+    use_shuffle_for_order_by_rand = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_use_shuffle_for_order_by_rand];
 
     lift_up_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_array_join];
     push_down_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_limit];
