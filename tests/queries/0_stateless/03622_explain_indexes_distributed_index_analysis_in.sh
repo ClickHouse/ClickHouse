@@ -68,8 +68,10 @@ explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m)
 echo "GLOBAL IN (10-element set)"
 explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key global in (select * from numbers(1000, 10))"
 
+# List the EXPLAIN queries and the index analysis queries they send. The reads of the `IN` subqueries are left out:
+# query-based parallel replicas read only the `GLOBAL IN` one through replicas, plan-based read both.
 $CLICKHOUSE_CLIENT -q "
 system flush logs query_log;
 -- SKIP: current_database = $CLICKHOUSE_DATABASE
-select toUInt64OrZero(Settings['allow_experimental_parallel_reading_from_replicas']), normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and query_kind in ('Select', 'Explain') order by event_time_microseconds;
+select toUInt64OrZero(Settings['allow_experimental_parallel_reading_from_replicas']), normalizeQuery(replace(query, currentDatabase(), 'default')) from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 and log_comment like '%' || currentDatabase() || '%' and type = 'QueryStart' and not(has(databases, 'system')) and (query_kind = 'Explain' or query like '%mergeTreeAnalyzeIndexes%') order by event_time_microseconds;
 "

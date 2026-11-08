@@ -62,6 +62,7 @@ public:
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
@@ -217,8 +218,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts `order_info_`: every reading step of every child plan has to be a `ReadFromMergeTree`
-    /// that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`) and is sorted like its table on the prefix.
+    /// Whether `requestReadingInOrder` accepts `order_info_`: no child plan runs distributed, and every reading step of every
+    /// child plan has to be a `ReadFromMergeTree` that reads in its direction (see `ReadFromMergeTree::canReadInReverseOrder`)
+    /// and is sorted like its table on the prefix.
     /// With `allow_shorter_read_key`, a read whose sorting key is shorter than the prefix passes: it refuses the request itself.
     /// Creates the child plans.
     bool canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key = false);
@@ -328,6 +330,11 @@ private:
         /// rows that are not conform to row level policy
         void addFilterTransform(QueryPlan &, ContextPtr) const;
 
+        /// The policy AND-ed with `forwarded`, as the row-level filter of the `storage` read; null if it cannot evaluate it.
+        FilterDAGInfoPtr makeRowLevelFilter(const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr) const;
+
+        void addCreatingSetsStep(QueryPlan &, ContextPtr) const;
+
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
@@ -345,7 +352,7 @@ private:
         QueryProcessingStage::Enum stage;
         /// Set for a child aggregated by keys of other types than the `Merge` table.
         bool forget_aggregation_buckets = false;
-        /// Set when the child's plan was built by the interpreter, which applies the child's row policy itself.
+        /// Set when the child's plan applies the child's row policy itself (interpreter plan, or the read's row-level filter).
         bool applies_row_policy = false;
     };
 
