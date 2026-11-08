@@ -276,9 +276,7 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
     {
         const bool sites_are_sent = protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_PATHS;
 
-        /// The older layout describes a site by the field's joined name alone, which is only correct
-        /// when that name is itself one of the field's sites. Omit a column whose joined name the
-        /// schema does not uniquely identify, rather than let a peer inject it into another column.
+        /// The older layout implies a whole-column site named after the field, so it carries only such columns.
         std::vector<const IdentityPartitionColumn *> sent_columns;
         sent_columns.reserve(identity_partition_columns.size());
         for (const auto & column : identity_partition_columns)
@@ -441,8 +439,7 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
             String name;
             readStringBinary(name, in);
             Field value = readFieldBinary(in);
-            /// A peer that predates the injection sites describes the whole-column site implicitly,
-            /// by the name alone. Synthesize it, so such a read keeps injecting top-level values.
+            /// An older peer sends no sites: the name alone is the whole-column site.
             identity_partition_columns.push_back(
                 Iceberg::IdentityPartitionColumn{name, {{name, Names{}}}, std::move(value)});
         }

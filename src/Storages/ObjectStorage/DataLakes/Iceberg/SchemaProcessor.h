@@ -112,12 +112,9 @@ public:
     std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
 
     /// Element path of a field from the root of its top-level column, one segment per nesting level.
-    /// Throws `BAD_ARGUMENTS` when absent: it is recorded beside the field's type, for the same key, so
-    /// a miss after a successful type lookup is a code defect rather than an unknown schema.
     Names getFieldPath(Int32 schema_version, Int32 source_id) const;
 
-    /// Whether exactly one column-or-subcolumn of this schema's ClickHouse type flattens to
-    /// `flat_name`. A name shared by two of them denotes neither, so it cannot carry a value.
+    /// Whether exactly one column or subcolumn of this schema's ClickHouse type flattens to `flat_name`.
     bool flatNameIdentifiesOneColumn(Int32 schema_id, const String & flat_name) const;
     NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids) const;
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
@@ -158,10 +155,7 @@ private:
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids TSA_GUARDED_BY(mutex);
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
-    /// Keyed exactly like `clickhouse_types_by_source_ids`, so it inherits that map's spec-backed
-    /// uniqueness of field ids within a schema.
     mutable std::map<std::pair<Int32, Int32>, Names> clickhouse_paths_by_source_ids TSA_GUARDED_BY(mutex);
-    /// How many columns and subcolumns of a schema's ClickHouse type flatten to a given name.
     mutable std::map<std::pair<Int32, String>, size_t> flat_name_counts TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);

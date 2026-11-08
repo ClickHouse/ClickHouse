@@ -2274,9 +2274,7 @@ PartitionColumnValues getIdentityPartitionColumnValues(
         const Int32 schema_id = manifest_file_entry.resolved_schema_id;
         const Names path = schema_processor.getFieldPath(schema_id, partition_field.source_id);
 
-        /// A reader header carries the field flattened, or one of its ancestor tuples, depending on
-        /// what else the query asked for, and which one is not known until the query is planned. So
-        /// offer one candidate per ancestor prefix and let the reader match whichever it has.
+        /// A reader header may carry the field flattened or any of its ancestor tuples: one site per prefix.
         std::vector<std::pair<String, Names>> injection_sites;
         String joined;
         for (size_t k = 0; k < path.size(); ++k)
@@ -2284,9 +2282,8 @@ PartitionColumnValues getIdentityPartitionColumnValues(
             if (k)
                 joined += '.';
             joined += path[k];
-            /// An identifier lookup resolves a top-level column before a subcolumn, so a header
-            /// column named `path[0]` is that top-level column and the root prefix needs no test.
-            /// A deeper prefix does: a name shared with another column or subcolumn denotes neither.
+            /// An identifier resolves a top-level column before a subcolumn, so `path[0]` is unambiguous;
+            /// a deeper prefix shared with another column or subcolumn denotes neither.
             if (k > 0 && !schema_processor.flatNameIdentifiesOneColumn(schema_id, joined))
                 continue;
             injection_sites.emplace_back(joined, Names(path.begin() + k + 1, path.end()));

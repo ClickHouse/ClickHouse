@@ -452,7 +452,6 @@ void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
     std::erase_if(clickhouse_types_by_source_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
     std::erase_if(clickhouse_ids_by_source_names, [schema_id](const auto & item) { return item.first.first == schema_id; });
     std::erase_if(clickhouse_paths_by_source_ids, [schema_id](const auto & item) { return item.first.first == schema_id; });
-    /// A count, not a presence bit, so a copy left behind here reads as an ambiguous name later.
     std::erase_if(flat_name_counts, [schema_id](const auto & item) { return item.first.first == schema_id; });
 }
 
@@ -583,9 +582,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
 
-    /// Census the flattened names a reader header can carry. It is taken over the built
-    /// ClickHouse type rather than over the Iceberg fields above, because header names come from
-    /// ClickHouse subcolumn flattening, which also exposes descendants of an array of tuples.
+    /// Header names come from ClickHouse subcolumn flattening, so they are counted over the ClickHouse type.
     for (const auto & column : *clickhouse_schema)
     {
         Names flat_names{column.name};

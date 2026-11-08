@@ -24,11 +24,10 @@ String computePartitionId(const Row & partition_key_value);
 /// An identity-partition value from a manifest, with the reader header columns it may be injected into.
 struct IdentityPartitionColumn
 {
-    /// Dot-joined full name of the Iceberg field, as the schema mints it.
+    /// Dot-joined full name of the Iceberg field.
     String name;
-    /// Each candidate is a header column name plus the tuple element path to walk inside that column;
-    /// an empty path means the whole column is the value. A joined name the Iceberg schema does not
-    /// uniquely identify is absent from this list.
+    /// Header column name plus the tuple element path inside it; an empty path means the whole column.
+    /// A name the schema does not uniquely identify is not listed.
     std::vector<std::pair<String, Names>> injection_sites;
     Field value;
 };

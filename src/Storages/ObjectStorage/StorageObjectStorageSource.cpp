@@ -277,13 +277,10 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
 }
 
-/// The identity values that may be injected into one column, each with the tuple element path to
-/// walk inside it. An empty path means the whole column is the value.
+/// Identity values to inject into one column, each with its tuple element path (empty = the whole column).
 using IdentitySubstitutions = std::vector<std::pair<const Names *, const Field *>>;
 
-/// Whether `path` addresses a named tuple element at every level of `type`. An identity partition
-/// source is always a primitive field under root-anchored structs, so a path that fails this is
-/// unreachable from an Iceberg schema and its value is not injected.
+/// Whether `path` addresses a named tuple element at every level of `type`.
 static bool identityPathIsAddressable(const IDataType & type, const Names & path)
 {
     const IDataType * current = &type;
@@ -300,9 +297,7 @@ static bool identityPathIsAddressable(const IDataType & type, const Names & path
     return true;
 }
 
-/// Match every identity value against the columns available to a reader, keyed by column name.
-/// `find_column_type` returns the type of an available column, or nullptr when it is absent, so both
-/// the availability and the addressability question are answered here for every consumer.
+/// Match identity values to available columns; `find_column_type` returns nullptr for an absent one.
 static std::unordered_map<std::string_view, IdentitySubstitutions> collectIdentitySubstitutions(
     const std::vector<Iceberg::IdentityPartitionColumn> & identity_partition_columns,
     const std::function<const DataTypePtr *(const String &)> & find_column_type)
@@ -320,8 +315,7 @@ static std::unordered_map<std::string_view, IdentitySubstitutions> collectIdenti
     return by_column;
 }
 
-/// Rebuild `node` with the element addressed by `path` replaced by `value`, keeping every other
-/// element as the file provides it. `path` must be addressable in `node`'s type.
+/// Rebuild `node` with the element at `path` replaced by `value`; `path` must be addressable.
 static const ActionsDAG::Node & addIdentityElementReplacement(
     ActionsDAG & dag, const ActionsDAG::Node & node, const Names & path, const Field & value)
 {
@@ -345,8 +339,7 @@ static const ActionsDAG::Node & addIdentityElementReplacement(
         elements.push_back(i == position ? &addIdentityElementReplacement(dag, element, deeper, value) : &element);
     }
 
-    /// A directly constructed `FunctionTuple` always yields an unnamed tuple, so the cast back to the
-    /// parent's named type matches elements by position rather than by name.
+    /// A directly constructed `FunctionTuple` yields an unnamed tuple, so this cast matches elements by position.
     FunctionOverloadResolverPtr tuple_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
     const auto & rebuilt = dag.addFunction(tuple_builder, std::move(elements), {});
     return dag.addCast(rebuilt, node.result_type, node.result_name, nullptr);
@@ -382,9 +375,7 @@ static ActionsDAG substituteIdentityPartitionColumns(
     {
         const DataTypePtr & type = *find_required(String(column_name));
 
-        /// Only a site that rebuilds a tuple element reads the column. A whole-column site stays a
-        /// bare constant: the file need not store that column, so reading it here could ask the
-        /// reader for a column that is not in the file.
+        /// A whole-column site stays a bare constant: the file need not store that column.
         const bool reads_column = std::ranges::any_of(sites, [](const auto & site) { return !site.first->empty(); });
         const ActionsDAG::Node * node = reads_column
             ? &substitution.addInput(String(column_name), type)
