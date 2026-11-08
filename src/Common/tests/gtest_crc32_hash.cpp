@@ -58,4 +58,28 @@ TEST(CRC32Hash, PreservesPrefixAndBulkBoundaryValues)
         EXPECT_EQ(CRC32Hash{}(input), expected) << "size=" << size;
     }
 }
+
+TEST(CRC32Hash, PreservesIndependentFoldingLanes)
+{
+    constexpr std::array<std::pair<size_t, UInt64>, 5> cases{{
+        {16384, 0x71ba239371ba2393ULL},
+        {16385, 0xcf9f1d17cf9f1d17ULL},
+        {32769, 0x066d7b7a066d7b7aULL},
+        {65537, 0x6ca541a86ca541a8ULL},
+        {131079, 0x3fc5499f3fc5499fULL},
+    }};
+    for (const auto & [size, expected] : cases)
+    {
+        std::string input(size, '\0');
+        UInt64 state = 0x243f6a8885a308d3ULL;
+        for (char & byte : input)
+        {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            byte = static_cast<char>(state >> 56);
+        }
+        EXPECT_EQ(CRC32Hash{}(input), expected) << "size=" << size;
+    }
+}
 #endif
