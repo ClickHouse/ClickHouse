@@ -192,6 +192,16 @@ public:
         return std::get<Iceberg::ManifestFileCacheableInfo>(result.first->cached_element);
     }
 
+    /// A miss is not counted: the caller is expected to load the file with `getOrSetManifestFile`, which counts it.
+    std::optional<Iceberg::ManifestFileCacheableInfo> tryGetManifestFile(const String & data_path)
+    {
+        auto cell = Base::get(data_path);
+        if (!cell)
+            return std::nullopt;
+        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
+        return std::get<Iceberg::ManifestFileCacheableInfo>(cell->cached_element);
+    }
+
     template <typename LoadFunc>
     LatestMetadataVersionPtr getOrSetLatestMetadataVersion(const String & table_path, const std::optional<String> & table_uuid, LoadFunc && load_fn, time_t tolerated_staleness_ms)
     {
