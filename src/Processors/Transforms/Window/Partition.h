@@ -8,8 +8,8 @@ namespace DB
 /// Rows-range of the partition seen so far.
 struct PartitionBounds
 {
-    RowPoint start;
-    RowPoint end;
+    RowNumber start;
+    RowNumber end;
     bool fully_visible = false;
 };
 

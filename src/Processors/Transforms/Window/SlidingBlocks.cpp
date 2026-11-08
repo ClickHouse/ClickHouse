@@ -65,6 +65,11 @@ int64_t SlidingBlocks::positionOf(RowNumber row) const
     return blockAt(row.block).begin_position + row.row;
 }
 
+int64_t SlidingBlocks::rowsBetween(RowNumber start, RowNumber end) const
+{
+    return positionOf(end) - positionOf(start);
+}
+
 RowNumber SlidingBlocks::move(RowNumber row, int64_t offset) const
 {
     /// The target row counted from the start of the row's block

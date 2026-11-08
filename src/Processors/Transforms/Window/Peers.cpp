@@ -31,7 +31,7 @@ bool advancePeerGroupEndInBlock(const SlidingBlock & block, int64_t group, int64
 void advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, PeersBounds & peers)
 {
     RowPoint & end = peers.end;
-    const RowNumber partition_end = partition.end.location;
+    const RowNumber partition_end = partition.end;
     while (end.location < partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(end.location.block);

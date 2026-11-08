@@ -140,7 +140,7 @@ void WindowTransform::computeReadyRows()
         if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
             evaluateRowsBatch();
 
-        if (peers.current().location == partition.bounds().end.location)
+        if (peers.current().location == partition.bounds().end)
         {
             /// The rest of this partition is not read yet, or the last partition is done.
             if (!partition.bounds().fully_visible || input_is_finished)
@@ -184,7 +184,7 @@ void WindowTransform::recordCurrentRowBounds()
     }
     if (params.required.partition)
     {
-        bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
+        bounds.partition_end.push_back(current.row_index_in_partition + blocks.rowsBetween(current.location, partition.bounds().end));
     }
     ++bounds.rows;
 }
@@ -226,10 +226,10 @@ void WindowTransform::packReadyBlock()
 
 void WindowTransform::startNextPartition()
 {
-    const RowNumber partition_start = partition.bounds().end.location;
+    const RowNumber partition_start = partition.bounds().end;
     chassert(peers.current().location == partition_start);
 
-    arguments.startPartition(partition.bounds().end.row_index_in_partition);
+    arguments.startPartition(peers.current().row_index_in_partition);
     partition.beginAt(blocks, partition_start);
     peers.enterPartition(partition_start);
     frame.enterPartition(partition_start);

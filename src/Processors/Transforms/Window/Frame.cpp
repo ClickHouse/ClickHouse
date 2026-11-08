@@ -27,20 +27,21 @@ int64_t peerGroupAt(const SlidingBlocks & blocks, RowNumber row)
     return blocks.blockAt(row.block).index.peer_group_indexes[row.row];
 }
 
-bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
+bool advanceToPartitionEnd(const SlidingBlocks & blocks, const PartitionBounds & partition, RowPoint & bound)
 {
     if (!partition.fully_visible)
         return false;
 
-    bound = partition.end;
+    bound.row_index_in_partition += blocks.rowsBetween(bound.location, partition.end);
+    bound.location = partition.end;
     return true;
 }
 
 /// The bound of a ROWS frame at a row index, cut to the partition.
 bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t target_row_index, RowPoint & bound)
 {
-    if (target_row_index >= partition.end.row_index_in_partition)
-        return advanceToPartitionEnd(partition, bound);
+    if (target_row_index >= bound.row_index_in_partition + blocks.rowsBetween(bound.location, partition.end))
+        return advanceToPartitionEnd(blocks, partition, bound);
 
     const int64_t row_index = std::max<int64_t>(target_row_index, 0);
     chassert(bound.row_index_in_partition <= row_index);
@@ -52,7 +53,7 @@ bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partitio
 /// The first row of the peer group, found block by block in the stored peer group indexes; the partition end when the group is past the last one.
 bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & bound)
 {
-    const RowNumber partition_end = partition.end.location;
+    const RowNumber partition_end = partition.end;
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
@@ -70,7 +71,7 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & pa
         }
         bound.location = blocks.move(bound.location, row - bound.location.row);
     }
-    return advanceToPartitionEnd(partition, bound);
+    return advanceToPartitionEnd(blocks, partition, bound);
 }
 
 /// The first row whose ORDER BY key is at the offset from the current row's key, or past it when `past`.
@@ -80,7 +81,7 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
     const bool offset_is_preceding = frame_preceding == (direction > 0);
     const size_t key_position = params.order_by_indices[0];
     const IColumn * current_key_column = blocks.blockAt(current.location.block).materialized_columns[key_position].get();
-    const RowNumber partition_end = partition.end.location;
+    const RowNumber partition_end = partition.end;
     while (bound.location != partition_end)
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
@@ -99,7 +100,7 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
         bound.location = blocks.move(bound.location, row - bound.location.row);
     }
 
-    return advanceToPartitionEnd(partition, bound);
+    return advanceToPartitionEnd(blocks, partition, bound);
 }
 
 bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RowPoint & start)
@@ -141,7 +142,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
     switch (frame.end_type)
     {
         case WindowFrame::BoundaryType::Unbounded:
-            return advanceToPartitionEnd(partition, end);
+            return advanceToPartitionEnd(blocks, partition, end);
         case WindowFrame::BoundaryType::Current:
             switch (frame.type)
             {
