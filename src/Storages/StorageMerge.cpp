@@ -2456,7 +2456,10 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                                 for (const auto & column_name : columns_to_check)
                                 {
                                     auto column_to_read = getChildColumnToRead(column_name, child_columns, merge_storage_snapshot->metadata->getColumns());
-                                    columns_to_read.push_back(column_to_read ? std::move(*column_to_read) : column_name);
+                                    if (column_to_read)
+                                        columns_to_read.push_back(std::move(*column_to_read));
+                                    else
+                                        columns_to_read.push_back(column_name);
                                 }
                                 access->checkAccess(
                                     AccessType::SELECT,
