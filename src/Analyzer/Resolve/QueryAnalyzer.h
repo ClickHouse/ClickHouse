@@ -270,7 +270,7 @@ private:
     /// `bare_column_names` has, per result column of a `SELECT` list, the bare column name a column reference can be named with (empty if not one).
     static std::vector<size_t> findUniqueBareProjectionNames(const NamesAndTypes & projection_columns, const Names & bare_column_names);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false, Names * bare_column_names = nullptr, Names * written_identifiers = nullptr);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false, Names * bare_column_names = nullptr, std::vector<bool> * column_references = nullptr);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -284,9 +284,9 @@ private:
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 
-    /// `reference_positions` gets the position of each column reference by the other names it can be written with, as `a.id` for output `id`.
+    /// `column_references` gets, per result column, whether it is an unaliased reference to a column, as `a.id` or a column of `a.*`.
     NamesAndTypes resolveProjectionExpressionNodeList(
-        QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::unordered_multimap<String, size_t> * reference_positions = nullptr);
+        QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * column_references = nullptr);
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 

@@ -112,6 +112,21 @@ id	a.id
 11	102
 3	103
 13	104
+id	k
+1	1
+2	11
+3	3
+4	13
+k	id
+1	1
+2	11
+3	3
+4	13
+a.id	b.id
+1	1
+2	11
+3	3
+4	13
 all	id
 1	1
 -- case 16: an unqualified outer reference can match the renamed column
