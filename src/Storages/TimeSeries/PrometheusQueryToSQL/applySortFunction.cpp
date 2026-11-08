@@ -24,6 +24,19 @@ namespace
         return (function_name == "sort_by_label") || (function_name == "sort_by_label_desc");
     }
 
+    bool hasSortFunction(const PrometheusQueryTree::Node * node)
+    {
+        if ((node->node_type == PrometheusQueryTree::NodeType::Function)
+            && isSortFunction(static_cast<const PrometheusQueryTree::Function *>(node)->function_name))
+            return true;
+        for (const auto * child : node->children)
+        {
+            if (hasSortFunction(child))
+                return true;
+        }
+        return false;
+    }
+
     /// timeSeriesGroupToTags(group)
     ASTPtr makeTagsExpression()
     {
@@ -291,11 +304,20 @@ bool isUnderSortByLabel(const PrometheusQueryTree::Node * node, const ConverterC
     if (range.start_time != range.end_time)
         return false;
 
-    for (const auto * parent = node->parent; parent; parent = parent->parent)
+    for (const auto * child = node, * parent = node->parent; parent; child = parent, parent = parent->parent)
     {
         if ((parent->node_type == PrometheusQueryTree::NodeType::Function)
             && isSortByLabelFunction(static_cast<const PrometheusQueryTree::Function *>(parent)->function_name))
             return true;
+
+        /// `or` outputs each operand's rows in their order, which matters when the other operand is sorted.
+        if ((parent->node_type == PrometheusQueryTree::NodeType::BinaryOperator)
+            && (static_cast<const PrometheusQueryTree::BinaryOperator *>(parent)->operator_name == "or"))
+        {
+            const auto * other = (child == parent->children.at(0)) ? parent->children.at(1) : parent->children.at(0);
+            if (hasSortFunction(other))
+                return true;
+        }
     }
     return false;
 }
@@ -366,7 +388,7 @@ void setOrResultWithSortRank(
     {
         if (rank_subquery.empty())
         {
-            /// A side without sort*() is in storage order, which is by tags, so its rows share one rank and tie by tags.
+            /// A side without a rank map (only in a range query) is in storage order, so its rows share one rank and tie by tags.
             builder.select_list.push_back(make_intrusive<ASTLiteral>(Array{}));
         }
         else

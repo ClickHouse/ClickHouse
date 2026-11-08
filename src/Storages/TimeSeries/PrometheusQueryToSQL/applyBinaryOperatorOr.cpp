@@ -41,13 +41,23 @@ SQLQueryPiece applyBinaryOperatorOr(
     bool keep_sort_rank = !left_argument.sort_rank_subquery.empty() || !right_argument.sort_rank_subquery.empty()
         || isUnderSortByLabel(operator_node, context);
 
+    /// At one step, a side without a rank map gets its order by tags as one, so a later change of the tags keeps it.
+    const auto & range = context.node_range_getter.get(operator_node);
+    auto add_implicit_sort_rank = [&](SQLQueryPiece & side)
+    {
+        if (keep_sort_rank && (range.start_time == range.end_time) && side.sort_rank_subquery.empty())
+            setImplicitSortRank(side, context);
+    };
+
     left_argument = toVectorGrid(std::move(left_argument), context);
+    add_implicit_sort_rank(left_argument);
     /// The left grid is read twice - by the per-group presence step (Step 1) and by the final merge join (Step 3) -
     /// so it's added as a materialized CTE to be evaluated once.
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
     String left = context.subqueries.back().name;
 
     right_argument = toVectorGrid(std::move(right_argument), context);
+    add_implicit_sort_rank(right_argument);
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
     String right = context.subqueries.back().name;
 

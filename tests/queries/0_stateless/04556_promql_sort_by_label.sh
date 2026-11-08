@@ -184,6 +184,24 @@ promql_client -q 'sort_by_label({__name__=~"pa|pb"} * on() group_left() pc, "ins
 echo "-- sort_by_label_desc({__name__=~'pa|pb'} * on() group_left() pc, 'instance'): the order of Prometheus 3.5"
 promql_client -q 'sort_by_label_desc({__name__=~"pa|pb"} * on() group_left() pc, "instance")'
 
+echo "-- sort_by_label(abs(s or s), 'instance') with s = {__name__=~'pa|pb'}: 's or s' is s, so the same as sort_by_label(abs(s), 'instance')"
+promql_client -q 'sort_by_label(abs({__name__=~"pa|pb"} or {__name__=~"pa|pb"}), "instance")'
+
+echo "-- sort_by_label_desc(abs(s or s), 'instance'): the same as sort_by_label_desc(abs(s), 'instance')"
+promql_client -q 'sort_by_label_desc(abs({__name__=~"pa|pb"} or {__name__=~"pa|pb"}), "instance")'
+
+echo "-- sort_by_label(abs(pc or {__name__=~'pa|pb'}), 'instance'): the right rows keep their order through abs(), as in Prometheus 3.5"
+promql_client -q 'sort_by_label(abs(pc or {__name__=~"pa|pb"}), "instance")'
+
+echo "-- sort_by_label(label_replace(s or pc, '__name__', '', '', ''), 'instance'): a label rewrite after 'or' keeps the order too"
+promql_client -q 'sort_by_label(label_replace({__name__=~"pa|pb"} or pc, "__name__", "", "", ""), "instance")'
+
+echo "-- sort(pc) or abs({__name__=~'pa|pb'}): the right rows come after the sorted left one in their order before abs(), as in Prometheus 3.5"
+promql_client -q 'sort(pc) or abs({__name__=~"pa|pb"})'
+
+echo "-- abs(sort(pc) or {__name__=~'pa|pb'}): the same order through abs() after 'or'"
+promql_client -q 'abs(sort(pc) or {__name__=~"pa|pb"})'
+
 echo "-- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map"
 promql_client -q "sum by (instance) (sort(up))" | LC_ALL=C sort
 
