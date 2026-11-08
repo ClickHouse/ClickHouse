@@ -1,0 +1,45 @@
+backup
+1
+the backup entry is FileEncryption ciphertext without the plaintext statement
+ENC
+0
+config-defined collections are not in the backup
+0
+a backup requires SHOW NAMED COLLECTIONS SECRETS even with the encrypted storage
+1
+1
+0
+restore after dropping everything
+1
+1	['format','url']	[HIDDEN]	SQL
+1
+1
+1000
+the restored tables hold the collection through the DROP guard
+1
+an existing collection is kept with create_named_collection = 'if-not-exists' (the default)
+1
+1
+an existing collection fails the restore with create_named_collection = 'create', without the name
+1
+0
+0
+an existing collection is replaced with create_named_collection = 'replace'
+1
+0
+the restore streams no collection name to the client log
+0
+restore_named_collections = false skips the collections
+1
+0
+structure_only still restores the collections
+1
+1
+0
+restore is refused without the CREATE NAMED COLLECTION privilege, before anything is created
+1
+0
+0
+the same restore succeeds with the privilege
+1
+1000
