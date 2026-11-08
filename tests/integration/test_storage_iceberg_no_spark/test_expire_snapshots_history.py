@@ -7,7 +7,7 @@ from helpers.iceberg_utils import (
 )
 
 # expire_snapshots and Iceberg mutations require format version 2.
-EXPIRE_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1}
+EXPIRE_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_expire_snapshots": 1}
 
 
 def _metadata_dir(table_name):
