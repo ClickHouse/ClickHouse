@@ -78,6 +78,7 @@
 #include <Processors/Transforms/CopyTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageSnapshot.h>
@@ -3324,8 +3325,10 @@ bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const Matched
 
 /// A partial index has no data for rows outside its `WHERE`, so it can be used only if
 /// every conjunct of that condition is also a conjunct of the query filter.
-bool filterImpliesIndexCondition(const ActionsDAG & filter_dag, const IndexDescription & index, const Settings & settings, size_t max_set_size_to_compare)
+bool filterImpliesIndexCondition(
+    const ActionsDAG & filter_dag, const IndexDescription & index, const ContextPtr & context, size_t max_set_size_to_compare)
 {
+    const auto & settings = context->getSettingsRef();
     if (!index.where_is_session_independent && queryConditionCacheSettingsSalt(settings) != index.where_settings_salt)
         return false;
 
@@ -3348,7 +3351,22 @@ bool filterImpliesIndexCondition(const ActionsDAG & filter_dag, const IndexDescr
         if (it != matches.end() && it->second.node && !it->second.monotonicity && hasSameFunctionSemantics(conjunct, matches))
             index_conjuncts.erase(it->second.node);
     }
-    return index_conjuncts.empty();
+    if (!index_conjuncts.empty())
+        return false;
+
+    /// Index conditions find indexed expressions by name, so the filter must calculate each of them like the writer did.
+    const auto indexed_matches = matchTrees(
+        index.selected_rows_expression->getActionsDAG().getOutputs(), filter_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
+    const NameSet index_columns(index.column_names.begin(), index.column_names.end());
+    for (const auto & node : filter_dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !index_columns.contains(RPNBuilderTreeNode(&node, context).getColumnName()))
+            continue;
+        auto it = indexed_matches.find(&node);
+        if (it == indexed_matches.end() || !it->second.node || it->second.monotonicity || !hasSameFunctionSemantics(&node, indexed_matches))
+            return false;
+    }
+    return true;
 }
 
 }
@@ -3457,7 +3475,7 @@ void ReadFromMergeTree::buildIndexes(
 
         if (index.where_expression
             && (!filter_actions_dag_
-                || !filterImpliesIndexCondition(*filter_actions_dag_, index, settings, settings[Setting::query_plan_max_set_size_for_projection_match])))
+                || !filterImpliesIndexCondition(*filter_actions_dag_, index, query_context, settings[Setting::query_plan_max_set_size_for_projection_match])))
             continue;
 
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;

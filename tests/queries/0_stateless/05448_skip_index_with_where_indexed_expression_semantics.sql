@@ -1,0 +1,38 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+
+-- A partial index is used only if the query calculates the indexed expression like the writer did.
+
+SET allow_experimental_partial_skip_indexes = 1;
+SET use_query_condition_cache = 0;
+
+DROP TABLE IF EXISTS t_expr_set;
+DROP TABLE IF EXISTS t_expr_minmax;
+DROP TABLE IF EXISTS t_expr_eq;
+
+CREATE TABLE t_expr_set (n UInt64, p UInt8, INDEX i formatRow('JSONEachRow', n) TYPE set(10) WHERE p) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_expr_set VALUES (1, 1);
+CREATE TABLE t_expr_minmax (n UInt64, p UInt8, INDEX i formatRow('JSONEachRow', n) TYPE minmax WHERE p) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_expr_minmax VALUES (1, 1);
+CREATE TABLE t_expr_eq (n UInt64, p UInt8, INDEX i formatRow('JSONEachRow', n) TYPE set(10) WHERE p = 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_expr_eq VALUES (1, 1);
+
+SELECT 'format setting of the indexed expression';
+SELECT count() FROM t_expr_set WHERE p AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 0;
+SELECT count() FROM t_expr_set WHERE p AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_expr_set WHERE p AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+SELECT count() FROM t_expr_minmax WHERE p AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_expr_minmax WHERE p AND formatRow('JSONEachRow', n) = '{"n":"1"}\n' SETTINGS output_format_json_quote_64bit_integers = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'field name given by an alias';
+SELECT count() FROM t_expr_eq WHERE p = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_expr_eq WHERE p = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
+SELECT count() FROM t_expr_eq WHERE p = 1 AND formatRow('JSONEachRow', n AS x) = '{"x":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+
+SELECT 'same calculation: the index is used';
+SELECT count() FROM t_expr_set WHERE p AND formatRow('JSONEachRow', n) = '{"n":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
+SELECT count() FROM t_expr_minmax WHERE p AND formatRow('JSONEachRow', n) = '{"n":1}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
+SELECT count() FROM t_expr_set WHERE p AND formatRow('JSONEachRow', n) = '{"n":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, force_data_skipping_indices = 'i';
+
+DROP TABLE t_expr_set;
+DROP TABLE t_expr_minmax;
+DROP TABLE t_expr_eq;
