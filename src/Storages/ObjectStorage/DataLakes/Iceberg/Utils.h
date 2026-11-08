@@ -126,6 +126,12 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ContextPtr context,
     UInt64 format_version = 2);
 
+/// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
+
+/// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
+
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
 /// is spelled in still counts, and a listing these callers cannot order unambiguously is refused.
@@ -188,8 +194,8 @@ void forEachAvroEntry(
 
 /// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
 /// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian
-/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`.
-/// Bring such a value to the column type; any other value is returned unchanged.
+/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`
+/// and a `Bool` one as an `int`. Bring such a value to the column type; any other value is returned unchanged.
 /// The result of a decimal always uses `Decimal256` as its carrier, independently of the width of the
 /// ClickHouse type, because `DB::Field` compares and orders on its variant tag first and Iceberg allows
 /// widening `decimal(P, S)` to `decimal(P', S)` between schemas of the same table.
