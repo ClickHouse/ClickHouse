@@ -4464,7 +4464,27 @@ ORDER BY EventDate ASC
 ```
 
 For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
-A subquery in the `IN` clause is always run just one time on a single server. There are no dependent subqueries.
+A subquery in the `IN` clause that does not reference columns of the outer query is run just one time on a single server.
+
+## Correlated Subqueries {#correlated-subqueries}
+
+The subquery of `IN` and `NOT IN` can reference columns of the outer query. For each outer row, the result is the same as `IN` over the rows that the subquery returns for that row. This requires [allow_correlated_subqueries](/reference/settings/session-settings/allow#allow_correlated_subqueries), enabled by default.
+
+```sql title="Query"
+SELECT r.id
+FROM values('id Int32, owner Int32', (1, 10), (2, 20), (3, 30)) AS r
+WHERE r.id IN (SELECT p.id FROM values('id Int32, owner Int32', (1, 10), (2, 20), (3, 40)) AS p WHERE p.owner = r.owner)
+ORDER BY r.id;
+```
+
+```text title="Response"
+┌─id─┐
+│  1 │
+│  2 │
+└────┘
+```
+
+Correlated `IN` supports fewer shapes than the regular one. These throw `NOT_IMPLEMENTED`, among others: an outer column of a `Nullable` type referenced in the subquery, `LIMIT`, `OFFSET` or an aggregation without `GROUP BY` keys in the correlated part of the subquery, non-deterministic functions or `arrayJoin` in the subquery, a `SETTINGS` clause inside the subquery, `transform_null_in = 1`, keys of compound types such as `Array`, key types that differ unless both are numbers, and a correlated `IN` inside `JOIN ON`.
 
 ## NULL Processing {#null-processing}
 
