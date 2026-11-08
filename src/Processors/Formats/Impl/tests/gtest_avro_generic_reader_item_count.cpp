@@ -196,4 +196,13 @@ TEST(AvroGenericReader, ResolvingArrayOfItemsMadeOfDefaultsIsLimited)
     EXPECT_THROW(readAllDatumsResolving(file, reader_type), avro::Exception);
 }
 
+TEST(AvroGenericReader, ArrayOfRecursiveNullableRecordsIsRead)
+{
+    /// `GenericDatum` constructs only the first branch of a union, so the recursion through the second branch
+    /// must not count against the limit of items that take no bytes.
+    const std::string type = R"({"type":"array","items":{"type":"record","name":"Node","fields":[{"name":"next","type":["null","Node"]}]}})";
+    EXPECT_NO_THROW(readAllDatums(makeFile(makeRecordSchema(type), {0x02, 0x00, 0x00})));
+    EXPECT_NO_THROW(readAllDatums(makeFile(makeRecordSchema(type), {0x02, 0x02, 0x00, 0x00})));
+}
+
 #endif
