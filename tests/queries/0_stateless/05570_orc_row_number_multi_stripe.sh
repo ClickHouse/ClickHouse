@@ -14,9 +14,10 @@ FILE="$CUR_DIR/data_orc/row_numbers_multi_stripe.orc"
 $CLICKHOUSE_LOCAL -q "SELECT count(), countIf(_row_number = id) FROM file('$FILE', ORC) SETTINGS input_format_orc_row_batch_size = 37"
 $CLICKHOUSE_LOCAL -q "SELECT count(), countIf(_row_number = id) FROM file('$FILE', ORC)"
 
-# The filter push-down skips stripe 0 by its statistics and all row groups but two in stripes 1 and 2;
-# `max_rows_to_read` fails the query if it does not skip them.
-$CLICKHOUSE_LOCAL -q "
-    SELECT count(), countIf(_row_number = id), min(id), max(id) FROM file('$FILE', ORC)
+# The filter push-down skips stripe 0 by its statistics and all row groups but two in stripes 1 and 2, so only 200 rows
+# are read and the row numbers must count the skipped ones.
+QUERY="SELECT count(), countIf(_row_number = id), min(id), max(id) FROM file('$FILE', ORC)
     WHERE id BETWEEN 2550 AND 2560 OR id BETWEEN 7000 AND 7010
-    SETTINGS input_format_orc_filter_push_down = 1, input_format_orc_row_batch_size = 37, max_rows_to_read = 1000, read_overflow_mode = 'throw'"
+    SETTINGS input_format_orc_filter_push_down = 1, input_format_orc_row_batch_size = 37"
+$CLICKHOUSE_LOCAL -q "$QUERY"
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 -q "$QUERY FORMAT Null" |& grep -o -m1 'SelectedRows: [0-9]*'
