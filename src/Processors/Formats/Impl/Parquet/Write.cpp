@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <zstd.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -817,6 +818,17 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 static_cast<int>(max_dest_size));
 
             scratch.resize(static_cast<size_t>(compressed_size));
+            return scratch;
+        }
+        case CompressionMethod::Zstd:
+        {
+            const size_t max_dest_size = ZSTD_compressBound(source.size());
+            scratch.resize(max_dest_size);
+            const size_t compressed_size = ZSTD_compress(scratch.data(), max_dest_size, source.data(), source.size(), level);
+            if (ZSTD_isError(compressed_size))
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", ZSTD_getErrorName(compressed_size));
+
+            scratch.resize(compressed_size);
             return scratch;
         }
 
