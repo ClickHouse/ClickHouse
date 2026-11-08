@@ -1,11 +1,14 @@
 SET flatten_nested = 1;
 SET materialize_ttl_after_modify = 0;
 
+-- The tables stay on horizontal merges, which these TTL rules take. A background TTL merge can drop `n.a`
+-- before `OPTIMIZE`, which then has no TTL left to apply and with randomized settings could merge vertically.
+
 DROP TABLE IF EXISTS ttl_nested_full_wide;
 CREATE TABLE ttl_nested_full_wide (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 ALTER TABLE ttl_nested_full_wide MODIFY COLUMN n.a Array(UInt64) TTL ts + INTERVAL 1 DAY;
 INSERT INTO ttl_nested_full_wide VALUES (0, '2000-01-01', [1, 2]), (1, '2000-01-01', [3]);
 ALTER TABLE ttl_nested_full_wide ADD COLUMN n.d Array(UInt8);
@@ -27,7 +30,7 @@ DROP TABLE IF EXISTS ttl_nested_full_compact;
 CREATE TABLE ttl_nested_full_compact (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 ALTER TABLE ttl_nested_full_compact MODIFY COLUMN n.a Array(UInt64) TTL ts + INTERVAL 1 DAY;
 INSERT INTO ttl_nested_full_compact VALUES (0, '2000-01-01', [1, 2]), (1, '2000-01-01', [3]);
 ALTER TABLE ttl_nested_full_compact ADD COLUMN n.d Array(UInt8);
@@ -47,7 +50,7 @@ DROP TABLE IF EXISTS ttl_nested_partial_wide;
 CREATE TABLE ttl_nested_partial_wide (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 INSERT INTO ttl_nested_partial_wide VALUES (0, '2000-01-01', [1, 2]), (1, '2099-01-01', [3]);
 ALTER TABLE ttl_nested_partial_wide ADD COLUMN n.d Array(UInt8);
 ALTER TABLE ttl_nested_partial_wide MODIFY COLUMN n.a Array(UInt64) TTL ts + INTERVAL 1 DAY;
@@ -69,7 +72,7 @@ DROP TABLE IF EXISTS ttl_nested_partial_compact;
 CREATE TABLE ttl_nested_partial_compact (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 INSERT INTO ttl_nested_partial_compact VALUES (0, '2000-01-01', [1, 2]), (1, '2099-01-01', [3]);
 ALTER TABLE ttl_nested_partial_compact ADD COLUMN n.d Array(UInt8);
 ALTER TABLE ttl_nested_partial_compact MODIFY COLUMN n.a Array(UInt64) TTL ts + INTERVAL 1 DAY;
@@ -95,7 +98,7 @@ CREATE TABLE ttl_nested_recomputed_source
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 INSERT INTO ttl_nested_recomputed_source (id, ts, x) VALUES (0, '2000-01-01', 2), (1, '2000-01-01', 1);
 ALTER TABLE ttl_nested_recomputed_source ADD COLUMN n.d Array(UInt8);
 ALTER TABLE ttl_nested_recomputed_source ADD COLUMN m UInt64 MATERIALIZED length(n.d) AFTER id;
@@ -114,7 +117,7 @@ DROP TABLE IF EXISTS ttl_nested_rollup_wide;
 CREATE TABLE ttl_nested_rollup_wide (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 -- The first group flushes from `consume`; the last group flushes from `generate`.
 INSERT INTO ttl_nested_rollup_wide VALUES (0, '2000-01-01', [1, 2]), (0, '2000-01-01', [3]), (1, '2099-01-01', [7, 8, 9, 10]), (2, '2000-01-01', [4, 5]), (2, '2000-01-01', [6]);
 ALTER TABLE ttl_nested_rollup_wide ADD COLUMN n.d Array(UInt8);
@@ -136,7 +139,7 @@ DROP TABLE IF EXISTS ttl_nested_rollup_compact;
 CREATE TABLE ttl_nested_rollup_compact (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 INSERT INTO ttl_nested_rollup_compact VALUES (0, '2000-01-01', [1, 2]), (0, '2000-01-01', [3]), (1, '2099-01-01', [7, 8, 9, 10]), (2, '2000-01-01', [4, 5]), (2, '2000-01-01', [6]);
 ALTER TABLE ttl_nested_rollup_compact ADD COLUMN n.d Array(UInt8);
 ALTER TABLE ttl_nested_rollup_compact ADD COLUMN m UInt64 MATERIALIZED length(n.d);
@@ -157,7 +160,7 @@ DROP TABLE IF EXISTS ttl_nested_default_source_wide;
 CREATE TABLE ttl_nested_default_source_wide (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 INSERT INTO ttl_nested_default_source_wide VALUES (0, '2000-01-01', [7, 8]);
 INSERT INTO ttl_nested_default_source_wide VALUES (1, '2000-01-01', [9]);
 ALTER TABLE ttl_nested_default_source_wide ADD COLUMN n.d Array(UInt8);
@@ -179,7 +182,7 @@ DROP TABLE IF EXISTS ttl_nested_default_source_compact;
 CREATE TABLE ttl_nested_default_source_compact (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id
 SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
 INSERT INTO ttl_nested_default_source_compact VALUES (0, '2000-01-01', [7, 8]);
 INSERT INTO ttl_nested_default_source_compact VALUES (1, '2000-01-01', [9]);
 ALTER TABLE ttl_nested_default_source_compact ADD COLUMN n.d Array(UInt8);
