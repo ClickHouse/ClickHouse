@@ -560,10 +560,13 @@ public:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Used for aggregate projection.
+    /// `sources_are_shared` means that the aggregate states in `columns` may be read concurrently by other queries
+    /// (e.g. they come from the partial aggregate cache), so they must not be modified in place.
     bool mergeOnBlock(Columns columns, size_t rows, bool is_overflows,
         AggregatedDataVariants & result,
         bool & no_more_keys,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        bool sources_are_shared = false) const;
 
     void mergeOnBlockSmall(
         AggregatedDataVariants & result,
@@ -1664,14 +1667,17 @@ private:
         const Columns & columns,
         size_t rows,
         AggregatedDataVariants & result,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        bool sources_are_shared = false) const;
 
+    /// `sources_are_shared`: see `mergeOnBlock`.
     void mergeWithoutKeyStreamsImpl(
         AggregatedDataVariants & result,
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        bool sources_are_shared = false) const;
 
     template <typename Method>
     void mergeBucketImpl(

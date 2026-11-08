@@ -6118,10 +6118,11 @@ void NO_INLINE Aggregator::mergeBlockWithoutKeyStreamsImpl(
     const Columns & columns,
     size_t rows,
     AggregatedDataVariants & result,
-    std::atomic<bool> & is_cancelled) const
+    std::atomic<bool> & is_cancelled,
+    bool sources_are_shared) const
 {
     AggregateColumnsConstData aggregate_columns = makeAggregateColumnsData(columns, params.keys_size, params.aggregates_size);
-    mergeWithoutKeyStreamsImpl(result, 0, rows, aggregate_columns, is_cancelled);
+    mergeWithoutKeyStreamsImpl(result, 0, rows, aggregate_columns, is_cancelled, sources_are_shared);
 }
 
 void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
@@ -6129,7 +6130,8 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
     size_t row_begin,
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
-    std::atomic<bool> & is_cancelled) const
+    std::atomic<bool> & is_cancelled,
+    bool sources_are_shared) const
 {
     using namespace CurrentMetrics;
 
@@ -6156,7 +6158,10 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         /// Adding Values
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
-            if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
+            /// `parallelizeMergePrepare` converts the states it is given in place (e.g. `uniqExact` turns a
+            /// single-level set into a two-level one), so it must not touch shared source states. `merge` itself
+            /// does not modify its source, so skipping the preparation only costs speed.
+            if (!sources_are_shared && aggregate_functions[i]->isParallelizeMergePrepareNeeded())
             {
                 AggregateDataPtrs data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
                 aggregate_functions[i]->parallelizeMergePrepare(data_vec, *thread_pool, is_cancelled);
@@ -6173,7 +6178,14 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 }
 
 
-bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, AggregatedDataVariants & result, bool & no_more_keys, std::atomic<bool> & is_cancelled) const
+bool Aggregator::mergeOnBlock(
+    Columns columns,
+    size_t rows,
+    bool is_overflows,
+    AggregatedDataVariants & result,
+    bool & no_more_keys,
+    std::atomic<bool> & is_cancelled,
+    bool sources_are_shared) const
 {
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
@@ -6195,7 +6207,7 @@ bool Aggregator::mergeOnBlock(Columns columns, size_t rows, bool is_overflows, A
     }
 
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
-        mergeBlockWithoutKeyStreamsImpl(columns, rows, result, is_cancelled);
+        mergeBlockWithoutKeyStreamsImpl(columns, rows, result, is_cancelled, sources_are_shared);
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) mergeStreamsImpl( \
         columns, \

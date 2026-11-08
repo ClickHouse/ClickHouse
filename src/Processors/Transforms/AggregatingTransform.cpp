@@ -4,7 +4,9 @@
 #include <Common/ListWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
+#include <IO/NullWriteBuffer.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <base/defines.h>
@@ -67,6 +69,24 @@ size_t partialAggregateArenaBytesFromVariants(const AggregatedDataVariants & var
             arena_allocated += pool_ptr->allocatedBytes();
     }
     return arena_allocated;
+}
+
+/// The size of the aggregate states of `block` in serialized form. Unlike the arenas, it also covers memory that
+/// states own outside of them (e.g. the hash set of `uniqExact`, which does not allocate in the arena).
+size_t partialAggregateSerializedStateBytes(const Block & block)
+{
+    NullWriteBuffer buf;
+    for (const auto & column : block)
+    {
+        const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(column.column.get());
+        if (!aggregate_column)
+            continue;
+        const auto function = aggregate_column->getAggregateFunction();
+        for (const auto place : aggregate_column->getData())
+            function->serialize(place, buf);
+    }
+    buf.finalize();
+    return buf.count();
 }
 
 }
@@ -1629,7 +1649,8 @@ void AggregatingTransform::consume(Chunk chunk)
             }
 
             Block block = materializeBlock(plan_hit->cached_partial_states);
-            if (!params->aggregator.mergeOnBlock(block.getColumns(), block.rows(), false, variants, no_more_keys, is_cancelled))
+            if (!params->aggregator.mergeOnBlock(
+                    block.getColumns(), block.rows(), false, variants, no_more_keys, is_cancelled, /*sources_are_shared=*/true))
                 is_consume_finished = true;
             partial_aggregate_cache_parts_served.insert(plan_hit->cache_key);
             return;
@@ -1688,7 +1709,8 @@ void AggregatingTransform::consume(Chunk chunk)
                     src_bytes += chunk.bytes();
 
                     Block block = materializeBlock(*cached);
-                    if (!params->aggregator.mergeOnBlock(block.getColumns(), block.rows(), false, variants, no_more_keys, is_cancelled))
+                    if (!params->aggregator.mergeOnBlock(
+                            block.getColumns(), block.rows(), false, variants, no_more_keys, is_cancelled, /*sources_are_shared=*/true))
                         is_consume_finished = true;
                     partial_aggregate_cache_parts_served.insert(key);
                     return;
@@ -1927,11 +1949,16 @@ void AggregatingTransform::flushPartialAggregateMissBuffers(bool allow_cache_put
         }
         if (allow_cache_put && !isCancelled() && !partial_aggregate_skip_cache_put_keys.contains(key))
         {
-            /// `Block::allocatedBytes()` omits `ColumnAggregateFunction::foreign_arenas`; count arenas while `local_variants` still holds the pools.
+            /// `Block::allocatedBytes()` omits `ColumnAggregateFunction::foreign_arenas`; count arenas while `local_variants`
+            /// still holds the pools. States can also own memory outside of the arenas, which the serialized size
+            /// approximates, so take the larger of the two.
             const size_t arena_weight = partialAggregateArenaBytesFromVariants(buf.local_variants);
-            params->partial_aggregate_cache->put(key, Block(materialized), arena_weight);
+            const size_t serialized_weight = partialAggregateSerializedStateBytes(materialized);
+            params->partial_aggregate_cache->put(key, Block(materialized), std::max(arena_weight, serialized_weight));
         }
-        if (!params->aggregator.mergeOnBlock(materialized.getColumns(), materialized.rows(), false, variants, no_more_keys, is_cancelled))
+        /// The states were just published to the cache, so another query may already read them.
+        if (!params->aggregator.mergeOnBlock(
+                materialized.getColumns(), materialized.rows(), false, variants, no_more_keys, is_cancelled, /*sources_are_shared=*/true))
             is_consume_finished = true;
     }
 
