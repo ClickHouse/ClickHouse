@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: Prevents running test in parallel, but multiple queries for the single test still run in parallel.
+# Tag no-fasttest: The executor sleeps for 10 seconds by design, so that it can be killed mid-flight, which is longer than the Fast test limit.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
