@@ -185,22 +185,43 @@ jobs:
             fi
 
             # Fetch run metadata once for all checks below
-            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
-              --jq '{pr: .pull_requests[0].number, sha: .head_sha,
-                     head_owner: .head_repository.owner.login, head_branch: .head_branch}')
-            pr_number=$(echo "$run_data" | jq -r '.pr // empty')
-            run_sha=$(echo "$run_data" | jq -r '.sha')
+            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id")
+            run_sha=$(echo "$run_data" | jq -r '.head_sha')
+            run_head_branch=$(echo "$run_data" | jq -r '.head_branch // ""')
+            run_head_repo=$(echo "$run_data" | jq -r '.head_repository.full_name // ""')
+            run_head_repo_id=$(echo "$run_data" | jq -r '.head_repository.id // ""')
 
-            # ".pull_requests" is populated only for a head branch that lives in this
-            # repository, so a pull request from a fork is found by its head reference.
-            if [ -z "$pr_number" ]; then
-              head_owner=$(echo "$run_data" | jq -r '.head_owner // empty')
-              head_branch=$(echo "$run_data" | jq -r '.head_branch // empty')
-              if [ -n "$head_owner" ] && [ -n "$head_branch" ]; then
-                pr_number=$(gh api --method GET "repos/$GH_REPO/pulls" \
-                  -f "head=$head_owner:$head_branch" -f state=all -f per_page=1 \
-                  --jq '.[0].number // empty' 2>/dev/null || true)
+            # Resolve the PR of the run the same way as rerun_on_review_threads.yml.
+            # Several open PRs can share the head commit of a run, so `.pull_requests[0]`
+            # may name another PR; match the candidates against the run's own head branch
+            # and repository instead. `.pull_requests` is empty for fork PRs, so then look
+            # the PRs up through the head commit. An ambiguous or unresolved run gets no PR
+            # number and is skipped below, so no PR-scoped artifact or marker is read for it.
+            pr_candidates=$(echo "$run_data" | jq -c \
+              --arg ref "$run_head_branch" --arg repo_id "$run_head_repo_id" '
+              [(.pull_requests // [])[] |
+               select(.head.ref == $ref and (.head.repo.id | tostring) == $repo_id) |
+               .number] | unique
+            ')
+            if [ "$(echo "$pr_candidates" | jq 'length')" -eq 0 ]; then
+              # Failing closed: without the PR lookup the run cannot be attributed, so
+              # do not rerun it on this tick; the next one re-examines it.
+              if ! commit_pulls=$(gh api "repos/$GH_REPO/commits/$run_sha/pulls"); then
+                echo "::warning::Skipping run $run_id: the PRs of commit $run_sha could not be listed."
+                continue
               fi
+              pr_candidates=$(echo "$commit_pulls" | jq -c \
+                --arg ref "$run_head_branch" --arg repo "$run_head_repo" '
+                [.[] |
+                 select(.state == "open" and .head.ref == $ref and .head.repo.full_name == $repo) |
+                 .number] | unique
+              ')
+            fi
+            pr_number=""
+            if [ "$(echo "$pr_candidates" | jq 'length')" -eq 1 ]; then
+              pr_number=$(echo "$pr_candidates" | jq -r '.[0]')
+            elif [ "$(echo "$pr_candidates" | jq 'length')" -gt 1 ]; then
+              echo "  Run belongs to several PRs ($pr_candidates) - not using a PR number."
             fi
 
             if [ -z "$pr_number" ]; then
@@ -295,6 +316,68 @@ jobs:
               if [ -n "$config_failed_at" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
                 should_rerun=true
                 echo "  Config Workflow failed but PR #$pr_number was updated after, rerunning."
+              fi
+            fi
+
+            # A red "Finish Workflow" caused by the unresolved-review-threads
+            # merge gate (the "Review Threads" commit status, see
+            # ci/jobs/scripts/workflow_hooks/review_threads.py) is an expected
+            # policy failure, not an infrastructure error. A rerun would end
+            # red again; rerun_on_review_threads.yml re-runs it once the
+            # threads are resolved.
+            if [ "$should_rerun" = "true" ] && [ -n "$run_sha" ]; then
+              # Every job of the run that did not end green, not only the
+              # `failure` ones: a lane that ended `timed_out` or `cancelled`
+              # alongside the gate is an infrastructure flake that must still
+              # be retried, so it has to break the "only Finish Workflow"
+              # equality below.
+              failed_workflow_jobs=$(echo "$jobs_raw" | jq -r '
+                .jobs[] |
+                select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") |
+                .name
+              ')
+              # A red "Review Threads" status alone does not prove that the
+              # gate was the only reason: "Finish Workflow" aggregates every
+              # PR post-hook, so the gate may have posted its status and then
+              # another post-hook failed for infrastructure reasons - such a
+              # run must still be retried. The run-scoped proof is the
+              # aggregate "Mergeable Check" status: ci/praktika/native_jobs.py
+              # writes the description "Failed: review threads only" only when
+              # the dedicated `can_be_merged.py --review-threads` post-hook was
+              # the sole failure of the whole workflow (any other failed job or
+              # post-hook yields "Failed: <jobs>" instead), and no other writer
+              # uses that description. The marker must also come from the
+              # failed attempt itself: only a status created within the failed
+              # "Finish Workflow" job's own time window belongs to it. A status
+              # created later (e.g. by rerun_on_review_threads.yml handling a
+              # label event) says nothing about why this run failed.
+              # And it must come from this PR: another open PR can share the
+              # commit, so the marker is posted with the Praktika report URL of
+              # its PR (`?PR=<n>&`).
+              finish_window=$(echo "$jobs_raw" | jq -r '
+                [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
+                first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
+              ')
+              finish_started_at=$(echo "$finish_window" | cut -f1)
+              finish_completed_at=$(echo "$finish_window" | cut -f2)
+              marker_state=""
+              if [ -n "$finish_started_at" ] && [ -n "$finish_completed_at" ]; then
+                statuses=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
+                  | jq -s 'add // []') || statuses="[]"
+                marker_state=$(echo "$statuses" | jq -r \
+                  --arg from "$finish_started_at" --arg to "$finish_completed_at" \
+                  --arg pr "$pr_number" '
+                  [.[] | select(.context == "Mergeable Check") |
+                   select(.description == "Failed: review threads only") |
+                   select($pr != "" and ((.target_url // "") | contains("?PR=" + $pr + "&"))) |
+                   select(.created_at >= $from and .created_at <= $to)] |
+                  first // {} | .state // empty
+                ')
+              fi
+              if { [ "$marker_state" = "failure" ] || [ "$marker_state" = "error" ]; } \
+                && [ "$failed_workflow_jobs" = "Finish Workflow" ]; then
+                should_rerun=false
+                echo "  Skipping: only Finish Workflow failed due to the unresolved-review-threads merge gate."
               fi
             fi
 
