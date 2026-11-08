@@ -12,6 +12,7 @@
 #include <Exception.hh>
 #include <Generic.hh>
 #include <GenericDatum.hh>
+#include <Compiler.hh>
 #include <Stream.hh>
 
 namespace
@@ -37,12 +38,14 @@ void appendString(std::vector<uint8_t> & out, const std::string & value)
     out.insert(out.end(), value.begin(), value.end());
 }
 
-/// A file with a single data block holding one record whose only field is an array or a map
-/// that declares `declared_item_count` items in its first block and carries no item data at all.
-std::vector<uint8_t> makeFileWithDeclaredItemCount(const std::string & field_type, int64_t declared_item_count)
+std::string makeRecordSchema(const std::string & field_type)
 {
-    const std::string schema = R"({"type":"record","name":"r","fields":[{"name":"f","type":)" + field_type + "}]}";
+    return R"({"type":"record","name":"r","fields":[{"name":"f","type":)" + field_type + "}]}";
+}
 
+/// A file with a single data block of `block_data` that holds one object.
+std::vector<uint8_t> makeFile(const std::string & schema, const std::vector<uint8_t> & block_data)
+{
     std::vector<uint8_t> sync;
     for (uint8_t i = 0; i < 16; ++i)
         sync.push_back(i);
@@ -54,14 +57,20 @@ std::vector<uint8_t> makeFileWithDeclaredItemCount(const std::string & field_typ
     appendLong(file, 0);
     file.insert(file.end(), sync.begin(), sync.end());
 
-    std::vector<uint8_t> block_data;
-    appendLong(block_data, declared_item_count);
-
     appendLong(file, 1);
     appendLong(file, static_cast<int64_t>(block_data.size()));
     file.insert(file.end(), block_data.begin(), block_data.end());
     file.insert(file.end(), sync.begin(), sync.end());
     return file;
+}
+
+/// A file with a single data block holding one record whose only field is an array or a map
+/// that declares `declared_item_count` items in its first block and carries no item data at all.
+std::vector<uint8_t> makeFileWithDeclaredItemCount(const std::string & field_type, int64_t declared_item_count)
+{
+    std::vector<uint8_t> block_data;
+    appendLong(block_data, declared_item_count);
+    return makeFile(makeRecordSchema(field_type), block_data);
 }
 
 void readAllDatums(const std::vector<uint8_t> & file)
@@ -73,11 +82,31 @@ void readAllDatums(const std::vector<uint8_t> & file)
     }
 }
 
+/// Reads the file with schema resolution from the writer schema of the file to `reader_field_type`.
+void readAllDatumsResolving(const std::vector<uint8_t> & file, const std::string & reader_field_type)
+{
+    avro::ValidSchema reader_schema = avro::compileJsonSchemaFromString(makeRecordSchema(reader_field_type));
+    avro::DataFileReader<avro::GenericDatum> reader(avro::memoryInputStream(file.data(), file.size()), reader_schema);
+    avro::GenericDatum datum(reader.readerSchema());
+    while (reader.read(datum))
+    {
+    }
+}
+
+/// `{"type":"array","items":<record with `fields_count` fields of type null>}`.
+std::string arrayOfRecordsOfNulls(size_t fields_count)
+{
+    std::string fields;
+    for (size_t i = 0; i < fields_count; ++i)
+        fields += (i ? R"(,{"name":"n)" : R"({"name":"n)") + std::to_string(i) + R"(","type":"null"})";
+    return R"({"type":"array","items":{"type":"record","name":"e","fields":[)" + fields + "]}}";
+}
+
 /// More items than `std::vector::max_size` of any element type used by `GenericDatum`, so that
 /// resizing a container by the declared count throws `std::length_error` instead of `avro::Exception`.
 constexpr int64_t huge_item_count = int64_t(1) << 62;
 
-/// The number of items that take no bytes a single datum may declare, as set in `contrib/avro`.
+/// The number of datums that items taking no bytes may create in a single datum, as set in `contrib/avro`.
 /// 65536 `GenericDatum` objects of 32 bytes are 2 MiB.
 constexpr int64_t max_zero_size_items = int64_t(1) << 16;
 
@@ -125,6 +154,46 @@ TEST(AvroGenericReader, ZeroSizeItemsOverTheLimitAreRejectedByTheCap)
 {
     EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(array_of_null, max_zero_size_items + 1)), avro::Exception);
     EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(array_of_empty_records, max_zero_size_items + 1)), avro::Exception);
+}
+
+TEST(AvroGenericReader, ArrayOfRecordsOfManyNullsIsBoundedByDatumsNotItems)
+{
+    /// 65536 items of a record with 1000 `null` fields pass an item-count cap, yet would build 65 million datums
+    /// (about 2 GiB) before the missing end of the block is noticed. They must be rejected after a few MiB.
+    auto file = makeFileWithDeclaredItemCount(arrayOfRecordsOfNulls(1000), max_zero_size_items);
+    EXPECT_THROW(readAllDatums(file), avro::Exception);
+    EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(arrayOfRecordsOfNulls(1000), huge_item_count)), avro::Exception);
+}
+
+TEST(AvroGenericReader, ArrayOfRecordsWithTooManyFieldsIsRejected)
+{
+    EXPECT_THROW(readAllDatums(makeFileWithDeclaredItemCount(arrayOfRecordsOfNulls(70000), 1)), avro::Exception);
+}
+
+TEST(AvroGenericReader, ResolvingArrayOfItemsThatTakeBytesIsNotLimited)
+{
+    /// With schema resolution (here an extra defaulted field in the reader schema) items that are read from the input
+    /// are bounded by the input, however many there are.
+    constexpr int64_t items = 70000;
+    std::vector<uint8_t> block_data;
+    appendLong(block_data, items);
+    for (int64_t i = 0; i < items; ++i)
+        appendLong(block_data, i);
+    appendLong(block_data, 0);
+
+    const std::string writer_type = R"({"type":"array","items":{"type":"record","name":"e","fields":[{"name":"x","type":"int"}]}})";
+    const std::string reader_type = R"({"type":"array","items":{"type":"record","name":"e","fields":[{"name":"x","type":"int"},{"name":"y","type":"int","default":0}]}})";
+    auto file = makeFile(makeRecordSchema(writer_type), block_data);
+    EXPECT_NO_THROW(readAllDatumsResolving(file, reader_type));
+}
+
+TEST(AvroGenericReader, ResolvingArrayOfItemsMadeOfDefaultsIsLimited)
+{
+    /// The writer's empty records take no bytes, and so do the reader's records whose only field is filled by a default.
+    const std::string writer_type = R"({"type":"array","items":{"type":"record","name":"e","fields":[]}})";
+    const std::string reader_type = R"({"type":"array","items":{"type":"record","name":"e","fields":[{"name":"y","type":"int","default":0}]}})";
+    auto file = makeFile(makeRecordSchema(writer_type), [] { std::vector<uint8_t> d; appendLong(d, huge_item_count); return d; }());
+    EXPECT_THROW(readAllDatumsResolving(file, reader_type), avro::Exception);
 }
 
 #endif
