@@ -117,6 +117,15 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
+    /// The first violation of the Iceberg spec in `schema`, or nullopt: a field, list element, map key or value
+    /// without the members its type needs, or a geo type with invalid parameters. With `is_table_schema`, also a
+    /// schema that is not a `struct`, or an `identifier-field-ids` entry that is not a required primitive field
+    /// outside lists, maps and optional structs.
+    static std::optional<String> findSchemaViolation(const Poco::JSON::Object & schema, bool is_table_schema);
+
+    /// Throws ICEBERG_SPECIFICATION_VIOLATION for the violation above.
+    static void checkSchema(const Poco::JSON::Object & schema, bool is_table_schema);
+
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
     /// The largest field id in `schema`, nested ids included.

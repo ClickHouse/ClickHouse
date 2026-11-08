@@ -7,6 +7,8 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <functional>
+
 namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -16,10 +18,14 @@ using namespace DB::Iceberg;
 
 namespace
 {
+/// Every writer emits `"type": "struct"`, so the fixtures leave it out.
 Poco::JSON::Object::Ptr parseSchema(const std::string & json)
 {
     Poco::JSON::Parser parser;
-    return parser.parse(json).extract<Poco::JSON::Object::Ptr>();
+    auto schema = parser.parse(json).extract<Poco::JSON::Object::Ptr>();
+    if (!schema->has("type"))
+        schema->set("type", "struct");
+    return schema;
 }
 }
 
@@ -371,8 +377,8 @@ TEST(IcebergSchemaProcessor, MapKeyValueDecimalWhitespaceIsInsensitive)
 /// different spacing must not be rejected.
 TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
 {
-    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C,A)"}]})json");
-    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84,spherical)"}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
@@ -384,8 +390,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
 /// instead of one skipping aliasing (staying "geography") and the other becoming "binary".
 TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
 {
-    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(C,A) "}]})json");
-    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
+    auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(OGC:CRS84,spherical) "}]})json");
+    auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
@@ -397,8 +403,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
 /// unchanged and the DAG would still expose the old name.
 TEST(IcebergSchemaProcessor, RenameGeoFieldAcrossSchemaIdsWithWhitespaceIsRename)
 {
-    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(C,A)"}]})json");
-    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(C, A)"}]})json");
+    auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(OGC:CRS84,spherical)"}]})json");
+    auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(OGC:CRS84, spherical)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
     processor.addIcebergTableSchema(old_schema);
     processor.addIcebergTableSchema(new_schema);
@@ -511,4 +517,62 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalEmptyScaleThrows)
 TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
+}
+
+namespace
+{
+void expectSpecificationViolation(const std::function<void()> & register_schema)
+{
+    try
+    {
+        register_schema();
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+    }
+}
+}
+
+/// A manifest header copy is checked only for what reading data needs: AWS S3 Tables writes copies with only some
+/// of the columns, whose `identifier-field-ids` can then name a field that is not there. A metadata.json schema is not.
+TEST(IcebergSchemaProcessor, ManifestHeaderSchemaSkipsTableRules)
+{
+    Poco::JSON::Parser parser;
+    const std::string json = R"json({"schema-id":0,"identifier-field-ids":[2],"fields":[{"id":1,"name":"ts","required":true,"type":"timestamptz"}]})json";
+    IcebergSchemaProcessor from_manifest;
+    EXPECT_NO_THROW(from_manifest.addIcebergTableSchema(
+        parser.parse(json).extract<Poco::JSON::Object::Ptr>(), IcebergSchemaProcessor::SchemaSource::ManifestFile, true));
+    EXPECT_TRUE(from_manifest.hasClickHouseTableSchemaById(0));
+
+    IcebergSchemaProcessor from_metadata;
+    expectSpecificationViolation([&] { from_metadata.addIcebergTableSchema(parser.parse(json).extract<Poco::JSON::Object::Ptr>()); });
+}
+
+/// A metadata.json copy of an already registered schema-id is checked even when it compares identical to it.
+TEST(IcebergSchemaProcessor, MetadataCopyOfRegisteredIdIsChecked)
+{
+    auto valid = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"g","required":false,"type":"geography(OGC:CRS84,spherical)"}]})json");
+    auto bad_algorithm = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"g","required":false,"type":"geography(OGC:CRS84,bogus)"}]})json");
+    auto plain = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"id","required":true,"type":"long"}]})json");
+    auto bad_identifier = parseSchema(R"json({"schema-id":0,"identifier-field-ids":[999],"fields":[{"id":1,"name":"id","required":true,"type":"long"}]})json");
+
+    /// A copy from a manifest, then the metadata.json copy that confirms it.
+    {
+        IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
+        processor.addIcebergTableSchema(valid, IcebergSchemaProcessor::SchemaSource::ManifestFile, true);
+        expectSpecificationViolation([&] { processor.addIcebergTableSchema(bad_algorithm); });
+    }
+    /// Two metadata.json copies.
+    {
+        IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
+        processor.addIcebergTableSchema(valid);
+        expectSpecificationViolation([&] { processor.addIcebergTableSchema(bad_algorithm); });
+    }
+    {
+        IcebergSchemaProcessor processor;
+        processor.addIcebergTableSchema(plain);
+        expectSpecificationViolation([&] { processor.addIcebergTableSchema(bad_identifier); });
+    }
 }

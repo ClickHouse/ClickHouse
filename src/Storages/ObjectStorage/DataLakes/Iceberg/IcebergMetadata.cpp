@@ -427,6 +427,10 @@ Int32 IcebergMetadata::parseTableSchema(const Poco::JSON::Object::Ptr & metadata
     if (format_version >= 2 || metadata_object->has(f_schemas))
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+        /// Every schema, not only the current one: nothing registers the others of a table without snapshots.
+        const auto schemas = metadata_object->getArray(f_schemas);
+        for (UInt32 i = 0; i != schemas->size(); ++i)
+            IcebergSchemaProcessor::checkSchema(*schemas->getObject(i), /*is_table_schema=*/ true);
         schema_processor.addIcebergTableSchema(schema);
         return current_schema_id;
     }
