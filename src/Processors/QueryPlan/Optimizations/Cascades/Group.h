@@ -44,6 +44,7 @@ public:
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
     bool isOptimizedFor(const ExpressionProperties & required_properties) const;
+    bool isOptimizedForAnyProperties() const { return !optimized_properties.empty(); }
     void setOptimizedFor(const ExpressionProperties & required_properties);
     bool isEnforcedFor(const ExpressionProperties & required_properties) const;
     void setEnforcedFor(const ExpressionProperties & required_properties);

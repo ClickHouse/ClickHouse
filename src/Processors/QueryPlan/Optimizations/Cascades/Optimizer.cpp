@@ -158,6 +158,7 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     memo.setContext(buildContext(getQueryContextOrThrow(), optimization_settings));
 
     addRule(createJoinCommutativity());
+    addRule(createJoinEnumeration());
     addRule(createHashJoinImplementation());
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
@@ -251,7 +252,8 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
     return {group_id, {}};
 }
 
-std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinSets(QueryPlan::Node & node, JoinGraphStep::SetPlan set_plan)
+std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinSets(
+    QueryPlan::Node & node, JoinGraphStep::SetPlan set_plan, const JoinGraphStep & graph_step)
 {
     std::unordered_map<UInt64, GroupId> set_groups;
     std::unordered_map<UInt64, ExpressionProperties> input_pending_props;
@@ -284,6 +286,15 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinSets(QueryPla
     }
     if (!last_group_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A join graph without sets of relations");
+
+    if (graph_step.getOrderBuilder().hasRemainingSets())
+    {
+        auto expansion = std::make_shared<JoinGraphExpansion>();
+        expansion->order_builder = graph_step.getOrderBuilderPtr();
+        expansion->set_groups = std::move(set_groups);
+        expansion->input_pending_props = std::move(input_pending_props);
+        memo.addJoinGraphExpansion(*last_group_id, std::move(expansion));
+    }
     return {*last_group_id, {}};
 }
 
@@ -298,7 +309,7 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinGraph(QueryPl
         if (!blocksHaveEqualStructure(*set_plan->sets.back().splits.front().step->getOutputHeader(), *graph_step.getOutputHeader()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The joins of all relations of a join graph have header {}, the graph has {}",
                 set_plan->sets.back().splits.front().step->getOutputHeader()->dumpStructure(), graph_step.getOutputHeader()->dumpStructure());
-        return addJoinSets(node, std::move(*set_plan));
+        return addJoinSets(node, std::move(*set_plan), graph_step);
     }
 
     /// The plans of the other orders are built before anything is imported: building reads the headers of the inputs

@@ -1201,6 +1201,8 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
         std::vector<size_t> splits;
     };
     std::vector<SetSplits> set_splits;
+    /// The splits that the `JoinEnumeration` rule adds during the search, see `buildRemainingSets`.
+    std::vector<SetSplits> remaining_set_splits;
 
     /// Chooses the splits Cascades gets for `mode` and returns true, or returns false with `reason` when the graph
     /// gets its orders imported instead.
@@ -1220,6 +1222,8 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
     }
 
     std::optional<JoinGraphStep::SetPlan> buildSetPlan(const std::vector<QueryPlan::Node *> & inputs) override;
+    std::optional<JoinGraphStep::SetPlan> buildRemainingSets() override;
+    bool hasRemainingSets() const override { return !remaining_set_splits.empty(); }
 
 private:
     /// The plan of a join entry, and the columns of its relations after it, see `current_input_nodes` in `build`.
@@ -1254,6 +1258,15 @@ private:
     std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>> inputs_of;
     std::vector<std::vector<const ActionsDAG::Node *>> edge_inputs;
     std::vector<const ActionsDAG::Node *> output_inputs;
+    /// Builds the joins of `sets`; the sets they are split into are built already.
+    JoinGraphStep::SetPlan buildSets(const std::vector<SetSplits> & sets);
+
+    /// The output header, the output columns and the estimates of every set built so far.
+    UInt64 all_relations = 0;
+    std::unordered_map<UInt64, SharedHeader> set_headers;
+    std::unordered_map<UInt64, std::vector<const ActionsDAG::Node *>> set_columns_by_relations;
+    std::unordered_map<UInt64, RelationEstimateInfo> set_relation_infos;
+
     /// Equalities made for an equivalence class, by the two members they compare.
     std::map<std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>, JoinActionRef> class_equalities;
 };
@@ -1766,7 +1779,7 @@ bool JoinOrderPlanBuilder::selectSetSplits(QueryPlanOptimizationSettings::JoinEn
     }
 
     const auto & splits = recorded_splits->splits;
-    if (mode == JoinEnumeration::AllSplits && 2 * splits.size() > max_join_expressions)
+    if (mode != JoinEnumeration::Candidates && 2 * splits.size() > max_join_expressions)
     {
         reason = fmt::format("{} splits are more than `cascades_join_enumeration_max_splits` allows", splits.size());
         return false;
@@ -1820,22 +1833,47 @@ bool JoinOrderPlanBuilder::selectSetSplits(QueryPlanOptimizationSettings::JoinEn
         }
     }
 
-    set_splits.clear();
-    for (auto & [relations, indexes] : selected)
+    /// With the rule, the splits of the orders are imported, and the rule adds the others during the search.
+    std::unordered_map<UInt64, std::vector<size_t>> remaining;
+    if (mode == JoinEnumeration::AllSplitsRule)
     {
-        /// The winner of the set first: Cascades derives the statistics of a group from its first expression.
-        const auto & winner = recorded_splits->winners.at(relations);
-        auto winner_index = find_split(relations, toRelationMask(winner->left->relations));
-        if (!winner_index)
+        for (const auto & [relations, indexes] : splits_by_set)
         {
-            reason = "the winner of a set is not a recorded split";
-            return false;
+            const auto it = selected.find(relations);
+            for (size_t index : indexes)
+                if (it == selected.end() || std::ranges::find(it->second, index) == it->second.end())
+                    remaining[relations].push_back(index);
         }
-        std::erase(indexes, *winner_index);
-        indexes.insert(indexes.begin(), *winner_index);
-        set_splits.push_back({relations, std::move(indexes)});
     }
-    std::ranges::sort(set_splits, {}, [](const SetSplits & set) { return std::pair{std::popcount(set.relations), set.relations}; });
+
+    /// The winner of a set first: Cascades derives the statistics of a group from its first expression. A set that is
+    /// imported already has its winner there.
+    auto order_sets = [&](std::unordered_map<UInt64, std::vector<size_t>> & sets, bool imported_already, std::vector<SetSplits> & result)
+    {
+        result.clear();
+        for (auto & [relations, indexes] : sets)
+        {
+            if (!imported_already || !selected.contains(relations))
+            {
+                const auto & winner = recorded_splits->winners.at(relations);
+                auto winner_index = find_split(relations, toRelationMask(winner->left->relations));
+                if (!winner_index)
+                {
+                    reason = "the winner of a set is not a recorded split";
+                    return false;
+                }
+                std::erase(indexes, *winner_index);
+                indexes.insert(indexes.begin(), *winner_index);
+            }
+            result.push_back({relations, std::move(indexes)});
+        }
+        std::ranges::sort(result, {}, [](const SetSplits & set) { return std::pair{std::popcount(set.relations), set.relations}; });
+        return true;
+    };
+    if (!order_sets(remaining, /* imported_already= */ true, remaining_set_splits))
+        return false;
+    if (!order_sets(selected, /* imported_already= */ false, set_splits))
+        return false;
 
     edge_inputs.clear();
     for (const auto & edge : recorded_splits->edges)
@@ -1961,22 +1999,39 @@ std::optional<JoinGraphStep::SetPlan> JoinOrderPlanBuilder::buildSetPlan(const s
     if (set_splits.empty())
         return std::nullopt;
 
-    const UInt64 all_relations = (UInt64(1) << inputs.size()) - 1;
-    std::unordered_map<UInt64, SharedHeader> headers;
-    std::unordered_map<UInt64, std::vector<const ActionsDAG::Node *>> columns;
-    std::unordered_map<UInt64, RelationEstimateInfo> relation_infos;
+    all_relations = (UInt64(1) << inputs.size()) - 1;
     for (size_t relation = 0; relation < inputs.size(); ++relation)
     {
         const UInt64 mask = UInt64(1) << relation;
-        headers[mask] = inputs[relation]->step->getOutputHeader();
+        set_headers[mask] = inputs[relation]->step->getOutputHeader();
         for (const auto & [input_relation, input] : initial_input_nodes)
             if (input_relation == relation)
-                columns[mask].push_back(input);
-        relation_infos[mask] = leaf_relation_infos.at(BitSet().set(relation));
+                set_columns_by_relations[mask].push_back(input);
+        set_relation_infos[mask] = leaf_relation_infos.at(BitSet().set(relation));
     }
+    ProfileEvents::increment(ProfileEvents::JoinEnumerationSetPlans);
+    return buildSets(set_splits);
+}
+
+std::optional<JoinGraphStep::SetPlan> JoinOrderPlanBuilder::buildRemainingSets()
+{
+    if (remaining_set_splits.empty())
+        return std::nullopt;
+    if (set_headers.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The remaining sets of a join graph are built before its sets");
+    auto plan = buildSets(remaining_set_splits);
+    remaining_set_splits.clear();
+    return plan;
+}
+
+JoinGraphStep::SetPlan JoinOrderPlanBuilder::buildSets(const std::vector<SetSplits> & sets)
+{
+    auto & headers = set_headers;
+    auto & columns = set_columns_by_relations;
+    auto & relation_infos = set_relation_infos;
 
     JoinGraphStep::SetPlan plan;
-    for (const auto & set : set_splits)
+    for (const auto & set : sets)
     {
         const bool is_all_relations = set.relations == all_relations;
         const auto set_columns = is_all_relations ? output_inputs : setColumns(set.relations);
@@ -2055,7 +2110,7 @@ std::optional<JoinGraphStep::SetPlan> JoinOrderPlanBuilder::buildSetPlan(const s
                 winner->estimated_rows, winner->column_stats, imprecise_estimate, winner->cost, winner->selectivity, cluster_id,
                 winner->max_rows, winner->estimate_from_defaults);
 
-            if (planned_set.splits.empty())
+            if (!headers.contains(set.relations))
             {
                 headers[set.relations] = join_step->getOutputHeader();
                 relation_infos[set.relations] = RelationEstimateInfo{
@@ -2077,7 +2132,6 @@ std::optional<JoinGraphStep::SetPlan> JoinOrderPlanBuilder::buildSetPlan(const s
         ProfileEvents::increment(ProfileEvents::JoinEnumerationSplits, planned_set.splits.size());
         plan.sets.push_back(std::move(planned_set));
     }
-    ProfileEvents::increment(ProfileEvents::JoinEnumerationSetPlans);
     return plan;
 }
 

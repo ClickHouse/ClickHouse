@@ -50,6 +50,11 @@ public:
         /// The joins of every set of the graph's relations that Cascades chooses between, see `SetPlan`. Empty when
         /// Cascades imports the orders instead.
         virtual std::optional<SetPlan> buildSetPlan(const std::vector<QueryPlan::Node *> & inputs) = 0;
+
+        /// The joins that `buildSetPlan` left for the `JoinEnumeration` rule to add during the search: the other splits
+        /// of the sets it built, and the sets it did not build. Built once, after `buildSetPlan`.
+        virtual std::optional<SetPlan> buildRemainingSets() = 0;
+        virtual bool hasRemainingSets() const = 0;
     };
 
     /// `chosen_order_root` is the root of the chosen order's plan; its leaves are the nodes in `inputs` order.
@@ -66,6 +71,7 @@ public:
     /// The root of the chosen order's plan, whose leaves are the step's children.
     QueryPlan::Node * getChosenOrderRoot() const { return chosen_order_root; }
     OrderBuilder & getOrderBuilder() const { return *order_builder; }
+    std::shared_ptr<OrderBuilder> getOrderBuilderPtr() const { return order_builder; }
 
     /// Replaces the step in `node` by the plan of the chosen order.
     static void expandToChosenOrder(QueryPlan::Node & node);

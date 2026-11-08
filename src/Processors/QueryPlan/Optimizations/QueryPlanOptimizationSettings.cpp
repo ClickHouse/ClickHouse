@@ -422,9 +422,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         cascades_join_enumeration = JoinEnumeration::Candidates;
     else if (join_enumeration == "all_splits")
         cascades_join_enumeration = JoinEnumeration::AllSplits;
+    else if (join_enumeration == "all_splits_rule")
+        cascades_join_enumeration = JoinEnumeration::AllSplitsRule;
     else
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid value '{}' of setting `cascades_join_enumeration`, expected 'off', 'candidates' or 'all_splits'", join_enumeration);
+            "Invalid value '{}' of setting `cascades_join_enumeration`, expected 'off', 'candidates', 'all_splits' or 'all_splits_rule'",
+            join_enumeration);
     cascades_join_enumeration_max_splits = from[Setting::cascades_join_enumeration_max_splits];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];

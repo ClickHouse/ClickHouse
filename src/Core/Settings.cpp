@@ -11258,6 +11258,8 @@ Experimental. How the Cascades optimizer gets the join orders of a join graph:
 - `candidates`: the same orders, imported with one memo group per set of joined tables;
 - `all_splits`: every split of every set of joined tables that the join order optimizer accepted, one memo group per
   set, so that Cascades costs each split with the data moved between nodes.
+- `all_splits_rule`: the same joins as `all_splits`, but only those of `candidates` are imported; the rule
+  `JoinEnumeration` adds the others when the search explores the graph.
 
 `candidates` and `all_splits` take effect only for graphs of inner joins whose join keys compare the same way as
 hash keys and as values (no floating-point keys), and that `DPsub` plans; other graphs use `off`.
@@ -11265,7 +11267,7 @@ Takes effect only together with `enable_cascades_optimizer = 1` and `make_distri
 )", EXPERIMENTAL, \
         {"26.11", "off", "off", "New experimental setting."}) \
     DECLARE(UInt64, cascades_join_enumeration_max_splits, 20000, R"(
-With `cascades_join_enumeration = 'all_splits'`: the largest number of join expressions (two per split) that a join
+With `cascades_join_enumeration = 'all_splits'` or `'all_splits_rule'`: the largest number of join expressions (two per split) that a join
 graph may add to the Cascades memo. A larger graph uses `off`.
 )", EXPERIMENTAL, \
         {"26.11", 20000, 20000, "New experimental setting."}) \

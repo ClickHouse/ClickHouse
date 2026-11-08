@@ -47,6 +47,7 @@ using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
 /// Rule factories; every rule class is local to its source file under `Rules/`.
 OptimizationRulePtr createJoinCommutativity();
+OptimizationRulePtr createJoinEnumeration();
 OptimizationRulePtr createHashJoinImplementation();
 OptimizationRulePtr createAggregationImplementation();
 OptimizationRulePtr createDistinctImplementation();

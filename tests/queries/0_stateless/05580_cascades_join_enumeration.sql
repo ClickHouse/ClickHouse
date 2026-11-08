@@ -48,6 +48,8 @@ SELECT 'candidates', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b
     SETTINGS cascades_join_enumeration = 'candidates', log_comment = 'join_enum_chain_candidates';
 SELECT 'all_splits', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS cascades_join_enumeration = 'all_splits', log_comment = 'join_enum_chain_all_splits';
+SELECT 'all_splits_rule', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'all_splits_rule', log_comment = 'join_enum_chain_rule';
 SELECT 'one node', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS make_distributed_plan = 0;
 
@@ -62,6 +64,8 @@ SELECT 'one node', count(), sum(a.x * d.k) FROM t_enum_a a JOIN t_enum_b b ON a.
 SELECT '-- cycle with several keys, nullable keys';
 SELECT 'all_splits', count(), sum(c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id AND a.k = b.k JOIN t_enum_c c ON b.k = c.k JOIN t_enum_d d ON c.id = d.id AND d.k = a.x
     SETTINGS cascades_join_enumeration = 'all_splits', enable_join_transitive_predicates = 1, log_comment = 'join_enum_cycle';
+SELECT 'all_splits_rule', count(), sum(c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id AND a.k = b.k JOIN t_enum_c c ON b.k = c.k JOIN t_enum_d d ON c.id = d.id AND d.k = a.x
+    SETTINGS cascades_join_enumeration = 'all_splits_rule', enable_join_transitive_predicates = 1, log_comment = 'join_enum_cycle_rule';
 SELECT 'one node', count(), sum(c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id AND a.k = b.k JOIN t_enum_c c ON b.k = c.k JOIN t_enum_d d ON c.id = d.id AND d.k = a.x
     SETTINGS make_distributed_plan = 0;
 
@@ -75,6 +79,9 @@ SELECT '-- a predicate over three tables, a one-sided condition, a self-equality
 SELECT 'all_splits', count(), sum(a.x + c.w), max(d.s || toString(a.y))
 FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id AND a.x + b.v > c.w AND c.k = c.k AND 1 = 1 JOIN t_enum_d d ON c.id = d.id AND d.s = '1'
     SETTINGS cascades_join_enumeration = 'all_splits', log_comment = 'join_enum_predicates';
+SELECT 'all_splits_rule', count(), sum(a.x + c.w), max(d.s || toString(a.y))
+FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id AND a.x + b.v > c.w AND c.k = c.k AND 1 = 1 JOIN t_enum_d d ON c.id = d.id AND d.s = '1'
+    SETTINGS cascades_join_enumeration = 'all_splits_rule', log_comment = 'join_enum_predicates_rule';
 SELECT 'one node', count(), sum(a.x + c.w), max(d.s || toString(a.y))
 FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id AND a.x + b.v > c.w AND c.k = c.k AND 1 = 1 JOIN t_enum_d d ON c.id = d.id AND d.s = '1'
     SETTINGS make_distributed_plan = 0;
@@ -112,10 +119,17 @@ SELECT 'limit', count() FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_en
 
 SYSTEM FLUSH LOGS query_log;
 SELECT '-- sets given to Cascades';
-SELECT log_comment, ProfileEvents['JoinEnumerationSetPlans'] AS graphs, ProfileEvents['JoinEnumerationSplits'] > 0 AS has_splits
+SELECT log_comment, ProfileEvents['JoinEnumerationSetPlans'] AS graphs, ProfileEvents['JoinEnumerationSplits'] > 0 AS has_splits,
+    ProfileEvents['JoinEnumerationRuleExpansions'] AS rule_expansions
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND log_comment LIKE 'join\_enum\_%' AND event_date >= yesterday()
 ORDER BY log_comment;
+SELECT '-- the rule adds the joins that the import of all splits gets';
+SELECT replaceOne(replaceOne(log_comment, '_rule', ''), '_all_splits', '') AS graph, count() AS runs, uniqExact(ProfileEvents['JoinEnumerationSplits']) AS split_counts
+FROM system.query_log
+WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment IN ('join_enum_chain_all_splits', 'join_enum_chain_rule', 'join_enum_cycle', 'join_enum_cycle_rule', 'join_enum_predicates', 'join_enum_predicates_rule')
+GROUP BY 1 ORDER BY 1;
 
 DROP TABLE t_enum_a;
 DROP TABLE t_enum_b;

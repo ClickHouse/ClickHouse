@@ -180,6 +180,7 @@ struct QueryPlanOptimizationSettings
         Off,
         Candidates,
         AllSplits,
+        AllSplitsRule,
     };
     JoinEnumeration cascades_join_enumeration = JoinEnumeration::Off;
     size_t cascades_join_enumeration_max_splits = 20000;
