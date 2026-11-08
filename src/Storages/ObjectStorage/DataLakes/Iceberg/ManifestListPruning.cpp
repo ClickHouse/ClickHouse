@@ -55,7 +55,7 @@ std::optional<Field> deserializeIntegerBound(const String & bytes, const IDataTy
 std::optional<std::pair<Field, Field>> boundsOfPartitionFieldSummary(
     const PartitionFieldSummary & summary, const DataTypePtr & type, Int32 partition_spec_id, size_t field_index)
 {
-    if (summary.contains_null || summary.contains_nan || !summary.lower_bound.has_value() || summary.lower_bound->empty()
+    if (summary.contains_nan || !summary.lower_bound.has_value() || summary.lower_bound->empty()
         || !summary.upper_bound.has_value() || summary.upper_bound->empty())
         return {};
 
@@ -155,32 +155,34 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
     if (partition_key.data_types.size() != partition_summaries.size())
         return false;
 
-    std::vector<FieldRef> left_keys(partition_summaries.size());
-    std::vector<FieldRef> right_keys(partition_summaries.size());
+    /// Each summary bounds its field independently, so the manifest's partition tuples lie in the box of these ranges.
+    Hyperrectangle hyperrectangle;
+    hyperrectangle.reserve(partition_summaries.size());
     for (size_t i = 0; i < partition_summaries.size(); ++i)
     {
-        auto bounds
-            = boundsOfPartitionFieldSummary(partition_summaries[i], partition_key.data_types.at(i), partition_spec_id, i);
-
-        left_keys[i] = bounds.has_value() ? FieldRef(bounds->first) : FieldRef(NEGATIVE_INFINITY);
-        right_keys[i] = bounds.has_value() ? FieldRef(bounds->second) : FieldRef(POSITIVE_INFINITY);
+        const auto & summary = partition_summaries[i];
+        auto bounds = boundsOfPartitionFieldSummary(summary, partition_key.data_types.at(i), partition_spec_id, i);
+        if (!bounds)
+            hyperrectangle.push_back(Range::createWholeUniverse());
+        else if (summary.contains_null)
+            /// NULL sorts after every value.
+            hyperrectangle.emplace_back(bounds->first, true, POSITIVE_INFINITY, true);
+        else
+            hyperrectangle.emplace_back(bounds->first, true, bounds->second, true);
     }
 
     /// A summary that covers a wrapped value may hold it for rows whose key is the unwrapped one.
     for (const auto & wraparound : condition_it->second.int32_truncate_wraparounds)
     {
-        if (wraparound.tuple_index >= left_keys.size())
+        if (wraparound.tuple_index >= hyperrectangle.size())
             continue;
-        auto & lower = left_keys[wraparound.tuple_index];
-        const auto & upper = right_keys[wraparound.tuple_index];
-        if (lower.getType() == Field::Types::Int64 && upper.getType() == Field::Types::Int64
-            && lower.safeGet<Int64>() <= wraparound.stored && wraparound.stored <= upper.safeGet<Int64>()
-            && wraparound.value < lower.safeGet<Int64>())
-            lower = FieldRef(wraparound.value);
+        auto & range = hyperrectangle[wraparound.tuple_index];
+        if (range.left.getType() == Field::Types::Int64 && range.contains(Field(wraparound.stored))
+            && wraparound.value < range.left.safeGet<Int64>())
+            range.left = Field(wraparound.value);
     }
 
-    return !condition_it->second.condition.mayBeTrueInRange(
-        partition_summaries.size(), left_keys.data(), right_keys.data(), partition_key.data_types);
+    return !condition_it->second.condition.checkInHyperrectangle(hyperrectangle, partition_key.data_types).can_be_true;
 }
 
 }

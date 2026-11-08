@@ -161,6 +161,7 @@ extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
 extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
 extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
+extern const SettingsBool use_iceberg_table_statistics_ndv;
 }
 
 namespace
@@ -513,7 +514,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_position_deletes,
         total_equality_deletes,
         refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
+        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr,
+        metadata_object->getArray(f_statistics));
 }
 
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
@@ -1654,6 +1656,63 @@ std::optional<UInt64> countDeletedRows(
     return deleted_rows;
 }
 
+/// An integer JSON value, std::nullopt for any other value. Poco keeps an integer above the `Int64` range as `UInt64`.
+std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
+{
+    if (!value.isInteger() || value.isBoolean())
+        return std::nullopt;
+    if (value.isSigned())
+        return value.convert<Int64>();
+    const auto unsigned_value = value.convert<UInt64>();
+    if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        return std::nullopt;
+    return static_cast<Int64>(unsigned_value);
+}
+
+/// Field id -> `ndv` of the one-column theta sketches in the first statistics file of snapshot `snapshot_id`; skips malformed
+/// entries and the blobs that the file keeps from an earlier snapshot.
+std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
+{
+    static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
+
+    std::unordered_map<Int32, UInt64> distinct_values;
+    if (!statistics)
+        return distinct_values;
+
+    for (unsigned i = 0; i < statistics->size(); ++i)
+    {
+        const auto statistics_file = statistics->getObject(i);
+        if (!statistics_file || tryGetInt64(statistics_file->get(f_metadata_snapshot_id)) != snapshot_id)
+            continue;
+
+        const auto blobs = statistics_file->getArray(f_blob_metadata);
+        for (unsigned j = 0; blobs && j < blobs->size(); ++j)
+        {
+            const auto blob = blobs->getObject(j);
+            if (!blob)
+                continue;
+
+            const auto type = blob->get(f_type);
+            const auto fields = blob->getArray(f_fields);
+            if (!type.isString() || type.convert<String>() != theta_sketch_blob_type || !fields || fields->size() != 1
+                || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
+                continue;
+
+            const auto field_id = tryGetInt64(fields->get(0));
+            if (!field_id || *field_id < std::numeric_limits<Int32>::min() || *field_id > std::numeric_limits<Int32>::max())
+                continue;
+
+            const auto properties = blob->getObject(f_properties);
+            const auto ndv = properties ? properties->get(f_ndv) : Poco::Dynamic::Var{};
+            UInt64 num_distinct_values = 0;
+            if (ndv.isString() && tryParse(num_distinct_values, ndv.convert<String>()))
+                distinct_values[static_cast<Int32>(*field_id)] = num_distinct_values;
+        }
+        break;
+    }
+    return distinct_values;
+}
+
 }
 
 std::optional<DataLakeReadEstimate>
@@ -1679,11 +1738,29 @@ IcebergMetadata::estimateRead(
         return estimate;
     }
 
+    const auto & settings = context->getSettingsRef();
+
+    std::unordered_map<Int32, UInt64> table_distinct_values;
+    if (settings[Setting::use_iceberg_table_statistics_ndv])
+    {
+        table_distinct_values = readTableStatisticsDistinctValues(data_snapshot->statistics, data_snapshot->snapshot_id);
+        if (!table_distinct_values.empty())
+            LOG_TRACE(
+                log,
+                "Table statistics of snapshot {} give the numbers of distinct values of {} fields",
+                data_snapshot->snapshot_id,
+                table_distinct_values.size());
+    }
+
     ManifestColumnStatistics column_statistics(
-        column_names, storage_metadata_snapshot->getColumns(), *persistent_components.schema_processor, table_state_snapshot->schema_id, context);
+        column_names,
+        storage_metadata_snapshot->getColumns(),
+        *persistent_components.schema_processor,
+        table_state_snapshot->schema_id,
+        context,
+        table_distinct_values);
 
     /// Prune as the read does (`IcebergIterator`), but never build an `IN` set: planning must not run a subquery.
-    const auto & settings = context->getSettingsRef();
     const ActionsDAG * pruning_filter = settings[Setting::use_iceberg_partition_pruning] ? filter : nullptr;
 
     std::unique_ptr<ManifestListPruner> manifest_list_pruner;
