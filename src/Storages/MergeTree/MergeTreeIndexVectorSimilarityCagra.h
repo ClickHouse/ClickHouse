@@ -63,6 +63,13 @@ struct MergeTreeIndexGranuleCagra final : public IMergeTreeIndexGranule
     void searchBatch(const std::vector<float> & queries, size_t num_queries, size_t limit, size_t candidates,
         std::vector<UInt32> & neighbours, std::vector<float> & distances) const;
 
+    /// The same as `search`, on the CPU: a beam search over the graph, as CAGRA does on the device, without cuVS.
+    NearestNeighbours searchOnCpu(const std::vector<float> & query, size_t limit, size_t candidates, bool return_distances) const;
+
+    /// The same as `searchBatch`, on the CPU, with the queries spread over all cores.
+    void searchBatchOnCpu(const std::vector<float> & queries, size_t num_queries, size_t limit, size_t candidates,
+        std::vector<UInt32> & neighbours, std::vector<float> & distances) const;
+
     /// Normalizes a vector for `CagraMetric::Cosine`.
     static void normalize(float * vector, size_t dimensions);
 
@@ -124,6 +131,7 @@ private:
     const float index_fetch_multiplier;
     const size_t max_limit;
     const bool is_rescoring;
+    const bool on_cpu;
 };
 
 

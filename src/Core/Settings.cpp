@@ -10111,6 +10111,12 @@ SELECT queries with LIMIT bigger than this setting cannot use vector similarity 
 The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
 )", 0, \
         {"24.10", 64, 256, "New setting. Previously, the value was optionally specified in CREATE INDEX and 64 by default."}) \
+    DECLARE(Bool, vector_search_cagra_on_cpu, false, R"(
+Search a vector similarity index of the `cagra` method on the CPU instead of the GPU: a beam search over the graph that the GPU built,
+with a candidate list of `hnsw_candidate_list_size_for_search` entries. It needs no device and runs on all cores of the query
+pipeline, which is faster for single queries under concurrency, while batches of queries (the table function `vectorSearch`) are faster on the GPU.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
