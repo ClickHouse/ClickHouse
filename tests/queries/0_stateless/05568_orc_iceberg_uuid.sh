@@ -17,6 +17,10 @@ $CLICKHOUSE_LOCAL -q "
     SELECT id, uuid_col, name FROM file('$DATA/iceberg_uuid.orc', ORC, 'id Nullable(Int32), uuid_col Nullable(UUID), name Nullable(String)') ORDER BY id;
     SELECT 'not nullable';
     SELECT id, uuid_col FROM file('$DATA/iceberg_uuid.orc', ORC, 'id Int32, uuid_col UUID, name String') ORDER BY id;
+    SELECT 'low cardinality';
+    SELECT id, uuid_col FROM file('$DATA/iceberg_uuid.orc', ORC, 'id Nullable(Int32), uuid_col LowCardinality(Nullable(UUID)), name Nullable(String)') ORDER BY id;
+    SELECT id, uuid_col FROM file('$DATA/iceberg_uuid.orc', ORC, 'id Int32, uuid_col LowCardinality(UUID), name String') ORDER BY id;
+    SELECT id, l FROM file('$DATA/iceberg_uuid_nested.orc', ORC, 'id Int32, l Array(LowCardinality(Nullable(UUID)))') ORDER BY id;
     SELECT 'filter';
     SELECT id FROM file('$DATA/iceberg_uuid.orc', ORC, 'id Nullable(Int32), uuid_col Nullable(UUID), name Nullable(String)')
         WHERE uuid_col = 'abcdefab-cdef-abcd-efab-cdefabcdefab' SETTINGS input_format_orc_filter_push_down = 1;
@@ -24,6 +28,7 @@ $CLICKHOUSE_LOCAL -q "
     SELECT id, l, m, s FROM file('$DATA/iceberg_uuid_nested.orc', ORC, 'id Int32, l Array(Nullable(UUID)), m Map(String, Nullable(UUID)), s Tuple(x Nullable(UUID))') ORDER BY id;
     SELECT 'union';
     SELECT id, v, variantType(v) FROM file('$DATA/iceberg_uuid_nested.orc', ORC, 'id Int32, v Variant(String, UUID)') ORDER BY id;
+    SELECT id, v, variantType(v) FROM file('$DATA/iceberg_uuid_nested.orc', ORC, 'id Int32, v Variant(String, UUID, IPv6)') ORDER BY id;
     SELECT 'inferred';
     DESCRIBE file('$DATA/iceberg_uuid.orc', ORC) SETTINGS describe_compact_output = 1;
     DESCRIBE file('$DATA/iceberg_uuid_nested.orc', ORC) SETTINGS describe_compact_output = 1;

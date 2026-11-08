@@ -2343,7 +2343,7 @@ static bool orcUnionBranchMatchesType(const ORC::Type * orc_branch_type, const D
 /// schema fail depending on per-stripe encoding choices; preferring the natural pairing keeps the
 /// assignment stable. The target is inspected with the LowCardinality/Nullable wrappers stripped,
 /// so a LowCardinality-wrapped alternative (inferred from a dictionary-encoded stripe) pairs the
-/// same way. BINARY deliberately has no preference: it is the conversion-rich kind (IPv6, big
+/// same way. An unmarked BINARY deliberately has no preference: it is the conversion-rich kind (IPv6, big
 /// integers, Decimal256), so a preference could steal a String alternative from a STRING branch.
 ///
 /// The numeric kinds are tie-broken the same way, for the same reason: they match their widenings
@@ -2378,6 +2378,8 @@ static bool orcUnionBranchPrefersType(const ORC::Type * orc_branch_type, const D
         case ORC::TypeKind::STRING:
         case ORC::TypeKind::VARCHAR:
             return which.isString();
+        case ORC::TypeKind::BINARY:
+            return which.isUUID() && isIcebergUUIDBinary(*orc_branch_type);
         default:
             return false;
     }
@@ -2712,6 +2714,9 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         {
             if (type_hint)
             {
+                if (isUUID(removeLowCardinalityAndNullable(type_hint)) && isIcebergUUIDBinary(*orc_type))
+                    return readUUIDColumnFromIcebergBinaryData(orc_column, column_name);
+
                 switch (type_hint->getTypeId())
                 {
                     case TypeIndex::IPv6:
@@ -2728,10 +2733,6 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                     /// ORC doesn't support Decimal256 as separate type. We read and write it as binary data.
                     case TypeIndex::Decimal256:
                         return readColumnWithBigNumberFromBinaryData<ColumnDecimal<Decimal256>>(orc_column, column_name, type_hint);
-                    case TypeIndex::UUID:
-                        if (isIcebergUUIDBinary(*orc_type))
-                            return readUUIDColumnFromIcebergBinaryData(orc_column, column_name);
-                        break;
                     default:;
                 }
             }
@@ -3111,6 +3112,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 
 - Other types are not supported.
 - An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
+- An ORC `Binary` column with the attribute `iceberg.binary-type=UUID` (how Apache Iceberg writes `uuid`) is read as [UUID](/reference/data-types/uuid) from 16 big-endian bytes. `UUID` is not supported for output.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 
