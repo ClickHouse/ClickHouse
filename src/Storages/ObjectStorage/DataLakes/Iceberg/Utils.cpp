@@ -1613,7 +1613,6 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 continue;
             if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
-            /// A name without a version cannot be ordered against the others by version.
             if (!tryGetMetadataFileVersion(filename))
             {
                 if (ignore_metadata_pointer_overrides)
