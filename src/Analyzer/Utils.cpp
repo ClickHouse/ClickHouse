@@ -11,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
