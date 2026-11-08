@@ -123,8 +123,9 @@ public:
     /// outside lists, maps and optional structs.
     static std::optional<String> findSchemaViolation(const Poco::JSON::Object & schema, bool is_table_schema);
 
-    /// Throws ICEBERG_SPECIFICATION_VIOLATION for the violation above.
-    static void checkSchema(const Poco::JSON::Object & schema, bool is_table_schema);
+    /// Throws ICEBERG_SPECIFICATION_VIOLATION for the first invalid schema of a metadata.json: an entry of `schemas`,
+    /// or the legacy `schema` when there is no `schemas`.
+    static void checkTableSchemas(const Poco::JSON::Object & metadata);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 

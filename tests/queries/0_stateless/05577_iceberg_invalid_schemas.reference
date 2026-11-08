@@ -39,9 +39,14 @@ schema_of_type_list (ICEBERG_SPECIFICATION_VIOLATION) 'list'
 v1_schema_without_type (ICEBERG_SPECIFICATION_VIOLATION) 'type'
 v1_schema
 id	Int64
+v2_legacy_schema_not_checked
+id	Int64
 --- every schema of schemas
 historical_schema_invalid (ICEBERG_SPECIFICATION_VIOLATION) 999
 historical_schema_valid
+id	Int64
+historical_schema_invalid_geo (ICEBERG_SPECIFICATION_VIOLATION) 'bogus'
+old_version_invalid
 id	Int64
 --- alter
 id	Int64
@@ -56,3 +61,6 @@ id	Int64
 k	Tuple(\n    part Int64)
 w	Int64
 identifier fields: id k.part
+--- cached
+cached (ICEBERG_SPECIFICATION_VIOLATION) 999
+cached (ICEBERG_SPECIFICATION_VIOLATION) 999

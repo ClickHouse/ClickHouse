@@ -604,6 +604,17 @@ std::optional<String> findIdentifierViolation(const Poco::JSON::Object & schema,
     return {};
 }
 
+/// Throws ICEBERG_SPECIFICATION_VIOLATION for the violation found by `findSchemaViolation`.
+void checkSchema(const Poco::JSON::Object & schema, bool is_table_schema)
+{
+    if (auto violation = IcebergSchemaProcessor::findSchemaViolation(schema, is_table_schema))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg schema with schema-id {} is invalid: {}",
+            hasMember(schema, f_schema_id) ? schema.get(f_schema_id).toString() : "(none)",
+            *violation);
+}
+
 }
 
 namespace Iceberg
@@ -631,14 +642,19 @@ std::optional<String> IcebergSchemaProcessor::findSchemaViolation(const Poco::JS
     return {};
 }
 
-void IcebergSchemaProcessor::checkSchema(const Poco::JSON::Object & schema, bool is_table_schema)
+void IcebergSchemaProcessor::checkTableSchemas(const Poco::JSON::Object & metadata)
 {
-    if (auto violation = findSchemaViolation(schema, is_table_schema))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg schema with schema-id {} is invalid: {}",
-            hasMember(schema, f_schema_id) ? schema.get(f_schema_id).toString() : "(none)",
-            *violation);
+    if (metadata.has(f_schemas))
+    {
+        const auto schemas = metadata.getArray(f_schemas);
+        if (!schemas)
+            return;
+        for (UInt32 i = 0; i != schemas->size(); ++i)
+            if (const auto schema = schemas->getObject(i))
+                checkSchema(*schema, /*is_table_schema=*/ true);
+    }
+    else if (const auto schema = metadata.getObject(f_schema))
+        checkSchema(*schema, /*is_table_schema=*/ true);
 }
 
 void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
@@ -659,11 +675,6 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
     if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
         return;
-
-    /// Every metadata.json copy, also one the comparisons below find identical to a registered copy: they compare
-    /// only `fields`, and with the geo parser they compare every geo type as `binary`.
-    if (source == SchemaSource::Metadata)
-        checkSchema(*schema_ptr, /*is_table_schema=*/ true);
 
     std::unordered_map<String, String> type_mapping;
     if (allow_geo_parser)

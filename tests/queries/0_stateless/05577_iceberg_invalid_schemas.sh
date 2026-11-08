@@ -7,6 +7,7 @@
 # an `identifier-field-ids` entry that is not a required primitive field outside lists, maps and optional structs,
 # a list or a map without the id of its element, key or value, a geo type with invalid parameters,
 # a table schema that is not a `struct`. Every schema of `schemas` is checked, not only the current one.
+# A rejected metadata.json is rejected again when it is cached; older metadata versions are not checked.
 # An ALTER that would produce such a schema is refused with BAD_ARGUMENTS.
 # The `schema_core__*` and `types_*` cases are from apache/iceberg-verification
 # (Apache-2.0, commit 12b050929377853252123e345fa0659452da4a73, `table-spec/{schema,types}/*/cases.json`).
@@ -18,15 +19,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_DIR="${USER_FILES_PATH}/${TABLE}"
-rm -rf "$DIR" "$TABLE_DIR"
+rm -rf "$DIR" "$TABLE_DIR" "${TABLE_DIR}_cached"
 mkdir -p "$DIR"
 cleanup() {
-    rm -rf "$DIR" "$TABLE_DIR"
+    rm -rf "$DIR" "$TABLE_DIR" "${TABLE_DIR}_cached"
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}; DROP TABLE IF EXISTS ${TABLE}_reopened"
 }
 trap cleanup EXIT
 
-python3 - "$DIR" <<'PY'
+python3 - "$DIR" "${TABLE_DIR}_cached" <<'PY'
 import json
 import os
 import sys
@@ -127,6 +128,10 @@ cases = {
     "historical_schema_invalid": table(
         [schema([ID], **{"identifier-field-ids": [999]}), dict(schema([ID]), **{"schema-id": 1})], current_schema_id=1),
     "historical_schema_valid": table([schema([ID]), dict(schema([ID]), **{"schema-id": 1})], current_schema_id=1),
+    "historical_schema_invalid_geo": table(
+        [column("geography(OGC:CRS84, bogus)"), dict(column("long"), **{"schema-id": 1})], current_schema_id=1),
+    # Only `schemas` is read when it is present.
+    "v2_legacy_schema_not_checked": dict(table([schema([ID])]), schema={"schema-id": 0, "fields": [ID]}),
 }
 
 # Format version 1 with only the legacy `schema`.
@@ -136,20 +141,33 @@ for name, legacy in (("v1_schema_without_type", {"schema-id": 0, "fields": [ID]}
     t.update({"format-version": 1, "schema": legacy, "partition-spec": []})
     cases[name] = t
 
+
+def write(location, metadata, version=1):
+    metadata["location"] = location
+    os.makedirs(os.path.join(location, "metadata"), exist_ok=True)
+    with open(os.path.join(location, "metadata", f"v{version}.metadata.json"), "w") as f:
+        json.dump(metadata, f)
+
+
 for name, metadata in cases.items():
     if "format-version" not in metadata:
         metadata = table([metadata], current_schema_id=metadata["schema-id"])
-    metadata["location"] = os.path.join(root, name)
-    os.makedirs(os.path.join(root, name, "metadata"))
-    with open(os.path.join(root, name, "metadata", "v1.metadata.json"), "w") as f:
-        json.dump(metadata, f)
+    write(os.path.join(root, name), metadata)
+
+# An invalid version followed by a valid one.
+write(os.path.join(root, "old_version_invalid"), table([schema([ID], **{"identifier-field-ids": [999]})]))
+newer = table([schema([ID])])
+newer["last-updated-ms"] += 1
+write(os.path.join(root, "old_version_invalid"), newer, version=2)
+
+write(sys.argv[2], table([schema([ID], **{"identifier-field-ids": [999]})]))
 PY
 
-# Describes a table, or prints the error code and `token` when the message contains it.
+# Describes a table, or prints the error code and `token` when the message contains it. `$3` are more arguments of icebergLocal.
 function describe()
 {
     local out
-    out=$($CLICKHOUSE_LOCAL --allow_geo_types_in_iceberg 1 --query "DESCRIBE icebergLocal('$DIR/$1') SETTINGS describe_compact_output = 1" 2>&1)
+    out=$($CLICKHOUSE_LOCAL --allow_geo_types_in_iceberg 1 --query "DESCRIBE icebergLocal('$DIR/$1'${3:+, $3}) SETTINGS describe_compact_output = 1" 2>&1)
     if [[ "$out" == *"DB::Exception"* ]]
     then
         echo "$1 $(grep -oE '\([A-Z_]+\)' <<< "$out" | tail -1) $(grep -oF -- "$2" <<< "$out" | head -1)"
@@ -192,10 +210,14 @@ describe schema_without_type "'type'"
 describe schema_of_type_list "'list'"
 describe v1_schema_without_type "'type'"
 describe v1_schema
+describe v2_legacy_schema_not_checked
 
 echo "--- every schema of schemas"
 describe historical_schema_invalid "999"
 describe historical_schema_valid
+describe historical_schema_invalid_geo "'bogus'"
+# Choosing the latest version by `last-updated-ms` reads every version.
+describe old_version_invalid "" "SETTINGS iceberg_recent_metadata_file_by_last_updated_ms_field = 1"
 
 echo "--- alter"
 # A table whose current schema has the identifier fields `id` and `k.part`, as another engine could write it.
@@ -247,3 +269,10 @@ SELECT * FROM ${TABLE}_reopened;
 DESCRIBE icebergLocal('${TABLE_DIR}/') SETTINGS describe_compact_output = 1;
 "
 identifiers
+
+echo "--- cached"
+for _ in 1 2
+do
+    out=$(${CLICKHOUSE_CLIENT} -q "DESCRIBE icebergLocal('${TABLE_DIR}_cached/') SETTINGS use_iceberg_metadata_files_cache = 1" 2>&1)
+    echo "cached $(grep -oE '\([A-Z_]+\)' <<< "$out" | tail -1) $(grep -oF -- 999 <<< "$out" | head -1)"
+done

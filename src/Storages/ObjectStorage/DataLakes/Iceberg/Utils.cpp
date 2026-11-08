@@ -727,6 +727,43 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
+/// `validate` is false only for the candidates of the latest metadata file selection, which may be other tables' files.
+static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid,
+    bool validate)
+{
+    auto read_fn = [&]()
+    {
+        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
+    };
+
+    if (!metadata_cache || !table_uuid.has_value())
+    {
+        auto metadata_object = parseMetadataJSONString(read_fn());
+        if (validate)
+            IcebergSchemaProcessor::checkTableSchemas(*metadata_object);
+        return metadata_object;
+    }
+
+    std::function<void(const Poco::JSON::Object &)> validate_fn;
+    if (validate)
+        validate_fn = [](const Poco::JSON::Object & metadata) { IcebergSchemaProcessor::checkTableSchemas(metadata); };
+    return metadata_cache->getOrSetTableMetadata(
+        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
+        [&]()
+        {
+            auto metadata_json_str = read_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
+        },
+        validate_fn);
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -736,21 +773,8 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid)
 {
-    auto read_fn = [&]()
-    {
-        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
-    };
-
-    if (!metadata_cache || !table_uuid.has_value())
-        return parseMetadataJSONString(read_fn());
-
-    return metadata_cache->getOrSetTableMetadata(
-        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
-        [&]()
-        {
-            auto metadata_json_str = read_fn();
-            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
-        });
+    return getMetadataJSONObjectImpl(
+        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ true);
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -1612,8 +1636,9 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
             if (need_all_metadata_files_parsing)
             {
-                auto metadata_file_object = getMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                /// A candidate may be another table's metadata file, so it is checked only once it is chosen.
+                auto metadata_file_object = getMetadataJSONObjectImpl(
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ false);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))
