@@ -1,0 +1,11 @@
+legacy has_partition_specs=0 default_spec_id=none spec_in_sync=0 spec_fields=p
+2
+1
+add_column has_partition_specs=1 default_spec_id=0 spec_in_sync=1 spec_fields=p
+insert has_partition_specs=1 default_spec_id=0 spec_in_sync=1 spec_fields=p
+2
+1	a	\N
+2	b	\N
+3	a	30
+4	c	40
+ICEBERG_SPECIFICATION_VIOLATION
