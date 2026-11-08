@@ -1,0 +1,153 @@
+---
+title: "Sample pipeline: SQL Server to ClickHouse"
+sidebarTitle: "Sample pipeline"
+slug: /integrations/connectors/data-ingestion/etl-tools/striim/sample-pipeline
+description: "Build an automated SQL Server to ClickHouse pipeline that loads existing rows and streams inserts, updates, and deletes."
+doc_type: guide
+keywords: ['striim', 'clickhouse', 'cdc', 'data ingestion', 'real-time replication']
+---
+
+Operational data in SQL Server is often the source of truth for orders, payments and inventory, but it is not built for heavy analytical queries. In this walkthrough you replicate a SQL Server table into ClickHouse with an automated pipeline: Striim loads the existing rows, then streams every insert, update and delete as it happens. You then query the result in ClickHouse.
+
+See [Introducing Automated Pipelines for Effortless Data Replication](https://www.striim.com/blog/automated-pipelines-5-0/) for a full walkthrough.
+
+SQL Server CDC requires the Striim for ClickHouse **Premium** plan.
+
+## What you will build {#what-you-will-build}
+
+SQL Server (`sales.orders`) &gt; Striim initial load, then CDC &gt; ClickHouse (`sales.orders`, `ReplacingMergeTree`)
+
+## Before you begin {#before-you-begin}
+
+- A running Striim for ClickHouse service on the Premium plan (see [Get started](/integrations/connectors/data-ingestion/etl-tools/striim/get-started)).
+- A SQL Server instance reachable from Striim, with SQL Server Agent running, and permission to enable change data capture. The steps below work on SQL Server on a VM or Amazon RDS for SQL Server.
+- A ClickHouse service, a database named `sales`, a Striim user with the required privileges, and a ClickHouse connection profile.
+
+## Step 1: Prepare SQL Server {#step-1-prepare-sql-server}
+
+Create a database and a sample table with a few rows. This seed data is illustrative so that you can reproduce the example.
+
+```sql
+CREATE DATABASE salesdb;
+GO
+USE salesdb;
+GO
+CREATE SCHEMA sales;
+GO
+CREATE TABLE sales.orders (
+  order_id    INT           NOT NULL PRIMARY KEY,
+  customer_id INT           NOT NULL,
+  status      VARCHAR(20)   NOT NULL,
+  total       DECIMAL(10,2) NOT NULL,
+  placed_at   DATETIME2     NOT NULL
+);
+INSERT INTO sales.orders VALUES
+  (1, 101, 'NEW',     120.50, SYSDATETIME()),
+  (2, 102, 'NEW',      75.00, SYSDATETIME()),
+  (3, 103, 'NEW',     310.25, SYSDATETIME());
+GO
+```
+
+Enable change data capture on the database and create a user for Striim. Striim enables CDC on each selected table when the application starts.
+
+<Tabs>
+<Tab title="SQL Server on a VM" id="enable-cdc-vm">
+
+```sql
+USE salesdb;
+EXEC sys.sp_cdc_enable_db;
+```
+
+</Tab>
+<Tab title="Amazon RDS for SQL Server" id="enable-cdc-rds">
+
+```sql
+EXEC msdb.dbo.rds_cdc_enable_db 'salesdb';
+```
+
+</Tab>
+</Tabs>
+
+Create the Striim user in `salesdb`:
+
+```sql
+USE salesdb;
+CREATE LOGIN striim WITH PASSWORD = '<strong password>';
+CREATE USER striim FOR LOGIN striim;
+EXEC sp_addrolemember @rolename = db_owner, @membername = striim;
+```
+
+SQL Server authentication mode must be enabled for the Striim user. Striim documents `db_owner` for the reader user. After your pipeline starts, you can confirm CDC is active with `EXEC sys.sp_cdc_help_change_data_capture`. See [Configuring SQL Server to use MS SQL Reader](https://www.striim.com/docs/striimforclickhouse/en/configuring-sql-server-to-use-ms-sql-reader.html) for Azure VM prerequisites and Always On availability groups.
+
+## Step 2: Create the automated pipeline {#step-2-create-the-automated-pipeline}
+
+1. In Striim, select **Apps &gt; Create an App**.
+2. Search for and select **SQL Server** as the source. Select **ClickHouse** as the target.
+3. Select **Get Started** and choose the automated pipeline (initial load plus CDC).
+4. Name the pipeline, for example `SqlServerToClickHouse`, choose a namespace, and select **Next**.
+5. Enter the SQL Server connection details: host and port (`<host>:1433`), database name `salesdb`, and the `striim` user. Select **Next**. Striim validates the connection. If validation fails, select **Back** and correct the settings; you must pass validation to continue.
+6. Select the schemas to replicate. Choose `sales`; do not select system schemas.
+7. Select the tables to replicate from each schema. Choose `orders`.
+8. Select your ClickHouse connection profile and set **Table Engine** to **`ReplacingMergeTree`**. This engine suits CDC sources that send a full row image on update.
+9. Optionally edit the table mapping. Confirm `sales.orders` maps to `sales.orders` in ClickHouse.
+10. Review the settings and select **Save &amp; Start**.
+
+![Review the SQL Server to ClickHouse automated pipeline configuration](/images/integrations/striim/automated-pipeline-wizard.png)
+
+*Example wizard review. For this walkthrough, use `salesdb`, `sales.orders` and `ReplacingMergeTree` as described above.*
+
+Striim creates two linked applications. It runs the initial load first, quiesces it when all rows are copied, then starts the CDC application automatically and shows event counts as changes flow. If either phase hits a problem, the pipeline halts and shows recommended fixes.
+
+![Monitor the running change data capture application](/images/integrations/striim/pipeline-monitoring.png)
+
+<Warning>
+Do not run DDL against the source tables while the initial load is running, and make sure SQL Server retains the change data (default retention is three days) from the start of the initial load until the CDC application has caught up.
+</Warning>
+
+## Step 3: Verify the initial load in ClickHouse {#step-3-verify-the-initial-load-in-clickhouse}
+
+Striim created the target table with the `ReplacingMergeTree` engine and two metadata columns. Inspect it:
+
+```sql
+SHOW CREATE TABLE sales.orders;
+```
+
+Based on the Striim data type mapping, expect `order_id` and `customer_id` as `Int32`, `status` as `String`, `total` as `Decimal(10, 2)`, `placed_at` as `DateTime64`, the columns `__STRIIM_VERSION` (`UInt64`) and `__STRIIM_ISDELETED` (`UInt8`), `ENGINE = ReplacingMergeTree(__STRIIM_VERSION, __STRIIM_ISDELETED)` and `ORDER BY order_id`.
+
+```sql
+SELECT order_id, customer_id, status, total
+FROM sales.orders FINAL
+WHERE __STRIIM_ISDELETED = 0
+ORDER BY order_id;
+```
+
+You should see the three rows loaded from SQL Server.
+
+## Step 4: Stream changes {#step-4-stream-changes}
+
+Make changes in SQL Server:
+
+```sql
+USE salesdb;
+UPDATE sales.orders SET status = 'SHIPPED' WHERE order_id = 2;
+DELETE FROM sales.orders WHERE order_id = 3;
+INSERT INTO sales.orders VALUES (4, 104, 'NEW', 42.00, SYSDATETIME());
+```
+
+Run the same query in ClickHouse again. Orders 1, 2 and 4 should be present, order 2 should show `SHIPPED`, and order 3 should be absent. The delete is stored as a soft-delete row. The query uses `FINAL` to select the latest version and `__STRIIM_ISDELETED = 0` to exclude deleted rows. Delete markers are retained by default; background merges alone do not guarantee their physical removal. See [`ReplacingMergeTree`](/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) for cleanup behavior. You can also watch event counts and target freshness in the Striim monitoring view, or ask Clara for the current lag.
+
+## Build the same pipeline with Striim Clara {#build-the-same-pipeline-with-striim-clara}
+
+Instead of the wizard, you can describe the pipeline on the Home page, for example: "Build a pipeline from SQL Server to ClickHouse with initial load and change data capture for the sales.orders table." Clara asks for the connection details, generates a TQL plan, and deploys only after you select **Accept TQL**.
+
+## Clean up {#clean-up}
+
+- Stop and undeploy the two Striim applications from the Apps page.
+- SQL Server keeps capturing change data even after you undeploy the Striim applications with the default reader settings. To stop capturing data for this sample, run `sys.sp_cdc_disable_table` for `sales.orders`, or `sys.sp_cdc_disable_db` if no other tables in the database require CDC. See the SQL Server [documentation](https://learn.microsoft.com/en-us/sql/relational-databases/system-stored-procedures/sys-sp-cdc-disable-table-transact-sql) for details. Alternatively, follow Striim's [Auto Disable Table CDC procedure](https://www.striim.com/docs/striimforclickhouse/en/sql-server-operational-considerations.html).
+- Drop the sample tables: `DROP TABLE sales.orders;` in both systems.
+
+## Next steps {#next-steps}
+
+- Try other sources from the [supported source list](https://www.striim.com/docs/striimforclickhouse/en/sources.html).
+- Add in-flight transformations or masking in Flow Designer. See [Pipelines](https://www.striim.com/docs/striimforclickhouse/en/pipelines.html) in the Striim documentation.
+- Build dashboards on the replicated data with [ClickHouse visualization](https://clickhouse.com/docs/integrations/connectors/data-visualization) integrations.
