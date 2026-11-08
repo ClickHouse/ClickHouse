@@ -4,12 +4,12 @@
 
 CREATE CLUSTER t05483_missing_replica_paren (
     SHARD (REPLICA host = '127.0.0.1', REPLICA host = '127.0.0.2')
-); -- { serverError SYNTAX_ERROR }
+); -- { error SYNTAX_ERROR }
 
 CREATE CLUSTER t05483_missing_shard_paren (
     SHARD user = 'u1',
     SHARD (host = '127.0.0.1', port = 9000)
-); -- { serverError SYNTAX_ERROR }
+); -- { error SYNTAX_ERROR }
 
 CREATE CLUSTER t05483_dup_cluster_user (
     user = 'a',
