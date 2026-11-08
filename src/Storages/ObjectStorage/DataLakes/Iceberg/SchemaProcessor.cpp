@@ -805,6 +805,65 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     return allowed_type_conversion;
 }
 
+Poco::Dynamic::Var IcebergSchemaProcessor::getTypeWithOldPrimitives(
+    const Poco::JSON::Object::Ptr & old_holder, const Poco::JSON::Object::Ptr & new_holder, const String & key)
+{
+    checkStackSize();
+
+    auto new_type = new_holder->get(key);
+    if (!new_holder->isObject(key))
+    {
+        auto old_type = old_holder->get(key);
+        if (!old_holder->isObject(key) && new_type.isString() && old_type.isString()
+            && allowPrimitiveTypeConversion(old_type.extract<String>(), new_type.extract<String>()))
+            return old_type;
+        return new_type;
+    }
+    if (!old_holder->isObject(key))
+        return new_type;
+
+    auto old_object = old_holder->getObject(key);
+    auto new_object = new_holder->getObject(key);
+    const auto type_name = new_object->getValue<String>(f_type);
+    if (old_object->getValue<String>(f_type) != type_name)
+        return new_type;
+
+    Poco::JSON::Object::Ptr result = new Poco::JSON::Object(*new_object);
+    if (type_name == f_list)
+    {
+        result->set(f_element, getTypeWithOldPrimitives(old_object, new_object, f_element));
+    }
+    else if (type_name == f_map)
+    {
+        result->set(f_key, getTypeWithOldPrimitives(old_object, new_object, f_key));
+        result->set(f_value, getTypeWithOldPrimitives(old_object, new_object, f_value));
+    }
+    else if (type_name == f_struct)
+    {
+        std::unordered_map<Int32, Poco::JSON::Object::Ptr> old_fields_by_id;
+        auto old_fields = old_object->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i != old_fields->size(); ++i)
+        {
+            auto old_field = old_fields->getObject(static_cast<UInt32>(i));
+            old_fields_by_id[old_field->getValue<Int32>(f_id)] = old_field;
+        }
+
+        auto new_fields = new_object->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+        for (size_t i = 0; i != new_fields->size(); ++i)
+        {
+            auto new_field = new_fields->getObject(static_cast<UInt32>(i));
+            Poco::JSON::Object::Ptr field_copy = new Poco::JSON::Object(*new_field);
+            auto old_field_it = old_fields_by_id.find(new_field->getValue<Int32>(f_id));
+            if (old_field_it != old_fields_by_id.end())
+                field_copy->set(f_type, getTypeWithOldPrimitives(old_field_it->second, new_field, f_type));
+            fields->add(field_copy);
+        }
+        result->set(f_fields, fields);
+    }
+    return result;
+}
+
 // Ids are passed only for error logging purposes
 std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
     const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id)
@@ -848,10 +907,16 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         new_id);
                 }
                 auto old_type = getFieldType(old_json, "type", required);
-                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
-                old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
+                /// EvolutionFunctionStruct does not convert primitives, so promoted nested ones are cast afterwards.
+                Poco::JSON::Object::Ptr evolved_field = new Poco::JSON::Object(*field);
+                evolved_field->set(f_type, getTypeWithOldPrimitives(old_json, field, f_type));
+                auto evolved_type = getFieldType(evolved_field, f_type, required);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{evolved_type}, DataTypes{old_type}, old_json, field);
+                const auto * node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
+                if (!evolved_type->equals(*type))
+                    node = &dag->addCast(*node, type, name, nullptr);
 
-                outputs.push_back(old_node);
+                outputs.push_back(node);
             }
             else
             {
