@@ -171,6 +171,11 @@ elseif (ARCH_S390X)
         ${LLVMLIBC_DEFS_COMMON}
         LIBC_NAMESPACE=${LIBC_NAMESPACE}
         LIBC_COPT_PUBLIC_PACKAGING=1
+        # `cpu_features.h` of llvm-libc does not detect the s390x FPU, so declare it explicitly.
+        # Without it, `fputil::sqrt` falls back to a software integer algorithm (also inside `asin` and `pow`)
+        # instead of the hardware square root instructions.
+        LIBC_TARGET_CPU_HAS_FPU_FLOAT=1
+        LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1
         LIBC_TARGET_CPU_HAS_FMA=1
         LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1
         LIBC_TARGET_CPU_HAS_FMA_HALF=1
