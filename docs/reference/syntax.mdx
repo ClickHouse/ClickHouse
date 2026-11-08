@@ -227,6 +227,7 @@ Integer values wider than 64-bit (`UInt128`, `Int128`, `UInt256`, `Int256`) must
 ```
 
 This bypasses the above algorithm and parses the integer with a routine that supports arbitrary precision.
+The same holds for an integer written in hexadecimal or binary, or with underscores, such as `-0x8000000000000001::Int128`.
 
 Otherwise, the literal will be parsed as a floating-point number and thus subject to loss of precision due to truncation.
 </Info>

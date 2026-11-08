@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <Common/BinStringDecodeHelper.h>
+#include <Common/Hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/likePatternToRegexp.h>
@@ -54,6 +55,7 @@
 
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
+#include <base/wide_integer_to_string.h>
 #include <Core/UUID.h>
 
 namespace DB
@@ -1115,6 +1117,64 @@ static bool isPlainDecimalNumeral(std::string_view text)
     return pos == text.size();
 }
 
+/// The binary digits as hexadecimal text with the 0x prefix, or nothing if one of them is not 0 or 1.
+static String binaryToHexadecimal(const char * digits, size_t size)
+{
+    String hex = "0x";
+    size_t nibble = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (digits[i] != '0' && digits[i] != '1')
+            return {};
+        nibble = nibble * 2 + (digits[i] == '1');
+        if ((size - i) % 4 == 1)
+        {
+            hex += "0123456789abcdef"[nibble];
+            nibble = 0;
+        }
+    }
+    return hex;
+}
+
+/// A number that `isPlainDecimalNumeral` rejects, as the plain decimal numeral of the same value: without digit
+/// separators, and an integer in hexadecimal or binary written in decimal. Nothing for other forms, such as a
+/// hexadecimal float, or for an integer wider than 256 bits, which no type reads.
+static std::optional<String> rewriteAsPlainDecimalNumeral(std::string_view token)
+{
+    String text;
+    for (char c : token)
+        if (c != '_')
+            text += c;
+
+    String binary_as_hex;
+    std::string_view hex;
+    if (text.starts_with("0b"))
+    {
+        binary_as_hex = binaryToHexadecimal(text.data() + 2, text.size() - 2);
+        if (binary_as_hex.empty())
+            return {};
+        hex = std::string_view(binary_as_hex).substr(2);
+    }
+    else if (text.starts_with("0x") || text.starts_with("0X"))
+        hex = std::string_view(text).substr(2);
+    else if (isPlainDecimalNumeral(text))
+        return text;
+    else
+        return {};
+
+    if (hex.empty())
+        return {};
+
+    UInt256 value = 0;
+    for (char c : hex)
+    {
+        if (!isHexDigit(c) || (value >> 252) != 0)
+            return {};
+        value = (value << 4) | UInt256(unhex(c));
+    }
+    return wide::to_string(value);
+}
+
 /// True if a plain decimal numeral is written without a fractional part and without an exponent.
 /// That is the only form an integer type reads: `1e3` stands for an integer, but `readIntText` stops
 /// at the `e`.
@@ -1136,6 +1196,19 @@ static bool isIntegerZeroNumeral(std::string_view text)
 static std::string_view tokenText(IParser::Pos pos)
 {
     return std::string_view(pos->begin, pos->end - pos->begin);
+}
+
+/// The text of the `Number` token at `pos` as the types read it, or nothing - see `rewriteAsPlainDecimalNumeral`.
+static std::optional<String> numeralText(IParser::Pos pos, LiteralAsText & literal)
+{
+    if (pos->type != TokenType::Number)
+        return {};
+    const std::string_view token = tokenText(pos);
+    if (isPlainDecimalNumeral(token))
+        return String(token);
+    auto text = rewriteAsPlainDecimalNumeral(token);
+    literal.rewritten |= text.has_value();
+    return text;
 }
 
 /// The `NULL` keyword in any case, which the lexer leaves as a bare word.
@@ -1213,17 +1286,17 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
                 return false;
-            const std::string_view text = tokenText(pos);
-            if (!isPlainDecimalNumeral(text))
+            const auto text = numeralText(pos, literal);
+            if (!text)
                 return false;
-            literal.all_integers &= isIntegerNumeral(text);
+            literal.all_integers &= isIntegerNumeral(*text);
             holds_own_scalar |= own;
-            if (last_token == Minus && !isIntegerZeroNumeral(text))
+            if (last_token == Minus && !isIntegerZeroNumeral(*text))
             {
                 literal.all_non_negative = false;
                 literal.text += '-';
             }
-            literal.text += text;
+            literal.text += *text;
         }
         else if (isOneOf<StringLiteral, Minus>(pos->type))
         {
@@ -1279,30 +1352,30 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
     if (pos->type == Minus)
     {
         ++pos;
-        if (pos->type != Number || !isPlainDecimalNumeral(tokenText(pos)))
+        const auto text = numeralText(pos, result);
+        if (!text)
         {
             pos = begin;
             return false;
         }
 
-        const std::string_view text = tokenText(pos);
-        result.all_integers = isIntegerNumeral(text);
-        if (!isIntegerZeroNumeral(text))
+        result.all_integers = isIntegerNumeral(*text);
+        if (!isIntegerZeroNumeral(*text))
         {
             result.all_non_negative = false;
             result.text += '-';
         }
-        result.text += text;
+        result.text += *text;
         ++pos;
     }
     else if (pos->type == Number)
     {
-        const std::string_view text = tokenText(pos);
-        if (!isPlainDecimalNumeral(text))
+        const auto text = numeralText(pos, result);
+        if (!text)
             return false;
 
-        result.all_integers = isIntegerNumeral(text);
-        result.text += text;
+        result.all_integers = isIntegerNumeral(*text);
+        result.text += *text;
         ++pos;
     }
     else if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
@@ -1463,11 +1536,11 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!type_text)
         return false;
 
-    /// A literal holding a `NULL` goes as text only when the target type provably reads it back -
-    /// see `typeReadsLiteralExactly`. Everything else falls back to the ordinary expression path,
-    /// where a `NULL` converts, or fails to, the way it always did: the text parsers of some types
-    /// would silently turn it into a default value instead.
-    if (literal.has_null && !typeReadsLiteralExactly(*type_text, literal, pos))
+    /// A literal holding a `NULL` or a rewritten number goes as text only when the target type
+    /// provably reads it back - see `typeReadsLiteralExactly`. Everything else falls back to the
+    /// ordinary expression path, where a `NULL` or a number converts, or fails to, the way it always
+    /// did: the text parsers of some types would silently turn a `NULL` into a default value instead.
+    if ((literal.has_null || literal.rewritten) && !typeReadsLiteralExactly(*type_text, literal, pos))
         return false;
 
     /// The text is a literal only together with the type that reads it, so it is not recorded in the
@@ -1526,25 +1599,6 @@ static bool parseNumber(char * buffer, size_t size, bool negative, int base, Fie
     }
 
     return false;
-}
-
-/// strtod does not read binary, so a binary literal that does not fit 64 bits is converted to hexadecimal.
-static String binaryToHexadecimal(const char * digits, size_t size)
-{
-    String hex = "0x";
-    size_t nibble = 0;
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (digits[i] != '0' && digits[i] != '1')
-            return {};
-        nibble = nibble * 2 + (digits[i] == '1');
-        if ((size - i) % 4 == 1)
-        {
-            hex += "0123456789abcdef"[nibble];
-            nibble = 0;
-        }
-    }
-    return hex;
 }
 
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
