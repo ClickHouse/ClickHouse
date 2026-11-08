@@ -449,7 +449,7 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
+bool shouldIgnoreQuota(const TableNode & table_node)
 {
     const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
@@ -1261,6 +1261,7 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         && !main_query_node.hasGroupBy()
         && !main_query_node.hasHaving()
         && !main_query_node.hasOrderBy()
+        && !main_query_node.isShuffle()
         && !main_query_node.hasLimitBy()
         && !select_query_info.need_aggregate
         && !select_query_info.has_window
@@ -1546,8 +1547,9 @@ void pushOrderByIntoView(
     if (!sel)
         return;
 
-    /// View must not have transformations that change ORDER BY semantics
-    if (sel->hasJoin() || sel->groupBy() || sel->distinct)
+    /// View must not have transformations that change `ORDER BY` semantics.
+    /// Injecting `ORDER BY` into a `SHUFFLE` query would also create incompatible clauses.
+    if (sel->hasJoin() || sel->groupBy() || sel->distinct || sel->shuffle)
         return;
 
     /// Window functions partition/order globally; with ORDER BY/LIMIT pushed
@@ -3809,11 +3811,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     if (is_single_table_expression)
     {
         auto * table_node = table_expressions_stack[0]->as<TableNode>();
-        if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
-        {
+        if (table_node && shouldIgnoreQuota(*table_node))
             select_query_options.ignore_quota = true;
-            select_query_options.ignore_limits = true;
-        }
     }
 
     size_t joins_count = 0;
