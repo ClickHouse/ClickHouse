@@ -348,8 +348,9 @@ bool tryWrapInLiterals(
 /// Adds the aliases defined in `ast` to `aliases`, also in the assignments of `TTL ... GROUP BY ... SET`, which are not its
 /// children, as the analyzer scopes them: not those inside a lambda or a subquery, which are visible only there, nor the alias
 /// of a lambda, which names a function rather than an expression, but the alias of a subquery, as in `(SELECT ...) AS s`. An
-/// identifier aliased with its own name, as in `event AS event`, still names the column.
-void collectAliases(const ASTPtr & ast, NameSet & aliases)
+/// identifier aliased with its own name, as in `event AS event`, still names the column. If `aliased_expressions` is not
+/// nullptr, the aliased expressions are added to it by the names of their aliases too.
+void collectAliases(const ASTPtr & ast, NameSet & aliases, std::unordered_map<String, ASTPtr> * aliased_expressions = nullptr)
 {
     if (!ast)
         return;
@@ -357,16 +358,39 @@ void collectAliases(const ASTPtr & ast, NameSet & aliases)
     if ((function && function->name == "lambda") || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
         return;
     if (const String alias = ast->tryGetAlias(); !alias.empty())
+    {
         if (const auto * identifier = ast->as<ASTIdentifier>(); !identifier || identifier->name() != alias)
+        {
             aliases.insert(alias);
+            if (aliased_expressions)
+                aliased_expressions->emplace(alias, ast);
+        }
+    }
     /// The alias of a subquery is in this scope, the aliases inside it are not.
     if (ast->as<ASTSubquery>())
         return;
     if (const auto * ttl_element = ast->as<ASTTTLElement>())
         for (const auto & assignment : ttl_element->group_by_assignments)
-            collectAliases(assignment, aliases);
+            collectAliases(assignment, aliases, aliased_expressions);
     for (const auto & child : ast->children)
-        collectAliases(child, aliases);
+        collectAliases(child, aliases, aliased_expressions);
+}
+
+/// Whether `ast` has an identifier whose name, or the first part of it, is one of `names`.
+bool hasIdentifierWithName(const ASTPtr & ast, const NameSet & names)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && names.contains(identifier->name_parts.front()))
+        return true;
+    return std::ranges::any_of(ast->children, [&](const ASTPtr & child) { return hasIdentifierWithName(child, names); });
+}
+
+/// Removes the aliases of `ast` and of its descendants.
+void removeAliases(const ASTPtr & ast)
+{
+    if (!ast->tryGetAlias().empty())
+        ast->setAlias({});
+    for (const auto & child : ast->children)
+        removeAliases(child);
 }
 
 /// Adds the names of the identifiers and of the functions in `ast` to `names`, also in the assignments of
@@ -399,6 +423,13 @@ AliasTypes getUnknownAliasTypes(const NameSet & names)
 /// The types of the aliases `aliases` defined in `expressions`, which the analyzer gives them against the table with the
 /// settings of the query, as `MutationsInterpreter` resolves the expressions to validate the mutation: the type of the aliased
 /// expression, in which an identifier with the name of the alias names the column, as in `identity(event) AS event`.
+///
+/// With `prefer_column_name_to_alias`, an identifier with the name of an alias names the column with that name, if there is
+/// one, rather than the alias, while the mutation may run with other settings (a background mutation of `MergeTree` runs with
+/// those of the server), where it names the alias. The type of such an alias is then analyzed from its expression rather than
+/// from an identifier. The expression has that type with either setting if it does not refer to another alias with the name of
+/// a column, which the two settings bind differently (an identifier with the name of its own alias names the column with both,
+/// as in `identity(event) AS event`); otherwise the types of the aliases are not known.
 AliasTypes getAliasTypes(
     const ASTs & expressions,
     const NameSet & aliases,
@@ -407,19 +438,49 @@ AliasTypes getAliasTypes(
     const ContextPtr & context)
 {
     AliasTypes alias_types = getUnknownAliasTypes(aliases);
-    /// With `prefer_column_name_to_alias`, the analyzer gives an identifier the type of the column with its name rather than
-    /// of the alias, and the mutation may run with other settings, so the types of the aliases are not known.
-    if (context->getSettingsRef()[Setting::prefer_column_name_to_alias])
-        return alias_types;
-
     const Names names(aliases.begin(), aliases.end());
     if (names.empty())
         return alias_types;
 
-    /// The identifiers go first, because an expression of the list, such as a matcher, may be expanded to several nodes.
+    /// The aliases with the names of columns, with `prefer_column_name_to_alias`, and the expressions of the aliases.
+    NameSet aliases_of_columns;
+    std::unordered_map<String, ASTPtr> aliased_expressions;
+    if (context->getSettingsRef()[Setting::prefer_column_name_to_alias])
+    {
+        const auto & columns = storage_snapshot->metadata->getColumns();
+        for (const auto & name : names)
+            if (columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+                aliases_of_columns.insert(name);
+
+        NameSet collected_aliases;
+        for (const auto & expression : expressions)
+            collectAliases(expression, collected_aliases, &aliased_expressions);
+        for (const auto & [name, aliased_expression] : aliased_expressions)
+        {
+            NameSet other_aliases_of_columns = aliases_of_columns;
+            other_aliases_of_columns.erase(name);
+            if (hasIdentifierWithName(aliased_expression, other_aliases_of_columns))
+                return alias_types;
+        }
+    }
+
+    /// The identifiers, or the expressions of the aliases with the names of columns, go first, because an expression of the
+    /// list, such as a matcher, may be expanded to several nodes. The aliases are removed from the copies of the expressions,
+    /// which the expressions of the list define.
     auto list = make_intrusive<ASTExpressionList>();
     for (const auto & name : names)
-        list->children.push_back(make_intrusive<ASTIdentifier>(name));
+    {
+        if (aliases_of_columns.contains(name))
+        {
+            auto aliased_expression = aliased_expressions.at(name)->clone();
+            removeAliases(aliased_expression);
+            list->children.push_back(std::move(aliased_expression));
+        }
+        else
+        {
+            list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        }
+    }
     for (const auto & expression : expressions)
         list->children.push_back(expression->clone());
 

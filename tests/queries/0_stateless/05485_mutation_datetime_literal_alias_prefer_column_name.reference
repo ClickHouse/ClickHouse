@@ -1,0 +1,7 @@
+--- an alias of a DateTime expression with the name of a DateTime column
+1
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+2
+--- an alias that refers to another alias with the name of a column
+event = \'2020-01-01 00:00:00\')
+1

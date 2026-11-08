@@ -218,8 +218,8 @@ SELECT 'DELETE changed temporal alias', groupArray(id) FROM (SELECT id FROM t_al
 SELECT extract(command, '(?:event|n) = .*') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_temporal_changed' ORDER BY mutation_id;
 
 -- With `prefer_column_name_to_alias`, the identifier names the `DateTime` column rather than the `String` alias with its name,
--- but the mutation runs with the settings of the server, where it names the alias, so the types of the aliases are not known:
--- the comparison keeps its string and the mutation does not fail.
+-- but the mutation runs with the settings of the server, where it names the alias, so the comparison keeps its string and the
+-- mutation does not fail (05485 checks an alias that is a `DateTime` too).
 CREATE TABLE t_alias_prefer_column (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_alias_prefer_column VALUES (1, '2020-01-01 00:00:00');
 ALTER TABLE t_alias_prefer_column DELETE WHERE isNotNull(toString(event) AS event) AND event = '2020-01-01 00:00:00'
