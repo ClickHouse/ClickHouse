@@ -69,9 +69,17 @@ DataTypePtr getDateTimeColumnType(const String & identifier_name, const ColumnsD
     return getZonelessDateTimeType(desc->type);
 }
 
-/// The types of the parameters of the enclosing lambdas, by name. A parameter with a known type shadows the column with its
-/// name. A type that is not known is nullptr, and then the identifier is matched with the columns by its name.
-using LambdaParameters = std::unordered_map<String, DataTypePtr>;
+/// A parameter of an enclosing lambda. A parameter with a known type shadows the column with its name. A type that is not known
+/// is nullptr, and then the identifier is matched with the columns by its name, unless the parameter is one of a lambda whose
+/// body is shared by several invocations, which may bind it to other types (see `visitLambda`).
+struct LambdaParameter
+{
+    DataTypePtr type;
+    bool shadows_columns = false;
+};
+
+/// The parameters of the enclosing lambdas, by name.
+using LambdaParameters = std::unordered_map<String, LambdaParameter>;
 
 /// The type of the element `element_names` of a tuple of type `type`, such as `n.event` of the parameter `n`, or nullptr.
 DataTypePtr getTupleElementType(DataTypePtr type, std::span<const String> element_names)
@@ -90,13 +98,16 @@ DataTypePtr getTupleElementType(DataTypePtr type, std::span<const String> elemen
 }
 
 /// The type of the lambda parameter that `identifier` names, or of its element, such as `n.event` in `n -> n.event = '...'`.
-/// Returns std::nullopt if the identifier does not name a parameter with a known type.
+/// The type is nullptr if the parameter shadows the column with its name but its type is not known. Returns std::nullopt if the
+/// identifier does not name a parameter that shadows the column.
 std::optional<DataTypePtr> tryGetLambdaParameterType(const ASTIdentifier & identifier, const LambdaParameters & lambda_parameters)
 {
     const auto it = lambda_parameters.find(identifier.name_parts.front());
-    if (it == lambda_parameters.end() || !it->second)
+    if (it == lambda_parameters.end())
         return std::nullopt;
-    return getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
+    if (!it->second.type)
+        return it->second.shadows_columns ? std::optional<DataTypePtr>(DataTypePtr{}) : std::nullopt;
+    return getTupleElementType(it->second.type, std::span(identifier.name_parts).subspan(1));
 }
 
 /// The types of the aliases of the expression, by name, which shadow the columns with their names, such as `c` in
@@ -358,6 +369,24 @@ void collectAliases(const ASTPtr & ast, NameSet & aliases)
         collectAliases(child, aliases);
 }
 
+/// Adds the names of the identifiers and of the functions in `ast` to `names`, also in the assignments of
+/// `TTL ... GROUP BY ... SET` and in lambdas and subqueries, to find the aliases of lambdas that the expression invokes. A name
+/// that is not such an invocation, such as that of a column, only makes the lambda with that alias count as invoked.
+void collectReferencedNames(const ASTPtr & ast, NameSet & names)
+{
+    if (!ast)
+        return;
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        names.insert(identifier->name_parts.front());
+    else if (const auto * function = ast->as<ASTFunction>())
+        names.insert(function->name);
+    if (const auto * ttl_element = ast->as<ASTTTLElement>())
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            collectReferencedNames(assignment, names);
+    for (const auto & child : ast->children)
+        collectReferencedNames(child, names);
+}
+
 /// The aliases `names` with unknown types.
 AliasTypes getUnknownAliasTypes(const NameSet & names)
 {
@@ -422,11 +451,15 @@ public:
         const ColumnsDescription & columns;
         /// The aliases of the expression, which shadow the columns with their names.
         const AliasTypes & aliases;
+        /// The names of the identifiers and the functions of the expression, to find the aliases of lambdas that it invokes.
+        const NameSet & referenced_names;
         const String & session_timezone;
         /// To find the higher-order functions that bind the parameters of a lambda.
         ContextPtr context;
         bool modified = false;
         LambdaParameters lambda_parameters = {};
+        /// Whether this is the body of a lambda that is shared by several invocations, or is inside one.
+        bool in_shared_lambda = false;
     };
 
     static bool needChildVisit(const ASTPtr & ast, const ASTPtr & /*child*/)
@@ -494,8 +527,17 @@ public:
             return;
 
         const auto & parameter_asts = parameters->arguments->children;
-        const auto types = getLambdaParameterTypes(
-            function, lambda_position, parameter_asts.size(), data.columns, data.aliases, data.lambda_parameters, data.context);
+        /// The body of a lambda with an alias that the expression invokes, such as `f` in
+        /// `arrayExists((x -> x = '...') AS f, arr) OR arrayExists(f, utc)`, is shared by the invocations, which may bind its
+        /// parameters to other types, so the types of its parameters are not known. They shadow the columns with their names
+        /// all the same, as do the parameters of the lambdas inside it, so that the shared body is not rewritten with the type
+        /// of a column that one of the invocations may not bind them to.
+        const String alias = lambda.tryGetAlias();
+        const bool invoked_by_alias = !alias.empty() && data.referenced_names.contains(alias);
+        const auto types = invoked_by_alias
+            ? DataTypes(parameter_asts.size())
+            : getLambdaParameterTypes(
+                  function, lambda_position, parameter_asts.size(), data.columns, data.aliases, data.lambda_parameters, data.context);
         /// An alias in the body shadows the columns and the outer aliases with its name in the body only, and its type is not
         /// known.
         NameSet body_alias_names;
@@ -504,10 +546,12 @@ public:
         for (const auto & name : body_alias_names)
             body_aliases[name] = nullptr;
 
-        Data body_data{data.columns, body_aliases, data.session_timezone, data.context, false, data.lambda_parameters};
+        const bool shared = data.in_shared_lambda || invoked_by_alias;
+        Data body_data{
+            data.columns, body_aliases, data.referenced_names, data.session_timezone, data.context, false, data.lambda_parameters, shared};
         for (size_t i = 0; i < parameter_asts.size(); ++i)
             if (const auto * identifier = parameter_asts[i]->as<ASTIdentifier>())
-                body_data.lambda_parameters[identifier->name()] = types[i];
+                body_data.lambda_parameters[identifier->name()] = LambdaParameter{types[i], shared};
 
         InDepthNodeVisitor<RewriteDateTimeLiteralsMatcher, true>(body_data).visit(lambda.arguments->children[1]);
         data.modified |= body_data.modified;
@@ -551,9 +595,12 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
     for (const auto & expression : expressions)
         collectAliases(expression, alias_names);
     const AliasTypes aliases = getAliasTypes(expressions, alias_names, table, storage_snapshot, context);
+    NameSet referenced_names;
+    for (const auto & expression : expressions)
+        collectReferencedNames(expression, referenced_names);
 
     const ColumnsDescription & columns = storage_snapshot->metadata->getColumns();
-    RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, session_timezone, context, false};
+    RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, referenced_names, session_timezone, context, false};
     RewriteDateTimeLiteralsVisitor visitor(data);
 
     if (new_command.update_assignments)
@@ -589,7 +636,9 @@ bool rewriteDateTimeLiteralsWithTimezone(
     NameSet alias_names;
     collectAliases(root, alias_names);
     const AliasTypes aliases = getUnknownAliasTypes(alias_names);
-    RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, session_timezone, context, false};
+    NameSet referenced_names;
+    collectReferencedNames(root, referenced_names);
+    RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, referenced_names, session_timezone, context, false};
     RewriteDateTimeLiteralsVisitor(data).visit(root);
 
     /// The assignments of `TTL ... GROUP BY ... SET` are not children of the element.
