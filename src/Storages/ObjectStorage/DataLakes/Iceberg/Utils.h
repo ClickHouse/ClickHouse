@@ -20,6 +20,7 @@
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -218,7 +219,7 @@ DB::Row normalizePartitionKeyValue(
     const IcebergSchemaProcessor & schema_processor,
     Int32 schema_id);
 
-using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
+using PartitionColumnValues = std::vector<IdentityPartitionColumn>;
 
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);

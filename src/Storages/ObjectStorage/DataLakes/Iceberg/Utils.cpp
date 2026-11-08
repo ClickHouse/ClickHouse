@@ -2331,7 +2331,26 @@ PartitionColumnValues getIdentityPartitionColumnValues(
         if (value.isNull())
             continue;
 
-        result.emplace_back(name_and_type->name, std::move(value));
+        const Int32 schema_id = manifest_file_entry.resolved_schema_id;
+        const Names path = schema_processor.getFieldPath(schema_id, partition_field.source_id);
+
+        /// A reader header may carry the field flattened or any of its ancestor tuples: one site per prefix.
+        std::vector<std::pair<String, Names>> injection_sites;
+        String joined;
+        for (size_t k = 0; k < path.size(); ++k)
+        {
+            if (k)
+                joined += '.';
+            joined += path[k];
+            /// An identifier resolves a top-level column before a subcolumn, so `path[0]` is unambiguous;
+            /// a deeper prefix shared with another column or subcolumn denotes neither.
+            if (k > 0 && !schema_processor.flatNameIdentifiesOneColumn(schema_id, joined))
+                continue;
+            injection_sites.emplace_back(joined, Names(path.begin() + k + 1, path.end()));
+        }
+        std::ranges::reverse(injection_sites);
+
+        result.push_back(IdentityPartitionColumn{name_and_type->name, std::move(injection_sites), std::move(value)});
     }
 
     return result;
