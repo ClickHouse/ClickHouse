@@ -52,7 +52,7 @@ void LazyReadReplacingFinalStep::initializePipeline(QueryPipelineBuilder & pipel
     pipeline.init(Pipe(std::move(source)));
 }
 
-QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans()
+QueryPlanRawPtrs LazyReadReplacingFinalStep::getChildPlans(bool /*for_explain*/)
 {
     if (!explain_plan)
     {

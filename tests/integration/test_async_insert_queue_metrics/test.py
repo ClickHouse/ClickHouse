@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
@@ -25,6 +26,19 @@ KEEP_IN_QUEUE = """
     async_insert_busy_timeout_max_ms = 600000,
     async_insert_max_data_size = 1000000000
 """
+
+# 'test_flush_by_data_size' below needs an inlined payload that is far enough from both
+# ends of its size limit for the exact framing of the inlined data not to matter.
+ROWS_PER_PUSH = 100
+
+
+def payload(first_value):
+    """Values of a fixed width, so that every push inlines the same number of bytes."""
+    return ",".join(f"({first_value + i})" for i in range(ROWS_PER_PUSH))
+
+
+# Half a payload of headroom either way: one payload stays under the limit, two go over it.
+FLUSH_AT_BYTES = len(payload(1000)) * 3 // 2
 
 
 def queue_metrics():
@@ -116,18 +130,49 @@ def test_flush_by_busy_timeout():
 
 
 def test_flush_by_data_size():
-    """A push that reaches the size limit flushes at once, without entering the queue."""
+    """A push that takes the queue over the size limit flushes it at once.
+
+    'async_insert_max_data_size' is also the cap of the 'LimitReadBuffer' that reads the
+    inlined data, so a single push can never cross the threshold: a query whose data does
+    not fit under the cap returns 'TOO_MUCH_DATA' and is executed synchronously, without
+    ever reaching the queue. Two pushes are needed - the first stays under the limit, the
+    second takes their shared entry over it.
+    """
     table = "flush_by_data_size"
     node.query(f"CREATE TABLE {table} (a UInt64) ENGINE = MergeTree ORDER BY a")
 
     assert queue_metrics() == (0, 0), "the queue must be empty before the test"
 
-    node.query(
-        f"""INSERT INTO {table} SETTINGS async_insert = 1, wait_for_async_insert = 1,
-            async_insert_use_adaptive_busy_timeout = 0,
-            async_insert_busy_timeout_min_ms = 600000,
-            async_insert_busy_timeout_max_ms = 600000,
-            async_insert_max_data_size = 1 VALUES (1)"""
-    )
+    # Both pushes have to agree on every setting, because the settings are part of the
+    # queue key: pushes that disagree land in different entries and never accumulate.
+    # That is also why neither of them can wait for its own flush - the first one would
+    # block until the busy timeout above elapses.
+    def push(first_value):
+        node.query(
+            f"""INSERT INTO {table} SETTINGS async_insert = 1, wait_for_async_insert = 0,
+                async_insert_use_adaptive_busy_timeout = 0,
+                async_insert_busy_timeout_min_ms = 600000,
+                async_insert_busy_timeout_max_ms = 600000,
+                async_insert_max_data_size = {FLUSH_AT_BYTES}
+                VALUES {payload(first_value)}"""
+        )
 
-    assert_queue_is_empty(table, 1)
+    push(1000)
+
+    # Without this the test would pass just as well if the push never reached the queue,
+    # which is what a limit below the size of the inlined data makes it do.
+    entries, size_in_bytes = queue_metrics()
+    assert entries == 1, "the first push must be held in the queue"
+    assert 0 < size_in_bytes < FLUSH_AT_BYTES
+    assert (entries, size_in_bytes) == queue_contents()
+
+    push(2000)
+
+    # 'scheduleDataProcessingJob' discounts the metrics, and the push removes the entry
+    # from the queue, both before the data is handed to the pool - so both are already
+    # back to zero here. Only the rows themselves follow asynchronously.
+    assert queue_metrics() == (0, 0)
+    assert queue_contents() == (0, 0)
+    assert_eq_with_retry(node, f"SELECT count() FROM {table}", str(2 * ROWS_PER_PUSH))
+
+    node.query(f"DROP TABLE {table}")

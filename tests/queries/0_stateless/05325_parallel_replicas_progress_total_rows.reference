@@ -1,0 +1,9 @@
+enable_parallel_replicas=0
+"read_rows":"1000000" "total_rows_to_read":"1000000"
+"read_rows":"1000000" "total_rows_to_read":"1000000"
+parallel_replicas_local_plan=0
+"read_rows":"1000000" "total_rows_to_read":"1000000"
+"read_rows":"1000000" "total_rows_to_read":"1000000"
+parallel_replicas_local_plan=1
+"read_rows":"1000000" "total_rows_to_read":"1000000"
+"read_rows":"1000000" "total_rows_to_read":"1000000"

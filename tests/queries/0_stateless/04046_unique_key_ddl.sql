@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest
+-- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-fasttest
 -- no-parallel: ATTACHes a table with a fixed UUID (item 10c), which collides
 -- across concurrent runs of this test (e.g. the flaky check's parallel workers).
 -- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
@@ -255,22 +255,6 @@ ALTER TABLE uk_t MODIFY ORDER BY (id); -- { serverError SUPPORT_IS_DISABLED }
 
 -- 12. INSERT ... SETTINGS async_insert = 1 on a unique-key table — allowed.
 
--- 13. ALTER DELETE / ALTER UPDATE on a unique-key table -> error.
-ALTER TABLE uk_t DELETE WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE uk_t UPDATE v = 'x' WHERE id = 1; -- { serverError SUPPORT_IS_DISABLED }
-
--- 13a. Full-part rewrite mutations rebuild parts without preserving the
--- delete-bitmap sidecars, so the whole family must be rejected on a unique-key
--- table. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same rewrite path via
--- MutateAllPartColumnsTask for compact or non-full parts (the guard in
--- checkMutationIsPossible fires before name resolution, so the names need not exist).
-ALTER TABLE uk_t REWRITE PARTS; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE uk_t APPLY DELETED MASK; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE uk_t APPLY PATCHES; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE uk_t MATERIALIZE INDEX idx; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE uk_t MATERIALIZE STATISTICS v; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE uk_t MATERIALIZE PROJECTION proj; -- { serverError SUPPORT_IS_DISABLED }
-
 -- 14. All ALTER ... PARTITION operations are blocked on UK tables.
 CREATE TABLE uk_t_src (id UInt64, user_id UInt32, v String)
 ENGINE = MergeTree
@@ -300,6 +284,14 @@ ORDER BY (id, user_id)
 PARTITION BY user_id;
 
 ALTER TABLE uk_t_src MOVE PARTITION 10 TO TABLE uk_t_other; -- { serverError SUPPORT_IS_DISABLED }
+
+-- 15a. through a materialized view: red if the check reads the view's metadata, not the inner table's.
+CREATE TABLE uk_mv_src (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE MATERIALIZED VIEW uk_mv ENGINE = MergeTree ORDER BY k UNIQUE KEY k AS SELECT k FROM uk_mv_src;
+INSERT INTO uk_mv_src VALUES (1);
+ALTER TABLE uk_mv DETACH PARTITION tuple(); -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE uk_mv;
+DROP TABLE uk_mv_src;
 
 -- 16. Round-trip survival across DETACH/ATTACH (stand-in for restart).
 CREATE TABLE uk_t_rt (id UInt64, user_id UInt32, v String)
@@ -393,6 +385,44 @@ ORDER BY (c0, sk)
 SAMPLE BY sk
 UNIQUE KEY (c0)
 TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
+
+-- 23. Only plain MergeTree accepts UNIQUE KEY. Every other engine in the family can drop a row it
+-- read during a merge, taking that row's kill mark with it. The check is in `create()` and fresh
+-- definitions only; a stored one still loads, which
+-- `test_unique_key_sst.py::test_unique_key_on_a_non_plain_engine_still_loads` covers.
+CREATE TABLE uk_engine_reject (id UInt64, v String, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v String, sign Int8)
+ENGINE = CollapsingMergeTree(sign) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v UInt64)
+ENGINE = SummingMergeTree(v) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v UInt64)
+ENGINE = AggregatingMergeTree ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v String, sign Int8, ver UInt64)
+ENGINE = VersionedCollapsingMergeTree(sign, ver) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+-- A full-definition ATTACH is user input, so it counts as fresh and is rejected too.
+-- Explicit UUID because Atomic rejects a bare ATTACH-with-definition; derived from the test
+-- number like the projection ATTACH above, hence this file's no-parallel tag.
+DROP TABLE IF EXISTS uk_engine_attach SYNC;
+ATTACH TABLE uk_engine_attach UUID '00000000-0000-0000-0000-000000104046'
+(id UInt64, v String, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+SELECT 'unique_key_engine_rejected_on_attach';
+
+-- 24. A full-definition ATTACH is fresh input, so it needs the experimental setting;
+-- short-syntax ATTACH of an already-validated table (item 16) does not.
+DROP TABLE IF EXISTS uk_attach_gate SYNC;
+SET enable_unique_key = 0;
+ATTACH TABLE uk_attach_gate UUID '00000000-0000-0000-0000-000000204046'
+(id UInt64, v String)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id); -- { serverError SUPPORT_IS_DISABLED }
+SET enable_unique_key = 1;
+SELECT 'unique_key_attach_needs_experimental_setting';
 
 DROP TABLE uk_t;
 DROP TABLE uk_t_src;

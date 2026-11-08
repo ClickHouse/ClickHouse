@@ -68,6 +68,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"written_bytes", std::make_shared<DataTypeUInt64>(), "The amount of bytes written to the storage."},
         {"memory_usage", std::make_shared<DataTypeInt64>(), "Amount of RAM the query uses. It might not include some types of dedicated memory"},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>(), "The current peak of memory usage."},
+        {"spillable_memory_bytes", std::make_shared<DataTypeInt64>(), "The current spillable memory."},
         {"query", std::make_shared<DataTypeString>(), "The query text. For INSERT, it does not include the data to insert."},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"query_kind", std::make_shared<DataTypeString>(), "The type of the query - SELECT, INSERT, etc."},
@@ -142,6 +143,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.written_bytes);
         res_columns[i++]->insert(process.memory_usage);
         res_columns[i++]->insert(process.peak_memory_usage);
+        res_columns[i++]->insert(process.spillable_memory_bytes);
         res_columns[i++]->insert(process.query);
         res_columns[i++]->insert(process.normalized_query_hash);
         res_columns[i++]->insert(magic_enum::enum_name(process.query_kind));

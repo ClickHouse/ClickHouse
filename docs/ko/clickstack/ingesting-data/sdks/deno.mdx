@@ -6,17 +6,15 @@ doc_type: 'guide'
 keywords: ['Deno ClickStack SDK', 'Deno OpenTelemetry', 'ClickStack Deno 통합', 'Deno 관측성', 'Deno 로깅 SDK']
 ---
 
-이 가이드에서는 다음 항목을 통합합니다:
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-* **로그**
+<ClickStackIntegrates signals={['logs']} />
 
 <Note>
   현재 OpenTelemetry 로깅만 지원합니다. 트레이싱 지원은 [다음 가이드](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example)를 참조하십시오.
 </Note>
 
-<div id="logging">
-  ## 로깅
-</div>
+## 로깅 {#logging}
 
 로깅은 `std/log` 모듈에 사용자 지정 로거를 export하여 지원됩니다.
 
@@ -42,15 +40,13 @@ log.setup({
 log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-<div id="run-the-application">
-  ### 애플리케이션 실행
-</div>
+### 애플리케이션 실행 {#run-the-application}
 
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
     deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
     ```
   </Tab>
@@ -58,8 +54,8 @@ log.getLogger('my-otel-logger').info('Hello from Deno!');
   <Tab title="ClickStack Open Source">
     ```shell
     OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
     deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
     ```
   </Tab>

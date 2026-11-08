@@ -11,9 +11,7 @@ import ResourceEstimation from '/snippets/es/_resource_estimation.mdx';
 
 <ResourceEstimation />
 
-<div id="refining-sizing-assumptions">
-  ## Ajuste de las hipótesis de dimensionamiento para su entorno
-</div>
+## Ajuste de las hipótesis de dimensionamiento para su entorno {#refining-sizing-assumptions}
 
 El modelo asume un promedio sostenido de 1 QPS desde ClickStack, agregando todos los tipos de consultas, incluidas las búsquedas, los dashboards y las alertas.
 
@@ -23,9 +21,7 @@ Las estimaciones de almacenamiento asumen una relación de compresión conservad
 
 Esto supone una distribución de consultas relativamente equilibrada. Las cargas de trabajo sesgadas hacia consultas históricas o de archivado más pesadas pueden tener requisitos de cómputo significativamente distintos, y deben validarse mediante pruebas de carga. Tenemos previsto introducir un modelo de dimensionamiento más flexible que permita extrapolar el cómputo de consultas en función de distintos patrones de distribución de consultas.
 
-<div id="worked-example">
-  ### Ejemplo resuelto
-</div>
+### Ejemplo resuelto {#worked-example}
 
 **Requisitos:** 1,5 PB/mes de ingesta, 5 QPS, retención de 3 meses.
 
@@ -66,9 +62,7 @@ Con 579 MB/s sostenidos durante 30 días, la ingesta bruta equivale a 1.500 TB/m
 | Almacenamiento por mes (comprimido)          | 150 TB    |
 | Almacenamiento para una retención de 3 meses | 450 TB    |
 
-<div id="isolating-workloads">
-  ## Aislar las cargas de trabajo de observabilidad
-</div>
+## Aislar las cargas de trabajo de observabilidad {#isolating-workloads}
 
 Si está añadiendo ClickStack a un **servicio de ClickHouse Cloud** existente que ya admite otras cargas de trabajo, como análisis de aplicaciones en tiempo real, se recomienda encarecidamente aislar el tráfico de observabilidad.
 
@@ -80,5 +74,7 @@ Use [**Managed Warehouses**](/es/products/cloud/features/infrastructure/warehous
 * Compartir los mismos conjuntos de datos subyacentes entre servicios cuando sea necesario
 
 Este enfoque garantiza que sus cargas de trabajo existentes no se vean afectadas y permite que ClickStack escale de forma independiente a medida que aumentan los datos de observabilidad.
+
+La misma funcionalidad puede usarse para aprovisionar como servicios separados el cómputo de ingesta y el cómputo de consultas estimados anteriormente, de modo que cada uno pueda escalarse de forma independiente. Consulte nuestra guía sobre [Aislar las cargas de trabajo de lectura y escritura](/es/clickstack/managing/isolating-read-write).
 
 Para implementaciones de mayor tamaño o recomendaciones de dimensionamiento personalizadas, contacte con soporte para obtener una estimación más precisa.

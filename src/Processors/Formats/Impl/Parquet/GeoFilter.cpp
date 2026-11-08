@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <unordered_set>
 
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
@@ -13,6 +14,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -26,6 +31,26 @@ namespace DB::Parquet
 
 namespace
 {
+
+/// Whether the requested type of a geometry column keeps the coordinates as they are in the file:
+/// raw WKB bytes, or geo types with `Float64` coordinates. Otherwise the conversion to the requested
+/// type (e.g. `Tuple(UInt8, UInt8)`) can move a geometry out of the bounding box from the
+/// statistics, and the bounding box cannot be used for pruning.
+bool typeKeepsCoordinates(const DataTypePtr & type, bool is_top_level = true)
+{
+    const DataTypePtr nested = removeLowCardinalityAndNullable(type);
+    if (is_top_level && isString(nested))
+        return true;
+    if (WhichDataType(nested).isFloat64())
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(nested.get()))
+        return typeKeepsCoordinates(array->getNestedType(), false);
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(nested.get()))
+        return std::ranges::all_of(tuple->getElements(), [](const auto & element) { return typeKeepsCoordinates(element, false); });
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(nested.get()))
+        return std::ranges::all_of(variant->getVariants(), [](const auto & element) { return typeKeepsCoordinates(element, false); });
+    return false;
+}
 
 /// Extractor callback for the shared conjunctive collection template.
 /// Returns an optional SpatialFilter when the node is a spatial predicate
@@ -50,7 +75,10 @@ std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::N
             return std::nullopt;
         col_node = child;
     }
-    if (!col_node || !sample_block.has(col_node->result_name))
+    if (!col_node)
+        return std::nullopt;
+    const auto * sample_column = sample_block.findByName(col_node->result_name);
+    if (!sample_column || !typeKeepsCoordinates(sample_column->type))
         return std::nullopt;
 
     double xmin = std::numeric_limits<double>::infinity();
@@ -93,7 +121,22 @@ std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::N
     filter.query_ymin = ymin;
     filter.query_xmax = xmax;
     filter.query_ymax = ymax;
+    filter.column_is_point = typeid_cast<const DataTypeTuple *>(removeLowCardinalityAndNullable(sample_column->type).get()) != nullptr;
     return filter;
+}
+
+/// Whether the column chunk contains only points (also with Z and/or M coordinates).
+/// Multipoints are not included: e.g. `pointInPolygon` accepts their `Array(Point)` representation
+/// as a polygon and connects the vertices.
+bool geospatialStatisticsHaveOnlyPoints(const parq::GeospatialStatistics & statistics)
+{
+    /// An empty list means that the types are unknown.
+    if (statistics.geospatial_types.empty())
+        return false;
+    return std::ranges::all_of(statistics.geospatial_types, [](Int32 geospatial_type)
+    {
+        return geospatial_type > 0 && geospatial_type % 1000 == 1;
+    });
 }
 
 }
@@ -120,8 +163,8 @@ std::vector<SpatialFilter> extractSpatialFilters(
 }
 
 bool rowGroupFailsSpatialFilters(
-    const parq::RowGroup & rg_meta,
-    const std::vector<Reader::PrimitiveColumnInfo> & primitive_columns,
+    const Reader & reader,
+    size_t row_group_idx,
     const std::vector<SpatialFilter> & filters)
 {
     /// All filters here come from a conjunctive-only extraction (only AND branches).
@@ -131,7 +174,7 @@ bool rowGroupFailsSpatialFilters(
     {
         /// Find the geometry primitive column by name.
         const Reader::PrimitiveColumnInfo * geo_col = nullptr;
-        for (const auto & pc : primitive_columns)
+        for (const auto & pc : reader.primitive_columns)
         {
             if (pc.name == filter.geometry_column_name)
             {
@@ -144,24 +187,47 @@ bool rowGroupFailsSpatialFilters(
 
         /// Only check geospatial_statistics.bbox baked into the geometry column's ColumnMetaData.
         /// covering.bbox is handled via the standard KeyCondition hyperrectangle path.
-        if (geo_col->column_idx >= rg_meta.columns.size())
+        if (geo_col->column_idx >= reader.numColumnChunks(row_group_idx))
             continue;
-        const auto & col_meta = rg_meta.columns[geo_col->column_idx].meta_data;
+        const auto & col_meta = reader.getColumnChunk(row_group_idx, geo_col->column_idx).meta_data;
         if (!col_meta.__isset.geospatial_statistics || !col_meta.geospatial_statistics.__isset.bbox)
             continue;
 
         const auto & bbox = col_meta.geospatial_statistics.bbox;
-        /// Reject non-finite or inverted bounds: malformed metadata must not prune (fail closed).
+        /// Reject non-finite or inverted Y bounds: malformed metadata must not prune (fail closed).
         if (!std::isfinite(bbox.xmin) || !std::isfinite(bbox.ymin) ||
             !std::isfinite(bbox.xmax) || !std::isfinite(bbox.ymax) ||
-            bbox.xmin > bbox.xmax || bbox.ymin > bbox.ymax)
+            bbox.ymin > bbox.ymax)
             continue;
-        bool disjoint = bbox.xmax < filter.query_xmin
-                      || bbox.xmin > filter.query_xmax
+        /// For X only, `xmin > xmax` is allowed by the spec: the bounding box crosses the
+        /// antimeridian, and the X range is the union of [xmin, +inf) and (-inf, xmax].
+        /// It bounds the vertices, but not the straight segments between them, which the
+        /// Cartesian predicates use: a segment from 170 to -170 crosses 0. So the wrapped X range
+        /// is used only if the column chunk is known to contain only points, and the column is
+        /// read as a point, so the predicate cannot connect several vertices with segments.
+        bool x_disjoint = false;
+        if (bbox.xmin <= bbox.xmax)
+            x_disjoint = bbox.xmax < filter.query_xmin || bbox.xmin > filter.query_xmax;
+        else if (filter.column_is_point && geospatialStatisticsHaveOnlyPoints(col_meta.geospatial_statistics))
+            x_disjoint = filter.query_xmax < bbox.xmin && filter.query_xmin > bbox.xmax;
+        bool disjoint = x_disjoint
                       || bbox.ymax < filter.query_ymin
                       || bbox.ymin > filter.query_ymax;
-        if (disjoint)
-            return true;
+        if (!disjoint)
+            continue;
+
+        /// The bounding box covers only non-NULL geometries. If the column is read as a
+        /// non-nullable type, NULLs become default values, e.g. the point (0, 0), which can match
+        /// the predicate.
+        bool may_have_nulls = !geo_col->output_nullable
+            && std::ranges::any_of(geo_col->levels, [](const auto & level) { return !level.is_array; })
+            && !(col_meta.__isset.statistics && col_meta.statistics.__isset.null_count && col_meta.statistics.null_count == 0);
+        bool origin_matches = filter.query_xmin <= 0 && filter.query_xmax >= 0
+                            && filter.query_ymin <= 0 && filter.query_ymax >= 0;
+        if (may_have_nulls && origin_matches)
+            continue;
+
+        return true;
     }
 
     return false;

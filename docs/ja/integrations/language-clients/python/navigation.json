@@ -9,6 +9,7 @@
     "ja/integrations/language-clients/python/advanced-querying",
     "ja/integrations/language-clients/python/advanced-inserting",
     "ja/integrations/language-clients/python/advanced-usage",
+    "ja/integrations/language-clients/python/rust-codec",
     "ja/integrations/language-clients/python/sqlalchemy"
   ]
 }

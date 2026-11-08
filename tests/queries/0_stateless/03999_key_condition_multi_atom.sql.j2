@@ -1,0 +1,32 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: the selected marks and EXPLAIN output may differ with
+-- random settings.
+
+SET explain_query_plan_default = 'legacy';
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan, the marks
+    selected by index analysis and the key condition. -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }})),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' | ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE trimLeft(explain) LIKE 'Condition:%')
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_multi_atom (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY (toYYYYMM(ts), toDate(ts), ts)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_multi_atom SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(24 * 40);
+
+-- A range on ts constrains all three key columns.
+{{ check('test_multi_atom', "ts >= toDateTime('2026-01-10 00:00:00', 'UTC') AND ts < toDateTime('2026-01-11 00:00:00', 'UTC')") }}
+-- IN over ts with values spanning two months.
+{{ check('test_multi_atom', "ts IN (toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-01-10 01:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC'))") }}
+-- has(const_array, ts).
+{{ check('test_multi_atom', "has([toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC')], ts)") }}
+-- Direct IN over a key expression.
+{{ check('test_multi_atom', "toDate(ts) IN (toDate('2026-01-10'), toDate('2026-02-05'))") }}
+-- IN with Date-typed constants against the DateTime column.
+{{ check('test_multi_atom', "ts IN (toDate('2026-01-10'), toDate('2026-02-05'))") }}
+-- Disjunction mixing the transformed IN, a range, has and an equality.
+{{ check('test_multi_atom', "ts IN (toDate('2026-01-10'), toDate('2026-02-05')) OR ts <= toDateTime('2026-01-10 00:00:00', 'UTC') OR has([toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC')], ts) OR ts = toDateTime('2026-01-10 00:00:00', 'UTC')") }}

@@ -27,7 +27,7 @@ struct ExtractImpl
         const ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;
         size_t prev_offset = 0;
@@ -94,7 +94,7 @@ struct ExtractImpl
 
                     const uint8_t * src = nullptr;
                     size_t length = 0;
-                    if (matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1
+                    if (callJITFunction(matcher.func, str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1
                         && capture_starts[group] != nullptr && capture_ends[group] != nullptr)
                     {
                         src = capture_starts[group];
@@ -124,7 +124,7 @@ struct ExtractImpl
             }
         }
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
 
         unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;

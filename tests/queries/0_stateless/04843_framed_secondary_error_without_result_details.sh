@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: enables the `framing_exception_packet_throw` and `http_output_finalize_throw` fail
 # points, which affect the whole server. They fire on the next framed exception delivery / response
 # close anywhere on the server, so a concurrent query from another test could consume the injected

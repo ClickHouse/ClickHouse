@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -29,6 +30,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Processors/Port.h>
@@ -50,6 +52,7 @@
 #include <boost/iterator/zip_iterator.hpp>
 #include <boost/tuple/tuple.hpp>
 
+#include <algorithm>
 #include <limits>
 
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
@@ -92,6 +95,7 @@ namespace DB
         extern const int ILLEGAL_COLUMN;
         extern const int UNKNOWN_TYPE;
         extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+        extern const int TOO_LARGE_ARRAY_SIZE;
     }
 
     class ArrowUUIDExtensionType : public arrow::ExtensionType
@@ -185,6 +189,18 @@ namespace DB
         return bitmap;
     }
 
+    /// Arrow's `Utf8`/`Binary` builders take an int32 length and their `Append` skips the copy when it is
+    /// negative, so a narrowed size would store an empty value instead of failing.
+    static void checkStringSizeFitsArrowOffsets(size_t size, const String & column_name, const String & format_name)
+    {
+        if (size > MAX_ARROW_BUFFER_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cannot write a value of {} bytes of column {} to {}: `Utf8`/`Binary` offsets are 32-bit, so a single "
+                "value cannot be larger than {} bytes",
+                size, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
+    }
+
     /// Writes a column whose type has no first-class Arrow mapping as one serialized value per row.
     /// This goes through `ISerialization` rather than `IColumn::getDataAt`: `getDataAt` exposes a column's
     /// contiguous in-memory bytes, which most of the types reaching this path do not have - `ColumnObject`,
@@ -228,9 +244,16 @@ namespace DB
                     serialization->serializeBinary(*write_column, value_i, value, settings.format_settings);
 
                 if constexpr (target_is_utf8)
-                    status = builder.Append(makeValidUTF8View(value.stringView(), valid_utf8_scratch));
+                {
+                    const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
+                    checkStringSizeFitsArrowOffsets(valid.size(), write_column->getName(), format_name);
+                    status = builder.Append(valid);
+                }
                 else
+                {
+                    checkStringSizeFitsArrowOffsets(value.stringView().size(), write_column->getName(), format_name);
                     status = builder.Append(value.stringView());
+                }
             }
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -938,7 +961,9 @@ namespace DB
         const auto column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column_array->getOffsetsColumn()).getPtr();
         size_t offsets_start = start > 0 ? start - 1 : 0;
         size_t offsets_view_start = start > 0 ? 1 : 0;
-        auto offsets = extractIndexes<int32_t>(column_offsets, offsets_start, end, false);
+        /// Keep the absolute offsets 64-bit: only the value rebased against `values_start` has to fit an
+        /// Arrow `List` offset, and for a range that does not start at row 0 the absolute one can be larger.
+        auto offsets = extractIndexes<Int64>(column_offsets, offsets_start, end, false);
         size_t values_start = start == 0 ? 0 : offsets[0];
         size_t values_end = offsets.empty() ? values_start : offsets.back();
 
@@ -952,7 +977,14 @@ namespace DB
         checkStatus(status, column_name, format_name);
         for (size_t i = offsets_view_start; i < offsets.size(); ++i)
         {
-            status = offsets_builder.Append(static_cast<int>(offsets[i] - values_start));
+            const Int64 rebased = offsets[i] - static_cast<Int64>(values_start);
+            if (static_cast<UInt64>(rebased) > MAX_ARROW_BUFFER_SIZE)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Cannot write a row of {} elements of column '{}' to {}: `List` offsets are 32-bit, so a "
+                    "single row cannot hold more than {} elements",
+                    rebased, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
+            status = offsets_builder.Append(static_cast<int>(rebased));
             checkStatus(status, column_name, format_name);
         }
 
@@ -1121,6 +1153,7 @@ namespace DB
                 else
                 {
                     std::string_view string_ref = internal_column.getDataAt(string_i);
+                    checkStringSizeFitsArrowOffsets(string_ref.size(), write_column->getName(), format_name);
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -1131,6 +1164,7 @@ namespace DB
             for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i);
+                checkStringSizeFitsArrowOffsets(string_ref.size(), write_column->getName(), format_name);
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1262,11 +1296,28 @@ namespace DB
         const String & format_name,
         arrow::ArrayBuilder* array_builder,
         size_t start,
-        size_t end)
+        size_t end,
+        bool as_timestamp)
     {
         const auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
-        arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
+
+        if (as_timestamp)
+        {
+            arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
+            for (size_t value_i = start; value_i < end; ++value_i)
+            {
+                if (null_bytemap && (*null_bytemap)[value_i])
+                    status = builder.AppendNull();
+                else
+                    status = builder.Append(static_cast<Int64>(internal_data[value_i]));
+
+                checkStatus(status, write_column->getName(), format_name);
+            }
+            return;
+        }
+
+        arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
 
         if (null_bytemap)
         {
@@ -1475,7 +1526,7 @@ namespace DB
                 fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end, settings.output_date_as_uint16);
                 break;
             case TypeIndex::DateTime:
-                fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end, settings.output_datetime_as_timestamp);
                 break;
             case TypeIndex::Date32:
                 fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
@@ -1483,6 +1534,33 @@ namespace DB
             case TypeIndex::Time:
                 fillArrowArrayWithTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
+            case TypeIndex::Nothing:
+            {
+                if (settings.output_nothing_as_null)
+                {
+                    /// The schema maps `Nothing` to the Arrow `Null` type (see `getArrowType`).
+                    /// A `Nothing` column has no values, so every entry of the Arrow Null array is null
+                    /// regardless of the null bytemap.
+                    arrow::NullBuilder & builder = assert_cast<arrow::NullBuilder &>(*array_builder);
+                    arrow::Status status = builder.AppendNulls(end - start);
+                    checkStatus(status, column->getName(), format_name);
+                }
+                else if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
+                {
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TYPE,
+                        "Internal type '{}' of a column '{}' is not supported for conversion into {} data format. Set "
+                        "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
+                        column_type->getFamilyName(), column_name, format_name);
+                }
+                else
+                {
+                    /// `Nothing` is a type with no conversion like any other here: `getArrowType` mapped it to
+                    /// an opaque `utf8`/`binary` column, as the `default` branch below does for the rest of them.
+                    fillArrowArrayWithOpaqueColumnData(column, column_type, null_bytemap, format_name, settings, array_builder, start, end);
+                }
+                break;
+            }
             case TypeIndex::Array:
                 arrow_array = buildArrowListArrayWithArrayColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
@@ -1668,6 +1746,14 @@ namespace DB
             return arrow_type;
         }
 
+        if (isNothing(column_type) && settings.output_nothing_as_null)
+        {
+            /// Every value of the Nothing type is null, so the Arrow field must be nullable
+            /// even when the ClickHouse type is not wrapped in Nullable (e.g. Array(Nothing)).
+            *out_is_column_nullable = true;
+            return arrow::null();
+        }
+
         if (isDecimal(column_type))
         {
             std::shared_ptr<arrow::DataType> arrow_type;
@@ -1781,6 +1867,12 @@ namespace DB
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
             return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
+        }
+
+        if (isDateTime(column_type) && settings.output_datetime_as_timestamp)
+        {
+            const auto * datetime_type = assert_cast<const DataTypeDateTime *>(column_type.get());
+            return arrow::timestamp(arrow::TimeUnit::SECOND, datetime_type->getTimeZone().getTimeZone());
         }
 
         if (isTime64(column_type))
@@ -1986,53 +2078,84 @@ namespace DB
 
         for (const auto & chunk : chunks)
         {
-            /// For arrow::Table creation
+            /// Normalize once per chunk: `fillArrowArray` converts a constant or replicated column on every
+            /// call, which would otherwise repeat for each row range below.
+            Columns columns(columns_num);
+            DataTypes column_types(columns_num);
             for (size_t column_i = 0; column_i < columns_num; ++column_i)
             {
-                const ColumnWithTypeAndName & header_column = header_columns[column_i];
-                auto column_type = header_column.type;
-                auto column = chunk.getColumns()[column_i];
-
+                auto column = chunk.getColumns()[column_i]->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                auto column_type = header_columns[column_i].type;
                 if (!settings.low_cardinality_as_dictionary)
                 {
                     column = recursiveRemoveLowCardinality(column);
                     column_type = recursiveRemoveLowCardinality(column_type);
                 }
-
-                // Generate the unwrapped builder schema (safe for MakeBuilder)
-                bool is_column_nullable = false;
-                auto builder_type = getArrowType(
-                    column_type, column, header_column.name, format_name, settings, &is_column_nullable, true /* for_builder */);
-
-                std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), builder_type, &array_builder);
-                checkStatus(status, column->getName(), format_name);
-
-                std::shared_ptr<arrow::Array> arrow_array = fillArrowArray(
-                    header_column.name,
-                    column,
-                    column_type,
-                    nullptr,
-                    array_builder.get(),
-                    format_name,
-                    0,
-                    column->size(),
-                    settings,
-                    dictionary_values);
-
-                // Zero-copy cast to the extension-rich schema (handles infinite nesting)
-                auto target_type = schema->field(static_cast<int>(column_i))->type();
-                if (!arrow_array->type()->Equals(*target_type))
-                    arrow_array = checkResult(arrow_array->View(target_type), column->getName(), format_name);
-
-                table_data.at(column_i).emplace_back(std::move(arrow_array));
+                columns[column_i] = std::move(column);
+                column_types[column_i] = std::move(column_type);
             }
+
+            /// A chunk that exceeds the 32-bit Arrow offsets becomes several arrays of the ChunkedArray.
+            const size_t num_rows = chunk.getNumRows();
+            size_t offset = 0;
+            do
+            {
+                size_t rows = maxRowsFittingOneArrowBatch(
+                    columns,
+                    column_types,
+                    offset,
+                    num_rows,
+                    settings.output_fixed_string_as_fixed_byte_array,
+                    settings.output_max_record_batch_bytes);
+                /// A row that does not fit on its own cannot be represented at all; the leaf encoders reject it.
+                rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
+
+                /// For arrow::Table creation
+                for (size_t column_i = 0; column_i < columns_num; ++column_i)
+                {
+                    const ColumnWithTypeAndName & header_column = header_columns[column_i];
+                    const ColumnPtr & column = columns[column_i];
+                    const DataTypePtr & column_type = column_types[column_i];
+
+                    // Generate the unwrapped builder schema (safe for MakeBuilder)
+                    bool is_column_nullable = false;
+                    auto builder_type = getArrowType(
+                        column_type, column, header_column.name, format_name, settings, &is_column_nullable, true /* for_builder */);
+
+                    std::unique_ptr<arrow::ArrayBuilder> array_builder;
+                    arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), builder_type, &array_builder);
+                    checkStatus(status, column->getName(), format_name);
+
+                    std::shared_ptr<arrow::Array> arrow_array = fillArrowArray(
+                        header_column.name,
+                        column,
+                        column_type,
+                        nullptr,
+                        array_builder.get(),
+                        format_name,
+                        offset,
+                        offset + rows,
+                        settings,
+                        dictionary_values);
+
+                    // Zero-copy cast to the extension-rich schema (handles infinite nesting)
+                    auto target_type = schema->field(static_cast<int>(column_i))->type();
+                    if (!arrow_array->type()->Equals(*target_type))
+                        arrow_array = checkResult(arrow_array->View(target_type), column->getName(), format_name);
+
+                    table_data.at(column_i).emplace_back(std::move(arrow_array));
+                }
+
+                offset += rows;
+            } while (offset < num_rows);
         }
 
         std::vector<std::shared_ptr<arrow::ChunkedArray>> columns;
         columns.reserve(columns_num);
+        /// Arrow cannot infer the type of a column with no chunks.
         for (size_t column_i = 0; column_i < columns_num; ++column_i)
-            columns.emplace_back(std::make_shared<arrow::ChunkedArray>(table_data.at(column_i)));
+            columns.emplace_back(std::make_shared<arrow::ChunkedArray>(
+                table_data.at(column_i), schema->field(static_cast<int>(column_i))->type()));
 
         return arrow::Table::Make(schema, columns);
     }

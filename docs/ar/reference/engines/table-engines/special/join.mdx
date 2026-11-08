@@ -14,9 +14,7 @@ doc_type: 'reference'
   في ClickHouse Cloud، إذا كانت خدمتك قد أُنشئت بإصدار أقدم من 25.4، فستحتاج إلى ضبط التوافق على 25.4 على الأقل باستخدام `SET compatibility=25.4`.
 </Note>
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,45 +26,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 راجع الوصف التفصيلي لاستعلام [CREATE TABLE](/ar/reference/statements/create/table).
 
-<div id="engine-parameters">
-  ## معلمات المحرك
-</div>
+## معلمات المحرك {#engine-parameters}
 
-<div id="join_strictness">
-  ### `join_strictness`
-</div>
+### `join_strictness` {#join_strictness}
 
 `join_strictness` – [درجة صرامة JOIN](/ar/reference/statements/select/join#supported-types-of-join).
 
-<div id="join_type">
-  ### `join_type`
-</div>
+### `join_type` {#join_type}
 
 `join_type` – [نوع JOIN](/ar/reference/statements/select/join#supported-types-of-join).
 
-<div id="key-columns">
-  ### الأعمدة المفتاحية
-</div>
+### الأعمدة المفتاحية {#key-columns}
 
 `k1[, k2, ...]` – الأعمدة المفتاحية من عبارة `USING` التي تُجرى بها عملية `JOIN`.
 
 أدخِل المعلَمين `join_strictness` و`join_type` من دون علامات اقتباس، على سبيل المثال: `Join(ANY, LEFT, col1)`. يجب أن يتطابقا مع عملية `JOIN` التي سيُستخدم الجدول فيها. إذا لم تتطابق المعلَمات، فلن يُصدر ClickHouse استثناءً وقد يعيد بيانات غير صحيحة.
 
-<div id="specifics-and-recommendations">
-  ## تفاصيل وتوصيات
-</div>
+## تفاصيل وتوصيات {#specifics-and-recommendations}
 
-<div id="data-storage">
-  ### تخزين البيانات
-</div>
+### تخزين البيانات {#data-storage}
 
 توجد بيانات جدول `Join` دائمًا في RAM. عند إدراج صفوف في جدول، يكتب ClickHouse كتل البيانات إلى الدليل على القرص لكي يمكن استعادتها عند إعادة تشغيل الخادم.
 
 إذا أُعيد تشغيل الخادم بصورة غير سليمة، فقد تُفقد كتلة البيانات الموجودة على القرص أو تتلف. في هذه الحالة، قد تحتاج إلى حذف الملف الذي يحتوي على البيانات التالفة يدويًا.
 
-<div id="selecting-and-inserting-data">
-  ### اختيار البيانات وإدراجها
-</div>
+### اختيار البيانات وإدراجها {#selecting-and-inserting-data}
 
 يمكنك استخدام استعلامات `INSERT` لإضافة البيانات إلى جداول المحرك `Join`. إذا أُنشئ الجدول بدرجة الصرامة `ANY`، فسيتم تجاهل البيانات ذات المفاتيح المكررة. أما مع درجة الصرامة `ALL`، فتُضاف جميع الصفوف.
 
@@ -75,55 +59,37 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * ضع الجدول في الطرف الأيمن ضمن عبارة `JOIN`.
 * استدعِ الدالة [joinGet](/ar/reference/functions/regular-functions/other-functions#joinGet)، التي تتيح لك استخراج البيانات من الجدول بالطريقة نفسها التي تستخرج بها البيانات من القاموس.
 
-<div id="deleting-data">
-  ### حذف البيانات
-</div>
+### حذف البيانات {#deleting-data}
 
 تُنفَّذ استعلامات `ALTER DELETE` الخاصة بجداول المحرك `Join` على شكل [عمليات تعديل](/ar/reference/statements/alter/index#mutations). وتقرأ عملية التعديل `DELETE` البيانات المُصفّاة وتُعيد كتابة البيانات في الذاكرة وعلى القرص.
 
-<div id="join-limitations-and-settings">
-  ### القيود والإعدادات
-</div>
+### القيود والإعدادات {#join-limitations-and-settings}
 
 عند إنشاء جدول، تُطبَّق الإعدادات التالية:
 
-<div id="join_use_nulls">
-  #### `join_use_nulls`
-</div>
+#### `join_use_nulls` {#join_use_nulls}
 
 [join&#95;use&#95;nulls](/ar/reference/settings/session-settings/join#join_use_nulls)
 
-<div id="max_rows_in_join">
-  #### `max_rows_in_join`
-</div>
+#### `max_rows_in_join` {#max_rows_in_join}
 
 [max&#95;rows&#95;in&#95;join](/ar/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-<div id="max_bytes_in_join">
-  #### `max_bytes_in_join`
-</div>
+#### `max_bytes_in_join` {#max_bytes_in_join}
 
 [max&#95;bytes&#95;in&#95;join](/ar/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 
-<div id="join_overflow_mode">
-  #### `join_overflow_mode`
-</div>
+#### `join_overflow_mode` {#join_overflow_mode}
 
 [join&#95;overflow&#95;mode](/ar/reference/settings/session-settings/join#join_overflow_mode)
 
-<div id="join_any_take_last_row">
-  #### `join_any_take_last_row`
-</div>
+#### `join_any_take_last_row` {#join_any_take_last_row}
 
 [join&#95;any&#95;take&#95;last&#95;row](/ar/reference/settings/session-settings/join#join_any_take_last_row)
 
-<div id="join_use_nulls">
-  #### `join_use_nulls`
-</div>
+#### `join_use_nulls` {#join_use_nulls-1}
 
-<div id="persistent">
-  #### الاستمرارية
-</div>
+#### الاستمرارية {#persistent}
 
 تعطّل الاستمرارية لمحركي الجدول Join و[Set](/ar/reference/engines/table-engines/special/set).
 
@@ -138,11 +104,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 لا يمكن استخدام الجداول ذات المحرك `Join` في عمليات `GLOBAL JOIN`.
 
+تُصفّي [سياسة الصفوف](/ar/reference/statements/create/row-policy) المفروضة على جدول ذي محرك `Join` نتائجَ استعلام `SELECT` العادي منه، أما `JOIN` أو `joinGet` فيقرآن جدول التجزئة المُعَدّ مسبقًا كما هو دون أن يتمكّنا من تصفية صفوفه، ولذلك تفشل هذه الاستعلامات بالخطأ `ACCESS_DENIED` ما دامت هناك سياسة مطبّقة على الجدول.
+
 يسمح المحرك `Join` بتحديد الإعداد [join&#95;use&#95;nulls](/ar/reference/settings/session-settings/join#join_use_nulls) في عبارة `CREATE TABLE`. ويجب أن تكون قيمة `join_use_nulls` في استعلام [SELECT](/ar/reference/statements/select/index) هي نفسها.
 
-<div id="example">
-  ## أمثلة الاستخدام
-</div>
+## أمثلة الاستخدام {#example}
 
 إنشاء الجدول في الجانب الأيسر:
 

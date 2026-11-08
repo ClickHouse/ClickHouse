@@ -15,7 +15,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE;
 }
@@ -38,26 +37,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}",
-                getName(),
-                arguments.size());
-
-        FunctionArgumentDescriptors args{
-            {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
-            {"pattern", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
-        };
-
-        if (arguments.size() == 3)
-            args.emplace_back(FunctionArgumentDescriptor{"index", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "Integer"});
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<DataTypeString>();
+        return "(String, const String, [Integer]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -137,7 +119,7 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         /// Default index: `1` when capture groups exist, `0` (whole match) otherwise.
         ssize_t index = index_arg.value_or(capture == 0 ? 0 : 1);
@@ -181,7 +163,7 @@ private:
         res_data.reserve(data.size() / 5);
         res_offsets.reserve(offsets.size());
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
 
         OptimizedRegularExpression::MatchVec matches;
@@ -228,11 +210,11 @@ private:
         ColumnString::Chars padded_str;
         padded_str.insert(str.begin(), str.end());
 
-        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(capture + 1);
-        regexp.match(reinterpret_cast<const char *>(padded_str.data()), padded_str.size(), matches, static_cast<unsigned>(capture + 1));
+        regexp.match(reinterpret_cast<const char *>(padded_str.data()), padded_str.size(), matches, capture + 1);
 
         size_t res_offset = 0;
         for (size_t i = 0; i < rows; ++i)

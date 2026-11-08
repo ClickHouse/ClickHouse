@@ -1,0 +1,29 @@
+-- a stateful function in a subquery, under a join that repeats its rows
+0	l0	0
+0	l0	10
+0	l0	20
+0	l0	30
+0	l0	40
+1	l1	1
+0	l0	0
+0	l0	10
+0	l0	20
+0	l0	30
+0	l0	40
+1	l1	1
+1
+-- the same, with the value in the result only
+0	l0	0
+0	l0	10
+0	l0	20
+0	l0	30
+0	l0	40
+0	l0	0
+0	l0	10
+0	l0	20
+0	l0	30
+0	l0	40
+1
+-- a lambda calling a random function, in a filter and in the result, which agree
+1
+1

@@ -44,7 +44,10 @@ A cluster with `replicas: 3` and `shards: 2` will create 6 ClickHouse pods total
 
 ### Keeper integration {#keeper-integration}
 
-Every ClickHouse cluster must reference a KeeperCluster for coordination:
+Every ClickHouse cluster needs a Keeper ensemble for coordination. Set exactly one of
+`keeperClusterRef` or `externalKeeper`; a cluster that sets both or neither is rejected.
+
+Point `keeperClusterRef` at a KeeperCluster this operator manages:
 
 ```yaml
 spec:
@@ -54,6 +57,63 @@ spec:
 ```
 
 When `keeperClusterRef.namespace` is set, the operator must watch both namespaces. If `WATCH_NAMESPACE` is configured, include the ClickHouse and Keeper namespaces in that list.
+
+### Externally managed Keeper {#external-keeper}
+
+Use `externalKeeper` to run ClickHouse against a Keeper ensemble the operator does not manage —
+one owned by another operator, running in a different Kubernetes cluster, on virtual machines or
+bare metal, or shared between several systems:
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+`port` defaults to `9181`. `host` is a DNS name or an IP address; enclose IPv6 addresses in square
+brackets. Set `tls: Enabled` to connect over TLS, and give `port` the value the ensemble listens on
+for secure connections:
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+ClickHouse verifies the Keeper certificates against the system trust store, plus any `caBundle`
+you configure. See [ClickHouse-Keeper communication over TLS](#clickhouse-keeper-communication-over-tls).
+
+When several ClickHouse clusters share one ensemble, give each its own root znode through
+`settings.extraConfig`, so their replication metadata, SQL-defined users and named collections
+don't collide. Create the znode before ClickHouse starts, and don't change it afterwards:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+Don't put `zookeeper.root` in `settings.extraReloadableConfig`: a reload would switch the root of a
+running cluster and leave its replicated tables read-only. If the root znode has ACLs, they must let
+the cluster's `keeper-identity` create child znodes.
+
+The operator does not change these servers, and it does not wait for them before it reconciles ClickHouse.
+Keeping the ensemble available is up to the user.
+
+Authentication works the same way as for an operator-managed Keeper: the operator reads the
+`keeper-identity` key from the cluster Secret and passes it to ClickHouse. See
+[External Secret](#external-secret) for the Secret layout.
 
 ## KeeperCluster configuration {#keepercluster-configuration}
 
@@ -69,6 +129,31 @@ spec:
       requests:
         storage: 5Gi
 ```
+
+### Leadership handover on termination {#keeper-leadership-handover}
+
+The Keeper container has a default `preStop` hook that asks the replica to hand off Raft
+leadership before it stops, and waits for the handover to complete before letting the
+container terminate. This runs on every graceful stop of the container, not just
+operator-initiated rollouts: a descheduler eviction, a node drain, or an autoscaler
+action all trigger the same hook, since it is a kubelet-level `preStop` handler rather
+than reconcile-loop logic.
+
+Without this, restarting the current leader leaves the ensemble without a leader until a
+new election completes, which can take several seconds under load and shows up to
+ClickHouse as Keeper connection loss and elevated query latency. The hook asks the
+replica to yield leadership (Keeper's `ydld` four-letter-word command, sent over the
+`http_control` port) and then polls the replica's status until it is no longer the
+leader, rather than firing the request and immediately letting the container stop — a
+fire-and-forget request can still lose the race with `SIGTERM` under write load, so
+waiting is what keeps the leaderless window bounded.
+
+The hook needs no configuration and degrades gracefully: on Keeper versions older than
+26.3, which don't yet serve the leadership commands used here, the request is a no-op and
+the container stops as it would without the hook. It runs a shell script, so it requires
+`bash` in the image; if you run a distroless or scratch Keeper image, override or remove
+it via `containerTemplate.lifecycle` — see
+[API Reference](/products/kubernetes-operator/reference/api-reference#containertemplatespec).
 
 ## Storage configuration {#storage-configuration}
 
@@ -322,6 +407,70 @@ It is allowed to specify multiple volume mounts to the same `mountPath`.
 Operator will create projected volume with all specified mounts.
 </Note>
 
+### Health probes {#health-probes}
+
+The operator configures liveness and readiness probes on every ClickHouse and Keeper container.
+No startup probe is set by default.
+
+| Resource            | Probe     | Default check                                                                                   |
+|---------------------|-----------|-------------------------------------------------------------------------------------------------|
+| `ClickHouseCluster` | liveness  | HTTP `GET /ping` on the interserver port `9009`                                                 |
+| `ClickHouseCluster` | readiness | HTTP `GET /ping` on the management HTTP port `9002`                                             |
+| `KeeperCluster`     | liveness  | TCP connect to the client port `2181` (`2281` when both `settings.tls.enabled` and `settings.tls.required` are `true`) |
+| `KeeperCluster`     | readiness | HTTP `GET /ready` on the `http_control` port `9123`                                             |
+
+ClickHouse and Keeper use the same default timing settings:
+
+| Probe     | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+|-----------|-----------------------|-----------------|------------------|--------------------|--------------------|
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse opens the interserver listener before it loads tables and the client listeners after, so the liveness probe tolerates slow table loading, while a passing readiness probe means the replica serves queries.
+
+Override any probe through `spec.containerTemplate` on either resource. For example, customize the ClickHouse liveness probe:
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+A probe you set replaces the operator default entirely — it isn't merged field by field.
+Specify the handler (`httpGet`, `tcpSocket`, or `exec`) and every timing field you care about; omitted fields fall back to the Kubernetes defaults (for example `timeoutSeconds: 1`, `failureThreshold: 3`), not to the operator values above.
+</Warning>
+
+#### Startup probe {#startup-probe}
+
+Use `startupProbe` when a container needs more time to start than the liveness probe allows — with the defaults, about 60 seconds of initial delay plus 10 failed checks 5 seconds apart.
+Kubernetes holds back the liveness and readiness probes until the startup probe succeeds, so a slow start doesn't trigger a restart loop.
+For example, give a Keeper replica that replays a large snapshot up to 10 minutes to start accepting connections:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+After the startup probe succeeds, the regular liveness and readiness probes take over.
+
 ### See [API Reference](/products/kubernetes-operator/reference/api-reference#containertemplatespec) for all supported Container template options.
 
 ## TLS/SSL configuration {#tls-ssl-configuration}
@@ -352,7 +501,8 @@ This format is compatible with cert-manager generated certificates.
 
 ### ClickHouse-Keeper communication over TLS {#clickhouse-keeper-communication-over-tls}
 
-If KeeperCluster has TLS enabled, ClickHouseCluster would use secure connection to Keeper nodes automatically.
+If the KeeperCluster referenced by `keeperClusterRef` has TLS enabled, ClickHouseCluster would use secure connection to Keeper nodes automatically.
+With `externalKeeper`, set `tls: Enabled` instead, and set each node's `port` to the ensemble's secure client port (for example `9281`).
 
 ClickHouseCluster verifies Keeper node certificates against the system trust store, plus any `caBundle` you configure.
 

@@ -15,10 +15,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-}
 
 using namespace GatherUtils;
 
@@ -48,12 +44,15 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.size() == 1)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} should not be 1", getName());
-
-        return std::make_shared<DataTypeString>();
+        /// Accept zero or at least two arguments, but not exactly one: a single argument hits the
+        /// passthrough in `executeImpl` that returns the input column unchanged, which would
+        /// contradict the declared `String` result type (legacy rejected it with
+        /// `TOO_FEW_ARGUMENTS_FOR_FUNCTION`). The `concat` overload resolver routes a single
+        /// argument to `toString` separately, so only the direct `ConcatImpl`
+        /// (`concatAssumeInjective`) relies on this.
+        return "() -> String OR (Any, Any, ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -214,8 +213,10 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// When called with a single argument, concat delegates to toString which is injective.
-        return arguments.size() == 1;
+        /// When called with a single argument, concat delegates to toString, so the claim has to be
+        /// the one toString makes: it depends on the argument type, because rendering a date-time in a
+        /// time zone that has a UTC offset transition maps two distinct instants onto one string.
+        return arguments.size() == 1 && to_string->isInjective(arguments);
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -234,10 +235,10 @@ public:
             return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        /// We always return Strings from concat, even if arguments were fixed strings.
-        return std::make_shared<DataTypeString>();
+        /// We always return String from concat, even if arguments were fixed strings.
+        return "([Any], ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -1,0 +1,2 @@
+two reads in one query finished
+a concurrent reader is not blocked by a slow consumer

@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "SELECT engine, position(create_table_query, 'version = 99
 echo '--- every PromQL entry point rejects it ---'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM prometheusQuery(ts_future_version, 'up', 1000)" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "SELECT * FROM prometheusQueryRange(ts_future_version, 'up', 1000, 2000, 60)" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
-$CLICKHOUSE_CLIENT -q "SELECT * FROM timeSeriesSelector(ts_future_version, 'up', 1000, 2000)" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
+$CLICKHOUSE_CLIENT -q "SELECT * FROM timeSeriesSelector(ts_future_version, 'up', 1000, 2000, 'samples')" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 --dialect=promql --promql_table=ts_future_version -q "up" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 
 echo '--- reads, writes, alters and maintenance are rejected too ---'
@@ -29,6 +29,7 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM ts_future_version" 2>&1 | grep -o "INCOMPAT
 $CLICKHOUSE_CLIENT -q "INSERT INTO ts_future_version (metric_name) SELECT 'up'" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "ALTER TABLE ts_future_version MODIFY SETTING filter_by_min_time_and_max_time = false" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ts_future_version" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
+$CLICKHOUSE_CLIENT -q "SYSTEM CLEAR TIME SERIES CACHES ts_future_version" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE ts_future_version" 2>&1 | grep -o "INCOMPATIBLE_SCHEMA" | head -1
 
 echo '--- the error is instructive ---'

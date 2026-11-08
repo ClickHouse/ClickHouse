@@ -6,8 +6,6 @@
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <base/range.h>
 
 
@@ -93,14 +91,12 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserMoveAccessEntityQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementMoveAccessEntity(StatementFactory & factory)
-{
-    factory.registerStatement("MOVE",
+    documentation["MOVE"] =
     {
         .description = R"DOCS_MD(
 This statement allows to move an access entity from one access storage to another.
@@ -132,7 +128,9 @@ MOVE ROLE test TO memory
 MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY} name1 [, name2, ...] TO access_storage_type
 )",
         .related = {"CREATE USER", "CREATE ROLE", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }
