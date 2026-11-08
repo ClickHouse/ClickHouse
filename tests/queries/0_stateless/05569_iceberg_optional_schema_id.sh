@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: Iceberg is not in fast test
+
+# Iceberg tables whose `schema-id` fields are absent: they are optional for the legacy format version 1 `schema`, the schema
+# in the Avro header of a format version 1 manifest, and every snapshot; `sort-orders` is optional in format version 1.
+# `data_iceberg/impala/iceberg_partitioned` is Apache Impala's `testdata/data/iceberg_test/iceberg_partitioned` at e35eb8f3582,
+# written by Spark 2.4 with Iceberg 0.9, which has all of these traits (Apache License 2.0).
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+TMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+CLUSTER_DIR="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "$TMP_DIR" "$CLUSTER_DIR"
+mkdir -p "$TMP_DIR"
+trap 'rm -rf "$TMP_DIR" "$CLUSTER_DIR"' EXIT
+
+T="$CUR_DIR/data_iceberg/impala/iceberg_partitioned"
+CORPUS="$CUR_DIR/data_lake_corpus/iceberg/py_v2_schema_evolution"
+
+local_query()
+{
+    $CLICKHOUSE_LOCAL --session_timezone UTC --query "$1" < /dev/null
+}
+
+# The legacy table as is, including partition pruning and time travel to its snapshot without `schema-id`.
+echo '--- legacy'
+local_query "DESCRIBE icebergLocal('$T')"
+local_query "SELECT * FROM icebergLocal('$T') ORDER BY id"
+local_query "SELECT count(), countIf(id > 10), countIf(action != 'click') FROM icebergLocal('$T')"
+local_query "SELECT action, count() FROM icebergLocal('$T') WHERE event_time >= '2020-01-01 10:00:00' GROUP BY action ORDER BY action"
+local_query "SELECT count() FROM icebergLocal('$T') SETTINGS iceberg_snapshot_id = 8270633197658268308"
+local_query "SELECT count() FROM icebergLocal('$T') SETTINGS iceberg_timestamp_ms = 1598853488440"
+local_query "
+    CREATE TABLE t_legacy ENGINE = IcebergLocal('$T');
+    SELECT groupUniqArray(schema_id) FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_legacy';
+"
+
+# The legacy `schema` with a non-empty sort order, as written by Iceberg 0.11.
+echo '--- legacy, sorted'
+cp -r "$T" "$TMP_DIR/sorted"
+python3 -c "
+import json, sys
+path = sys.argv[1]
+metadata = json.load(open(path))
+metadata['sort-orders'] = [{'order-id': 1, 'fields': [{'transform': 'identity', 'source-id': 1, 'direction': 'asc', 'null-order': 'nulls-first'}]}]
+metadata['default-sort-order-id'] = 1
+json.dump(metadata, open(path, 'w'))
+" "$TMP_DIR/sorted/metadata/v2.metadata.json"
+local_query "SELECT count(), min(id), max(id) FROM icebergLocal('$TMP_DIR/sorted')"
+# A read loads the Iceberg sort order into the table metadata that `system.tables` shows.
+local_query "
+    CREATE TABLE t_sorted ENGINE = IcebergLocal('$TMP_DIR/sorted');
+    CREATE TABLE t_unsorted ENGINE = IcebergLocal('$T');
+    SELECT count() FROM t_sorted FORMAT Null;
+    SELECT count() FROM t_unsorted FORMAT Null;
+    SELECT name, sorting_key FROM system.tables WHERE database = currentDatabase() AND name IN ('t_sorted', 't_unsorted') ORDER BY name;
+"
+
+# The legacy `schema` renamed `user`, or dropped it and added another `user`, while the manifest keeps the old schema without
+# `schema-id`, which the files are read with, and which `system.iceberg_files` shows as schema 0. The cluster function workers
+# do not read the manifests, and lazy materialization, which reads them, is disabled.
+# `data_iceberg/legacy_v1_orc` is three data files of `iceberg_partitioned` rewritten as ORC, which is read by name.
+echo '--- legacy, evolved'
+for table in "$T" "$CUR_DIR/data_iceberg/legacy_v1_orc"; do
+    for mode in renamed readded; do
+        rm -rf "$TMP_DIR/evolved"
+        cp -r "$table" "$TMP_DIR/evolved"
+        python3 -c "
+import glob, json, sys
+path = max(glob.glob(sys.argv[1] + '/metadata/*.metadata.json'))
+metadata = json.load(open(path))
+fields = metadata['schema']['fields']
+if sys.argv[2] == 'renamed':
+    fields[1]['name'] = 'user_name'
+else:
+    metadata['schema']['fields'] = [field for field in fields if field['name'] != 'user'] + [{'id': 5, 'name': 'user', 'required': False, 'type': 'string'}]
+    metadata['last-column-id'] = 5
+json.dump(metadata, open(path, 'w'))
+" "$TMP_DIR/evolved" "$mode"
+        local_query "SELECT * FROM icebergLocal('$TMP_DIR/evolved') ORDER BY id LIMIT 3"
+        local_query "
+            CREATE TABLE t_evolved ENGINE = IcebergLocal('$TMP_DIR/evolved');
+            SELECT groupUniqArray(schema_id) FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_evolved';
+        "
+        mkdir -p "$CLUSTER_DIR"
+        cp -r "$TMP_DIR/evolved" "$CLUSTER_DIR/$(basename "$table")_$mode"
+        $CLICKHOUSE_CLIENT --query "
+            SELECT * FROM icebergLocalCluster('test_cluster_two_shards_localhost', '$CLUSTER_DIR/$(basename "$table")_$mode') ORDER BY id LIMIT 3
+            SETTINGS query_plan_optimize_lazy_materialization = 0"
+    done
+done
+
+# Format version 2 snapshots whose `schema-id` is absent or null: the data files keep the schema of their manifest, and time travel
+# to the first snapshot returns the current schema.
+for mode in absent null; do
+    echo "--- snapshots, $mode"
+    cp -r "$CORPUS" "$TMP_DIR/$mode"
+    python3 -c "
+import glob, json, sys
+path = max(glob.glob(sys.argv[1] + '/metadata/*.metadata.json'))
+metadata = json.load(open(path))
+for snapshot in metadata['snapshots']:
+    if sys.argv[2] == 'absent':
+        del snapshot['schema-id']
+    else:
+        snapshot['schema-id'] = None
+json.dump(metadata, open(path, 'w'))
+" "$TMP_DIR/$mode" "$mode"
+    local_query "SELECT if((SELECT count(), sum(cityHash64(*)) FROM icebergLocal('$TMP_DIR/$mode')) = (SELECT count(), sum(cityHash64(*)) FROM icebergLocal('$CORPUS')), 'ok', 'MISMATCH')"
+    local_query "SELECT * FROM icebergLocal('$TMP_DIR/$mode') ORDER BY ALL"
+    local_query "DESCRIBE icebergLocal('$TMP_DIR/$mode') SETTINGS iceberg_snapshot_id = 704564496950448094"
+    local_query "SELECT * FROM icebergLocal('$TMP_DIR/$mode') ORDER BY ALL SETTINGS iceberg_snapshot_id = 704564496950448094"
+    local_query "
+        CREATE TABLE t_mode ENGINE = IcebergLocal('$TMP_DIR/$mode');
+        CREATE TABLE t_orig ENGINE = IcebergLocal('$CORPUS');
+        SELECT groupArray(schema_id) FROM (SELECT schema_id FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_mode' ORDER BY ALL);
+        SELECT if((SELECT groupArray(schema_id) FROM (SELECT schema_id FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_mode' ORDER BY ALL))
+            = (SELECT groupArray(schema_id) FROM (SELECT schema_id FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_orig' ORDER BY ALL)), 'ok', 'MISMATCH');
+    "
+done
+
+# `system.iceberg_metadata_log_entries` over snapshots with a null `schema-id`.
+echo '--- metadata log entries, null'
+local_query "
+    CREATE TABLE t_null ENGINE = IcebergLocal('$TMP_DIR/null');
+    SELECT count() > 0, countIf(latest_snapshot_id IS NOT NULL AND latest_schema_id IS NOT NULL)
+    FROM system.iceberg_metadata_log_entries WHERE table = 't_null';
+"

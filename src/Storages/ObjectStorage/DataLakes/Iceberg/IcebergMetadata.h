@@ -260,6 +260,10 @@ private:
     StorageObjectStorageConfigurationPtr getConfiguration() const;
     DataLakeStorageSettings getMetadataLookupSettings() const;
 
+    /// A negative schema id is the one of a manifest schema without `schema-id`, which only a server that has read the manifest knows,
+    /// and a cluster function worker does not read the manifests.
+    void registerManifestSchemaIfUnknown(const ContextPtr & local_context, Int32 schema_id) const;
+
     /// Refuse `operation` while the table root is deeper than the queried path, because anything
     /// scoped to the queried path reaches beyond this table there.
     void checkTableRootIsQueriedPath(std::string_view operation) const;

@@ -563,3 +563,34 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
 }
+
+/// A manifest schema without `schema-id` gets 0 only when metadata.json binds 0 to the same fields; every other schema gets a
+/// negative id derived from its fields, the same in every processor, so a cluster function worker can register it by itself.
+TEST(IcebergSchemaProcessor, ManifestSchemasWithoutIdGetDistinctIds)
+{
+    const std::string current = R"json({"fields":[{"id":1,"name":"new_name","required":false,"type":"int"}]})json";
+    const std::string old = R"json({"fields":[{"id":1,"name":"old_name","required":false,"type":"int"}]})json";
+    const std::string older = R"json({"fields":[{"id":1,"name":"oldest_name","required":false,"type":"int"}]})json";
+
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"new_name","required":false,"type":"int"}]})json"));
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(current)), 0);
+    const Int32 old_id = processor.addIcebergTableSchemaWithoutId(parseSchema(old));
+    const Int32 older_id = processor.addIcebergTableSchemaWithoutId(parseSchema(older));
+    EXPECT_LT(old_id, 0);
+    EXPECT_LT(older_id, 0);
+    EXPECT_NE(old_id, older_id);
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(old)), old_id);
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(0)->front().name, "new_name");
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(old_id)->front().name, "old_name");
+    EXPECT_EQ(processor.getClickHouseTableSchemaById(older_id)->front().name, "oldest_name");
+
+    /// Another processor, which meets the schemas in another order.
+    IcebergSchemaProcessor worker;
+    worker.addIcebergTableSchema(parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"new_name","required":false,"type":"int"}]})json"));
+    EXPECT_EQ(worker.addIcebergTableSchemaWithoutId(parseSchema(older)), older_id);
+    EXPECT_EQ(worker.addIcebergTableSchemaWithoutId(parseSchema(old)), old_id);
+
+    /// A placeholder without fields is not registered.
+    EXPECT_EQ(processor.addIcebergTableSchemaWithoutId(parseSchema(R"json({"fields":[]})json")), 0);
+}

@@ -105,6 +105,9 @@ public:
         Poco::JSON::Object::Ptr schema_ptr,
         SchemaSource source = SchemaSource::Metadata,
         bool tolerate_conflicting_manifest_schemas = false);
+    /// Registers a manifest file schema without `schema-id` and returns the id it is registered under: 0 if metadata.json binds 0
+    /// to the same fields, else a negative id derived from the fields.
+    Int32 addIcebergTableSchemaWithoutId(Poco::JSON::Object::Ptr schema_ptr);
     std::shared_ptr<NamesAndTypesList> getClickHouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
     NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;

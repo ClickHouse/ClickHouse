@@ -421,14 +421,7 @@ Int32 IcebergMetadata::parseTableSchema(const Poco::JSON::Object::Ptr & metadata
             "Iceberg format version {} is not supported, only versions 1, 2 and 3 are supported",
             format_version);
 
-    /// `schema` is deprecated and may be stale (a writer that evolved the schema only via `schemas`), so `schemas` wins when present.
-    if (format_version >= 2 || metadata_object->has(f_schemas))
-    {
-        auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-        schema_processor.addIcebergTableSchema(schema);
-        return current_schema_id;
-    }
-    auto [schema, current_schema_id] = parseTableSchemaV1Method(metadata_object);
+    auto [schema, current_schema_id] = parseCurrentTableSchema(metadata_object);
     schema_processor.addIcebergTableSchema(schema);
     return current_schema_id;
 }
@@ -440,24 +433,30 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
         schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
-    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 j = 0; j < schemas->size(); ++j)
+    if (metadata_object->has(f_schemas))
     {
-        auto schema = schemas->getObject(j);
-        schema_processor->addIcebergTableSchema(schema);
+        auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+        for (UInt32 j = 0; j < schemas->size(); ++j)
+        {
+            auto schema = schemas->getObject(j);
+            schema_processor->addIcebergTableSchema(schema);
+        }
+    }
+    else
+    {
+        schema_processor->addIcebergTableSchema(parseCurrentTableSchema(metadata_object).first);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-        auto current_schema_id = snapshot->getValue<Int32>(f_schema_id);
-        schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, current_schema_id);
-        if (snapshot->getValue<Int64>(f_metadata_snapshot_id) == snapshot_id)
-        {
+        const auto current_snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        /// `schema-id` of a snapshot is optional: the data files then keep the schema of their manifest file.
+        if (snapshot->has(f_schema_id) && !snapshot->isNull(f_schema_id))
+            schema_processor->registerSnapshotWithSchemaId(current_snapshot_id, snapshot->getValue<Int32>(f_schema_id));
+        if (current_snapshot_id == snapshot_id)
             current_snapshot = snapshot;
-        }
     }
     return current_snapshot;
 }
@@ -498,9 +497,10 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
             refresh_cursor = summary_object->getValue<String>(f_refresh_cursor);
     }
 
-    if (!snapshot_object->has(f_schema_id))
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No schema id found for snapshot id `{}`", snapshot_id);
-    Int32 schema_id = snapshot_object->getValue<Int32>(f_schema_id);
+    /// `schema-id` of a snapshot is optional: the snapshot then has the current schema, as in Java.
+    const Int32 schema_id = snapshot_object->has(f_schema_id) && !snapshot_object->isNull(f_schema_id)
+        ? snapshot_object->getValue<Int32>(f_schema_id)
+        : parseCurrentTableSchema(metadata_object).second;
 
 
     return std::make_shared<IcebergDataSnapshot>(
@@ -737,11 +737,24 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     return {data_snapshot, table_state_snapshot};
 }
 
-std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
+void IcebergMetadata::registerManifestSchemaIfUnknown(const ContextPtr & local_context, Int32 schema_id) const
+{
+    if (schema_id >= 0 || persistent_components.schema_processor->hasClickHouseTableSchemaById(schema_id))
+        return;
+    auto [data_snapshot, table_state_snapshot] = getRelevantState(local_context);
+    if (!data_snapshot)
+        return;
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+        getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, table_state_snapshot.schema_id);
+}
+
+std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
+    registerManifestSchemaIfUnknown(local_context, iceberg_object_info->info.underlying_format_read_schema_id);
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
             || (!iceberg_object_info->info.equality_deletes_objects.empty()))
@@ -749,11 +762,12 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
         : nullptr;
 }
 
-std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr, ObjectInfoPtr object_info) const
+std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
+    registerManifestSchemaIfUnknown(local_context, iceberg_object_info->info.underlying_format_read_schema_id);
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator)
         ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
               iceberg_object_info->info.underlying_format_read_schema_id, iceberg_object_info->info.schema_id_relevant_to_iterator)
@@ -1405,7 +1419,7 @@ IcebergMetadata::IcebergMetadataLogEntries IcebergMetadata::getMetadataLogEntrie
             return;
 
         const auto & snapshot = snapshot_it->second;
-        if (snapshot->has(f_schema_id))
+        if (snapshot->has(f_schema_id) && !snapshot->isNull(f_schema_id))
             record.latest_schema_id = snapshot->getValue<Int32>(f_schema_id);
         if (snapshot->has(f_metadata_sequence_number))
             record.latest_sequence_number = snapshot->getValue<Int64>(f_metadata_sequence_number);
@@ -1477,7 +1491,8 @@ IcebergFileRecord buildIcebergFileRecord(
     record.record_count = parsed.record_count;
     record.file_size_in_bytes = parsed.file_size_in_bytes;
     record.partition = formatPartitionKeyValue(processed->normalized_partition_key_value);
-    record.schema_id = processed->resolved_schema_id;
+    /// A negative id is an internal one of a manifest schema without `schema-id`, which is 0 by default.
+    record.schema_id = std::max(processed->resolved_schema_id, 0);
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
     record.first_row_id = processed->first_row_id;
@@ -2264,7 +2279,10 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_compression_method,
         persistent_components.table_uuid);
 
-    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    if (!metadata_object->has(f_sort_orders) && metadata_object->getValue<Int32>(f_format_version) == 1)
+        return {};
+
+    auto [schema, current_schema_id] = parseCurrentTableSchema(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
