@@ -1528,6 +1528,25 @@ static bool parseNumber(char * buffer, size_t size, bool negative, int base, Fie
     return false;
 }
 
+/// strtod does not read binary, so a binary literal that does not fit 64 bits is converted to hexadecimal.
+static String binaryToHexadecimal(const char * digits, size_t size)
+{
+    String hex = "0x";
+    size_t nibble = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (digits[i] != '0' && digits[i] != '1')
+            return {};
+        nibble = nibble * 2 + (digits[i] == '1');
+        if ((size - i) % 4 == 1)
+        {
+            hex += "0123456789abcdef"[nibble];
+            nibble = 0;
+        }
+    }
+    return hex;
+}
+
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos literal_begin = pos;
@@ -1641,7 +1660,10 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
                 return true;
             }
-            return false;
+            String hex = binaryToHexadecimal(start_pos, size);
+            if (hex.empty())
+                return false;
+            return try_read_float(hex.data(), hex.data() + hex.size());
         }
 
         /// hexadecimal
