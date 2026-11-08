@@ -600,7 +600,7 @@ struct StatisticsAggregate
 
     Kind kind;
 
-    /// Physical column the aggregate is computed over (empty for count).
+    /// Physical column the aggregate is computed over (empty for `count()`).
     String column_name = {};
 
     /// The Field type the statistics values must have to be exact. Legacy statistics stored
@@ -740,9 +740,10 @@ static std::vector<StatisticsAggregate> getStatisticsAggregates(
 
         /// Like the trivial count optimization, answer `count(column)` of a column that cannot be `NULL` with the number
         /// of rows (`count(expr)` was declined above, because its argument has to be evaluated, and that can throw).
+        /// The column is kept to check that a part stores it: otherwise a read evaluates its `DEFAULT`, which can throw.
         if (kind == StatisticsAggregate::Kind::Count)
         {
-            result.push_back({.kind = kind, .aggregate = &aggregate});
+            result.push_back({.kind = kind, .column_name = node->result_name, .aggregate = &aggregate});
             continue;
         }
 
@@ -1095,22 +1096,26 @@ static Block makeBlockFromStatistics(
         for (size_t i = 0; i < stats_aggregates.size(); ++i)
         {
             const auto & stats_aggregate = stats_aggregates[i];
-            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
+            if (stats_aggregate.column_name.empty())
                 continue;
-
-            auto it = estimates.find(stats_aggregate.column_name);
-            if (it == estimates.end())
-                return false;
 
             /// The statistics describe the values as they are stored in the part. When the part stores
             /// the column with a different type, a read converts the values to the current type, even
             /// without a pending mutation in the snapshot (e.g. with `apply_mutations_on_fly = 0` or
             /// after `KILL MUTATION`). A conversion that keeps the representation (e.g. an extended
-            /// `Enum`) leaves the values, and so the statistics, valid.
+            /// `Enum`) leaves the values, and so the statistics, valid. A part without the column
+            /// (added after the part was written) is read, so that its `DEFAULT` is evaluated.
             auto part_column = part->tryGetColumn(stats_aggregate.column_name);
             const auto * metadata_column = metadata->getColumns().tryGet(stats_aggregate.column_name);
             if (!part_column || !metadata_column
                 || !isRepresentationPreservingConversion(part_column->type.get(), metadata_column->type.get()))
+                return false;
+
+            if (stats_aggregate.kind == StatisticsAggregate::Kind::Count)
+                continue;
+
+            auto it = estimates.find(stats_aggregate.column_name);
+            if (it == estimates.end())
                 return false;
 
             const auto & estimate = it->second;
