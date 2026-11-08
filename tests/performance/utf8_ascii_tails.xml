@@ -31,4 +31,8 @@
         SELECT sum(length(toValidUTF8(materialize(repeat('€', 21))))) AS total
         FROM numbers(1000000) FORMAT Null
     </query>
+    <query>
+        SELECT sum(length(toValidUTF8(materialize('\xFF')))) AS total
+        FROM numbers(1000000) FORMAT Null
+    </query>
 </test>
