@@ -162,8 +162,11 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     array_join_step->updateInputHeader(sort_node->step->getOutputHeader());
     parent_node->children[0] = first_node_below_sort;
 
-    /// depth to optimize again: `ArrayJoin -> Sorting -> [Filter]` and one `Expression` above
-    return 4;
+    /// optimize again down to the node below the moved sort, so the emptiness filter merges before `tryOptimizeTopK`
+    size_t depth = 1;
+    for (const auto * node = parent_node; node != array_join_input_node; node = node->children.front())
+        ++depth;
+    return depth;
 }
 
 }
