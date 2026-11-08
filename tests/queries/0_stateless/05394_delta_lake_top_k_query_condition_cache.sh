@@ -21,8 +21,9 @@ DELTA_SETTINGS="--allow_experimental_delta_kernel_rs 1 --allow_delta_lake_writes
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05394"
 # shellcheck disable=SC2086
-${CLICKHOUSE_CLIENT} ${DELTA_SETTINGS} --output_format_parquet_row_group_size 1000 --query "
-    CREATE TABLE t_05394 (k Int64, s String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet)"
+${CLICKHOUSE_CLIENT} ${DELTA_SETTINGS} --query "
+    CREATE TABLE t_05394 (k Int64, s String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet)
+    SETTINGS output_format_parquet_row_group_size = 1000"
 
 # Each data file keeps its largest values in its first row group, so all other row groups hold no row of
 # the result of `ORDER BY k DESC LIMIT 3`.

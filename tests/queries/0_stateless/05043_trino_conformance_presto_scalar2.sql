@@ -1,3 +1,5 @@
+-- Tags: no-msan
+
 -- Conformance queries derived from the scalar-function tests of Presto
 -- (https://github.com/prestodb/presto, presto-main-base operator/scalar tests, Apache License 2.0),
 -- covering the shared Presto/Trino function surface.

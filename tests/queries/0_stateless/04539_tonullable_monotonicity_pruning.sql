@@ -5,7 +5,6 @@
 -- The assertions compare the "Granules: selected/total" line for toNullable(k) against the
 -- bare key, so they are stable under randomized index_granularity / merge-tree settings.
 
-SET enable_analyzer = 1;
 -- The assertions are about local KeyCondition granule pruning; parallel replicas would route the
 -- read through a cluster and change the plan shape (and needs a cluster this single-node run lacks).
 SET enable_parallel_replicas = 0;

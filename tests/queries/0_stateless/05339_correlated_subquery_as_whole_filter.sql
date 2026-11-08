@@ -1,8 +1,6 @@
 -- A correlated scalar subquery used as the whole filter is validated in its own scope, and the outer columns it uses are read.
 -- https://github.com/ClickHouse/ClickHouse/issues/124499
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_corr_whole_filter;
 CREATE TABLE t_corr_whole_filter (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_corr_whole_filter SELECT number % 3, number FROM numbers(6);

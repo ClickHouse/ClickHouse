@@ -1653,4 +1653,22 @@ bool prewhereSupportedColumnsContain(
     return column && column->isSubcolumn() && supported_columns.contains(column->getNameInStorage());
 }
 
+bool canPushDownRowPolicyFilter(const IStorage & storage, const ColumnsDescription & columns, const Names & required_columns)
+{
+    if (!storage.supportsPrewhere() || storage.isRemote())
+        return false;
+
+    if (const auto supported_prewhere_columns = storage.supportedPrewhereColumns())
+    {
+        const bool include_subcolumns = storage.supportedPrewhereColumnsIncludeSubcolumns();
+        for (const auto & column_name : required_columns)
+        {
+            if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, columns, column_name))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 }

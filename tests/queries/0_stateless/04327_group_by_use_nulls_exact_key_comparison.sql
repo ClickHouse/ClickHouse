@@ -2,7 +2,6 @@
 -- when group_by_use_nulls = 1. Previously the comparison ignored types, so constants
 -- with equal values but different types or source expressions could be conflated.
 
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
 
 -- A GROUP BY key that contains other keys as subexpressions.
