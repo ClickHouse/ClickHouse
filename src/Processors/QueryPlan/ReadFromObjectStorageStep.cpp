@@ -44,6 +44,8 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
 
 namespace DataLakeStorageSetting
@@ -300,6 +302,11 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
     /// yields different sets of files from query to query.
     if ((*configuration->getDataLakeSettings())[DataLakeStorageSetting::paimon_incremental_read])
+        return {};
+
+    /// The change data feed of a Delta Lake table reads the data files of a range of versions, not of the
+    /// pinned snapshot, so the snapshot does not identify them.
+    if (settings[Setting::delta_lake_snapshot_start_version] != -1 || settings[Setting::delta_lake_snapshot_end_version] != -1)
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the

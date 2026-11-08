@@ -177,8 +177,8 @@ static std::optional<DeltaLake::TableChangesVersionRange> getChangeDataFeedVersi
         return std::nullopt;
 
     auto version_range = DeltaLake::TableChanges::getVersionRange(start_version, settings[Setting::delta_lake_snapshot_end_version].value);
-    if (!version_range.second.has_value() && snapshot_version.has_value())
-        version_range.second = *snapshot_version;
+    if (!version_range.second.has_value())
+        version_range.second = snapshot_version;
     return version_range;
 }
 
@@ -363,7 +363,8 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     /// which are read like the data files of a snapshot. The column mapping is that of the last version of the range.
     if (auto version_range = getChangeDataFeedVersionRange(context->getSettingsRef(), snapshot_version))
     {
-        const auto & physical_names_map = getTableSnapshot(version_range->second)->getPhysicalNamesMap();
+        /// A copy: the snapshot can be evicted from the cache of snapshots while the files are listed.
+        const auto physical_names_map = getTableSnapshot(version_range->second)->getPhysicalNamesMap();
         return getTableChanges(*version_range)->iterate(filter_dag, physical_names_map, callback, context);
     }
 

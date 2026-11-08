@@ -34,5 +34,15 @@ update_preimage	20	1
 2023-12-29	4
 --- virtual columns
 1	0
+--- a subcolumn
+1	insert
+1	insert
+1	insert
+1	insert
+1	insert
 --- the number of threads
 1
+--- TopN query condition cache
+10
+10
+4

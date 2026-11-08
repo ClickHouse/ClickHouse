@@ -79,6 +79,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/MergeTree/MarkRange.h>
@@ -274,6 +275,51 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         return false;
     const auto & metadata = *object_info.data_lake_metadata;
     return (metadata.excluded_rows && metadata.excluded_rows->size() > 0) || metadata.selected_rows;
+}
+
+/// The schema transform of a data lake object outputs whole columns, but the query can request subcolumns
+/// (e.g. `struct_col.field`), which the format reader reads by themselves. Passes such a subcolumn through
+/// if its column is an input of the transform, or extracts it from the column that the transform makes.
+static void addRequestedSubcolumns(ActionsDAG & dag, const NamesAndTypesList & requested_columns, const ContextPtr & context)
+{
+    for (const auto & column : requested_columns)
+    {
+        if (dag.tryFindInOutputs(column.name))
+            continue;
+
+        /// A subcolumn can come as an ordinary column named by its full name, so find the output with the longest name
+        /// that is a prefix of the column name and has such a subcolumn.
+        const ActionsDAG::Node * storage_column = nullptr;
+        String subcolumn_name;
+        for (const auto * output : dag.getOutputs())
+        {
+            const auto & output_name = output->result_name;
+            if (column.name.size() <= output_name.size() + 1 || !column.name.starts_with(output_name)
+                || column.name[output_name.size()] != '.')
+                continue;
+            if (storage_column && storage_column->result_name.size() >= output_name.size())
+                continue;
+            auto candidate_subcolumn_name = column.name.substr(output_name.size() + 1);
+            if (!output->result_type->tryGetSubcolumnType(candidate_subcolumn_name))
+                continue;
+            storage_column = output;
+            subcolumn_name = std::move(candidate_subcolumn_name);
+        }
+        if (!storage_column)
+            continue;
+
+        if (storage_column->type == ActionsDAG::ActionType::INPUT)
+        {
+            dag.getOutputs().push_back(&dag.addInput(column.name, column.type));
+        }
+        else
+        {
+            auto string_type = std::make_shared<DataTypeString>();
+            const auto & subcolumn_name_node = dag.addColumn(string_type->createColumnConst(1, subcolumn_name), string_type, subcolumn_name);
+            dag.getOutputs().push_back(&dag.addFunction(
+                FunctionFactory::instance().get("getSubcolumn", context), {storage_column, &subcolumn_name_node}, column.name));
+        }
+    }
 }
 
 static bool readsIdentityPartitionColumn(
@@ -2037,6 +2083,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_required_names(stripped_row_level_filter->actions);
             if (stripped_prewhere_info)
                 add_filter_required_names(stripped_prewhere_info->prewhere_actions);
+            addRequestedSubcolumns(*schema_transform, read_from_format_info.requested_columns, context_);
             schema_transform->removeUnusedActions(needed_names);
         }
         if (!schema_transform)
