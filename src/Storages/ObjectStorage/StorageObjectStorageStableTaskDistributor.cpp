@@ -45,6 +45,7 @@ StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistrib
     , remaining_bytes(ids_of_nodes_.size(), 0)
     , ids_of_nodes(std::move(ids_of_nodes_))
     , replica_seen(ids_of_nodes.size(), false)
+    , replica_finished(ids_of_nodes.size(), false)
     , iterator_exhausted(false)
 {
 }
@@ -216,23 +217,74 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     if (!stealing_allowed_since)
         stealing_allowed_since = std::chrono::steady_clock::now() + wait_for_owner;
 
+    /// Every file is assigned to a replica by rendezvous hashing, so that the same file is read by the same replica
+    /// in every query, and is read from its cache. Taking a file of another replica breaks this, so it is done only
+    /// when needed. A replica that has asked for tasks keeps asking until it receives an empty task, so its files
+    /// will be processed anyway. If they were given to any replica that asks, they would go to random replicas,
+    /// depending on the timing of the requests, and the caches would be different in every query. That's why the
+    /// files of such a replica are taken only to balance the work, when it has much more of it left than the others.
+    /// If such a replica fails in the middle of the query, the result is incomplete anyway, because the files
+    /// that it was reading are lost.
+    ///
+    /// Note that the requests are served synchronously by the threads of the initiator, so waiting here for
+    /// a replica that has already asked for tasks could block the threads that serve the requests of this replica.
+    ///
     /// The loop exits in one of two ways:
-    /// - returns a file of the replica with the most remaining bytes among the replicas whose files can be taken:
-    ///   the current replica, replicas that have already asked for tasks, or any replica once `wait_for_owner` has passed;
-    /// - returns nothing when no unprocessed files are left.
-    /// Otherwise it waits until a new replica asks for tasks or until `wait_for_owner` passes, and then checks again.
+    /// - returns a file: of the current replica if it has any; otherwise of the replica with the most remaining bytes
+    ///   among the replicas whose files can be taken:
+    ///   - replicas that have received an empty task and will not ask again (their files could have been queued
+    ///     by other threads that took them from the iterator before it was exhausted);
+    ///   - replicas that haven't asked for tasks yet, once `wait_for_owner` has passed;
+    ///   - replicas that have asked for tasks and have more than twice the average remaining bytes of the other replicas;
+    /// - returns nothing when no unprocessed files are left, or when the files that are left will be processed
+    ///   by their replicas.
+    /// Otherwise, when there are files of replicas that haven't asked for tasks yet, it waits until a new replica
+    /// asks for tasks or until `wait_for_owner` passes, and then checks again.
     while (!unprocessed_files.empty())
     {
+        if (auto next_file = takeQueuedFile(number_of_current_replica))
+        {
+            LOG_TRACE(
+                log,
+                "Iterator exhausted. Assigning unprocessed file {} to its replica {}",
+                getSchedulingIdentifier(next_file, send_over_whole_archive),
+                number_of_current_replica);
+
+            return next_file;
+        }
+
         const bool deadline_passed = std::chrono::steady_clock::now() >= *stealing_allowed_since;
 
+        UInt128 total_remaining_bytes = 0;
+        for (size_t bytes : remaining_bytes)
+            total_remaining_bytes += bytes;
+
         std::optional<size_t> owner;
+        bool should_wait = false;
         for (size_t replica = 0; replica < remaining_bytes.size(); ++replica)
         {
             if (!remaining_bytes[replica])
                 continue;
-            if (!deadline_passed && replica != number_of_current_replica && !replica_seen[replica])
-                continue;
-            if (!owner || remaining_bytes[replica] > remaining_bytes[*owner])
+
+            bool can_take = false;
+            if (replica_finished[replica])
+            {
+                can_take = true;
+            }
+            else if (!replica_seen[replica])
+            {
+                can_take = deadline_passed;
+                should_wait = should_wait || !deadline_passed;
+            }
+            else
+            {
+                /// More than twice the average of the other replicas. There are at least two replicas here,
+                /// because the current replica doesn't have queued files.
+                UInt128 bytes = remaining_bytes[replica];
+                can_take = bytes * (remaining_bytes.size() - 1) > (total_remaining_bytes - bytes) * 2;
+            }
+
+            if (can_take && (!owner || remaining_bytes[replica] > remaining_bytes[*owner]))
                 owner = replica;
         }
 
@@ -252,9 +304,14 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
             return next_file;
         }
 
+        if (!should_wait)
+            break;
+
         replica_seen_cv.wait_until(lock, *stealing_allowed_since);
     }
 
+    LOG_TRACE(log, "No more tasks for replica {}", number_of_current_replica);
+    replica_finished[number_of_current_replica] = true;
     return {};
 }
 
