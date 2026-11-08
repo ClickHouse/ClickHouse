@@ -727,16 +727,6 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         case avro::AVRO_NULL:
             if (target.isNullable())
             {
-                auto nested_type = removeNullable(target_type);
-                if (nested_type->getTypeId() == TypeIndex::Nothing)
-                {
-                    return [](IColumn &, avro::Decoder & decoder)
-                    {
-                        decoder.decodeNull();
-                        return true;
-                    };
-                }
-
                 return [](IColumn & column, avro::Decoder & decoder)
                 {
                     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
