@@ -34,6 +34,7 @@
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -564,6 +566,27 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
 }
 
+static void throwIfUnnestColumnHidden(const String & argument_name, IdentifierResolveScope & scope)
+{
+    const auto * query_scope = scope.getNearestQueryScope();
+    if (!query_scope || !query_scope->resolving_join_on_expression)
+        return;
+
+    const auto * array_join_node = query_scope->resolving_join_on_expression->as<ArrayJoinNode>();
+    if (!array_join_node || !array_join_node->isUnnest()
+        || !query_scope->table_expressions_in_resolve_process.contains(query_scope->resolving_join_on_expression))
+        return;
+
+    for (const auto & node : array_join_node->getJoinExpressions().getNodes())
+    {
+        if (node->getAlias() == argument_name)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "{} in an alias is ambiguous in the arguments or the ON condition of unnest(...) AS {}: it names a column of unnest and a column of a preceding table, write the expression in the ON condition itself",
+                backQuote(argument_name),
+                array_join_node->getUnnestAlias());
+    }
+}
+
 /** Resolve identifier from expression arguments.
   *
   * Expression arguments can be initialized during lambda analysis or they could be provided externally.
@@ -597,7 +620,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
     /// The argument is invisible while an expression written outside of this lambda is resolved through it.
     if (scope.hidden_expression_arguments.contains(it->first))
+    {
+        throwIfUnnestColumnHidden(it->first, scope);
         return {};
+    }
 
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
