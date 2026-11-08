@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Common/DequeWithMemoryTracking.h>
+#include <Common/DevectorWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 
-#include <deque>
 #include <cstdint>
 
 namespace DB
@@ -57,7 +56,7 @@ public:
     int64_t rowsBetween(RowNumber start, RowNumber end) const;
 
 private:
-    DequeWithMemoryTracking<SlidingBlock> blocks;
+    DevectorWithMemoryTracking<SlidingBlock> blocks;
     int64_t first_block_number = 0;
     int64_t next_block_number = 0;
     int64_t end_position = 0;
