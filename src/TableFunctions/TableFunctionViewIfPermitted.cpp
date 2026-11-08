@@ -100,6 +100,10 @@ void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, C
 
 ColumnsDescription TableFunctionViewIfPermitted::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
+    /// Both `DESCRIBE` and `SELECT` resolve the structure of the `ELSE` function here, which may access its
+    /// source (e.g. schema inference fetches a URL), so it owes the same `CREATE TEMPORARY TABLE` check as running it.
+    /// The `ELSE` function is executed separately, where its own execution-mode checks run.
+    else_table_function->checkCreateTemporaryTableAccess(context, /*is_insert_query=*/ false);
     return else_table_function->getActualTableStructure(context, is_insert_query);
 }
 
