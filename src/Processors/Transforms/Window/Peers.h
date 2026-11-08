@@ -23,6 +23,7 @@ public:
 
     const RowPoint & current() const;
     const PeersBounds & bounds() const;
+    int64_t currentGroupIndex(const SlidingBlocks & blocks) const;
 
 private:
     RowPoint current_row;

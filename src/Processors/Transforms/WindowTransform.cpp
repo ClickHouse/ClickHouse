@@ -180,7 +180,7 @@ void WindowTransform::recordCurrentRowBounds()
     {
         bounds.peers_start.push_back(peers.bounds().start.row_index_in_partition);
         bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
-        bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
+        bounds.peer_group_index.push_back(peers.currentGroupIndex(blocks));
     }
     if (params.required.partition)
     {

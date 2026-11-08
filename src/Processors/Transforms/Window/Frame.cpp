@@ -22,6 +22,11 @@ int64_t signedOffset(const Field & offset, bool preceding)
     return value;
 }
 
+int64_t peerGroupAt(const SlidingBlocks & blocks, RowNumber row)
+{
+    return blocks.blockAt(row.block).index.peer_group_indexes[row.row];
+}
+
 bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
 {
     if (!partition.fully_visible)
@@ -47,9 +52,6 @@ bool advanceToRow(const SlidingBlocks & blocks, const PartitionBounds & partitio
 /// The first row of the peer group, found block by block in the stored peer group indexes; the partition end when the group is past the last one.
 bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & partition, int64_t group, RowPoint & bound)
 {
-    if (bound.peer_group_index_in_partition >= group)
-        return true;
-
     const RowNumber partition_end = partition.end.location;
     while (bound.location != partition_end)
     {
@@ -64,7 +66,6 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & pa
         if (row < rows_end)
         {
             bound.location.row = row;
-            bound.peer_group_index_in_partition = groups[row];
             return true;
         }
         bound.location = blocks.move(bound.location, row - bound.location.row);
@@ -93,7 +94,6 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
         if (row < rows_end)
         {
             bound.location.row = row;
-            bound.peer_group_index_in_partition = block.index.peer_group_indexes[row];
             return true;
         }
         bound.location = blocks.move(bound.location, row - bound.location.row);
@@ -117,7 +117,7 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
                     return true;
                 case WindowFrame::FrameType::RANGE:
                 case WindowFrame::FrameType::GROUPS:
-                    if (start.peer_group_index_in_partition != current.peer_group_index_in_partition)
+                    if (peerGroupAt(blocks, start.location) != peerGroupAt(blocks, current.location))
                         start = current;
                     return true;
             }
@@ -129,7 +129,7 @@ bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks
                 case WindowFrame::FrameType::RANGE:
                     return advanceToRangeBound(params, blocks, partition, current, frame.begin_offset, frame.begin_preceding, false, start);
                 case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, current.peer_group_index_in_partition + signedOffset(frame.begin_offset, frame.begin_preceding), start);
+                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + signedOffset(frame.begin_offset, frame.begin_preceding), start);
             }
     }
     UNREACHABLE();
@@ -149,7 +149,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
                     return advanceToRow(blocks, partition, current.row_index_in_partition + 1, end);
                 case WindowFrame::FrameType::RANGE:
                 case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, current.peer_group_index_in_partition + 1, end);
+                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + 1, end);
             }
         case WindowFrame::BoundaryType::Offset:
             switch (frame.type)
@@ -159,7 +159,7 @@ bool advanceFrameEnd(const WindowTransformParams & params, const SlidingBlocks &
                 case WindowFrame::FrameType::RANGE:
                     return advanceToRangeBound(params, blocks, partition, current, frame.end_offset, frame.end_preceding, true, end);
                 case WindowFrame::FrameType::GROUPS:
-                    return advanceToPeerGroup(blocks, partition, current.peer_group_index_in_partition + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
+                    return advanceToPeerGroup(blocks, partition, peerGroupAt(blocks, current.location) + signedOffset(frame.end_offset, frame.end_preceding) + 1, end);
             }
     }
     UNREACHABLE();
