@@ -812,15 +812,32 @@ bool tableExpressionDataCanReadIdentifier(
 
 }
 
-/// Returns true if a visible expression argument of `scope` (a lambda argument) can provide the identifier of
-/// `identifier_lookup`, matched the same way `tryResolveIdentifierFromExpressionArguments` binds it,
-/// see `readingIsUsableForLookup`.
-static bool expressionArgumentCanReadIdentifier(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+namespace
+{
+
+/// How a visible expression argument of a scope (a lambda argument) binds the identifier of a lookup.
+enum class ExpressionArgumentReading : uint8_t
+{
+    /// No visible argument binds the identifier: the lookup continues in the enclosing scopes.
+    ABSENT,
+    /// An argument binds the identifier and provides it, see `readingIsUsableForLookup`.
+    READABLE,
+    /// An argument binds the first part of the identifier but cannot provide the rest. The lookup stops there
+    /// with `UNKNOWN_IDENTIFIER`, as `tryResolveIdentifierFromCompoundExpression` throws, so the enclosing scopes
+    /// are not searched and cannot give the identifier a reading.
+    BLOCKS,
+};
+
+}
+
+/// Returns how a visible expression argument of `scope` binds the identifier of `identifier_lookup`, matched the
+/// same way `tryResolveIdentifierFromExpressionArguments` binds it.
+static ExpressionArgumentReading expressionArgumentReadingOfIdentifier(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     const auto & identifier = identifier_lookup.identifier;
 
     if (scope.expression_argument_name_to_node.empty())
-        return false;
+        return ExpressionArgumentReading::ABSENT;
 
     auto it = scope.expression_argument_name_to_node.find(identifier.getFullName());
     bool full_identifier = it != scope.expression_argument_name_to_node.end();
@@ -828,14 +845,14 @@ static bool expressionArgumentCanReadIdentifier(const IdentifierLookup & identif
     {
         it = scope.expression_argument_name_to_node.find(identifier.front());
         if (it == scope.expression_argument_name_to_node.end())
-            return false;
+            return ExpressionArgumentReading::ABSENT;
     }
 
     if (scope.hidden_expression_arguments.contains(it->first))
-        return false;
+        return ExpressionArgumentReading::ABSENT;
 
     if (!isExpressionNodeType(it->second->getNodeType()))
-        return false;
+        return ExpressionArgumentReading::ABSENT;
 
     DataTypePtr type = it->second->getResultType();
     if (!full_identifier && identifier.isCompound())
@@ -843,9 +860,14 @@ static bool expressionArgumentCanReadIdentifier(const IdentifierLookup & identif
         IdentifierView rest(identifier);
         rest.popFirst();
         type = type->tryGetSubcolumnType(rest.getFullName());
+
+        /// An expression lookup binds the argument by its first part and throws when the rest is not a subcolumn
+        /// of it, instead of searching the enclosing scopes.
+        if (!type && identifier_lookup.isExpressionLookup())
+            return ExpressionArgumentReading::BLOCKS;
     }
 
-    return readingIsUsableForLookup(type, identifier_lookup);
+    return readingIsUsableForLookup(type, identifier_lookup) ? ExpressionArgumentReading::READABLE : ExpressionArgumentReading::ABSENT;
 }
 
 /// Returns true if `target` is `root` itself or is nested below `root` in a join tree.
@@ -1038,9 +1060,20 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
           * `tryResolveIdentifierFromExpressionArguments`: the full name or the first part names a visible argument,
           * and the rest of the identifier is a subcolumn of it. Arguments are resolved before the lambda body, so
           * their type is known. They are visible regardless of `enable_global_with_statement`.
+          *
+          * An argument that binds the first part of the identifier but has no subcolumn for the rest stops the
+          * parent lookup with `UNKNOWN_IDENTIFIER`, so the scopes farther out are not searched and give the
+          * identifier no reading: the name stays visible to the qualifier.
           */
-        if (expressionArgumentCanReadIdentifier(identifier_lookup, *outer_scope))
-            return true;
+        switch (expressionArgumentReadingOfIdentifier(identifier_lookup, *outer_scope))
+        {
+            case ExpressionArgumentReading::READABLE:
+                return true;
+            case ExpressionArgumentReading::BLOCKS:
+                return false;
+            case ExpressionArgumentReading::ABSENT:
+                break;
+        }
 
         /** The join tree of this query is still being resolved, so we are inside one of its table
           * expressions and cannot read a column of the others. Its name set is also only half filled at

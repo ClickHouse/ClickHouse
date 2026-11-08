@@ -20,6 +20,12 @@ SELECT 'lambda argument without the element';
 WITH t -> (SELECT count() FROM t AS c WHERE t.val > 15) AS f SELECT f(CAST(tuple(10), 'Tuple(other UInt64)'));
 WITH t -> (SELECT count() FROM t AS c WHERE t.val > 15) AS f SELECT f(1);
 
+SELECT 'lambda argument without the element shadows an outer table';
+-- The argument binds `t` and stops the lookup of `t.val` before it reaches the outer `FROM t`, so that table
+-- gives `t.val` no reading and the inner `t AS c` keeps the name.
+WITH t -> (SELECT count() FROM t AS c WHERE t.val > 15) AS f SELECT f(1) FROM t;
+WITH t -> (SELECT count() FROM t AS c WHERE t.val > 15) AS f SELECT f(CAST(tuple(10), 'Tuple(other UInt64)')) FROM t;
+
 SELECT 'disabled';
 WITH t -> (SELECT count() FROM t AS c WHERE c.val > t.val) AS f SELECT f(CAST(tuple(10), 'Tuple(val UInt64)')) SETTINGS analyzer_alias_hides_table_name = 0;
 
