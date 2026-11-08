@@ -10,6 +10,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
@@ -129,6 +130,29 @@ static size_t memoryLimitOfCurrentThread()
             limit = size_t(hard_limit);
     }
     return limit;
+}
+
+/// The size of a column, bounded from above, with the values of each `LowCardinality` column in it expanded over all
+/// its rows, as e.g. a conversion to a type without `LowCardinality` takes them. `IColumn::byteSize` counts only the
+/// dictionary and the indexes, which may be much smaller.
+static size_t maxByteSizeWithExpandedLowCardinality(const IColumn & column)
+{
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        const IColumn & dictionary = *low_cardinality->getDictionary().getNestedNotNullableColumn();
+        size_t max_value_bytes = 0;
+        for (size_t i = 0; i < dictionary.size(); ++i)
+            max_value_bytes = std::max(max_value_bytes, dictionary.byteSizeAt(i));
+        /// The column itself, and each row expanded, with a byte of a null map.
+        return low_cardinality->byteSize() + low_cardinality->size() * (max_value_bytes + 1);
+    }
+    /// The subcolumns are counted with their values expanded, which is never less than their size.
+    size_t res = column.byteSize();
+    column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn)
+    {
+        res += maxByteSizeWithExpandedLowCardinality(*subcolumn) - subcolumn->byteSize();
+    });
+    return res;
 }
 
 template <typename E>
@@ -3214,12 +3238,13 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 continue;
             count_assembled_column(*output_idx, chunk_rows, chunk_bytes, size_unknown);
         }
-        /// A cached column is counted by its largest chunk.
+        /// A cached column is counted by its largest chunk, with the values of `LowCardinality` expanded: the cached
+        /// chunk is compact, but the query may convert it whole, e.g. by `CAST` to `String`.
         for (const auto & chunks : row_group.cached_columns)
         {
             size_t max_chunk_bytes = 0;
             for (const auto & chunk : chunks)
-                max_chunk_bytes = std::max(max_chunk_bytes, chunk->byteSize());
+                max_chunk_bytes = std::max(max_chunk_bytes, maxByteSizeWithExpandedLowCardinality(*chunk));
             chunk_bytes += static_cast<double>(max_chunk_bytes);
         }
         /// The chunks of the files read in parallel are processed at the same time, and the scheduler cannot split them,

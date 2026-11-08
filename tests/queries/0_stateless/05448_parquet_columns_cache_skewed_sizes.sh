@@ -27,7 +27,9 @@
 # - a column to write to the cache that `PREWHERE` does not need, with a small dictionary page, in each of several files
 #   read in parallel, of which the dictionary pages do not fit the memory limit together;
 # - a chunk served from the cache, in each of several files read in parallel, of which the chunks do not fit the memory
-#   limit together.
+#   limit together;
+# - a chunk served from the cache, of `LowCardinality` strings, or arrays of them, which take little in the cache, but
+#   much more converted to strings.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -275,5 +277,22 @@ $CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(rows) FROM system.columns_cache WHERE database = '' AND part LIKE '%/${CLICKHOUSE_TEST_UNIQUE_NAME}_parallel_chunk_%';
     ${QUERY}, use_columns_cache = 1"
 rm -f "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"_parallel_chunk_*.parquet
+
+echo "--- chunks of LowCardinality strings served from the cache, converted to strings"
+# 65536 rows: the same string of 2 KiB, which takes 128 MiB expanded, but only a little as `LowCardinality`.
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('${FILE}', Parquet, 's String, a Array(String)')
+    SELECT repeat('x', 2048), [repeat('x', 2048)] FROM numbers(65536)
+    SETTINGS engine_file_truncate_on_insert = 1"
+touch -d "1 minute ago" "${FILE_PATH}"
+STRUCTURE="'s LowCardinality(String), a Array(LowCardinality(String))'"
+SETTINGS="max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
+    input_format_parquet_memory_high_watermark = '4Mi', max_memory_usage = '64Mi', max_untracked_memory = 65536"
+$CLICKHOUSE_CLIENT -q "
+    SYSTEM DROP COLUMNS CACHE;
+    SELECT count(), sum(length(s)), sum(length(a)) FROM file('${FILE}', Parquet, ${STRUCTURE}) SETTINGS max_threads = 1, use_columns_cache = 1;
+    ${ENTRIES};
+    SELECT count(), sum(cityHash64(CAST(s, 'String'))) FROM file('${FILE}', Parquet, ${STRUCTURE}) SETTINGS ${SETTINGS}, use_columns_cache = 1;
+    SELECT count(), sum(cityHash64(CAST(a, 'Array(String)'))) FROM file('${FILE}', Parquet, ${STRUCTURE}) SETTINGS ${SETTINGS}, use_columns_cache = 1"
 
 rm -f "${FILE_PATH}" "${FILE_PATH}.tmp"
