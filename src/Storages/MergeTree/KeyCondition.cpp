@@ -1659,8 +1659,8 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 
             /// So far we only support the case of two arguments.
             if (2 == curve.arguments.size()
-                && !WhichDataType(removeLowCardinality(curve.arguments[0].type)).isUInt64()
-                && !WhichDataType(removeLowCardinality(curve.arguments[1].type)).isUInt64())
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[0].type))).isUInt64()
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[1].type))).isUInt64())
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
@@ -6181,7 +6181,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     return std::nullopt;
                 }
 
-                const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                /// A string that does not parse as the key type, such as `'2026-07-16T12:30:45.123Z'` for a
+                /// `DateTime64` key, cannot supply a comparison bound. The comparison itself may still accept
+                /// it (for example, with `cast_string_to_date_time_mode = 'best_effort'`), so the index
+                /// declines the candidate instead of failing the query.
+                const_value = tryConvertFieldToType(const_value, *key_expr_type_not_null);
                 if (const_value.isNull())
                     return std::nullopt;
                 const_type = key_expr_type_not_null;
