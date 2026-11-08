@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
@@ -46,7 +45,6 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
     const ActionsDAG::Node *,
     std::vector<UInt8>) const
 {
-    const bool display_secrets = canDisplaySecrets(context);
     auto add_table = [&](
         const DatabaseTablesIteratorPtr & it, StorageObjectStorageQueue & storage)
     {
@@ -56,7 +54,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
         auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
         const auto & constraints = constraints_and_current_profiles->constraints;
         MutableColumnsAndConstraints params(res_columns, constraints);
-        storage.getSettings().dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage, display_secrets);
+        storage.getSettings().dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage);
     };
 
     const auto access = context->getAccess();

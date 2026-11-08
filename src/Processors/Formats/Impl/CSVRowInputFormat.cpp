@@ -173,14 +173,13 @@ void CSVFormatReader::skipRow()
             if (*pos == '\r')
             {
                 ++istr.position();
-                /// `\r\n` is a single line ending even if a bare `\r` is allowed, as in `skipEndOfLine`.
-                if (!istr.eof() && *istr.position() == '\n')
-                {
-                    ++istr.position();
-                    return;
-                }
                 if (format_settings.csv.allow_cr_end_of_line)
                     return;
+                if (!istr.eof() && *pos == '\n')
+                {
+                    ++pos;
+                    return;
+                }
             }
         }
     }
@@ -356,34 +355,22 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
-void CSVFormatReader::setDataTypes(const DataTypes & types)
-{
-    skip_whitespaces_before_field.resize(types.size());
-    for (size_t i = 0; i != types.size(); ++i)
-        skip_whitespaces_before_field[i]
-            = format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(types[i]));
-}
-
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
     const SerializationPtr & serialization,
-    bool /*is_last_file_column*/,
-    const String & /*column_name*/,
-    size_t column_index)
+    bool is_last_file_column,
+    const String & /*column_name*/)
 {
-    chassert(column_index < skip_whitespaces_before_field.size());
-    if (skip_whitespaces_before_field[column_index]) [[likely]]
+    if (format_settings.csv.trim_whitespaces || !isStringOrFixedString(removeNullable(type))) [[likely]]
         skipWhitespacesAndTabs(*buf, format_settings.csv.allow_whitespace_or_tab_as_delimiter);
 
-    /// A field is empty if it is followed by the field delimiter or the end of the row.
-    /// The row can end before the last file column with `input_format_csv_allow_variable_number_of_columns`.
-    const bool is_empty_field = buf->eof() || *buf->position() == format_settings.csv.delimiter
-        || *buf->position() == '\n' || *buf->position() == '\r';
+    const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
+    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
-    if (format_settings.csv.empty_as_default && is_empty_field)
+    if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
         /// Treat empty unquoted column value as default value, if
         /// specified in the settings. Tuple columns might seem

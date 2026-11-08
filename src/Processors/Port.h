@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -33,7 +32,7 @@ class Port
 public:
     struct UpdateInfo
     {
-        using UpdateList = VectorWithMemoryTracking<void *>;
+        using UpdateList = std::vector<void *>;
 
         UpdateList * update_list = nullptr;
         void * id = nullptr;

@@ -34,18 +34,18 @@ INSERT INTO ts_decimal_overflow VALUES ('2024-01-01 00:00:00', 1.0);
 -- crosses `2^63`). Before the fix UBSAN aborted the build; after the fix the
 -- accumulation wraps and the subsequent scale-multiplier `common::mulOverflow`
 -- check in `tryReadDecimalText` rejects the value with `BAD_ARGUMENTS`.
-SELECT timeSeriesLastToGrid('99999999999999999999', '99999999999999999998', '1', '1')(timestamp, value)
+SELECT timeSeriesResampleToGridWithStaleness('99999999999999999999', '99999999999999999998', '1', '1')(timestamp, value)
 FROM ts_decimal_overflow FORMAT Null;  -- { serverError BAD_ARGUMENTS }
 
 -- Case 2: 19-digit string parameter just over `Int64` max. Triggers the
 -- `operator+=` flavour (the AST fuzzer's `9223372036854775800 + 8` shape).
-SELECT timeSeriesLastToGrid('9223372036854775808', '9223372036854775816', '1', '1')(timestamp, value)
+SELECT timeSeriesResampleToGridWithStaleness('9223372036854775808', '9223372036854775816', '1', '1')(timestamp, value)
 FROM ts_decimal_overflow FORMAT Null;  -- { serverError BAD_ARGUMENTS }
 
 -- Case 3: A string-typed parameter that parses cleanly within `Int64` must still
 -- work (regression guard — make sure the `NO_SANITIZE_UNDEFINED` attribute does
 -- not silently change the value for normal-range inputs).
-SELECT length(timeSeriesLastToGrid('1577836800', '1577836810', '1', '1')(timestamp, value)) AS grid_len
+SELECT length(timeSeriesResampleToGridWithStaleness('1577836800', '1577836810', '1', '1')(timestamp, value)) AS grid_len
 FROM ts_decimal_overflow;
 
 DROP TABLE ts_decimal_overflow;
