@@ -1,8 +1,8 @@
 -- The serialized states of `uniqCombined` must not change between versions: replicas merge parts independently and compare checksums.
 -- The value 0 gives the zero key, which a medium set stores separately.
 
--- A state that is read and written back: medium sets that fit the initial buffer of the hash table (40) and that do not (3000),
--- and a HyperLogLog counter (20000). `uniqHLL12` reads its HyperLogLog counter the same way.
+-- A state that is read and written back: medium sets of 40 and 3000 values, and a HyperLogLog counter (20000).
+-- `uniqHLL12` reads its HyperLogLog counter the same way.
 SELECT n,
     cityHash64(hex(CAST(unhex(hex(arrayReduce('uniqCombinedState', range(toUInt64(n))))), 'AggregateFunction(uniqCombined, UInt64)'))),
     finalizeAggregation(CAST(unhex(hex(arrayReduce('uniqCombinedState', range(toUInt64(n))))), 'AggregateFunction(uniqCombined, UInt64)')),
