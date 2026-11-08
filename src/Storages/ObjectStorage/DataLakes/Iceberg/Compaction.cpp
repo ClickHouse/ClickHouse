@@ -242,7 +242,6 @@ static Plan getPlan(
 
     /// A snapshot's manifest list also lists the manifests of the earlier snapshots.
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
-    /// Keyed by `storageIdentity`, so that one file listed under two spellings is planned once.
     std::unordered_set<String> seen_position_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
     for (const auto & snapshot : snapshots_info)

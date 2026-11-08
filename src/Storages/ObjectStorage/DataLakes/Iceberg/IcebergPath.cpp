@@ -121,7 +121,7 @@ std::string_view remainderAfter(std::string_view path, const IcebergPathResolver
     return rest;
 }
 
-/// `base` and `rest` joined by one `/`. Unlike `fs::path::operator/`, a `rest` starting with `/` does not replace `base`.
+/// Appends `rest` to `base` with a `/` in between; a `rest` starting with `/` does not replace `base`.
 String joinPath(std::string_view base, std::string_view rest)
 {
     if (base.empty())
@@ -265,14 +265,6 @@ IcebergPathResolver::ParsedPath IcebergPathResolver::parse(std::string_view path
     return parsePath(path, blob_storage.is_filesystem);
 }
 
-/// A path is resolved by the first rule that applies:
-/// 0. Relative, with `relative_location_not_under_root`: unchanged.
-/// 1. Under `location` in the same storage: re-rooted under the table root.
-/// 2. In another namespace of the storage: unchanged.
-/// 3. Under `location`, with no scheme on one side (it is relative to the writer's default file system): as in 1.
-/// 4. Containing the table root: from that occurrence on.
-/// 5. Outside `location`: relative to the common parent directory of the table and the file.
-/// Otherwise the path names no file of this table's storage.
 std::optional<String> IcebergPathResolver::resolveImpl(const String & raw_path) const
 {
     if (relative_location_not_under_root && !raw_path.starts_with('/') && !hasIcebergURIScheme(raw_path))
@@ -293,6 +285,7 @@ std::optional<String> IcebergPathResolver::resolveImpl(const String & raw_path) 
     if (isInForeignNamespace(raw_path))
         return raw_path;
 
+    /// A path or `location` with no scheme is relative to the writer's default file system, which may be this storage.
     const bool compatible_space = same_space || !parsed_location.has_scheme || !path.has_scheme;
     if (in_location && compatible_space)
         return joinPath(table_root, remainderAfter(raw_path, path, common));
@@ -302,7 +295,6 @@ std::optional<String> IcebergPathResolver::resolveImpl(const String & raw_path) 
         auto pos = raw_path.find(table_root);
         if (pos != std::string::npos)
         {
-            /// Prefer an occurrence followed by a table directory.
             size_t good_pos = std::string::npos;
             while (pos != std::string::npos)
             {
@@ -322,6 +314,7 @@ std::optional<String> IcebergPathResolver::resolveImpl(const String & raw_path) 
         }
     }
 
+    /// Outside `location`: relative to the common parent directory of the table and the file.
     const size_t outside_components = location_components.size() - common;
     if (compatible_space && outside_components <= table_root_components.size())
     {
@@ -416,8 +409,7 @@ PositionDeleteScope IcebergPathResolver::matchPositionDeleteBounds(
     if (!data_file_key.canonical_prefix || (lower && !spelled_like_data_file(lower_key)) || (upper && !spelled_like_data_file(upper_key)))
         return PositionDeleteScope::ThisFile;
 
-    /// Only two bounds prove a range (Iceberg Java writes none for a delete file of several data files), and only if
-    /// the lower one continues the prefix with a byte above `/`: a value continuing it with `/` may be the data file.
+    /// Two bounds prove a range only if the lower one continues the prefix with a byte above `/` (see `canonicalPrefix`).
     if (lower && upper && lower->serialize() >= *data_file_key.canonical_prefix + '0'
         && !(*lower <= data_file_path && data_file_path <= *upper))
         return PositionDeleteScope::None;

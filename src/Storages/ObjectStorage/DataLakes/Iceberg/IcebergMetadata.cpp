@@ -1600,8 +1600,7 @@ std::optional<UInt64> countDeletedRows(
     const IcebergPathResolver & path_resolver,
     LoggerPtr log)
 {
-    /// Keyed by `storageIdentity` of the data file both bounds name, so each data file needs one lookup instead of a
-    /// pass over the deletes.
+    /// Keyed by `storageIdentity` of the data file both bounds name: one lookup per data file, not a pass over the deletes.
     std::unordered_map<String, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
     size_t skipped_delete_files = 0;
     for (const auto & position_delete : position_deletes)

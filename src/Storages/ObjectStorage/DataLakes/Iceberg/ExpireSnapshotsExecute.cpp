@@ -380,8 +380,7 @@ ExpiredFiles collectExpiredFiles(
     LoggerPtr log,
     Int32 current_schema_id)
 {
-    /// Deletion is irreversible, so a retained file is matched in every spelling: an unresolvable retained path
-    /// fails the whole request.
+    /// A retained file is matched in every spelling; an unresolvable retained path throws (deletion is irreversible).
     const auto & path_resolver = persistent_table_components.path_resolver;
     std::unordered_set<String> retained_identities;
     for (const auto * paths : {&retained.manifest_list_paths, &retained.manifest_paths, &retained.data_file_paths})

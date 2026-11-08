@@ -81,9 +81,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
     if (auto name = fileNameOf(iceberg_data_path))
         data_file_name = String(*name);
-    /// Row groups are pruned by the min/max of their raw `file_path` values. A row group is skipped only if all its
-    /// values continue the data file path's `canonicalPrefix` with a byte above `/` and its range excludes the raw path;
-    /// a value spelling the data file with another scheme, authority or number of leading slashes does not.
+    /// A row group is skipped only if all its `file_path` values continue the data file path's `canonicalPrefix` with a
+    /// byte above `/` and its range excludes the raw path; another scheme, authority or number of leading slashes does not.
     ASTPtr where_ast;
     if (auto prefix = IcebergPathResolver::canonicalPrefix(iceberg_data_path))
     {

@@ -94,9 +94,7 @@ enum class PositionDeleteScope
 /// The parts of a path that `IcebergPathResolver::matchPositionDeleteBounds` compares, computed once per path.
 struct PositionDeleteMatchKey
 {
-    /// `IcebergPathResolver::storageIdentity` of the path.
     std::optional<String> identity;
-    /// `IcebergPathResolver::canonicalPrefix` of the path.
     std::optional<String> canonical_prefix;
 };
 
@@ -135,23 +133,18 @@ public:
     /// Throws `BAD_ARGUMENTS` for a path that names no file of the configured storage.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
 
-    /// The object `metadata_path` names in the configured storage: equal for every spelling of one file.
-    /// `std::nullopt` if the path cannot be resolved.
+    /// The object `metadata_path` names in this storage, equal for every spelling of one file; `std::nullopt` if unresolvable.
     std::optional<String> storageIdentity(const IcebergPathFromMetadata & metadata_path) const;
-    /// Same, but throws as `resolve` does.
     String storageIdentityOrThrow(const IcebergPathFromMetadata & metadata_path) const;
 
-    /// The raw text in front of the first component of an absolute `path` (scheme and authority, or `/`; it ends with
-    /// `/`), if the components are separated by single `/` and none is empty, `.` or `..`; otherwise `std::nullopt`.
-    /// Another spelling of the same file continues it with a byte other than `/` only if it has an empty, `.` or `..`
-    /// component.
+    /// The text in front of the first component of `path` (scheme and authority, or `/`) if no component is empty, `.` or `..`.
+    /// Another spelling of the same file continues it with a byte other than `/` only if it has such a component.
     static std::optional<std::string_view> canonicalPrefix(std::string_view path);
 
     PositionDeleteMatchKey positionDeleteMatchKey(const IcebergPathFromMetadata & path) const;
 
     /// Which rows of a position delete file with these manifest bounds of `file_path` can name `data_file_path`.
-    /// `lower_key`, `upper_key`, `data_file_key`: `positionDeleteMatchKey` of the paths, default-constructed for an
-    /// absent bound.
+    /// The keys are `positionDeleteMatchKey` of the paths, default-constructed for an absent bound.
     PositionDeleteScope matchPositionDeleteBounds(
         const std::optional<IcebergPathFromMetadata> & lower,
         const PositionDeleteMatchKey & lower_key,
@@ -210,7 +203,6 @@ private:
     String table_location_namespace;
 
     ParsedPath parsed_location;
-    /// Components of `table_root`, and whether it starts with `/`.
     std::vector<std::pair<size_t, size_t>> table_root_components;
     bool table_root_is_absolute = false;
     /// `location` is a relative path whose components are not the last components of `table_root`: then a relative
