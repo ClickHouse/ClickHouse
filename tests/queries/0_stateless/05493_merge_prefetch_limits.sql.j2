@@ -6,6 +6,9 @@
 
 SET optimize_on_insert = 0;
 SET optimize_dry_run_check_part = 0;
+-- A merge reads with the read settings of its task context, which is the query context for `DRY RUN`:
+-- pin the settings that enable a remote prefetch at all, so that only the limits decide.
+SET remote_filesystem_read_prefetch = 1, remote_filesystem_read_method = 'threadpool';
 
 DROP TABLE IF EXISTS t_merge_prefetch;
 
