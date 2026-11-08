@@ -43,9 +43,12 @@ $CLICKHOUSE_CLIENT -m -q "
     CREATE WORKLOAD ${P}_hi IN ${P}_grp SETTINGS priority = 0;
     CREATE WORKLOAD ${P}_lo IN ${P}_grp SETTINGS priority = 1;
 
+    -- t, big and bs are on local disk: object storage reads spend CPU in reader threads that hold no lease, and they
+    -- park the lease, which lets a capped analysis run past max_cpus without a preemption (#126133)
+
     -- With index_granularity = 1 and a filter on the second key column, the generic exclusion search dominates
     CREATE TABLE t (a UInt64, b UInt64, INDEX ib b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY (a, b)
-        SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
+        SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', storage_policy = 'default';
     SYSTEM STOP MERGES t;
     INSERT INTO t SELECT number % 25000, number FROM numbers(250000);
     INSERT INTO t SELECT number % 25000, number FROM numbers(250000);
@@ -53,7 +56,7 @@ $CLICKHOUSE_CLIENT -m -q "
     INSERT INTO t SELECT number % 25000, number FROM numbers(250000);
 
     CREATE TABLE big (a UInt64, b UInt64, INDEX ib b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY (a, b)
-        SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
+        SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', storage_policy = 'default';
     INSERT INTO big SELECT number % 100000, number FROM numbers(1000000);
 
     -- b is even, so the source of the dictionary has a long analysis and reads nothing
@@ -67,7 +70,7 @@ $CLICKHOUSE_CLIENT -m -q "
 
     -- b is not in the sorting key, so the skip index dominates
     CREATE TABLE bs (a UInt64, b UInt64, INDEX ib b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a
-        SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
+        SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi', storage_policy = 'default';
     INSERT INTO bs SELECT number % 100000, number FROM numbers(1000000);
 
     CREATE TABLE p (k UInt64, v UInt64, INDEX iv v TYPE set(100) GRANULARITY 1) ENGINE = MergeTree PARTITION BY k % 8 ORDER BY k
