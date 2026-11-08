@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-# Inside a materialized view query, the source table read by the nested interpreter of `loop`, `executable` or
-# `merge` is the inserted block, in the read itself and in its `IN` subqueries alike. The database name is spelled
-# out: `currentDatabase()` in the view query does not resolve to the test database during the push.
+# Inside a materialized view query, the source table read by the nested interpreter of `loop` or `executable`
+# is the inserted block. The source child of `merge` reads the table, and only the `IN` subqueries inside it
+# read the inserted block. The database name is spelled out: `currentDatabase()` in the view query does not
+# resolve to the test database during the push.
 # A refreshable view appending to the source table behaves like an INSERT; a refreshable view reading
 # the source table reads the table.
 
@@ -46,7 +47,7 @@ CREATE MATERIALIZED VIEW mv_merge_policy TO dst AS
         (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(child|dist)\$')) AS value
     FROM src;
 
--- The source table in an `IN` subquery reads the same data as the source child it filters.
+-- The source table in an IN subquery reads the same data as the source child it filters.
 CREATE MATERIALIZED VIEW mv_merge_in TO dst AS
     SELECT 'merge_in' AS name, count() AS block_rows,
         (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(src|child|dist)\$') WHERE x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src)) AS value
