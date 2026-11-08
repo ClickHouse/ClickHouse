@@ -16,7 +16,7 @@
         "fill_bulk",
         "kl_memset_neon_bulk128"
       ],
-      "integration_sha256": "16304cb215058dc8f079bca3c67f1950b6a48a86c3614c45b72710dd771b9f0b",
+      "integration_sha256": "cd75f6474a2103454aea8a3b06681c0c1d5937c2a5236f5ca7077fc7c47ba29e",
       "integration_additions": {
         "date": "2026-11-08",
         "functions": [
@@ -24,6 +24,16 @@
           "zero_blocks"
         ],
         "change": "Use bounded aligned DC ZVA blocks for zero fills512bytes..2MiB after checking DCZID_EL0 permission/blocksize; preserve NEON streaming path. Native hierarchical dictionary regression minimized to repeated1MiB clears; measured1..8way unrolling and cache-size boundaries. Current longer zero path is not covered by prior machine-code proof snapshots. Production entry-point sweep rejects unaligned256byte regression; lower cutoff512bytes preserves that earlier NEON case."
+      },
+      "integration_functions_added": [
+        "copy_medium"
+      ],
+      "integration_copy_changes": {
+        "date": "2026-11-08",
+        "change": "Bounded first/tail NEON tiers for copies of 129 through 256 bytes; strict streaming-loop exit avoids duplicating an aligned final tail. The separate directional move kernel is retained.",
+        "measured_source_sha256": "704f753565bd17b635e44fce486d42c76cbdb56b044a60d2edce2003311e0e07",
+        "comment_only_difference_from_measured_source": false,
+        "subsequent_copy_policy": "For lengths through1024, align the source only when it is16-byte aligned and the change removes one redundant128-byte body iteration; preserve the original destination phase otherwise."
       }
     },
     {
@@ -106,6 +116,35 @@
         "kl_strcat_sve_split64"
       ],
       "integration_sha256": "e6f6cc1b227385ff953d290c2ef436a2a52a72fb396e307fd2b5e3e3f15d4f71"
+    }
+  ],
+  "integration_entry_units": [
+    {
+      "path": "aarch64/memory_copy.c",
+      "sha256": "f0e16c23b46e225875bd09fa4fbcded08288a1748216eb947a3c16a9f63903e8",
+      "functions": [
+        "str_memcpy",
+        "str_memmove",
+        "select_tiny_copy"
+      ],
+      "change": "Frameless public copy/move entries with compiler asynchronous unwind information. The tiny-copy dispatcher checks Linux SVE availability after pre-constructor NEON operation and preserves the exact 16-byte NEON specialization."
+    },
+    {
+      "path": "aarch64/tiny_copy_sve.c",
+      "sha256": "b196bd0a716c1f15606cd0a2ff2dcda092c14ea52d9facb37143666a71653760",
+      "functions": [
+        "ch_str_sve_copy_tiny16"
+      ],
+      "precondition": "Caller bounds the byte count to at most 16.",
+      "origin": "Integration experiment with a predicated SVE load/store; standalone compiled FPC and Parquet caller measurements are separate from integrated-query validation."
+    },
+    {
+      "path": "aarch64/memory_fill.c",
+      "sha256": "a8b5c1aa843f1b705b91cef2af1c6b05d27623290264c06c92b54d3babdecdbd",
+      "functions": [
+        "str_memset"
+      ],
+      "change": "Isolate the unchanged public fill body to omit its leaf frame while retaining compiler asynchronous unwind information. The bulk fill frame and store layout remain unchanged. Native actual UInt256 Shift caller and broad controls are separate from integrated-query validation."
     }
   ]
 }

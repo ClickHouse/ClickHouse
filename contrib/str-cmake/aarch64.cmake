@@ -5,23 +5,31 @@ add_library (str_neon OBJECT
     "${str_arm_dir}/aarch64_neon_length.c"
     "${str_arm_dir}/aarch64_neon_membership.c"
     "${str_arm_dir}/aarch64_neon_strings.c"
-    "${str_arm_dir}/dispatch.c")
+    "${str_arm_dir}/dispatch.c"
+    "${str_arm_dir}/memory_copy.c"
+    "${str_arm_dir}/memory_fill.c")
 add_library (str_sve OBJECT
     "${str_arm_dir}/aarch64_sve_bulk.c"
     "${str_arm_dir}/aarch64_sve_extra.c"
-    "${str_arm_dir}/sve_dispatch.c")
+    "${str_arm_dir}/sve_dispatch.c"
+    "${str_arm_dir}/tiny_copy_sve.c")
 
 foreach (target str_neon str_sve)
     set_target_properties (${target} PROPERTIES
         INTERPROCEDURAL_OPTIMIZATION FALSE POSITION_INDEPENDENT_CODE TRUE
         LINK_LIBRARIES "")
-    # Preserve compiler unwind data and frame chains. No x86 rewriting pass
+    # Preserve compiler unwind data and nonleaf frame chains. No x86 rewriting pass
     # applies to these objects. Disable loop idioms that call libc recursively.
     target_compile_options (${target} PRIVATE
         -O3 -ffreestanding -fno-builtin -fno-stack-protector -fno-lto
         -ffunction-sections -fdata-sections
         -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
 endforeach ()
+# Tiny public memory entries avoid leaf frame bookkeeping while retaining
+# compiler-generated CFI. Bulk entries keep their original frames and code.
+# This provider is Linux-only without sanitizers.
+set_source_files_properties ("${str_arm_dir}/memory_copy.c" "${str_arm_dir}/tiny_copy_sve.c" "${str_arm_dir}/memory_fill.c" PROPERTIES
+    COMPILE_OPTIONS "-momit-leaf-frame-pointer;-fasynchronous-unwind-tables")
 target_compile_options (str_neon PRIVATE -march=armv8-a)
 target_compile_options (str_sve PRIVATE -march=armv8-a+sve -msve-vector-bits=scalable)
 

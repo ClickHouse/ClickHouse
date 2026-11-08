@@ -5,8 +5,6 @@
 
 #define STR_HWCAP_SVE (1UL << 22)
 
-typedef void *(*copy_fn)(void *, const void *, size_t);
-typedef void *(*fill_fn)(void *, int, size_t);
 typedef void *(*find_fn)(const void *, int, size_t);
 typedef char *(*string_fn)(char *, const char *);
 
@@ -16,16 +14,10 @@ static char *cat_neon(char *d, const char *s)
     return d;
 }
 
-static copy_fn copy_impl = kl_memcpy_neon_bulk128;
-static copy_fn move_impl = kl_memmove_neon_bulk64;
-static fill_fn fill_impl = kl_memset_neon_bulk128;
 static find_fn find_impl = kl_memchr_neon_blocks;
 static string_fn strcpy_impl = kl_strcpy_neon_first16;
 static string_fn strcat_impl = cat_neon;
 
-void *ch_str_sve_memcpy(void *, const void *, size_t);
-void *ch_str_sve_memmove(void *, const void *, size_t);
-void *ch_str_sve_memset(void *, int, size_t);
 void *ch_str_sve_memchr(const void *, int, size_t);
 char *ch_str_sve_strcpy(char *, const char *);
 char *ch_str_sve_strcat(char *, const char *);
@@ -35,67 +27,13 @@ __attribute__((constructor(101))) static void select_implementations(void)
 {
     if (getauxval(AT_HWCAP) & STR_HWCAP_SVE)
     {
-        __atomic_store_n(&copy_impl, ch_str_sve_memcpy, __ATOMIC_RELAXED);
-        __atomic_store_n(&move_impl, ch_str_sve_memmove, __ATOMIC_RELAXED);
-        __atomic_store_n(&fill_impl, ch_str_sve_memset, __ATOMIC_RELAXED);
         __atomic_store_n(&find_impl, ch_str_sve_memchr, __ATOMIC_RELAXED);
         __atomic_store_n(&strcpy_impl, ch_str_sve_strcpy, __ATOMIC_RELAXED);
         __atomic_store_n(&strcat_impl, ch_str_sve_strcat, __ATOMIC_RELAXED);
     }
 }
 
-__attribute__((flatten)) void *str_memcpy(void *d, const void *s, size_t n)
-{
-    if (n <= 16)
-    {
-        kl_copy_tier(d, s, n);
-        return d;
-    }
-    /* At VL16 the SVE prefix covers at most 64 bytes; every other VL and
-       the baseline configuration use this same NEON implementation. */
-    if (n > 64)
-        return kl_memcpy_neon_bulk128(d, s, n);
-    return __atomic_load_n(&copy_impl, __ATOMIC_RELAXED)(d, s, n);
-}
-__attribute__((flatten)) void *str_memmove(void *d, const void *s, size_t n)
-{
-    if (n <= 16)
-    {
-        kl_copy_tier(d, s, n);
-        return d;
-    }
-    if (n > 64)
-        return kl_memmove_neon_bulk64(d, s, n);
-    return __atomic_load_n(&move_impl, __ATOMIC_RELAXED)(d, s, n);
-}
-void *str_memset(void *d, int c, size_t n)
-{
-    if (n <= 16)
-    {
-        u8 *bytes = d;
-        uint64_t value = (u8)c * UINT64_C(0x0101010101010101);
-        if (n >= 8)
-        {
-            kl_store64(bytes, value);
-            kl_store64(bytes + n - 8, value);
-        }
-        else if (n >= 4)
-        {
-            kl_store32(bytes, (uint32_t)value);
-            kl_store32(bytes + n - 4, (uint32_t)value);
-        }
-        else if (n)
-        {
-            bytes[0] = (u8)c;
-            bytes[n / 2] = (u8)c;
-            bytes[n - 1] = (u8)c;
-        }
-        return d;
-    }
-    if (n > 64)
-        return kl_memset_neon_bulk128(d, c, n);
-    return __atomic_load_n(&fill_impl, __ATOMIC_RELAXED)(d, c, n);
-}
+
 void *str_memchr(const void *s, int c, size_t n)
 {
     return __atomic_load_n(&find_impl, __ATOMIC_RELAXED)(s, c, n);

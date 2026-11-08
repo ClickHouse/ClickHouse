@@ -34,20 +34,32 @@ included from our ARM workbench; `aarch64/provenance.json` records source hashes
 and the selection. The MIT license is included. This makes an ARM build
 reproducible without depending on an unpublished fork commit.
 
-The ARM objects use the compiler output directly, retaining unwind information
-and frame pointers. Baseline objects use `-march=armv8-a`; separate SVE objects
-use `-march=armv8-a+sve` and scalable vector length. Valid NEON implementations
-are available before constructors run. A constructor checks Linux `AT_HWCAP`
-and atomically installs SVE entry points on supported hosts. Each SVE entry
-checks the calling thread's current vector length: the tuned kernels run only
-at 16 bytes, the measured and modeled length. Other lengths use NEON. No
-process or thread vector-length setting is changed by the library.
+The ARM objects use the compiler output directly, retaining unwind information.
+Most entries retain frame pointers. The leaf public `memcpy`, `memmove`, and
+`memset` entries omit their frames and retain compiler-generated asynchronous
+unwind tables; bulk kernels, other entries, and nonleaf constructors keep their
+frames. Baseline
+objects use `-march=armv8-a`; separate SVE objects use `-march=armv8-a+sve`
+and scalable vector length. Valid NEON implementations are available before
+constructors run. Constructors check Linux `AT_HWCAP` and atomically publish
+SVE availability. The bounded tiny-copy helper predicates every memory access
+and only uses the first 16 byte lanes. Other SVE wrappers retain their tuned
+16-byte vector-length gate and use NEON outside it. The library changes no
+process or thread vector-length setting.
 
-The public `memcpy`, `memmove`, and `memset` entry points handle up to 16 bytes
-inline. Sizes above 64 bytes call NEON directly: the selected SVE kernels
-already use those same NEON implementations above that boundary at a vector
-length of 16 bytes. Only sizes from 17 through 64 bytes need runtime selection
-for these three functions. This avoids dispatch overhead in these size ranges.
+The public `memcpy` entry uses one predicated SVE load/store for lengths
+below 16 on SVE hosts after initialization. Its exact 16-byte NEON load/store
+stays before the feature check. The NEON path handles other short copies and
+pre-constructor calls. `memmove` retains its bounded NEON path through 128
+bytes, loading every source byte before the first store. Larger copies and
+moves call their separate NEON kernels directly. `memset` handles up to 16
+bytes inline and uses NEON above that boundary.
+The copy kernel also has bounded tiers through 192 and 256 bytes and avoids
+recopying a final 128-byte block already covered by its tail. Through 1024
+bytes, it selects source alignment only when the source is 16-byte aligned and
+that phase removes an entire redundant 128-byte loop iteration. Other copies
+retain destination alignment. The move kernel retains its separate overlap
+and direction handling.
 
 Zero fills from 512 bytes through 2 MiB use `DC ZVA` when `DCZID_EL0`
 permits it and the range contains at least two zeroing blocks. The prefix
@@ -67,17 +79,29 @@ and `strnlen` remain in use. LLVM libc math and other memory routines retain
 their existing providers. Sanitizer and sanitizer-coverage builds reject the
 experimental option so their interceptors remain authoritative.
 
-The workbench has partial machine-code proof coverage. The native validation
-also proved the public `memcpy`, `memmove`, and `memset` paths for lengths from
-0 through 16 from the actual integration object files, within the model's
-assumptions. Constructors, longer paths, and the complete ClickHouse executable
-remain outside that proof. This option remains experimental and disabled by default.
+The workbench has partial machine-code proof coverage. The preserved native
+`21150DDAAA53A58AAF97D2ED50634F7366A9E0B4` object snapshot passed bounded
+proofs of `memcpy` through 256 bytes and `memmove` and `memset` through 128
+bytes, within an explicit 48-bit-address, 16-byte-SVE model. The proof domain
+assumes caller buffers are separate from code and provider-private globals.
+Seven deliberately mutated instruction cases produced counterexamples. The subsequent native
+`B9080B220E8BC7AEA5B9727A913E13086D2E77B9` snapshot passed fresh bounded
+proofs of the tiny SVE helper through 16 bytes and the public `memset` entry
+through 128 bytes, bound to its compiler objects, archives and linked function
+bytes. The helper proof uses a 16-byte SVE model; native and emulated API tests
+also exercise NEON and additional vector lengths. These checks do not certify
+the changed public copy router or its constructor state. Constructors, longer
+paths and the complete ClickHouse executable remain outside those proofs.
+This option remains experimental and disabled by default.
 
 See the [2026-11-07 native AArch64 comparison](benchmarks/aarch64-2026-11-07.md)
 for the build configuration, query results, and limits of the measurements.
 The [2026-11-08 hierarchical dictionary investigation](benchmarks/hierarchy-2026-11-08.md)
 records the repeated regression, zero-fill minimization, fix, and remaining
 flat-hierarchy control difference.
+The [2026-11-08 regression portfolio](benchmarks/regressions-2026-11-08.md)
+records all 19 affected suites on the later candidate, minimized caller
+experiments, retained timing concerns and exact proof limits.
 
 On a native AArch64 glibc host, test the prefixed archive against the independent
 host libc, including protected pages and oversized early-match `memchr`:

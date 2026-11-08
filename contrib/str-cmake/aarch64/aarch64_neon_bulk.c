@@ -6,6 +6,66 @@ static inline void copy64(u8 *d, const u8 *s) {
     vst1q_u8(d, a); vst1q_u8(d + 16, b); vst1q_u8(d + 32, c); vst1q_u8(d + 48, e);
 }
 
+/* The medium `memcpy` tier uses fewer repeated stores than the streaming loop.
+   `memmove` retains its directional loop. */
+static inline void copy_medium(u8 *d, const u8 *s, size_t n)
+{
+    uint8x16_t a0 = vld1q_u8(s);
+    uint8x16_t a1 = vld1q_u8(s + 16);
+    uint8x16_t a2 = vld1q_u8(s + 32);
+    uint8x16_t a3 = vld1q_u8(s + 48);
+    uint8x16_t a4 = vld1q_u8(s + 64);
+    uint8x16_t a5 = vld1q_u8(s + 80);
+    uint8x16_t a6 = vld1q_u8(s + 96);
+    uint8x16_t a7 = vld1q_u8(s + 112);
+    if (n <= 192)
+    {
+        uint8x16_t b0 = vld1q_u8(s + n - 64);
+        uint8x16_t b1 = vld1q_u8(s + n - 48);
+        uint8x16_t b2 = vld1q_u8(s + n - 32);
+        uint8x16_t b3 = vld1q_u8(s + n - 16);
+        vst1q_u8(d, a0);
+        vst1q_u8(d + 16, a1);
+        vst1q_u8(d + 32, a2);
+        vst1q_u8(d + 48, a3);
+        vst1q_u8(d + 64, a4);
+        vst1q_u8(d + 80, a5);
+        vst1q_u8(d + 96, a6);
+        vst1q_u8(d + 112, a7);
+        vst1q_u8(d + n - 64, b0);
+        vst1q_u8(d + n - 48, b1);
+        vst1q_u8(d + n - 32, b2);
+        vst1q_u8(d + n - 16, b3);
+    }
+    else
+    {
+        uint8x16_t b0 = vld1q_u8(s + n - 128);
+        uint8x16_t b1 = vld1q_u8(s + n - 112);
+        uint8x16_t b2 = vld1q_u8(s + n - 96);
+        uint8x16_t b3 = vld1q_u8(s + n - 80);
+        uint8x16_t b4 = vld1q_u8(s + n - 64);
+        uint8x16_t b5 = vld1q_u8(s + n - 48);
+        uint8x16_t b6 = vld1q_u8(s + n - 32);
+        uint8x16_t b7 = vld1q_u8(s + n - 16);
+        vst1q_u8(d, a0);
+        vst1q_u8(d + 16, a1);
+        vst1q_u8(d + 32, a2);
+        vst1q_u8(d + 48, a3);
+        vst1q_u8(d + 64, a4);
+        vst1q_u8(d + 80, a5);
+        vst1q_u8(d + 96, a6);
+        vst1q_u8(d + 112, a7);
+        vst1q_u8(d + n - 128, b0);
+        vst1q_u8(d + n - 112, b1);
+        vst1q_u8(d + n - 96, b2);
+        vst1q_u8(d + n - 80, b3);
+        vst1q_u8(d + n - 64, b4);
+        vst1q_u8(d + n - 48, b5);
+        vst1q_u8(d + n - 32, b6);
+        vst1q_u8(d + n - 16, b7);
+    }
+}
+
 static inline __attribute__((always_inline)) void *copy_bulk(void *dst, const void *src, size_t n, size_t stride) {
     u8 *d = dst;
     const u8 *s = src;
@@ -14,11 +74,21 @@ static inline __attribute__((always_inline)) void *copy_bulk(void *dst, const vo
         return dst;
     }
 
+    if (n <= 256)
+    {
+        copy_medium(d, s, n);
+        return dst;
+    }
+
     copy64(d, s);
     copy64(d + 64, s + 64);
-    size_t i = 128 - ((uintptr_t)d & 15);
+    /* Choose source alignment only when it removes one body iteration. */
+    size_t destination_phase = (uintptr_t)d & 15;
+    size_t gap = (-n) & 127;
+    size_t phase = n <= 1024 && ((uintptr_t)s & 15) == 0 && destination_phase > gap ? 0 : destination_phase;
+    size_t i = 128 - phase;
 
-    while (n - i >= stride) {
+    while (n - i > stride) {
         copy64(d + i, s + i);
 
         if (stride == 128) {
