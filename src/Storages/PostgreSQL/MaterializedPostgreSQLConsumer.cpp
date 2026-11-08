@@ -5,12 +5,12 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
+#include <Common/Hex.h>
 #include <Core/Field.h>
-#include <base/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -671,7 +671,7 @@ void MaterializedPostgreSQLConsumer::preserveUnchangedToastValues(StorageData & 
         select_context->makeQueryContext();
         select_context->setInternalQuery(true);
 
-        InterpreterSelectQuery interpreter(
+        InterpreterSelectQueryAnalyzer interpreter(
             select,
             select_context,
             SelectQueryOptions().setInternal(true).ignoreAccessCheck());
@@ -944,7 +944,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            if (!isSyncAllowed(relation_id, relation_name))
+            /// `deleted_tables` and `waiting_list` are keyed by the ClickHouse table name, which includes
+            /// the PostgreSQL schema in the multi-schema modes, as for the other message types.
+            if (!isSyncAllowed(relation_id, table_name))
                 return;
 
             auto storage_iter = storages.find(table_name);
@@ -953,7 +955,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 /// FIXME: This can happen if we created a publication with this table but then got an exception that this
                 /// table has primary key or something else.
                 LOG_ERROR(log,
-                          "Storage for table {} does not exist, but is included in replication stream. (Storages number: {})"
+                          "Storage for table {} does not exist, but is included in replication stream. (Storages number: {}) "
                           "Please manually remove this table from replication (DETACH TABLE query) to avoid redundant replication",
                           table_name, storages.size());
                 markTableAsSkipped(relation_id, table_name);
@@ -1207,7 +1209,7 @@ void MaterializedPostgreSQLConsumer::updateLsn()
 
 String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
 {
-    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance('{}', '{}')", replication_slot_name, final_lsn);
+    std::string query_str = fmt::format("SELECT end_lsn FROM pg_replication_slot_advance({}, {})", quoteStringPostgreSQL(replication_slot_name), quoteStringPostgreSQL(final_lsn));
     pqxx::result result{tx->exec(query_str)};
 
     final_lsn = result[0][0].as<std::string>();
@@ -1369,8 +1371,8 @@ bool MaterializedPostgreSQLConsumer::consume()
         /// (`publication "..." does not exist`). Quote the name so its case is preserved on this side too.
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
-                "'{}', NULL, {}, 'publication_names', '{}', 'proto_version', '1')",
-                replication_slot_name, max_block_size, doubleQuoteString(publication_name));
+                "{}, NULL, {}, 'publication_names', {}, 'proto_version', '1')",
+                quoteStringPostgreSQL(replication_slot_name), max_block_size, quoteStringPostgreSQL(doubleQuoteStringPostgreSQL(publication_name)));
 
         auto stream{pqxx::stream_from::query(*tx, query_str)};
 

@@ -71,7 +71,7 @@ SELECT and(NULL, 1, 10, -2);
 ```
 
 ```response title=Response
-ᴺᵁᴸᴸ
+\N
 ```
 
 <div id="not">
@@ -159,14 +159,14 @@ SELECT or(1, 0, 0, 2, NULL);
 1
 ```
 
-**NULLを含む場合**
+**NULL を使用する場合**
 
 ```sql title=Query
 SELECT or(0, NULL);
 ```
 
 ```response title=Response
-ᴺᵁᴸᴸ
+\N
 ```
 
 <div id="xor">

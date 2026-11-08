@@ -52,6 +52,9 @@ private:
     /// `ValidationMode::TemporaryAdd` so the element order stays unchanged.
     /// `1` marks shorthand values remapped relative to the base enum.
     RelativeFlags relative_flags;
+    /// The key of the serialization in the pool of serializations, calculated once, because
+    /// an Enum can have thousands of values, and the serialization is requested often.
+    UInt128 serialization_hash;
 
 public:
     explicit DataTypeEnum(const Values & values_, bool is_add_ = false, RelativeFlags relative_flags_ = {});
@@ -70,6 +73,7 @@ public:
     Field getDefault() const override;
     Type getDefaultValue() const;
     void insertDefaultInto(IColumn & column) const override;
+    bool isDefaultInsertTrivial() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
 
@@ -83,6 +87,7 @@ public:
     bool contains(const IDataType & rhs) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    UInt128 getSerializationHash() const { return serialization_hash; }
 
     void updateHashImpl(SipHash & hash) const override;
 
@@ -90,6 +95,9 @@ public:
     bool isRelativeAt(size_t index) const { return index < relative_flags.size() && relative_flags[index]; }
     size_t getRelativeFlagsSize() const { return relative_flags.size(); }
 };
+
+/// True when `type` is an `Enum` and `value` is a `String` that names none of its elements.
+bool isUnknownEnumElement(const IDataType & type, const Field & value);
 
 template <typename TypeBase>
 DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeBase> & add);

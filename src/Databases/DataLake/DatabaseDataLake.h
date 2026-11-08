@@ -7,6 +7,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Disks/DiskType.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/MultiVersion.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -67,7 +68,7 @@ public:
 
     void checkDatabase() const override;
 
-    void shutdown() override {}
+    void shutdown() override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
@@ -85,6 +86,15 @@ public:
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
+
+    String getDefaultTableEngineName(const String & name) const override;
+
+    ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
+
+    void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
+
+    static bool catalogManagesProviderChain(const DataLake::ICatalog & catalog);
+    static bool catalogConfiguresStorageAccess(const DataLake::ICatalog & catalog);
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -137,9 +147,30 @@ private:
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,
-        DataLakeStorageSettingsPtr storage_settings) const;
+        DataLakeStorageSettingsPtr storage_settings,
+        DataLake::DataLakeTableFormat table_format) const;
 
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
+
+    struct TableEngineArgs
+    {
+        ASTs args;
+        DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
+        bool static_credentials_applied = false;
+    };
+
+    TableEngineArgs buildTableEngineArgs(
+        const DatabaseDataLakeSettings & settings,
+        const DataLake::ICatalog & catalog,
+        const DataLake::TableMetadata & table_metadata,
+        bool lightweight) const;
+
+    std::optional<DataLake::TableMetadata> tryGetNewTableMetadata(
+        const DatabaseDataLakeSettings & settings,
+        const DataLake::ICatalog & catalog,
+        const String & name) const;
+
+    Exception cannotTellNewTableLocation(const String & name) const;
 
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot
@@ -158,7 +189,22 @@ private:
 
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
-    StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg) const;
+    StoragePtr tryGetTableImpl(
+        const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables = true) const;
+
+    void evictStatefulTable(const String & name) const;
+
+    /// For tables which have merges.
+    struct StatefulTable
+    {
+        StoragePtr storage;
+        String endpoint;
+        UUID uuid;
+        MultiVersion<DatabaseDataLakeSettings>::Version settings_version;
+    };
+
+    mutable std::mutex stateful_tables_mutex;
+    mutable std::unordered_map<String, StatefulTable> stateful_tables TSA_GUARDED_BY(stateful_tables_mutex);
 
     const UUID db_uuid;
 };

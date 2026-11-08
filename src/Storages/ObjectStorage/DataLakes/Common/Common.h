@@ -18,5 +18,8 @@ std::vector<String> listFiles(
     const String & prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need);
 
+/// True if a `_delta_log/` with any entry (not just `*.json`) exists at `path`, so a checkpoint-only log still counts as an existing table.
+bool deltaLogExists(const IObjectStorage & object_storage, const String & path);
+
 String resolvePathInsideTable(const String & table_path, const String & relative_path);
 }

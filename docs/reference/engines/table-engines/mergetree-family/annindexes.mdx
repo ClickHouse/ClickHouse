@@ -575,6 +575,14 @@ Example output:
 └──────────┴───────┴──────┴──────────────────────────┘
 ```
 
+#### Deleted rows {#deleted-rows}
+
+A vector similarity index is built when a part is written, merged, or mutated, and it does not know about rows deleted later by a [lightweight `DELETE`](/reference/statements/delete) or by an `ALTER TABLE ... DELETE` mutation that is still pending.
+Such rows would still be returned as candidates by the index and then removed after the read, so the query could return fewer than `LIMIT N` rows or miss the nearest remaining neighbors.
+To keep the results correct, ClickHouse does not use the vector similarity index for parts with deleted rows and reads these parts in full (exact search) instead.
+The index is used for the part again after a merge or a mutation rewrites it, for example after `OPTIMIZE TABLE ... FINAL`.
+With setting `apply_deleted_mask = 0`, lightweight-deleted rows are returned by the query, so the index is still used unless the query filters by `_row_exists` explicitly.
+
 #### Differences to regular skipping indexes {#differences-to-regular-skipping-indexes}
 
 As all regular [skipping indexes](/concepts/features/performance/skip-indexes/skipping-indexes), vector similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default for normal skipping indexes).

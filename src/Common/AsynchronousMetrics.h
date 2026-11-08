@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Server/ServerType.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/MemoryWorker.h>
@@ -64,9 +66,24 @@ struct AsynchronousMetricValue
 
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
+/// The name under which a single key of a key-value metric was published before version 26.8, when every key
+/// was a separate scalar metric with the key mangled into the name (`BlockReadBytes_sda`, `OSUserTimeCPU3`).
+/// Returns an empty string for a metric family that never had such a name.
+String getLegacyAsynchronousMetricName(const String & metric, const String & key);
+
+/// Rewrites the key-value metrics of `values` into the form requested by `mode`: adds their pre-26.8 scalar
+/// representation and/or removes the key-value one. Families with no legacy name are left as they are.
+void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode);
+
+/// The frequency of every CPU core in MHz, keyed by the core number, read from the contents of `/proc/cpuinfo`.
+/// Lines that do not parse are skipped.
+AsynchronousMetricKeyValues readCPUFrequenciesFromProcCPUInfo(ReadBuffer & in);
+
 struct ProtocolServerMetrics
 {
     String port_name;
+    /// `ServerType::Type::END` for servers with no protocol type of their own (Keeper listeners).
+    ServerType::Type protocol_type = ServerType::Type::END;
     size_t current_threads;
     size_t rejected_connections;
 };
@@ -150,7 +167,7 @@ private:
     /// Values store the result of the last update prepared for reading.
     AsynchronousMetricValues values TSA_GUARDED_BY(values_mutex);
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if HAS_MEMORY_STATISTICS_OS
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
 #endif
 
@@ -180,6 +197,7 @@ private:
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
+    std::optional<std::string> cgroupcpu_max_dir TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_stat TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpuacct_stat TSA_GUARDED_BY(data_mutex);
 
@@ -298,7 +316,8 @@ private:
 
     std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
     void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
-    void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
+    /// Returns the cgroup directory of the opened file, or nullopt if it was not opened.
+    std::optional<std::string> openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
 
     void applyCgroupCPUMetricsUpdate(AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
 

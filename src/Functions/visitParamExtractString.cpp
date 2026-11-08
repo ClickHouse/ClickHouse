@@ -8,7 +8,9 @@ namespace DB
 
 struct ExtractString
 {
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
+    struct Scratch {};
+
+    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data, Scratch &)
     {
         size_t old_size = res_data.size();
         ReadBufferFromMemory in(pos, end - pos);

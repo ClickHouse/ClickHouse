@@ -5,7 +5,7 @@
       "pages": [
         "fr/resources/support-center/home",
         {
-          "group": "Performance et optimisation",
+          "group": "Performances et optimisation",
           "pages": [
             "fr/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "fr/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "Importation et exportation des données",
+          "group": "Importation et exportation de données",
           "pages": [
             "fr/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "fr/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "Tables et schéma",
+          "group": "Tables et schémas",
           "pages": [
             "fr/resources/support-center/knowledge-base/tables-schema/add-column",
             "fr/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -131,11 +131,12 @@
             "fr/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "fr/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "fr/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "fr/resources/support-center/knowledge-base/materialized-views/projection-example"
+            "fr/resources/support-center/knowledge-base/materialized-views/projection-example",
+            "fr/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
           ]
         },
         {
-          "group": "Monitoring et débogage",
+          "group": "Supervision et débogage",
           "pages": [
             "fr/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "fr/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -185,11 +186,11 @@
           ]
         },
         {
-          "group": "Général et FAQ",
+          "group": "Généralités et FAQ",
           "pages": [
             "fr/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "Général",
+              "group": "Généralités",
               "pages": [
                 "fr/resources/support-center/knowledge-base/general-faqs/index",
                 "fr/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -241,7 +242,7 @@
           ]
         },
         {
-          "group": "Trucs et astuces",
+          "group": "Conseils et astuces",
           "pages": [
             "fr/resources/support-center/tips-and-tricks/community-wisdom",
             "fr/resources/support-center/tips-and-tricks/cost-optimization",
@@ -256,5 +257,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Centre de support"
+  "item": "Centre d’assistance"
 }

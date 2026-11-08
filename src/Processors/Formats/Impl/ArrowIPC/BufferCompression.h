@@ -20,6 +20,19 @@ enum class CompressionCodec : UInt8
     Zstd = 1,
 };
 
+/// An upper bound on what `src` can decompress to. `exact` distinguishes a size the codec pledges
+/// (so a prefix differing from it is forged) from a bound derived from the payload's structure (so
+/// only a prefix exceeding it is).
+struct FrameContentBound
+{
+    UInt64 size;
+    bool exact;
+};
+
+/// The bound the codec frames of the whole of `src` imply. Throws INCORRECT_DATA when the codec
+/// cannot parse `src` at all.
+FrameContentBound frameContentBound(CompressionCodec codec, const char * src, size_t size);
+
 /// Compresses Arrow IPC buffers, reusing one codec context across all buffers (creating a fresh
 /// context per buffer — as a one-shot call would — dominates the cost when there are many buffers).
 class Compressor

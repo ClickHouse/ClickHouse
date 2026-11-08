@@ -19,11 +19,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 class Block;
 
 /// Maximum nesting depth for Avro schemas. Passed to the Avro library to
@@ -53,12 +48,14 @@ private:
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+    /// `absent_columns` are known to be missing from the file and get defaults even if `allow_missing_fields` is false.
+    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns = {});
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
+    /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
     AvroDeserializer(const AvroDeserializer &) = delete;
     AvroDeserializer & operator=(const AvroDeserializer &) = delete;
-    AvroDeserializer(AvroDeserializer &&) = default;
+    AvroDeserializer(AvroDeserializer &&) = delete;
     AvroDeserializer & operator=(AvroDeserializer &&) = delete;
 
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
@@ -70,6 +67,7 @@ private:
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
     DeserializeFn createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type);
     SkipFn createSkipFn(const avro::NodePtr & root_node);
+    static size_t readUnionIndex(avro::Decoder & decoder, size_t num_branches);
 
     struct Action
     {
@@ -130,12 +128,7 @@ private:
                     deserializeNested(columns, decoder, ext);
                     break;
                 case Union:
-                    auto index = decoder.decodeUnionIndex();
-                    if (index >= actions.size())
-                    {
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
-                    }
-                    actions[index].execute(columns, decoder, ext);
+                    actions[readUnionIndex(decoder, actions.size())].execute(columns, decoder, ext);
                     break;
             }
         }
@@ -175,16 +168,19 @@ public:
 
     String getName() const override { return "AvroRowInputFormat"; }
 
+    void setColumnMapper(const ColumnMapperPtr & column_mapper_) override { column_mapper = column_mapper_; }
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
 
-    bool supportsCountRows() const override { return true; }
+    bool supportsCountRows() const override;
     size_t countRows(size_t max_block_size) override;
 
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
     FormatSettings format_settings;
+    ColumnMapperPtr column_mapper;
 };
 
 /// Confluent framing + Avro binary datum encoding. Mainly used for Kafka.

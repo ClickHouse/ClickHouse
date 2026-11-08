@@ -107,7 +107,7 @@ Peak memory usage: 485.15 MiB.
   ### Créer la table Iceberg
 </div>
 
-Pour écrire des données dans Iceberg, créez une table à l’aide du [table engine `IcebergS3`](/fr/reference/engines/table-engines/integrations/iceberg).
+Pour les lectures directes à partir d’une table Iceberg existante, nous recommandons la [fonction de table `icebergS3`](/fr/reference/functions/table-functions/iceberg). Ce guide montre comment créer et alimenter des tables Iceberg autonomes. Il utilise donc le [moteur de table `IcebergS3`](/fr/reference/engines/table-engines/integrations/iceberg) avec un schéma explicite. Les emplacements S3 de l’exemple contiennent déjà les tables finalisées ; pour exécuter les instructions `CREATE` et `INSERT`, remplacez les deux emplacements par des préfixes S3 vides, accessibles en écriture, et des identifiants que vous contrôlez.
 
 Notez que le schéma doit être simplifié par rapport à celui de la table source MergeTree. ClickHouse prend en charge un système de types plus riche qu’Iceberg et que les fichiers Parquet sous-jacents : des types tels que `Enum`, `LowCardinality` et `UInt8` ne sont pas pris en charge par Iceberg et doivent être convertis en types compatibles.
 
@@ -138,8 +138,10 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 Utilisez `INSERT INTO SELECT` pour insérer dans la table Iceberg des données provenant de la table MergeTree. Dans cet exemple, nous insérons uniquement les transactions de Londres :
 
+Cet exemple nécessite le [paramètre `allow_insert_into_iceberg`](/fr/reference/settings/session-settings/allow#allow_insert_into_iceberg). Consultez la [matrice de prise en charge](/fr/guides/use-cases/data-warehousing/support-matrix) pour connaître le niveau de maturité actuel et les limitations.
+
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

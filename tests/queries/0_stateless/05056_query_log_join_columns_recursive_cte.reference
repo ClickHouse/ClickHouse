@@ -1,0 +1,9 @@
+one join in the recursive member, five iterations
+5
+one join in each member of the recursive CTE
+5
+two independent recursive CTEs that share the name r
+5	5
+05056_recursive_cte_a_recursive_member	1	['HASH']	['INNER']	['ALL']
+05056_recursive_cte_b_both_members	2	['HASH']	['INNER','INNER']	['ALL','ALL']
+05056_recursive_cte_c_two_same_named	2	['HASH']	['INNER','INNER']	['ALL','ALL']

@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- INNER and LEFT/RIGHT/FULL counts of a large timestamp `BETWEEN` band join
 -- (167137 x 158 rows, `DateTime64(6)` keys) at full size.
 

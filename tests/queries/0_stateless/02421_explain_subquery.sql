@@ -1,5 +1,4 @@
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 
 SELECT count() > 3 FROM (EXPLAIN PIPELINE header = 1 SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain LIKE '%Header: \_\_table1.number UInt64%';
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT * FROM system.numbers ORDER BY number DESC) WHERE explain ILIKE '%Sort%';
@@ -24,6 +23,9 @@ SELECT * FROM viewExplain('', ''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', ''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', '', 1); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM viewExplain('EXPLAIN AST', '', ''); -- { serverError BAD_ARGUMENTS }
+-- `viewExplain` validates the first two arguments as string literals before analyzer resolution.
+SELECT * FROM viewExplain((SELECT * FROM view_explain_missing_table), '', (SELECT 1)); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM viewExplain('EXPLAIN', (SELECT * FROM view_explain_missing_table), (SELECT 1)); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 ( a UInt64 ) Engine = MergeTree ORDER BY tuple() AS SELECT number AS a FROM system.numbers LIMIT 100000;

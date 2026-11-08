@@ -1,6 +1,9 @@
 #include <Storages/Statistics/Statistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,6 +53,28 @@ bool StatisticsUtils::isSame(const IAggregateFunction & a, const IAggregateFunct
         if (!a_types[i]->equals(*b_types[i]))
             return false;
     return true;
+}
+
+void StatisticsUtils::updateMin(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && value < accumulator)
+        accumulator = value;
+}
+
+void StatisticsUtils::updateMax(Field & accumulator, const Field & value)
+{
+    if (value.isNull())
+        return;
+
+    if (accumulator.isNull() || isNaNField(accumulator))
+        accumulator = value;
+    else if (!isNaNField(value) && accumulator < value)
+        accumulator = value;
 }
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -175,6 +200,46 @@ IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
 {
 }
 
+size_t IStatistics::fieldAllocatedBytes(const Field & field)
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    auto vector_allocated_bytes = [](const FieldVector & vector)
+    {
+        size_t res = vector.capacity() * sizeof(Field);
+        for (const auto & element : vector)
+            res += fieldAllocatedBytes(element);
+        return res;
+    };
+
+    switch (field.getType())
+    {
+        case Field::Types::String:
+            return field.safeGet<String>().capacity();
+        case Field::Types::Array:
+            return vector_allocated_bytes(field.safeGet<Array>());
+        case Field::Types::Tuple:
+            return vector_allocated_bytes(field.safeGet<Tuple>());
+        case Field::Types::Map:
+            return vector_allocated_bytes(field.safeGet<Map>());
+        case Field::Types::Object:
+        {
+            size_t res = 0;
+            for (const auto & [key, value] : field.safeGet<Object>())
+                res += sizeof(Object::value_type) + map_node_overhead + key.capacity() + fieldAllocatedBytes(value);
+            return res;
+        }
+        case Field::Types::AggregateFunctionState:
+        {
+            const auto & state = field.safeGet<AggregateFunctionStateData>();
+            return state.name.capacity() + state.data.capacity();
+        }
+        default:
+            return 0;
+    }
+}
+
 ColumnStatistics::ColumnStatistics(const ColumnStatisticsDescription & stats_desc_)
     : stats_desc(stats_desc_)
 {
@@ -238,7 +303,16 @@ bool ColumnStatistics::structureEquals(const ColumnStatistics & other) const
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
 {
-    return MergeTreeStatisticsFactory::instance().get(stats_desc);
+    /// The statistics are recreated from their descriptions, which does not reproduce the structure of
+    /// statistics deserialized from an older format (e.g. `basic` without a default-value count), so
+    /// copy it explicitly: the clone must be compatible with the original (see `structureEquals`).
+    auto result = MergeTreeStatisticsFactory::instance().get(stats_desc);
+    for (const auto & [type, single_stats] : result->stats)
+    {
+        if (auto it = stats.find(type); it != stats.end())
+            single_stats->copyStructureFrom(*it->second);
+    }
+    return result;
 }
 
 UInt64 IStatistics::estimateCardinality() const
@@ -327,14 +401,14 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (uniq_stats != nullptr)
+    if (hasCardinality())
     {
-        UInt64 cardinality = uniq_stats->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
+        UInt64 distinct_values = estimateCardinality();
+        if (distinct_values == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
         /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(distinct_values);
     }
 
     return std::nullopt;
@@ -366,11 +440,13 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
 
 bool ColumnStatistics::hasCardinality() const
 {
-    return findUniqStats(stats) != nullptr;
+    return external_cardinality || findUniqStats(stats) != nullptr;
 }
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
+    if (external_cardinality)
+        return *external_cardinality;
     if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
         return uniq_stats->estimateCardinality();
@@ -506,9 +582,27 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// Write each statistics blob with a length prefix, by serializing into a temp buffer first.
+    /// Write each statistics blob with a length prefix. Statistics that can compute their exact
+    /// serialized size can stream directly to the destination; the others keep the temp-buffer
+    /// fallback needed for the V4 prefix.
     for (const auto & [type, stat_ptr] : stats)
     {
+        if (std::optional<UInt64> serialized_size = stat_ptr->getSerializedSize())
+        {
+            writeIntBinary(*serialized_size, buf);
+
+            const auto count_before = buf.count();
+            stat_ptr->serialize(buf);
+            const auto written = static_cast<UInt64>(buf.count() - count_before);
+            if (written != *serialized_size)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Statistics serialization for type {} wrote {} bytes but declared {} bytes",
+                    statisticsTypeToString(type), written, *serialized_size);
+
+            continue;
+        }
+
         String temp_data;
         WriteBufferFromString temp_buf(temp_data);
         stat_ptr->serialize(temp_buf);
@@ -517,6 +611,23 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
         writeIntBinary(static_cast<UInt64>(temp_data.size()), buf);
         buf.write(temp_data.data(), temp_data.size());
     }
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+    stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
+
+    auto basic = std::make_shared<StatisticsBasic>(basic_desc, data_type);
+    basic->build(rows, min_value, max_value, null_count);
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
+    column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
+    column_stats->rows = rows;
+    return column_stats;
 }
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
@@ -638,6 +749,19 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
         desc->deserialize(buf, version);
 
     return result;
+}
+
+size_t ColumnStatistics::allocatedBytes() const
+{
+    /// A node of `std::map` holds the value and three pointers and a color.
+    static constexpr size_t map_node_overhead = 4 * sizeof(void *);
+
+    size_t res = sizeof(*this);
+    for (const auto & [type, desc] : stats_desc.types_to_desc)
+        res += sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead + desc.allocatedBytes();
+    for (const auto & [type, single_stats] : stats)
+        res += sizeof(StatsMap::value_type) + map_node_overhead + single_stats->allocatedBytes() + single_stats->descriptionAllocatedBytes();
+    return res;
 }
 
 String ColumnStatistics::getNameForLogs() const
@@ -956,6 +1080,11 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type)
+{
+    return removeLowCardinalityAndNullable(removeNullable(data_type))->isValueRepresentedByNumber();
 }
 
 }

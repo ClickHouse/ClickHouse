@@ -1,0 +1,9 @@
+the predicate is evaluated per group
+1
+a constant argument is not folded into one draw
+1
+a seeded sample stays deterministic
+1
+a deterministic aggregate still folds
+6
+1

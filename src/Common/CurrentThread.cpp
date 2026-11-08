@@ -2,6 +2,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
@@ -97,6 +98,24 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
+CurrentThread::HideLogsFromClientScope::HideLogsFromClientScope()
+{
+    if (unlikely(!current_thread))
+        return;
+    logs_queue_to_restore = current_thread->getInternalTextLogsQueue();
+    if (!logs_queue_to_restore)
+        return;
+    client_logs_level_to_restore = current_thread->getClientLogsLevel();
+    current_thread->attachInternalTextLogsQueue(nullptr, LogsLevel::none);
+    restore = true;
+}
+
+CurrentThread::HideLogsFromClientScope::~HideLogsFromClientScope()
+{
+    if (restore)
+        CurrentThread::attachInternalTextLogsQueue(logs_queue_to_restore, client_logs_level_to_restore);
+}
+
 
 ThreadGroupPtr CurrentThread::getGroup()
 {
@@ -112,6 +131,13 @@ ContextPtr CurrentThread::tryGetQueryContext()
         return {};
 
     return current_thread->tryGetQueryContext();
+}
+
+MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
+{
+    if (auto group = getGroup())
+        return group->memory_pressure_monitor;
+    return getGlobalMemoryPressureMonitor();
 }
 
 void CurrentThread::checkIfNotCancelled()
@@ -230,17 +256,6 @@ ThrottlerPtr CurrentThread::getWriteThrottler()
     return current_thread->write_throttler;
 }
 
-MemoryTracker * CurrentThread::getUserMemoryTracker()
-{
-    if (unlikely(!current_thread))
-        return nullptr;
-
-    auto * tracker = current_thread->memory_tracker.getParent();
-    while (tracker && tracker->level != VariableContext::User)
-        tracker = tracker->getParent();
-
-    return tracker;
-}
 
 void CurrentThread::flushUntrackedMemory()
 {

@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 
 
@@ -55,7 +56,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
     const auto & constraints = constraints_and_current_profiles->constraints;
 
     MutableColumnsAndConstraints params(res_columns, constraints);
-    settings.dumpToSystemSettingsColumns(params);
+    settings.dumpToSystemSettingsColumns(params, canDisplaySecrets(context));
 }
 
 }

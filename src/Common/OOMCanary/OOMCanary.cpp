@@ -232,7 +232,7 @@ try
 
     warnIfCgroupGroupOOMKill(log);
 
-    Epoll epoll;
+    Epoll epoll{EpollNesting::Leaf};
     epoll.add(shutdown_fd.fd, EPOLLIN);
 
     const uint64_t initial_backoff_milliseconds = config.initial_backoff_seconds * 1000;
@@ -438,8 +438,8 @@ void OOMCanary::onCanaryOOM()
     /// Cancel all merges and mutations
     try
     {
-        context->getMergeList().cancelAll();
-        LOG_INFO(log, "Cancelled all running merges");
+        context->getMergeList().cancelCurrent();
+        LOG_INFO(log, "Cancelled currently running merges");
     }
     catch (...)
     {

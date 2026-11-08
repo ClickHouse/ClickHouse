@@ -171,7 +171,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-  [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) の値のレプリケーションはサポートされていません。代わりに、データ型のデフォルト値が使用されます。
+  [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) の値はレプリケートされます。PostgreSQL が更新時に変更されていない TOAST 参照を送信した場合、既存の値が保持されます。変更されていない TOAST replica identity カラムでは、PostgreSQL が古いキーのタプルを送信する必要があります。そうしないと、行を識別できません。
 </Note>
 
 <div id="settings">

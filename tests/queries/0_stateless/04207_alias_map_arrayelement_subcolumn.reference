@@ -50,7 +50,7 @@ value-c	value-c	value-c
 1
 -- tupleElement(t_chain, b) rewrites to t.b through chain
 1
--- isNull(n_alias) rewrites to n.null
+-- isNull(n_alias) rewrites to not(not(n.null))
 1
 -- isNotNull(n_chain) rewrites to not(n.null) through chain
 1

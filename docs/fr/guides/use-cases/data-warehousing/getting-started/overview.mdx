@@ -23,13 +23,13 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
   <Step title="Interroger directement des données Iceberg" id="query-directly">
     Le moyen le plus rapide pour démarrer — en particulier pour des requêtes ad hoc ou lorsque vous n’utilisez pas de catalogue — consiste à utiliser la table function [`icebergS3()`](/fr/reference/functions/table-functions/iceberg). Pointez-la vers une table Iceberg dans S3 et lancez immédiatement une query, sans aucune configuration préalable.
 
-    Inspectez le schéma :
+    Inspectez le schéma :
 
     ```sql
     DESCRIBE icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
     ```
 
-    Exécuter une requête :
+    Exécuter une requête :
 
     ```sql
     SELECT
@@ -45,18 +45,18 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
 
     ClickHouse lit directement les métadonnées Iceberg depuis S3 et détermine automatiquement le schéma. La même approche fonctionne pour [`deltaLake()`](/fr/reference/functions/table-functions/deltalake), [`hudi()`](/fr/reference/functions/table-functions/hudi) et [`paimon()`](/fr/reference/functions/table-functions/paimon).
 
-    **Pour en savoir plus :** [Interroger directement les formats de table ouverts](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) couvre les quatre formats, les variantes de cluster pour les lectures distribuées et les options de backend de stockage (S3, Azure, HDFS, local).
+    **Pour en savoir plus :** [Interroger directement les formats de table ouverts](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) couvre les quatre formats, les variantes de cluster pour les lectures distribuées et les options de backend de stockage (S3, Azure, HDFS, local).
   </Step>
 
   <Step title="Créer une table persistante avec le moteur de table Iceberg" id="table-engine">
-    Si vous n’utilisez pas de catalogue mais comptez interroger plusieurs fois le même chemin, créez une table à l’aide du moteur de table Iceberg afin de ne pas avoir à spécifier le chemin à chaque fois. Les données restent dans S3 — aucune donnée n’est dupliquée :
+    Si vous n’utilisez pas de catalogue mais comptez interroger plusieurs fois le même chemin, créez une table à l’aide du moteur de table Iceberg afin de ne pas avoir à spécifier le chemin à chaque fois. Les données restent dans S3 — aucune donnée n’est dupliquée :
 
     ```sql
     CREATE TABLE hits_iceberg
         ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
     ```
 
-    Interrogez-la maintenant comme n’importe quelle table ClickHouse :
+    Interrogez-la maintenant comme n’importe quelle table ClickHouse :
 
     ```sql
     SELECT
@@ -82,7 +82,7 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
       Utilisez `DataLakeCatalog` pour les charges de travail de production avec Glue, Unity Catalog, REST et les autres [catalogues pris en charge](/fr/guides/use-cases/data-warehousing/reference/index). Les fonctions de table et les moteurs de table fonctionnent lorsque vous connaissez un chemin spécifique, mais ils ne restent pas synchronisés à mesure que votre catalogue s’agrandit et nécessitent des identifiants ou des chemins distincts pour chaque table.
     </Warning>
 
-    Voici un exemple de connexion à [AWS Glue](/fr/guides/use-cases/data-warehousing/glue-catalog) :
+    Voici un exemple de connexion à [AWS Glue](/fr/guides/use-cases/data-warehousing/glue-catalog) :
 
     ```sql
     CREATE DATABASE my_lake
@@ -96,7 +96,7 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
 
     Chaque type de catalogue nécessite ses propres paramètres de connexion — consultez les [guides sur les catalogues](/fr/guides/use-cases/data-warehousing/reference/index) pour la liste complète des catalogues pris en charge et de leurs options de configuration.
 
-    Parcourez les tables et exécutez des requêtes :
+    Parcourez les tables et exécutez des requêtes :
 
     ```sql
     SHOW TABLES FROM my_lake;
@@ -110,11 +110,11 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
       Les accents graves sont obligatoires autour de `<database>.<table>`, car ClickHouse ne prend pas nativement en charge plusieurs espaces de noms.
     </Note>
 
-    **Pour en savoir plus :** [Se connecter à un catalogue de données](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) explique pas à pas une configuration complète d’Unity Catalog avec des exemples Delta et Iceberg.
+    **Pour en savoir plus :** [Se connecter à un catalogue de données](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) explique pas à pas une configuration complète d’Unity Catalog avec des exemples Delta et Iceberg.
   </Step>
 
   <Step title="Exécuter une requête" id="issue-query">
-    Quelle que soit la méthode utilisée ci-dessus — fonction de table, moteur de table ou `DataLakeCatalog` — le même ClickHouse SQL fonctionne dans tous les cas. En production avec un catalogue, interrogez via la base de données `DataLakeCatalog` ; les autres exemples restent utiles pour des tests rapides et un accès par chemin :
+    Quelle que soit la méthode utilisée ci-dessus — fonction de table, moteur de table ou `DataLakeCatalog` — le même ClickHouse SQL fonctionne dans tous les cas. En production avec un catalogue, interrogez via la base de données `DataLakeCatalog` ; les autres exemples restent utiles pour des tests rapides et un accès par chemin :
 
     ```sql
     -- Table function
@@ -134,12 +134,18 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     ```
 
     La syntaxe de la requête est identique — seule la clause `FROM` change. Toutes les fonctions, jointures et agrégations de ClickHouse SQL fonctionnent de la même façon, quelle que soit la source de données.
+
+    <Note>
+      **Ajouter du compute aux requêtes éligibles**
+
+      On-Demand Compute est en private preview pour les requêtes `SELECT` éligibles portant sur des données Apache Iceberg et Delta Lake prises en charge. Il affecte temporairement des workers ClickHouse supplémentaires via votre service et votre endpoint existants, sans redimensionner le service. Consultez la [documentation On-Demand Compute](/fr/products/cloud/features/infrastructure/on-demand-compute) pour connaître les conditions d’éligibilité et les limitations.
+    </Note>
   </Step>
 
   <Step title="Charger un sous-ensemble dans ClickHouse" id="load-data">
     Interroger Iceberg directement est pratique, mais les performances restent limitées par le débit du réseau et l’organisation des fichiers. Pour les charges de travail analytiques, chargez les données dans une table MergeTree native.
 
-    Commencez par exécuter une requête filtrée sur la table Iceberg afin d’établir une référence :
+    Commencez par exécuter une requête filtrée sur la table Iceberg afin d’établir une référence :
 
     ```sql
     SELECT
@@ -156,7 +162,7 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
 
     <Image img="/images/datalake/iceberg-query.webp" alt="Requête Iceberg" />
 
-    Créez maintenant une table MergeTree et chargez les données :
+    Créez maintenant une table MergeTree et chargez les données :
 
     ```sql
     CREATE TABLE hits_clickhouse
@@ -175,7 +181,7 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     FROM hits_iceberg
     ```
 
-    Réexécutez la même requête sur la table MergeTree :
+    Réexécutez la même requête sur la table MergeTree :
 
     ```sql
     SELECT
@@ -190,17 +196,17 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
 
     <Image img="/images/datalake/clickhouse-query.webp" alt="Requête ClickHouse" />
 
-    Comme `counterid` est la première colonne de la clé `ORDER BY`, l’index primaire sparse de ClickHouse saute directement aux granules pertinentes et ne lit que les lignes correspondant à `counterid = 38`, au lieu de parcourir l’ensemble des 100 millions de lignes. Le résultat est un gain de vitesse spectaculaire.
+    Comme `counterid` est la première colonne de la clé `ORDER BY`, l’index primaire sparse de ClickHouse saute directement aux granules pertinentes et ne lit que les lignes correspondant à `counterid = 38`, au lieu de parcourir l’ensemble des 100 millions de lignes. Le résultat est un gain de vitesse spectaculaire.
 
-    Le guide [accélérer l’analytique](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) va plus loin avec les types `LowCardinality`, les index de texte intégral et des clés de tri optimisées, en montrant une **amélioration d’environ 40x** sur un jeu de données de 283 millions de lignes.
+    Le guide [accélérer l’analytique](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) va plus loin avec les types `LowCardinality`, les index de texte intégral et des clés de tri optimisées, en montrant une **amélioration d’environ 40x** sur un jeu de données de 283 millions de lignes.
 
-    **Pour en savoir plus :** [Accélérer l’analytique avec MergeTree](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) couvre l’optimisation du schéma, l’indexation en texte intégral et une comparaison complète des performances avant/après.
+    **Pour en savoir plus :** [Accélérer l’analytique avec MergeTree](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) couvre l’optimisation du schéma, l’indexation en texte intégral et une comparaison complète des performances avant/après.
   </Step>
 
-  <Step title="Écrire à nouveau dans Iceberg" id="write-back">
+  <Step title="Écrire dans Iceberg" id="write-back">
     ClickHouse peut également écrire des données dans des tables Iceberg, ce qui permet des workflows ETL inversés — publier des résultats agrégés ou des sous-ensembles pour qu’ils soient exploités par d’autres outils (Spark, Trino, DuckDB, etc.).
 
-    Créez une table Iceberg de sortie :
+    Créez une table Iceberg de sortie :
 
     ```sql
     CREATE TABLE output_iceberg
@@ -211,7 +217,7 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     ENGINE = IcebergS3('https://your-bucket.s3.amazonaws.com/output/', 'access_key', 'secret_key')
     ```
 
-    Écrire les résultats agrégés :
+    Écrire les résultats agrégés :
 
     ```sql
     SET allow_experimental_insert_into_iceberg = 1;
@@ -227,13 +233,11 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
 
     La table Iceberg obtenue peut être lue par tout moteur compatible avec Iceberg.
 
-    **Pour en savoir plus :** [Écrire des données dans des formats de tables ouverts](/fr/guides/use-cases/data-warehousing/getting-started/writing-data) explique comment écrire des données brutes et des résultats agrégés à partir du jeu de données UK Price Paid, notamment les considérations de schéma lors de la correspondance entre les types ClickHouse et Iceberg.
+    **Pour en savoir plus :** [Écrire des données dans des formats de tables ouverts](/fr/guides/use-cases/data-warehousing/getting-started/writing-data) explique comment écrire des données brutes et des résultats agrégés à partir du jeu de données UK Price Paid, notamment les considérations de schéma lors de la correspondance entre les types ClickHouse et Iceberg.
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## Étapes suivantes
-</div>
+## Étapes suivantes {#next-steps}
 
 Maintenant que vous avez vu l’ensemble du processus, approfondissez chaque domaine :
 
