@@ -49,6 +49,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
@@ -459,7 +460,8 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
 
     /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
     /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
-    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
+    if (!schema_ptr->isArray(f_fields)
+        || (source == SchemaSource::ManifestFile && schema_ptr->getArray(f_fields)->size() == 0))
         return;
 
     std::unordered_map<String, String> type_mapping;
@@ -984,6 +986,11 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSch
     auto it = clickhouse_table_schemas_by_ids.find(id);
     if (it == clickhouse_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
+    if (it->second->empty())
+        throw Exception(
+            ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED,
+            "Iceberg schema with schema-id {} has no fields, which is not supported: a table must have at least one column",
+            id);
     return it->second;
 }
 
