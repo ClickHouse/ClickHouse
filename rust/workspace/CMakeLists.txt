@@ -59,20 +59,12 @@ if (ENABLE_PRQL)
         # unlike the host ld which may not support the target architecture.
         find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
         if (_LLD_FOR_STRIP)
-            set(_prql_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_prql.a")
-            add_custom_target(strip_prql_symbols
-                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                    "${_prql_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
-                    prql_to_sql prql_free_pointer
-                DEPENDS cargo-build__ch_rust_prql
+            clickhouse_postprocess_rust_lib(_ch_rust_prql
+                STEP strip_rust_symbols
+                SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+                ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" prql_to_sql prql_free_pointer
                 COMMENT "Stripping internal symbols from PRQL library"
-                VERBATIM
             )
-            add_dependencies(_ch_rust_prql strip_prql_symbols)
-            # Ensure localize runs before strip (they both modify the same .a)
-            if (TARGET localize_rust_c__ch_rust_prql)
-                add_dependencies(strip_prql_symbols localize_rust_c__ch_rust_prql)
-            endif()
         endif ()
     endif ()
 endif()
@@ -86,20 +78,12 @@ if (ENABLE_POLYGLOT)
         AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
         find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
         if (_LLD_FOR_STRIP)
-            set(_polyglot_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_polyglot.a")
-            add_custom_target(strip_polyglot_symbols
-                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                    "${_polyglot_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
-                    polyglot_transpile polyglot_free_pointer
-                DEPENDS cargo-build__ch_rust_polyglot
+            clickhouse_postprocess_rust_lib(_ch_rust_polyglot
+                STEP strip_rust_symbols
+                SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+                ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" polyglot_transpile polyglot_free_pointer
                 COMMENT "Stripping internal symbols from polyglot library"
-                VERBATIM
             )
-            add_dependencies(_ch_rust_polyglot strip_polyglot_symbols)
-            # Ensure localize runs before strip (they both modify the same .a)
-            if (TARGET localize_rust_c__ch_rust_polyglot)
-                add_dependencies(strip_polyglot_symbols localize_rust_c__ch_rust_polyglot)
-            endif()
         endif ()
     endif ()
 endif()
@@ -116,20 +100,12 @@ if (ENABLE_PCO)
         AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
         find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
         if (_LLD_FOR_STRIP)
-            set(_pco_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_pco.a")
-            add_custom_target(strip_pco_symbols
-                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                    "${_pco_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
-                    pco_compress pco_decompress
-                DEPENDS cargo-build__ch_rust_pco
+            clickhouse_postprocess_rust_lib(_ch_rust_pco
+                STEP strip_rust_symbols
+                SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+                ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" pco_compress pco_decompress
                 COMMENT "Stripping internal symbols from pco library"
-                VERBATIM
             )
-            add_dependencies(_ch_rust_pco strip_pco_symbols)
-            # Ensure localize runs before strip (they both modify the same .a)
-            if (TARGET localize_rust_c__ch_rust_pco)
-                add_dependencies(strip_pco_symbols localize_rust_c__ch_rust_pco)
-            endif()
         endif ()
     endif ()
 endif()
@@ -195,20 +171,12 @@ if (ENABLE_VORTEX AND TARGET ch_contrib::arrow)
             list(LENGTH _vortex_ffi_symbols _vortex_ffi_symbol_count)
             message(STATUS "Vortex: keeping ${_vortex_ffi_symbol_count} FFI entry points when stripping")
 
-            set(_vortex_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_vortex.a")
-            add_custom_target(strip_vortex_symbols
-                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                    "${_vortex_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
-                    ${_vortex_ffi_symbols}
-                DEPENDS cargo-build__ch_rust_vortex
+            clickhouse_postprocess_rust_lib(_ch_rust_vortex
+                STEP strip_rust_symbols
+                SCRIPT "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+                ARGS "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}" ${_vortex_ffi_symbols}
                 COMMENT "Stripping internal symbols from Vortex library"
-                VERBATIM
             )
-            add_dependencies(_ch_rust_vortex strip_vortex_symbols)
-            # Ensure localize runs before strip (they both modify the same .a)
-            if (TARGET localize_rust_c__ch_rust_vortex)
-                add_dependencies(strip_vortex_symbols localize_rust_c__ch_rust_vortex)
-            endif()
         endif ()
     endif ()
 endif()
