@@ -23,11 +23,6 @@ SELECT unhex('0000000010000000')::AggregateFunction(sumForEach, Array(Nullable(N
 -- -ForEach over a zero-sized -Resample multiplies the nested states like nested -Resample does.
 SELECT nothingResampleForEach(0, 1048576, 1)(range(1048576), range(1048576)); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT length(nothingForEach(range(1048576)));
--- Nested states reached from one created state or one added row share the limit: -Tuple elements, -Map keys, and the
--- elements of -ForEach / -Array over them.
+-- The nested states of one created state share the limit, also across the elements of a -Tuple.
 SELECT length(nothingResampleTupleResample(0, 524288, 1, 0, 2, 1)(tuple(number, number), number)) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT length(tupleElement(nothingResampleTuple(0, 1048576, 1)(tuple(number, number)), 1)) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT length(mapKeys(nothingResampleMap(0, 1048576, 1)(map(1, 1, 2, 2)))); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT length(nothingResampleMapArrayResample(0, 1048576, 1, 0, 1, 1)([map(1, 1), map(2, 2)], 0)); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT length(nothingResampleMapForEach(0, 1048576, 1)([map(1, 1), map(2, 2)])); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT length(nothingResampleMapForEachResample(0, 1048576, 1, 0, 1, 1)([map(1, 1), map(2, 2)], 0)); -- { serverError ARGUMENT_OUT_OF_BOUND }

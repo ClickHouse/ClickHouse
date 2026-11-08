@@ -187,7 +187,7 @@ public:
     void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
 
     /// While alive, the zero-sized states created by `createNestedStates` on this thread count against one limit.
-    /// A combinator opens one for a call that reaches several nested states (one created state, one added row).
+    /// A combinator whose `create` creates states of several nested functions (`-Tuple`) opens one around them.
     class NestedStatesScope
     {
     public:

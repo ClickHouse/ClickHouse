@@ -246,7 +246,6 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        IAggregateFunction::NestedStatesScope scope;
         absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
 
         for (size_t i = 0; i < num_arguments; ++i)
@@ -312,7 +311,6 @@ public:
         size_t row,
         Arena * arena) const
     {
-        IAggregateFunction::NestedStatesScope scope;
         size_t begin = offsets[row - 1];
         size_t end = offsets[row];
         assertArraySizesMatch(trailing_offsets, row, begin, end);
