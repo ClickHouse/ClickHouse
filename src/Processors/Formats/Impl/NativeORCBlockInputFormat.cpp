@@ -1402,8 +1402,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     }
 
     std::unordered_set<UInt64> include_typeids;
-    /// A field of the file with the name of an absent column is neither read nor used by the filter push-down, so the
-    /// column is not bound to it.
+    /// A same-named field of an absent column has another field id: it is neither read nor used by the filter push-down.
     bool absent_column_has_namesake = false;
     for (const auto & column : header)
     {

@@ -820,8 +820,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
         if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
         {
-            /// An identical metadata.json copy confirms a copy that was registered from a manifest header, and replaces
-            /// it: the comparison ignores keys that a manifest header copy may lack, like `initial-default`.
+            /// A manifest header copy may lack keys the comparison ignores, like `initial-default`: the metadata.json copy wins.
             if (source == SchemaSource::Metadata && manifest_sourced_schema_ids.erase(schema_id))
             {
                 iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
