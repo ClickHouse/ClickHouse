@@ -60,3 +60,22 @@ $CLICKHOUSE_LOCAL --session_timezone UTC --allow_insert_into_iceberg 1 --allow_e
     CREATE TABLE IF NOT EXISTS t (i Nullable(Int32), s String, d Date) ENGINE = IcebergLocal('$PWD/${work_dir}/iceberg_v2_delete_equality_partitioned');
     ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1, dry_run = 1);"
 rm -rf "./${work_dir}"
+
+# Manifests without `schema` and `schema-id` around a column rename. The schema of an ORC file is known from the snapshot
+# that added its manifest, and once that snapshot is expired the reader refuses rather than assuming the current schema.
+work_dir="${CLICKHOUSE_TEST_UNIQUE_NAME}_renamed"
+rm -rf "./${work_dir}"
+mkdir -p "./${work_dir}"
+table="$PWD/${work_dir}/t"
+ch="$CLICKHOUSE_LOCAL --allow_insert_into_iceberg 1 --allow_expire_snapshots 1"
+$ch --query "CREATE TABLE t (a Int32) ENGINE = IcebergLocal('$table', 'ORC'); INSERT INTO t VALUES (7);"
+$ch --query "CREATE TABLE t ENGINE = IcebergLocal('$table', 'ORC'); ALTER TABLE t RENAME COLUMN a TO b;"
+$ch --query "CREATE TABLE t ENGINE = IcebergLocal('$table', 'ORC'); INSERT INTO t VALUES (8);"
+for manifest in "$table"/metadata/*.avro; do
+    [[ "$(basename "$manifest")" == snap-* ]] && continue
+    python3 -c 'import sys; p = sys.argv[1]; d = open(p, "rb").read(); open(p, "wb").write(d.replace(b"\x0cschema", b"\x0cschemX", 1).replace(b"\x12schema-id", b"\x12schemX-id", 1))' "$manifest"
+done
+q "SELECT b FROM icebergLocal('$table') ORDER BY b"
+$ch --query "CREATE TABLE t ENGINE = IcebergLocal('$table', 'ORC'); ALTER TABLE t EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1);" > /dev/null
+q "SELECT b FROM icebergLocal('$table') ORDER BY b" 2>&1 | grep -o -m1 -e 'the table has several schemas' -e 'ICEBERG_SPECIFICATION_VIOLATION'
+rm -rf "./${work_dir}"

@@ -1134,6 +1134,22 @@ bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
     return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
 }
 
+std::optional<Int32> IcebergSchemaProcessor::tryGetOnlySchemaIdFromMetadata() const
+{
+    SharedLockGuard lock(mutex);
+
+    std::optional<Int32> result;
+    for (const auto & [id, _] : iceberg_table_schemas_by_ids)
+    {
+        if (manifest_sourced_schema_ids.contains(id))
+            continue;
+        if (result)
+            return std::nullopt;
+        result = id;
+    }
+    return result;
+}
+
 std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
 {
     std::unordered_map<String, Int64> result;

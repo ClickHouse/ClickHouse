@@ -120,6 +120,8 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickHouseTableSchemaById(Int32 id) const;
     bool isSchemaRegisteredFromMetadata(Int32 id) const;
+    /// The id of the schema registered from metadata.json if it is the only one, nullopt otherwise.
+    std::optional<Int32> tryGetOnlySchemaIdFromMetadata() const;
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 

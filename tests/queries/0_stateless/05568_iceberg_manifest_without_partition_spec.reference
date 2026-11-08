@@ -24,3 +24,7 @@ deleted_manifest_lists_count	3
 deleted_statistics_files_count	0
 dry_run	1
 failed_deletions_count	0
+7
+8
+the table has several schemas
+ICEBERG_SPECIFICATION_VIOLATION
