@@ -33,6 +33,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/Logger.h>
@@ -334,6 +335,14 @@ static Plan getPlan(
                 && (!upper.has_value() || *upper >= data_file_path);
             if (!can_contain_data_file_deletes)
                 continue;
+
+            /// Compaction reads the data files under the current schema, which the ORC and Avro readers resolve by name, not by field id.
+            const auto & data_file_format = data_file->data_object_info->info.file_format;
+            if (Poco::toUpper(data_file_format) != "PARQUET")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Compaction of Iceberg tables with position deletes is supported only for data files of Parquet format, but got {}",
+                    data_file_format);
 
             data_file->data_object_info->addPositionDeleteFile(
                 delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));

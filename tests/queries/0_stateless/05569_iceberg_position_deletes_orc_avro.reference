@@ -54,3 +54,13 @@ avrofmt	1
 4
 5
 4
+orcfmt OPTIMIZE refused
+1	alpha
+3	charlie
+4	delta
+5	echo
+avrofmt OPTIMIZE refused
+1	alpha
+3	charlie
+4	delta
+5	echo
