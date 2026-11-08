@@ -28,24 +28,25 @@ struct RowPoint
 struct SlidingBlock
 {
     /// Inputs
-    const Columns input_columns;
-    const Columns materialized_columns;
+    Columns input_columns;
+    Columns materialized_columns;
 
     /// Helper data
-    const int64_t rows_count = 0;
-    const int64_t block_number = 0;
-    const int64_t begin_position = 0;
-    const int64_t end_position = 0;
-    const SlidingIndex index;
+    int64_t rows_count = 0;
+    int64_t block_number = 0;
+    int64_t begin_position = 0;
+    int64_t end_position = 0;
+    SlidingIndex index;
 };
 
 class SlidingBlocks
 {
 public:
-    SlidingBlock & add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
+    void add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
+    void pop();
+
     const SlidingBlock & blockAt(int64_t block_number) const;
     const SlidingBlock & front() const;
-    void pop();
 
     RowNumber begin() const;
     RowNumber end() const;

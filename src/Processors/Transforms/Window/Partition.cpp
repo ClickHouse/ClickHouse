@@ -4,7 +4,7 @@ namespace DB
 {
 
 Partition::Partition()
-    : partition_bounds{.fully_visible = true}
+    : partition_bounds{.start = RowNumber{0, 0}, .end = RowNumber{0, 0}, .fully_visible = true}
 {
 }
 

@@ -18,6 +18,7 @@
 
 #include <Common/AlignedBuffer.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/Block.h>
 
 #include <optional>
