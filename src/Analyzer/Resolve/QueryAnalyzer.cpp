@@ -2220,6 +2220,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedUnnestColumnNode
     const auto * nearest_query_scope = scope.getNearestQueryScope();
     const auto & qualify_scope = nearest_query_scope ? *nearest_query_scope : scope;
 
+    auto binds_elsewhere = [&](Identifier identifier)
+    {
+        IdentifierLookup identifier_lookup{std::move(identifier), IdentifierLookupContext::EXPRESSION};
+        return IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, /*table_expression_node=*/ nullptr, qualify_scope)
+            || IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, qualify_scope)
+            || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, qualify_scope, unnest_node.get());
+    };
+
     QueryTreeNodesWithNames matched_column_nodes_with_names;
     for (const auto & array_join_expression : unnest_node_typed.getJoinExpressions().getNodes())
     {
@@ -2230,10 +2238,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedUnnestColumnNode
 
         auto column_node = std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource());
 
-        IdentifierLookup identifier_lookup{Identifier(column_name), IdentifierLookupContext::EXPRESSION};
-        if (IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, /*table_expression_node=*/ nullptr, qualify_scope)
-            || IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, qualify_scope)
-            || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, qualify_scope, unnest_node.get()))
+        /// A dotted name `a.b` can also bind as one part, to an alias or another unnest column named `a.b`.
+        Identifier column_identifier(column_name);
+        bool is_compound = column_identifier.isCompound();
+        if (binds_elsewhere(std::move(column_identifier))
+            || (is_compound && binds_elsewhere(Identifier(std::vector<std::string>{column_name}))))
             node_to_projection_name.emplace(column_node, unnest_node_typed.getUnnestAlias() + '.' + column_name);
 
         matched_column_nodes_with_names.emplace_back(std::move(column_node), column_name);
