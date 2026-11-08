@@ -342,7 +342,7 @@ private:
     NameSet materialized_statistics;
     NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
-    /// `Nested` members written by `MATERIALIZE COLUMN`, a `MATERIALIZED` recalculation or a patch, with no size check.
+    /// `Nested` members written by `MATERIALIZE COLUMN`, a `MATERIALIZED` recalculation, a patch or a type conversion, with no size check.
     NameSet nested_written_without_size_check;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.

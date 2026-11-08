@@ -1702,6 +1702,10 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 if (old_type && command.data_type && !old_type->equals(*command.data_type))
                 {
+                    /// A conversion, e.g. from `String`, may produce other array sizes.
+                    if (getNestedGroupOfMember(columns_desc, command.column_name))
+                        nested_written_without_size_check.insert(command.column_name);
+
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
                         const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();

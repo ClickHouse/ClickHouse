@@ -14,6 +14,8 @@ DROP TABLE IF EXISTS t10;
 DROP TABLE IF EXISTS t11;
 DROP TABLE IF EXISTS t12;
 DROP TABLE IF EXISTS t13;
+DROP TABLE IF EXISTS t14;
+DROP TABLE IF EXISTS t15;
 
 SELECT 'materialize a default of other sizes';
 CREATE TABLE t1 (id UInt64, n Nested(a UInt64, c String)) ENGINE = MergeTree ORDER BY id
@@ -157,6 +159,26 @@ SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM syste
 KILL MUTATION WHERE database = currentDatabase() AND table = 't13' SYNC FORMAT Null;
 SELECT id, n.a, n.c FROM t13 ORDER BY id;
 
+SELECT 'convert a stored column to an array of other sizes';
+CREATE TABLE t14 (id UInt64, n Nested(a UInt64, c String), `n.x` String, `n.y` String) ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t14 VALUES (0, [1, 2], ['p', 'q'], '[5, 6]', '[]'), (1, [3], ['r'], '[7]', '[]');
+ALTER TABLE t14 MODIFY COLUMN `n.x` Array(UInt64) SETTINGS mutations_sync = 2;
+SELECT id, n.a, n.c, n.x FROM t14 ORDER BY id;
+ALTER TABLE t14 MODIFY COLUMN `n.y` Array(UInt64) SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
+SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't14' AND NOT is_done;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't14' SYNC FORMAT Null;
+SELECT id, n.a, n.c, n.x FROM t14 ORDER BY id;
+
+SELECT 'convert a stored column of a compact part to an array of other sizes';
+CREATE TABLE t15 (id UInt64, n Nested(a UInt64, c String), `n.y` String) ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = '10G';
+INSERT INTO t15 VALUES (0, [1, 2], ['p', 'q'], '[]'), (1, [3], ['r'], '[]');
+ALTER TABLE t15 MODIFY COLUMN `n.y` Array(UInt64) SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
+SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't15' AND NOT is_done;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't15' SYNC FORMAT Null;
+SELECT id, n.a, n.c FROM t15 ORDER BY id;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
@@ -170,3 +192,5 @@ DROP TABLE t10;
 DROP TABLE t11;
 DROP TABLE t12;
 DROP TABLE t13;
+DROP TABLE t14;
+DROP TABLE t15;
