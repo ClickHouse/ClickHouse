@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityCagra.h>
 
 #include <atomic>
 #include <cmath>
@@ -74,7 +75,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// The only indexing method currently supported by USearch
+/// The only indexing method supported by USearch. `cagra` (cuVS, on the GPU) is handled in MergeTreeIndexVectorSimilarityCagra.
 const std::set<String> methods = {"hnsw"};
 
 /// Maps from user-facing name to internal name
@@ -671,6 +672,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+#if USE_GPU
+    if (args[0].safeGet<String>() == "cagra")
+        return cagraIndexCreator(std::move(metadata_snapshot), index, args);
+#endif
     UInt64 dimensions = args[2].safeGet<UInt64>();
 
     /// Default parameters:
@@ -697,6 +702,13 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+#if USE_GPU
+    if (!args.empty() && args[0].getType() == Field::Types::String && args[0].safeGet<String>() == "cagra")
+    {
+        cagraIndexValidator(index, args);
+        return;
+    }
+#endif
     const bool has_three_args = (args.size() == 3);
     const bool has_six_args = (args.size() == 6);
 
