@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Common/FieldVisitorHash.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -124,7 +125,13 @@ std::optional<IASTHash> computePartialAggregateCacheQueryHash(
         updateHashWithString(hash, aggregate.function->getName());
         hash.update(aggregate.parameters.size());
         for (const auto & parameter : aggregate.parameters)
+        {
+            /// `FieldVisitorHash` hashes the type and the raw value of a decimal but not its scale, so
+            /// `toDecimal32(5, 0)` and `toDecimal32(0.5, 1)` would hash the same. The textual form includes the
+            /// scale, also for decimals nested in arrays, tuples and maps.
             applyVisitor(FieldVisitorHash(hash), parameter);
+            updateHashWithString(hash, applyVisitor(FieldVisitorToString(), parameter));
+        }
         hash.update(aggregate.argument_names.size());
         for (const auto & arg : aggregate.argument_names)
             updateHashWithString(hash, arg);
