@@ -11,7 +11,7 @@ NOT_IMPLEMENTED
 1	alpha	10
 2	beta	20
 3	alpha	\N
-deleted_data_files_count	0
+deleted_data_files_count	1
 deleted_position_delete_files_count	0
 deleted_equality_delete_files_count	0
 deleted_manifest_files_count	0
@@ -20,6 +20,7 @@ deleted_metadata_files_count	0
 deleted_statistics_files_count	0
 skipped_missing_metadata_count	0
 failed_deletions_count	0
+NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 NOT_IMPLEMENTED
 1

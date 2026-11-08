@@ -469,7 +469,8 @@ void ManifestFilesPrefetcher::fill()
             cached = persistent_table_components.metadata_cache->tryGetManifestFile(
                 IcebergMetadataFilesCache::getKey(*persistent_table_components.table_uuid, manifest.manifest_file_path.serialize()));
 
-        const size_t bytes = cached ? 0 : manifest.manifest_file_byte_size;
+        const size_t known_bytes = manifest.manifest_file_byte_size;
+        const size_t bytes = cached ? 0 : (known_bytes != 0 ? known_bytes : max_manifest_bytes_in_flight);
         if (bytes != 0 && leased_bytes != 0 && leased_bytes + bytes > max_manifest_bytes_in_flight)
             break;
 

@@ -87,10 +87,15 @@ metadata_files v1
 
 echo '--- upgraded to format version 2'
 local_in v2 -q "SELECT * FROM icebergLocal('$LEGACY') ORDER BY id"
-# The embedded manifest and its data files are reachable, so nothing is an orphan.
+# The embedded manifest and its data files are reachable, so the only orphan is an old unreferenced file.
+touch -d '2001-01-01 00:00:00' "$WORK/v2/$LEGACY/data/orphan.parquet"
 local_in v2 --allow_insert_into_iceberg=1 --allow_iceberg_remove_orphan_files=1 -q "
     CREATE TABLE t ENGINE = IcebergLocal('$LEGACY');
     ALTER TABLE t EXECUTE remove_orphan_files(older_than = '2002-01-01 00:00:00', dry_run = 1)"
+rm "$WORK/v2/$LEGACY/data/orphan.parquet"
+error_code v2 --allow_insert_into_iceberg=1 -q "
+    CREATE TABLE t ENGINE = IcebergLocal('$LEGACY');
+    ALTER TABLE t DELETE WHERE id = 1"
 error_code v2 --allow_experimental_iceberg_compaction=1 -q "
     CREATE TABLE t ENGINE = IcebergLocal('$LEGACY');
     OPTIMIZE TABLE t"

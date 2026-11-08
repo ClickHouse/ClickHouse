@@ -62,7 +62,7 @@ ManifestFileCacheKeys getManifestList(
     LoggerPtr log);
 
 /// The manifests that a snapshot without `manifest-list` lists in `manifests` (format version 1),
-/// with the values Java gives them: partition spec 0, sequence number 0, added by this snapshot, no summaries and counts.
+/// with the values Java gives them: partition spec 0, sequence number 0, added by this snapshot, unknown size (0), no summaries and counts.
 ManifestFileCacheKeys getEmbeddedManifests(const Poco::JSON::Object::Ptr & snapshot_object);
 
 /// Reads manifest files ahead, in order, on the IO thread pool. Not thread-safe.
@@ -112,7 +112,8 @@ private:
     void fill();
 
     static constexpr size_t max_manifest_files_in_flight = 64;
-    /// Counts only the files that are not in the metadata files cache. A larger file is still read when it is the only one.
+    /// Counts only the files that are not in the metadata files cache;
+    /// a file of unknown size (0) counts as the whole budget. A larger file is still read when it is the only one.
     static constexpr size_t max_manifest_bytes_in_flight = 64 << 20;
 
     const ObjectStoragePtr object_storage;
