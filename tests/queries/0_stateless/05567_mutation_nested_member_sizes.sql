@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t9;
 DROP TABLE IF EXISTS t10;
 DROP TABLE IF EXISTS t11;
 DROP TABLE IF EXISTS t12;
+DROP TABLE IF EXISTS t13;
 
 SELECT 'materialize a default of other sizes';
 CREATE TABLE t1 (id UInt64, n Nested(a UInt64, c String)) ENGINE = MergeTree ORDER BY id
@@ -141,6 +142,21 @@ SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM syste
 KILL MUTATION WHERE database = currentDatabase() AND table = 't12' SYNC FORMAT Null;
 SELECT id, k, n.a, n.c, n.m FROM t12 ORDER BY id;
 
+SELECT 'patch carrying a recomputed MATERIALIZED member';
+CREATE TABLE t13 (id UInt64, k UInt64, n Nested(a UInt64, c String), `n.m` Array(UInt64) MATERIALIZED range(k))
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t13 (id, k, `n.a`, `n.c`) VALUES (0, 2, [1, 2], ['p', 'q']), (1, 1, [3], ['r']);
+UPDATE t13 SET k = 1, `n.a` = [4] WHERE id = 1;
+ALTER TABLE t13 APPLY PATCHES SETTINGS mutations_sync = 2;
+SELECT id, k, n.a, n.c, n.m FROM t13 ORDER BY id;
+UPDATE t13 SET k = 0 WHERE id = 0;
+ALTER TABLE t13 APPLY PATCHES SETTINGS mutations_sync = 2; -- { serverError UNFINISHED }
+SELECT position(latest_fail_reason, 'SIZES_OF_ARRAYS_DONT_MATCH') > 0 FROM system.mutations WHERE database = currentDatabase() AND table = 't13' AND NOT is_done;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't13' SYNC FORMAT Null;
+SELECT id, n.a, n.c FROM t13 ORDER BY id;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
@@ -153,3 +169,4 @@ DROP TABLE t9;
 DROP TABLE t10;
 DROP TABLE t11;
 DROP TABLE t12;
+DROP TABLE t13;

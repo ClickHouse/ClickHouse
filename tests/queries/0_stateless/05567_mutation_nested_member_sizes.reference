@@ -52,3 +52,9 @@ recompute a MATERIALIZED member to other sizes
 1
 0	2	[1,2]	['p','q']	[0,1]
 1	1	[3]	['r']	[0]
+patch carrying a recomputed MATERIALIZED member
+0	2	[1,2]	['p','q']	[0,1]
+1	1	[4]	['r']	[0]
+1
+0	[1,2]	['p','q']
+1	[4]	['r']

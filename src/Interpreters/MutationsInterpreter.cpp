@@ -936,7 +936,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// The _row_exists mask is handled by APPLY_DELETED_MASK, not as a data column.
         if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch
             && command.column_name != RowExistsColumn::name)
+        {
             patch_updated_columns.insert(command.column_name);
+            /// A patch may carry a `MATERIALIZED` member recomputed without a size check.
+            if (getNestedGroupOfMember(columns_desc, command.column_name))
+                nested_written_without_size_check.insert(command.column_name);
+        }
 
         auto alter = command.ast();
         if (alter && alter->update_assignments)
