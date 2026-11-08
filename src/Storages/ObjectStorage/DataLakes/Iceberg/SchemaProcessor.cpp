@@ -463,7 +463,7 @@ std::optional<String> findGeoTypeViolation(const String & type_name)
     }
     if (crs.empty())
         return fmt::format("Empty CRS in Iceberg type '{}'", type_name);
-    if (is_geometry && crs.find(')') != std::string_view::npos)
+    if (is_geometry && crs.contains(')'))
         return fmt::format("Invalid CRS '{}' in Iceberg type '{}'", crs, type_name);
 
     static constexpr std::string_view algorithms[] = {"spherical", "vincenty", "thomas", "andoyer", "karney"};
