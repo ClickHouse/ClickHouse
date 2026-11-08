@@ -478,10 +478,16 @@ void DistinctTransform::transformWithOwnSet(Chunk & chunk)
         const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
         const UInt64 available_memory = max_bytes_before_pass_through - std::min(max_bytes_before_pass_through, query_memory_usage);
 
-        size_t filtering_memory = roundUpToPowerOfTwoOrZero(
-            num_rows * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right) * 2;
+        /// As in `DistinctSetFilter::estimateFilteringMemory`: the output filter and the optional
+        /// `LowCardinality` mask coexist with either the packed keys of the hash method (alive during
+        /// insertion) or the filtered copies of the columns (made after insertion), whichever is larger.
+        const size_t mask_bytes = roundUpToPowerOfTwoOrZero(
+            num_rows * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right);
+        size_t columns_bytes = 0;
         for (const auto & column : columns)
-            filtering_memory += column->allocatedBytes();
+            columns_bytes += column->allocatedBytes();
+        const size_t prepared_keys_bytes = data->estimatePreparedKeysMemory(num_rows, key_sizes);
+        const size_t filtering_memory = std::max(columns_bytes, prepared_keys_bytes) + 2 * mask_bytes;
 
         size_t growth_memory = data->estimateGrowthMemory(column_ptrs, 0, num_rows);
         if (key_columns_pos.size() == 1
