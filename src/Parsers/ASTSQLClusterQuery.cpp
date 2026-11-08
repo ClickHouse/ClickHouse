@@ -1,9 +1,11 @@
 #include <Parsers/ASTSQLClusterQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/FieldVisitorToSetting.h>
 #include <Parsers/formatSettingName.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+
+#include <cstring>
 
 
 namespace DB
@@ -11,6 +13,21 @@ namespace DB
 
 namespace
 {
+
+bool equalsKeywordIgnoreCase(std::string_view name, std::string_view keyword)
+{
+    return name.size() == keyword.size()
+        && 0 == strncasecmp(name.data(), keyword.data(), name.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
+}
+
+void formatSQLClusterSettingName(const String & name, WriteBuffer & ostr)
+{
+    /// Unquoted, `shard` / `replica` are parsed as the `SHARD` / `REPLICA` keywords.
+    if (equalsKeywordIgnoreCase(name, "shard") || equalsKeywordIgnoreCase(name, "replica"))
+        ostr << backQuote(name);
+    else
+        formatSettingName(name, ostr);
+}
 
 void formatPropertiesAssignments(
     WriteBuffer & ostr,
@@ -22,9 +39,9 @@ void formatPropertiesAssignments(
         if (i != 0)
             ostr << ", ";
 
-        formatSettingName(properties[i].name, ostr);
+        formatSQLClusterSettingName(properties[i].name, ostr);
         if (settings.show_secrets || (properties[i].name != "password" && properties[i].name != "secret"))
-            ostr << " = " << applyVisitor(FieldVisitorToString(), properties[i].value);
+            ostr << " = " << applyVisitor(FieldVisitorToSetting(), properties[i].value);
         else
             ostr << " = '[HIDDEN]'";
     }
