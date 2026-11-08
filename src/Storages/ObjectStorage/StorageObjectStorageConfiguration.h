@@ -56,7 +56,7 @@ struct StorageObjectStorageQuerySettings
     bool ignore_non_existent_file;
     /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix
     /// when listing by glob. Tables with hive partition strategy skip them unconditionally.
-    bool skip_hidden_files = false;
+    bool skip_hidden_files;
 };
 
 

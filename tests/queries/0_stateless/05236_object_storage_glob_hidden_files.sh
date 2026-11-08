@@ -41,6 +41,36 @@ SELECT 'plain glob skip hidden:', count() FROM s3('$path/t/**.parquet', 'test', 
 INSERT INTO FUNCTION s3('$path/_root/dt=2026-01-01/d.parquet', 'test', 'testtest', 'Parquet') SELECT toInt64(4) AS id;
 SELECT 'hidden prefix exempt:', count() FROM s3('$path/_root/*/*.parquet', 'test', 'testtest', 'Parquet') SETTINGS s3_skip_hidden_files = 1;
 
+-- A segment containing '=' is a partition directory, not a hidden path: the hive partition strategy
+-- writes '_p=1/' for a partition column '_p' and must read it back.
+CREATE TABLE 05236_underscore_partition (id Int64, _p String)
+ENGINE = S3('$path/up', 'test', 'testtest', format = 'Parquet', partition_strategy = 'hive')
+PARTITION BY _p;
+INSERT INTO 05236_underscore_partition VALUES (6, 'x'), (7, 'y');
+SELECT 'underscore partition column:', id, _p FROM 05236_underscore_partition ORDER BY id;
+DROP TABLE 05236_underscore_partition;
+
+-- A hidden table root without a trailing slash is the explicit path of the table, and is exempt.
+CREATE TABLE 05236_hidden_root (id Int64, dt String)
+ENGINE = S3('$path/_hroot', 'test', 'testtest', format = 'Parquet', partition_strategy = 'hive')
+PARTITION BY dt;
+INSERT INTO 05236_hidden_root VALUES (8, '2026-01-01');
+INSERT INTO FUNCTION s3('$path/_hroot/_temporary/0/dt=2026-01-01/e.parquet', 'test', 'testtest', 'Parquet') SELECT toInt64(9) AS id;
+SELECT 'hidden table root:', id, dt FROM 05236_hidden_root ORDER BY id;
+DROP TABLE 05236_hidden_root;
+
+-- The literal prefix of a glob is exempt even when it ends in the middle of a hidden segment.
+SELECT 'hidden partial prefix exempt:', count() FROM s3('$path/_ro*/*/*.parquet', 'test', 'testtest', 'Parquet') SETTINGS s3_skip_hidden_files = 1;
+
+-- Keys extracted from a '_path' predicate obey the same visibility rule as the listing, so the result
+-- does not depend on 's3_path_filter_limit'.
+SELECT 'path predicate with key extraction:', count() FROM s3('$path/t/**.parquet', 'test', 'testtest', 'Parquet')
+WHERE _path IN ('test/${CLICKHOUSE_DATABASE}/05236/t/dt=2026-01-01/a.parquet', 'test/${CLICKHOUSE_DATABASE}/05236/t/.spark-staging-y/dt=2026-01-01/c.parquet')
+SETTINGS s3_skip_hidden_files = 1;
+SELECT 'path predicate without key extraction:', count() FROM s3('$path/t/**.parquet', 'test', 'testtest', 'Parquet')
+WHERE _path IN ('test/${CLICKHOUSE_DATABASE}/05236/t/dt=2026-01-01/a.parquet', 'test/${CLICKHOUSE_DATABASE}/05236/t/.spark-staging-y/dt=2026-01-01/c.parquet')
+SETTINGS s3_skip_hidden_files = 1, s3_path_filter_limit = 0;
+
 -- Schema inference samples the listing in order, and '_temporary' sorts before 'dt=...':
 -- without the filter it infers the schema of a staged file.
 INSERT INTO FUNCTION s3('$path/t2/_temporary/0/staged.parquet', 'test', 'testtest', 'Parquet') SELECT 'x' AS a;

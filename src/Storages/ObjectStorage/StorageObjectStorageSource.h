@@ -347,12 +347,12 @@ private:
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;
-    /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix,
-    /// the way every other reader of Hive-layout data does (Hive, Spark, Trino): such segments
-    /// hold in-progress staging output and marker objects, not table data. Enabled by the
-    /// per-engine skip_hidden_files settings and unconditionally for hive partition strategy.
+    /// Skip objects with a path segment starting with '_' or '.' (and not containing '=') below
+    /// the non-glob prefix, the way every other reader of Hive-layout data does (Hive, Spark, Trino):
+    /// such segments hold in-progress staging output and marker objects, not table data. Enabled by
+    /// the per-engine skip_hidden_files settings and unconditionally for hive partition strategy.
     const bool skip_hidden_files;
-    /// Size of the directory part of the non-glob prefix: segments are checked only past it.
+    /// Size of the literal (glob-free) prefix of the glob path: only segments starting past it are checked.
     size_t hidden_check_prefix_size = 0;
     const LoggerPtr log;
 
