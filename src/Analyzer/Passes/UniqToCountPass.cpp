@@ -12,12 +12,14 @@
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool optimize_uniq_to_count;
+    extern const SettingsBool group_by_each_block_no_merge;
 }
 
 namespace
@@ -189,6 +191,11 @@ public:
         auto match_subquery_with_group_by = [&]() -> bool
         {
             if (!subquery_node->hasGroupBy())
+                return false;
+
+            /// With `group_by_each_block_no_merge` the subquery flushes its groups for every block separately,
+            /// so the same key can appear in many rows, and `count()` would count each of them.
+            if (subquery_node->getContext()->getSettingsRef()[Setting::group_by_each_block_no_merge])
                 return false;
 
             /// These modifiers emit rows beyond one per group - the super-aggregate "total" rows -

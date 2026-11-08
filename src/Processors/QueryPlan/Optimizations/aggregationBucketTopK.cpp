@@ -112,6 +112,11 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         || params.keys_size == 0)
         return 0;
 
+    /// The streaming per-block flush of `group_by_each_block_no_merge` emits partial groups of every block,
+    /// so a selection over the aggregation as a whole does not apply. `optimizeGroupByTopK` has the same gate.
+    if (params.group_by_each_block_no_merge)
+        return 0;
+
     /// The selection reads the count from the aggregate state and handles no null-key cell, so
     /// nullable and low-cardinality keys stay on the ordinary conversion.
     const auto & header = node->step->getOutputHeader();

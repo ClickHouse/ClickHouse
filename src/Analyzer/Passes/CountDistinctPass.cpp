@@ -23,6 +23,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool count_distinct_optimization;
+    extern const SettingsBool group_by_each_block_no_merge;
 }
 
 namespace
@@ -40,9 +41,17 @@ public:
             return;
 
         auto * query_node = node->as<QueryNode>();
+        if (!query_node)
+            return;
+
+        /// The generated `GROUP BY` subquery inherits the context of this query. With `group_by_each_block_no_merge`
+        /// it would flush its groups for every block separately, so the same key could appear in many rows, and
+        /// the outer `count()` would count each of them.
+        if (query_node->getContext()->getSettingsRef()[Setting::group_by_each_block_no_merge])
+            return;
 
         /// Check that query has only SELECT clause
-        if (!query_node || (query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
+        if ((query_node->hasWith() || query_node->hasPrewhere() || query_node->hasWhere() || query_node->hasGroupBy() ||
             query_node->hasHaving() || query_node->hasWindow() || query_node->hasQualify() || query_node->hasOrderBy() || query_node->hasLimitByLimit() || query_node->hasLimitByOffset() ||
             query_node->hasLimitBy() || query_node->hasLimit() || query_node->hasLimitAfter() || query_node->hasLimitUntil() || query_node->hasOffset()))
             return;
