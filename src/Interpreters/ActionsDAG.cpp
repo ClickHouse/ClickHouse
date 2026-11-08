@@ -1,6 +1,5 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Analyzer/TableQualifiers.h>

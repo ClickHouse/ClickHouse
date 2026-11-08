@@ -3,7 +3,6 @@
 #include <Core/Block_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/ListWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Core/Field.h>
