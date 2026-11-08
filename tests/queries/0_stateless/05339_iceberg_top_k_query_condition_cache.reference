@@ -49,6 +49,13 @@
 100997
 100996
 100995
+--- a predicate on _table, then a rename
+100999
+100998
+100997
+999
+999
+999
 --- query condition cache lookups
 nowhere_1	1	0
 nowhere_2	1	1
@@ -64,3 +71,5 @@ deleted_where_1	1	0
 deleted_nowhere_2	1	1
 gate_1	0	0
 gate_2	0	0
+table_1	0	0
+table_2	0	0
