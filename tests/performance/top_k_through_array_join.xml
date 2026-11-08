@@ -1,5 +1,5 @@
 <test>
-    <!-- the setting is off by default, so run each query with it off and on (#115157) -->
+    <!-- run each query with the setting off and on (#115157) -->
     <substitutions>
         <substitution>
             <name>top_k</name>
