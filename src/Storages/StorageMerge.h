@@ -62,6 +62,7 @@ public:
     /// initiator rewrite functions to subcolumns, or a skip index on the shard would be missed.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
@@ -218,10 +219,10 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
 
-    /// Returns whether `requestReadingInOrder` accepts `order_info_`, without changing the child readers: every reading step
-    /// of every child plan has to be a `ReadFromMergeTree` that can read the prefix in its direction (see
-    /// `ReadFromMergeTree::canReadInOrder`) and is sorted like its table on the prefix, or a nested `Merge` that accepts it.
-    /// Used as a preflight so that the request is all-or-nothing. Creates the child plans.
+    /// Returns whether `requestReadingInOrder` accepts `order_info_`, without changing the child readers: no child plan runs
+    /// distributed, and every reading step of every child plan has to be a `ReadFromMergeTree` that can read the prefix in its
+    /// direction (see `ReadFromMergeTree::canReadInOrder`) and is sorted like its table on the prefix, or a nested `Merge` that
+    /// accepts it. Used as a preflight so that the request is all-or-nothing. Creates the child plans.
     bool canReadInOrder(const InputOrderInfo & order_info_);
 
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }

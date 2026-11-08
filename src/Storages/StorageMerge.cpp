@@ -154,8 +154,9 @@ bool queryHasOrderBy(const SelectQueryInfo & query_info)
 {
     if (query_info.query_tree)
     {
+        /// The streams of `SHUFFLE` are sorted by its key and merged the same way.
         if (const auto * query_node = query_info.query_tree->as<QueryNode>())
-            return query_node->hasOrderBy();
+            return query_node->hasOrderBy() || query_node->isShuffle();
     }
 
     if (query_info.query)
@@ -445,6 +446,12 @@ bool StorageMerge::supportsOptimizationToSubcolumns() const
 bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
+}
+
+bool StorageMerge::hasBucketedMapSerialization() const
+{
+    /// The rewritten query is sent to every underlying table, so all of them must benefit from it.
+    return traverseTablesUntil([](const auto & table) { return !table->hasBucketedMapSerialization(); }) == nullptr;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const
@@ -2085,9 +2092,18 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
         auto ast = modified_query_info.query_tree->toAST();
+        /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+        /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
+        auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
+        if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
+        {
+            modified_context->clearViewSource();
+            view_source = nullptr;
+        }
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
-            child_select_query_options);
+            child_select_query_options,
+            view_source);
 
         auto & planner = interpreter.getPlanner();
         planner.buildQueryPlanIfNeeded();
@@ -2806,6 +2822,11 @@ bool ReadFromMerge::canReadInOrder(const InputOrderInfo & order_info_)
     auto table_it = selected_tables.begin();
     for (const auto & child_plan : *child_plans)
     {
+        /// A distributed child plan returns its result through one exchange stream, which does not keep the order
+        /// of the streams it gathers.
+        if (child_plan.plan.staysDistributed())
+            return false;
+
         const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
 
         /// Ask the reader itself, so that every condition under which its `requestReadingInOrder`

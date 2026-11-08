@@ -19,7 +19,13 @@ namespace DB
 enum class GeoEncoding : uint8_t
 {
     WKB,
-    WKT
+    WKT,
+    /// One of the native (GeoArrow) encodings of GeoParquet 1.1: `point`, `linestring`, `polygon`,
+    /// `multipoint`, `multilinestring`, `multipolygon`. The geometry is stored as nested lists of
+    /// `struct<x: double, y: double>`, which have the same layout as the corresponding geo type
+    /// (e.g. `Polygon` is `Array(Array(Tuple(Float64, Float64)))`), so the column is read as a
+    /// regular nested column with the geo type requested, instead of being decoded from bytes.
+    Native,
 };
 
 enum class GeoType : uint8_t
