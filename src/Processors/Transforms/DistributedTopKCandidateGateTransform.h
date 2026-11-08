@@ -4,8 +4,8 @@
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-
-#include <deque>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -31,20 +31,20 @@ public:
 private:
     void retainChunk(Chunk chunk);
     void coordinate();
-    void selectRows(const std::vector<UInt64> & selected_ordinals);
+    void selectRows(const std::vector<UInt64> & selected_ordinals); /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type of `QueryCoordinationResponse::selected_ordinals`
     void validateRowCount(UInt64 rows) const;
 
     SharedHeader header;
     UInt64 limit;
     SortDescription sort_description;
     QueryCoordinationCallback coordination_callback;
-    std::vector<size_t> sort_key_positions;
+    VectorWithMemoryTracking<size_t> sort_key_positions;
     MutableColumns candidate_columns;
 
     UInt64 retained_rows = 0;
     Chunk current_chunk;
-    std::deque<Chunk> retained_chunks;
-    std::deque<Chunk> output_chunks;
+    DequeWithMemoryTracking<Chunk> retained_chunks;
+    DequeWithMemoryTracking<Chunk> output_chunks;
     bool coordination_complete = false;
 };
 

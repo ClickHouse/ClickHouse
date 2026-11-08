@@ -6,9 +6,9 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <algorithm>
-#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -48,7 +48,7 @@ DistributedTopKCandidateGateTransform::DistributedTopKCandidateGateTransform(
     if (!coordination_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed TopK candidate gate requires a query coordination callback");
 
-    std::unordered_set<String> key_names;
+    UnorderedSetWithMemoryTracking<String> key_names;
     for (const auto & column : sort_description)
     {
         if (!key_names.emplace(column.column_name).second)
@@ -188,7 +188,7 @@ void DistributedTopKCandidateGateTransform::coordinate()
     coordination_complete = true;
 }
 
-void DistributedTopKCandidateGateTransform::selectRows(const std::vector<UInt64> & selected_ordinals)
+void DistributedTopKCandidateGateTransform::selectRows(const std::vector<UInt64> & selected_ordinals) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     IColumn::Filter selected(retained_rows, 0);
     for (const UInt64 ordinal : selected_ordinals)
