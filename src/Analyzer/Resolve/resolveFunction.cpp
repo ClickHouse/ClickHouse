@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsMap additional_table_filters;
 }
 
@@ -1311,13 +1312,6 @@ bool hasSubqueryWithSettingsChanges(const QueryTreeNodePtr & node)
     return false;
 }
 
-QueryTreeNodePtr makeFunctionNode(String function_name, QueryTreeNodes arguments)
-{
-    auto function_node = std::make_shared<FunctionNode>(std::move(function_name));
-    function_node->getArguments().getNodes() = std::move(arguments);
-    return function_node;
-}
-
 [[noreturn]] void throwCorrelatedInNotSupported(std::string_view reason, const QueryTreeNodePtr & in_function_node)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -1400,14 +1394,20 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         if (hasLimitClause(*query_node))
             throwCorrelatedInNotSupported(" when the subquery has LIMIT, OFFSET or LIMIT BY", node);
 
+        const bool aggregates = hasAggregateFunctionNodes(query_node->getProjectionNode())
+            || (query_node->hasHaving() && hasAggregateFunctionNodes(query_node->getHaving()))
+            || (query_node->hasOrderBy() && hasAggregateFunctionNodes(query_node->getOrderByNode()))
+            || (query_node->hasQualify() && hasAggregateFunctionNodes(query_node->getQualify()));
+
         /// Decorrelation groups by the correlated columns, so an outer row without inner rows gets no row,
         /// while an aggregation without keys returns one.
-        if (!query_node->hasGroupBy()
-            && (hasAggregateFunctionNodes(query_node->getProjectionNode())
-                || (query_node->hasHaving() && hasAggregateFunctionNodes(query_node->getHaving()))
-                || (query_node->hasOrderBy() && hasAggregateFunctionNodes(query_node->getOrderByNode()))
-                || (query_node->hasQualify() && hasAggregateFunctionNodes(query_node->getQualify()))))
+        if (aggregates && !query_node->hasGroupBy())
             throwCorrelatedInNotSupported(" when the subquery aggregates without GROUP BY keys", node);
+
+        /// With this setting disabled, so does an aggregation by constant keys, which the planner removes.
+        if (aggregates && !settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set])
+            throwCorrelatedInNotSupported(
+                " when the subquery aggregates and `empty_result_for_aggregation_by_constant_keys_on_empty_set` is disabled", node);
     }
 
     /// Decorrelation joins by `=` on the correlated columns, so an outer row with a NULL correlated value gets no subquery rows.
@@ -1439,6 +1439,14 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     const auto unresolved_left = unresolved_arguments.at(0);
     auto unresolved_subquery = std::move(unresolved_arguments.at(1));
 
+    auto make_function_node = [this](String function_name_to_build, QueryTreeNodes arguments) -> QueryTreeNodePtr
+    {
+        auto function_node = std::make_shared<FunctionNode>(std::move(function_name_to_build));
+        function_node->getArguments().getNodes() = std::move(arguments);
+        builtin_only_function_nodes.insert(function_node);
+        return function_node;
+    };
+
     const auto & left_type = in_first_argument->getResultType();
     DataTypes key_types;
     QueryTreeNodes resolved_keys;
@@ -1465,11 +1473,11 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         const auto * unresolved_tuple = unresolved_left->as<FunctionNode>();
         const bool is_unresolved_tuple = unresolved_tuple && unresolved_tuple->getFunctionName() == "tuple"
             && unresolved_tuple->getArguments().getNodes().size() == keys_count;
-        make_unresolved_key = [unresolved_left, is_unresolved_tuple](size_t i) -> QueryTreeNodePtr
+        make_unresolved_key = [unresolved_left, is_unresolved_tuple, make_function_node](size_t i) -> QueryTreeNodePtr
         {
             if (is_unresolved_tuple)
                 return unresolved_left->as<FunctionNode &>().getArguments().getNodes()[i]->clone();
-            return makeFunctionNode("tupleElement", {unresolved_left->clone(), std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1))});
+            return make_function_node("tupleElement", {unresolved_left->clone(), std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1))});
         };
     }
 
@@ -1539,7 +1547,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         auto flattened_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
         flattened_subquery->setIsSubquery(true);
         flattened_subquery->getProjection().getNodes().push_back(
-            makeFunctionNode("arrayJoin", {std::make_shared<IdentifierNode>(Identifier{array_column_name})}));
+            make_function_node("arrayJoin", {std::make_shared<IdentifierNode>(Identifier{array_column_name})}));
         flattened_subquery->getJoinTreeNode() = std::move(unresolved_subquery);
         unresolved_subquery = std::move(flattened_subquery);
     }
@@ -1556,7 +1564,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         /// The left value converted to the key type as `Set::execute` does it.
         auto make_converted_left_key = [&]
         {
-            return makeFunctionNode("accurateCastOrNull", {make_unresolved_key(i), std::make_shared<ConstantNode>(right_key_type->getName())});
+            return make_function_node("accurateCastOrNull", {make_unresolved_key(i), std::make_shared<ConstantNode>(right_key_type->getName())});
         };
 
         if (which_right.isFloat())
@@ -1565,19 +1573,19 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
             const String reinterpret_function_name
                 = which_right.isBFloat16() ? "reinterpretAsUInt16" : (which_right.isFloat32() ? "reinterpretAsUInt32" : "reinterpretAsUInt64");
             auto left_value = left_key_type->getName() == right_key_type->getName() ? make_unresolved_key(i) : make_converted_left_key();
-            comparisons.push_back(makeFunctionNode("equals",
-                {makeFunctionNode(reinterpret_function_name, {std::move(left_value)}),
-                 makeFunctionNode(reinterpret_function_name, {std::move(right_value)})}));
+            comparisons.push_back(make_function_node("equals",
+                {make_function_node(reinterpret_function_name, {std::move(left_value)}),
+                 make_function_node(reinterpret_function_name, {std::move(right_value)})}));
         }
         else if (left_key_type->getName() == right_key_type->getName()
             || (isNativeInteger(left_key_type) && isNativeInteger(right_key_type) && !isBool(left_key_type) && !isBool(right_key_type)))
         {
             /// Not for a float on the left: `equals` merged into a join condition compares floats by bits, so `-0. = 0` fails.
-            comparisons.push_back(makeFunctionNode("equals", {make_unresolved_key(i), std::move(right_value)}));
+            comparisons.push_back(make_function_node("equals", {make_unresolved_key(i), std::move(right_value)}));
         }
         else
         {
-            comparisons.push_back(makeFunctionNode("equals", {make_converted_left_key(), std::move(right_value)}));
+            comparisons.push_back(make_function_node("equals", {make_converted_left_key(), std::move(right_value)}));
         }
     }
 
@@ -1585,16 +1593,16 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
     exists_body->setIsSubquery(true);
     exists_body->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, std::make_shared<DataTypeUInt64>()));
     exists_body->getJoinTreeNode() = std::move(unresolved_subquery);
-    exists_body->getWhere() = comparisons.size() == 1 ? std::move(comparisons.front()) : makeFunctionNode("and", std::move(comparisons));
+    exists_body->getWhere() = comparisons.size() == 1 ? std::move(comparisons.front()) : make_function_node("and", std::move(comparisons));
 
-    auto exists_function_node = makeFunctionNode("exists", {std::move(exists_body)});
+    auto exists_function_node = make_function_node("exists", {std::move(exists_body)});
     QueryTreeNodePtr result = exists_function_node;
     if (isNegativeInFunctionName(function_name))
-        result = makeFunctionNode("not", {std::move(result)});
+        result = make_function_node("not", {std::move(result)});
 
     if (keys_count == 1 && isNullableOrLowCardinalityNullable(left_type))
-        result = makeFunctionNode("if",
-            {makeFunctionNode("isNull", {in_first_argument}),
+        result = make_function_node("if",
+            {make_function_node("isNull", {in_first_argument}),
              std::make_shared<ConstantNode>(Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())),
              std::move(result)});
 
@@ -1845,7 +1853,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
-    if (!function_node_ptr->isWindowFunction())
+    if (!function_node_ptr->isWindowFunction() && !builtin_only_function_nodes.contains(node))
     {
         auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;

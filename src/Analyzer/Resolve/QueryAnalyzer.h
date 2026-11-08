@@ -391,6 +391,9 @@ private:
     /// Unresolved arguments of a rewritten correlated IN, for a function node resolved again (as a condition of `if` is).
     std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> correlated_in_function_to_unresolved_arguments;
 
+    /// Functions built by the correlated IN rewrite, never resolved as a lambda of the scope with the same name.
+    std::unordered_set<QueryTreeNodePtr> builtin_only_function_nodes;
+
     /// Deduplicates the built `FunctionBase` for non-deterministic functions (e.g. `randConstant`)
     /// by tree hash, so syntactically-identical calls fold to the same constant. See `resolveFunction`.
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;

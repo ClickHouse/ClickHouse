@@ -248,6 +248,13 @@ SELECT k, x FROM o WHERE EXISTS (SELECT 1 FROM i WHERE i.k = o.k AND i.e IN (SEL
 SELECT 'shapes';
 SELECT k, x, x IN (SELECT DISTINCT e FROM i WHERE i.k = o.k) FROM o ORDER BY k, x;
 SELECT k, x, x IN (SELECT e FROM i WHERE i.k = o.k GROUP BY e HAVING count() > 1) FROM o ORDER BY k, x;
+SELECT k, x,
+    x IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k GROUP BY tuple()) AS got,
+    isNotDistinctFrom(got, multiIf(
+        k = 1, x IN (SELECT toInt32(count()) FROM i WHERE i.k = 1 GROUP BY tuple()),
+        k = 2, x IN (SELECT toInt32(count()) FROM i WHERE i.k = 2 GROUP BY tuple()),
+        x IN (SELECT toInt32(count()) FROM i WHERE i.k = 3 GROUP BY tuple())))
+FROM o ORDER BY k, x;
 SELECT k, x, x IN (SELECT i.e FROM i JOIN j ON i.e = j.e WHERE i.k = o.k) FROM o ORDER BY k, x;
 SELECT k, x,
     x IN (SELECT e FROM i WHERE i.k = o.k UNION ALL SELECT j.e FROM j WHERE j.a = o.k * 10) AS got,
@@ -288,6 +295,22 @@ FROM o ORDER BY k, x;
 SELECT k, x, x IN (SELECT e FROM i WHERE i.k = o.k UNION DISTINCT SELECT j.e FROM j WHERE j.a = o.k * 10)
 FROM o ORDER BY k, x SETTINGS max_rows_in_distinct = 1, distinct_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 
+-- A lambda named after a function that the rewrite builds does not replace it.
+SELECT 'shadowing';
+WITH a -> a AS not, a -> 1 AS exists, (a, b) -> 1 AS accurateCastOrNull, a -> 1 AS reinterpretAsUInt64, a -> 1 AS isNull,
+    (a, b, c) -> 7 AS if, (a, b) -> 1 AS and, (a, b) -> 1 AS tupleElement, a -> 1 AS arrayJoin
+SELECT k, x,
+    x NOT IN (SELECT e FROM i WHERE i.k = o.k),
+    toFloat64(x) IN (SELECT e FROM i WHERE i.k = o.k),
+    toFloat64(x) IN (SELECT toFloat64(e) FROM i WHERE i.k = o.k),
+    xn IN (SELECT e FROM i WHERE i.k = o.k),
+    (x, k) IN (SELECT e, i.k FROM i WHERE i.k = o.k),
+    CAST((x, k), 'Tuple(Int32, UInt8)') IN (SELECT e, i.k FROM i WHERE i.k = o.k),
+    x IN (SELECT groupArray(e) FROM i WHERE i.k = o.k GROUP BY i.k)
+FROM o ORDER BY k, x;
+-- `<=>`, because a lambda named `equals` replaces the `=` of the query as well.
+WITH (a, b) -> 1 AS equals SELECT k, x FROM o WHERE x IN (SELECT e FROM i WHERE i.k <=> o.k) ORDER BY k, x;
+
 SELECT 'refusals';
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.kn); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE coalesce(o.xn, 0) IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
@@ -312,6 +335,7 @@ SELECT k FROM o WHERE nullIn(x, (SELECT e FROM i WHERE i.k = o.k)); -- { serverE
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_rows_in_set = 1000, set_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k) SETTINGS max_bytes_in_set = 1000000, set_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE x IN (SELECT toInt32(count()) FROM i WHERE i.k = o.k GROUP BY tuple()) SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k GROUP BY e) SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k SETTINGS additional_table_filters = {'i': 'rand() % 2 = 0'}); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT DISTINCT e FROM i WHERE i.k = o.k SETTINGS max_rows_in_distinct = 1); -- { serverError NOT_IMPLEMENTED }
