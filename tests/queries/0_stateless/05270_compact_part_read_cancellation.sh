@@ -187,10 +187,9 @@ SELECT 'text part type', part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_text_read_cancel' AND active"
 
 # Every row carries 'filler', so no mark is pruned and the walk covers all 100k of them. Each
-# extra predicate adds a virtual column whose posting list is materialized per mark, and the walk
-# costs about 37 ms per predicate, so the count sets how long the read lasts. It has to stay long
-# relative to the handshake below, which needs a few client round-trips: at 30 predicates the read
-# takes 1.1 s and the cancel can arrive after it has already finished.
+# extra predicate adds a virtual column whose posting list is materialized per mark, so the count
+# sets how long the read lasts. It has to stay long relative to the handshake below, which needs a
+# few client round-trips, or the cancel can arrive after the read has already finished.
 text_pred="1"
 for i in $(seq 1 240); do
     text_pred="$text_pred AND hasAnyTokens(s, ['filler', 'tok$i'])"
@@ -198,8 +197,8 @@ done
 text_query="SELECT count() FROM t_text_read_cancel WHERE $text_pred"
 
 # Assert the text index is what serves the query: if it silently fell back to a full scan the
-# reader under test would never run. Analysing the predicate costs about as much per term as
-# reading does, so this asks the same question of a single term: whether the index is usable for
+# reader under test would never run. Analysing the predicate costs more per term than reading
+# does, so this asks the same question of a single term: whether the index is usable for
 # this predicate shape does not depend on how many terms are conjoined. Only the plan does: a
 # count() over a single text predicate is answered from the index without scanning the part, so
 # that rewrite is disabled here.
@@ -218,8 +217,11 @@ WHERE explain ILIKE '%Name: idx_s%'"
 # query_plan_direct_read_from_text_index = 1: with it disabled the text reader is not used at all,
 # the predicate is evaluated over the physical column, and the token then comes from the compact
 # reader's own check, so the token would report an interrupt with the text-index check reverted.
+# merge_tree_generic_exclusion_search_max_steps = 1: no mark can be dropped, and an unlimited
+# search checks every mark against every predicate, which costs many times the read itself. Each
+# retry below repeats the analysis, so on a slow build it outlasts the handshake's polling.
 # Cancelled by KILL rather than by a deadline, for the reason given above the compact timeout arm:
-# analysing this index costs more than a fixed limit on a loaded runner, so a deadline can expire
+# on a loaded runner the work before the read can outlast a fixed limit, so a deadline can expire
 # before the read starts.
 #
 # The handshake below cannot prove the read has begun: SelectedMarks is incremented once index
@@ -239,6 +241,7 @@ for text_settle in 0 0.25 0.5 1 2 4; do
     ${CLICKHOUSE_CLIENT} --query_id "$text_query_id" \
         --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
         --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
+        --merge_tree_generic_exclusion_search_max_steps 1 \
         -q "$text_query" >/dev/null 2>"$text_err" &
     text_pid=$!
 
