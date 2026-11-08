@@ -214,7 +214,7 @@ namespace
             if (end == std::string_view::npos)
                 end = path.size();
             std::string_view segment = path.substr(pos, end - pos);
-            if (!segment.empty() && (segment[0] == '_' || segment[0] == '.') && segment.find('=') == std::string_view::npos)
+            if (!segment.empty() && (segment[0] == '_' || segment[0] == '.') && !segment.contains('='))
                 return true;
             pos = end + 1;
         }
