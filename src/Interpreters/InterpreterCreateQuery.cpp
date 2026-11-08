@@ -26,6 +26,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
@@ -1007,36 +1008,63 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
-/// A table created `AS` a table function reads the columns of the function's storage by name, converting their types
-/// (see `StorageTableFunctionProxy`), so a stored column of the table that the structure of the function does not have
-/// fails on every read. Checked only for a function whose structure does not depend on the table: a fixed one, or an
-/// explicit structure argument, which only parses that argument. Not for a function that takes the table's columns as
-/// its structure, or that infers its structure from the data or a remote server.
-void throwIfTableColumnsAreMissingFromTableFunction(const ColumnsDescription & columns, const ITableFunction & table_function, const ContextPtr & context)
+/// A table created `AS` a table function reads the columns of the function's storage by name, converting their types (see
+/// `StorageTableFunctionProxy`): it passes the names to that storage, which resolves its columns, their subcolumns and its
+/// virtual columns, such as `_path` or a hive partition column of `file`. A stored column of the table that the storage does
+/// not resolve fails on every read. Checked only for a function whose structure does not depend on the data: a fixed one, or
+/// an explicit structure argument, which only parses that argument. Not for a function that infers its structure from the
+/// data or a remote server. A name that the structure does not have is looked up in the storage that the table would read,
+/// built as the proxy builds it, from the columns of the table, which some functions, such as `elasticsearch`, take as the
+/// columns of their storage. The storage takes its hive partition columns from the files that match the path when it is
+/// built, so a hive partition column is accepted only if such files exist at `CREATE`, as the proxy of the table takes them
+/// from the files that exist when the table is first read.
+void throwIfTableColumnsAreMissingFromTableFunction(
+    const ColumnsDescription & columns,
+    const ITableFunction & table_function,
+    const ASTPtr & table_function_ast,
+    const String & table_name,
+    const ContextPtr & context)
 {
     if (!table_function.hasStaticStructure())
         return;
 
     const auto function_columns = table_function.getActualTableStructure(context, /*is_insert_query=*/ true);
-    String missing;
-    size_t missing_count = 0;
+    Names missing;
     for (const auto & column : columns.getAllPhysical())
-    {
-        if (function_columns.has(column.name))
-            continue;
-        if (!missing.empty())
-            missing += ", ";
-        missing += backQuote(column.name);
-        ++missing_count;
-    }
+        if (!function_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column.name))
+            missing.push_back(column.name);
+    if (missing.empty())
+        return;
 
-    if (missing_count)
-        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-            "The structure of table function '{}' has no {} {} of the table, so the table could not read {}. The "
-            "structure has the columns {}. A column of the table can have another type, but needs the name of a column of "
-            "the structure, unless it is an `ALIAS` column",
-            table_function.getName(), missing_count == 1 ? "column" : "columns", missing, missing_count == 1 ? "it" : "them",
-            function_columns.getAllPhysical().toNamesAndTypesDescription());
+    /// The columns of the table differ from the structure, so this is a proxy, which builds the storage that the table reads,
+    /// with the global context, as `doCreateTable` executes the function for the table.
+    const auto storage = table_function.execute(
+        table_function_ast, context, table_name, columns, /*use_global_context=*/ true, /*is_insert_query=*/ true);
+    SCOPE_EXIT_SAFE(storage->shutdown());
+    const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get());
+    const auto nested = proxy ? proxy->getNested() : storage;
+    const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
+    const auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
+    const auto readable = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withVirtuals(
+        VirtualsKind::All, VirtualsMaterializationPlace::All);
+    std::erase_if(missing, [&](const String & name) { return nested_snapshot->tryGetColumn(readable, name).has_value(); });
+    if (missing.empty())
+        return;
+
+    String missing_list;
+    for (const auto & name : missing)
+    {
+        if (!missing_list.empty())
+            missing_list += ", ";
+        missing_list += backQuote(name);
+    }
+    throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+        "The storage of table function '{}' has no {} {} of the table, so the table could not read {}. The structure has "
+        "the columns {}. A column of the table can have another type, but needs the name of a column of the structure, of "
+        "a subcolumn of one, or of a virtual column of the function's storage (such as `_path` of a file-like function, or "
+        "a hive partition column of the files that match the path now), unless it is an `ALIAS` column",
+        table_function.getName(), missing.size() == 1 ? "column" : "columns", missing_list, missing.size() == 1 ? "it" : "them",
+        function_columns.getAllPhysical().toNamesAndTypesDescription());
 }
 
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
@@ -2969,15 +2997,17 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
-        /// Only for a definition written now: a table created before this check still loads.
-        if (isFreshTableDefinition(mode, create.attach_short_syntax))
-            throwIfTableColumnsAreMissingFromTableFunction(properties.columns, *table_function, getContext());
-
         /// Classify the table function before executing it: with a static structure it returns the final storage
         /// directly, which may not have enough information to decide (e.g. `url` with a relative URL resolved
         /// against `url_base`), see `ITableFunction::hasUnreplicatedTableDataOnDisk`.
         if (only_replicated_engine_allowed && table_function->hasUnreplicatedTableDataOnDisk())
             throwUnreplicatedTableDataNotAllowed();
+
+        /// Only for a definition written now: a table created before this check still loads. After the check above, which
+        /// does not need the storage that this check may build.
+        if (isFreshTableDefinition(mode, create.attach_short_syntax))
+            throwIfTableColumnsAreMissingFromTableFunction(
+                properties.columns, *table_function, table_function_ast, create.getTable(), getContext());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup

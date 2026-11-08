@@ -9,5 +9,16 @@
 UInt16
 --- a subset of the columns of the structure
 x
+--- a subcolumn of a column of the structure
+7
+--- a virtual column and a hive partition column of the storage
+1	f.csv	1
+2	f.csv	1
+3	f.csv	1
+1	v1
+2	v1
+3	v2
+--- a function whose storage takes the columns of the table
+payload	JSON
 --- a function that takes the columns of the table as its structure is not checked
 0
