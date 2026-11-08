@@ -202,3 +202,83 @@ def test_manifest_list_partition_pruning_after_type_promotion(
     assert instance.query(
         f"SELECT sum(number) FROM {creation_expression} WHERE tag >= {SELECTED_TAG}"
     ).strip() == str(sum(tag * 100 for tag in range(SELECTED_TAG, NUM_PARTITIONS + 1)))
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_manifest_list_partition_pruning_null_partition_values(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = (
+        "test_manifest_list_partition_pruning_nulls_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    spark.sql(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                a BIGINT,
+                b BIGINT,
+                s STRING,
+                v INT
+            )
+            USING iceberg
+            PARTITIONED BY (identity(a), identity(b), identity(s))
+            TBLPROPERTIES ('format-version' = '2', 'commit.manifest-merge.enabled' = 'false')
+        """
+    )
+
+    # One commit, so one manifest holds all the partitions and every field summary contains NULL.
+    spark.sql(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES
+                (1, 10, 'x', 1), (2, NULL, 'x', 2), (3, 10, NULL, 3), (NULL, 5, 'y', 4), (-5, NULL, 'y', 5)
+        """
+    )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    summaries = spark.sql(
+        f"SELECT partition_summaries FROM spark_catalog.default.{TABLE_NAME}.manifests"
+    ).collect()
+    assert len(summaries) == 1
+    assert [
+        summary["contains_null"] for summary in summaries[0]["partition_summaries"]
+    ] == [True, True, True]
+
+    creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+    )
+
+    def select_values(condition, query_id=None):
+        return instance.query(
+            f"SELECT arraySort(groupArray(v)) FROM {creation_expression} WHERE {condition}",
+            query_id=query_id,
+        ).strip()
+
+    assert select_values("a = 2 AND b IS NULL") == "[2]"
+    assert select_values("NOT (b IS NOT NULL) AND NOT (a >= 0)") == "[5]"
+    assert select_values("a IN (2, 100) AND b IS NULL") == "[2]"
+    assert select_values("a = 3 AND s IS NULL") == "[3]"
+    assert instance.query(f"SELECT sum(v) FROM {creation_expression}").strip() == "15"
+
+    query_id_pruned = f"{TABLE_NAME}-pruned"
+    assert select_values("a = -100", query_id_pruned) == "[]"
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert (
+        profile_event(instance, query_id_pruned, "IcebergPartitionPrunedManifestFiles")
+        == 1
+    )

@@ -1487,7 +1487,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     writeIntText(part, ostr);
 
     bool fractional_written = false;
-    if (scale || (fixed_fractional_length && fractional_length > 0))
+    if (rounded_scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(rounded, rounded_scale);
         if (part || trailing_zeros)
