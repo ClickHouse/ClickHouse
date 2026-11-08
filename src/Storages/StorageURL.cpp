@@ -1963,6 +1963,8 @@ public:
     bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
+    bool canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const override;
+
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -2033,6 +2035,12 @@ bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_c
     /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
     /// would come from other values than the ones the reader compares against it.
     return !info.columns_description.hasDefault(sort_column.name);
+}
+
+bool ReadFromURL::canSkipDataByFilterOn(const ColumnWithTypeAndName & column) const
+{
+    const auto settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
+    return formatSkipsDataByStatistics(storage->format_name, settings) && info.canSkipDataByStatisticsOf(column);
 }
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)

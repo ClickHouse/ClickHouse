@@ -113,7 +113,6 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool use_join_disjunctions_push_down;
-    extern const SettingsBool use_primary_key;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool use_query_condition_cache_for_time_conditions;
@@ -267,9 +266,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
     /// The filter push-down pass also runs with `filter_push_down` off, once a JOIN runtime filter has been added.
     filter_push_down_below_limit_by = from[Setting::query_plan_filter_push_down_below_limit_by];
-    /// Without `use_primary_key` the copy would just be a full scan filter
-    propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
-        && from[Setting::use_primary_key];
+    propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations]
+        && from[Setting::query_plan_propagate_predicate_across_join];
     fuse_filter_into_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_fuse_filter_into_array_join];
     lower_array_join_function = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lower_array_join_function];
     legacy_array_join_function_nondeterministic_evaluation = from[Setting::legacy_array_join_function_nondeterministic_evaluation];
