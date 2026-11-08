@@ -378,10 +378,10 @@ protected:
             return {};
         }
 
-        /// The bucket's group count is taken from the table rather than from the chunk: the
-        /// bucket-local Top-K conversion truncates the chunk to its n best groups, and the
-        /// group-by limit must be enforced against the true cardinality.
-        size_t full_group_count = 0;
+        /// The bucket's group count comes from the merge rather than from the chunk: the
+        /// bucket-local Top-K conversion truncates the chunk to its n best groups, while the
+        /// group limit counts every group that the merge built (see `checkMergedGroupLimit`).
+        size_t merged_group_count = 0;
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
             *data,
             arena,
@@ -389,12 +389,12 @@ protected:
             bucket_num,
             shared_data->is_cancelled,
             updater,
-            &full_group_count,
+            &merged_group_count,
             &shared_data->threshold_top_k_verdict);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
 
         if (!shared_data->is_cancelled.load(std::memory_order_seq_cst))
-            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, full_group_count);
+            params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, merged_group_count);
         shared_data->is_bucket_processed[bucket_num] = true;
 
         return chunk;

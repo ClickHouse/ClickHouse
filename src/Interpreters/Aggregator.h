@@ -1464,9 +1464,9 @@ private:
     /// dataflow statistics must describe the untruncated aggregation output (it prices the
     /// shipping term of the parallel-replicas plan, where the partial aggregation materializes
     /// every group), so the chunk of a truncated conversion cannot be measured as is.
-    /// `full_group_count`, when non-null, receives the bucket table's group count: the group-by
-    /// limit must be enforced against the true cardinality, which the chunk's row count
-    /// understates when the Top-K conversion truncates it.
+    /// `merged_group_count`, when non-null, receives the bucket table's group count, which the group
+    /// limit is checked against (see `checkMergedGroupLimit`): the chunk's row count understates it
+    /// when the Top-K conversion truncates the chunk.
     /// `keep_table_buffer` leaves the converted table empty but with its buffer, for a caller that fills it again
     /// (the adaptive merge's units), where an ordinary conversion releases the buffer at once.
     template <typename Method>
@@ -1477,7 +1477,7 @@ private:
         bool final,
         Int32 bucket,
         UntruncatedAggregationKeys * untruncated_keys,
-        size_t * full_group_count,
+        size_t * merged_group_count,
         bool keep_table_buffer = false) const;
 
     /// The dispatch over the two-level variants of the conversion above, with its parameters.
@@ -1518,8 +1518,9 @@ private:
     /// `insertResultInto` leaves the state valid for the merge and the conversion that follow.
     UInt64 finalizeBucketTopKRank(AggregateDataPtr place, IColumn & scratch, Arena * arena) const;
 
-    /// `full_group_count`, when non-null, receives the merged bucket's group count (see
-    /// `convertOneBucketToChunk`).
+    /// `merged_group_count`, when non-null, receives the number of groups merged for the bucket:
+    /// every group of the bucket (see `convertOneBucketToChunk`), or, with the top-K threshold
+    /// merge, only the groups that can rank among its k best.
     AggregatedChunk mergeAndConvertOneBucketToChunk(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
@@ -1527,7 +1528,7 @@ private:
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-        size_t * full_group_count,
+        size_t * merged_group_count,
         std::atomic<int> * threshold_top_k_verdict = nullptr) const;
 
     /// The top-K threshold merge (see `Params::threshold_top_k`): merges and materializes only
@@ -1535,13 +1536,15 @@ private:
     /// nothing when it declines at run time (a method it does not serve, a bucket too small
     /// for the pruning to pay for the setup, or a value distribution the threshold cannot cut;
     /// the latter verdict is shared across the buckets through `threshold_top_k_verdict`), and
-    /// the caller falls back to the ordinary merge. Defined in AggregatorThresholdTopK.cpp.
+    /// the caller falls back to the ordinary merge. `merged_group_count`, when non-null, receives
+    /// the number of groups it merged. Defined in AggregatorThresholdTopK.cpp.
     std::optional<AggregatedChunk> tryMergeAndConvertOneBucketToChunkThresholdTopK(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
-        std::atomic<int> * threshold_top_k_verdict) const;
+        std::atomic<int> * threshold_top_k_verdict,
+        size_t * merged_group_count) const;
 
     template <typename Method>
     requires MapAggregationMethod<Method>
@@ -1550,7 +1553,8 @@ private:
         Arena * arena,
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
-        std::atomic<int> * threshold_top_k_verdict) const;
+        std::atomic<int> * threshold_top_k_verdict,
+        size_t * merged_group_count) const;
 
     /// The threshold merge ranks groups by an aggregate's value, which a set method cannot have.
     /// This overload exists only because the call site tests it at run time.
@@ -1561,7 +1565,8 @@ private:
         Arena * arena,
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
-        std::atomic<int> * threshold_top_k_verdict) const;
+        std::atomic<int> * threshold_top_k_verdict,
+        size_t * merged_group_count) const;
 
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
