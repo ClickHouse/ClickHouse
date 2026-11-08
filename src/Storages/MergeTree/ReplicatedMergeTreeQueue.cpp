@@ -2381,6 +2381,51 @@ MutationCommands getMetadataMutationCommands(const MutationCommands & commands)
     return result;
 }
 
+/// The commands of an ALTER whose renames and drops the part already has, without them. A command names a column as it
+/// is at its position in the ALTER, so it is moved to the name that the later renames give, or skipped if a later drop
+/// removes the column.
+MutationCommands getCommandsWithoutAppliedRenames(const MutationCommands & commands)
+{
+    MutationCommands result;
+    for (auto it = commands.begin(); it != commands.end(); ++it)
+    {
+        if (AlterConversions::isSupportedMetadataMutation(it->type) && !it->clear)
+            continue;
+
+        auto follow_later_commands = [&](String & name)
+        {
+            for (auto later = std::next(it); later != commands.end(); ++later)
+            {
+                if (later->type == MutationCommand::RENAME_COLUMN && later->column_name == name)
+                    name = later->rename_to;
+                else if (later->type == MutationCommand::DROP_COLUMN && !later->clear && later->column_name == name)
+                    return false;
+            }
+            return true;
+        };
+
+        MutationCommand command = *it;
+        if (command.type == MutationCommand::DROP_STATISTICS && !command.statistics_columns.empty())
+        {
+            Names columns;
+            for (auto name : command.statistics_columns)
+                if (follow_later_commands(name))
+                    columns.push_back(std::move(name));
+            if (columns.empty())
+                continue;
+            command.statistics_columns = std::move(columns);
+        }
+        else if (command.type == MutationCommand::DROP_COLUMN || command.type == MutationCommand::READ_COLUMN
+                 || command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            if (!follow_later_commands(command.column_name))
+                continue;
+        }
+        result.push_back(std::move(command));
+    }
+    return result;
+}
+
 }
 
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
@@ -2628,9 +2673,8 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         if (entry.alter_version != -1 && entry.alter_version <= part->getMetadataVersion()
             && !part->old_part_with_no_metadata_version_on_disk)
         {
-            for (const auto & command : entry.commands)
-                if (!AlterConversions::isSupportedMetadataMutation(command.type) || command.clear)
-                    commands.push_back(command);
+            auto commands_from_entry = getCommandsWithoutAppliedRenames(entry.commands);
+            commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
         }
         else
             commands.insert(commands.end(), entry.commands.begin(), entry.commands.end());

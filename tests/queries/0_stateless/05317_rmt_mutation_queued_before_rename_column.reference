@@ -35,3 +35,38 @@ swap rewrite	2	21	22	200
 swap shared	1	10	11	100
 swap shared	2	20	21	200
 1
+readd pending	1	10	7	100
+readd pending	2	20	7	200
+readd	1	11	7	100
+readd	2	21	7	200
+1
+drop rename pending	1	10	100
+drop rename pending	2	20	200
+drop rename	1	11	100
+drop rename	2	21	200
+1
+readd rename pending	1	10	7	100
+readd rename pending	2	20	7	200
+readd rename	1	11	7	100
+readd rename	2	21	7	200
+1
+rename readd drop pending	1	10	42	100
+rename readd drop pending	2	20	43	200
+rename readd drop	1	11	42	100
+rename readd drop	2	21	43	200
+1
+readd marker	1	11	7	100
+readd marker	2	21	7	200
+1
+drop rename marker	1	11	0
+drop rename marker	2	21	0
+1
+drop rename sparse	4500	9	500500
+drop rename sparse	a	Sparse
+clear rename	a1	[]
+clear rename	b	['TDigest','Basic']
+clear rename	x	['Basic']
+clear drop rename	a	['TDigest','Basic']
+clear drop rename	x	['Basic']
+drop nested	1	[5,6]
+1

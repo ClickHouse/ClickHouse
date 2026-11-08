@@ -45,6 +45,8 @@ public:
     /// Column was dropped by a pending mutation (data in part is stale).
     /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
+    /// As `isColumnDropped`, but only for `DROP COLUMN`, not `CLEAR COLUMN`.
+    bool isColumnRemoved(const std::string & name, bool share_nested_offsets) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
@@ -128,6 +130,8 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+    /// The subset of `dropped_columns` dropped by `DROP COLUMN`.
+    NameSet removed_columns;
 
     /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
     /// in the command, before the normalization done for `rename_map` and `dropped_columns`.

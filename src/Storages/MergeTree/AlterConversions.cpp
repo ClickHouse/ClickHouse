@@ -228,7 +228,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 break;
             }
         }
-        if (!chained)
+        /// A name that the part's column was renamed away from or dropped under belongs to a column added later.
+        if (!chained && !columnHasNewName(command.column_name) && !removed_columns.contains(command.column_name))
             rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
     }
     else if (command.type == DROP_COLUMN)
@@ -244,9 +245,16 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             dropped_column_name = it->rename_from;
             rename_map.erase(it);
         }
+        else if (columnHasNewName(command.column_name))
+        {
+            /// The part's column of this name was renamed away, so the command is about a column added later.
+            return;
+        }
 
         /// The reader returns the replacement column's defaults instead of the stored values.
         value_updated_columns.insert(dropped_column_name);
+        if (!command.clear)
+            removed_columns.insert(dropped_column_name);
         dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
@@ -356,10 +364,10 @@ NameSet AlterConversions::getColumnsInvalidatingIndexes() const
     return res;
 }
 
-bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
+static bool containsColumnOrNestedParent(const NameSet & columns, const std::string & name, bool share_nested_offsets)
 {
     /// Check exact match (e.g. DROP COLUMN `n.s`)
-    if (dropped_columns.contains(name))
+    if (columns.contains(name))
         return true;
 
     /// When share_nested_offsets is disabled, dotted-name columns are independent
@@ -369,10 +377,20 @@ bool AlterConversions::isColumnDropped(const std::string & name, bool share_nest
 
     /// Check if the parent nested column was dropped (e.g. DROP COLUMN `n` should match `n.s`, `n.d`, etc.)
     auto nested_prefix_end = name.find('.');
-    if (nested_prefix_end != std::string::npos && dropped_columns.contains(name.substr(0, nested_prefix_end)))
+    if (nested_prefix_end != std::string::npos && columns.contains(name.substr(0, nested_prefix_end)))
         return true;
 
     return false;
+}
+
+bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
+{
+    return containsColumnOrNestedParent(dropped_columns, name, share_nested_offsets);
+}
+
+bool AlterConversions::isColumnRemoved(const std::string & name, bool share_nested_offsets) const
+{
+    return containsColumnOrNestedParent(removed_columns, name, share_nested_offsets);
 }
 
 PrewhereExprSteps AlterConversions::getMutationSteps(
