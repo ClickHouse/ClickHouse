@@ -491,7 +491,7 @@ For `ENGINE = Kafka(named_collection)`:
 
 When a named collection is used, **the global server `<kafka>` block in `config.xml` is not merged**. Each collection must include every extended property the table needs (including TLS files and `security.protocol` when it is not set via non-empty table `SETTINGS`).
 
-A common layout for `SASL_SSL` with client certificates: store TLS paths and `ssl.key.password` in the named collection; set `kafka_broker_list`, topics, group, format, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Non-empty table settings for `kafka_security_protocol`, `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password` override the same `librdkafka` properties that may also be set in the collection (`kafka.security_protocol` and `kafka_security_protocol` are equivalent).
+A common layout for `SASL_SSL` with client certificates: store TLS paths and `ssl.key.password` in the named collection; set `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name`, `kafka_format`, and optionally `kafka_sasl_username` / `kafka_sasl_password` in the table `SETTINGS` clause. Both `kafka.security_protocol` and `kafka_security_protocol` set `security.protocol`, and the non-empty table setting wins. If the collection already stores that property, the table setting is a named collection override: it requires `SHOW NAMED COLLECTIONS SECRETS` on the collection, and it fails with `Override not allowed` if the key is `NOT OVERRIDABLE`. The same applies to `kafka_sasl_mechanism`, `kafka_sasl_username`, and `kafka_sasl_password`.
 
 Example (certificate paths must exist on every ClickHouse server that runs consumers for the table):
 
@@ -520,14 +520,20 @@ SETTINGS
 The same extended settings in an XML-defined collection:
 
 ```xml
-<kafka>
-    <security_protocol>SASL_SSL</security_protocol>
-    <sasl_mechanism>PLAIN</sasl_mechanism>
-    <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
-    <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
-    <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
-    <ssl_key_password>secret</ssl_key_password>
-</kafka>
+<clickhouse>
+    <named_collections>
+        <kafka_mtls>
+            <kafka>
+                <security_protocol>SASL_SSL</security_protocol>
+                <sasl_mechanism>PLAIN</sasl_mechanism>
+                <ssl_ca_location>/etc/clickhouse/certs/ca.pem</ssl_ca_location>
+                <ssl_certificate_location>/etc/clickhouse/certs/client.pem</ssl_certificate_location>
+                <ssl_key_location>/etc/clickhouse/certs/client.key</ssl_key_location>
+                <ssl_key_password>secret</ssl_key_password>
+            </kafka>
+        </kafka_mtls>
+    </named_collections>
+</clickhouse>
 ```
 
 See the [librdkafka configuration reference](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md) for all TLS-related properties. For server-wide defaults without named collections, see [Configuration](#configuration) below.
@@ -691,10 +697,6 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
-
-### Extended settings and named collections {#kafka-extended-config-named-collections}
-
-Extended `librdkafka` options (TLS, OIDC, and most consumer/producer tuning) can be set in the server `<kafka>` configuration or in a [named collection](/concepts/features/configuration/server-config/named-collections#named-collections-for-accessing-kafka) referenced by `ENGINE = Kafka(collection)`. When a named collection is used, global `<kafka>` settings are not merged. See [TLS and SASL with named collections](#kafka-tls-sasl-named-collections).
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 
