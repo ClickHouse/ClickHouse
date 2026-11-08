@@ -17,7 +17,7 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), multiply(__table2.b, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
       Expression (Left Pre Join Actions)
@@ -43,7 +43,7 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d, plus(__table1.b, __table1.c), multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), __table2.a, multiply(__table2.b, 2_UInt8), multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
       Expression (Left Pre Join Actions)
@@ -52,7 +52,7 @@ Expression ((Project names + Projection))
       Expression (Right Pre Join Actions)
         Expression (Post Join Actions)
           Join (JOIN FillRightFirst)
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(__table2.a) = (__table3.d)]
             Expression (Left Pre Join Actions)
               Expression (Change column names to column identifiers)
@@ -77,7 +77,7 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d, multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), __table2.a, multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d))]
       Expression (Left Pre Join Actions)
@@ -86,7 +86,7 @@ Expression ((Project names + Projection))
       Expression (Right Pre Join Actions)
         Expression (Post Join Actions)
           Join (JOIN FillRightFirst)
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(__table2.a) = (__table3.d)]
             Expression (Left Pre Join Actions)
               Expression (Change column names to column identifiers)
@@ -111,7 +111,7 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d, plus(__table1.b, __table1.c), multiply(__table1.a, 2_UInt8)) = (plus(__table2.c, __table2.d), __table2.a, multiply(__table2.b, 2_UInt8), multiply(__table3.a, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
       Expression (Left Pre Join Actions)
@@ -120,7 +120,7 @@ Expression ((Project names + Projection))
       Expression (Right Pre Join Actions)
         Expression (Post Join Actions)
           Join (JOIN FillRightFirst)
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(__table2.a) = (__table3.d)]
             Expression (Left Pre Join Actions)
               Expression (Change column names to column identifiers)
@@ -145,7 +145,7 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(__table1.d, multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (__table2.a, multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8))]
       Expression (Left Pre Join Actions)
         Expression (Change column names to column identifiers)
@@ -153,7 +153,7 @@ Expression ((Project names + Projection))
       Expression (Right Pre Join Actions)
         Expression (Post Join Actions)
           Join (JOIN FillRightFirst)
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(__table2.a) = (__table3.d)]
             Expression (Left Pre Join Actions)
               Expression (Change column names to column identifiers)
@@ -179,7 +179,7 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), multiply(__table2.b, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
       Expression (Left Pre Join Actions)
@@ -205,13 +205,13 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
-    Algorithm: ConcurrentHashJoin
+    Algorithm: HashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c), __table1.d) = (multiply(__table3.a, 2_UInt8), multiply(__table3.c, 2_UInt8), toNullable(__table3.d))]
     Sharding: [(multiply(a, 2) = multiply(a, 2)), (plus(b, c) = multiply(c, 2))]
       Expression (Left Pre Join Actions)
         Expression (Post Join Actions)
           Join (JOIN FillRightFirst)
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(multiply(__table1.a, 2_UInt8), __table1.d, plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), toNullable(__table2.a), multiply(__table2.b, 2_UInt8))]
           Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
             Expression (Left Pre Join Actions)
