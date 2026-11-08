@@ -23,12 +23,10 @@
   * Threads may fill different buckets at the same time when every bucket is written under its own lock.
   */
 
-template <size_t initial_size_degree = 8>
-struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
-{
-    /// Increase the size of the hash table.
-    void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
-};
+/// The buckets grow by 4 times while they are small, and switch to the Robin Hood mode when they become large,
+/// see `HashTableGrowerWithPrecalculationAndRobinHood`.
+template <size_t initial_size_degree = 8, size_t robin_hood_size_degree = 16>
+using TwoLevelHashTableGrower = HashTableGrowerWithPrecalculationAndRobinHood<initial_size_degree, 15, robin_hood_size_degree>;
 
 constexpr size_t DEFAULT_BITS_FOR_BUCKET = 8;
 

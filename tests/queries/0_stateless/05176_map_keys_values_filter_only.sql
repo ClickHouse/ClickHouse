@@ -1,6 +1,5 @@
 -- Map key/value filters should use the matching subcolumn even when the full Map is selected.
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_rewrite_has_to_in = 0;
 

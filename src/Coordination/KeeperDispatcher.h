@@ -81,7 +81,7 @@ private:
     LoggerPtr log;
 
     /// Counter for new session_id requests.
-    std::atomic<int64_t> internal_session_id_counter{0};
+    std::atomic<int64_t> internal_session_id_counter;
 
     KeeperSnapshotManagerS3 snapshot_s3;
 

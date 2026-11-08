@@ -40,7 +40,32 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "新增设置，用于限制并发解码的 Iceberg manifest 文件数量，对 delete manifest 和 data manifest 同样适用。它取代了 `iceberg_delete_manifest_decode_concurrency`（保留为别名）。取值 `2` 近似于 26.9 之前的数据路径行为：一次解码一个 manifest，同时下一个 manifest 的拉取已在进行中；因此当 `compatibility` 为 26.8 或更低时，delete 解码也会以 2 而非其发布默认值 4 运行，从而保持旧数据路径的内存占用规模，代价是损失部分 delete 解码的重叠执行。"}]}]} />
+<VersionHistory
+  rows={[
+{
+  id: "row-1",
+  items: [
+    { label: "26.9" },
+    { label: "4" },
+    {
+      label:
+        "新增设置，用于限制并发解码的 Iceberg manifest 文件数量，对 delete manifest 和 data manifest 同样适用。它取代了 `iceberg_delete_manifest_decode_concurrency`（保留为别名）。取值 `2` 近似于 26.9 之前的数据路径行为：一次解码一个 manifest，同时下一个 manifest 的拉取已在进行中；因此当 `compatibility` 为 26.8 或更低时，delete 解码也会以 2 而非其发布默认值 4 运行，从而保持旧数据路径的内存占用规模，代价是损失部分 delete 解码的重叠执行。"
+    }
+  ]
+},
+{
+  id: "row-2",
+  items: [
+    { label: "26.8" },
+    { label: "4" },
+    {
+      label:
+        "新增设置，用于限制在读取第一行之前并发解码的 Iceberg delete manifest 文件数量。在 26.8 之前，一次只解码一个 manifest，同时下一个 manifest 的拉取已在进行中，因此 `2` 最接近之前的行为；在之前的行为下，这些 manifest 的对象存储往返耗时总和都落在读取第一行之前的关键路径上。当时该设置名为 `iceberg_delete_manifest_decode_concurrency`，现已成为该设置的别名。"
+    }
+  ]
+}
+]}
+/>
 
 读取表时并发解码的 Iceberg manifest 文件的最大数量。
 
@@ -103,9 +128,9 @@ Iceberg 表中删除孤立文件时使用的默认文件期限阈值 (以秒为�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：当 Iceberg manifest 文件头中携带的 schema 与 metadata.json 中为同一 schema-id 注册的 schema 冲突时，优先采用 metadata.json 中的 schema 并记录一条警告，而不是让查询失败，从而与其他查询引擎的行为保持一致。将 `compatibility` 设为低于 26.10 的版本可恢复此前的严格行为。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置：当 Iceberg manifest 文件头中携带的 schema 与 metadata.json 中为同一 schema-id 注册的 schema 冲突时，优先采用 metadata.json 中的 schema，而不是让查询失败，从而与其他查询引擎的行为保持一致。将 `compatibility` 设为低于 26.10 的版本可恢复此前的严格行为。"}]}]} />
 
-启用时，如果 Iceberg manifest 文件头的 `schema` 键所携带的 schema 与 metadata.json 中已为同一 schema-id 注册的 schema 不一致，则使用 metadata.json 中的 schema，并记录警告后忽略 manifest 头中的副本。禁用时，此类冲突会使查询以 ICEBERG&#95;SPECIFICATION&#95;VIOLATION 错误失败。
+启用时，如果 Iceberg manifest 文件的 schema-id 已在 metadata.json 中注册，则使用 metadata.json 中的 schema，并直接忽略 manifest 文件头 `schema` 键中的副本，不做任何比较。禁用时，会将 manifest 头中的副本与 metadata.json 中的 schema 进行比较，一旦存在冲突，查询将以 ICEBERG&#95;SPECIFICATION&#95;VIOLATION 错误失败。
 
 manifest 头中的 schema 只是 manifest 写入时表 schema 的一份副本，而据观察，某些写入器 (例如 AWS S3 Tables 维护作业) 会在其中存储质量降级的副本。其他查询引擎均从 metadata.json 解析 schema 并忽略存在差异的头部副本，因此这里的默认行为与之保持一致。但两个 metadata.json schema 定义之间的冲突始终仍会导致查询失败。
 

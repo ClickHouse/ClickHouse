@@ -16,13 +16,10 @@ CLIENT="${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none"
 # The queries that rewrite Keeper nodes must run as written (the stress profile fuzzes every query).
 ZK_WRITER="${CLICKHOUSE_CLIENT} --ast_fuzzer_runs=0 --ast_fuzzer_any_query=0"
 
-function count_recoveries()
+# Recovery rewrites the replica digest as its last step.
+function recovered()
 {
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-    ${CLICKHOUSE_CLIENT} -q "
-        SELECT count() FROM system.text_log
-        WHERE logger_name = 'DatabaseReplicated (${DB})' AND message = 'All tables are created successfully'
-        SETTINGS max_rows_to_read = 0"
+    ${CLICKHOUSE_CLIENT} -q "SELECT value != '42' FROM system.zookeeper WHERE path = '${ZK_PATH}/replicas/s1|r1' AND name = 'digest'"
 }
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB} SYNC"
@@ -48,17 +45,16 @@ ${ZK_WRITER} -q "
 ${CLICKHOUSE_KEEPER_CLIENT} -q "rm '${ZK_PATH}/metadata/km_renamed'"
 ${CLICKHOUSE_KEEPER_CLIENT} -q "rm '${ZK_PATH}/metadata/km_dropped'"
 
-RECOVERIES_BEFORE=$(count_recoveries)
 # The digest 42 makes the replica recover itself when the database is attached.
 ${CLICKHOUSE_KEEPER_CLIENT} -q "set '${ZK_PATH}/replicas/s1|r1/digest' '42'"
 ${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${DB}"
 ${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${DB}"
 for _ in {1..240}; do
-    [ "$(count_recoveries)" -gt "${RECOVERIES_BEFORE}" ] && break
+    [ "$(recovered)" = "1" ] && break
     sleep 0.5
 done
 
-${CLICKHOUSE_CLIENT} -q "SELECT 'recovered', $(count_recoveries) > ${RECOVERIES_BEFORE}"
+${CLICKHOUSE_CLIENT} -q "SELECT 'recovered', $(recovered)"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'km_altered', count() FROM ${DB}.km_altered"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'km_renamed exists', count() FROM system.tables WHERE database = '${DB}' AND name = 'km_renamed'"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'km_renamed2', count() FROM ${DB}.km_renamed2"

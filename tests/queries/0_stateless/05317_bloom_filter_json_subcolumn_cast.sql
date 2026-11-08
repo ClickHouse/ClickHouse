@@ -1,8 +1,7 @@
--- A `bloom_filter` index on a typed JSON path is used when the path is cast to `Nullable`, which cannot change a
--- value or throw. A cast that drops `Nullable` throws on NULL, so the index is not used for it.
+-- A `bloom_filter` index on a typed JSON path is used when the path is cast to or from `Nullable`, which does not
+-- change a non-NULL value.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;
