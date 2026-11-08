@@ -1625,9 +1625,17 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
             }
 
             /// So far we only support the case of two arguments.
+            /// Both must be curve coordinates: a range mask (`Tuple`) as the first argument makes
+            /// the curve one-dimensional over the second argument, which the 2-D analysis does not handle.
+            auto is_supported_coordinate = [](const DataTypePtr & type)
+            {
+                WhichDataType which(removeNullable(removeLowCardinality(type)));
+                return which.isNativeUInt() && !which.isUInt64();
+            };
+
             if (2 == curve.arguments.size()
-                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[0].type))).isUInt64()
-                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[1].type))).isUInt64())
+                && is_supported_coordinate(curve.arguments[0].type)
+                && is_supported_coordinate(curve.arguments[1].type))
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
