@@ -26,6 +26,14 @@ std::vector<String> listFilesNonRecursive(
     const String & path,
     const String & prefix, const String & suffix);
 
+/// Only the objects directly inside the directory `path`/`prefix` whose names start with `name_prefix`.
+std::vector<String> listFilesNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const String & suffix);
+
 std::vector<String> listFilesNonRecursive(
     const IObjectStorage & object_storage,
     const String & path,

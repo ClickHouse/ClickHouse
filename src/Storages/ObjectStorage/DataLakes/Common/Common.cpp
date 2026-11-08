@@ -49,29 +49,16 @@ bool isDirectlyInside(std::string_view key, const String & directory)
     return false;
 }
 
-}
-
-std::vector<String> listFiles(
-    const IObjectStorage & object_storage,
-    const String & path,
-    const String & prefix, const String & suffix)
-{
-    return listFiles(
-        object_storage,
-        path,
-        prefix,
-        [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
-}
-
-
-std::vector<String> listFiles(
+/// Objects at any depth inside the directory `path`/`prefix` whose names inside it start with `name_prefix`.
+std::vector<String> listFilesImpl(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix,
+    const String & name_prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
     /// Without the trailing separator the key also matches sibling directories such as `metadata_old/`.
-    const auto key = (std::filesystem::path(path) / prefix / "").string();
+    const auto key = (std::filesystem::path(path) / prefix / "").string() + name_prefix;
     RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;
@@ -84,15 +71,67 @@ std::vector<String> listFiles(
     return res;
 }
 
+std::vector<String> listFilesNonRecursiveImpl(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
+{
+    const auto directory = (std::filesystem::path(path) / prefix / "").string();
+    return listFilesImpl(
+        object_storage,
+        path,
+        prefix,
+        name_prefix,
+        [&](const RelativePathWithMetadata & file_with_metadata)
+        { return check_need(file_with_metadata) && isDirectlyInside(file_with_metadata.relative_path, directory); });
+}
+
+}
+
+std::vector<String> listFiles(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix, const String & suffix)
+{
+    return listFiles(
+        object_storage,
+        path,
+        prefix,
+        [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
+}
+
+
+std::vector<String> listFiles(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const std::function<bool(const RelativePathWithMetadata &)> & check_need)
+{
+    return listFilesImpl(object_storage, path, prefix, "", check_need);
+}
+
 std::vector<String> listFilesNonRecursive(
     const IObjectStorage & object_storage,
     const String & path,
     const String & prefix, const String & suffix)
 {
-    return listFilesNonRecursive(
+    return listFilesNonRecursive(object_storage, path, prefix, "", suffix);
+}
+
+std::vector<String> listFilesNonRecursive(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix,
+    const String & name_prefix,
+    const String & suffix)
+{
+    return listFilesNonRecursiveImpl(
         object_storage,
         path,
         prefix,
+        name_prefix,
         [&suffix](const RelativePathWithMetadata & files_with_metadata) { return files_with_metadata.relative_path.ends_with(suffix); });
 }
 
@@ -102,13 +141,7 @@ std::vector<String> listFilesNonRecursive(
     const String & prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
-    const auto directory = (std::filesystem::path(path) / prefix / "").string();
-    return listFiles(
-        object_storage,
-        path,
-        prefix,
-        [&](const RelativePathWithMetadata & file_with_metadata)
-        { return check_need(file_with_metadata) && isDirectlyInside(file_with_metadata.relative_path, directory); });
+    return listFilesNonRecursiveImpl(object_storage, path, prefix, "", check_need);
 }
 
 bool deltaLogExists(const IObjectStorage & object_storage, const String & path)

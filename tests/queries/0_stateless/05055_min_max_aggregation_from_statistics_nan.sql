@@ -20,7 +20,6 @@ SET materialize_statistics_on_insert = 1;
 -- Pin every setting the optimization's eligibility depends on: the test runner randomizes
 -- optimize_aggregation_in_order, and aggregation-in-order (like aggregate_functions_null_for_empty)
 -- disables the projection optimization entirely, turning the EXPLAIN checks below into 0.
-SET enable_analyzer = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
 

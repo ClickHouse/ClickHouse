@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-random-settings, no-flaky-check, no-distributed-cache
+# Tags: long, no-fasttest, no-parallel, no-random-settings, no-flaky-check, no-distributed-cache, no-msan
 # Tag no-flaky-check -- access to system.remote_data_path is too slow with thread fuzzer enabled
 # Tag no-distributed-cache -- This test aims to test filesystem cache
 

@@ -77,6 +77,8 @@ public:
     /// not evaluate the threshold against it. `column_name` in the info is that column's name.
     virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
     virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
+    /// True only if the source honors `FormatTopKFilterInfo::filter_rows = false` (no per-row filter).
+    virtual bool supportsTopKStatisticsOnlyFilter() const { return false; }
 
     /// The whole output is consumed only by `min` / `max` (see `FormatFilterInfo::min_max_from_statistics`).
     virtual bool supportsMinMaxFromStatistics() const { return false; }
@@ -129,6 +131,7 @@ public:
     SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
+    void setStorageLimits(std::shared_ptr<const StorageLimitsList> storage_limits) { query_info.storage_limits = std::move(storage_limits); }
     FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
     PrewhereInfoPtr getPrewhereInfo() const override { return query_info.prewhere_info; }
     ContextPtr getContext() const { return context; }
