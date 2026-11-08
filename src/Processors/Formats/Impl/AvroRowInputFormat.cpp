@@ -39,6 +39,7 @@
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <base/EnumReflection.h>
+#include <base/unaligned.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -816,11 +817,24 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             }
             if (target.isUUID())
             {
+                if (fixed_size == sizeof(UUID))
+                {
+                    /// RFC 4122 binary form: 16 big-endian bytes.
+                    return [tmp_fixed = std::vector<uint8_t>(sizeof(UUID))](IColumn & column, avro::Decoder & decoder) mutable
+                    {
+                        decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
+                        UUID uuid;
+                        UUIDHelpers::getHighBytes(uuid) = unalignedLoadBigEndian<UInt64>(tmp_fixed.data());
+                        UUIDHelpers::getLowBytes(uuid) = unalignedLoadBigEndian<UInt64>(tmp_fixed.data() + sizeof(UInt64));
+                        assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
+                        return true;
+                    };
+                }
                 return [tmp = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable
                 {
                     decoder.decodeFixed(fixed_size, tmp);
                     if (tmp.size() != 36)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from type Fixed, because it's size ({}) is not equal to the size of UUID (36)", fixed_size);
+                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from Avro type Fixed of size {}, expected size 16 (binary) or 36 (text)", fixed_size);
 
                     const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
