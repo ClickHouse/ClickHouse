@@ -70,7 +70,8 @@ echo "evolved $(query "SELECT count(), sum(id) FROM ${TABLE}")"
 
 # The spec -1 is removed from the metadata, the manifest list still refers to it.
 publish "${TABLE_DIR}" 'm["partition-specs"] = [s for s in m["partition-specs"] if s["spec-id"] != -1]'
-echo "removed count $(rejected "SELECT count() FROM ${TABLE}" -1)"
+# The runner may disable the optimizations that answer `count()` from the snapshot summary.
+echo "removed count $(rejected "SELECT count() FROM ${TABLE} SETTINGS optimize_trivial_count_query = 1, optimize_count_from_files = 1" -1)"
 echo "removed select $(rejected "SELECT * FROM ${TABLE}" -1)"
 
 # Format version 1 metadata without `partition-specs` has only the spec 0 (`partition-spec`).
@@ -78,6 +79,10 @@ query "CREATE TABLE ${TABLE_V1} (id Int32) ENGINE = IcebergLocal('${TABLE_V1_DIR
 query "INSERT INTO ${TABLE_V1} VALUES (1), (2)"
 publish "${TABLE_V1_DIR}" 'del m["partition-specs"]; del m["default-spec-id"]'
 echo "v1_without_partition_specs $(query "SELECT count(), sum(id) FROM ${TABLE_V1}")"
+
+# Without `partition-spec` either, format version 1 metadata has no spec.
+publish "${TABLE_V1_DIR}" 'del m["partition-spec"]'
+echo "v1_without_any_partition_spec $(rejected "SELECT count() FROM ${TABLE_V1}" 0)"
 
 # Format version 2 requires `partition-specs`, so without it no spec is known.
 query "CREATE TABLE ${TABLE_V2} (id Int32) ENGINE = IcebergLocal('${TABLE_V2_DIR}/')"

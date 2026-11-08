@@ -509,7 +509,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     auto manifest_list_entries = getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log);
 
     /// A manifest list entry names one of the table's partition specs;
-    /// format version 1 metadata without `partition-specs` has only the spec 0.
+    /// format version 1 metadata without `partition-specs` has only the spec 0, its `partition-spec`.
     std::unordered_set<Int32> spec_ids;
     if (partition_specs)
     {
@@ -517,7 +517,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
             if (const auto spec = partition_specs->getObject(i); spec && spec->has(f_spec_id))
                 spec_ids.insert(spec->getValue<Int32>(f_spec_id));
     }
-    else if (metadata_object->getValue<Int32>(f_format_version) == 1)
+    else if (metadata_object->getValue<Int32>(f_format_version) == 1 && metadata_object->has(f_partition_spec))
         spec_ids.insert(0);
 
     for (const auto & entry : manifest_list_entries)
