@@ -38,6 +38,8 @@
 #include <Interpreters/StorageID.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/String.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -96,7 +98,7 @@ struct SampledValueStep
 /// Whether every numeric value reached by following `path` (starting at `depth`) inside the sampled
 /// value `value` is the boolean literal `0` or `1`. A value whose shape does not match its step (in
 /// particular a `NULL`) carries no evidence and is not counted against the column.
-bool sampledValueHoldsOnlyBoolLiterals(const Field & value, const std::vector<SampledValueStep> & path, size_t depth)
+bool sampledValueHoldsOnlyBoolLiterals(const Field & value, const VectorWithMemoryTracking<SampledValueStep> & path, size_t depth)
 {
     if (depth == path.size())
     {
@@ -172,7 +174,7 @@ bool sampledValueHoldsOnlyBoolLiterals(const Field & value, const std::vector<Sa
 
 /// Whether the sampled value reached by `path` is an array with exactly `size` elements. A value that
 /// does not have the expected shape provides no evidence, so it is treated as compatible.
-bool sampledValueIsArrayOfSize(const Field & value, const std::vector<SampledValueStep> & path, size_t depth, size_t size)
+bool sampledValueIsArrayOfSize(const Field & value, const VectorWithMemoryTracking<SampledValueStep> & path, size_t depth, size_t size)
 {
     if (depth == path.size())
         return value.getType() != Field::Types::Array || value.safeGet<Array>().size() == size;
@@ -228,7 +230,7 @@ bool sampledValueIsArrayOfSize(const Field & value, const std::vector<SampledVal
 /// non-`String` value carry no evidence and are not counted against the column.
 bool sampledStringValuesSatisfy(
     const Field & value,
-    const std::vector<SampledValueStep> & path,
+    const VectorWithMemoryTracking<SampledValueStep> & path,
     size_t depth,
     const std::function<bool(const String &)> & predicate)
 {
@@ -297,7 +299,7 @@ struct SampledValueEvidence
     /// The top-level inferred column the compared value belongs to, and the path from that column's
     /// value down to it. Unset when the value cannot be located in the sample.
     std::optional<size_t> column_index;
-    std::vector<SampledValueStep> path;
+    VectorWithMemoryTracking<SampledValueStep> path;
 };
 
 }
@@ -339,7 +341,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_has_strict_order_of_columns = true;
     bool format_has_exact_types_from_data = false;
     bool format_validates_declared_types_by_name = false;
-    std::unordered_map<String, String> format_declared_type_names;
+    std::unordered_map<String, String> format_declared_type_names; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type returned by `ISchemaReader::getDeclaredTypeNames`
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
     bool format_allows_fewer_columns_than_expected = false;
@@ -526,7 +528,7 @@ String getInsertDataSchemaMismatchDescription(
     /// second pass is unavailable, `numbers_inference_available` stays false and an inferred `String` is
     /// treated as compatible with a numeric destination, staying on the low-false-positive side.
     bool numbers_inference_available = false;
-    std::vector<DataTypePtr> numbers_inferred_types(inferred.size());
+    VectorWithMemoryTracking<DataTypePtr> numbers_inferred_types(inferred.size());
     try
     {
         auto number_inference_settings = format_settings;
@@ -642,7 +644,7 @@ String getInsertDataSchemaMismatchDescription(
     Columns sample_columns;
     size_t sample_rows = 0;
     auto sampled_values_hold_only_bool_literals
-        = [&](size_t column_index, const std::vector<SampledValueStep> & path) -> std::optional<bool>
+        = [&](size_t column_index, const VectorWithMemoryTracking<SampledValueStep> & path) -> std::optional<bool>
     {
         if (!sample_values_scanned)
         {
@@ -738,7 +740,7 @@ String getInsertDataSchemaMismatchDescription(
     /// the low-false-positive side and treats the column as compatible.
     auto sampled_string_values_satisfy
         = [&](size_t column_index,
-              const std::vector<SampledValueStep> & path,
+              const VectorWithMemoryTracking<SampledValueStep> & path,
               const std::function<bool(const String &)> & predicate) -> std::optional<bool>
     {
         /// Reuse the lazy sample parser above; the boolean result is irrelevant here.
@@ -763,7 +765,7 @@ String getInsertDataSchemaMismatchDescription(
     /// passes a destination that keeps the `Nullable` wrapper where the cast does (the generic
     /// serialization-based conversions), so the `NULL` literal is accepted there too.
     auto sampled_string_values_are_valid_text_for
-        = [&](size_t column_index, const std::vector<SampledValueStep> & path, const DataTypePtr & destination)
+        = [&](size_t column_index, const VectorWithMemoryTracking<SampledValueStep> & path, const DataTypePtr & destination)
         -> std::optional<bool>
     {
         auto serialization = destination->getDefaultSerialization();
@@ -782,7 +784,7 @@ String getInsertDataSchemaMismatchDescription(
     /// the JSON tuple parser requires one value per destination element. Use the parsed sample to
     /// recover that arity before reporting a tuple-shape mismatch.
     auto sampled_values_are_arrays_of_size
-        = [&](size_t column_index, const std::vector<SampledValueStep> & path, size_t size) -> std::optional<bool>
+        = [&](size_t column_index, const VectorWithMemoryTracking<SampledValueStep> & path, size_t size) -> std::optional<bool>
     {
         /// Reuse the lazy sample parser above; the boolean result is irrelevant here.
         static_cast<void>(sampled_values_hold_only_bool_literals(column_index, path));
@@ -1659,7 +1661,7 @@ String getInsertDataSchemaMismatchDescription(
     /// `FormatFactory::checkIfFormatSupportsSubsetOfColumns` must not be used as the signal here).
     /// A destination with duplicate column names cannot be matched by name unambiguously (a degenerate
     /// case that does not occur for a real table); compare it positionally, as before.
-    std::unordered_set<std::string_view> expected_names;
+    UnorderedSetWithMemoryTracking<std::string_view> expected_names;
     for (const auto & column : expected)
         expected_names.insert(column.name);
 
@@ -1694,7 +1696,7 @@ String getInsertDataSchemaMismatchDescription(
         /// genuine unknown field the parser rejects (`input_format_skip_unknown_fields` permitting), so
         /// treating it as a match would suppress the explanation. Use the parser's own resolution mode,
         /// reported by the schema reader.
-        std::vector<DataTypePtr> expected_types;
+        VectorWithMemoryTracking<DataTypePtr> expected_types;
         expected_types.reserve(expected.size());
         /// The declared names of a metadata section are validated by an exact lookup, whatever the
         /// resolution mode of the data fields (see `validatesSchemaAsMetadataByExactName`).
@@ -1718,7 +1720,7 @@ String getInsertDataSchemaMismatchDescription(
         /// have to be type-compatible with their destination. A column missing from the input is not a
         /// structure mismatch, unless the parser rejects missing columns (`Parquet` / `Arrow` / `ORC`
         /// with `input_format_*_allow_missing_columns` disabled).
-        std::vector<bool> expected_present(expected.size(), false);
+        VectorWithMemoryTracking<bool> expected_present(expected.size(), false);
         size_t inferred_index = 0;
         for (const auto & column : inferred)
         {
