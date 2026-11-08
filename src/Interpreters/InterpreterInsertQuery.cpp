@@ -1,6 +1,5 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/StorageInput.h>
@@ -544,7 +543,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
-        context, num_concurrent_copies);
+        context);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     const auto & settings = context->getSettingsRef();
@@ -648,7 +647,8 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             {
                 size_t min_block_size_bytes = table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL;
                 /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-                min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(min_block_size_bytes, insert_dependencies->getNumSquashesSharingRootBudget());
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
                     table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
@@ -744,8 +744,10 @@ void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery
                 new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
             if (settings[Setting::min_insert_block_size_bytes])
             {
+                size_t block_size_bytes = settings[Setting::min_insert_block_size_bytes];
                 /// On low-memory systems, cap the input format block size.
-                size_t block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], /*num_simultaneous_squashes=*/ 1);
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    block_size_bytes = std::min<size_t>(block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
                 new_settings[Setting::preferred_block_size_bytes] = block_size_bytes;
             }
         }
@@ -890,9 +892,12 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     /// bringing the plan-based implementation or the automatic mode back for the plans built below, and
     /// the automatic mode would make the probe below decline to distribute the insert. `execute` restores
     /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{
-        std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
+    /// `parallel_replicas_plan_based` is removed from subqueries too: this path is query-based, so the
+    /// setting has no effect anywhere in it, and a subquery keeping it would be rejected as plan-based.
+    static constexpr std::array settings_overridden_for_this_path{std::string_view{"automatic_parallel_replicas_mode"}};
     removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
+    static constexpr std::array settings_without_effect_on_this_path{std::string_view{"parallel_replicas_plan_based"}};
+    removeSettingsFromQuery(query.select, settings_without_effect_on_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
     if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
@@ -1107,8 +1112,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         async_insert,
         /*skip_destination_table*/ no_destination,
         insert_threads,
-        context,
-        num_concurrent_copies);
+        context);
     returning_insert_views_serial = query.returning && insert_dependencies->getViewProcessingNumThreads() == 1;
 
     QueryPipeline pipeline
@@ -1206,10 +1210,10 @@ QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
     if (should_squash)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
+        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
         /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
-        size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
-            insert_dependencies->getNumSquashesSharingRootBudget());
+        if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+            min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
         add_head_transform(std::make_shared<PlanSquashingTransform>(
             insert_header,
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],

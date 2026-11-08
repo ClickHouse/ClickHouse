@@ -123,6 +123,12 @@ struct QueryState
 
     /// Data was sent.
     bool sent_all_data = false;
+    /// The result of a `SELECT` is being streamed to the client, so the client accepts `ProfileEvents`
+    /// packets at any moment, including right before an `Exception`.
+    bool streaming_select_result = false;
+    /// A completed pipeline is being executed with the cancel callback, which sends `ProfileEvents` packets
+    /// periodically, so the client accepts them at any moment, including right before an `Exception`.
+    bool sending_interactive_updates = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
     /// The current client upload ended: external tables/scalars, insertion rows, or `input` rows.
@@ -322,6 +328,7 @@ private:
     InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void killQueryIfStoppedByClient(QueryState & state);
     void processQuery(std::shared_ptr<QueryState> & state);
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
@@ -362,9 +369,11 @@ private:
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);
+    bool shouldSendProfileEvents(const QueryState & state) const;
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    /// `final_report` is the report after all the data of the `INSERT` has been received.
+    void sendInsertProfileEvents(QueryState & state, bool final_report = false) TSA_REQUIRES(callback_mutex);
     static void cancelProfileTracesQueue(QueryState & state);
     void updateProfileTracesQueue(QueryState & state) const;
     void sendPendingProfileTraces(QueryState & state, bool finish = false) TSA_REQUIRES(callback_mutex);

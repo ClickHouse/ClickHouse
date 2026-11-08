@@ -4,10 +4,12 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <string_view>
 
 #include <Common/PipeFDs.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
+#include <Common/setThreadName.h>
 #include <base/types.h>
 
 class StackTrace;
@@ -38,6 +40,27 @@ class TraceSender
 public:
     static constexpr Int8 MEMORY_CONTEXT_UNKNOWN = -1;
 
+    /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
+    /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
+    ///
+    /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
+    /// The performance test query ids can be surprisingly long like
+    /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
+    /// so make some allowance for them as well.
+    /// Leave room for the fixed fields and stack frames within a portable 512-byte atomic pipe write.
+    static constexpr size_t QUERY_ID_MAX_LEN = 93;
+
+    /// The thread a trace is attributed to. `send` fills it from the calling thread; a sampler that
+    /// captures another thread's stack (the macOS query profiler) passes the sampled thread's instead.
+    struct Origin
+    {
+        std::string_view query_id;
+        UInt64 thread_id = 0;
+        ThreadName thread_name = ThreadName::UNKNOWN;
+        /// Subscription that receives the trace in `ProfileTraces` packets, 0 for none.
+        UInt64 profile_traces_id = 0;
+    };
+
     struct Extras
     {
         /// size, ptr - for memory tracing is the amount of memory allocated; for other trace types it is 0.
@@ -53,6 +76,7 @@ public:
     /// Collect a stack trace. This method is signal safe.
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
+    static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras, Origin origin) noexcept;
 
     enum class ProfileTracesFlushResult
     {
