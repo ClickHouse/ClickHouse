@@ -120,6 +120,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(total_records, total-records);
 DEFINE_ICEBERG_FIELD_ALIAS(total_files_size, total-files-size);
 DEFINE_ICEBERG_FIELD_ALIAS(refresh_cursor, clickhouse.refresh-cursor);
 DEFINE_ICEBERG_FIELD_ALIAS(manifest_list, manifest-list);
+DEFINE_ICEBERG_FIELD(manifests);
 DEFINE_ICEBERG_FIELD_ALIAS(timestamp_ms, timestamp-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_updated_ms, last-updated-ms);
 DEFINE_ICEBERG_FIELD_ALIAS(last_column_id, last-column-id);

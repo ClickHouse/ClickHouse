@@ -375,6 +375,30 @@ ManifestFileCacheKeys getManifestList(
     return manifest_file_cache_keys;
 }
 
+ManifestFileCacheKeys getEmbeddedManifests(const Poco::JSON::Object::Ptr & snapshot_object)
+{
+    const Int64 snapshot_id = snapshot_object->getValue<Int64>(f_metadata_snapshot_id);
+    const auto manifests = snapshot_object->getArray(f_manifests);
+    if (!manifests)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Field '{}' of snapshot {} is not an array", f_manifests, snapshot_id);
+
+    ManifestFileCacheKeys result;
+    result.reserve(manifests->size());
+    for (UInt32 i = 0; i < manifests->size(); ++i)
+        result.emplace_back(
+            IcebergPathFromMetadata::deserialize(manifests->getElement<String>(i)),
+            /* manifest_file_byte_size */ 0,
+            /* added_sequence_number */ 0,
+            /* added_snapshot_id */ snapshot_id,
+            ManifestFileContentType::DATA,
+            /* partition_spec_id */ 0,
+            PartitionFieldSummaries{},
+            /* live_files_count */ 0,
+            /* first_row_id */ std::nullopt);
+    return result;
+}
+
 ManifestFilesPrefetcher::Fetch::Fetch(ManifestFilesPrefetcher & owner_, const ManifestFileCacheKey & manifest_, size_t leased_bytes_)
     : owner(owner_)
     , manifest(manifest_)
@@ -445,7 +469,8 @@ void ManifestFilesPrefetcher::fill()
             cached = persistent_table_components.metadata_cache->tryGetManifestFile(
                 IcebergMetadataFilesCache::getKey(*persistent_table_components.table_uuid, manifest.manifest_file_path.serialize()));
 
-        const size_t bytes = cached ? 0 : manifest.manifest_file_byte_size;
+        const size_t known_bytes = manifest.manifest_file_byte_size;
+        const size_t bytes = cached ? 0 : (known_bytes != 0 ? known_bytes : max_manifest_bytes_in_flight);
         if (bytes != 0 && leased_bytes != 0 && leased_bytes + bytes > max_manifest_bytes_in_flight)
             break;
 

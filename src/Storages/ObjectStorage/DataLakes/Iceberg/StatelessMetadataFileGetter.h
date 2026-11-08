@@ -61,6 +61,9 @@ ManifestFileCacheKeys getManifestList(
     const IcebergPathFromMetadata & filename,
     LoggerPtr log);
 
+/// The v1 `manifests` of a snapshot without `manifest-list`, with Java's defaults: spec 0, sequence number 0, size 0 (unknown).
+ManifestFileCacheKeys getEmbeddedManifests(const Poco::JSON::Object::Ptr & snapshot_object);
+
 /// Reads manifest files ahead, in order, on the IO thread pool. Not thread-safe.
 class ManifestFilesPrefetcher : private boost::noncopyable
 {
@@ -108,7 +111,8 @@ private:
     void fill();
 
     static constexpr size_t max_manifest_files_in_flight = 64;
-    /// Counts only the files that are not in the metadata files cache. A larger file is still read when it is the only one.
+    /// Counts only the files that are not in the metadata files cache;
+    /// a file of unknown size (0) counts as the whole budget. A larger file is still read when it is the only one.
     static constexpr size_t max_manifest_bytes_in_flight = 64 << 20;
 
     const ObjectStoragePtr object_storage;

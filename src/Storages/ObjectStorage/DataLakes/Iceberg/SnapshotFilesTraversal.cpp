@@ -31,14 +31,17 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     for (UInt32 i = 0; i < snapshots->size(); ++i)
     {
         auto snapshot = snapshots->getObject(i);
-        if (!snapshot->has(Iceberg::f_manifest_list))
+        ManifestFileCacheKeys manifest_keys;
+        if (snapshot->has(Iceberg::f_manifest_list))
+        {
+            auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
+            files.manifest_list_paths.insert(manifest_list_path);
+            manifest_keys = getManifestList(object_storage, persistent_table_components, context, manifest_list_path, log);
+        }
+        else if (snapshot->has(Iceberg::f_manifests))
+            manifest_keys = getEmbeddedManifests(snapshot);
+        else
             continue;
-
-        auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
-        files.manifest_list_paths.insert(manifest_list_path);
-
-        auto manifest_keys = getManifestList(
-            object_storage, persistent_table_components, context, manifest_list_path, log);
 
         for (const auto & manifest_entry : manifest_keys)
         {

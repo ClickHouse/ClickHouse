@@ -467,12 +467,11 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSON(
     Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
 {
-    if (!snapshot_object->has(f_manifest_list))
+    if (!snapshot_object->has(f_manifest_list) && !snapshot_object->has(f_manifests))
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Snapshot object doesn't contain a manifest list path for snapshot with id `{}`",
-            snapshot_id);
-    IcebergPathFromMetadata manifest_list_file_path = IcebergPathFromMetadata::deserialize(snapshot_object->getValue<String>(f_manifest_list));
+            "Snapshot with id `{}` has neither '{}' nor '{}'",
+            snapshot_id, f_manifest_list, f_manifests);
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
@@ -506,7 +505,11 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 
 
     return std::make_shared<IcebergDataSnapshot>(
-        getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log),
+        snapshot_object->has(f_manifest_list)
+            ? getManifestList(
+                  object_storage, persistent_components, local_context,
+                  IcebergPathFromMetadata::deserialize(snapshot_object->getValue<String>(f_manifest_list)), log)
+            : getEmbeddedManifests(snapshot_object),
         snapshot_id,
         schema_id,
         total_rows,
@@ -1289,7 +1292,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         history_record.snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
-        history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
+        if (snapshot->has(f_manifest_list))
+            history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
 
         if (const auto summary = snapshot->getObject(f_summary))
         {

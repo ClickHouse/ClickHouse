@@ -84,6 +84,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
 }
@@ -725,6 +726,17 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
             result->set(key, deepCopyJSONValue(value));
     }
     return result;
+}
+
+String getManifestListPathForWrite(const Poco::JSON::Object::Ptr & snapshot)
+{
+    if (!snapshot->has(f_manifest_list))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Writing to an Iceberg table is not supported when its snapshot {} lists its manifests in '{}' instead of a manifest list",
+            snapshot->getValue<Int64>(f_metadata_snapshot_id),
+            f_manifests);
+    return snapshot->getValue<String>(f_manifest_list);
 }
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(

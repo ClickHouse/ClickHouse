@@ -998,7 +998,7 @@ void generateManifestList(
             if (snapshots->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == parent_snapshot_id)
             {
                 auto manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(
-                    snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list));
+                    Iceberg::getManifestListPathForWrite(snapshots->getObject(static_cast<UInt32>(i))));
 
                 auto resolved_manifest_list_path = path_resolver.resolve(manifest_list);
                 forEachAvroEntry(resolved_manifest_list_path, object_storage, context, "IcebergWrites",
