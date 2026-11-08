@@ -107,6 +107,7 @@ TEST(GlueCatalog, ResolveTimestampTypeLegacyV1Schema)
 
     auto result = GlueCatalog::resolveTimestampTypeFromMetadata(metadata, "ts_col", "timestamp");
     EXPECT_EQ(result, "timestamptz");
+    EXPECT_FALSE(schema->has("schema-id"));
 }
 
 #endif

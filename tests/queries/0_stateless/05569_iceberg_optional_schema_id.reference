@@ -29,6 +29,8 @@ download	6
 20
 --- legacy, sorted
 20	1	20
+t_sorted	id
+t_unsorted	
 --- snapshots, absent
 ok
 0	val0	0	2020-01-01	\N
@@ -76,6 +78,8 @@ added	Nullable(String)
 7	val7	3	2020-04-01	\N
 8	val8	0	2020-04-14	\N
 9	val0	1	2020-04-27	\N
+[0,1,2]
+ok
 --- snapshots, null
 ok
 0	val0	0	2020-01-01	\N
@@ -123,5 +127,7 @@ added	Nullable(String)
 7	val7	3	2020-04-01	\N
 8	val8	0	2020-04-14	\N
 9	val0	1	2020-04-27	\N
+[0,1,2]
+ok
 --- metadata log entries, null
 1	0

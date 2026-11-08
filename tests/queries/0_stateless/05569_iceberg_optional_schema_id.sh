@@ -45,6 +45,14 @@ metadata['default-sort-order-id'] = 1
 json.dump(metadata, open(path, 'w'))
 " "$TMP_DIR/sorted/metadata/v2.metadata.json"
 local_query "SELECT count(), min(id), max(id) FROM icebergLocal('$TMP_DIR/sorted')"
+# A read loads the Iceberg sort order into the table metadata that `system.tables` shows.
+local_query "
+    CREATE TABLE t_sorted ENGINE = IcebergLocal('$TMP_DIR/sorted');
+    CREATE TABLE t_unsorted ENGINE = IcebergLocal('$T');
+    SELECT count() FROM t_sorted FORMAT Null;
+    SELECT count() FROM t_unsorted FORMAT Null;
+    SELECT name, sorting_key FROM system.tables WHERE database = currentDatabase() AND name IN ('t_sorted', 't_unsorted') ORDER BY name;
+"
 
 # Format version 2 snapshots whose `schema-id` is absent or null: the data files keep the schema of their manifest, and time travel
 # to the first snapshot returns the current schema.
@@ -66,6 +74,13 @@ json.dump(metadata, open(path, 'w'))
     local_query "SELECT * FROM icebergLocal('$TMP_DIR/$mode') ORDER BY ALL"
     local_query "DESCRIBE icebergLocal('$TMP_DIR/$mode') SETTINGS iceberg_snapshot_id = 704564496950448094"
     local_query "SELECT * FROM icebergLocal('$TMP_DIR/$mode') ORDER BY ALL SETTINGS iceberg_snapshot_id = 704564496950448094"
+    local_query "
+        CREATE TABLE t_mode ENGINE = IcebergLocal('$TMP_DIR/$mode');
+        CREATE TABLE t_orig ENGINE = IcebergLocal('$CORPUS');
+        SELECT groupArray(schema_id) FROM (SELECT schema_id FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_mode' ORDER BY ALL);
+        SELECT if((SELECT groupArray(schema_id) FROM (SELECT schema_id FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_mode' ORDER BY ALL))
+            = (SELECT groupArray(schema_id) FROM (SELECT schema_id FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_orig' ORDER BY ALL)), 'ok', 'MISMATCH');
+    "
 done
 
 # `system.iceberg_metadata_log_entries` over snapshots with a null `schema-id`.
