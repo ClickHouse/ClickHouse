@@ -68,6 +68,40 @@ static unsigned char *guarded(size_t page)
     return p + page;
 }
 
+static void test_large_zero_fills(size_t page)
+{
+    const size_t capacity = 4 * 1024 * 1024 + page;
+    unsigned char *mapping = mmap(NULL, capacity + 2 * page, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    assert(mapping != MAP_FAILED);
+    unsigned char *actual = mapping + page;
+    assert(mprotect(actual, capacity, PROT_READ | PROT_WRITE) == 0);
+    unsigned char *expected = malloc(capacity);
+    assert(expected);
+
+    const size_t sizes[] = {255, 256, 257, 511, 512, 513, 4095, 4096, 4097,
+        1024 * 1024 - 1, 1024 * 1024, 1024 * 1024 + 1,
+        2 * 1024 * 1024 - 1, 2 * 1024 * 1024, 2 * 1024 * 1024 + 1, 4 * 1024 * 1024};
+    const size_t offsets[] = {0, 1, 15, 63, 255, page - 1};
+    const int values[] = {0, 256, -256, 127, -1};
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i)
+    {
+        for (size_t j = 0; j <= sizeof(offsets) / sizeof(offsets[0]); ++j)
+        {
+            size_t offset = j == sizeof(offsets) / sizeof(offsets[0]) ? capacity - sizes[i] : offsets[j];
+            for (size_t k = 0; k < sizeof(values) / sizeof(values[0]); ++k)
+            {
+                memset(actual, 0xa5, capacity);
+                memset(expected, 0xa5, capacity);
+                memset(expected + offset, values[k], sizes[i]);
+                assert(str_memset(actual + offset, values[k], sizes[i]) == actual + offset);
+                assert(memcmp(actual, expected, capacity) == 0);
+            }
+        }
+    }
+    free(expected);
+    assert(munmap(mapping, capacity + 2 * page) == 0);
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 2)
@@ -82,6 +116,7 @@ int main(int argc, char **argv)
         }
     }
     printf("HWCAP=%lx SVE_VL=%d\n", getauxval(AT_HWCAP), prctl(PR_SVE_GET_VL, 0, 0, 0, 0));
+    test_large_zero_fills((size_t)sysconf(_SC_PAGESIZE));
     unsigned char a[16384], b[16384], c[16384], source[16384];
     for (size_t i = 0; i < sizeof(source); ++i)
         source[i] = next_byte();

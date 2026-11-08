@@ -70,6 +70,47 @@ static inline void fill64(u8 *d, uint8x16_t v) {
     vst1q_u8(d, v); vst1q_u8(d + 16, v); vst1q_u8(d + 32, v); vst1q_u8(d + 48, v);
 }
 
+static inline void zero_edge(u8 *d, size_t n)
+{
+    uint8x16_t zero = vdupq_n_u8(0);
+    while (n >= 16)
+    {
+        vst1q_u8(d, zero);
+        d += 16;
+        n -= 16;
+    }
+    while (n)
+    {
+        *d++ = 0;
+        --n;
+    }
+}
+
+static inline void zero_blocks(u8 *d, size_t n, size_t block)
+{
+    size_t prefix = (-(uintptr_t)d) & (block - 1);
+    zero_edge(d, prefix);
+    d += prefix;
+    n -= prefix;
+
+    while (n >= 4 * block)
+    {
+        __asm__ volatile("dc zva, %0" :: "r"(d) : "memory");
+        __asm__ volatile("dc zva, %0" :: "r"(d + block) : "memory");
+        __asm__ volatile("dc zva, %0" :: "r"(d + 2 * block) : "memory");
+        __asm__ volatile("dc zva, %0" :: "r"(d + 3 * block) : "memory");
+        d += 4 * block;
+        n -= 4 * block;
+    }
+    while (n >= block)
+    {
+        __asm__ volatile("dc zva, %0" :: "r"(d) : "memory");
+        d += block;
+        n -= block;
+    }
+    zero_edge(d, n);
+}
+
 static inline __attribute__((always_inline)) void *fill_bulk(void *dst, int c, size_t n, size_t stride) {
     u8 *d = dst;
     uint8x16_t v = vdupq_n_u8((u8)c);
@@ -95,6 +136,22 @@ static inline __attribute__((always_inline)) void *fill_bulk(void *dst, int c, s
     } else if (n <= 128) {
         fill64(d, v); fill64(d + n - 64, v);
     } else {
+        /* Repeated cache-resident clears benefit from zero-by-address. Keep
+           streaming fills on NEON: the measured crossover is above 2 MiB. */
+        if ((u8)c == 0 && n >= 256 && n <= 2 * 1024 * 1024)
+        {
+            uint64_t dczid;
+            __asm__ volatile("mrs %0, dczid_el0" : "=r"(dczid));
+            if (!(dczid & 16))
+            {
+                size_t block = (size_t)4 << (dczid & 15);
+                if (n >= 2 * block)
+                {
+                    zero_blocks(d, n, block);
+                    return dst;
+                }
+            }
+        }
         fill64(d, v); fill64(d + 64, v);
         size_t i = 128 - ((uintptr_t)d & 15);
 

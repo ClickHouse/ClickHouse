@@ -49,6 +49,18 @@ already use those same NEON implementations above that boundary at a vector
 length of 16 bytes. Only sizes from 17 through 64 bytes need runtime selection
 for these three functions. This avoids dispatch overhead in these size ranges.
 
+Zero fills from 256 bytes through 2 MiB use `DC ZVA` when `DCZID_EL0`
+permits it and the range contains at least two zeroing blocks. The prefix
+and suffix use exact stores; zeroing instructions touch only complete aligned
+blocks inside the requested range. The byte conversion is applied before
+testing the fill value, including values such as 256 and -256. Larger fills
+retain NEON stores because the native Neoverse V2 size sweep found a crossover
+between 3 MiB and 4 MiB. The conservative 2 MiB limit retains the existing
+streaming path. This addresses repeated hash-table clears in
+`dictGetDescendants`; it does not change the dictionary implementation.
+The new zeroing path has native guarded differential tests and is outside the
+earlier machine-code proof snapshots.
+
 The overlapping strong definitions are excluded from the existing Arm
 optimized-routines archive only while this option is enabled. Its `strchr`
 and `strnlen` remain in use. LLVM libc math and other memory routines retain
@@ -63,6 +75,9 @@ remain outside that proof. This option remains experimental and disabled by defa
 
 See the [2026-11-07 native AArch64 comparison](benchmarks/aarch64-2026-11-07.md)
 for the build configuration, query results, and limits of the measurements.
+The [2026-11-08 hierarchical dictionary investigation](benchmarks/hierarchy-2026-11-08.md)
+records the repeated regression, zero-fill minimization, fix, and remaining
+flat-hierarchy control difference.
 
 On a native AArch64 glibc host, test the prefixed archive against the independent
 host libc, including protected pages and oversized early-match `memchr`:

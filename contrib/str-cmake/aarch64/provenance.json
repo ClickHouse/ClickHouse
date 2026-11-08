@@ -16,7 +16,15 @@
         "fill_bulk",
         "kl_memset_neon_bulk128"
       ],
-      "integration_sha256": "534c777d63faf3707541c046e7a955aeb8ff8f94f9c89de4092c43e7a4230c52"
+      "integration_sha256": "6196fac4d35e9a2892f96cb8b98381948655ef9eeaa1f75dcb4f31942d9ea03a",
+      "integration_additions": {
+        "date": "2026-11-08",
+        "functions": [
+          "zero_edge",
+          "zero_blocks"
+        ],
+        "change": "Use bounded aligned DC ZVA blocks for zero fills256bytes..2MiB after checking DCZID_EL0 permission/blocksize; preserve NEON streaming path. Native hierarchical dictionary regression minimized to repeated1MiB clears; measured1..8way unrolling and cache-size boundaries. Current longer zero path is not covered by prior machine-code proof snapshots."
+      }
     },
     {
       "source": "dev/lab/kernels/aarch64_neon_extra.c",
