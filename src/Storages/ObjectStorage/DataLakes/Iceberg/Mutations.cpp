@@ -259,6 +259,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             delete_data_writers[partition_key]->finalize();
             delete_data_write_buffers[partition_key]->finalize();
             delete_data_result[partition_key].total_bytes = static_cast<Int32>(delete_data_write_buffers[partition_key]->count());
+            delete_data_writers[partition_key].reset();
+            delete_data_write_buffers[partition_key].reset();
         }
     }
 
@@ -317,6 +319,8 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             update_data_writers[partition_key]->finalize();
             update_data_write_buffers[partition_key]->finalize();
             update_data_result[partition_key].total_bytes = static_cast<Int32>(update_data_write_buffers[partition_key]->count());
+            update_data_writers[partition_key].reset();
+            update_data_write_buffers[partition_key].reset();
         }
     }
 

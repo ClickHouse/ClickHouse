@@ -5,8 +5,14 @@
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <limits>
+
 namespace DB
 {
+
+/// Arrow offsets its `Utf8`, `Binary` and `List` buffers with 32-bit integers, and the Apache Arrow
+/// builders additionally reject the last representable value.
+constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
 
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
@@ -166,6 +172,8 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
+        /// Upper bound on one record batch.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
     } arrow{};
 
     struct

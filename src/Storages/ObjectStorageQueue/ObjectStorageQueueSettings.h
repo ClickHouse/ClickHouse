@@ -61,7 +61,8 @@ struct ObjectStorageQueueSettings
         MutableColumnsAndConstraints & params,
         const std::string & table_name,
         const std::string & database_name,
-        const StorageObjectStorageQueue & storage) const;
+        const StorageObjectStorageQueue & storage,
+        bool display_secrets) const;
 
     void loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id);
 
