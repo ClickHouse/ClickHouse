@@ -41,7 +41,6 @@ namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::Setting
@@ -229,6 +228,101 @@ namespace
 
         return ColumnBounds{*declared_left, *declared_right, *left, *right};
     }
+
+    Poco::JSON::Array::Ptr getRecordFields(const Poco::JSON::Array::Ptr & fields, const String & name)
+    {
+        if (!fields)
+            return nullptr;
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            const auto field = fields->getObject(i);
+            if (field && field->optValue<String>(f_name, "") == name)
+            {
+                const auto type = field->getObject(f_type);
+                return type ? type->getArray(f_fields) : nullptr;
+            }
+        }
+        return nullptr;
+    }
+
+    /// The position in the partition record of each field of `spec_fields`, matched by field id, nullopt if absent.
+    /// Empty if the record is in the order of the spec or has no field ids, so its values are taken by position.
+    std::vector<std::optional<size_t>> getPartitionValuePositions(
+        const AvroForIcebergDeserializer & deserializer,
+        const Poco::JSON::Array::Ptr & spec_fields,
+        const IcebergPathFromMetadata & path_to_manifest_file,
+        Int32 spec_id,
+        size_t & record_fields_count)
+    {
+        const auto throw_mismatch = [&](std::string_view reason)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest file '{}' has no 'partition-spec' in its Avro metadata, and its partition values cannot be matched "
+                "to the partition spec with id {} of the table metadata: {}",
+                path_to_manifest_file,
+                spec_id,
+                reason);
+        };
+
+        Poco::JSON::Array::Ptr record_fields;
+        if (auto avro_schema = deserializer.tryGetAvroMetadataValue(f_avro_schema))
+        {
+            Poco::JSON::Parser parser;
+            const auto root = parser.parse(*avro_schema);
+            if (root.type() == typeid(Poco::JSON::Object::Ptr))
+                record_fields = getRecordFields(
+                    getRecordFields(root.extract<Poco::JSON::Object::Ptr>()->getArray(f_fields), f_data_file), f_partition);
+        }
+        if (!record_fields)
+            throw_mismatch("its Avro schema has no 'data_file.partition' record");
+        record_fields_count = record_fields->size();
+
+        std::vector<std::optional<Int32>> record_field_ids;
+        bool record_has_field_ids = false;
+        for (UInt32 i = 0; i < record_fields->size(); ++i)
+        {
+            const auto field = record_fields->getObject(i);
+            record_field_ids.push_back(tryGetInt32Value(field, f_field_id));
+            record_has_field_ids |= field && field->has(f_field_id);
+        }
+        const auto spec_field_ids = getPartitionSpecFieldIds(spec_fields);
+
+        const auto are_complete_and_unique = [](const std::vector<std::optional<Int32>> & ids)
+        {
+            std::unordered_set<Int32> seen;
+            return std::ranges::all_of(ids, [&](const auto & id) { return id.has_value() && seen.insert(*id).second; });
+        };
+        if (!are_complete_and_unique(spec_field_ids))
+            throw_mismatch("the field ids of the partition spec are incomplete, invalid or not unique");
+        if (!record_has_field_ids && !record_field_ids.empty())
+            return {};
+        if (!are_complete_and_unique(record_field_ids))
+            throw_mismatch("the field ids of the partition record are incomplete, invalid or not unique");
+        if (record_field_ids.empty() && !spec_field_ids.empty())
+            throw_mismatch("the partition record is empty");
+
+        std::vector<std::optional<size_t>> positions(spec_field_ids.size());
+        size_t matched_fields = 0;
+        bool is_identity = spec_field_ids.size() == record_field_ids.size();
+        for (size_t i = 0; i < spec_field_ids.size(); ++i)
+        {
+            const auto it = std::ranges::find(record_field_ids, spec_field_ids[i]);
+            if (it == record_field_ids.end())
+            {
+                is_identity = false;
+                continue;
+            }
+            positions[i] = static_cast<size_t>(it - record_field_ids.begin());
+            is_identity &= *positions[i] == i;
+            ++matched_fields;
+        }
+        if (matched_fields != record_field_ids.size())
+            throw_mismatch("the partition record has a field that is not in the partition spec");
+        if (is_identity)
+            return {};
+        return positions;
+    }
 }
 
 std::unordered_map<Int32, DB::Range> getDataFileHyperrectangles(
@@ -384,6 +478,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
     std::optional<UInt64> inherited_first_row_id_,
+    Int32 partition_spec_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
@@ -413,20 +508,30 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 
     Poco::JSON::Parser parser;
 
-    auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
-    if (!partition_spec_json_string.has_value())
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No partition-spec in iceberg manifest file");
-
-    Poco::Dynamic::Var partition_spec_json = parser.parse(*partition_spec_json_string);
-    const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+    Poco::JSON::Array::Ptr partition_specification;
+    std::vector<std::optional<size_t>> partition_value_positions;
+    size_t partition_record_fields_count = 0;
+    if (auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec"))
+    {
+        Poco::Dynamic::Var partition_spec_json = parser.parse(*partition_spec_json_string);
+        partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+    }
+    else
+    {
+        /// Some writers drop this key. Like the Java reader, take the spec the manifest list names from the table metadata.
+        partition_specification = schema_processor.tryGetPartitionSpecFields(partition_spec_id_);
+        if (!partition_specification)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest file '{}' has no 'partition-spec' in its Avro metadata and the table metadata has no partition spec "
+                "with id {}",
+                path_to_manifest_file_,
+                partition_spec_id_);
+        partition_value_positions = getPartitionValuePositions(
+            *manifest_file_deserializer_, partition_specification, path_to_manifest_file_, partition_spec_id_, partition_record_fields_count);
+    }
 
     auto schema_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema);
-    if (!schema_json_string.has_value())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read Iceberg table: manifest file '{}' doesn't have field '{}' in its metadata",
-            path_to_manifest_file_,
-            f_schema);
 
     const bool tolerate_conflicting_manifest_schemas = context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas];
 
@@ -434,11 +539,40 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     if (auto schema_id_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema_id))
         header_schema_id = parse<Int32>(*schema_id_string);
 
+    /// `schema-id` and the snapshot that added the manifest name the schema it was written with: that of its ADDED entries,
+    /// not of the EXISTING entries a manifest rewrite carries over from older snapshots.
+    const bool manifest_schema_covers_all_entries
+        = schema_json_string.has_value() || schema_processor.hasOnlyInitialSchemaFromMetadata();
+
     Int32 manifest_schema_id = 0;
     if (header_schema_id.has_value() && tolerate_conflicting_manifest_schemas
         && schema_processor.isSchemaRegisteredFromMetadata(*header_schema_id))
     {
         manifest_schema_id = *header_schema_id;
+    }
+    else if (!schema_json_string.has_value())
+    {
+        if (header_schema_id.has_value())
+            manifest_schema_id = *header_schema_id;
+        else if (auto snapshot_schema_id = schema_processor.tryGetSchemaIdForSnapshot(inherited_snapshot_id_))
+            manifest_schema_id = *snapshot_schema_id;
+        else if (manifest_schema_covers_all_entries)
+            manifest_schema_id = 0;
+        else
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest file '{}' has no '{}' in its Avro metadata, the snapshot {} that added it is not in the table metadata, "
+                "and the table has a schema other than its initial schema 0, so the schema of its data files is unknown",
+                path_to_manifest_file_,
+                f_schema,
+                inherited_snapshot_id_);
+        if (!schema_processor.isSchemaRegisteredFromMetadata(manifest_schema_id))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest file '{}' has no '{}' in its Avro metadata and the table metadata has no schema with id {}",
+                path_to_manifest_file_,
+                f_schema,
+                manifest_schema_id);
     }
     else
     {
@@ -480,9 +614,12 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         inherited_first_row_id_,
         context_,
         manifest_schema_id,
+        manifest_schema_covers_all_entries,
         std::make_shared<const PartitionSpecification>(std::move(partition_key.partition_specification)),
         std::move(partition_key.key_description),
         partition_spec_fields_count,
+        std::move(partition_value_positions),
+        partition_record_fields_count,
         total_rows,
         std::move(filter_dag_),
         table_snapshot_schema_id_));
@@ -499,9 +636,12 @@ ManifestFileIterator::ManifestFileIterator(
     std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
+    bool manifest_schema_covers_all_entries_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
     std::optional<DB::KeyDescription> partition_key_description_,
     size_t partition_spec_fields_count_,
+    std::vector<std::optional<size_t>> partition_value_positions_,
+    size_t partition_record_fields_count_,
     size_t total_rows_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
@@ -513,10 +653,13 @@ ManifestFileIterator::ManifestFileIterator(
     , inherited_snapshot_id(inherited_snapshot_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
+    , manifest_schema_covers_all_entries(manifest_schema_covers_all_entries_)
     , common_partition_specification(std::move(common_partition_specification_))
     , partition_key_description(
           partition_key_description_ ? std::make_shared<const DB::KeyDescription>(std::move(*partition_key_description_)) : nullptr)
     , partition_spec_fields_count(partition_spec_fields_count_)
+    , partition_value_positions(std::move(partition_value_positions_))
+    , partition_record_fields_count(partition_record_fields_count_)
     , table_snapshot_schema_id(table_snapshot_schema_id_)
     , total_rows(total_rows_)
     , data_files_without_deleted(std::make_shared<std::vector<ProcessedManifestFileEntryPtr>>())
@@ -568,15 +711,33 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         return nullptr;
     }
 
+    const DB::Row * partition_key_value = &parsed_entry->partition_key_value;
+    DB::Row reordered_partition_key_value;
+    if (!partition_value_positions.empty())
+    {
+        if (partition_key_value->size() != partition_record_fields_count)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg manifest partition tuple for file '{}' has {} values but the partition record of manifest file '{}' "
+                "has {} fields",
+                parsed_entry->file_path_key,
+                partition_key_value->size(),
+                path_to_manifest_file,
+                partition_record_fields_count);
+        for (const auto & position : partition_value_positions)
+            reordered_partition_key_value.push_back(position ? (*partition_key_value)[*position] : Field());
+        partition_key_value = &reordered_partition_key_value;
+    }
+
     /// Iceberg requires one partition value per field of the spec the manifest was written with.
     /// This holds whether or not any of those fields ended up in the partition key.
-    if (parsed_entry->partition_key_value.size() != partition_spec_fields_count)
+    if (partition_key_value->size() != partition_spec_fields_count)
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
             "Iceberg manifest partition tuple for file '{}' has {} values but the manifest's partition "
             "spec defines {} fields",
             parsed_entry->file_path_key,
-            parsed_entry->partition_key_value.size(),
+            partition_key_value->size(),
             partition_spec_fields_count);
 
     /// Compute inherited/resolved fields
@@ -599,6 +760,15 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     const auto schema_id_opt = schema_processor_ptr->tryGetSchemaIdForSnapshot(resolved_snapshot_id);
+    if (!schema_id_opt.has_value() && !manifest_schema_covers_all_entries && resolved_snapshot_id != inherited_snapshot_id)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Manifest file '{}' has no '{}' in its Avro metadata and the snapshot {} of its entry for data file '{}' is not in "
+            "the table metadata, so the schema of that data file is unknown",
+            path_to_manifest_file,
+            f_schema,
+            resolved_snapshot_id,
+            parsed_entry->file_path_key);
     if (!schema_id_opt.has_value())
     {
         /// This is expected when the referenced snapshot was expired by the catalog (snapshot expiry is a
@@ -644,7 +814,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     /// pruning, identity-column projection, delete matching, compaction and `system.iceberg_files` all
     /// see the same value regardless of how this particular manifest encoded it.
     entry->normalized_partition_key_value = normalizePartitionKeyValue(
-        parsed_entry->partition_key_value, *common_partition_specification, *schema_processor_ptr, manifest_schema_id);
+        *partition_key_value, *common_partition_specification, *schema_processor_ptr, manifest_schema_id);
 
     if (parsed_entry->parsed_first_row_id.has_value())
         entry->first_row_id = parsed_entry->parsed_first_row_id;

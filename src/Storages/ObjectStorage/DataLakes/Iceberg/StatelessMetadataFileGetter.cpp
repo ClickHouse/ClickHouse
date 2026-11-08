@@ -222,6 +222,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         cache_key.added_sequence_number,
         cache_key.added_snapshot_id,
         cache_key.first_row_id,
+        cache_key.partition_spec_id,
         local_context,
         nullptr,
         table_snapshot_schema_id);

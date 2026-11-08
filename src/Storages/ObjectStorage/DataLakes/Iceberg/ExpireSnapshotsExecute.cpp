@@ -681,6 +681,7 @@ ExpireSnapshotsResult expireSnapshots(
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
+        persistent_table_components.schema_processor->registerMetadata(metadata);
 
         if (!metadata->has(Iceberg::f_current_snapshot_id))
         {
@@ -761,6 +762,7 @@ ExpireSnapshotsResult expireSnapshots(
                 LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
                 continue;
             }
+            persistent_table_components.schema_processor->registerMetadata(committed_metadata);
             /// The snapshots the committed metadata retains, not `partition.retained_snapshots`: the catalog may have
             /// committed snapshots without a reference since `metadata` was read, e.g. staged ones, which can
             /// reference the files of the expired snapshots.

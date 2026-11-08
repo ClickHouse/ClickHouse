@@ -28,6 +28,12 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
 
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
+/// nullopt unless `key` holds an integer that fits Int32.
+std::optional<Int32> tryGetInt32Value(const Poco::JSON::Object::Ptr & object, const std::string & key);
+
+/// The `field-id` of each field of a partition spec. A spec without any gets 1000, 1001, ..., the ids Iceberg assigns to it.
+std::vector<std::optional<Int32>> getPartitionSpecFieldIds(const Poco::JSON::Array::Ptr & spec_fields);
+
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -114,6 +120,8 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickHouseTableSchemaById(Int32 id) const;
     bool isSchemaRegisteredFromMetadata(Int32 id) const;
+    /// Whether schema 0, the id writers give the first schema of a table, is the only schema registered from metadata.json.
+    bool hasOnlyInitialSchemaFromMetadata() const;
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
@@ -136,6 +144,12 @@ public:
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
 
+    /// Registers what metadata.json binds: the last column id, the schemas, the schema of every snapshot and the partition specs.
+    void registerMetadata(const Poco::JSON::Object::Ptr & metadata_object);
+    /// The `fields` of the partition spec with this id, nullptr if it is not registered.
+    /// Throws if two metadata versions bind the id to different specs.
+    Poco::JSON::Array::Ptr tryGetPartitionSpecFields(Int32 spec_id) const;
+
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
     void updateLastColumnId(Int32 last_column_id_);
@@ -150,6 +164,8 @@ private:
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
+    std::unordered_map<Int32, Poco::JSON::Array::Ptr> partition_spec_fields_by_ids TSA_GUARDED_BY(mutex);
+    std::unordered_set<Int32> conflicting_partition_spec_ids TSA_GUARDED_BY(mutex);
     /// Schema-ids whose registered copy came from a manifest file header and has not been confirmed
     /// by an identical metadata.json copy yet. Such a copy is replaced when metadata.json binds the
     /// schema-id to a different schema, and two manifest headers disagreeing on such a schema-id is

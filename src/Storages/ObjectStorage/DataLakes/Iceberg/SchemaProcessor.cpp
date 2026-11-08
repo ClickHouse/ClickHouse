@@ -436,6 +436,41 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
     return {precision, scale};
 }
 
+std::optional<String> tryGetStringValue(const Poco::JSON::Object::Ptr & object, const String & key)
+{
+    if (!object || !object->has(key) || !object->get(key).isString())
+        return std::nullopt;
+    return object->get(key).extract<String>();
+}
+
+Poco::JSON::Array::Ptr deepCopyArray(const Poco::JSON::Array::Ptr & array)
+{
+    std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    array->stringify(stream);
+    Poco::JSON::Parser parser;
+    return parser.parse(stream.str()).extract<Poco::JSON::Array::Ptr>();
+}
+
+/// The reader identifies a partition field by its field id, source id, transform and name.
+bool partitionSpecsAreEqual(const Poco::JSON::Array::Ptr & first, const Poco::JSON::Array::Ptr & second)
+{
+    if (first->size() != second->size())
+        return false;
+    const auto first_field_ids = getPartitionSpecFieldIds(first);
+    const auto second_field_ids = getPartitionSpecFieldIds(second);
+    for (UInt32 i = 0; i != first->size(); ++i)
+    {
+        const auto first_field = first->getObject(i);
+        const auto second_field = second->getObject(i);
+        if (first_field_ids[i] != second_field_ids[i]
+            || tryGetInt32Value(first_field, f_source_id) != tryGetInt32Value(second_field, f_source_id)
+            || tryGetStringValue(first_field, f_partition_transform) != tryGetStringValue(second_field, f_partition_transform)
+            || tryGetStringValue(first_field, f_partition_name) != tryGetStringValue(second_field, f_partition_name))
+            return false;
+    }
+    return true;
+}
+
 }
 
 namespace Iceberg
@@ -976,6 +1011,105 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
     return std::nullopt;
 }
 
+void IcebergSchemaProcessor::registerMetadata(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
+        updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
+    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    for (UInt32 j = 0; j < schemas->size(); ++j)
+    {
+        auto schema = schemas->getObject(j);
+        addIcebergTableSchema(schema);
+    }
+    if (metadata_object->has(f_snapshots))
+    {
+        auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i < snapshots->size(); ++i)
+        {
+            const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+            auto snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+            auto snapshot_schema_id = snapshot->getValue<Int32>(f_schema_id);
+            registerSnapshotWithSchemaId(snapshot_id, snapshot_schema_id);
+        }
+    }
+
+    const auto specs = metadata_object->getArray(f_partition_specs);
+    if (!specs)
+        return;
+    for (UInt32 i = 0; i < specs->size(); ++i)
+    {
+        const auto spec = specs->getObject(i);
+        const auto spec_id = tryGetInt32Value(spec, f_spec_id);
+        const auto fields = spec ? spec->getArray(f_fields) : nullptr;
+        if (!spec_id || !fields)
+            continue;
+
+        Poco::JSON::Array::Ptr registered_fields;
+        {
+            SharedLockGuard lock(mutex);
+            if (auto it = partition_spec_fields_by_ids.find(*spec_id); it != partition_spec_fields_by_ids.end())
+                registered_fields = it->second;
+        }
+        if (!registered_fields)
+        {
+            /// Maintenance operations edit their metadata object in place.
+            auto fields_copy = deepCopyArray(fields);
+            std::lock_guard lock(mutex);
+            registered_fields = partition_spec_fields_by_ids.emplace(*spec_id, std::move(fields_copy)).first->second;
+        }
+        /// A spec-id is immutable per the Iceberg spec.
+        if (!partitionSpecsAreEqual(registered_fields, fields))
+        {
+            std::lock_guard lock(mutex);
+            conflicting_partition_spec_ids.insert(*spec_id);
+        }
+    }
+}
+
+Poco::JSON::Array::Ptr IcebergSchemaProcessor::tryGetPartitionSpecFields(Int32 spec_id) const
+{
+    SharedLockGuard lock(mutex);
+    if (conflicting_partition_spec_ids.contains(spec_id))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg partition spec with spec-id {} is bound to two different specs across metadata versions",
+            spec_id);
+    auto it = partition_spec_fields_by_ids.find(spec_id);
+    if (it == partition_spec_fields_by_ids.end())
+        return nullptr;
+    return it->second;
+}
+
+std::optional<Int32> tryGetInt32Value(const Poco::JSON::Object::Ptr & object, const std::string & key)
+{
+    if (!object || !object->has(key))
+        return std::nullopt;
+    const auto & value = object->get(key);
+    /// Poco counts `bool` as an integer type.
+    if (!value.isInteger() || value.isBoolean() || !value.isSigned())
+        return std::nullopt;
+    const auto result = value.convert<Int64>();
+    if (result < std::numeric_limits<Int32>::min() || result > std::numeric_limits<Int32>::max())
+        return std::nullopt;
+    return static_cast<Int32>(result);
+}
+
+std::vector<std::optional<Int32>> getPartitionSpecFieldIds(const Poco::JSON::Array::Ptr & spec_fields)
+{
+    std::vector<std::optional<Int32>> result;
+    bool has_any_field_id = false;
+    for (UInt32 i = 0; i < spec_fields->size(); ++i)
+    {
+        const auto field = spec_fields->getObject(i);
+        result.push_back(tryGetInt32Value(field, f_field_id));
+        has_any_field_id |= field && field->has(f_field_id);
+    }
+    if (!has_any_field_id)
+        for (size_t i = 0; i < result.size(); ++i)
+            result[i] = static_cast<Int32>(1000 + i);
+    return result;
+}
+
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSchemaById(Int32 id)
 {
@@ -999,6 +1133,16 @@ bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
     SharedLockGuard lock(mutex);
 
     return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
+}
+
+bool IcebergSchemaProcessor::hasOnlyInitialSchemaFromMetadata() const
+{
+    SharedLockGuard lock(mutex);
+
+    for (const auto & [id, _] : iceberg_table_schemas_by_ids)
+        if (id != 0 && !manifest_sourced_schema_ids.contains(id))
+            return false;
+    return iceberg_table_schemas_by_ids.contains(0) && !manifest_sourced_schema_ids.contains(0);
 }
 
 std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
