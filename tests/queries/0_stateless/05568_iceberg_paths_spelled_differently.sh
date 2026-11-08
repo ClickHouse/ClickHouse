@@ -149,6 +149,21 @@ local_query "
 mv "${deletes}.new" "${deletes}"
 select_with_both_transforms q
 
+# Sorted by `file_path`, the positions are 2, 0, which the streaming transform cannot merge. Read in one piece, they
+# select the bitmap transform. Read one row group at a time, the 0 arrives after row 2 is passed: an exception.
+for row_group_size in 1000 1; do
+    echo "a position delete file naming one data file in two spellings, row groups of ${row_group_size} rows"
+    create_table "o${row_group_size}" "INSERT INTO t VALUES (1), (2), (3), (4); ALTER TABLE t DELETE WHERE x IN (1, 3);"
+    deletes=$(find "o${row_group_size}/warehouse/db/t/data" -name '*-deletes.parquet')
+    local_query "
+        INSERT INTO FUNCTION file('${deletes}.new', Parquet)
+        SELECT if(pos = 0, concat('file:', file_path), file_path) AS file_path, pos FROM file('${deletes}', Parquet)
+        ORDER BY file_path, pos
+        SETTINGS output_format_parquet_row_group_size = ${row_group_size}"
+    mv "${deletes}.new" "${deletes}"
+    select_with_both_transforms "o${row_group_size}" 2>&1 | grep -oE '^\[.*\]$|ICEBERG_SPECIFICATION_VIOLATION'
+done
+
 echo "expire_snapshots keeps a file a retained snapshot names in another spelling and deletes the others"
 create_table x "INSERT INTO t VALUES (1); INSERT INTO t VALUES (2); INSERT INTO t VALUES (3);"
 edit_metadata x "

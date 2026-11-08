@@ -295,12 +295,17 @@ void IcebergStreamingPositionDeleteTransform::initialize()
             .position_index = position_index
         });
         iterator_at_latest_chunks.push_back(0);
+        last_positions.push_back(0);
         latest_chunks.emplace_back();
-        fetchNewChunkFromSource(i);
+        if (!fetchNewChunkFromSource(i))
+        {
+            has_unordered_positions = true;
+            return;
+        }
     }
 }
 
-void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t position_delete_file_index)
+bool IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t position_delete_file_index)
 {
     iterator_at_latest_chunks[position_delete_file_index] = 0;
 
@@ -316,7 +321,7 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t pos
         if (!chunk.hasRows())
         {
             latest_chunks[position_delete_file_index] = std::move(chunk);
-            return;
+            return true;
         }
 
         const auto filename_index = position_delete_file_column_indices[position_delete_file_index].filename_index;
@@ -324,10 +329,18 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t pos
             continue;
 
         const auto position_index = position_delete_file_column_indices[position_delete_file_index].position_index;
-        size_t first_position_value_in_delete_file = chunk.getColumns()[position_index]->get64(0);
-        latest_positions.emplace(first_position_value_in_delete_file, position_delete_file_index);
+        const auto & positions = *chunk.getColumns()[position_index];
+        auto & last_position = last_positions[position_delete_file_index];
+        for (size_t row = 0; row < positions.size(); ++row)
+        {
+            const size_t position = positions.get64(row);
+            if (position < last_position)
+                return false;
+            last_position = position;
+        }
+        latest_positions.emplace(positions.get64(0), position_delete_file_index);
         latest_chunks[position_delete_file_index] = std::move(chunk);
-        return;
+        return true;
     }
 }
 
@@ -370,7 +383,13 @@ void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
                     if (iterator_at_latest_chunks[position_delete_file_index] + 1 >= latest_chunks[position_delete_file_index].getNumRows()
                         && latest_chunks[position_delete_file_index].getNumRows() > 0)
                     {
-                        fetchNewChunkFromSource(position_delete_file_index);
+                        if (!fetchNewChunkFromSource(position_delete_file_index))
+                            throw Exception(
+                                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                                "A position delete file lists the positions of data file '{}' out of order: it is not sorted "
+                                "by file path and position, or names the data file in several spellings. Set "
+                                "use_roaring_bitmap_iceberg_positional_deletes = 1 to apply it",
+                                iceberg_object_info->info.data_object_file_path_key);
                     }
                     else
                     {

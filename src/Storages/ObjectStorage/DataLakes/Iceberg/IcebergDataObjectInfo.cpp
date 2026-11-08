@@ -103,10 +103,15 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
     /// A deletion vector is already a bitmap, so there is nothing to stream.
-    if (info.deletion_vector.has_value() || context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+    if (!info.deletion_vector.has_value() && !context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+    {
+        /// Several spellings of the data file in one delete file give one ascending run of positions per spelling.
+        auto streaming = std::make_shared<IcebergStreamingPositionDeleteTransform>(
             header, self, object_storage, path_resolver, format_settings, parser_shared_resources, context_);
-    return std::make_shared<IcebergStreamingPositionDeleteTransform>(
+        if (!streaming->hasUnorderedPositions())
+            return streaming;
+    }
+    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
         header, self, object_storage, path_resolver, format_settings, parser_shared_resources, context_);
 }
 

@@ -130,6 +130,9 @@ public:
 
     void transform(Chunk & chunk) override;
 
+    /// The positions read by the constructor are out of order, so this transform cannot be used.
+    bool hasUnorderedPositions() const { return has_unordered_positions; }
+
 private:
     void initialize();
 
@@ -139,12 +142,15 @@ private:
         size_t position_index;
     };
 
-    void fetchNewChunkFromSource(size_t position_delete_file_index);
+    /// Returns false if a position of the source is less than one read before it.
+    bool fetchNewChunkFromSource(size_t position_delete_file_index);
 
     std::vector<PositionDeleteFileIndexes> position_delete_file_column_indices;
     std::vector<Chunk> latest_chunks;
     std::vector<size_t> iterator_at_latest_chunks;
+    std::vector<size_t> last_positions;
     std::set<std::pair<size_t, size_t>> latest_positions;
+    bool has_unordered_positions = false;
 
     std::optional<size_t> previous_chunk_end_offset;
 };
