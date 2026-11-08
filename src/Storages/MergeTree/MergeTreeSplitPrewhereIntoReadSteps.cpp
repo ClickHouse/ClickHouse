@@ -53,6 +53,11 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
+bool isTopKFilter(const ActionsDAG::Node * node)
+{
+    return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__topKFilter";
+}
+
 /// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
 void resolveNodeInfo(NodeInfo & node_info, const String & column_name, const IndexReadTasks * index_read_tasks)
 {
@@ -125,13 +130,23 @@ using NodesInfo = std::unordered_map<const ActionsDAG::Node *, NodeInfo>;
 /// Group adjacent atoms from one conjunction; a later refinement may split an existing
 /// group but must never merge its last atom with the next group's first atom.
 void appendGroups(
-    std::vector<ConditionGroup> & groups, const ActionsDAG::NodeRawConstPtrs & nodes, const NodesInfo & info, size_t cache_prefix = 0)
+    std::vector<ConditionGroup> & groups,
+    const ActionsDAG::NodeRawConstPtrs & nodes,
+    const NodesInfo & info,
+    bool read_ahead_columns,
+    size_t cache_prefix = 0)
 {
     for (size_t i = 0; i < nodes.size(); ++i)
     {
         const auto * node = nodes[i];
         const auto & current = info.at(node);
-        if (i != 0 && i != cache_prefix && !current.may_throw && current.readsSameColumns(info.at(groups.back().nodes.front())))
+        const bool same_columns = i != 0 && current.readsSameColumns(info.at(groups.back().nodes.front()));
+        /// `__topKFilter` is the first condition (see `buildTopKDynamicFilterPrewhere`). In its own step the condition runs only
+        /// on the rows the threshold passes once it is selective, because the `__topKFilter` step's filter stays optional.
+        const bool follows_top_k_filter = same_columns && read_ahead_columns && isTopKFilter(groups.back().nodes.front())
+            && canBeMovedToTheFrontOfAndChain(node);
+
+        if (same_columns && i != cache_prefix && !current.may_throw && !follows_top_k_filter)
             groups.back().nodes.push_back(node);
         else
             groups.push_back({{node}, current.may_throw});
@@ -203,7 +218,7 @@ public:
     /// Refine the original schedule within its existing filter and cache boundaries.
     /// A group with an unguarded, possibly throwing expression may see rows from before
     /// the accumulated filter is applied. Keep all steps up to that group as they were.
-    void splitAliases(std::vector<ConditionGroup> & groups, const NodesInfo & nodes_info)
+    void splitAliases(std::vector<ConditionGroup> & groups, const NodesInfo & nodes_info, bool read_ahead_columns)
     {
         auto can_expand = [&](const ConditionGroup & group)
         {
@@ -240,7 +255,7 @@ public:
             for (const auto * node : group.nodes)
                 flatten(node, atoms, true);
             const size_t first = refined.size();
-            appendGroups(refined, atoms, nodes_info);
+            appendGroups(refined, atoms, nodes_info, read_ahead_columns);
             refined[first].needs_filtered_input |= group.needs_filtered_input;
             refined.back().ends_cache_prefix = group.ends_cache_prefix;
         }
@@ -550,8 +565,8 @@ bool tryBuildPrewhereSteps(
     /// a throwing predicate over the same column adjacent, so the may_throw check below is what keeps
     /// the guard effective.
     std::vector<ConditionGroup> condition_groups;
-    appendGroups(condition_groups, condition_nodes, nodes_info, num_attributed_conditions);
-    splitter.splitAliases(condition_groups, nodes_info);
+    appendGroups(condition_groups, condition_nodes, nodes_info, read_ahead_columns, num_attributed_conditions);
+    splitter.splitAliases(condition_groups, nodes_info, read_ahead_columns);
 
     /// For every group, the index of the group whose step reads its columns. A group that was split
     /// from the previous one only because it may throw reads the same columns, so with
