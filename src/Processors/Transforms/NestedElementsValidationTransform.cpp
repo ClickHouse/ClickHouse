@@ -64,7 +64,6 @@ void NestedSizesValidationTransform::transform(Chunk & chunk)
         const auto reference_column = get_column(reference_name);
         const ArraySizes reference_sizes(*reference_column, reference_name);
 
-        /// A `size0` subcolumn is reported by the name of its `Array`.
         String reference_member = reference_name;
         if (reference_sizes.sizes && reference_member.ends_with(".size0"))
             reference_member.resize(reference_member.size() - strlen(".size0"));

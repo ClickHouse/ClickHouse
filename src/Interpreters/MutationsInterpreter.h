@@ -162,8 +162,7 @@ public:
     /// Only changed columns.
     Block getUpdatedHeader() const;
 
-    /// The checks that the `Nested` members among `written` keep the array sizes of the part, for the members this
-    /// mutation writes without such a check of its own. `header` is the block that reaches the writer.
+    /// Size checks for the `Nested` members among `written` that have none of their own; `header` is the writer's input.
     VectorWithMemoryTracking<NestedSizesCheck> getNestedSizesChecks(const Names & written, const Block & header) const;
 
     const ColumnDependencies & getColumnDependencies() const;
@@ -343,8 +342,7 @@ private:
     NameSet materialized_statistics;
     NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
-    /// `Nested` members written by `MATERIALIZE COLUMN` or a recalculation of `MATERIALIZED` columns, which compare
-    /// their array sizes with nothing.
+    /// `Nested` members written by `MATERIALIZE COLUMN` or a `MATERIALIZED` recalculation, with no size check.
     NameSet nested_written_without_size_check;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.

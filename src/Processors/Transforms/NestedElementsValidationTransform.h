@@ -20,8 +20,7 @@ protected:
     void transform(Chunk & chunk) override;
 };
 
-/// Members of one `Nested` group whose array sizes must agree row by row: with `reference` (a `size0` subcolumn
-/// or an `Array` column) when it is set, otherwise with each other.
+/// Members of one `Nested` group whose array sizes must agree row by row: with `reference` if set, else with each other.
 struct NestedSizesCheck
 {
     Names columns;

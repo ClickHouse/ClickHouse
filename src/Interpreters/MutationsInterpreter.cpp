@@ -798,7 +798,6 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
-/// The `Nested` group of an `Array` column of the table, split as `getExpressionsOfUpdatedNestedSubcolumns` does.
 static std::optional<String> getNestedGroupOfMember(const ColumnsDescription & columns, const String & name)
 {
     auto column = columns.tryGetPhysical(name);
@@ -812,8 +811,7 @@ static std::optional<String> getNestedGroupOfMember(const ColumnsDescription & c
     return group;
 }
 
-/// The array sizes of the first of `members` as its `size0` subcolumn, which reads only the offsets, unless a column
-/// of the table has that name and would be read instead. Then the first member itself.
+/// Prefer a member's `size0` subcolumn (it reads only the offsets), unless a table column of that name would be read instead.
 static String chooseNestedSizesReference(const Names & members, const ColumnsDescription & columns)
 {
     for (const auto & member : members)
@@ -844,8 +842,7 @@ bool MutationsInterpreter::isStoredInSourcePart(const String & name) const
     return !(alter_conversions && alter_conversions->isColumnDropped(name_in_part, share_nested));
 }
 
-/// The members of a `Nested` group share their array sizes on disk only with `share_nested_offsets`, and only a
-/// mutation of a part writes them. The actions applied on the fly while reading write nothing.
+/// `Nested` members share array sizes on disk only with `share_nested_offsets`; mutations applied on the fly write nothing.
 bool MutationsInterpreter::checksNestedSizesOnWrite() const
 {
     const auto * data = source.getMergeTreeData();
@@ -867,9 +864,7 @@ Names MutationsInterpreter::getStoredNestedMembers(const String & group, const N
     return members;
 }
 
-/// A member has no size check of its own if the part does not store it (its old value is its DEFAULT), or if it is
-/// written by `MATERIALIZE COLUMN` or a recalculation of `MATERIALIZED` columns. A stored member updated by an `UPDATE`
-/// is compared with its old value.
+/// A stored member written by an `UPDATE` is already compared with its old value by `validateNestedArraySizes`.
 std::set<String> MutationsInterpreter::getNestedGroupsToCheck(const NameSet & written) const
 {
     const auto & columns_desc = metadata_snapshot->getColumns();
@@ -1335,8 +1330,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, column_to_update);
                     if (!nested_update_exprs)
                     {
-                        /// The old value of a member the part does not store is its DEFAULT, whose sizes may differ
-                        /// from the ones the stored members have.
+                        /// An unstored member's old value is its DEFAULT, whose sizes may differ from the stored members'.
                         String sizes_reference = column_name;
                         if (!isStoredInSourcePart(column_name))
                         {
@@ -1989,8 +1983,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             columns_written_by_stages.insert(column_name);
     }
 
-    /// `getNestedSizesChecks` compares a written member that has no size check of its own with a stored member the
-    /// mutation does not write, so read the array sizes of one.
+    /// Read the array sizes of an unwritten stored member for `getNestedSizesChecks`.
     if (checksNestedSizesOnWrite())
     {
         Stage * sizes_stage = nullptr;
@@ -3051,8 +3044,6 @@ VectorWithMemoryTracking<NestedSizesCheck> MutationsInterpreter::getNestedSizesC
                 check.columns.push_back(column.name);
         }
 
-        /// A stored member that is not rewritten keeps the array sizes of the part. Without one, the written
-        /// members define the sizes of the group together.
         auto unwritten_members = getStoredNestedMembers(group, written_set);
         if (!unwritten_members.empty())
         {
