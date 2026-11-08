@@ -245,6 +245,12 @@ void FileCacheFactory::setScratchPath(const std::string & path)
     scratch_path = path;
 }
 
+std::string FileCacheFactory::getScratchPath()
+{
+    std::lock_guard lock(mutex);
+    return scratch_path;
+}
+
 void FileCacheFactory::remove(FileCachePtr cache)
 {
     std::lock_guard lock(mutex);

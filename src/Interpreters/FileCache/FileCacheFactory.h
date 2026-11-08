@@ -62,6 +62,7 @@ public:
 
     /// Every cache created after this works in an empty directory under `path` and leaves its own directory as it is.
     void setScratchPath(const std::string & path);
+    std::string getScratchPath();
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 

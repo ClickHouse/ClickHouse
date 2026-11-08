@@ -52,6 +52,7 @@ namespace DB
 namespace ServerSetting
 {
     extern const ServerSettingsBool disk_transaction_wait_for_blob_removal;
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -562,6 +563,13 @@ void DiskObjectStorage::startupImpl()
     metadata_storage->startup();
     for (const auto & [location, _] : cluster->getConfiguration())
         object_storages->takePointingTo(location)->startup();
+
+    /// `load_tables_readonly` removes, copies and records no blob.
+    if (Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::load_tables_readonly])
+    {
+        LOG_INFO(log, "Disk {} started up without removing or replicating blobs", name);
+        return;
+    }
 
     blob_killer->startup();
     blob_copier->startup();

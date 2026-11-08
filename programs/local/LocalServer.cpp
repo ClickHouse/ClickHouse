@@ -1634,12 +1634,13 @@ void LocalServer::processConfig()
         /// `MergeTree` tables are read-only whatever their definitions say, so no merge, mutation, TTL, move or
         /// cleanup runs, `Distributed` tables do not send the blocks that wait in their directories to the shards,
         /// and nothing is inserted, so `Kafka`, `RabbitMQ`, `NATS`, `S3Queue` and `FileLog` do not stream into their
-        /// views.
+        /// views. A local disk does not write its periodic check file.
         /// In front of the other layers, so neither the configuration file nor the command line undoes it.
         /// The refreshes of refreshable materialized views are stopped below, with the query settings.
         getClientConfiguration().addFront(getConfigurationFromXMLString(
             "<clickhouse><load_tables_readonly>1</load_tables_readonly>"
-            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation></clickhouse>").duplicate(), false);
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>"
+            "<local_disk_check_period_ms>0</local_disk_check_period_ms></clickhouse>").duplicate(), false);
     }
 
     pager = getClientConfiguration().getString("pager", "");

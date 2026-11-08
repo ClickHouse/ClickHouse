@@ -25,12 +25,13 @@ snapshot()
 echo '--- a dump changes no file of the data path ---'
 src="$work/src"
 cd "$work" || exit 1
-# A filesystem cache of the configuration and the cache of a disk.
+# Filesystem caches of the configuration, one sized by the space of its directory, and the cache of a disk.
 config="$work/caches.xml"
 cat > "$config" <<EOF
 <clickhouse>
     <filesystem_caches>
         <fc><path>$src/fscache/</path><max_size>100Mi</max_size></fc>
+        <fr><path>$src/fsratio/</path><max_size_ratio_to_total_space>0.01</max_size_ratio_to_total_space></fr>
     </filesystem_caches>
     <storage_configuration>
         <disks>
@@ -85,6 +86,8 @@ for cache in "$src/fscache" "$src/cache/disk"; do
     touch "$cache/abc/abcdef0123456789abcdef0123456789/2"
     printf 'PID: 1\n' > "$cache/status"
 done
+# No directory for the cache sized by its space, which sizing it creates.
+rm -rf "$src/fsratio"
 
 before=$(snapshot "$src")
 $CLICKHOUSE_LOCAL --config-file "$config" --path "$src" --dump-schema=d,o > "$work/dump.sql" 2> "$work/err.txt" || echo "FAIL: dump failed: $(cat "$work/err.txt")"
@@ -125,6 +128,38 @@ $CLICKHOUSE_LOCAL --path "$work/orphan" --dump-schema > /dev/null 2> "$work/err.
 echo "dump rc=$?, refused: $(grep -c 'it has no metadata file' "$work/err.txt")"
 after=$(snapshot "$work/orphan")
 [ "$before" = "$after" ] && echo 'data path unchanged by the refused dump' || diff <(echo "$before") <(echo "$after")
+
+echo '--- a dump removes no blob that waits for removal ---'
+# The source removes no blob in the background, and its session is killed before its shutdown removes the dropped ones.
+for cleanup in 0 1; do
+    cat > "$work/blob$cleanup.xml" <<EOF
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <logged>
+                <type>local_blob_storage</type><path>$work/bsrc/blob/</path><persistent_removal_log>1</persistent_removal_log>
+                <data_background_cleanup><enabled>$cleanup</enabled></data_background_cleanup>
+            </logged>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+EOF
+done
+$CLICKHOUSE_LOCAL --config-file "$work/blob0.xml" --path "$work/bsrc" -n -q "
+CREATE DATABASE d;
+CREATE TABLE d.keep (x UInt64) ENGINE = Memory;
+CREATE TABLE d.gone (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = 'logged';
+INSERT INTO d.gone VALUES (1);
+DROP TABLE d.gone SYNC;
+SYSTEM KILL;" > /dev/null 2>&1
+[ -n "$(find "$work/bsrc/blob" -type f)" ] && echo 'blobs wait for removal'
+for cleanup in 0 1; do
+    before=$(snapshot "$work/bsrc")
+    $CLICKHOUSE_LOCAL --config-file "$work/blob$cleanup.xml" --path "$work/bsrc" --dump-schema=d > /dev/null 2> "$work/err.txt" \
+        || echo "FAIL: dump failed: $(cat "$work/err.txt")"
+    after=$(snapshot "$work/bsrc")
+    [ "$before" = "$after" ] && echo "background cleanup $cleanup: data path unchanged by the dump" || diff <(echo "$before") <(echo "$after")
+done
 
 # Creates the objects in a fresh source, dumps database `d`, and replays the dump into a fresh target started with the
 # remaining arguments.
