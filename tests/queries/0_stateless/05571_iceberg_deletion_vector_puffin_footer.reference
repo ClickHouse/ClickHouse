@@ -15,6 +15,8 @@ unknown_range
 ICEBERG_SPECIFICATION_VIOLATION
 same_name_swapped
 ICEBERG_SPECIFICATION_VIOLATION
+nested_suffix
+1
 mixed_blobs
 apple	1
 cherry	3

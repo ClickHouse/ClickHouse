@@ -114,12 +114,15 @@ void checkIcebergDeletionVectorBlob(
     if (referenced_data_file == data_path)
         return;
 
-    /// Relocating a table changes the paths up to its location, and a footer that was not rewritten
-    /// keeps the old prefix, so the path below the location must still match.
     std::string_view location = table_location;
     if (location.ends_with('/'))
         location.remove_suffix(1);
-    if (data_path.size() > location.size() + 1 && data_path.starts_with(location) && data_path[location.size()] == '/')
+    auto is_below_location = [&](std::string_view path)
+    { return path.size() > location.size() + 1 && path.starts_with(location) && path[location.size()] == '/'; };
+
+    /// Relocating a table changes the paths up to its location, and a footer that was not rewritten keeps the old prefix,
+    /// so the path below the location must still match. A footer path below the current location must match exactly.
+    if (is_below_location(data_path) && !is_below_location(referenced_data_file))
     {
         std::string_view relative_path = data_path.substr(location.size() + 1);
         if (referenced_data_file == relative_path

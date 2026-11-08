@@ -48,6 +48,9 @@ expect_violation "SELECT fruit, count FROM icebergLocal('unknown_range') ORDER B
 echo 'same_name_swapped'
 expect_violation "SELECT fruit, count FROM icebergLocal('same_name_swapped') ORDER BY ALL"
 
+echo 'nested_suffix'
+$CLICKHOUSE_LOCAL -q "SELECT fruit, count FROM icebergLocal('nested_suffix') ORDER BY ALL" 2>&1 | grep -c "data file 'nested_suffix/data/a/data.parquet' points at the blob at offset 46 .*referenced-data-file. is 'nested_suffix/data/b/data/a/data.parquet'"
+
 # A blob of another type in the same Puffin file is ignored.
 echo 'mixed_blobs'
 $CLICKHOUSE_LOCAL -q "SELECT fruit, count FROM icebergLocal('mixed_blobs') ORDER BY ALL"

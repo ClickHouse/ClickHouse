@@ -7,6 +7,9 @@ under this directory, with one change:
 - `unknown_range`: `iceberg_v3_deletion_vector` whose deletion vector is one byte shorter than its Puffin blob.
 - `same_name_swapped`: `iceberg_v3_dv_misbound` (the two vectors are swapped) with the data files renamed to
   `data/a/data.parquet` and `data/b/data.parquet`, so both vectors belong to files with the same name.
+- `nested_suffix`: `iceberg_v3_dv_misbound` with the data files renamed to `data/a/data.parquet` and
+  `data/b/data/a/data.parquet`, and both deletion vectors pointing at the blob of the second one, whose path ends with
+  the path of the first.
 - `mixed_blobs`: `iceberg_v3_deletion_vector` whose Puffin file also holds an `apache-datasketches-theta-v1` blob.
 - `duplicate_range`: `iceberg_v3_deletion_vector` whose Puffin footer describes the deletion vector twice, first as
   the vector of another data file.
@@ -153,6 +156,20 @@ def describe_deletion_vector_twice(blob_region, blobs, name):
     return blob_region
 
 
+def point_deletion_vectors_at(table_dir, referenced_data_file):
+    def edit(data_file):
+        if data_file["content"] != 1:
+            return
+        (puffin,) = (table_dir / "data").glob("*.puffin")
+        _, footer = read_puffin(puffin)
+        blobs = [b for b in footer["blobs"] if b["properties"]["referenced-data-file"] == referenced_data_file]
+        assert len(blobs) == 1
+        data_file["content_offset"] = blobs[0]["offset"]
+        data_file["content_size_in_bytes"] = blobs[0]["length"]
+
+    return edit
+
+
 def main():
     make_table(HERE, "unknown_range", "iceberg_v3_deletion_vector", edit_manifest_entry=shorten_deletion_vector)
     make_table(
@@ -163,6 +180,16 @@ def main():
             "data/00000-0-d7e8f9a0-0007-0007-0007-000000000001-00001.parquet": "data/a/data.parquet",
             "data/00001-0-d7e8f9a0-0007-0007-0007-000000000001-00001.parquet": "data/b/data.parquet",
         },
+    )
+    make_table(
+        HERE,
+        "nested_suffix",
+        "iceberg_v3_dv_misbound",
+        renames={
+            "data/00000-0-d7e8f9a0-0007-0007-0007-000000000001-00001.parquet": "data/a/data.parquet",
+            "data/00001-0-d7e8f9a0-0007-0007-0007-000000000001-00001.parquet": "data/b/data/a/data.parquet",
+        },
+        edit_manifest_entry=point_deletion_vectors_at(HERE / "nested_suffix", "nested_suffix/data/b/data/a/data.parquet"),
     )
     make_table(HERE, "mixed_blobs", "iceberg_v3_deletion_vector", edit_puffin=add_theta_sketch_blob)
     make_table(HERE, "duplicate_range", "iceberg_v3_deletion_vector", edit_puffin=describe_deletion_vector_twice)
