@@ -68,6 +68,8 @@ public:
 
     String getName() const override { return nested_func_name + "Tuple"; }
 
+    Array getStateParameters() const override;
+
     void forEachNestedFunction(const std::function<void(const AggregateFunctionPtr &)> & callback) const override
     {
         for (const auto & nested_function : nested_functions)

@@ -15,7 +15,8 @@ extern const int NOT_IMPLEMENTED;
 
 DataTypePtr IAggregateFunction::getStateType() const
 {
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters);
+    return std::make_shared<DataTypeAggregateFunction>(
+        shared_from_this(), argument_types, getStateParameters());
 }
 
 DataTypePtr IAggregateFunction::getStateTypeWithVersionOf(const IAggregateFunction & nested) const
@@ -27,7 +28,7 @@ DataTypePtr IAggregateFunction::getStateTypeWithVersionOf(const IAggregateFuncti
     const DataTypePtr nested_state_type = nested.getStateType();
     if (const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested_state_type.get()))
         version = nested_state->getVersionIfExplicit();
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, getStateParameters(), version);
 }
 
 DataTypePtr IAggregateFunction::getNormalizedStateType() const
@@ -36,7 +37,8 @@ DataTypePtr IAggregateFunction::getNormalizedStateType() const
     normalized_argument_types.reserve(argument_types.size());
     for (const auto & arg : argument_types)
         normalized_argument_types.emplace_back(arg->getNormalizedType());
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), normalized_argument_types, parameters);
+    return std::make_shared<DataTypeAggregateFunction>(
+        shared_from_this(), normalized_argument_types, getStateParameters());
 }
 
 String IAggregateFunction::getDescription() const
