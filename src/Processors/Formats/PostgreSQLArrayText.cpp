@@ -175,7 +175,7 @@ private:
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot parse the PostgreSQL array literal {} at position {}: {}",
-            quoteString(text), pos, what);
+            quoteString(String(text)), pos, what);
     }
 
     void skipWhitespace()

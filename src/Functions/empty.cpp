@@ -19,6 +19,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -175,9 +176,18 @@ public:
             return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<false>, NameEmpty, UInt8, false>>(), argument_types, return_type);
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6 | JSON) -> UInt8";
+        if (!isStringOrFixedString(arguments[0])
+            && !isArray(arguments[0])
+            && !isMap(arguments[0])
+            && !isUUID(arguments[0])
+            && !isIPv6(arguments[0])
+            && !isIPv4(arguments[0])
+            && !isObject(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

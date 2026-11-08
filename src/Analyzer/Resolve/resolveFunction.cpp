@@ -1674,7 +1674,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context, replaced_storage).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -2168,7 +2168,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto function_exists = std::make_shared<FunctionExists>();
             function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(
-                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl(DataTypes{})
+                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
                 )
             );
 
