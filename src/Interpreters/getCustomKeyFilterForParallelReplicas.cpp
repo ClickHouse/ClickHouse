@@ -277,6 +277,12 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         NameSet lambda_arguments;
         expandAliasColumns(expanded_custom_key_ast, columns, context, lambda_arguments, 0);
         validateExpandedCustomKey(expanded_custom_key_ast, columns, context);
+
+        /// The key is kept with its SQL UDF calls (see `parseCustomKeyForTable`), so validate their bodies
+        /// as well. A UDF body refers only to its parameters, so after the arguments are expanded above,
+        /// inlining adds no new references to the columns of the table.
+        UserDefinedSQLFunctionVisitor::visit(expanded_custom_key_ast, context);
+        validateExpandedCustomKey(expanded_custom_key_ast, columns, context);
     }
 
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
@@ -439,20 +445,27 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
         settings[Setting::max_parser_backtracks]);
 
     /// The DDL interpreters inline SQL UDFs before table metadata is built, but the custom key
-    /// arrives as a setting string parsed right here, so inline UDFs explicitly. Otherwise a UDF
-    /// body could hide a subquery or a column matcher from the key-expression validation.
+    /// arrives as a setting string parsed right here, so validate a copy with UDFs inlined.
+    /// Otherwise a UDF body could hide a subquery or a column matcher from the key-expression validation.
     ///
     /// Validate right here as well, rather than only in `KeyDescription::getKeyFromAST`: the callers
     /// analyze the key over the table (e.g. `buildFilterQueryTree` for the access check) before a
     /// `custom_key_range` key reaches `getKeyFromAST`, and a `custom_key_sampling` key never does.
+    ///
+    /// The key itself is returned as written: `UserDefinedSQLFunctionVisitor` substitutes the arguments
+    /// into the body without renaming the lambda parameters of the body, so an argument `s` passed to
+    /// `x -> arrayMap(s -> length(x) + s, [1])` would be captured by the inner `s`. The analyzer inlines
+    /// UDFs with the scopes kept apart. For validation the capture is harmless: the arguments are also
+    /// validated as written, in the caller's scope, by `getCustomKeyFilterForParallelReplica`.
     if (custom_key_ast)
     {
-        UserDefinedSQLFunctionVisitor::visit(custom_key_ast, context.shared_from_this());
+        ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
+        UserDefinedSQLFunctionVisitor::visit(expanded_custom_key_ast, context.shared_from_this());
         /// The columns of the table are not known here, so an identifier on the right-hand side of `IN`
         /// may be an array column (`a IN arr`). `getCustomKeyFilterForParallelReplica` checks it against
         /// the columns before the key is used to filter the data.
-        checkExpressionDoesntContainSubqueries(*custom_key_ast, [](const ASTIdentifier &) { return true; });
-        checkExpressionDoesntContainMatchers(*custom_key_ast);
+        checkExpressionDoesntContainSubqueries(*expanded_custom_key_ast, [](const ASTIdentifier &) { return true; });
+        checkExpressionDoesntContainMatchers(*expanded_custom_key_ast);
     }
 
     return custom_key_ast;

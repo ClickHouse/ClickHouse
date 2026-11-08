@@ -45,6 +45,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Common/checkStackSize.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -188,6 +189,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_PREWHERE;
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -1014,6 +1016,35 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         std::move(required_names_without_filter));
 }
 
+/// `getCustomKeyFilterForParallelReplica` validates the custom key on the AST, resolving `ALIAS` columns by
+/// name itself. Check the binding the analyzer actually made as well: the key splits the data between the
+/// replicas, so it must depend only on the row, and a subquery or a table on the right-hand side of `IN`
+/// (e.g. a `Set` table, whose contents may differ between the replicas) reached through any spelling of an
+/// `ALIAS` column would make the replicas read overlapping or incomplete parts of the data.
+void checkCustomKeyQueryTreeReadsOnlyRow(const QueryTreeNodePtr & node, const ASTPtr & custom_key_ast)
+{
+    checkStackSize();
+
+    if (!node)
+        return;
+
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION || node_type == QueryTreeNodeType::TABLE
+        || node_type == QueryTreeNodeType::TABLE_FUNCTION)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The custom key for parallel replicas (setting 'parallel_replicas_custom_key') cannot contain subqueries or tables, "
+            "including in the expressions of the ALIAS columns it uses. In expression {}",
+            custom_key_ast->formatForErrorMessage());
+
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        checkCustomKeyQueryTreeReadsOnlyRow(constant_node->getSourceExpression(), custom_key_ast);
+
+    /// The children of a `ColumnNode` include the expression of an `ALIAS` column; its source is not a child.
+    for (const auto & child : node->getChildren())
+        checkCustomKeyQueryTreeReadsOnlyRow(child, custom_key_ast);
+}
+
 std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context)
@@ -1045,12 +1076,11 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         metadata_snapshot->columns,
         query_context);
 
-    return buildFilterInfo(
-        parallel_replicas_custom_filter_ast,
-        table_expression_query_info.table_expression,
-        planner_context,
-        {},
-        /*check_access_rights=*/ true);
+    auto filter_query_tree = buildFilterQueryTree(
+        parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, query_context, /*check_access_rights=*/ true);
+    checkCustomKeyQueryTreeReadsOnlyRow(filter_query_tree, parallel_replicas_custom_filter_ast);
+
+    return buildFilterInfo(std::move(filter_query_tree), table_expression_query_info.table_expression, planner_context, {});
 }
 
 /// Parse `additional_table_filters` for this table expression and assign the AST into
@@ -2305,11 +2335,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     {
                         /// The key is evaluated on the replicas on behalf of this user.
                         auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
-                        buildFilterQueryTree(
+                        auto custom_key_query_tree = buildFilterQueryTree(
                             custom_key_ast,
                             table_expression_query_info.table_expression,
                             query_context,
                             /*check_access_rights=*/ true);
+                        checkCustomKeyQueryTreeReadsOnlyRow(custom_key_query_tree, custom_key_ast);
 
                         planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                         /// We disable prefer_localhost_replica because if one of the replicas is local it will create a single local plan
