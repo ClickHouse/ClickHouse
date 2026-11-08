@@ -53,4 +53,4 @@ echo 'mixed_blobs'
 $CLICKHOUSE_LOCAL -q "SELECT fruit, count FROM icebergLocal('mixed_blobs') ORDER BY ALL"
 
 echo 'duplicate_range'
-expect_violation "SELECT fruit, count FROM icebergLocal('duplicate_range') ORDER BY ALL"
+$CLICKHOUSE_LOCAL -q "SELECT fruit, count FROM icebergLocal('duplicate_range') ORDER BY ALL" 2>&1 | grep -o -m1 'describes two blobs at offset 4 and size 44'

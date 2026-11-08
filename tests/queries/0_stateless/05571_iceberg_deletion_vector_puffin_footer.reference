@@ -20,4 +20,4 @@ apple	1
 cherry	3
 elderberry	5
 duplicate_range
-ICEBERG_SPECIFICATION_VIOLATION
+describes two blobs at offset 4 and size 44
