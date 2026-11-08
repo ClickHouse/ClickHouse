@@ -81,6 +81,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
+        const Iceberg::IcebergPathResolver & path_resolver,
         const SharedHeader & header,
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
@@ -106,8 +107,9 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         return std::nullopt;
     }
 
-    /// Attach a V2 position delete file (Parquet).
-    void addPositionDeleteFile(const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path);
+    /// Attach a V2 position delete file (Parquet). `this_file_only`: see `PositionDeleteScope::ThisFile`.
+    void addPositionDeleteFile(
+        const Iceberg::ProcessedManifestFileEntryPtr & position_delete_file, const String & resolved_storage_path, bool this_file_only);
 
     /// Attach a V3 deletion vector (a blob inside a Puffin file).
     void addDeletionVector(const Iceberg::ProcessedManifestFileEntryPtr & deletion_vector, const String & resolved_storage_path);

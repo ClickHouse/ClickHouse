@@ -26,6 +26,7 @@ public:
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
+        const IcebergPathResolver & path_resolver_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
@@ -33,6 +34,7 @@ public:
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
         , object_storage(object_storage_)
+        , path_resolver(path_resolver_)
         , format_settings(format_settings_)
         , context(context_)
         , parser_shared_resources(parser_shared_resources_)
@@ -58,6 +60,7 @@ protected:
     SharedHeader header;
     IcebergDataObjectInfoPtr iceberg_object_info;
     const ObjectStoragePtr object_storage;
+    const IcebergPathResolver path_resolver;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -65,6 +68,14 @@ protected:
     /// We need to keep the read buffers alive since the position_delete_files depend on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
     std::vector<std::shared_ptr<IInputFormat>> position_delete_files;
+
+private:
+    bool namesDataFileInAnotherSpelling(std::string_view file_to_delete) const;
+
+    std::optional<String> data_file_identity;
+    /// Rows are sorted by `file_path`, so the last checked value usually repeats.
+    mutable String last_checked_file;
+    mutable bool last_checked_file_matches = false;
 };
 
 class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
@@ -76,10 +87,12 @@ public:
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
+        const IcebergPathResolver & path_resolver_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        : IcebergPositionDeleteTransform(
+              header_, iceberg_object_info_, object_storage_, path_resolver_, format_settings_, parser_shared_resources_, context_)
     {
         initialize();
     }
@@ -102,10 +115,12 @@ public:
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
+        const IcebergPathResolver & path_resolver_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        : IcebergPositionDeleteTransform(
+              header_, iceberg_object_info_, object_storage_, path_resolver_, format_settings_, parser_shared_resources_, context_)
     {
         initialize();
     }

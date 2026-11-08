@@ -401,11 +401,9 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             const auto & data_file_path = object_info->info.data_object_file_path_key;
             const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
             const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || *lower <= data_file_path)
-                && (!upper.has_value() || *upper >= data_file_path);
+            const auto scope = persistent_components.path_resolver.matchPositionDeleteBounds(lower, upper, data_file_path);
             /// Skip position deletes that do not match the data file path.
-            if (!can_contain_data_file_deletes)
+            if (scope == Iceberg::PositionDeleteScope::None)
             {
                 ProfileEvents::increment(ProfileEvents::IcebergMinMaxPrunedDeleteFiles);
                 LOG_TEST(
@@ -433,7 +431,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 if (position_delete->parsed_entry->isDeletionVector())
                     object_info->addDeletionVector(position_delete, resolved_delete_path);
                 else
-                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
+                    object_info->addPositionDeleteFile(
+                        position_delete, resolved_delete_path, scope == Iceberg::PositionDeleteScope::ThisFile);
             }
         }
 

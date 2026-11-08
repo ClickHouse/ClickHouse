@@ -25,6 +25,12 @@
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
+#include <base/unaligned.h>
+
+#if USE_PARQUET
+#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#endif
+
 namespace DB::Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
@@ -38,6 +44,54 @@ extern const int LOGICAL_ERROR;
 
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+/// Whether the footer statistics of the Parquet file `in` show that every `file_path` value is spelled like
+/// `data_file_path` (`IcebergPathResolver::isSpelledLike`). All strings with one raw prefix sort in one contiguous
+/// range, so a value with another prefix would be the minimum or the maximum of its row group.
+bool statisticsShowPathsSpelledLike(ReadBufferFromFileBase & in, size_t file_size, const String & data_file_path)
+{
+#if USE_PARQUET
+    /// A Parquet file ends with the serialized `FileMetaData`, its 4-byte size and the "PAR1" magic.
+    if (file_size <= 8)
+        return false;
+    char trailer[8];
+    in.seek(file_size - 8, SEEK_SET);
+    in.readStrict(trailer, 8);
+    const auto metadata_size = unalignedLoadLittleEndian<UInt32>(trailer);
+    if (memcmp(trailer + 4, "PAR1", 4) != 0 || metadata_size == 0 || metadata_size > file_size - 8)
+        return false;
+    String serialized(metadata_size, '\0');
+    in.seek(file_size - 8 - metadata_size, SEEK_SET);
+    in.readStrict(serialized.data(), metadata_size);
+    Parquet::parq::FileMetaData metadata;
+    Parquet::deserializeThriftStruct(metadata, serialized.data(), serialized.size());
+
+    const std::vector<std::string> column_path{IcebergPositionDeleteTransform::data_file_path_column_name};
+    for (const auto & row_group : metadata.row_groups)
+    {
+        auto column = std::find_if(
+            row_group.columns.begin(), row_group.columns.end(),
+            [&](const auto & chunk) { return chunk.meta_data.path_in_schema == column_path; });
+        if (column == row_group.columns.end() || !column->meta_data.__isset.statistics)
+            return false;
+        const auto & statistics = column->meta_data.statistics;
+        const auto * min = statistics.__isset.min_value ? &statistics.min_value : (statistics.__isset.min ? &statistics.min : nullptr);
+        const auto * max = statistics.__isset.max_value ? &statistics.max_value : (statistics.__isset.max ? &statistics.max : nullptr);
+        if (!min || !max || !IcebergPathResolver::isSpelledLike(*min, data_file_path)
+            || !IcebergPathResolver::isSpelledLike(*max, data_file_path))
+            return false;
+    }
+    return true;
+#else
+    UNUSED(in, file_size, data_file_path);
+    return false;
+#endif
+}
+
+}
 
 Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 {
@@ -61,6 +115,8 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
+    data_file_identity = path_resolver.storageIdentity(iceberg_object_info->info.data_object_file_path_key);
+
     /// Create filter on the data object to get interested rows
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
     ASTPtr where_ast = makeASTFunction(
@@ -114,17 +170,25 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
 
+        /// The filter prunes row groups by the min/max of their raw `file_path` values, so it would drop the rows
+        /// that spell the data file path in another way.
+        bool prune_row_groups = !position_deletes_object.reference_data_file_path.has_value() && object_metadata.is_size_known;
+        if (prune_row_groups)
+        {
+            auto footer_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
+            prune_row_groups = statisticsShowPathsSpelledLike(*footer_buf, object_metadata.size_bytes, iceberg_data_path);
+        }
+
         delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log, read_settings));
 
-        auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
-        ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
-        std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true);
-        std::shared_ptr<const ActionsDAG> actions_dag_ptr = [&actions]()
+        std::shared_ptr<const ActionsDAG> actions_dag_ptr;
+        if (prune_row_groups)
         {
-            if (actions.has_value())
-                return std::make_shared<const ActionsDAG>(std::move(actions.value()));
-            return std::shared_ptr<const ActionsDAG>();
-        }();
+            auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
+            ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
+            if (std::optional<ActionsDAG> actions = analyzer.getActionsDAG(true))
+                actions_dag_ptr = std::make_shared<const ActionsDAG>(std::move(*actions));
+        }
 
         auto delete_format_filter_info = std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr);
         delete_format_filter_info->need_row_numbers = true;
@@ -173,7 +237,8 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
     {
         const auto file_to_delete = filename_column.getDataAt(i);
         if (file_to_delete == iceberg_uri || file_to_delete == "/" + iceberg_uri
-            || file_to_delete == storage_path || file_to_delete == "/" + storage_path)
+            || file_to_delete == storage_path || file_to_delete == "/" + storage_path
+            || namesDataFileInAnotherSpelling(file_to_delete))
         {
             filter[i] = 1;
             ++num_matched;
@@ -194,6 +259,19 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
         column = column->filter(filter, static_cast<ssize_t>(num_matched));
     chunk.setColumns(std::move(columns), num_matched);
     return num_matched;
+}
+
+bool IcebergPositionDeleteTransform::namesDataFileInAnotherSpelling(std::string_view file_to_delete) const
+{
+    if (!data_file_identity)
+        return false;
+    if (file_to_delete != last_checked_file)
+    {
+        last_checked_file = file_to_delete;
+        last_checked_file_matches
+            = path_resolver.storageIdentity(IcebergPathFromMetadata::deserialize(last_checked_file)) == data_file_identity;
+    }
+    return last_checked_file_matches;
 }
 
 void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
