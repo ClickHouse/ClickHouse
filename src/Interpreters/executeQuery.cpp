@@ -731,6 +731,8 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     if (pulling_pipeline)
     {
         pipeline.tryGetResultRowsAndBytes(res.result_rows, res.result_bytes);
+        /// For the X-ClickHouse-Summary HTTP header.
+        res.rows_before_limit_at_least = pipeline.tryGetRowsBeforeLimitAtLeast();
     }
     else if (process_list_elem) /// will be used only for ordinary INSERT queries
     {

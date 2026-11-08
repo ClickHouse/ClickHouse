@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <functional>
+#include <optional>
 #include <base/types.h>
 
 #include <Core/Defines.h>
@@ -31,9 +32,16 @@ struct ProgressValues
 
     Int64 memory_usage = 0;
 
+    /// See `Progress::rows_before_limit_at_least`.
+    UInt64 rows_before_limit_at_least = 0;
+    bool has_rows_before_limit_at_least = false;
+
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
-    void writeJSON(WriteBuffer & out, bool write_zero_values) const;
+
+    /// If `verbose`, zero values are written too, and so is `rows_before_limit_at_least` (if it is set),
+    /// which belongs only to the final summary of a query.
+    void writeJSON(WriteBuffer & out, bool verbose) const;
 };
 
 struct ReadProgress
@@ -61,6 +69,9 @@ struct ResultProgress
     UInt64 result_rows = 0;
     UInt64 result_bytes = 0;
     Int64 memory_usage = 0;
+
+    /// Set only for queries with a limit, see `Progress::rows_before_limit_at_least`.
+    std::optional<UInt64> rows_before_limit_at_least;
 
     ResultProgress(UInt64 result_rows_, UInt64 result_bytes_, Int64 memory_usage_)
         : result_rows(result_rows_), result_bytes(result_bytes_), memory_usage(memory_usage_) {}
@@ -101,6 +112,13 @@ struct Progress
 
     std::atomic<Int64> memory_usage {0};
 
+    /// The same value as `rows_before_limit_at_least` in the `JSON` output formats. Unlike the other fields, it is not
+    /// an increment: it is reported once, when the query has finished, and only if the query has a limit (as indicated
+    /// by `has_rows_before_limit_at_least`). It is not sent over the native protocol, which has its own `ProfileInfo` packet
+    /// for it, and it is written only in the `Verbose` JSON, that is, in the `X-ClickHouse-Summary` HTTP header.
+    std::atomic<UInt64> rows_before_limit_at_least {0};
+    std::atomic<bool> has_rows_before_limit_at_least {false};
+
     Progress() = default;
 
     Progress(UInt64 read_rows_, UInt64 read_bytes_, UInt64 total_rows_to_read_ = 0, UInt64 total_bytes_to_read_ = 0)
@@ -113,7 +131,13 @@ struct Progress
         : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes) {}
 
     explicit Progress(ResultProgress result_progress)
-        : result_rows(result_progress.result_rows), result_bytes(result_progress.result_bytes), memory_usage(result_progress.memory_usage) {}
+        : result_rows(result_progress.result_rows)
+        , result_bytes(result_progress.result_bytes)
+        , memory_usage(result_progress.memory_usage)
+        , rows_before_limit_at_least(result_progress.rows_before_limit_at_least.value_or(0))
+        , has_rows_before_limit_at_least(result_progress.rows_before_limit_at_least.has_value())
+    {
+    }
 
     explicit Progress(FileProgress file_progress)
         : read_bytes(file_progress.read_bytes), total_bytes_to_read(file_progress.total_bytes_to_read) {}
@@ -124,7 +148,7 @@ struct Progress
 
     enum class DisplayMode
     {
-        Verbose,  // Display zero values. Needed for X-ClickHouse-Summary
+        Verbose,  // Display zero values and `rows_before_limit_at_least`. Needed for X-ClickHouse-Summary
         Minimal   // Do not write zero values. Needed to send less data for frequent progress updates (X-ClickHouse-Progress)
     };
 
@@ -132,6 +156,7 @@ struct Progress
     void writeJSON(WriteBuffer & out, DisplayMode mode) const;
 
     /// Each value separately is changed atomically (but not whole object).
+    /// `rows_before_limit_at_least` is not incremented, but replaced, if it is set in `rhs`.
     bool incrementPiecewiseAtomically(const Progress & rhs);
 
     void incrementElapsedNs(UInt64 elapsed_ns_);
