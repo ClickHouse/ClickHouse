@@ -36,6 +36,8 @@ void ASTPair::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "Pair");
     w.writeString("first", first);
     w.writeBool("second_with_brackets", second_with_brackets);
+    if (value_omitted)
+        w.writeBool("value_omitted", true);
     w.writeChild("second", second);
 }
 
@@ -50,6 +52,7 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
 
     second_with_brackets = r.getBool("second_with_brackets");
+    value_omitted = r.getBool("value_omitted");
 
     auto child = r.readChild("second");
     if (!child)
@@ -70,7 +73,11 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << Poco::toUpper(first) << " ";
+    ostr << Poco::toUpper(first);
+    if (value_omitted)
+        return;
+
+    ostr << " ";
 
     if (second_with_brackets)
         ostr << "(";
@@ -114,6 +121,8 @@ void ASTPair::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) cons
     hash_state.update(first.size());
     hash_state.update(first);
     hash_state.update(second_with_brackets);
+    if (value_omitted)
+        hash_state.update(value_omitted);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

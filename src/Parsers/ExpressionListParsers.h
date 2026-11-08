@@ -314,18 +314,35 @@ protected:
 /// or a nested list of pairs.
 class ParserKeyValuePair : public IParserBase
 {
+public:
+    explicit ParserKeyValuePair(bool allow_key_without_value_ = false)
+        : allow_key_without_value(allow_key_without_value_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "key-value pair"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    /// The last key before a closing bracket can have no value: LAYOUT(IP_TRIE(RADIX_PREFIX)).
+    bool allow_key_without_value;
 };
 
 
 /// Parser for list of key-value pairs.
 class ParserKeyValuePairsList : public IParserBase
 {
+public:
+    explicit ParserKeyValuePairsList(bool allow_key_without_value_ = false)
+        : allow_key_without_value(allow_key_without_value_)
+    {
+    }
+
 protected:
     const char * getName() const override { return "list of pairs"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    bool allow_key_without_value;
 };
 
 
