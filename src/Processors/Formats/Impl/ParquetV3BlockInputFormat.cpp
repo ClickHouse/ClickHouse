@@ -274,12 +274,17 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
     }
 }
 
+static std::optional<ParquetMetadataCacheKey> makeMetadataCacheKey(const RelativePathWithMetadata & object)
+{
+    if (!object.metadata.has_value())
+        return std::nullopt;
+    return ParquetMetadataCache::createKey(object.getPath(), object.metadata->getContentCacheToken().value_or(object.metadata->etag));
+}
+
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
-    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(
-            object_with_metadata->getPath(),
-            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
+    if (metadata_cache && object_with_metadata.has_value())
+        return makeMetadataCacheKey(*object_with_metadata);
     return std::nullopt;
 }
 
@@ -694,12 +699,30 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(
+    size_t bucket_size,
+    ReadBuffer & buf,
+    const RelativePathWithMetadata & object,
+    const FormatSettings & format_settings_,
+    const ContextPtr & context)
 {
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
+    auto read_footer = [&] { return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size); };
+
+    ParquetMetadataCachePtr metadata_cache;
+    if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        metadata_cache = context->tryGetParquetMetadataCache();
+    std::optional<ParquetMetadataCacheKey> cache_key;
+    if (metadata_cache && object.metadata && object.metadata->getContentCacheToken())
+        cache_key = makeMetadataCacheKey(object);
+
+    std::shared_ptr<const Parquet::FileFooter> footer;
+    if (cache_key)
+        footer = metadata_cache->getOrSetMetadata(*cache_key, read_footer).first->footer;
+    else
+        footer = read_footer();
     std::vector<size_t> bucket_sizes;
     for (const auto & row_group : footer->metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
@@ -942,12 +965,13 @@ On write, such a `Tuple` (with element names being a non-empty subset of the `FI
 
 ## Geo types (GeoParquet) {#geo-types}
 
-ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification and the Parquet [`GEOMETRY` and `GEOGRAPHY` logical types](https://github.com/apache/parquet-format/blob/master/Geospatial.md). Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read for GeoParquet). GeoParquet uses a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS, while the logical types annotate the column itself, and the column chunk metadata contains `GeospatialStatistics` (a bounding box and the list of geometry types) instead of min/max statistics. A file can have both.
+ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification and the Parquet [`GEOMETRY` and `GEOGRAPHY` logical types](https://github.com/apache/parquet-format/blob/master/Geospatial.md). Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read for GeoParquet). On read, the native (GeoArrow) encodings of GeoParquet 1.1 (`point`, `linestring`, `polygon`, `multipoint`, `multilinestring` and `multipolygon`), which store the coordinates in nested lists of `struct<x: double, y: double>`, are also supported. GeoParquet uses a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS, while the logical types annotate the column itself, and the column chunk metadata contains `GeospatialStatistics` (a bounding box and the list of geometry types) instead of min/max statistics. A file can have both.
 
 ### Read behavior {#read}
 
 On read, geometry columns are mapped to the corresponding ClickHouse [geo data types](/reference/data-types/geo):
 * A column declared as `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` is read into the matching ClickHouse geo type.
+* A column with a native (GeoArrow) encoding is read into the geo type that matches the encoding, e.g. `polygon` into `Polygon`. A NULL geometry is read as the default value of the type (an empty array or the point `(0, 0)`), the same as for WKB.
 * A column with multiple or unknown geometry types is read into the [`Geometry`](/reference/data-types/geo#geometry) type, which is a `Variant` over all supported geo types.
 * For a column with the `GEOMETRY` or `GEOGRAPHY` logical type, the geometry type is taken from the GeoParquet metadata if the file has it. Otherwise, if the `GeospatialStatistics` of all column chunks list the same single 2D geometry type, the column is read into the matching geo type, and into `Geometry` otherwise. If a geo type is requested explicitly, the values are decoded directly into that type.
 * ClickHouse has no separate type for geography, so `GEOGRAPHY` columns are read into the same geo types as `GEOMETRY` (the coordinates are longitude and latitude), and the edge interpolation algorithm (the `algorithm` parameter) is not represented. The CRS (the `crs` parameter, `OGC:CRS84` by default) is not represented either. Geometries with Z or M coordinates are not supported.
