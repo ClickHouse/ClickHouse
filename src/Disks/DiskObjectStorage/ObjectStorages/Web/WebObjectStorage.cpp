@@ -423,7 +423,12 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
             const auto & header_value = tuple[1].safeGet<String>();
             metadata.attributes.emplace(header_name, header_value);
             if (header_name == "ETag")
+            {
                 metadata.etag = header_value;
+                /// A weak validator (`W/"..."`) allows different bytes of the same representation
+                /// (RFC 9110, section 8.8.1), so it must not identify the content in the caches.
+                metadata.etag_is_strong = !header_value.starts_with("W/");
+            }
         }
         return metadata;
     };
