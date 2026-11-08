@@ -165,6 +165,11 @@ struct FormatSettings
 
     UInt64 client_protocol_version = 0;
 
+    /// The hash of the settings `getFormatSettings` derived this from (see `getFormatSettingsHash`), for
+    /// keying a value by the format settings it was read with. Unset when the struct was not built by
+    /// `getFormatSettings`. A member changed afterwards is not reflected in it.
+    std::optional<UInt64> source_settings_hash = std::nullopt;
+
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     size_t max_threads = 1;
@@ -366,6 +371,7 @@ struct FormatSettings
         bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
+        bool type_json_skip_duplicate_key_detection = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;
         char pretty_print_indent = ' ';
