@@ -310,6 +310,8 @@ const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return pa
 const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPartStorage(); }
 const IMergeTreeDataPart & getPart(const IMergeTreeDataPart & part) { return part; } /// NOLINT(bugprone-return-const-ref-from-parameter)
 const IMergeTreeDataPart & getPart(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPart(); }
+const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes(const IMergeTreeDataPart & part) { return part.getSecondaryIndexColumnTypes(); }
+const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes(const IMergeTreeDataPartInfoForReader & part) { return part.getSecondaryIndexColumnTypes(); }
 
 template <typename Part>
 bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
@@ -326,6 +328,16 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
 
     for (const auto & [column, metadata_type] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
     {
+        /// When the granules were built against a type that differs from the part's own column (an
+        /// index materialized over a not-yet-materialized type hint), the part records that type. It
+        /// is authoritative for decodability: the granules are readable iff it equals the current type.
+        if (auto built_type = getSecondaryIndexColumnTypes(part).tryGetBuiltType(skip_index.index.name, column))
+        {
+            if (*built_type == metadata_type->getName())
+                continue;
+            return false;
+        }
+
         auto part_column = part.tryGetColumn(column);
 
         /// The column is in the metadata but not in this part's column list, so there is no

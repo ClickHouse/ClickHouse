@@ -1468,7 +1468,12 @@ public:
             /// than `divide` below.
             integer<Bits, unsigned> numerator = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            integer<Bits, unsigned> quotient;
+            /// The signed operators are out of line, so `divide` is inlined into them: a narrow division then stays in registers.
+            if constexpr (std::is_same_v<Signed, signed>)
+                [[clang::always_inline]] quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            else
+                quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
                 quotient = operator_unary_minus(quotient);
@@ -1489,7 +1494,10 @@ public:
             /// See the note in operator_slash about _BitInt(256).
             integer<Bits, unsigned> remainder = make_positive(lhs);
             integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            if constexpr (std::is_same_v<Signed, signed>)
+                [[clang::always_inline]] integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            else
+                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);

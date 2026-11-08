@@ -690,7 +690,8 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         /// an index built for writing has no metadata and does not analyze predicates.
         metadata_snapshot ? getMapSubcolumnShadowingCheck() : IsShadowingColumn([](const String &) { return false; }),
         collectJSONIndexArgumentTypes(*text_index->index.expression),
-        /*is_projection_index_=*/ true);
+        /*is_projection_index_=*/ true,
+        text_index->automaton_budget);
 }
 
 }
