@@ -1,0 +1,8 @@
+--- local
+771428	347142342858	1	899999
+--- cluster, whole files
+771428	347142342858	1	899999
+--- cluster, a task per row group
+771428	347142342858	1	899999
+--- cluster, a task per row group, bitmap deletes
+771428	347142342858	1	899999

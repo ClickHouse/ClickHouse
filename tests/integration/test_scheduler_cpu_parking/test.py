@@ -149,11 +149,12 @@ def test_parking_fires_on_single_thread_async_remote_wait():
 # wall-clock time rather than row count, so it is hardware-independent and fast under any sanitizer
 # (a large window query was either flaky on fast CI or timed out under msan). No table/throttle/
 # async/cache path is touched, so the only park site reached is the idle wait, isolating that guard.
+# The outer `sum` reads the sleep column: under `count()` the analyzer drops it and nothing sleeps.
 IDLE_WORKER_QUERY = (
-    "select count() from ("
-    "  select sleepEachRow(0.2) from numbers_mt(80)"
+    "select sum(s) from ("
+    "  select sleepEachRow(0.2) as s from numbers_mt(80)"
     "  union all"
-    "  select sleepEachRow(0.5) from numbers(10)"
+    "  select sleepEachRow(0.5) as s from numbers(10)"
     ") settings workload = 'all', max_threads = 8, max_block_size = 1"
 )
 
@@ -163,6 +164,8 @@ def test_parking_fires_on_idle_worker():
     query_id = "cpu_parking_idle"
     node.query(IDLE_WORKER_QUERY, query_id=query_id)
     node.query("system flush logs")
+    sleeps = get_profile_event(query_id, "SleepFunctionCalls")
+    assert sleeps == 90, f"expected 90 sleep calls, got {sleeps}"
     parks = get_profile_event(query_id, "ConcurrencyControlParks")
     unparks = get_profile_event(query_id, "ConcurrencyControlUnparks")
     # Workers idle during the serial sleep phase park via the idle wait (#95727), so parking fires
