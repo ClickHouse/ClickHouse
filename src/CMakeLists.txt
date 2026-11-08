@@ -592,6 +592,10 @@ set_property(SOURCE
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
+elseif (USE_ORC)
+    # The ORC input format reads Iceberg variants with the Parquet variant decoder.
+    list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
+    list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()
 
 # Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
