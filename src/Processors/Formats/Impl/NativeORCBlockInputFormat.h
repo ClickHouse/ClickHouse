@@ -171,8 +171,7 @@ private:
         bool inside_nullable,
         DataTypePtr type_hint = nullptr) const;
 
-    /// Reads an ORC struct of the binary fields `metadata` and `value`, an unshredded variant, as `type_hint`,
-    /// which is `Dynamic`, `JSON` or `Nullable(JSON)`. Throws for any other struct.
+    /// Reads an unshredded variant, a struct of binary `metadata` and `value`, as `Dynamic` or `JSON`. Throws for any other struct.
     ColumnWithTypeAndName readVariantFromORCStruct(
         const ORC::ColumnVectorBatch * orc_column,
         const ORC::Type * orc_type,

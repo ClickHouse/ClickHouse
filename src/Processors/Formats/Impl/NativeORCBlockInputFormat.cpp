@@ -1179,7 +1179,6 @@ static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type
     return std::nullopt;
 }
 
-/// A struct requested as one of these types is read as a variant, see readVariantFromORCStruct.
 static bool isORCVariantTargetType(const IDataType & type)
 {
     return isDynamic(type) || isObject(type);
@@ -1221,7 +1220,7 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             return;
         }
         case ORC::STRUCT: {
-            /// The variant reader needs both fields, and rejects a struct that is not a variant when it reads it.
+            /// The variant reader needs both fields.
             if (isORCVariantTargetType(*non_nullable_type))
             {
                 include_typeids.insert(orc_type->getColumnId());
