@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <Columns/ColumnConst.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Disks/IStoragePolicy.h>
@@ -111,6 +112,80 @@ String buildPaimonCacheKeyPrefix(
     hash.update(table_name);
     hash.update(schema0_time_millis);
     return fmt::format("{:016x}", hash.get64());
+}
+
+/// Whether reading the fields nested in `file_parent[key]` by name with the type `read_parent[key]` binds a name to another
+/// field id. Only ids and names are read.
+bool nestedFieldsDiffer(
+    const Poco::JSON::Object::Ptr & file_parent,
+    const Poco::JSON::Object::Ptr & read_parent,
+    const String & key,
+    const String & file_path,
+    const String & read_path,
+    String & in_file,
+    String & in_read_schema)
+{
+    if (!file_parent->isObject(key) || !read_parent->isObject(key))
+        return false;
+    const auto file_type = file_parent->getObject(key);
+    const auto read_type = read_parent->getObject(key);
+    auto kind = [](const Poco::JSON::Object::Ptr & type)
+    {
+        const auto name = type->getValue<String>("type");
+        return name.substr(0, name.find(' '));
+    };
+    const String file_kind = kind(file_type);
+    if (file_kind != kind(read_type))
+        return false;
+
+    if (file_kind == "ROW")
+    {
+        const auto file_fields = file_type->getArray("fields");
+        const auto read_fields = read_type->getArray("fields");
+        for (unsigned i = 0; i < file_fields->size(); ++i)
+        {
+            const auto file_field = file_fields->getObject(i);
+            const auto field_id = file_field->getValue<Int32>("id");
+            const auto field_name = file_field->getValue<String>("name");
+            Poco::JSON::Object::Ptr same_id;
+            Poco::JSON::Object::Ptr same_name;
+            for (unsigned j = 0; j < read_fields->size(); ++j)
+            {
+                const auto read_field = read_fields->getObject(j);
+                if (read_field->getValue<Int32>("id") == field_id)
+                    same_id = read_field;
+                else if (!same_name && boost::iequals(read_field->getValue<String>("name"), field_name))
+                    same_name = read_field;
+            }
+
+            const String field_file_path = file_path + "." + field_name;
+            if (same_id && same_id->getValue<String>("name") != field_name)
+            {
+                in_file = fmt::format("field id {} is '{}'", field_id, field_file_path);
+                in_read_schema = fmt::format("'{}.{}'", read_path, same_id->getValue<String>("name"));
+                return true;
+            }
+            if (same_name)
+            {
+                in_file = fmt::format("'{}' is field id {}", field_file_path, field_id);
+                in_read_schema = fmt::format("field id {}", same_name->getValue<Int32>("id"));
+                return true;
+            }
+            if (same_id
+                && nestedFieldsDiffer(
+                    file_field, same_id, "type", field_file_path, read_path + "." + field_name, in_file, in_read_schema))
+                return true;
+        }
+        return false;
+    }
+    if (file_kind == "ARRAY" || file_kind == "MULTISET")
+        return nestedFieldsDiffer(
+            file_type, read_type, "element", file_path + ".element", read_path + ".element", in_file, in_read_schema);
+    if (file_kind == "MAP")
+        return nestedFieldsDiffer(file_type, read_type, "key", file_path + ".key", read_path + ".key", in_file, in_read_schema)
+            || nestedFieldsDiffer(
+                file_type, read_type, "value", file_path + ".value", read_path + ".value", in_file, in_read_schema);
+    return false;
 }
 }
 
@@ -626,7 +701,7 @@ ObjectIterator PaimonMetadata::iterate(
     }
 
     /// 4. Collect data files based on read mode
-    Strings data_files;
+    DataFilesToRead data_files;
 
     /// 4.a Query-level targeted snapshot (only when incremental is enabled)
     const Int64 target_snapshot_id = query_context->getSettingsRef()[Setting::paimon_target_snapshot_id];
@@ -713,9 +788,9 @@ ObjectIterator PaimonMetadata::iterate(
     }
 
     LOG_DEBUG(log, "Collected {} data files for snapshot_id={} (incremental={})",
-              data_files.size(), state->snapshot_id, isIncrementalReadEnabled());
+              data_files.paths.size(), state->snapshot_id, isIncrementalReadEnabled());
 
-    return createKeysIterator(std::move(data_files), object_storage, callback);
+    return createKeysIterator(std::move(data_files.paths), std::move(data_files.schema_transforms), object_storage, callback);
 }
 
 bool PaimonMetadata::isIncrementalReadEnabled() const
@@ -999,7 +1074,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
     return snapshots;
 }
 
-Strings PaimonMetadata::collectIncrementalDataFiles(
+PaimonMetadata::DataFilesToRead PaimonMetadata::collectIncrementalDataFiles(
     const PaimonTableStatePtr & state,
     const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner,
@@ -1008,7 +1083,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
     std::optional<Int64> & last_consumed_snapshot_id,
     std::optional<PaimonSnapshotIdentity> & last_consumed_identity) const
 {
-    Strings data_files;
+    DataFilesToRead data_files;
     last_consumed_snapshot_id.reset();
     last_consumed_identity.reset();
     const std::optional<Int64> & committed_snapshot_id = committed.snapshot_id;
@@ -1164,7 +1239,7 @@ void PaimonMetadata::checkCursorSnapshotUnchanged(Int64 snapshot_id, const Paimo
         current.time_millis, keeper_path, snapshot_id);
 }
 
-Strings PaimonMetadata::collectDataFilesFromManifests(
+PaimonMetadata::DataFilesToRead PaimonMetadata::collectDataFilesFromManifests(
     const std::vector<PaimonTableStatePtr> & snapshots,
     const PaimonTableSchema & read_schema,
     ManifestKind kind,
@@ -1243,88 +1318,153 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
             data_files.end());
     }
 
-    Strings result;
-    result.reserve(data_files.size());
+    DataFilesToRead result;
+    result.paths.reserve(data_files.size());
+    result.schema_transforms.reserve(data_files.size());
     for (auto & [file_path, file_schema_id] : data_files)
     {
-        checkDataFileSchema(file_path, file_schema_id, read_schema, incremental_cursor);
-        result.emplace_back(std::move(file_path));
+        result.schema_transforms.push_back(getDataFileSchemaTransform(file_path, file_schema_id, read_schema, incremental_cursor));
+        result.paths.emplace_back(std::move(file_path));
     }
     return result;
 }
 
-void PaimonMetadata::checkDataFileSchema(
+std::shared_ptr<ActionsDAG> PaimonMetadata::getDataFileSchemaTransform(
     const String & file_path,
     Int64 file_schema_id,
     const PaimonTableSchema & read_schema,
     std::optional<Int64> incremental_cursor) const
 {
     if (file_schema_id == read_schema.id)
-        return;
+        return nullptr;
+
+    std::optional<FileSchemaMapping> mapping;
     {
-        std::lock_guard lock(checked_file_schemas_mutex);
-        if (checked_file_schemas.contains({file_schema_id, read_schema.id}))
-            return;
+        std::lock_guard lock(file_schema_transforms_mutex);
+        if (auto it = file_schema_transforms.find({file_schema_id, read_schema.id}); it != file_schema_transforms.end())
+            mapping = it->second;
+    }
+    if (!mapping)
+    {
+        mapping = getDataFileSchemaMapping(file_schema_id, read_schema);
+        std::lock_guard lock(file_schema_transforms_mutex);
+        file_schema_transforms.emplace(std::make_pair(file_schema_id, read_schema.id), *mapping);
     }
 
+    if (mapping->in_file.empty())
+        return mapping->transform;
+
+    String recovery;
+    if (incremental_cursor && persistent_components.hasStreamState())
+        recovery = fmt::format(
+            "The cursor of this incremental read was not advanced, it is at snapshot {}. To move on, wait until Paimon expires "
+            "the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops "
+            "every snapshot not yet consumed up to it: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
+            "'<id of the last snapshot committed before the change>'\"",
+            *incremental_cursor,
+            persistent_components.stream_state->getKeeperPath());
+    else
+        recovery = "Rewriting the table with the current schema in Paimon, for example with INSERT OVERWRITE <table> SELECT * "
+                   "FROM <table>, makes the snapshots created after it readable";
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Reading Paimon data file '{}' is not supported: {} in schema {} the file was written with, but {} in the "
+        "current schema {}. Fields of a ROW column are matched to data files by name, not by field id, so the result would "
+        "contain wrong values. {}.",
+        file_path, mapping->in_file, file_schema_id, mapping->in_read_schema, read_schema.id, recovery);
+}
+
+PaimonMetadata::FileSchemaMapping PaimonMetadata::getDataFileSchemaMapping(Int64 file_schema_id, const PaimonTableSchema & read_schema) const
+{
     /// Only ids and names are read: a type the reader does not support must not fail a file it can read.
     auto file_schema_json = table_client->getTableSchemaJSON(
         table_client->getTableSchemaInfoById(static_cast<Int32>(file_schema_id)));
+    auto read_schema_json = table_client->getTableSchemaJSON(
+        table_client->getTableSchemaInfoById(static_cast<Int32>(read_schema.id)));
     const auto file_fields = file_schema_json->getArray("fields");
+    const auto read_fields = read_schema_json->getArray("fields");
+    std::unordered_map<Int32, String> file_names_by_id;
+    bool read_by_name_differs = false;
+    FileSchemaMapping mapping;
     for (unsigned i = 0; i < file_fields->size(); ++i)
     {
         const auto file_field = file_fields->getObject(i);
         const auto field_id = file_field->getValue<Int32>("id");
         const auto field_name = file_field->getValue<String>("name");
+        file_names_by_id.emplace(field_id, field_name);
 
-        String in_file;
-        String in_read_schema;
+        for (unsigned j = 0; j < read_fields->size(); ++j)
+        {
+            const auto read_field = read_fields->getObject(j);
+            if (read_field->getValue<Int32>("id") == field_id
+                && nestedFieldsDiffer(
+                    file_field,
+                    read_field,
+                    "type",
+                    field_name,
+                    read_field->getValue<String>("name"),
+                    mapping.in_file,
+                    mapping.in_read_schema))
+                return mapping;
+        }
+
         if (auto same_id = std::ranges::find(read_schema.fields, field_id, &DataField::id);
             same_id != read_schema.fields.end() && same_id->name != field_name)
-        {
-            in_file = fmt::format("field id {} is column '{}'", field_id, field_name);
-            in_read_schema = fmt::format("column '{}'", same_id->name);
-        }
+            read_by_name_differs = true;
         /// Case-insensitively: the Parquet and ORC readers can match column names that way.
-        else if (auto same_name = std::ranges::find_if(
+        else if (std::ranges::any_of(
                      read_schema.fields,
-                     [&](const DataField & field) { return field.id != field_id && boost::iequals(field.name, field_name); });
-                 same_name != read_schema.fields.end())
-        {
-            in_file = fmt::format("column '{}' is field id {}", field_name, field_id);
-            in_read_schema = same_name->name == field_name
-                ? fmt::format("field id {}", same_name->id)
-                : fmt::format("column '{}' is field id {}", same_name->name, same_name->id);
-        }
-        else
-            continue;
-
-        String recovery;
-        if (incremental_cursor && persistent_components.hasStreamState())
-            recovery = fmt::format(
-                "The cursor of this incremental read was not advanced, it is at snapshot {}. To move on, wait until Paimon expires "
-                "the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops "
-                "every snapshot not yet consumed up to it: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
-                "'<id of the last snapshot committed before the change>'\"",
-                *incremental_cursor,
-                persistent_components.stream_state->getKeeperPath());
-        else
-            recovery = "Rewriting the table with the current schema in Paimon, for example with INSERT OVERWRITE <table> SELECT * "
-                       "FROM <table>, makes the snapshots created after it readable";
-
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Reading Paimon data file '{}' is not supported: {} in schema {} the file was written with, but {} in the "
-            "current schema {}. Columns are matched to data files by name, not by field id, so the result would contain "
-            "wrong values. {}.",
-            file_path, in_file, file_schema_id, in_read_schema, read_schema.id, recovery);
+                     [&](const DataField & field) { return field.id != field_id && boost::iequals(field.name, field_name); }))
+            read_by_name_differs = true;
     }
 
-    std::lock_guard lock(checked_file_schemas_mutex);
-    checked_file_schemas.emplace(file_schema_id, read_schema.id);
+    if (read_by_name_differs)
+    {
+        /// The inputs are the columns of the file under its own names, with the types of the read schema.
+        auto transform = std::make_shared<ActionsDAG>();
+        auto & outputs = transform->getOutputs();
+        for (const auto & field : read_schema.fields)
+        {
+            const auto & type = field.type.clickhouse_data_type;
+            if (auto it = file_names_by_id.find(field.id); it != file_names_by_id.end())
+            {
+                const auto * node = &transform->addInput(it->second, type);
+                if (it->second != field.name)
+                    node = &transform->addAlias(*node, field.name);
+                outputs.push_back(node);
+            }
+            else
+            {
+                const auto & constant = transform->addColumn(type->createColumnConstWithDefaultValue(0), type, field.name);
+                outputs.push_back(&transform->materializeNode(constant));
+            }
+        }
+
+        /// A transform without inputs is not sent to other replicas, which would then read the file by column name.
+        if (transform->getInputs().empty() && file_fields->size() > 0)
+        {
+            const auto file_field = file_fields->getObject(0);
+            transform->addInput(
+                file_field->getValue<String>("name"), Paimon::DataType::parse(file_field, "type").clickhouse_data_type);
+        }
+        mapping.transform = std::move(transform);
+    }
+    return mapping;
 }
 
-Strings PaimonMetadata::collectDeltaFilesForSnapshot(
+std::shared_ptr<NamesAndTypesList> PaimonMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
+{
+    if (!object_info->data_lake_metadata || !object_info->data_lake_metadata->schema_transform)
+        return nullptr;
+
+    auto result = std::make_shared<NamesAndTypesList>();
+    for (const auto * input : object_info->data_lake_metadata->schema_transform->getInputs())
+        result->emplace_back(input->result_name, input->result_type);
+    return result;
+}
+
+PaimonMetadata::DataFilesToRead PaimonMetadata::collectDeltaFilesForSnapshot(
     const PaimonTableStatePtr & state,
     const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner) const
@@ -1332,7 +1472,7 @@ Strings PaimonMetadata::collectDeltaFilesForSnapshot(
     return collectDataFilesFromManifests({state}, read_schema, ManifestKind::Delta, partition_pruner, false, false);
 }
 
-Strings PaimonMetadata::collectFullScanDataFiles(
+PaimonMetadata::DataFilesToRead PaimonMetadata::collectFullScanDataFiles(
     const PaimonTableStatePtr & state,
     const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner) const
