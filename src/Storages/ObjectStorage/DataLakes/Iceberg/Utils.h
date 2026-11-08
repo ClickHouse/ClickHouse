@@ -130,6 +130,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
 
 /// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+/// Any other name gets version -1, so the metadata file written after it gets version 0.
 MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names

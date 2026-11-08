@@ -1,0 +1,13 @@
+explicit vfinal: 1
+explicit no-snapshot-schema-id: 1
+explicit spec_id_999: 1
+listing by version: 3
+listing by last-updated-ms: 1
+listing by table uuid: 3
+version hint: 1
+insert refused
+metadata files: 7
+listing by version: 3
+only unversioned, listing by version: error
+only unversioned, listing by last-updated-ms: 1
+only unversioned, explicit: 1
