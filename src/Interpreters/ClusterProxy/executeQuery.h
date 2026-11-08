@@ -84,6 +84,9 @@ void stripDatabaseSetting(Settings & settings);
 /// `parallel_distributed_insert_select` paths in `StorageDistributed`.
 void stripInitiatorOnlySettings(Settings & settings);
 
+/// Resets the insert_expected_* settings, which are for the table an INSERT writes: a read never sends them on.
+void stripInsertExpectations(Settings & settings);
+
 /// True for exactly the settings reset by `stripInitiatorOnlySettings`. Used to also strip those
 /// settings from a query's own `SETTINGS` clause before the query *text* is forwarded to a shard (the
 /// optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a formatted query

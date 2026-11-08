@@ -371,6 +371,7 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
     /// to the remote servers, where they would re-shape the per-shard subquery a second time or
     /// break it (e.g. `format = 'Null'`). This mirrors the `Distributed` fan-out.
     ClusterProxy::stripInitiatorOnlySettings(new_settings);
+    ClusterProxy::stripInsertExpectations(new_settings);
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

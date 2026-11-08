@@ -8,7 +8,8 @@ from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
-    get_error_from_query_endpoint,
+    get_response_to_http_api_query,
+    get_response_to_http_api_range_query,
     get_response_to_remote_write,
 )
 
@@ -76,18 +77,24 @@ def test_table_functions_are_refused_while_a_shard_runs_an_older_server(table_fu
 
 @pytest.mark.parametrize("endpoint", ["query", "query_range"])
 def test_query_endpoints_are_refused_while_a_shard_runs_an_older_server(endpoint):
-    error = get_error_from_query_endpoint(
-        node.ip_address,
-        9093,
-        "/older_api",
-        endpoint,
-        "older_metric",
-        START_TIME,
-        START_TIME + 10,
-        "10",
-        {},
-    )
-    assert OLDER_SERVER in error, error
+    if endpoint == "query":
+        response = get_response_to_http_api_query(
+            node.ip_address, 9093, "/older_api/query", "older_metric", START_TIME
+        )
+    else:
+        response = get_response_to_http_api_range_query(
+            node.ip_address,
+            9093,
+            "/older_api/query_range",
+            "older_metric",
+            START_TIME,
+            START_TIME + 10,
+            "10",
+        )
+    # Retryable, as for remote write: the shard passes once it is upgraded.
+    assert response.status_code >= 500, response.text
+    assert response.json()["errorType"] == "internal", response.text
+    assert OLDER_SERVER in response.json()["error"], response.text
 
 
 def test_an_insert_expectation_is_refused_by_an_older_shard_instead_of_ignored():
