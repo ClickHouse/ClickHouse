@@ -289,6 +289,7 @@ void DatabaseOnDisk::createTable(
       * - creating the .sql.tmp file;
       * - adding a table to `tables`;
       * - rename .sql.tmp to .sql.
+      * On a disk with `supportsAtomicFileCreation`, a new .sql is written directly, before adding the table.
       */
 
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
@@ -372,18 +373,22 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
                                        const String & statement, ContextPtr query_context)
 {
     auto db_disk = getDisk();
+    bool metadata_written = false;
     try
     {
         createDirectories();
 
-        /// Add a table to the map of known tables.
-        attachTable(query_context, query.getTable(), table, getTableDataPath(query));
-
+        /// Written before the table is attached, so that a failed write leaves no table behind.
         if (table_metadata_tmp_path.empty())
         {
             writeMetadataFile(db_disk, table_metadata_path, statement, query_context->getSettingsRef()[Setting::fsync_metadata]);
+            metadata_written = true;
         }
-        else
+
+        /// Add a table to the map of known tables.
+        attachTable(query_context, query.getTable(), table, getTableDataPath(query));
+
+        if (!table_metadata_tmp_path.empty())
         {
             /// If it was ATTACH query and file with table metadata already exist
             /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -394,6 +399,8 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     {
         if (!table_metadata_tmp_path.empty())
             db_disk->removeFileIfExists(table_metadata_tmp_path);
+        else if (metadata_written)
+            db_disk->removeFileIfExists(table_metadata_path);
         throw;
     }
 }

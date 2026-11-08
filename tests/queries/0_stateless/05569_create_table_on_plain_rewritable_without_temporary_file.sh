@@ -30,6 +30,7 @@ function blob_events()
         SYSTEM FLUSH LOGS blob_storage_log;
         SELECT
             countIf(event_type = 'Copy') AS copies,
+            countIf(event_type = 'Delete') AS deletes,
             countIf(remote_path LIKE '%.sql.tmp%') AS temporary,
             countIf(event_type = 'Upload' AND endsWith(remote_path, '/t.sql')) AS uploads
         FROM system.blob_storage_log
