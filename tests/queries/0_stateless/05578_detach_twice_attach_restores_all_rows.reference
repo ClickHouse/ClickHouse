@@ -1,0 +1,11 @@
+empty_parts_lifetime
+1	3
+2	4
+0
+remove_empty_parts = 0
+1	3
+2	4
+0
+DETACH PART
+2	3
+0

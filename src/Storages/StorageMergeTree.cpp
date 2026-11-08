@@ -3780,6 +3780,20 @@ void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, Conte
     }
 }
 
+void StorageMergeTree::dropEmptyPartsCoveringDetachedParts(const Strings & empty_part_names)
+{
+    /// An empty part that stays active covers the block range of the part just copied to `detached/`.
+    /// A later `DETACH` would copy that empty part, or a part merged from it, to `detached/` as well,
+    /// and `ATTACH` would then treat the earlier detached part as covered and rename it to `inactive_`.
+    for (const auto & part_name : empty_part_names)
+    {
+        if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}); part && isPinnedByDeleteBitmap(*part))
+            continue;
+
+        dropPartNoWaitNoThrow(part_name);
+    }
+}
+
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
     assertNotReadonly();
@@ -3863,6 +3877,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        Strings empty_part_names;
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
@@ -3895,7 +3910,11 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
 
                 if (detach)
+                {
                     clonePartsToDetached(removed_parts, query_context);
+                    for (const auto & new_part : new_data_parts)
+                        empty_part_names.push_back(new_part->name);
+                }
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3905,6 +3924,9 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          transaction.getTID());
             }
         }
+
+        if (detach)
+            dropEmptyPartsCoveringDetachedParts(empty_part_names);
     }
 
     clearOldPartsFromFilesystem();
@@ -3959,6 +3981,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         auto txn = query_context->getCurrentTransaction();
+        Strings empty_part_names;
 
         if (txn)
         {
@@ -4010,7 +4033,11 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
 
             if (detach)
+            {
                 clonePartsToDetached(removed_parts, query_context);
+                for (const auto & new_part : new_data_parts)
+                    empty_part_names.push_back(new_part->name);
+            }
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -4019,6 +4046,9 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                      op, parts.size(), future_parts.size(),
                      transaction.getTID());
         }
+
+        if (detach)
+            dropEmptyPartsCoveringDetachedParts(empty_part_names);
     }
 
     clearOldPartsFromFilesystem();
