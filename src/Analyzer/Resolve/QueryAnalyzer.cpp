@@ -2998,7 +2998,7 @@ static bool isInAggregateOrGroupingFunctionScope(const IdentifierResolveScope & 
   * 2. Apply column transformers to matched expression nodes. For strict column transformers save used column names.
   * 3. Validate strict column transformers.
   */
-ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope, std::vector<bool> * is_unchanged_matched_column)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
 
@@ -3153,6 +3153,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
 
+    bool has_naming_apply_transformer = is_unchanged_matched_column && hasNamingApplyTransformer(matcher_node_typed);
+
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
         bool apply_transformer_was_used = false;
@@ -3160,9 +3162,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         bool execute_apply_transformer = false;
         bool execute_replace_transformer = false;
 
+        const IQueryTreeNode * matched_node = node.get();
+        std::optional<String> resolved_projection_name;
+
         auto projection_name_it = node_to_projection_name.find(node);
         if (projection_name_it != node_to_projection_name.end())
+        {
             result_projection_names.push_back(projection_name_it->second);
+            if (is_unchanged_matched_column && !has_naming_apply_transformer)
+                resolved_projection_name = projection_name_it->second;
+        }
         else
             result_projection_names.push_back(column_name);
 
@@ -3426,7 +3435,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
 
         if (node)
+        {
             list->getNodes().push_back(node);
+            if (is_unchanged_matched_column)
+            {
+                is_unchanged_matched_column->resize(result_projection_names.size(), false);
+                is_unchanged_matched_column->back() = resolved_projection_name && node.get() == matched_node
+                    && result_projection_names.back() == *resolved_projection_name;
+            }
+        }
         else
             result_projection_names.pop_back();
     }
@@ -3904,7 +3921,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     bool allow_table_expression,
     bool ignore_alias,
     bool allow_niladic_functions,
-    bool is_top_level_projection)
+    bool is_top_level_projection,
+    std::vector<bool> * is_unchanged_matched_column)
 {
     checkStackSize();
 
@@ -4242,7 +4260,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         }
         case QueryTreeNodeType::MATCHER:
         {
-            result_projection_names = resolveMatcher(node, scope);
+            result_projection_names = resolveMatcher(node, scope, is_unchanged_matched_column);
             break;
         }
         case QueryTreeNodeType::LIST:
@@ -4527,12 +4545,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
     {
         const auto * identifier_node = node->as<IdentifierNode>();
         bool is_identifier_reference = bare_column_names && identifier_node && !node->hasAlias() && identifier_node->getIdentifier().isCompound();
-        bool is_matcher_reference = bare_column_names && node->getNodeType() == QueryTreeNodeType::MATCHER
-            && !hasNamingApplyTransformer(node->as<const MatcherNode &>());
+        bool is_matcher_reference = bare_column_names && node->getNodeType() == QueryTreeNodeType::MATCHER;
         String written_identifier = is_identifier_reference ? identifier_node->getIdentifier().getFullName() : String{};
+        std::vector<bool> is_unchanged_matched_column;
 
         auto node_to_resolve = node;
-        auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection);
+        auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression, false /*ignore_alias*/, allow_niladic_functions, is_top_level_projection, is_matcher_reference ? &is_unchanged_matched_column : nullptr);
         size_t expected_projection_names_size = 1;
         if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
@@ -4560,6 +4578,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(
 
                 const auto * column_node = result_nodes[first_result_index + i]->as<ColumnNode>();
                 if (!(is_identifier_reference || is_matcher_reference) || !column_node)
+                    continue;
+
+                if (is_matcher_reference && !(i < is_unchanged_matched_column.size() && is_unchanged_matched_column[i]))
                     continue;
 
                 auto column_source = column_node->getColumnSourceOrNull();

@@ -245,7 +245,8 @@ private:
 
     QueryTreeNodesWithNames resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
-    ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
+    /// `is_unchanged_matched_column` gets, per result column, whether it is a matched column under the name its resolution gave it.
+    ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope, std::vector<bool> * is_unchanged_matched_column = nullptr);
 
     ProjectionName resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
 
@@ -263,7 +264,8 @@ private:
         bool allow_table_expression,
         bool ignore_alias = false,
         bool allow_niladic_functions = true,
-        bool is_top_level_projection = false);
+        bool is_top_level_projection = false,
+        std::vector<bool> * is_unchanged_matched_column = nullptr);
 
     /// `bare_column_names` has, per result column of a `SELECT` list, the bare column name a column reference can be named with (empty if not one).
     static std::vector<size_t> findUniqueBareProjectionNames(const NamesAndTypes & projection_columns, const Names & bare_column_names);

@@ -24,6 +24,8 @@ SELECT a.id, a.id FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a
 SELECT '-- case 5: matchers';
 SELECT a.* FROM values('id Int32, x Int32', (1, 10)) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
 SELECT * FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
+SELECT COLUMNS(a.id, a.x) FROM values('id Int32, x Int32', (1, 10)) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
+SELECT a.COLUMNS('^(id|x)$') FROM values('id Int32, x Int32', (1, 10)) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
 
 SELECT '-- case 6: explicit alias';
 SELECT a.id AS `a.id` FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
@@ -70,6 +72,8 @@ SELECT l.* REPLACE (x + 1 AS x) FROM (SELECT 1 AS a, 2 AS x) AS l CROSS JOIN (SE
 SELECT a.* APPLY (x -> x) FROM values('id Int32', 1) a JOIN values('id Int32', 1) b ON a.id = b.id JOIN values('id Int32', 1) c ON a.id = c.id FORMAT TSVWithNames;
 SELECT t.* APPLY (x -> x, 't.') FROM values('id Int32', 1) AS t FORMAT TSVWithNames;
 SELECT t.* APPLY (x -> (x AS `t.id`)) FROM values('id Int32', 1) AS t FORMAT TSVWithNames;
+SELECT * EXCEPT (id) REPLACE (id AS `t.id`) FROM values('id Int32, `t.id` Int32', (1, 2)) AS t FORMAT TSVWithNames;
+SELECT s.`t.id` FROM (SELECT * EXCEPT (id) REPLACE (id AS `t.id`) FROM values('id Int32, `t.id` Int32', (1, 2)) AS t) AS s;
 
 SELECT '-- case 14: subcolumn';
 CREATE TABLE t_s (id Int32, tup Tuple(x Int32)) ENGINE = MergeTree ORDER BY id;

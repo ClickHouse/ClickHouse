@@ -28,6 +28,10 @@ id	x
 1	10
 a.id	b.id	c.id
 1	1	1
+id	x
+1	10
+id	x
+1	10
 -- case 6: explicit alias
 a.id
 1
@@ -70,6 +74,9 @@ id
 t.id
 1
 t.id
+1
+t.id
+1
 1
 -- case 14: subcolumn
 tup.x
