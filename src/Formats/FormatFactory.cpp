@@ -971,8 +971,10 @@ void FormatFactory::registerSplitter(const String & format, BucketSplitterCreato
 
 BucketSplitter FormatFactory::getSplitter(const String & format)
 {
-    auto creator = getCreators(format);
-    return creator.bucket_splitter_creator();
+    const auto & creators = getCreators(format);
+    if (!creators.bucket_splitter_creator)
+        return nullptr;
+    return creators.bucket_splitter_creator();
 }
 
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
