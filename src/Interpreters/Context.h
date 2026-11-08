@@ -14,6 +14,7 @@
 #include <Common/StopToken.h>
 #include <Core/UUID.h>
 #include <IO/ReadSettings.h>
+#include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/WriteSettings.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Formats/FormatSettings.h>

@@ -3,10 +3,12 @@
 #include <Storages/StorageSnapshot.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Interpreters/Context_fwd.h>
-#include <Processors/QueryPlan/Serialization.h>
 
 namespace DB
 {
+    struct QueryPlanStepSerialization;
+    struct QueryPlanStepDeserialization;
+
     struct PrewhereInfo;
     using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
@@ -39,8 +41,8 @@ namespace DB
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
 
-        void serialize(IQueryPlanStep::Serialization & ctx) const;
-        static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);
+        void serialize(QueryPlanStepSerialization & ctx) const;
+        static ReadFromFormatInfo deserialize(QueryPlanStepDeserialization & ctx);
 
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
