@@ -1,6 +1,6 @@
--- `IN` pushes the set through the same key transform as `=`, but unlike `=` it matches float values bit-exactly:
--- `-0.0 IN (0.0)` is 0. The transformed set `{'0'}` therefore selects exactly the rows `f IN (0.0)` matches, and
--- the index keeps answering it; the results with and without the index must agree.
+-- `IN` pushes the set through the same key transform as `=`, and like `=` it matches `-0.0` with `0.0`:
+-- `-0.0 IN (0.0)` is 1. The transformed set `{'0'}` would miss the row `'-0'`, so the index does not answer it
+-- when the transform tells the zeros apart; the results with and without the index must agree.
 -- The `marks` estimates are compared against 4, the number of granules in the table, so that a value
 -- below it means the index still prunes and 4 means a full scan.
 
