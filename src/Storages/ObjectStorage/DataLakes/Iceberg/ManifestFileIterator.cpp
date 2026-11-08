@@ -444,7 +444,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     {
         Poco::Dynamic::Var json = parser.parse(*schema_json_string);
         Poco::JSON::Object::Ptr schema_object = json.extract<Poco::JSON::Object::Ptr>();
-        /// `schema-id` of the schema is optional in format version 1: take the header key, else 0 as in Java.
+        /// `schema-id` of the embedded schema is optional in format version 1 manifests.
         if (!schema_object->has(f_schema_id) || schema_object->isNull(f_schema_id))
         {
             if (header_schema_id.has_value())

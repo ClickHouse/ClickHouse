@@ -445,7 +445,6 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     }
     else
     {
-        /// The legacy format version 1 `schema`.
         schema_processor->addIcebergTableSchema(parseCurrentTableSchema(metadata_object).first);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
@@ -2192,7 +2191,6 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_compression_method,
         persistent_components.table_uuid);
 
-    /// `sort-orders` is optional in format version 1, such a table is unsorted.
     if (!metadata_object->has(f_sort_orders) && metadata_object->getValue<Int32>(f_format_version) == 1)
         return {};
 
