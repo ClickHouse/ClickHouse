@@ -796,6 +796,14 @@ void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const Cart
     });
 }
 
+void differencePolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result)
+{
+    evaluatePolygonalOverlay(left, right, result, [](const auto & first, const auto & second, auto & output)
+    {
+        boost::geometry::difference(first, second, output);
+    });
+}
+
 
 size_t countMultiPolygonPoints(const CartesianMultiPolygon & mp)
 {

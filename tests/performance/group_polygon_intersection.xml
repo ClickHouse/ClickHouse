@@ -3,6 +3,7 @@
     <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_shrinking</drop_query>
     <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_crossbars</drop_query>
     <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_holes</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_octagons</drop_query>
 
     <!-- Shrinking squares: the running intersection stays a single small polygon. -->
     <create_query>CREATE TABLE bench_polygon_intersection_shrinking (poly Polygon) ENGINE = Memory</create_query>
@@ -40,6 +41,15 @@
         SETTINGS max_threads = 1
     </fill_query>
 
+    <!-- A shared exterior with overlapping octagonal holes: neither incremental hole path applies. -->
+    <create_query>CREATE TABLE bench_polygon_intersection_octagons (p Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_polygon_intersection_octagons
+        WITH arrayMap(k -> (100 + number * 0.5 + 10 * cos(k * pi() / 4), 500 + 10 * sin(k * pi() / 4)), range(8)) AS h
+        SELECT [[(0., 0.), (0., 5000.), (5000., 5000.), (5000., 0.), (0., 0.)], arrayPushBack(h, h[1])] FROM numbers(8000)
+        SETTINGS max_threads = 1
+    </fill_query>
+
     <query>SELECT groupPolygonIntersection(poly) FROM bench_polygon_intersection_shrinking FORMAT Null SETTINGS max_threads = 1</query>
     <query>SELECT groupPolygonIntersection(p) FROM bench_polygon_intersection_crossbars FORMAT Null SETTINGS max_threads = 1</query>
     <query>SELECT groupPolygonIntersection(separated) FROM bench_polygon_intersection_holes FORMAT Null SETTINGS max_threads = 1</query>
@@ -67,5 +77,8 @@
 
     <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_shrinking</drop_query>
     <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_crossbars</drop_query>
+    <query>SELECT groupPolygonIntersection(p) FROM bench_polygon_intersection_octagons FORMAT Null SETTINGS max_threads = 1</query>
+
     <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_holes</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_polygon_intersection_octagons</drop_query>
 </test>
