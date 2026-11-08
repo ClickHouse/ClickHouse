@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -49,6 +50,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
@@ -459,7 +461,8 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
 
     /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
     /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
-    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
+    if (!schema_ptr->isArray(f_fields)
+        || (source == SchemaSource::ManifestFile && schema_ptr->getArray(f_fields)->size() == 0))
         return;
 
     std::unordered_map<String, String> type_mapping;
@@ -657,6 +660,8 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeString>();
     if (type_name == f_variant)
         return std::make_shared<DataTypeDynamic>();
+    if (type_name == f_unknown)
+        return makeNullable(std::make_shared<DataTypeNothing>());
 
     if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
     {
@@ -762,6 +767,10 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     {
         const String & type_name = type.extract<String>();
         auto data_type = getSimpleType(type_name, allow_geo_parser);
+        if (required && data_type->onlyNull())
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg type 'unknown' must be optional, but it is used for a required field, list element or map key or value");
         return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
     }
 
@@ -769,10 +778,11 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
 }
 
 /**
-* Iceberg allows only three types of primitive type conversion:
+* Iceberg allows only these types of primitive type conversion:
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P
+* unknown -> any type (Iceberg v3; `unknown` has no values but NULL)
 * This function checks if `old_type` and `new_type` satisfy to one of these conditions.
 **/
 bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type_arg, const String & new_type_arg)
@@ -785,6 +795,7 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     bool allowed_type_conversion = (old_type == new_type);
     allowed_type_conversion |= (old_type == f_int) && (new_type == f_long);
     allowed_type_conversion |= (old_type == f_float) && (new_type == f_double);
+    allowed_type_conversion |= (old_type == f_unknown);
     if (old_type.starts_with("decimal(") && old_type.ends_with(')') && new_type.starts_with("decimal(") && new_type.ends_with(")"))
     {
         auto [old_precision, old_scale] = parseDecimal(old_type);
@@ -792,6 +803,65 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
         allowed_type_conversion |= (old_precision <= new_precision) && (old_scale == new_scale);
     }
     return allowed_type_conversion;
+}
+
+Poco::Dynamic::Var IcebergSchemaProcessor::getTypeWithOldPrimitives(
+    const Poco::JSON::Object::Ptr & old_holder, const Poco::JSON::Object::Ptr & new_holder, const String & key)
+{
+    checkStackSize();
+
+    auto new_type = new_holder->get(key);
+    if (!new_holder->isObject(key))
+    {
+        auto old_type = old_holder->get(key);
+        if (!old_holder->isObject(key) && new_type.isString() && old_type.isString()
+            && allowPrimitiveTypeConversion(old_type.extract<String>(), new_type.extract<String>()))
+            return old_type;
+        return new_type;
+    }
+    if (!old_holder->isObject(key))
+        return new_type;
+
+    auto old_object = old_holder->getObject(key);
+    auto new_object = new_holder->getObject(key);
+    const auto type_name = new_object->getValue<String>(f_type);
+    if (old_object->getValue<String>(f_type) != type_name)
+        return new_type;
+
+    Poco::JSON::Object::Ptr result = new Poco::JSON::Object(*new_object);
+    if (type_name == f_list)
+    {
+        result->set(f_element, getTypeWithOldPrimitives(old_object, new_object, f_element));
+    }
+    else if (type_name == f_map)
+    {
+        result->set(f_key, getTypeWithOldPrimitives(old_object, new_object, f_key));
+        result->set(f_value, getTypeWithOldPrimitives(old_object, new_object, f_value));
+    }
+    else if (type_name == f_struct)
+    {
+        std::unordered_map<Int32, Poco::JSON::Object::Ptr> old_fields_by_id;
+        auto old_fields = old_object->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i != old_fields->size(); ++i)
+        {
+            auto old_field = old_fields->getObject(static_cast<UInt32>(i));
+            old_fields_by_id[old_field->getValue<Int32>(f_id)] = old_field;
+        }
+
+        auto new_fields = new_object->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+        for (size_t i = 0; i != new_fields->size(); ++i)
+        {
+            auto new_field = new_fields->getObject(static_cast<UInt32>(i));
+            Poco::JSON::Object::Ptr field_copy = new Poco::JSON::Object(*new_field);
+            auto old_field_it = old_fields_by_id.find(new_field->getValue<Int32>(f_id));
+            if (old_field_it != old_fields_by_id.end())
+                field_copy->set(f_type, getTypeWithOldPrimitives(old_field_it->second, new_field, f_type));
+            fields->add(field_copy);
+        }
+        result->set(f_fields, fields);
+    }
+    return result;
 }
 
 // Ids are passed only for error logging purposes
@@ -837,10 +907,16 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         new_id);
                 }
                 auto old_type = getFieldType(old_json, "type", required);
-                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
-                old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
+                /// EvolutionFunctionStruct does not convert primitives, so promoted nested ones are cast afterwards.
+                Poco::JSON::Object::Ptr evolved_field = new Poco::JSON::Object(*field);
+                evolved_field->set(f_type, getTypeWithOldPrimitives(old_json, field, f_type));
+                auto evolved_type = getFieldType(evolved_field, f_type, required);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{evolved_type}, DataTypes{old_type}, old_json, field);
+                const auto * node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
+                if (!evolved_type->equals(*type))
+                    node = &dag->addCast(*node, type, name, nullptr);
 
-                outputs.push_back(old_node);
+                outputs.push_back(node);
             }
             else
             {
@@ -984,6 +1060,11 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickHouseTableSch
     auto it = clickhouse_table_schemas_by_ids.find(id);
     if (it == clickhouse_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
+    if (it->second->empty())
+        throw Exception(
+            ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED,
+            "Iceberg schema with schema-id {} has no fields, which is not supported: a table must have at least one column",
+            id);
     return it->second;
 }
 
