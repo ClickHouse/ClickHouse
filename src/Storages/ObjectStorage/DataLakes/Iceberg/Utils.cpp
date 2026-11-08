@@ -1004,13 +1004,20 @@ static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
     {
         auto metadata_object = parseMetadataJSONString(read_fn(), metadata_file_path);
         if (validate)
+        {
             validateTableMetadata(*metadata_object, metadata_file_path);
+            IcebergSchemaProcessor::checkTableSchemas(*metadata_object);
+        }
         return metadata_object;
     }
 
     std::function<void(const Poco::JSON::Object &)> validate_fn;
     if (validate)
-        validate_fn = [&](const Poco::JSON::Object & metadata) { validateTableMetadata(metadata, metadata_file_path); };
+        validate_fn = [&](const Poco::JSON::Object & metadata)
+        {
+            validateTableMetadata(metadata, metadata_file_path);
+            IcebergSchemaProcessor::checkTableSchemas(metadata);
+        };
     return metadata_cache->getOrSetTableMetadata(
         IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
         [&]()

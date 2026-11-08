@@ -95,7 +95,7 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
-/// The metadata file of the table, checked with validateTableMetadata.
+/// The metadata file of the table, checked with validateTableMetadata and IcebergSchemaProcessor::checkTableSchemas.
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,

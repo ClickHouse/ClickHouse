@@ -223,8 +223,8 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
             [&]()
             {
                 auto cell = std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, metadata_json_str.size());
-                /// The object was validated above.
-                std::call_once(cell->table_metadata_validated, [] {});
+                /// The checks of getMetadataJSONObject; validateTableMetadata ran above.
+                std::call_once(cell->table_metadata_validated, [&] { IcebergSchemaProcessor::checkTableSchemas(*metadata_object); });
                 return cell;
             });
     auto table_path = configuration->getPathForRead().path;
