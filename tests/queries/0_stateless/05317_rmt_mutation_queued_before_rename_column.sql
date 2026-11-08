@@ -9,7 +9,7 @@ SET enable_lightweight_update = 1;
 DROP TABLE IF EXISTS t_compact SYNC;
 CREATE TABLE t_compact (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_compact', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_compact VALUES (1, 1111, 2222), (2, 3333, 4444);
 ALTER TABLE t_compact DELETE WHERE id = 1 SETTINGS mutations_sync = 0;
@@ -26,7 +26,7 @@ DROP TABLE t_compact SYNC;
 DROP TABLE IF EXISTS t_wide SYNC;
 CREATE TABLE t_wide (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_wide', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_wide VALUES (1, 1111, 2222), (2, 3333, 4444);
 ALTER TABLE t_wide DELETE WHERE id = 1 SETTINGS mutations_sync = 0;
@@ -43,7 +43,7 @@ DROP TABLE t_wide SYNC;
 DROP TABLE IF EXISTS t_update SYNC;
 CREATE TABLE t_update (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_update', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_update VALUES (1, 1111, 2222), (2, 3333, 4444);
 ALTER TABLE t_update UPDATE a = a + 1 WHERE 1 SETTINGS mutations_sync = 0;
@@ -61,7 +61,7 @@ DROP TABLE t_update SYNC;
 DROP TABLE IF EXISTS t_patch SYNC;
 CREATE TABLE t_patch (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_patch', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS max_replicated_mutations_in_queue = 0, enable_block_number_column = 1, enable_block_offset_column = 1, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_patch VALUES (1, 1111, 2222), (2, 3333, 4444);
 UPDATE t_patch SET b = 9999 WHERE id = 2;
@@ -80,7 +80,7 @@ DROP TABLE t_patch SYNC;
 DROP TABLE IF EXISTS t_clear SYNC;
 CREATE TABLE t_clear (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear', '1') ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, replicated_max_mutations_in_one_entry = 1;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, replicated_max_mutations_in_one_entry = 1, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_clear VALUES (1, 1111, 2222), (2, 3333, 4444);
 ALTER TABLE t_clear ADD COLUMN d UInt32 DEFAULT b * 2 SETTINGS alter_sync = 2;
@@ -98,7 +98,7 @@ DROP TABLE t_clear SYNC;
 DROP TABLE IF EXISTS t_attach SYNC;
 CREATE TABLE t_attach (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_attach', '1') ORDER BY tuple() PARTITION BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_attach VALUES (1, 1111, 2222), (2, 3333, 4444);
 ALTER TABLE t_attach DETACH PARTITION tuple();
@@ -114,7 +114,7 @@ DROP TABLE t_attach SYNC;
 DROP TABLE IF EXISTS t_attach_target SYNC;
 CREATE TABLE t_attach_target (id UInt32, a UInt32, b UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_attach_target', '1') ORDER BY tuple() PARTITION BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_attach_target VALUES (1, 1111, 2222), (2, 3333, 4444);
 ALTER TABLE t_attach_target DETACH PARTITION tuple();
@@ -129,7 +129,7 @@ DROP TABLE t_attach_target SYNC;
 DROP TABLE IF EXISTS t_swap_wide SYNC;
 CREATE TABLE t_swap_wide (id UInt32, x UInt32, a UInt32, c UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_wide', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_swap_wide VALUES (1, 10, 11, 100), (2, 20, 21, 200);
 ALTER TABLE t_swap_wide UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
@@ -145,7 +145,7 @@ DROP TABLE t_swap_wide SYNC;
 DROP TABLE IF EXISTS t_swap_compact SYNC;
 CREATE TABLE t_swap_compact (id UInt32, x UInt32, a UInt32, c UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_compact', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 
 INSERT INTO t_swap_compact VALUES (1, 10, 11, 100), (2, 20, 21, 200);
 ALTER TABLE t_swap_compact UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
@@ -161,7 +161,7 @@ DROP TABLE IF EXISTS t_swap_rewrite SYNC;
 DROP TABLE IF EXISTS t_swap_shared SYNC;
 CREATE TABLE t_swap_rewrite (id UInt32, x UInt32, a UInt32 MATERIALIZED x + 1, c UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_rewrite', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 CREATE TABLE t_swap_shared (id UInt32, x UInt32, a UInt32 MATERIALIZED x + 1, c UInt32)
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
@@ -178,172 +178,3 @@ SELECT 'swap shared', id, x, a, c FROM t_swap_shared ORDER BY id;
 CHECK TABLE t_swap_shared SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_swap_rewrite SYNC;
 DROP TABLE t_swap_shared SYNC;
-
--- ALTER UPDATE queued before an ALTER that reuses the name of a dropped or renamed column.
-DROP TABLE IF EXISTS t_readd SYNC;
-CREATE TABLE t_readd (id UInt32, x UInt32, a UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_readd', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1,
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_readd VALUES (1, 10, 42, 100), (2, 20, 43, 200);
-ALTER TABLE t_readd UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_readd DROP COLUMN a, ADD COLUMN a UInt32 DEFAULT 7 SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_readd;
-SELECT 'readd pending', id, x, a, c FROM t_readd ORDER BY id;
-ALTER TABLE t_readd MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_readd UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'readd', id, x, a, c FROM t_readd ORDER BY id;
-CHECK TABLE t_readd SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_readd SYNC;
-
-DROP TABLE IF EXISTS t_drop_rename SYNC;
-CREATE TABLE t_drop_rename (id UInt32, x UInt32, a UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_drop_rename', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1,
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_drop_rename VALUES (1, 10, 42, 100), (2, 20, 43, 200);
-ALTER TABLE t_drop_rename UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_drop_rename DROP COLUMN a, RENAME COLUMN c TO a SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_drop_rename;
-SELECT 'drop rename pending', id, x, a FROM t_drop_rename ORDER BY id;
-ALTER TABLE t_drop_rename MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_drop_rename UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'drop rename', id, x, a FROM t_drop_rename ORDER BY id;
-CHECK TABLE t_drop_rename SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_drop_rename SYNC;
-
-DROP TABLE IF EXISTS t_readd_rename SYNC;
-CREATE TABLE t_readd_rename (id UInt32, x UInt32, a UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_readd_rename', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1,
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_readd_rename VALUES (1, 10, 42, 100), (2, 20, 43, 200);
-ALTER TABLE t_readd_rename UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_readd_rename DROP COLUMN a, ADD COLUMN a UInt32 DEFAULT 7, RENAME COLUMN a TO z SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_readd_rename;
-SELECT 'readd rename pending', id, x, z, c FROM t_readd_rename ORDER BY id;
-ALTER TABLE t_readd_rename MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_readd_rename UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'readd rename', id, x, z, c FROM t_readd_rename ORDER BY id;
-CHECK TABLE t_readd_rename SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_readd_rename SYNC;
-
-DROP TABLE IF EXISTS t_rename_readd_drop SYNC;
-CREATE TABLE t_rename_readd_drop (id UInt32, x UInt32, a UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rename_readd_drop', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1,
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_rename_readd_drop VALUES (1, 10, 42, 100), (2, 20, 43, 200);
-ALTER TABLE t_rename_readd_drop UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_rename_readd_drop RENAME COLUMN a TO b, ADD COLUMN a UInt32 DEFAULT 7, DROP COLUMN a SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_rename_readd_drop;
-SELECT 'rename readd drop pending', id, x, b, c FROM t_rename_readd_drop ORDER BY id;
-ALTER TABLE t_rename_readd_drop MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_rename_readd_drop UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'rename readd drop', id, x, b, c FROM t_rename_readd_drop ORDER BY id;
-CHECK TABLE t_rename_readd_drop SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_rename_readd_drop SYNC;
-
--- The same with `a` stored as a missing-column marker.
-DROP TABLE IF EXISTS t_readd_marker SYNC;
-CREATE TABLE t_readd_marker (id UInt32, x UInt32, a UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_readd_marker', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1,
-    skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_readd_marker VALUES (1, 10, 0, 100), (2, 20, 0, 200);
-ALTER TABLE t_readd_marker UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_readd_marker DROP COLUMN a, ADD COLUMN a UInt32 DEFAULT 7 SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_readd_marker;
-ALTER TABLE t_readd_marker MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_readd_marker UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'readd marker', id, x, a, c FROM t_readd_marker ORDER BY id;
-CHECK TABLE t_readd_marker SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_readd_marker SYNC;
-
--- A column stored as a missing-column marker renamed onto the dropped name, and a sparse one.
-DROP TABLE IF EXISTS t_drop_rename_marker SYNC;
-CREATE TABLE t_drop_rename_marker (id UInt32, x UInt32, a UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_drop_rename_marker', '1') ORDER BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1,
-    skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_drop_rename_marker VALUES (1, 10, 42, 0), (2, 20, 43, 0);
-ALTER TABLE t_drop_rename_marker UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_drop_rename_marker DROP COLUMN a, RENAME COLUMN c TO a SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_drop_rename_marker;
-ALTER TABLE t_drop_rename_marker MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_drop_rename_marker UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'drop rename marker', id, x, a FROM t_drop_rename_marker ORDER BY id;
-CHECK TABLE t_drop_rename_marker SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_drop_rename_marker SYNC;
-
-DROP TABLE IF EXISTS t_drop_rename_sparse SYNC;
-CREATE TABLE t_drop_rename_sparse (id UInt32, x UInt32, a UInt32, c UInt32)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_drop_rename_sparse', '1') ORDER BY id
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1, ratio_of_defaults_for_sparse_serialization = 0.5,
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_drop_rename_sparse SELECT number, number, 42, if(number % 100 = 0, number, 0) FROM numbers(1000);
-ALTER TABLE t_drop_rename_sparse UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_drop_rename_sparse DROP COLUMN a, RENAME COLUMN c TO a SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_drop_rename_sparse;
-ALTER TABLE t_drop_rename_sparse MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_drop_rename_sparse UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'drop rename sparse', sum(a), countIf(a != 0), sum(x) FROM t_drop_rename_sparse;
-SELECT 'drop rename sparse', column, serialization_kind FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_drop_rename_sparse' AND active AND column = 'a';
-DROP TABLE t_drop_rename_sparse SYNC;
-
--- CLEAR STATISTICS names a column as it is before a rename or a drop of the same ALTER.
-SET materialize_statistics_on_insert = 1;
-
-DROP TABLE IF EXISTS t_clear_rename SYNC;
-CREATE TABLE t_clear_rename (x UInt64, a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest))
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_rename', '1') ORDER BY tuple() PARTITION BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1, auto_statistics_types = 'basic',
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_clear_rename VALUES (1, 2, 3);
-ALTER TABLE t_clear_rename UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_clear_rename CLEAR STATISTICS a IN PARTITION tuple(), RENAME COLUMN a TO a1 SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_clear_rename;
-ALTER TABLE t_clear_rename MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_clear_rename UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'clear rename', column, statistics FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_clear_rename' AND active AND NOT startsWith(column, '_') ORDER BY column;
-DROP TABLE t_clear_rename SYNC;
-
-DROP TABLE IF EXISTS t_clear_drop_rename SYNC;
-CREATE TABLE t_clear_drop_rename (x UInt64, a UInt64 STATISTICS(tdigest), b UInt64 STATISTICS(tdigest))
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_clear_drop_rename', '1') ORDER BY tuple() PARTITION BY tuple()
-SETTINGS max_replicated_mutations_in_queue = 0, replicated_max_mutations_in_one_entry = 1, auto_statistics_types = 'basic',
-    min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_clear_drop_rename VALUES (1, 2, 3);
-ALTER TABLE t_clear_drop_rename UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
-ALTER TABLE t_clear_drop_rename CLEAR STATISTICS a IN PARTITION tuple(), DROP COLUMN a, RENAME COLUMN b TO a SETTINGS alter_sync = 0;
-SYSTEM SYNC REPLICA t_clear_drop_rename;
-ALTER TABLE t_clear_drop_rename MODIFY SETTING max_replicated_mutations_in_queue = 16;
-ALTER TABLE t_clear_drop_rename UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'clear drop rename', column, statistics FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_clear_drop_rename' AND active AND NOT startsWith(column, '_') ORDER BY column;
-DROP TABLE t_clear_drop_rename SYNC;
-
--- DROP COLUMN of a Nested subcolumn keeps the offsets that the other subcolumn shares.
-DROP TABLE IF EXISTS t_drop_nested SYNC;
-CREATE TABLE t_drop_nested (id UInt32, n Nested(a UInt32, b UInt32))
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_drop_nested', '1') ORDER BY tuple()
-SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
-
-INSERT INTO t_drop_nested VALUES (1, [1, 2], [5, 6]);
-ALTER TABLE t_drop_nested DROP COLUMN `n.a` SETTINGS alter_sync = 2, mutations_sync = 2;
-SELECT 'drop nested', id, n.b FROM t_drop_nested;
-CHECK TABLE t_drop_nested SETTINGS check_query_single_value_result = 1;
-DROP TABLE t_drop_nested SYNC;
