@@ -604,7 +604,6 @@ std::optional<String> findIdentifierViolation(const Poco::JSON::Object & schema,
     return {};
 }
 
-/// Throws ICEBERG_SPECIFICATION_VIOLATION for the violation found by `findSchemaViolation`.
 void checkSchema(const Poco::JSON::Object & schema, bool is_table_schema)
 {
     if (auto violation = IcebergSchemaProcessor::findSchemaViolation(schema, is_table_schema))
@@ -760,8 +759,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         }
     }
 
-    /// A manifest header copy is only checked for what reading data with its types needs: known writers store degraded
-    /// copies there (see above), and the Java implementation does not parse them.
+    /// Known writers store degraded schema copies in manifest headers (see above), so only the structural rules apply.
     if (source == SchemaSource::ManifestFile)
         checkSchema(*schema_ptr, /*is_table_schema=*/ false);
 

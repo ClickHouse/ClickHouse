@@ -727,7 +727,6 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
-/// `validate` is false only for the candidates of the latest metadata file selection, which may be other tables' files.
 static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
