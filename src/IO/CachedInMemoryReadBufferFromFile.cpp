@@ -19,6 +19,16 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
+}
+
+namespace
+{
+
+/// The file offsets are rounded to the multiples of the block size (and to the lookahead groups of blocks)
+/// in many places. Bounding the block size keeps all of these computations far from wrapping around.
+constexpr size_t MAX_PAGE_CACHE_BLOCK_SIZE = 1ULL << 40;
+
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
@@ -31,6 +41,10 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {
+    if (settings.block_size == 0 || settings.block_size > MAX_PAGE_CACHE_BLOCK_SIZE)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for `page_cache_block_size`: must be between 1 and {}", settings.block_size, MAX_PAGE_CACHE_BLOCK_SIZE);
+
     /// The working buffer is a page cache cell, an exact-size allocation: nothing past its end is readable.
     clearBufferPadding();
 }
