@@ -1195,7 +1195,8 @@ struct InPartRenewal
     }
 };
 
-SlotAllocationPtr allocateIndexAnalysisCPU(const Settings & settings, size_t num_threads, const QueryStatusPtr & query_status)
+SlotAllocationPtr allocateIndexAnalysisCPU(
+    const Settings & settings, size_t num_threads, const QueryStatusPtr & query_status, const std::function<bool()> & cancel_callback)
 {
     if (num_threads == 0 || !settings[Setting::use_concurrency_control])
         return nullptr;
@@ -1209,7 +1210,10 @@ SlotAllocationPtr allocateIndexAnalysisCPU(const Settings & settings, size_t num
     auto links = getWorkloadCPULinks(query_context);
     if (!links.master_thread && !links.worker_thread)
         return nullptr;
-    return std::make_shared<CPULeaseAllocation>(num_threads, links.master_thread, links.worker_thread, getCPULeaseSettings(query_context));
+    auto lease_settings = getCPULeaseSettings(query_context);
+    if (cancel_callback)
+        lease_settings.on_master_wait = [cancel_callback] { cancel_callback(); };
+    return std::make_shared<CPULeaseAllocation>(num_threads, links.master_thread, links.worker_thread, std::move(lease_settings));
 }
 
 }
@@ -1661,9 +1665,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         const size_t analysis_threads = std::max<size_t>(1, std::min(num_threads, parts_with_ranges.size()));
         SlotAllocationPtr cpu;
+        /// While the analysis waits for a CPU slot, this thread keeps reading the client's `Cancel` packet
+        std::function<bool()> cancel_callback;
         /// On a thread that already runs on a CPU lease (an executor thread) a second allocation can hang a one-slot workload
         if (!getCurrentCPULease() && !parts_with_ranges.empty())
-            cpu = allocateIndexAnalysisCPU(settings, analysis_threads, query_status);
+        {
+            if (context->hasQueryContext())
+                cancel_callback = context->getQueryContext()->getInteractiveCancelCallback();
+            cpu = allocateIndexAnalysisCPU(settings, analysis_threads, query_status, cancel_callback);
+        }
 
         if (cpu)
         {
@@ -1764,7 +1774,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             if (pool)
+            {
+                while (cancel_callback && !pool->waitUntil(std::chrono::steady_clock::now() + CPULeaseSettings::default_master_wait_period))
+                    cancel_callback();
                 pool->wait();
+            }
         }
         else if (num_threads <= 1)
         {

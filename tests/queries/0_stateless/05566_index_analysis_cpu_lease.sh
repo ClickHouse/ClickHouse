@@ -7,7 +7,7 @@
 
 # Index analysis of MergeTree runs under the workload's preemptive CPU scheduling: its CPU is reported to the
 # workload, it is preempted inside a part (the primary key search, a skip index, the top-K path), it never hangs a
-# one-slot workload (also not in a dictionary load), and KILL QUERY wakes it up.
+# one-slot workload (also not in a dictionary load), and KILL QUERY or a cancellation by the client wakes it up.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -152,6 +152,30 @@ $CLICKHOUSE_CLIENT --query_id "${P}_starved_r" --replace_running_query 1 --repla
 timeout 120 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${P}_starved_r' SYNC FORMAT Null"; echo "kill after replace: $?"
 wait $starved_pid
 grep -c -m1 'QUERY_WAS_CANCELLED' "${CLICKHOUSE_TMP}/${P}_starved_r.out"
+
+echo "--- the client's cancellation (Ctrl-C) stops an analysis starved by a higher priority query"
+$CLICKHOUSE_CLIENT --query_id "${P}_starved_c" -q "SELECT count() FROM t WHERE ${T_COND} SETTINGS workload = '${P}_lo', max_threads = 8, ${COMMON}" >/dev/null 2>&1 &
+starved_pid=$!
+preempted=""
+for _ in {1..600}; do
+    preempted=$($CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['ConcurrencyControlPreemptions'] > 0 FROM system.processes WHERE query_id = '${P}_starved_c'")
+    [ "$preempted" = 1 ] && break
+    kill -0 $starved_pid 2>/dev/null || break
+    sleep 0.1
+done
+echo "cancelled: ${preempted:-finished}"
+kill -INT $starved_pid
+start=$SECONDS
+while (( SECONDS - start < 120 )) && [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${P}_starved_c'")" != 0 ]; do
+    sleep 0.1
+done
+# The analysis would otherwise wait until the hog stops
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${P}_starved_c' SYNC FORMAT Null" 2>/dev/null
+wait $starved_pid
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT errorCodeToName(exception_code) FROM system.query_log
+    WHERE current_database = currentDatabase() AND query_id = '${P}_starved_c' AND type != 'QueryStart'"
 
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${P}_hog' SYNC FORMAT Null"
 wait

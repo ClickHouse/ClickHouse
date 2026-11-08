@@ -7,8 +7,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 
+#include <atomic>
 #include <chrono>
 #include <future>
+#include <stdexcept>
 #include <thread>
 
 using namespace DB;
@@ -425,6 +427,57 @@ TEST(SchedulerCPULeaseAllocation, ReleaseResumesPreemptedThread)
     EXPECT_TRUE(resumed) << "a thread preempted inside a task is not resumed on the slot released by another thread";
 
     worker_thread.get();
+    allocation->free();
+    other->free();
+    scheduler.stop();
+}
+
+/// A preempted master thread calls `on_master_wait` periodically while it waits for a slot (index analysis serves the
+/// client's cancellation there), and an exception from it stops the wait. Another query holds the only slot here.
+TEST(SchedulerCPULeaseAllocation, MasterWaitCallbackStopsWait)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    ResourceLink link;
+    link.queue = queue.get();
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, CPULeaseSettings{});
+    while (semaphore->getInflights().first != 1)
+        std::this_thread::yield();
+
+    std::atomic<size_t> calls = 0;
+    CPULeaseSettings settings;
+    settings.master_wait_period = std::chrono::milliseconds(10);
+    settings.on_master_wait = [&]
+    {
+        if (++calls == 3)
+            throw std::runtime_error("cancelled");
+    };
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    while (queue->getQueueLengthAndCost().first != 1)
+        std::this_thread::yield();
+
+    auto master_thread = std::async(std::launch::async, [&, slot = allocation->acquire()]() mutable
+    {
+        auto * master = dynamic_cast<ISlotLease *>(slot.get());
+        master->startConsumption();
+        burnCPU(settings.quantum_ns);
+        EXPECT_THROW(master->renew(), std::runtime_error);
+        slot.reset();
+    });
+
+    bool stopped = master_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!stopped)
+        other->free(); // Grants the slot and wakes the thread, so the test fails instead of hanging
+    EXPECT_TRUE(stopped) << "an exception from on_master_wait did not stop the wait of the master thread";
+    master_thread.get();
+    EXPECT_EQ(calls.load(), 3u);
+
     allocation->free();
     other->free();
     scheduler.stop();
