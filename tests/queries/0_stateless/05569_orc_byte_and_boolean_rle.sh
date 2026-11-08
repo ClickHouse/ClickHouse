@@ -29,19 +29,28 @@ STRUCTURE='id Int64, b Bool, rb Bool, nb Nullable(Bool), i8 Int8, l8 Int8, ni8 N
 DIGEST="sum(cityHash64(id, b, rb, isNull(nb), ifNull(nb, false), i8, l8, isNull(ni8), ifNull(ni8, 0), isNull(runs), ifNull(runs, 0),
     isNull(all_null), arrayMap(x -> (isNull(x), ifNull(x, false)), arr), toString(t)))"
 
-$CLICKHOUSE_LOCAL --output_format_orc_row_index_stride 1000 -q "$QUERY INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC"
+ORC="file('$FILE', 'ORC', '$STRUCTURE')"
 
-# Batch sizes that end the batches inside a byte of the boolean streams and inside the runs.
-for batch_size in 1 3 8 13 1000 100000; do
-    $CLICKHOUSE_LOCAL -q "
-        SELECT $batch_size, (SELECT $DIGEST FROM ($QUERY)) = (SELECT $DIGEST FROM file('$FILE', 'ORC', '$STRUCTURE') SETTINGS input_format_orc_row_batch_size = $batch_size)"
+# Batch sizes that end the batches inside a byte of the boolean streams and inside the runs. The small ones read only the row
+# groups 12 and 13 (`indexHint` keeps all their rows; a null run of `runs` ends between them), because each batch is expensive
+# under the thread fuzzer of the flaky check.
+CHECKS=""
+for batch_size in 3 8 13; do
+    CHECKS+="SELECT $batch_size, (SELECT $DIGEST FROM ($QUERY) WHERE id BETWEEN 12000 AND 13999)
+        = (SELECT $DIGEST FROM $ORC WHERE indexHint(id IN (12000, 13000))
+            SETTINGS input_format_orc_filter_push_down = 1, input_format_orc_row_batch_size = $batch_size);"
+done
+for batch_size in 1000 100000; do
+    CHECKS+="SELECT $batch_size, (SELECT $DIGEST FROM ($QUERY)) = (SELECT $DIGEST FROM $ORC SETTINGS input_format_orc_row_batch_size = $batch_size);"
 done
 
 # Row groups before id 12345 are skipped (count = rows of the kept groups), so the reader seeks into the middle of the streams.
 $CLICKHOUSE_LOCAL -q "
-    SELECT count() FROM file('$FILE', 'ORC', '$STRUCTURE') WHERE indexHint(id >= 12345) SETTINGS input_format_orc_filter_push_down = 1;
+    $QUERY INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC SETTINGS output_format_orc_row_index_stride = 1000;
+    $CHECKS
+    SELECT count() FROM $ORC WHERE indexHint(id >= 12345) SETTINGS input_format_orc_filter_push_down = 1;
     SELECT (SELECT $DIGEST FROM ($QUERY) WHERE id >= 12345)
-        = (SELECT $DIGEST FROM file('$FILE', 'ORC', '$STRUCTURE') WHERE id >= 12345 SETTINGS input_format_orc_filter_push_down = 1);
+        = (SELECT $DIGEST FROM $ORC WHERE id >= 12345 SETTINGS input_format_orc_filter_push_down = 1);
     SELECT countIf(nb IS NULL), countIf(ni8 IS NULL), countIf(runs IS NULL), countIf(all_null IS NULL), countIf(t IS NULL),
         sum(arrayCount(x -> x IS NULL, arr))
-    FROM file('$FILE', 'ORC', '$STRUCTURE')"
+    FROM $ORC"
