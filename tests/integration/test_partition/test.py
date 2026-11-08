@@ -540,14 +540,14 @@ def test_detached_part_dir_exists(started_cluster):
 
     q("detach table detached_part_dir_exists")
     q("attach table detached_part_dir_exists")
-    q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q("insert into detached_part_dir_exists select 1")  # will create all_2_2_0
+    q("insert into detached_part_dir_exists select 1")  # will create all_3_3_0
 
     assert (
         q(
             "select name from system.parts where table='detached_part_dir_exists' and active order by name"
         )
-        == "all_1_1_0\nall_2_2_0\n"
+        == "all_2_2_0\nall_3_3_0\n"
     )
     instance.exec_in_container(
         [
@@ -572,7 +572,7 @@ def test_detached_part_dir_exists(started_cluster):
         q(
             "select name from system.detached_parts where table='detached_part_dir_exists' order by name"
         )
-        == "all_1_1_0\nall_1_1_0_try1\nall_2_2_0\nall_2_2_0_try1\n"
+        == "all_1_1_0\nall_2_2_0\nall_2_2_0_try1\nall_3_3_0\n"
     )
     q("drop table detached_part_dir_exists")
 
