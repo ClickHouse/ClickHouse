@@ -1,4 +1,5 @@
 #include <Common/FileChecker.h>
+#include <Formats/FormatSettings.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrorCodes.h>
