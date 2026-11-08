@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShuffleStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -361,9 +362,16 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
     return { std::move(split_result.first), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
+struct MainFilterStep
+{
+    FilterDAGInfo filter_dag_info;
+    /// See `FilterStep::getOptimizeConstantColumnsAfterFilter`.
+    std::optional<bool> optimize_constant_columns_after_filter;
+};
+
 struct SplitFilterResult
 {
-    FilterDAGInfo main_filter_step;
+    MainFilterStep main_filter_step;
     ActionsDAG lazy_expression_step;
 
     /// Those are available input positions for the next step (main branch).
@@ -444,7 +452,8 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
     filter_dag_info.column_name = name;
     filter_dag_info.do_remove_column = filter_step.removesFilterColumn();
 
-    return { std::move(filter_dag_info), std::move(split_result.second), std::move(new_required_inputs) };
+    MainFilterStep main_filter_step{std::move(filter_dag_info), filter_step.getOptimizeConstantColumnsAfterFilter()};
+    return { std::move(main_filter_step), std::move(split_result.second), std::move(new_required_inputs) };
 }
 
 static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
@@ -563,12 +572,14 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     }
 
     auto * sorting_step = typeid_cast<SortingStep *>(sorting_node->step.get());
+    /// `SHUFFLE` works the same way as sorting by its key column.
+    auto * shuffle_step = typeid_cast<ShuffleStep *>(sorting_node->step.get());
     bool reading_in_order = false;
 
-    /// The lift-above-sort walk only applies when it actually lands on a sorting step.
+    /// The lift-above-sort walk only applies when it actually lands on a sorting (or shuffle) step.
     /// Otherwise the expressions it collected belong to the Expression/Filter chain that
     /// feeds the reading step and must be split by the code below, so restore them.
-    if (!sorting_step)
+    if (!sorting_step && !shuffle_step)
     {
         above_sort_dags.clear();
         sorting_node = root.children.front();
@@ -588,6 +599,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
         reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
 
+        chain_top_node = sorting_node->children.front();
+    }
+    else if (shuffle_step)
+    {
         chain_top_node = sorting_node->children.front();
     }
 
@@ -626,6 +641,11 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (sorting_step)
         for (const auto & descr : sorting_step->getSortDescription())
             required_columns[chain_top_header.getPositionByName(descr.column_name)] = true;
+
+    /// `SHUFFLE` needs no columns (the random choices are made just in time). For `ORDER BY rand()` the key column is kept,
+    /// because its values are replaced in place.
+    if (shuffle_step && shuffle_step->getKey() && shuffle_step->getKey()->replace)
+        required_columns[chain_top_header.getPositionByName(shuffle_step->getKey()->column_name)] = true;
 
     bool has_filter = false;
 
@@ -723,7 +743,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// this is the only way to avoid reading all columns for every scanned row. For non-FINAL
     /// reads, PREWHERE already covers this shape. Object storage, file and memory reads have no FINAL,
     /// so the no-sorting case never applies to them.
-    if (!sorting_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
+    if (!sorting_step && !shuffle_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
         return false;
 
     std::unique_ptr<LazilyReadFromMergeTree> merge_tree_lazy_reading;
@@ -789,7 +809,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         // std::cerr << ".. Main header " << reading_step->getOutputHeader()->dumpNames() << std::endl;
     }
 
-    std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
+    std::list<std::variant<ActionsDAG, MainFilterStep>> main_steps;
     std::list<ActionsDAG> lazy_steps;
 
     for (const auto & step_to_split : steps_to_split | std::views::reverse)
@@ -847,14 +867,17 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
         else
         {
-            auto filter_dag_info = std::move(std::get<FilterDAGInfo>(step));
-            main_plan.addStep(std::make_unique<FilterStep>(
+            auto main_filter_step = std::move(std::get<MainFilterStep>(step));
+            auto & filter_dag_info = main_filter_step.filter_dag_info;
+            auto new_filter_step = std::make_unique<FilterStep>(
                 main_plan.getCurrentHeader(),
-                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column));
+                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column);
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(main_filter_step.optimize_constant_columns_after_filter);
+            main_plan.addStep(std::move(new_filter_step));
         }
     }
 
-    if (sorting_step)
+    if (sorting_step || shuffle_step)
     {
         auto new_sorting_step = std::move(sorting_node->step);
         new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
