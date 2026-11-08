@@ -1367,6 +1367,37 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     return result;
 }
 
+namespace
+{
+
+/// Give the columns of a resolved subquery the unique names `__unique_predicate_column_N` by their positions.
+/// The columns of `UNION` are matched by position, so all of its queries are renamed the same way.
+void renameProjectionColumnsByPosition(const QueryTreeNodePtr & node)
+{
+    if (auto * query_node = node->as<QueryNode>())
+    {
+        auto projection_columns = query_node->getProjectionColumns();
+        Names unique_names;
+        unique_names.reserve(projection_columns.size());
+        for (size_t i = 0; i < projection_columns.size(); ++i)
+            unique_names.push_back("__unique_predicate_column_" + std::to_string(i));
+        /// The override takes precedence over the names passed to `resolveProjectionColumns`, so it is replaced as well.
+        query_node->setProjectionAliasesToOverride(std::move(unique_names));
+        query_node->resolveProjectionColumns(std::move(projection_columns));
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            renameProjectionColumnsByPosition(query);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a query or a union node, got {}", node->getNodeTypeName());
+    }
+}
+
+}
+
 /** Rewrite `UNIQUE(subquery)` into the scalar subquery
   * `ifNull((SELECT count() = uniqExact(*) FROM (subquery) WHERE and(1, * APPLY isNotNull)), 1)`.
   * Per the SQL standard, rows that have a NULL in any column are never duplicates, so they are filtered out.
@@ -1403,6 +1434,26 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
     new_unique_subquery->setIsSubquery(true);
 
+    /// The rewrite reads the columns of the subquery with matchers, and a matcher refers to the columns by name.
+    /// The subquery can have several columns with the same name, e.g. `SELECT toNullable(1) AS x, toNullable(1) AS x UNION ALL ...`,
+    /// and all of them would be read as the first one. So resolve the subquery first and give its columns unique names.
+    /// It is resolved in a scope nested in the scope of the rewritten subquery, so that if it is correlated,
+    /// the rewritten subquery is marked as correlated as well. The rewritten subquery reuses this scope when it is resolved,
+    /// and the already resolved subquery is not resolved again as its table expression.
+    {
+        IdentifierResolveScope & new_unique_subquery_scope = createIdentifierResolveScope(new_unique_subquery, &scope);
+        IdentifierResolveScope & unique_subquery_argument_scope = createIdentifierResolveScope(unique_subquery_argument, &new_unique_subquery_scope);
+        new_unique_subquery_scope.subquery_depth = scope.subquery_depth + 1;
+        unique_subquery_argument_scope.subquery_depth = scope.subquery_depth + 2;
+
+        if (unique_subquery_argument_node_type == QueryTreeNodeType::QUERY)
+            resolveQuery(unique_subquery_argument, unique_subquery_argument_scope);
+        else
+            resolveUnion(unique_subquery_argument, unique_subquery_argument_scope);
+
+        renameProjectionColumnsByPosition(unique_subquery_argument);
+    }
+
     /// The functions of the rewrite are resolved in the scope of the query, so they are marked as built-in:
     /// a lambda that happens to be named like one of them, e.g. `WITH (x -> 0) AS isNotNull`, must not replace it.
     auto make_builtin_function = [](const String & name)
@@ -1420,7 +1471,7 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     new_unique_subquery->getProjection().getNodes().push_back(std::move(equals_function));
     new_unique_subquery->getJoinTreeNode() = unique_subquery_argument;
 
-    /// The matcher expands to every column of the subquery, so the filter does not refer to the columns by name.
+    /// The matcher expands to every column of the subquery, which have unique names now.
     /// The constant makes `and` have at least two arguments.
     ColumnTransformersNodes is_not_null_transformers;
     is_not_null_transformers.push_back(std::make_shared<ApplyColumnTransformerNode>(make_builtin_function("isNotNull")));
