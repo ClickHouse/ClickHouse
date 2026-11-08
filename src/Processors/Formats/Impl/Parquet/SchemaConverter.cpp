@@ -850,6 +850,8 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
 
     TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
+    if (!has_inner_group)
+        setListElementColumnMapperPath(subnode);
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())

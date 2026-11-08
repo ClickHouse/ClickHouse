@@ -91,6 +91,16 @@ rewritten manifest
 3	\N
 4	40
 3
+two-level list
+1	[(1,'c1'),(2,'c2')]
+2	[(3,'c3')]
+3	[(4,NULL)]
+1	['c1','c2']
+2	['c3']
+3	[NULL]
+1	[(1,'c1'),(2,'c2')]
+2	[(3,'c3')]
+3	[(4,NULL)]
 columns cache
 1	(1,10)
 2	(2,20)

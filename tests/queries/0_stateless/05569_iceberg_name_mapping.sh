@@ -14,6 +14,9 @@
 # `data_iceberg/name_mapping_rewritten_manifest` (PyIceberg 0.11.1): `add_files` of one file without field ids, `b`
 # renamed to `b_old` and a new `b` added, then a merging `append` that rewrites the manifest under the new schema and
 # the `add_files` snapshot expired.
+# `data_iceberg/name_mapping_two_level_list` (Spark 3.5.5, Iceberg 1.10.0): `add_files` of a file without field
+# ids written by parquet-mr with a two-level list of a struct (`repeated group array`, as parquet-avro writes
+# lists), then `l.element.a` renamed to `a_new`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,6 +55,12 @@ function R()
     local metadata
     metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_rewritten_manifest/metadata" && ls "$1"-*.metadata.json)
     echo "icebergLocal('name_mapping_rewritten_manifest', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
+# L <metadata version>: the table with a two-level list at that version.
+function L()
+{
+    echo "icebergLocal('name_mapping_two_level_list', SETTINGS iceberg_metadata_file_path = 'metadata/v$1.metadata.json')"
 }
 
 V_BOTH=00004             # all fields mapped, `x`, `a`, `v` also under their old names
@@ -118,6 +127,10 @@ SELECT count() FROM $(P $V_P_CLEANED) WHERE b_old IS NULL SETTINGS use_query_con
 SELECT 'rewritten manifest';
 SELECT id, b_old FROM $(R $V_R_REWRITTEN) ORDER BY id;
 SELECT count() FROM $(R $V_R_REWRITTEN) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'two-level list';
+SELECT id, l FROM $(L 3) ORDER BY id;
+SELECT id, l.c FROM $(L 3) ORDER BY id;
+SELECT id, l FROM $(L 4) ORDER BY id;
 SELECT 'columns cache';
 SELECT id, s FROM $(S $V_S_MAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
 SELECT count() > 0 FROM system.columns_cache WHERE database = '' AND column = 's';
