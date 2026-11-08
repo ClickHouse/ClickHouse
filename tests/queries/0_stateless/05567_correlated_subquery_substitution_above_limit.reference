@@ -26,3 +26,6 @@ plan: substituted=1
 -- case 9: equality above the LIMIT on a column determined by an equality below it
 1
 3
+-- case 10: UNION ALL under the LIMIT
+1
+3

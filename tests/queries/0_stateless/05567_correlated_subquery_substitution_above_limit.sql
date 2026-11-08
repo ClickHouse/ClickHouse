@@ -70,5 +70,13 @@ SELECT r.id FROM t2 AS r
 WHERE EXISTS (SELECT 1 FROM (SELECT p.id AS u FROM t2 AS p WHERE p.id = r.owner ORDER BY p.id LIMIT 1) AS s WHERE s.u = r.id)
 ORDER BY r.id;
 
+SELECT '-- case 10: UNION ALL under the LIMIT';
+-- Pinned to the buffered `right` layout: in the other layouts two UNION arms that both join the outer values
+-- cannot be built yet (NOT_IMPLEMENTED, also on master).
+SELECT r.id FROM t AS r
+WHERE EXISTS (SELECT 1 FROM (SELECT u FROM (SELECT p.id AS u FROM t AS p WHERE p.owner = r.owner AND p.id <= 2 UNION ALL SELECT p.id AS u FROM t AS p WHERE p.owner = r.owner AND p.id > 2) AS q ORDER BY u LIMIT 1) AS s WHERE s.u = r.id)
+ORDER BY r.id
+SETTINGS correlated_subqueries_default_join_kind = 'right', correlated_subqueries_use_in_memory_buffer = 1;
+
 DROP TABLE t;
 DROP TABLE t2;
