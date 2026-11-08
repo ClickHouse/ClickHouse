@@ -135,15 +135,40 @@ bool ProjectionDescription::isSortingKeyStaleInPart(const IMergeTreeDataPart & p
             return true;
 
     /// A key expression's value can change with any difference of its input, even a byte-identical one
-    /// (`toHour` after a timezone-only change); a key of plain columns only needs identical bytes.
-    const bool plain_key = std::ranges::all_of(
-        sorting_key.column_names, [&](const String & key_column) { return key_inputs.contains(key_column); });
+    /// (`toHour` after a timezone-only change); an input used only as a key column itself only needs identical bytes.
+    NameSet expression_inputs;
+    std::vector<const ActionsDAG::Node *> to_visit;
+    for (const auto & key_column : sorting_key.column_names)
+    {
+        const auto * output = sorting_key.expression->getActionsDAG().tryFindInOutputs(key_column);
+        if (!output)
+        {
+            for (const auto & input : key_inputs)
+                expression_inputs.insert(input.name);
+            to_visit.clear();
+            break;
+        }
+        if (output->type != ActionsDAG::ActionType::INPUT)
+            to_visit.push_back(output);
+    }
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            expression_inputs.insert(node->result_name);
+        to_visit.insert(to_visit.end(), node->children.begin(), node->children.end());
+    }
+
     for (const auto & [column_name, input_type] : key_inputs)
     {
         auto part_type = recorded_type(column_name);
         if (!part_type || (part_type->equals(*input_type) && part_type->getName() == input_type->getName()))
             continue;
-        if (!plain_key || !isRepresentationPreservingConversion(part_type.get(), input_type.get()))
+        if (expression_inputs.contains(column_name) || !isRepresentationPreservingConversion(part_type.get(), input_type.get()))
             return true;
     }
     return false;

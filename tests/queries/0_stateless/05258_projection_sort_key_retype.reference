@@ -20,9 +20,12 @@ E2 projection	1
 F1 projection	5
 F2 projection	19
 F2 table	19
+F3 projection	19
+F3 table	19
 G table	1
 G default	1
 G materialized	1
+G2 materialized	1
 H broken	1
 H table	1
 H projection	1

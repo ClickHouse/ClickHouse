@@ -108,6 +108,17 @@ ALTER TABLE tf2 MODIFY COLUMN dt DateTime('Asia/Tokyo');
 SELECT 'F2 projection', count() FROM tf2 WHERE dt >= toDateTime('2026-01-01 05:00:00', 'UTC') SETTINGS force_optimize_projection = 1;
 SELECT 'F2 table', count() FROM tf2 WHERE dt >= toDateTime('2026-01-01 05:00:00', 'UTC') SETTINGS optimize_use_projections = 0;
 
+-- ... also when the key reads other columns through an expression.
+CREATE TABLE tf3 (id UInt64, a DateTime('UTC'), b DateTime('UTC'), PROJECTION p (SELECT id, a, b ORDER BY (a, toHour(b)))) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 8192, index_granularity_bytes = '10Mi',
+    enable_block_number_column = 0, enable_block_offset_column = 0, use_primary_key_cache = 0, prewarm_primary_key_cache = 0,
+    auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+INSERT INTO tf3 SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600, toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24);
+ALTER TABLE tf3 DELETE WHERE id = 1000;
+ALTER TABLE tf3 MODIFY COLUMN a DateTime('Asia/Tokyo');
+SELECT 'F3 projection', count() FROM tf3 WHERE a >= toDateTime('2026-01-01 05:00:00', 'UTC') SETTINGS force_optimize_projection = 1;
+SELECT 'F3 table', count() FROM tf3 WHERE a >= toDateTime('2026-01-01 05:00:00', 'UTC') SETTINGS optimize_use_projections = 0;
+
 -- A time zone change moves every value of a projection ordered by toHour(dt).
 CREATE TABLE tg (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT id, dt ORDER BY toHour(dt))) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 1, index_granularity_bytes = '10Mi',
@@ -121,6 +132,18 @@ SELECT 'G default', count() FROM tg WHERE toHour(dt) = 5;
 SELECT count() FROM tg WHERE toHour(dt) = 5 SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 ALTER TABLE tg MATERIALIZE PROJECTION p;
 SELECT 'G materialized', count() FROM tg WHERE toHour(dt) = 5 SETTINGS force_optimize_projection = 1;
+
+-- ... and of a projection ordered by both dt and toHour(dt).
+CREATE TABLE tg2 (id UInt64, dt DateTime('UTC'), PROJECTION p (SELECT id, dt ORDER BY (dt, toHour(dt)))) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, index_granularity = 1, index_granularity_bytes = '10Mi',
+    enable_block_number_column = 0, enable_block_offset_column = 0, use_primary_key_cache = 0, prewarm_primary_key_cache = 0,
+    auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+INSERT INTO tg2 SELECT number, toDateTime('2026-01-01 00:00:00', 'UTC') + number * 3600 FROM numbers(24);
+ALTER TABLE tg2 DELETE WHERE id = 1000;
+ALTER TABLE tg2 MODIFY COLUMN dt DateTime('Asia/Tokyo');
+SELECT count() FROM tg2 WHERE toHour(dt) = 5 SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+ALTER TABLE tg2 MATERIALIZE PROJECTION p;
+SELECT 'G2 materialized', count() FROM tg2 WHERE toHour(dt) = 5 SETTINGS force_optimize_projection = 1;
 
 -- With the primary key loaded eagerly, such a projection is broken after a restart; the next mutation rebuilds it.
 CREATE TABLE th (id UInt64, v UInt32, PROJECTION p (SELECT id, v ORDER BY v)) ENGINE = MergeTree ORDER BY id
