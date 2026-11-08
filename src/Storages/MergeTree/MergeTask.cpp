@@ -388,13 +388,6 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 namespace
 {
 
-/// A merge builds a text index from its expression if it may reduce rows, as the offsets of the source parts
-/// cannot be adjusted then, or if @part has no usable copy of the index. Otherwise it merges the files of the index.
-bool needToBuildTextIndex(const IMergeTreeIndex & index, const IMergeTreeDataPart & part, bool merge_may_reduce_rows)
-{
-    return merge_may_reduce_rows || !index.getDeserializedFormat(part, index.getFileName());
-}
-
 bool hasStoredDefault(const ColumnDescription & column)
 {
     const auto & default_desc = column.default_desc;
@@ -3560,7 +3553,9 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
 
-        if (needToBuildTextIndex(*index_ptr, data_part, global_ctx->merge_may_reduce_rows))
+        /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
+        /// Build index if it is not materialized in the data part.
+        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));
@@ -3709,17 +3704,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                         global_ctx->time_of_merge,
                         ctx->force_ttl);
 
-                    /// A horizontal merge builds every index in `merging_skip_indexes`, and an index in
-                    /// `text_indexes_to_merge` only as `addBuildTextIndexesStep` does: otherwise it merges its files.
-                    IndicesDescription text_indexes_to_build;
-                    for (const auto & index : global_ctx->text_indexes_to_merge)
-                    {
-                        auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
-                        if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
-                            { return needToBuildTextIndex(*index_ptr, *part, global_ctx->merge_may_reduce_rows); }))
-                            text_indexes_to_build.push_back(index);
-                    }
-
+                    /// A horizontal merge builds every index in `merging_skip_indexes` and `text_indexes_to_merge`. A text
+                    /// index that it merges from the files of the source parts instead reads no expired array: no source
+                    /// part stores the array, so `isPartTypeCompatible` refuses the copy of an index over it in each part.
                     columns_read_by_expressions.emplace(
                         *global_ctx->metadata_snapshot,
                         getColumnsWithDefaultsEvaluatedByMerge(
@@ -3729,7 +3716,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                             evaluated_by_ttl.columns_with_evaluated_defaults,
                             /* share_nested_offsets = */ true),
                         evaluated_by_ttl.columns_read_by_due_ttls,
-                        std::vector<const IndicesDescription *>{&global_ctx->merging_skip_indexes, &text_indexes_to_build},
+                        std::vector<const IndicesDescription *>{&global_ctx->merging_skip_indexes, &global_ctx->text_indexes_to_merge},
                         global_ctx->projections_to_rebuild);
                 }
 

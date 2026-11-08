@@ -341,3 +341,28 @@ SELECT 'default source index stored', arraySort(groupUniqArray(column)) FROM sys
 WHERE database = currentDatabase() AND table = 'ttl_nested_default_source_index' AND active
     AND column IN ('id', 'ts', 'n.a', 'n.d');
 DROP TABLE ttl_nested_default_source_index;
+
+-- Every part has a text index over `n.d`, and `CLEAR COLUMN` then removes `n.d` from them. The parts no longer store
+-- a column that their copies of the index were built over, so the merge builds the index from its expression, which
+-- reads `n.d`, instead of merging their files.
+DROP TABLE IF EXISTS ttl_nested_text_index;
+CREATE TABLE ttl_nested_text_index (id UInt64, ts DateTime, n Nested(a UInt8))
+ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 100 YEAR
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, index_granularity = 4,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+INSERT INTO ttl_nested_text_index SELECT number, '2000-01-01', [intDiv(number, 8)] FROM numbers(16);
+INSERT INTO ttl_nested_text_index SELECT number + 16, '2000-01-01', [intDiv(number + 16, 8)] FROM numbers(16);
+ALTER TABLE ttl_nested_text_index ADD COLUMN n.d Array(String);
+ALTER TABLE ttl_nested_text_index ADD INDEX i arrayConcat(arrayMap(x -> toString(x), n.a), n.d) TYPE text(tokenizer = 'splitByNonAlpha');
+ALTER TABLE ttl_nested_text_index MATERIALIZE INDEX i SETTINGS mutations_sync = 2;
+ALTER TABLE ttl_nested_text_index CLEAR COLUMN n.d SETTINGS mutations_sync = 2;
+
+OPTIMIZE TABLE ttl_nested_text_index FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'text index', count(), arraySort(groupArray(id)) FROM ttl_nested_text_index
+WHERE has(arrayConcat(arrayMap(x -> toString(x), n.a), n.d), '2') SETTINGS force_data_skipping_indices = 'i';
+SELECT 'text index parts', count(), countIf(secondary_indices_compressed_bytes > 0) FROM system.parts
+WHERE database = currentDatabase() AND table = 'ttl_nested_text_index' AND active;
+SELECT 'text index stored', arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_text_index' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
+DROP TABLE ttl_nested_text_index;

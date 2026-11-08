@@ -74,3 +74,6 @@ default source unread compact stored	['id','n.a','ts']
 default source index	0	[1,2]	2
 default source index	1	[1,2]	2
 default source index stored	['id','n.a','ts']
+text index	8	[16,17,18,19,20,21,22,23]
+text index parts	1	1
+text index stored	['id','n.a','ts']
