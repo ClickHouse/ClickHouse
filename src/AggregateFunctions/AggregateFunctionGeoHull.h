@@ -163,6 +163,13 @@ void computeGeoConvexHullImpl(const MultiPoint & points, const MultiPoint * addi
 
     MultiPoint lower;
     MultiPoint upper;
+    /// Small inputs (typical with many groups) get each chain in one allocation; larger ones grow as usual.
+    size_t total = points.size();
+    if constexpr (HasAdditional)
+        total += additional->size();
+    const size_t initial_capacity = std::min<size_t>(total + 2, 256);
+    lower.reserve(initial_capacity);
+    upper.reserve(initial_capacity);
     lower.push_back(left);
     upper.push_back(left);
     /// A point strictly inside the triangle (left, bottom, right) or (right, top, left) is strictly inside
