@@ -38,6 +38,15 @@ public:
 
     static SharedHeader addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_);
 
+    /// The columns a transform built with the same arguments resets to their default: the ones with a
+    /// column TTL and the expired ones.
+    static NameSet getResetColumns(const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_);
+
+    /// The `MATERIALIZED` columns a transform built with the same arguments recomputes. A stale dependent
+    /// that is expired, read by a key or non-deterministic is not among them.
+    static NameSet getRecomputedColumns(
+        const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_);
+
 protected:
     void consume(Chunk chunk) override;
     Chunk generate() override;

@@ -129,6 +129,32 @@ VectorWithMemoryTracking<VectorWithMemoryTracking<TTLTransform::DependentMateria
     return levels;
 }
 
+NameSet TTLTransform::getResetColumns(const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_)
+{
+    NameSet reset_columns;
+    for (const auto & [name, description] : metadata_snapshot->getColumnTTLs())
+        reset_columns.insert(name);
+    for (const auto & expired_column : expired_columns_)
+        reset_columns.insert(expired_column.name);
+    return reset_columns;
+}
+
+NameSet TTLTransform::getRecomputedColumns(
+    const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_)
+{
+    const auto reset_columns = getResetColumns(metadata_snapshot, expired_columns_);
+    if (reset_columns.empty())
+        return {};
+
+    /// The dependency on a shared offsets source only orders the levels, it does not add a dependent.
+    NameSet recomputed_columns;
+    for (const auto & level : analyzeDependentMaterializedColumns(
+             storage, metadata_snapshot, reset_columns, expired_columns_.getNameSet(), {}))
+        for (const auto & dependent : level)
+            recomputed_columns.insert(dependent.name);
+    return recomputed_columns;
+}
+
 SharedHeader TTLTransform::addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_)
 {
     if (expired_columns_.empty())
@@ -264,23 +290,15 @@ TTLTransform::TTLTransform(
     }
 
     /// The columns this transform resets to their default.
-    NameSet reset_columns;
-    for (const auto & [name, description] : column_ttls)
-        reset_columns.insert(name);
-    for (const auto & expired_column : expired_columns)
-        reset_columns.insert(expired_column.name);
+    const NameSet reset_columns = getResetColumns(metadata_snapshot_, expired_columns);
 
     VectorWithMemoryTracking<VectorWithMemoryTracking<DependentMaterializedColumn>> recompute_levels;
     NameSet recomputed_columns;
     if (!reset_columns.empty())
     {
-        NameSet expired_column_names;
-        for (const auto & expired_column : expired_columns)
-            expired_column_names.insert(expired_column.name);
-
         recompute_levels
             = analyzeDependentMaterializedColumns(
-                storage_, metadata_snapshot_, reset_columns, expired_column_names, shared_offsets_sources);
+                storage_, metadata_snapshot_, reset_columns, expired_columns.getNameSet(), shared_offsets_sources);
 
         for (const auto & level : recompute_levels)
             for (const auto & dependent : level)

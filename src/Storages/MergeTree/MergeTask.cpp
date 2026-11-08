@@ -19,7 +19,6 @@
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
@@ -398,26 +397,18 @@ bool hasStoredDefault(const ColumnDescription & column)
 
 /// The columns whose `DEFAULT` or `MATERIALIZED` expression a merge may evaluate: the reader of a source part
 /// fills a column that the part does not store or that a pending mutation drops, and `TTLTransform` resets a
-/// column with a TTL or an expired column to its default and recomputes the `MATERIALIZED` columns that read one
-/// of them. The expression of any other column is never evaluated, as every source part already stores its value.
+/// column with a TTL or an expired column to its default and recomputes the `MATERIALIZED` columns of its plan.
+/// The expression of any other column is never evaluated, as every source part already stores its value.
 NameSet getColumnsWithDefaultsEvaluatedByMerge(
-    const StorageInMemoryMetadata & metadata,
+    const MergeTreeData & data,
+    const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData::DataPartsVector & parts,
     const std::vector<AlterConversionsPtr> & alter_conversions,
     const NamesAndTypesList & expired_columns,
-    bool share_nested_offsets,
-    const ContextPtr & context)
+    bool share_nested_offsets)
 {
-    const auto & columns = metadata.getColumns();
-
-    NameSet reset_columns;
-    for (const auto & [name, _] : metadata.getColumnTTLs())
-        reset_columns.insert(name);
-    for (const auto & column : expired_columns)
-        reset_columns.insert(column.name);
-
-    /// The same graph that `TTLTransform::analyzeDependentMaterializedColumns` uses to find the dependents.
-    const MaterializedColumnDependencies materialized_dependencies(columns, context);
+    const auto reset_columns = TTLTransform::getResetColumns(metadata_snapshot, expired_columns);
+    const auto recomputed_columns = TTLTransform::getRecomputedColumns(data, metadata_snapshot, expired_columns);
 
     /// Mirrors `injectRequiredColumns`, which decides what the reader of a part fills.
     auto is_missing_in_some_part = [&](const String & name)
@@ -437,14 +428,14 @@ NameSet getColumnsWithDefaultsEvaluatedByMerge(
     };
 
     NameSet result;
-    for (const auto & column : columns)
+    for (const auto & column : metadata_snapshot->getColumns())
     {
         if (!hasStoredDefault(column))
             continue;
 
         if (reset_columns.contains(column.name)
-            || is_missing_in_some_part(column.name)
-            || !materialized_dependencies.findColumnsToRecalculate(column.name, reset_columns).empty())
+            || recomputed_columns.contains(column.name)
+            || is_missing_in_some_part(column.name))
             result.insert(column.name);
     }
 
@@ -3701,12 +3692,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                     columns_read_by_expressions.emplace(
                         *global_ctx->metadata_snapshot,
                         getColumnsWithDefaultsEvaluatedByMerge(
-                            *global_ctx->metadata_snapshot,
+                            *global_ctx->data,
+                            global_ctx->metadata_snapshot,
                             global_ctx->future_part->parts,
                             global_ctx->alter_conversions,
                             global_ctx->merging_columns_expired_by_ttl,
-                            /* share_nested_offsets = */ true,
-                            global_ctx->data->getContext()));
+                            /* share_nested_offsets = */ true));
 
                 if (!columns_read_by_expressions->contains(column.name))
                     continue;
