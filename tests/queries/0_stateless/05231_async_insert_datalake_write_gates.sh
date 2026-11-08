@@ -56,7 +56,7 @@ queued_now() {
 }
 
 ${CLICKHOUSE_CLIENT} -q "
-    SET allow_delta_kernel_rs = 1, allow_delta_lake_writes = 1, allow_delta_lake_create_table = 1;
+    SET allow_delta_lake_writes = 1, allow_delta_lake_create_table = 1;
     CREATE TABLE t_delta (id Int32) ENGINE = DeltaLakeLocal('${ROOT}/delta', Parquet);
 "
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_iceberg (id Int32) ENGINE = IcebergLocal('${ROOT}/iceberg/')"
@@ -147,7 +147,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine=1 \
     | grep -o -m1 'Writes are not supported for engine'
 
 # Plain object storage is refused for a path it cannot write to at all, which is decided from the
-# path alone. No endpoint is needed: the refusal happens before any request is issued.
+# path alone, before anything is written.
 ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_globs (k UInt64) ENGINE = S3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}_*.parquet', 'clickhouse', 'clickhouse', Parquet);
     CREATE TABLE t_archive (k UInt64) ENGINE = S3('http://localhost:11111/test/${CLICKHOUSE_DATABASE}.zip :: data.parquet', 'clickhouse', 'clickhouse', Parquet);
@@ -182,7 +182,7 @@ echo "-- entries it left in the queue: $(queued_now "${QID}")"
 
 # The initiator must not start refusing a writable plain object storage table. Asserted positively,
 # on the client's own status and output, so that an unrelated failure cannot satisfy it; the batch is
-# never flushed here, so no endpoint is needed for this case either.
+# never flushed here, so nothing is written for this case either.
 echo '-- plain object storage, ordinary path: still accepted on the initiator'
 out=$(${CLICKHOUSE_CLIENT} "${ASYNC_NOWAIT[@]}" -q "INSERT INTO t_plain VALUES (1)" 2>&1); rc=$?
 echo "-- accepted on the initiator: rc=${rc} output_lines=$(printf '%s' "${out}" | grep -c . || true)"
