@@ -1475,15 +1475,29 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         ? promoted_remote_read_buffer_size
         : remote_read_buffer_size;
 
+    /// A remote reader that prefetches holds two file buffers, not one: with
+    /// remote_filesystem_read_method = 'threadpool' and remote_filesystem_read_prefetch, the reader is an
+    /// AsynchronousBoundedReadBuffer, and MergeTreeReaderWide prefetches on every read. Its nextImpl swaps the
+    /// filled prefetch_buffer into the working memory, so the next prefetch allocates another buffer while
+    /// the previous one is still being consumed. The merge may still turn the prefetch off
+    /// (canPrefetchInMergeOrMutation, which depends on the columns of each reading stage), so this is an
+    /// upper bound; the userspace page cache, which uses its own cells instead of the prefetch buffer, is not
+    /// distinguished either. Local readers use pread for merges (MergeTreeSequentialSource) and never prefetch.
+    const UInt64 remote_read_buffers_per_stream
+        = read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool && read_settings.remote_fs_settings.prefetch
+        ? 2
+        : 1;
+
     /// The size a single reader of this part costs: local parts read through the local buffer, remote parts
-    /// through the remote one, promoted when the part's disk is cache-backed (see above).
+    /// through the remote one, promoted when the part's disk is cache-backed (see above), and doubled when
+    /// the remote reader prefetches.
     auto part_read_buffer_size = [&](const auto & part)
     {
         if (!part->isStoredOnRemoteDisk())
             return local_read_buffer_size;
         if (!part->getDataPartStorage().getCacheName())
-            return remote_read_buffer_size;
-        return merge_read_buffer_size_on_cached_disk;
+            return saturatingStreamsTimesBuffer(remote_read_buffers_per_stream, remote_read_buffer_size);
+        return saturatingStreamsTimesBuffer(remote_read_buffers_per_stream, merge_read_buffer_size_on_cached_disk);
     };
 
     /// Per-stream write buffer size on multipart object storage (S3 / Azure). A stream's upload buffers
@@ -1931,7 +1945,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
     /// Input side: one reader stream per column substream a base merge reader actually opens on every
     /// source part. Each reader stream keeps two live buffers: the compressed file buffer
-    /// (MergeTreeReaderStream::init) and the decompressed block that CompressedReadBufferFromFile::nextImpl
+    /// (MergeTreeReaderStream::init; two of them for a prefetching remote reader, see part_read_buffer_size)
+    /// and the decompressed block that CompressedReadBufferFromFile::nextImpl
     /// resizes its working buffer to. A decompressed block is at most the max_compress_block_size the part
     /// was written with, priced here at the largest size the read columns resolve to under the current
     /// settings. The block size a part was actually written with is not recorded in the part metadata
@@ -3309,8 +3324,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// cache-promoted buffer size - the same size the readers get on a cache-backed disk, and
                 /// identical to the plain one under default settings. The read-back readers belong to the
                 /// table, whose settings `settings` are here.
-                const UInt64 projection_read_buffer_size
-                    = output_on_remote_disk ? merge_read_buffer_size_on_cached_disk : local_read_buffer_size;
+                const UInt64 projection_read_buffer_size = output_on_remote_disk
+                    ? saturatingStreamsTimesBuffer(remote_read_buffers_per_stream, merge_read_buffer_size_on_cached_disk)
+                    : local_read_buffer_size;
                 /// A Compact projection part is written by the compact writer (see compact_eager_buffers above),
                 /// with the projection's own table-level block size and the codecs of the projection columns.
                 const UInt64 projection_compact_block_size = resolve_compact_block_size(projection_settings);
