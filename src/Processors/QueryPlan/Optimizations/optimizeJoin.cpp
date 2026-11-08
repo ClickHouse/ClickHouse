@@ -1905,7 +1905,7 @@ bool JoinOrderPlanBuilder::selectSetSplits(
                 }
         }
     }
-    else
+    else if (mode != JoinEnumeration::Winners)
     {
         /// The splits of the chosen order and of the other orders.
         std::vector<const DPJoinEntry *> stack{chosen_order.get()};
@@ -1930,6 +1930,24 @@ bool JoinOrderPlanBuilder::selectSetSplits(
                 set.push_back(*index);
             stack.push_back(entry->left.get());
             stack.push_back(entry->right.get());
+        }
+    }
+
+    /// The winner of every set DPsub reached: one join per set, so the cost grows with the sets, not with the splits.
+    if (mode == JoinEnumeration::Winners || mode == JoinEnumeration::WinnersCandidates)
+    {
+        for (const auto & [relations, _] : splits_by_set)
+        {
+            const auto & winner = recorded_splits->winners.at(relations);
+            auto winner_index = find_split(relations, toRelationMask(winner->left->relations));
+            if (!winner_index)
+            {
+                reason = "the winner of a set is not a recorded split";
+                return false;
+            }
+            auto & indexes = selected[relations];
+            if (std::ranges::find(indexes, *winner_index) == indexes.end())
+                indexes.push_back(*winner_index);
         }
     }
 

@@ -4,6 +4,8 @@ candidates	1860	50180
 all_splits	1860	50180
 all_splits_rule	1860	50180
 topk	1860	50180
+winners	1860	50180
+winners_candidates	1860	50180
 one node	1860	50180
 -- transitive chain, transitive predicates on and off
 all_splits on	1860	3985
@@ -40,6 +42,8 @@ join_enum_chain_candidates	1	1	0
 join_enum_chain_off	0	0	0
 join_enum_chain_rule	1	1	1
 join_enum_chain_topk	1	1	0
+join_enum_chain_winners	1	1	0
+join_enum_chain_winners_candidates	1	1	0
 join_enum_cross	1	1	0
 join_enum_cross_empty	1	1	0
 join_enum_cycle	1	1	0
