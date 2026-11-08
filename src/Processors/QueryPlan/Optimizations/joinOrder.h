@@ -103,6 +103,9 @@ struct RecordedJoinSplits
         UInt64 right = 0;
         /// Positions in `edges` of the predicates that DPsub places at this split.
         std::vector<size_t> edges;
+        /// The DPsub cost of this join without the costs of its two inputs: the cost of a join order is the sum of
+        /// these over its joins.
+        double local_cost = 0;
     };
     /// In the order the search accepted them.
     std::vector<Split> splits;

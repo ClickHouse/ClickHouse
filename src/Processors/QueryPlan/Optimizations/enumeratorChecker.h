@@ -139,16 +139,20 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     else if (kind == JoinKind::Inner && !connected)
         kind = JoinKind::Cross;
 
+    auto keys = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
+    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys, kind, strictness);
+
     if (recorded_splits)
     {
-        RecordedJoinSplits::Split split{.left = lhs_subset, .right = rhs_subset, .edges = {}};
+        RecordedJoinSplits::Split split{
+            .left = lhs_subset,
+            .right = rhs_subset,
+            .edges = {},
+            .local_cost = plan_cost - dp_table[lhs_subset].cost - dp_table[rhs_subset].cost};
         for (const auto * recorded_edge : edge)
             split.edges.push_back(recorded_edge - optimizer.query_graph.edges.data());
         recorded_splits->splits.push_back(std::move(split));
     }
-
-    auto keys = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
-    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys, kind, strictness);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
              keys.selectivity,

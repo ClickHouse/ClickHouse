@@ -424,9 +424,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         cascades_join_enumeration = JoinEnumeration::AllSplits;
     else if (join_enumeration == "all_splits_rule")
         cascades_join_enumeration = JoinEnumeration::AllSplitsRule;
+    else if (join_enumeration == "topk")
+        cascades_join_enumeration = JoinEnumeration::TopK;
     else
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid value '{}' of setting `cascades_join_enumeration`, expected 'off', 'candidates', 'all_splits' or 'all_splits_rule'",
+            "Invalid value '{}' of setting `cascades_join_enumeration`, expected 'off', 'candidates', 'all_splits', 'all_splits_rule' or 'topk'",
             join_enumeration);
     cascades_join_enumeration_max_splits = from[Setting::cascades_join_enumeration_max_splits];
 

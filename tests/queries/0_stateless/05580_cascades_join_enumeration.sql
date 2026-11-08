@@ -50,6 +50,8 @@ SELECT 'all_splits', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b
     SETTINGS cascades_join_enumeration = 'all_splits', log_comment = 'join_enum_chain_all_splits';
 SELECT 'all_splits_rule', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS cascades_join_enumeration = 'all_splits_rule', log_comment = 'join_enum_chain_rule';
+SELECT 'topk', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'topk', cascades_join_order_alternatives = 2, log_comment = 'join_enum_chain_topk';
 SELECT 'one node', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS make_distributed_plan = 0;
 

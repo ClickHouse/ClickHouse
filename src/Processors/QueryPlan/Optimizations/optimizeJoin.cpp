@@ -1206,7 +1206,7 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
 
     /// Chooses the splits Cascades gets for `mode` and returns true, or returns false with `reason` when the graph
     /// gets its orders imported instead.
-    bool selectSetSplits(QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, String & reason);
+    bool selectSetSplits(QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, String & reason);
 
     /// Builds the plan of the join tree `optimized` over `input_nodes`, in `nodes`, and returns its root. The plan of
     /// a subtree that an order built before is not built again: the node of that plan is used.
@@ -1752,7 +1752,75 @@ static std::optional<size_t> singleRelation(const JoinActionRef & ref)
     return ref.getSourceRelations().getSingleBit();
 }
 
-bool JoinOrderPlanBuilder::selectSetSplits(QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, String & reason)
+/// The splits of the `orders` cheapest complete join orders by the DPsub cost, by set. The cost of an order is the sum of
+/// the local costs of its joins, so the cheapest plans of a set are among the combinations of the cheapest plans of the
+/// two sides of each of its splits.
+static std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
+    const RecordedJoinSplits & recorded_splits, const std::unordered_map<UInt64, std::vector<size_t>> & splits_by_set, size_t orders)
+{
+    struct Plan
+    {
+        double cost = 0;
+        /// Position in `recorded_splits.splits`, none for a single relation.
+        std::optional<size_t> split;
+        size_t left_rank = 0;
+        size_t right_rank = 0;
+    };
+    std::unordered_map<UInt64, std::vector<Plan>> cheapest;
+
+    std::vector<UInt64> sets;
+    for (const auto & [relations, _] : splits_by_set)
+        sets.push_back(relations);
+    std::ranges::sort(sets, {}, [](UInt64 relations) { return std::pair{std::popcount(relations), relations}; });
+
+    auto plans_of = [&](UInt64 relations) -> const std::vector<Plan> &
+    {
+        if (std::popcount(relations) == 1)
+            return cheapest.try_emplace(relations, std::vector<Plan>{Plan{}}).first->second;
+        return cheapest.at(relations);
+    };
+
+    for (UInt64 relations : sets)
+    {
+        std::vector<Plan> candidates;
+        for (size_t index : splits_by_set.at(relations))
+        {
+            const auto & split = recorded_splits.splits[index];
+            const auto & left_plans = plans_of(split.left);
+            const auto & right_plans = plans_of(split.right);
+            for (size_t i = 0; i < left_plans.size(); ++i)
+                for (size_t j = 0; j < right_plans.size(); ++j)
+                    candidates.push_back({split.local_cost + left_plans[i].cost + right_plans[j].cost, index, i, j});
+        }
+        const size_t kept = std::min(orders, candidates.size());
+        std::ranges::partial_sort(candidates, candidates.begin() + kept, {}, &Plan::cost);
+        candidates.resize(kept);
+        cheapest[relations] = std::move(candidates);
+    }
+
+    std::unordered_map<UInt64, std::vector<size_t>> result;
+    std::vector<std::pair<UInt64, size_t>> stack;
+    for (size_t rank = 0; rank < cheapest.at(sets.back()).size(); ++rank)
+        stack.emplace_back(sets.back(), rank);
+    while (!stack.empty())
+    {
+        auto [relations, rank] = stack.back();
+        stack.pop_back();
+        const auto & plan = cheapest.at(relations)[rank];
+        if (!plan.split)
+            continue;
+        auto & indexes = result[relations];
+        if (std::ranges::find(indexes, *plan.split) == indexes.end())
+            indexes.push_back(*plan.split);
+        const auto & split = recorded_splits.splits[*plan.split];
+        stack.emplace_back(split.left, plan.left_rank);
+        stack.emplace_back(split.right, plan.right_rank);
+    }
+    return result;
+}
+
+bool JoinOrderPlanBuilder::selectSetSplits(
+    QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, String & reason)
 {
     using JoinEnumeration = QueryPlanOptimizationSettings::JoinEnumeration;
 
@@ -1779,7 +1847,7 @@ bool JoinOrderPlanBuilder::selectSetSplits(QueryPlanOptimizationSettings::JoinEn
     }
 
     const auto & splits = recorded_splits->splits;
-    if (mode != JoinEnumeration::Candidates && 2 * splits.size() > max_join_expressions)
+    if ((mode == JoinEnumeration::AllSplits || mode == JoinEnumeration::AllSplitsRule) && 2 * splits.size() > max_join_expressions)
     {
         reason = fmt::format("{} splits are more than `cascades_join_enumeration_max_splits` allows", splits.size());
         return false;
@@ -1804,6 +1872,38 @@ bool JoinOrderPlanBuilder::selectSetSplits(QueryPlanOptimizationSettings::JoinEn
     if (mode == JoinEnumeration::AllSplits)
     {
         selected = splits_by_set;
+    }
+    else if (mode == JoinEnumeration::TopK)
+    {
+        selected = cheapestOrdersSplits(*recorded_splits, splits_by_set, orders);
+
+        /// Every set also gets the split of its winner, which its statistics come from, see `order_sets` below. That
+        /// split can lead to sets that no cheapest order has, so they get their winners too.
+        std::vector<UInt64> unchecked;
+        for (const auto & [relations, _] : selected)
+            unchecked.push_back(relations);
+        while (!unchecked.empty())
+        {
+            const UInt64 relations = unchecked.back();
+            unchecked.pop_back();
+            const auto & winner = recorded_splits->winners.at(relations);
+            auto winner_index = find_split(relations, toRelationMask(winner->left->relations));
+            if (!winner_index)
+            {
+                reason = "the winner of a set is not a recorded split";
+                return false;
+            }
+            auto & indexes = selected[relations];
+            if (std::ranges::find(indexes, *winner_index) != indexes.end())
+                continue;
+            indexes.push_back(*winner_index);
+            for (UInt64 side : {splits[*winner_index].left, splits[*winner_index].right})
+                if (std::popcount(side) > 1 && !selected.contains(side))
+                {
+                    selected[side];
+                    unchecked.push_back(side);
+                }
+        }
     }
     else
     {
@@ -2349,7 +2449,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     {
         builder->recorded_splits = recorded_splits;
         String reason;
-        import_sets = builder->selectSetSplits(join_enumeration, optimization_settings.cascades_join_enumeration_max_splits, reason);
+        import_sets = builder->selectSetSplits(
+            join_enumeration, optimization_settings.cascades_join_enumeration_max_splits,
+            optimization_settings.cascades_join_order_alternatives + 1, reason);
         if (import_sets)
             LOG_DEBUG(getLogger("optimizeJoin"), "Cascades gets {} sets of the join graph from {} accepted of {} considered splits",
                 builder->set_splits.size(), recorded_splits->splits.size(), recorded_splits->considered_splits);

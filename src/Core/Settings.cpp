@@ -11259,7 +11259,9 @@ Experimental. How the Cascades optimizer gets the join orders of a join graph:
 - `all_splits`: every split of every set of joined tables that the join order optimizer accepted, one memo group per
   set, so that Cascades costs each split with the data moved between nodes.
 - `all_splits_rule`: the same joins as `all_splits`, but only those of `candidates` are imported; the rule
-  `JoinEnumeration` adds the others when the search explores the graph.
+  `JoinEnumeration` adds the others when the search explores the graph;
+- `topk`: the `cascades_join_order_alternatives + 1` cheapest complete join orders by the join order optimizer's cost,
+  found among all splits of every set (not only orders that differ in the top join), imported like `candidates`.
 
 `candidates` and `all_splits` take effect only for graphs of inner joins whose join keys compare the same way as
 hash keys and as values (no floating-point keys), and that `DPsub` plans; other graphs use `off`.
