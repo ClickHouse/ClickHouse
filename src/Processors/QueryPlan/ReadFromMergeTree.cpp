@@ -766,6 +766,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 
     Pipes pipes;
 
+    const auto shared_state = MergeTreeSelectProcessor::buildSharedState(
+        pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info, index_read_tasks, actions_settings, reader_settings);
+
     for (size_t i = 0; i < pool_settings.threads; ++i)
     {
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
@@ -779,7 +782,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            shared_state);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -895,6 +899,9 @@ Pipe ReadFromMergeTree::readFromPool(
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams{}", total_rows, pool_settings.threads,
         seal_gate_refiner ? " (gated by a runtime filter seal)" : "");
 
+    const auto shared_state = MergeTreeSelectProcessor::buildSharedState(
+        pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info, index_read_tasks, actions_settings, reader_settings);
+
     /// Seal-gated reading: the sources are replaced by transforms whose input is the seal,
     /// so nothing is read until the build side of the JOIN completes its runtime filter.
     /// One seal is copied to every stream; the copy input is registered on the pipe as
@@ -919,7 +926,8 @@ Pipe ReadFromMergeTree::readFromPool(
                 actions_settings,
                 reader_settings,
                 index_build_context,
-                lazy_materializing_rows);
+                lazy_materializing_rows,
+                shared_state);
 
             auto header = std::make_shared<const Block>(processor->getHeader());
             auto transform = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
@@ -954,7 +962,8 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            shared_state);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -1194,6 +1203,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
     const Block pk_header = use_virtual_row ? makeVirtualRowHeader() : Block{};
 
+    MergeTreeSelectProcessorSharedStatePtr shared_state;
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
@@ -1211,6 +1221,10 @@ Pipe ReadFromMergeTree::readInOrder(
             if (!initiator_selected_parts->contains({part_info_for_check, projection_name_for_check}))
                 continue;
         }
+
+        if (!shared_state)
+            shared_state = MergeTreeSelectProcessor::buildSharedState(
+                pool->getHeader(), query_info.row_level_filter, query_info.prewhere_info, index_read_tasks, actions_settings, reader_settings);
 
         UInt64 total_rows = part_with_ranges.getRowsCount();
         if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -1239,7 +1253,8 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            shared_state);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
