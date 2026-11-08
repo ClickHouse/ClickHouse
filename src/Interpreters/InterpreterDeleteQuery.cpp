@@ -168,7 +168,9 @@ BlockIO InterpreterDeleteQuery::execute()
         /// to analyze.
         MutationsInterpreter::validateNonDeterministicMutationsForStorage(engine_table, mutation_commands, getContext());
         MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(engine_table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
+        auto validation_context = Context::createCopy(getContext());
+        validation_context->setAnalyzingBackgroundExpressions(true);
+        MutationsInterpreter(engine_table, metadata_snapshot, mutation_commands, validation_context, mutation_settings).validate();
         getContext()->onQueryExecutionStarted();
         engine_table->mutate(mutation_commands, getContext());
         return {};
