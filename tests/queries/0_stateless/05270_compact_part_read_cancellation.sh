@@ -81,16 +81,20 @@ inside_part_read "$timeout_err"
 
 # With the columns cache the granules are read in another loop. Writes are off, so every granule is
 # read from the part, and a retry of the ladder does not find the granules of the previous one cached.
-cache_query_id="compact_read_cancel_cache_${CLICKHOUSE_DATABASE}_$$"
-timeout_ladder --use_columns_cache 1 --enable_writes_to_columns_cache 0 --query_id "$cache_query_id"
+cache_settings=(--use_columns_cache 1 --enable_writes_to_columns_cache 0)
+timeout_ladder "${cache_settings[@]}"
 echo -n 'columns cache timeout observed '
 inside_part_read "$timeout_err"
-# Misses are counted only by the columns cache loop, so this proves the ladder went through it.
+# Misses are counted only by the columns cache loop, so a read with the same settings proves the
+# ladder went through it. The ladder's own query cannot: a granule's miss is counted after it is
+# read, and a deadline that expired before the loop stops the query at the first granule.
+cache_query_id="compact_read_cancel_cache_${CLICKHOUSE_DATABASE}_$$"
+${CLICKHOUSE_CLIENT} "${cache_settings[@]}" --query_id "$cache_query_id" -q "$read_query WHERE k < 10" >/dev/null
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
-SELECT 'columns cache read', max(ProfileEvents['ColumnsCacheMisses']) > 0 FROM system.query_log
+SELECT 'columns cache read', ProfileEvents['ColumnsCacheMisses'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_id = '$cache_query_id'
-  AND type != 'QueryStart' AND event_date >= yesterday()"
+  AND type = 'QueryFinish' AND event_date >= yesterday()"
 
 query_id="compact_read_cancel_${CLICKHOUSE_DATABASE}_$$"
 kill_err="${CLICKHOUSE_TMP}/05270_kill_err.txt"
