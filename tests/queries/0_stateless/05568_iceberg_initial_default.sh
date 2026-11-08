@@ -59,6 +59,10 @@ if mode == "readd":
     struct["fields"] = [{"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9, "write-default": 9}]
 elif mode == "bad_long":
     fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
+elif mode == "bad_timestamp":
+    fields.append({"id": new_id(), "name": "ts", "required": False, "type": "timestamp", "initial-default": "2017-11-16T22:31:08+01:00"})
+elif mode == "bad_timestamptz":
+    fields.append({"id": new_id(), "name": "ts", "required": False, "type": "timestamptz", "initial-default": "2017-11-16T22:31:08"})
 elif mode == "bad_struct":
     x = new_id()
     fields.append({"id": new_id(), "name": "s", "required": False, "initial-default": {str(x): 1},
@@ -243,6 +247,10 @@ for format in Parquet ORC Avro; do
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 1;
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 0;
         "
+        if [ "${format}" = Parquet ]; then
+            # A field with a default is not a missing column.
+            ${LOCAL} -q "SELECT a, t, l, d, r, s, ll FROM icebergLocal('${table}/') SETTINGS input_format_parquet_allow_missing_columns = 0"
+        fi
     fi
 
     # The dropped fields `j` and the added fields `j` have different field ids.
@@ -263,7 +271,7 @@ for format in Parquet ORC Avro; do
 done
 
 # Malformed defaults.
-for mode in bad_long bad_struct; do
+for mode in bad_long bad_struct bad_timestamp bad_timestamptz; do
     ${LOCAL} --allow_insert_into_iceberg=1 -q "
         CREATE TABLE t (a Int32, t Tuple(x Nullable(Int32)), l Array(Tuple(x Nullable(Int32)))) ENGINE = IcebergLocal('${mode}/');
         INSERT INTO t VALUES (1, (10), [(11)]);

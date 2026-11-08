@@ -167,16 +167,18 @@ void SchemaConverter::prepareForReading()
     {
         if (found_columns[i])
             continue;
-        if (!options.format.parquet.allow_missing_columns)
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", sample_block->getByPosition(i).name);
+        const auto & missing_column = sample_block->getByPosition(i);
+        auto missing_column_default = getAbsentFieldDefault(missing_column.name, missing_column.type);
+        if (!options.format.parquet.allow_missing_columns && !missing_column_default)
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} was not found in parquet schema", missing_column.name);
 
         OutputColumnInfo & missing_output = output_columns.emplace_back();
         missing_output.idx_in_output_block = i;
-        missing_output.name = sample_block->getByPosition(i).name;
-        missing_output.input_type = sample_block->getByPosition(i).type;
+        missing_output.name = missing_column.name;
+        missing_output.input_type = missing_column.type;
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
-        missing_output.missing_column_default = getAbsentFieldDefault(missing_output.name, missing_output.output_type);
+        missing_output.missing_column_default = std::move(missing_column_default);
     }
 
 }
@@ -1227,16 +1229,19 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         {
             if (elements[i] != UINT64_MAX)
                 continue;
-            if (!options.format.parquet.allow_missing_columns)
+            String missing_name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
+            const DataTypePtr & missing_type = tuple_type_hint->getElement(i);
+            auto missing_column_default = getAbsentFieldDefault(missing_name, missing_type);
+            if (!options.format.parquet.allow_missing_columns && !missing_column_default)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), node.getNameForLogging(), element_names_in_file);
 
             elements[i] = output_columns.size();
             OutputColumnInfo & missing_output = output_columns.emplace_back();
-            missing_output.name = node.name + "." + (tuple_type_hint->hasExplicitNames() ? tuple_type_hint->getNameByPosition(i + 1) : std::to_string(i + 1));
-            missing_output.input_type = tuple_type_hint->getElement(i);
+            missing_output.name = std::move(missing_name);
+            missing_output.input_type = missing_type;
             missing_output.output_type = missing_output.input_type;
             missing_output.is_missing_column = true;
-            missing_output.missing_column_default = getAbsentFieldDefault(missing_output.name, missing_output.output_type);
+            missing_output.missing_column_default = std::move(missing_column_default);
         }
         output_type = node.type_hint;
     }

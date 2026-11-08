@@ -72,6 +72,7 @@ schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
 1
 1
+1	(10,5)	[(11,5)]	7	8	(6)	[1,NULL]
 readd	1	(9)	9
 readd, current schema	1	(9)	9
 readd, current schema	1	(9)	9
@@ -97,5 +98,7 @@ schema ids	[1]
 readd	1	(9)	9
 readd, current schema	1	9
 readd, current schema	1	9
+Code: 743
+Code: 743
 Code: 743
 Code: 743

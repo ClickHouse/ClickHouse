@@ -487,6 +487,24 @@ std::optional<Int64> parseIcebergTime(std::string_view s)
     return micros + fraction;
 }
 
+/// `YYYY-MM-DDTHH:MM:SS[.f]` with 1 to 9 fraction digits: an Iceberg timestamp without its zone offset.
+bool isIcebergTimestampText(std::string_view s)
+{
+    if (s.size() < 19)
+        return false;
+    for (size_t i = 0; i < 19; ++i)
+    {
+        const char separator = (i == 4 || i == 7) ? '-' : (i == 10 ? 'T' : ((i == 13 || i == 16) ? ':' : '\0'));
+        if (separator ? s[i] != separator : !isNumericASCII(s[i]))
+            return false;
+    }
+    if (s.size() == 19)
+        return true;
+    if (s[19] != '.' || s.size() == 20 || s.size() > 29)
+        return false;
+    return std::all_of(s.begin() + 20, s.end(), isNumericASCII);
+}
+
 /// Parses a value in the JSON single-value serialization of the Iceberg spec (Appendix D) of the Iceberg type
 /// `iceberg_type` into a Field of the ClickHouse type `type`. `required` is the Iceberg nullability of the position.
 Field parseIcebergDefaultValue(
@@ -555,9 +573,18 @@ Field parseIcebergDefaultValue(
         if (type_name == f_timestamp || type_name == f_timestamptz || type_name == f_timestamp_ns || type_name == f_timestamptz_ns)
         {
             /// Parsed in UTC: the stored value of an Iceberg `timestamp` is the microseconds of its wall clock in UTC.
+            std::string_view local_text = text;
+            if (type_name == f_timestamptz || type_name == f_timestamptz_ns)
+            {
+                if (!local_text.ends_with("+00:00"))
+                    throwInvalidDefault(value, iceberg_type, field_name);
+                local_text.remove_suffix(6);
+            }
+            if (!isIcebergTimestampText(local_text))
+                throwInvalidDefault(value, iceberg_type, field_name);
             const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*nested_type).getScale();
             DateTime64 result;
-            ReadBufferFromString buf(text);
+            ReadBufferFromString buf(local_text);
             if (!tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance("UTC"), DateLUT::instance("UTC")) || !buf.eof())
                 throwInvalidDefault(value, iceberg_type, field_name);
             return DecimalField<DateTime64>(result, scale);

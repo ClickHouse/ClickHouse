@@ -115,6 +115,7 @@ public:
         auto it = iceberg_initial_defaults.find(path);
         return it == iceberg_initial_defaults.end() ? nullptr : &it->second;
     }
+    void removeIcebergInitialDefault(const String & path) { iceberg_initial_defaults.erase(path); }
     bool hasIcebergInitialDefaults() const { return !iceberg_initial_defaults.empty(); }
     /// 0 if there are no defaults.
     UInt64 getIcebergInitialDefaultsHash() const;

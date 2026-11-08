@@ -1820,6 +1820,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
             if (!column_mapper)
                 column_mapper = configuration->getColumnMapperForObject(object_info);
+            else if (!identity_partition_columns.empty() && column_mapper->hasIcebergInitialDefaults())
+            {
+                if (auto per_file_mapper = configuration->getColumnMapperForObject(object_info))
+                    column_mapper = per_file_mapper;
+            }
 
             if (!format_supports_prewhere)
             {

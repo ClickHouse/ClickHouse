@@ -2158,7 +2158,13 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (file_format != "parquet" && file_format != "avro" && file_format != "vortex" && file_format != "orc")
         return nullptr;
 
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    auto column_mapper
+        = persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
+    /// An identity partition value of the file, even NULL, takes precedence over `initial-default`.
+    if (column_mapper)
+        for (const auto & [column_name, _] : iceberg_object_info->info.identity_partition_columns)
+            column_mapper->removeIcebergInitialDefault(column_name);
+    return column_mapper;
 }
 
 // (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).
