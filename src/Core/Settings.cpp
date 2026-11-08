@@ -135,9 +135,9 @@ Which dialect will be used to parse query.
 
 Supported values:
 - `clickhouse` (default) — standard ClickHouse SQL.
-- `kusto` — Kusto Query Language. Requires the beta setting `allow_experimental_kusto_dialect`.
-- `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
-- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
+- `kusto` — Kusto Query Language. Requires the beta setting `enable_kusto_dialect`.
+- `prql` — PRQL. Requires the experimental setting `enable_prql_dialect`.
+- `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `enable_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `logsql` — LogsQL, the log query language of VictoriaLogs, translated into `SELECT` queries over the logs table configured by the `logsql_database` and `logsql_table` settings. Requires the experimental setting `enable_logsql_dialect`.
@@ -452,7 +452,7 @@ The maximum size of the buffer to read from local filesystem. If set to 0 then m
     DECLARE(UInt64, max_read_buffer_size_remote_fs, 0, R"(
 The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
-    DECLARE(UInt64, max_distributed_connections, 1024, R"(
+    DECLARE(NonZeroUInt64, max_distributed_connections, 1024, R"(
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
 The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
@@ -1410,7 +1410,7 @@ In CREATE TABLE statement allows creating columns of type FixedString(n) with n 
     DECLARE_WITH_ALIAS(Bool, allow_suspicious_indexes, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
 )", 0, allow_suspicious_indices, \
-        {"26.10", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
+        {"26.11", false, false, "Added an alias for setting `allow_suspicious_indices`."}, \
         {"23.4", true, false, "If true, index can defined with identical expressions"}) \
     DECLARE(Bool, allow_minmax_index_for_json, false, R"(
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
@@ -2309,6 +2309,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.4", false, true, "New setting to use statistics for part pruning during query execution."}) \
+    DECLARE(UInt64, min_marks_per_part_to_load_statistics, 64, R"(
+The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
+
+Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
+
+Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
+
+Possible values:
+
+- 0 — Load statistics regardless of the size of the read.
+- Positive integer — The number of marks per data part.
+)", 0, \
+        {"26.11", 0, 64, "New setting to skip loading statistics when the primary key leaves only a small read."}) \
     DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
 Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
 
@@ -4063,18 +4076,6 @@ FORMAT Null;
     DECLARE(Seconds, max_execution_time, 0, R"(
 The maximum query execution time in seconds.
 
-The `max_execution_time` parameter can be a bit tricky to understand.
-It operates based on interpolation relative to the current query execution speed
-(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)).
-
-ClickHouse will interrupt a query if the projected execution time exceeds the
-specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
-is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse
-will begin estimating the total execution time. If, for example, `max_execution_time`
-is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated
-time exceeds this 3600-second limit. If you set `timeout_before_checking_execution_speed`
-to 0, ClickHouse will use the clock time as the basis for `max_execution_time`.
-
 If query runtime exceeds the specified number of seconds, the behavior will be
 determined by the 'timeout_overflow_mode', which by default is set to `throw`.
 
@@ -4158,11 +4159,17 @@ expires. If the execution speed is high, the execution speed will be reduced.
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
 Checks that execution speed is not too slow (no less than `min_execution_speed`),
 after the specified time in seconds has expired.
+
+If set to `0`, the execution speed limits are checked from the start of the query,
+but [`max_estimated_execution_time`](/reference/settings/session-settings/max#max_estimated_execution_time)
+is not checked at all.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
 Maximum query estimate execution time in seconds. Checked on every data block
 when [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-expires.
+expires. It operates based on extrapolation relative to the current query execution
+speed. If you set `timeout_before_checking_execution_speed` to 0, then this setting
+will not be checked.
 )", 0, \
         {"24.1", 0, 0, "Separate max_execution_time and max_estimated_execution_time"}) \
     \
@@ -5566,7 +5573,7 @@ Disabled by default.
 )", 0, \
         {"26.5", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."}) \
     DECLARE_WITH_ALIAS(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
-Allow S3 and Azure Blob Storage access that originates from user SQL to use server-managed credentials.
+Allow S3, Azure Blob Storage and MongoDB access that originates from user SQL to use server-managed credentials.
 
 Also available under the alias `allow_server_credentials_in_user_queries`, as it applies to Azure as well.
 
@@ -5592,6 +5599,8 @@ Azure Blob Storage is covered by this setting as well. When it is disabled, the 
 
 For Azure, a named collection that relies on workload or managed identity is restricted too, including one defined in the server configuration, and so is `extra_credentials(client_id = '...', tenant_id = '...')`, which exchanges the server's own federated token for the named client. Disks defined in the server configuration keep using workload or managed identity. A dynamic Azure disk is restricted like a table, except for a table in the `system` database with the server setting `s3_allow_server_credentials_for_system_table_disks`; a dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a restart it keeps using the server's identity. The record is written only by the server and is ignored in a `CREATE` or `ATTACH` query. The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys. A persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure disk, that relied on the server's identity is loaded at startup with a client that has no credentials, per `s3_load_table_anonymously_if_credentials_restricted`; `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead.
 
+MongoDB is covered by this setting as well. When it is disabled, a query that reads with the `mongodb` table function or from a `MongoDB` table is rejected with `ACCESS_DENIED` if the connection string makes the server authenticate with its own credentials: with the authentication mechanism `MONGODB-OIDC` (the identity the server runs under: a Kubernetes service account token, or a token from the Azure or GCP instance metadata service), `MONGODB-AWS`, `GSSAPI` or `MONGODB-X509`, or with the connection option `tlsCertificateKeyFile` (or its deprecated alias `sslClientCertificateKeyFile`), which makes the server present a client certificate from its own filesystem. Only `SCRAM-SHA-1`, `SCRAM-SHA-256` and `PLAIN` are accepted, or no `authMechanism` at all. The check uses the settings of the session that reads, also for a table created by another user, so a session where this setting is enabled should not read MongoDB tables, or views of them, defined by untrusted users. Creating a `MongoDB` table is not checked. A MongoDB dictionary created with a DDL query may not use these mechanisms or `tlsCertificateKeyFile` whatever the value of this setting (except in `clickhouse-local`), because the server loads it with its own context, after the named collection it refers to may have changed; define such a dictionary in the server configuration files. Dictionaries defined in the server configuration files are not restricted, also when they refer to a named collection created with a DDL query, so whoever may alter that collection controls their connection string.
+
 To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
 
 ```xml
@@ -5614,7 +5623,7 @@ This setting has no effect in `clickhouse-local`, where the user is the operator
 
 `DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
 )", 0, allow_server_credentials_in_user_queries, \
-        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). Added the alias `allow_server_credentials_in_user_queries`."}, \
+        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). Added the alias `allow_server_credentials_in_user_queries`. Also blocks MongoDB authentication with credentials of the server process (`MONGODB-OIDC`, `MONGODB-AWS`, `GSSAPI`, `MONGODB-X509`, `tlsCertificateKeyFile`) in the `mongodb` table function and the `MongoDB` engine."}, \
         {"26.7", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/GCP-OAuth-metadata). Explicit role_arn-based STS assume-role is still allowed. The previous behavior (allowed) is restored with compatibility settings."}) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0, \
         {"24.10", 0, 1000, "New setting"}) \
@@ -6885,6 +6894,14 @@ Automatically choose implicit projections to perform SELECT query
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0, \
         {"25.6", false, true, "New setting"}) \
+    DECLARE(Float, optimize_projection_skip_index_ratio, 0.5, R"(
+When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. `0` always applies them, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
+
+Possible values:
+
+- A float in the range `[0, 1]`.
+)", 0, \
+        {"26.11", 1.0, 0.5, "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement never runs, because it could only matter for candidates that the primary-key-only comparison rejects anyway."}) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
@@ -7103,7 +7120,7 @@ Possible values:
 )", 0, \
         {"26.7", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."}) \
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
-If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
+If non-zero, skip fetching the latest Iceberg metadata version (from the remote catalog, from `metadata/version-hint.text` with `iceberg_use_version_hint`, or by listing the metadata files) if there is a cached one, more recent than the given staleness window. Zero means to always fetch the latest metadata version. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0, \
         {"26.3", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"}) \
     DECLARE(Bool, iceberg_list_only_v_prefixed_metadata_files, false, R"(
@@ -7315,7 +7332,7 @@ Possible values:
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
 Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
-Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot; for object storage, by the set of objects read and their ETags). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
 Possible values:
 
@@ -7911,7 +7928,7 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
-    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+    DECLARE(Bool, query_plan_top_k_through_array_join, true, R"(
 Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
@@ -7920,7 +7937,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0, \
-        {"26.11", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}) \
+        {"26.11", false, true, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
 Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 
@@ -8171,6 +8188,24 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"23.1", false, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries"}) \
+    DECLARE(Bool, query_plan_use_shuffle_for_order_by_rand, true, R"(
+Toggles a query-plan-level optimization which executes `ORDER BY rand()` and `ORDER BY rand64()` by shuffling the rows
+(the same way as the `SHUFFLE` clause) instead of sorting them, which takes O(n) time instead of O(n * log(n)).
+The result has the same distribution: the values of the `rand()` column are replaced by other random values in sorted order.
+Applies when the `rand()` value is not used in other expressions, and when there is a `LIMIT` or the external sorting is disabled
+(the shuffle does not spill to disk).
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, true, "New setting to execute `ORDER BY rand()` by shuffling the rows instead of sorting them."}) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -8526,7 +8561,7 @@ The version of `visibleWidth` behavior. 0 - only count the number of code points
 )", 0, \
         {"24.1", 0, 1, "We changed the default behavior of `visibleWidth` to be more precise"}) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](/reference/functions/regular-functions/conditional-functions#if), [multiIf](/reference/functions/regular-functions/conditional-functions#multiIf), [and](/reference/functions/regular-functions/logical-functions#and), and [or](/reference/functions/regular-functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](/reference/functions/regular-functions/conditional-functions#if), [multiIf](/reference/functions/regular-functions/conditional-functions#multiIf), [and](/reference/functions/regular-functions/logical-functions#and), [or](/reference/functions/regular-functions/logical-functions#or), [coalesce](/reference/functions/regular-functions/functions-for-nulls#coalesce), and [ifNull](/reference/functions/regular-functions/functions-for-nulls#ifNull) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -8794,10 +8829,14 @@ Prefetch step in marks. Zero means `auto` - approximately the best prefetch step
     DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
 Maximum memory usage for prefetches.
 
+It also applies to merges and mutations.
+
 Cloud default value: 10% of total memory.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
 Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
+
+It also applies to merges and mutations.
 )", 0) \
     \
     DECLARE(Bool, allow_calculating_subcolumns_sizes_for_merge_tree_reading, true, R"(
@@ -9744,6 +9783,10 @@ Skip whole Iceberg manifest files whose partition summaries in the manifest list
 With [`use_statistics`](#use_statistics) enabled, estimate an Iceberg read for join reordering from the manifest files of its data files left after partition and min-max pruning by the query filter, without reading data: the rows from their `record_count`, and the number of distinct values, min/max and NULL fraction of the columns it returns from their identity partition values, value bounds and NULL counts. The filter, `PREWHERE` and row policy of the read are estimated on these statistics, as for MergeTree tables with column statistics; if no requested column has statistics, a filter that prunes no file gives no estimate, as for MergeTree tables without them. The row estimate is exact without a filter and without delete files. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
 )", 0, \
         {"26.11", false, false, "New setting to estimate the rows and column statistics of Iceberg reads for join reordering from manifest files."}) \
+    DECLARE(Bool, use_iceberg_table_statistics_ndv, false, R"(
+With [`use_iceberg_manifest_statistics`](#use_iceberg_manifest_statistics) enabled, take the number of distinct values of an Iceberg column for which the manifest files give none from the table statistics in `metadata.json`: the `ndv` property of an `apache-datasketches-theta-v1` blob over that one column, as written by Spark `compute_table_stats` or Trino `ANALYZE`. Only the blobs computed from the snapshot that is read are used. The numbers drive join reordering and condition estimates only and never change query results.
+)", 0, \
+        {"26.11", false, false, "New setting to take the numbers of distinct values of Iceberg columns from the table statistics in `metadata.json` for join reordering."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
@@ -10298,6 +10341,12 @@ This is an internal setting that should not be used directly. The initiator of a
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0, \
         {"25.11", 0, 0, "New setting."}) \
+    DECLARE(Bool, cluster_table_function_split_by_split_offsets, false, R"(
+With `bucket` split granularity, when the table metadata records the file size and the row group offsets (`split_offsets` in Iceberg), cut files into byte ranges on these offsets without reading them; each task reads the row groups that start in its range. Otherwise, and on a hit in the query condition cache, the initiator reads the footer of every file.
+
+Requires all servers of the cluster to support it: a task with a byte range cannot be sent to a server of an older version.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
@@ -10579,9 +10628,9 @@ Use roaring bitmap for iceberg positional deletes.
 )", 0, \
         {"25.8", false, false, "New setting"}) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
-If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+If enabled, injects `SHUFFLE` into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
-If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+If the top-level construct is UNION, `SHUFFLE` is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
 )", 0, \
         {"25.10", false, false, "New setting"}) \
@@ -10823,10 +10872,6 @@ Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engin
 )", EXPERIMENTAL, allow_experimental_unique_key, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_unique_key`."}, \
         {"26.5", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}) \
-    DECLARE(Bool, enable_alp_codec, false, R"(
-Enables the `ALP` compression codec.
-)", BETA, \
-        {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
     DECLARE(Bool, enable_pco_codec, false, R"(
 Enables the `PCO` compression codec.
 )", BETA, \
@@ -10839,6 +10884,10 @@ Enables the `Quantized` compression codec.
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_gdeflate_codec, false, R"(
+Enables the `GDeflate` compression codec.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
@@ -10887,6 +10936,10 @@ If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is me
 Set to false to force the old full-mutation behavior.
 )", 0, \
         {"26.8", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."}) \
+    DECLARE(Bool, allow_experimental_shuffle_query, false, R"(
+Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used in place of `ORDER BY` and returns the rows in a uniformly random order.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected
@@ -11010,9 +11063,10 @@ Intersections of 256 or more tokens always use leapfrog.
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
-Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, enable_database_materialized_postgresql, false, R"(
+Allow to create databases with `Engine = MaterializedPostgreSQL(...)`.
+)", EXPERIMENTAL, allow_experimental_database_materialized_postgresql, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_database_materialized_postgresql`."}) \
     \
     DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, true, R"(
 Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
@@ -11030,22 +11084,26 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
         {"26.9", false, true, "`Nullable(Tuple)` is now GA: a `Tuple` subcolumn extracted from a `Tuple`, `Variant`, `Dynamic` or `JSON` column is `Nullable(Tuple)` and is NULL in the rows where the subcolumn is missing. The setting is read once at server startup, so `compatibility` restores the previous behavior only from the startup profile (for example, users.xml), not from a session-level `SET`."}, \
         {"26.3", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."}) \
     \
-    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_database_hms_catalog, false, R"(
+Allow database engine `DataLakeCatalog` with `catalog_type = 'hms'`
+)", EXPERIMENTAL, allow_experimental_database_hms_catalog, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_database_hms_catalog`."}, \
         {"25.5", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"}) \
-    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_kusto_dialect, false, R"(
 Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
-)", BETA, \
+)", BETA, allow_experimental_kusto_dialect, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_kusto_dialect`."}, \
         {"26.10", false, false, "The Kusto Query Language (KQL) dialect was moved to Beta."}, \
         {"25.1", true, false, "A new setting"}) \
-    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_prql_dialect, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_prql_dialect`."}, \
         {"25.1", true, false, "A new setting"}) \
-    DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_polyglot_dialect, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_polyglot_dialect`."}, \
         {"26.3", false, false, "New setting to enable the polyglot SQL transpiler dialect."}) \
     DECLARE(Bool, enable_json_ast_dialect, false, R"(
 Enable the `clickhouse_json` value of the `dialect` setting.
@@ -11130,11 +11188,6 @@ Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join proces
 Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL, \
         {"25.2", false, false, "New setting. Enable spill memory data into external storage adaptively."}) \
-    DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
-Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
-)", BETA, allow_experimental_delta_kernel_rs, \
-        {"26.8", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}, \
-        {"25.5", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}) \
     DECLARE(Bool, allow_delta_lake_create_table, false, R"(
 Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet. In a `DataLakeCatalog` database the table is registered with its Delta schema, so declared ClickHouse types that map to a wider Delta type (e.g. `UInt8` -> `short`, `FixedString(N)` -> `string`) are read back as the Delta-mapped type rather than the declared one.
 )", EXPERIMENTAL, \
@@ -11144,13 +11197,14 @@ Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg, \
         {"26.2", false, false, "Insert into iceberg was moved to Beta. This also applies to the alias `allow_experimental_insert_into_iceberg`."}, \
         {"25.7", false, false, "New setting."}) \
-    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_cleanup_old_data_files_compaction, false, R"(
 Allow to clean up old data files during Iceberg compaction.
 
 The cleanup runs `iceberg_compaction_data_cleanup` after a compaction. It expires the snapshots the compaction made obsolete, the same
 way as `expire_snapshots`: removes them from the table metadata and deletes the files that no other snapshot references. For a table
 of the format version 1 or behind a transactional catalog it only deletes the files, and the snapshots stay in the metadata.
-)", EXPERIMENTAL, \
+)", EXPERIMENTAL, allow_experimental_cleanup_old_data_files_compaction, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_cleanup_old_data_files_compaction`."}, \
         {"26.5", false, false, "New setting"}) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
@@ -11178,9 +11232,10 @@ Default age threshold in seconds for orphan file removal in Iceberg tables. File
 Minimum age in seconds of the files that `ALTER TABLE ... EXECUTE remove_orphan_files` may delete from an Iceberg table. An `older_than` (given explicitly or derived from `iceberg_orphan_files_older_than_seconds`) that is closer to now than this is rejected: files of a write that has not committed yet are not referenced by the table metadata and would be deleted, which corrupts the table when the write commits. Keep it above the longest time a write to the table can take to commit. 0 disables the check.
 )", EXPERIMENTAL, \
         {"26.10", 0, 86400, "New setting. `remove_orphan_files` rejects an `older_than` less than this many seconds before now, so it keeps the files of a write that started less than this long ago and has not committed yet. `compatibility` with versions before 26.10 restores the previous behavior (no minimum)."}) \
-    DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
-Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, allow_expire_snapshots, false, R"(
+Allow to execute the Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
+)", EXPERIMENTAL, allow_experimental_expire_snapshots, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_expire_snapshots`."}, \
         {"26.3", false, false, "New setting."}) \
     DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
 Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
@@ -11302,17 +11357,20 @@ With `make_distributed_plan`, send join runtime filters built in one stage to th
 When `send_logs_level` forwards stateless-worker task logs to the coordinator, each worker task buffers at most this many log lines between status polls. Lines beyond the bound are dropped and their count is reported to the client. `0` means unbounded (never drops, but a stalled status poll can grow the buffer without limit).
 )", EXPERIMENTAL, \
         {"26.10", 100000, 100000, "New setting bounding how many log lines a stateless-worker task buffers for forwarding to the coordinator between status polls; excess lines are dropped and counted. New feature, so the previous value equals the default."}) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_engine, false, R"(
+Enable the `YTsaurus` table engine for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_engine, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_ytsaurus_table_engine`."}, \
         {"25.8", false, false, "New setting."}) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_table_function, false, R"(
+Enable the `ytsaurus` table function for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_table_function, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_ytsaurus_table_function`."}, \
         {"25.8", false, false, "New setting."}) \
-DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
-Experimental dictionary source for integration with YTsaurus.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_ytsaurus_dictionary_source, false, R"(
+Enable the `ytsaurus` dictionary source for integration with YTsaurus.
+)", EXPERIMENTAL, allow_experimental_ytsaurus_dictionary_source, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_ytsaurus_dictionary_source`."}, \
         {"25.8", false, false, "New setting."}) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
@@ -11439,9 +11497,10 @@ A comparison without `bool` keeps the metric name, so matchers always go through
 A copied matcher turns a selector of a whole metric into a filtered one, which can be slower on a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table with an `id` clustered by metric (the default) if the matcher keeps most series of the metric. Disable the setting for such queries.
 )", PRIVATE_PREVIEW, \
         {"26.10", false, true, "New setting to copy PromQL label matchers across binary operators."}) \
-    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
-Allow to create tables with Paimon* table engines.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_paimon_storage_engine, false, R"(
+Allow to create tables with `Paimon*` table engines.
+)", EXPERIMENTAL, allow_experimental_paimon_storage_engine, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_paimon_storage_engine`."}, \
         {"26.5", false, false, "New setting."}) \
     DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
 Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
@@ -11457,9 +11516,10 @@ Maximum number of Paimon snapshots to consume per incremental read. 0 means no l
 Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL, \
         {"25.12", false, false, "New setting."}) \
-    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
-Allow to use hive partitioning with S3Queue/AzureQueue engines
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_object_storage_queue_hive_partitioning, false, R"(
+Allow to use hive partitioning with `S3Queue`/`AzureQueue` engines
+)", EXPERIMENTAL, allow_experimental_object_storage_queue_hive_partitioning, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_object_storage_queue_hive_partitioning`."}, \
         {"26.1", false, false, "New setting."}) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "dpsub,greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
@@ -11480,9 +11540,16 @@ decide which join reorderings are valid. The following values are available:
 )", BETA, \
         {"26.11", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
         {"26.9", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}) \
-    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
-)", EXPERIMENTAL, \
+    DECLARE(Bool, query_plan_join_order_use_interesting_orders, true, R"(
+Only affects the `dpsub` join order algorithm. Makes it aware of the sort order of the joined tables: for each inner equi-join it chooses between a hash join and `full_sorting_merge` by cost, and keeps partial plans whose result is sorted by a join key that a later join can use.
+
+An input counts as sorted by a join key when `optimize_read_in_order` can read it in the order of that key from a `MergeTree` table, or when it is the result of a `full_sorting_merge` join on that key. A join chosen to run as `full_sorting_merge` tries it first, with the `join_algorithm` list as its fallback. The choice is made only when `join_algorithm` has its default value: any other list is a priority list, used as it is. Requires `enable_join_transitive_predicates`.
+)", BETA, \
+        {"26.11", false, true, "New setting, enabled by default: the DPsub join order algorithm chooses between hash and sort-merge joins using the sort order of the inputs."}) \
+    DECLARE_WITH_ALIAS(Bool, enable_database_paimon_rest_catalog, false, R"(
+Allow database engine `DataLakeCatalog` with `catalog_type = 'paimon_rest'`
+)", EXPERIMENTAL, allow_experimental_database_paimon_rest_catalog, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_database_paimon_rest_catalog`."}, \
         {"26.1", false, false, "New setting"}) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
 Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
@@ -11514,9 +11581,10 @@ Set to 0 to leave the input unsplit: the whole pipeline block is passed in one c
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL, \
         {"26.3", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."}) \
-    DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
-Enable experimental table function `eval`.
-)", EXPERIMENTAL, \
+    DECLARE_WITH_ALIAS(Bool, enable_eval_table_function, false, R"(
+Enable table function `eval`.
+)", EXPERIMENTAL, allow_experimental_eval_table_function, \
+        {"26.11", false, false, "Added an alias for setting `allow_experimental_eval_table_function`."}, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
     \
     /* ####################################################### */ \
@@ -11547,6 +11615,10 @@ Enable experimental table function `eval`.
         {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
     MAKE_OBSOLETE(M, UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), \
         {"26.10", 137438953472, 137438953472, "Obsolete: the per-query filesystem cache write limit was removed. A query is no longer capped in how much it writes into a filesystem cache; the cache's own `max_size` and eviction policy bound it."}) \
+    ALIAS(Bool, allow_delta_kernel_rs, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, allow_experimental_delta_kernel_rs, \
+        {"26.11", true, true, "Obsolete: the legacy Delta Lake reader was removed, `delta-kernel-rs` is always used."}, \
+        {"26.8", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}, \
+        {"25.5", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
@@ -11655,6 +11727,9 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false, \
         {"26.8", false, false, "Obsolete setting, renamed to `use_indexes_refiner_in_read_pools`."}) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
+    MAKE_OBSOLETE(M, Bool, enable_alp_codec, true, \
+        {"26.11", false, true, "Obsolete setting: the `ALP` compression codec is generally available and no longer needs to be enabled."}, \
+        {"26.8", false, false, "New setting to enable the experimental `ALP` compression codec individually, without the `allow_experimental_codecs`."}) \
     MAKE_OBSOLETE(M, UInt64, s3_max_connections, 1024) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
