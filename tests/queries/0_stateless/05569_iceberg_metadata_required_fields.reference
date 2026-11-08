@@ -3,6 +3,7 @@ valid_v2 0
 valid_v1 0
 valid_v3_without_next_row_id 0
 valid_v2_null_optionals 0
+valid_v3_source_ids 0
 negative_last_updated_ms_by_field 0
 shared 0
 --- unsupported
@@ -26,6 +27,13 @@ missing_default_sort_order_id ICEBERG_SPECIFICATION_VIOLATION 'default-sort-orde
 v1_missing_partition_spec ICEBERG_SPECIFICATION_VIOLATION 'partition-spec'
 missing_spec_id ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].spec-id'
 sort_order_missing_order_id ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].order-id'
+partition_field_missing_transform ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0].transform'
+partition_field_missing_name ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0].name'
+partition_field_missing_source_id ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0].source-id'
+partition_field_not_object ICEBERG_SPECIFICATION_VIOLATION 'partition-specs[0].fields[0]'
+sort_field_missing_null_order ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].fields[0].null-order'
+sort_field_missing_source_id ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].fields[0].source-id'
+v1_partition_spec_field_missing_name ICEBERG_SPECIFICATION_VIOLATION 'partition-spec[0].name'
 current_snapshot_id_out_of_range ICEBERG_SPECIFICATION_VIOLATION 'current-snapshot-id'
 snapshot_id_out_of_range ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0].snapshot-id'
 snapshot_missing_timestamp ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0].timestamp-ms'

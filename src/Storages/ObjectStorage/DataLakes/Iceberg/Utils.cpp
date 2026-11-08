@@ -694,6 +694,8 @@ struct MetadataField
     MetadataFieldType type;
     /// The first format version that requires the field, 0 if the field is optional.
     Int32 required_since;
+    /// If set, the field is not required when this field is present instead.
+    const char * required_unless = nullptr;
 };
 
 /// The fields of a table metadata file and of its entries that the Iceberg spec requires or types,
@@ -716,6 +718,20 @@ constexpr MetadataField table_metadata_fields[] = {
 };
 constexpr MetadataField partition_spec_fields[] = {{f_spec_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
 constexpr MetadataField sort_order_fields[] = {{f_order_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
+constexpr MetadataField partition_field_fields[] = {
+    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids},
+    {f_source_ids, MetadataFieldType::Array, 0},
+    {f_field_id, MetadataFieldType::Int32, 0},
+    {f_name, MetadataFieldType::String, 1},
+    {f_transform, MetadataFieldType::String, 1},
+};
+constexpr MetadataField sort_field_fields[] = {
+    {f_transform, MetadataFieldType::String, 1},
+    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids},
+    {f_source_ids, MetadataFieldType::Array, 0},
+    {f_direction, MetadataFieldType::String, 1},
+    {f_null_order, MetadataFieldType::String, 1},
+};
 constexpr MetadataField snapshot_fields[] = {
     {f_metadata_snapshot_id, MetadataFieldType::Int64, 1},
     {f_timestamp_ms, MetadataFieldType::Int64, 1},
@@ -773,7 +789,8 @@ void checkField(
     const auto value = object.get(field.name);
     if (value.isEmpty())
     {
-        if (field.required_since && format_version >= field.required_since)
+        if (field.required_since && format_version >= field.required_since
+            && (!field.required_unless || object.isNull(field.required_unless)))
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Iceberg table metadata file '{}' doesn't contain required field '{}{}'",
@@ -788,23 +805,32 @@ void checkField(
 }
 
 void checkEntries(
-    const Poco::JSON::Object & metadata, const char * array_name, std::span<const MetadataField> fields, Int32 format_version, const String & metadata_file_path)
+    const Poco::JSON::Object & parent,
+    const char * array_name,
+    std::span<const MetadataField> fields,
+    Int32 format_version,
+    const String & metadata_file_path,
+    std::string_view parent_prefix = "",
+    std::span<const MetadataField> nested_fields = {})
 {
-    if (metadata.isNull(array_name))
+    if (parent.isNull(array_name))
         return;
-    const auto entries = metadata.getArray(array_name);
+    const auto entries = parent.getArray(array_name);
     size_t i = 0;
     for (const auto & entry : *entries)
     {
         if (entry.type() != typeid(Poco::JSON::Object::Ptr))
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg table metadata file '{}' has invalid field '{}[{}]': expected an object",
-                metadata_file_path, array_name, i);
+                "Iceberg table metadata file '{}' has invalid field '{}{}[{}]': expected an object",
+                metadata_file_path, parent_prefix, array_name, i);
         const auto & object = *entry.extract<Poco::JSON::Object::Ptr>();
-        const String prefix = fmt::format("{}[{}].", array_name, i);
+        const String prefix = fmt::format("{}{}[{}].", parent_prefix, array_name, i);
         for (const auto & field : fields)
             checkField(object, field, format_version, prefix, metadata_file_path);
+        /// The entries of a partition spec or a sort order are in its `fields`, checked above to be an array.
+        if (!nested_fields.empty())
+            checkEntries(object, f_fields, nested_fields, format_version, metadata_file_path, prefix);
         ++i;
     }
 }
@@ -843,8 +869,11 @@ void validateTableMetadata(const Poco::JSON::Object & metadata, const String & m
     if (!metadata.isNull(f_sort_orders))
         checkField(metadata, {f_default_sort_order_id, MetadataFieldType::Int32, 1}, format_version, "", metadata_file_path);
 
-    checkEntries(metadata, f_partition_specs, partition_spec_fields, format_version, metadata_file_path);
-    checkEntries(metadata, f_sort_orders, sort_order_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_partition_specs, partition_spec_fields, format_version, metadata_file_path, "", partition_field_fields);
+    /// Java reads the deprecated `partition-spec` only when `partition-specs` is absent.
+    if (metadata.isNull(f_partition_specs))
+        checkEntries(metadata, f_partition_spec, partition_field_fields, format_version, metadata_file_path);
+    checkEntries(metadata, f_sort_orders, sort_order_fields, format_version, metadata_file_path, "", sort_field_fields);
     checkEntries(metadata, f_snapshots, snapshot_fields, format_version, metadata_file_path);
     checkEntries(metadata, f_snapshot_log, snapshot_log_fields, format_version, metadata_file_path);
     checkEntries(metadata, f_metadata_log, metadata_log_fields, format_version, metadata_file_path);
