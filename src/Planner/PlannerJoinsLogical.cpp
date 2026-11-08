@@ -536,7 +536,7 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
     bool or_kept_as_single_clause_in_inner_join = false;
     auto join_conditions = buildJoinConditionsGeneral(
         join_expression, builder_context, /* inner_join_keeps_or_as_single_clause= */ true, or_kept_as_single_clause_in_inner_join);
-    /// Within one of several clauses such an `OR` is evaluated during matching, which only `hash` and `grace_hash` support, and no key is exposed to join reordering, so it is planned as in an outer join.
+    /// Within one of several clauses such an `OR` is evaluated during matching, which only `hash` and `grace_hash` support.
     if (join_conditions.size() > 1 && or_kept_as_single_clause_in_inner_join)
         join_conditions = buildJoinConditionsGeneral(
             join_expression, builder_context, /* inner_join_keeps_or_as_single_clause= */ false, or_kept_as_single_clause_in_inner_join);
