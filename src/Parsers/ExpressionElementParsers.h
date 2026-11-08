@@ -586,9 +586,8 @@ struct LiteralAsText
     bool all_non_negative = true;
     /// It holds a `NULL`, which only a `Nullable` target reads back.
     bool has_null = false;
-    /// A number in it is not written the way the types read text - in hexadecimal or binary, or with digit
-    /// separators - and the text holds it as a plain decimal numeral. Only a type that reads the text exactly
-    /// reads it as that number: `255` is not an `IPv4` the way `0xFF` is.
+    /// A number in it written in hexadecimal, binary or with digit separators is held as a plain decimal
+    /// numeral, which not every type reads as that number: `255` is not an `IPv4` the way `0xFF` is.
     bool rewritten = false;
 };
 
@@ -598,8 +597,7 @@ struct LiteralAsText
   * it on the way to the `Decimal`.
   *
   * Returns false, leaving `pos` where it was, if there is no such literal ahead, or if it holds a
-  * number that cannot be written as a plain decimal numeral, such as a hexadecimal float or an integer
-  * wider than 256 bits - see `rewriteAsPlainDecimalNumeral`.
+  * number written in a form that no type reads back - see `rewriteAsPlainDecimalNumeral`.
   */
 bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal);
 

@@ -1117,7 +1117,6 @@ static bool isPlainDecimalNumeral(std::string_view text)
     return pos == text.size();
 }
 
-/// The binary digits as hexadecimal text with the 0x prefix, or nothing if one of them is not 0 or 1.
 static String binaryToHexadecimal(const char * digits, size_t size)
 {
     String hex = "0x";
@@ -1136,9 +1135,7 @@ static String binaryToHexadecimal(const char * digits, size_t size)
     return hex;
 }
 
-/// A number that `isPlainDecimalNumeral` rejects, as the plain decimal numeral of the same value: without digit
-/// separators, and an integer in hexadecimal or binary written in decimal. Nothing for other forms, such as a
-/// hexadecimal float, or for an integer wider than 256 bits, which no type reads.
+/// The number as a plain decimal numeral, or nothing for a form such as a hexadecimal float or an integer wider than 256 bits.
 static std::optional<String> rewriteAsPlainDecimalNumeral(std::string_view token)
 {
     String text;
@@ -1198,7 +1195,6 @@ static std::string_view tokenText(IParser::Pos pos)
     return std::string_view(pos->begin, pos->end - pos->begin);
 }
 
-/// The text of the `Number` token at `pos` as the types read it, or nothing - see `rewriteAsPlainDecimalNumeral`.
 static std::optional<String> numeralText(IParser::Pos pos, LiteralAsText & literal)
 {
     if (pos->type != TokenType::Number)
@@ -1536,10 +1532,10 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!type_text)
         return false;
 
-    /// A literal holding a `NULL` or a rewritten number goes as text only when the target type
-    /// provably reads it back - see `typeReadsLiteralExactly`. Everything else falls back to the
-    /// ordinary expression path, where a `NULL` or a number converts, or fails to, the way it always
-    /// did: the text parsers of some types would silently turn a `NULL` into a default value instead.
+    /// A literal holding a `NULL` or a rewritten number goes as text only when the target type provably reads it back -
+    /// see `typeReadsLiteralExactly`. Everything else falls back to the ordinary expression path,
+    /// where a `NULL` converts, or fails to, the way it always did: the text parsers of some types
+    /// would silently turn it into a default value instead.
     if ((literal.has_null || literal.rewritten) && !typeReadsLiteralExactly(*type_text, literal, pos))
         return false;
 
