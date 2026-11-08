@@ -1820,7 +1820,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
             if (!column_mapper)
                 column_mapper = configuration->getColumnMapperForObject(object_info);
-            else if (!identity_partition_columns.empty() && column_mapper->hasIcebergInitialDefaults())
+            else if (std::any_of(
+                         identity_partition_columns.begin(),
+                         identity_partition_columns.end(),
+                         [&](const auto & column) { return column_mapper->getIcebergInitialDefault(column.first) != nullptr; }))
             {
                 if (auto per_file_mapper = configuration->getColumnMapperForObject(object_info))
                     column_mapper = per_file_mapper;

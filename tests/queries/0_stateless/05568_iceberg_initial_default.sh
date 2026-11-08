@@ -195,6 +195,20 @@ cd duckdb || exit 1
 echo 'duckdb, current schema'
 schema_ids data/persistent/add_columns_with_defaults/default.db/add_columns_with_defaults
 duckdb_queries
+# An identity partition value of the file, even NULL, comes before the default. The copy renames the metadata file:
+# `final.metadata.json` is not read as a metadata version (#129988).
+mixed=data/persistent/partition_values_missing_edge_cases/default/mixed
+mkdir -p "$(dirname "${mixed}")"
+cp -rp "${CUR_DIR}/data_iceberg/duckdb/${mixed}" "$(dirname "${mixed}")/"
+mv "${mixed}/metadata/final.metadata.json" "${mixed}/metadata/v1.metadata.json"
+MIXED="icebergLocal('${mixed}', SETTINGS iceberg_metadata_file_path = 'metadata/v1.metadata.json')"
+${LOCAL} -q "
+    SELECT 'identity partition values';
+    SELECT id, region, address FROM ${MIXED} WHERE id IN (4, 9, 11) ORDER BY id;
+    SELECT count(), sum(id) FROM ${MIXED} WHERE region IS NULL SETTINGS optimize_move_to_prewhere = 1;
+    SELECT count(), sum(id) FROM ${MIXED} WHERE region IS NULL SETTINGS optimize_move_to_prewhere = 0;
+    SELECT id FROM ${MIXED} WHERE region = 'unknown-region' AND address.country = 'unknown-country' ORDER BY id;
+"
 
 # The defaults are a part of the identity of the cached data: the same files read through metadata without them first.
 table="data/persistent/add_columns_with_defaults_in_struct/default.db/add_columns_with_defaults_in_struct"
@@ -244,6 +258,7 @@ for format in Parquet ORC Avro; do
     else
         ${LOCAL} -q "
             SELECT a, t, l, d, r, s, n, ll FROM icebergLocal('${table}/');
+            SELECT t.x, t.y, s.x, n.x FROM icebergLocal('${table}/');
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 1;
             SELECT a FROM icebergLocal('${table}/') WHERE d = 7 SETTINGS optimize_move_to_prewhere = 0;
         "

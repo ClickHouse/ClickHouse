@@ -58,6 +58,13 @@ purchase	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-1
 test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	2023-05-15 14:30:45.000000	World	020d4fc7-acd6-45ac-b216-7873f4038e1f	8000800080	800080
 test	false	453243	328725092345834	23.34342	23.343424523423433	3423434.23	0011-03-05	43605000000	0011-03-05 12:06:45.000000	\N	World	\N	\N	800080
 test	true	342342	-9223372036854775808	0.34234	0.342343242342342	12345	2003-10-20	12345	1970-01-01 00:00:00.012345	1970-01-01 00:00:00.012345	HELLO	f79c3e09-677c-4bbd-a479-3f349cb785e7	010203FF03	0102
+identity partition values
+4	\N	(NULL,'null-city',(NULL,'null-code'))
+9	unknown-region	('unknown-country','default-city',(-1,'default-code'))
+11	\N	(NULL,NULL,(NULL,NULL))
+3	21
+3	21
+9
 columns cache	test	453243
 columns cache	test	\N
 columns cache	test	342342
@@ -70,6 +77,7 @@ schema ids	[0]
 Parquet, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
+10	5	6	\N
 1
 1
 1	(10,5)	[(11,5)]	7	8	(6)	[1,NULL]
@@ -83,6 +91,7 @@ schema ids	[0]
 ORC, current schema
 schema ids	[1]
 1	(10,5)	[(11,5)]	7	8	(6)	(NULL)	[1,NULL]
+10	5	6	\N
 1
 1
 readd	1	(9)	9

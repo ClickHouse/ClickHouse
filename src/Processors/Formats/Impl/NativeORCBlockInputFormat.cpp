@@ -1298,6 +1298,58 @@ static std::optional<std::vector<Int64>> getORCFieldIcebergIds(const ORC::Type &
     return result;
 }
 
+/// The field of the ORC struct `struct_type` with the Iceberg field id `field_id`: nullptr if no field has it, nullopt if
+/// `struct_type` is not a struct or one of its fields has no id (absence cannot be proven).
+static std::optional<const ORC::Type *> findORCFieldByIcebergId(const ORC::Type & struct_type, Int64 field_id)
+{
+    if (struct_type.getKind() != ORC::STRUCT)
+        return std::nullopt;
+    auto field_ids = getORCFieldIcebergIds(struct_type);
+    if (!field_ids)
+        return std::nullopt;
+    auto it = std::find(field_ids->begin(), field_ids->end(), field_id);
+    if (it == field_ids->end())
+        return static_cast<const ORC::Type *>(nullptr);
+    return struct_type.getSubtype(static_cast<uint64_t>(it - field_ids->begin()));
+}
+
+/// Whether the column `path` (a field of the data lake schema or a tuple element of one) is absent from the file, matching
+/// each struct on its way from the root by Iceberg field id, and whether its `initial-default` applies: inside an absent
+/// struct it applies only if every struct from the absent one down has a struct default (else NULL, as in Parquet).
+static std::pair<bool, bool> getORCFieldAbsence(const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema)
+{
+    const auto & encoding = column_mapper.getStorageColumnEncoding();
+    auto field = encoding.find(path);
+    if (field == encoding.end())
+        return {false, false};
+
+    std::vector<std::pair<String, Int64>> levels;
+    for (size_t pos = path.find('.'); pos != String::npos; pos = path.find('.', pos + 1))
+        if (auto ancestor = encoding.find(path.substr(0, pos)); ancestor != encoding.end())
+            levels.emplace_back(ancestor->first, ancestor->second);
+    levels.emplace_back(path, field->second);
+
+    const ORC::Type * level_type = &file_schema;
+    for (size_t i = 0; i < levels.size(); ++i)
+    {
+        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i].second);
+        if (!orc_field)
+            return {false, false};
+        if (!*orc_field)
+        {
+            for (size_t j = i; j + 1 < levels.size(); ++j)
+            {
+                const Field * struct_default = column_mapper.getIcebergInitialDefault(levels[j].first);
+                if (!struct_default || struct_default->getType() != Field::Types::Tuple)
+                    return {true, false};
+            }
+            return {true, true};
+        }
+        level_type = *orc_field;
+    }
+    return {false, false};
+}
+
 void NativeORCBlockInputFormat::prepareFileReader()
 {
     getFileReader(*in, file_reader, format_settings, use_prefetch, min_bytes_for_seek, is_stopped);
@@ -1314,25 +1366,23 @@ void NativeORCBlockInputFormat::prepareFileReader()
     const auto & header = getPort().getHeader();
     const auto & file_schema = file_reader->getType();
 
-    /// A column of the data lake schema is absent from the file if the file identifies all its fields by Iceberg field
-    /// id and none of them has the column's id.
+    /// A column of the data lake schema is absent from the file if a struct on its way identifies all its fields by Iceberg
+    /// field id and none of them has the id of the column or of its struct.
     const ColumnMapper * column_mapper = format_filter_info ? format_filter_info->column_mapper.get() : nullptr;
     NameSet absent_columns;
     std::unordered_map<String, Field> absent_column_defaults;
     if (column_mapper)
     {
-        if (auto file_field_ids = getORCFieldIcebergIds(file_schema))
+        for (const auto & column : header)
         {
-            const auto & encoding = column_mapper->getStorageColumnEncoding();
-            for (const auto & column : header)
-            {
-                auto it = encoding.find(column.name);
-                if (it == encoding.end() || std::find(file_field_ids->begin(), file_field_ids->end(), it->second) != file_field_ids->end())
-                    continue;
-                absent_columns.insert(column.name);
-                if (const Field * value = column_mapper->getIcebergInitialDefault(column.name))
-                    absent_column_defaults.emplace(column.name, convertFieldToTypeOrThrow(*value, *column.type));
-            }
+            const auto [absent, default_applies] = getORCFieldAbsence(column.name, *column_mapper, file_schema);
+            if (!absent)
+                continue;
+            absent_columns.insert(column.name);
+            if (!default_applies)
+                continue;
+            if (const Field * value = column_mapper->getIcebergInitialDefault(column.name))
+                absent_column_defaults.emplace(column.name, convertFieldToTypeOrThrow(*value, *column.type));
         }
     }
 
