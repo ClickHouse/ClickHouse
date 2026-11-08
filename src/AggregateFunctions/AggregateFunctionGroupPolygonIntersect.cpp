@@ -786,7 +786,7 @@ Empty geometry inputs are absorbing: once encountered, the result is immediately
 
 The result is a `MultiPolygon`. Returns an empty `MultiPolygon` for empty groups or when the intersection is empty. Invalid polygonal input raises an exception.
 
-The function short-circuits: once the accumulated intersection becomes empty, further inputs are ignored.
+The function short-circuits: once the accumulated intersection becomes empty, further inputs are ignored without being validated. Whether an invalid input raises an exception can therefore depend on the input order and on parallel processing.
 
 The geometric intersection is order-independent, but floating-point overlay operations are not exactly associative and the returned `MultiPolygon` is not canonicalized. Its raw array layout and floating-point coordinates can therefore depend on input and merge order.
 
