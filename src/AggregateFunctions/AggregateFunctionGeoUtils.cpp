@@ -24,6 +24,16 @@
 #include <type_traits>
 
 
+/// Boost.Geometry keeps only default `cpp_bin_float` numbers as their own floating-point type and maps every
+/// other Boost.Multiprecision number to `double`. For the quad type used as `WideCoordinate` on some targets,
+/// `segment_ratio` would then overflow `double` and break the overlay for coordinates above about 1e154.
+template <>
+struct boost::geometry::detail::promoted_to_floating_point<boost::multiprecision::cpp_bin_float_quad>
+{
+    using type = boost::multiprecision::cpp_bin_float_quad;
+};
+
+
 namespace DB
 {
 
@@ -105,6 +115,7 @@ using WideCoordinate = std::conditional_t<
         && std::numeric_limits<long double>::digits >= std::numeric_limits<Float64>::digits,
     long double,
     boost::multiprecision::cpp_bin_float_quad>;
+static_assert(std::is_same_v<boost::geometry::detail::promoted_to_floating_point<WideCoordinate>::type, WideCoordinate>);
 using WideCartesianPoint = boost::geometry::model::d2::point_xy<WideCoordinate>;
 using WideCartesianMultiPolygon = MultiPolygon<WideCartesianPoint>;
 
