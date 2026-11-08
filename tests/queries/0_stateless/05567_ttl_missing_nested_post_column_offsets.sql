@@ -224,6 +224,26 @@ WHERE database = currentDatabase() AND table = 'ttl_nested_through_ephemeral' AN
     AND column IN ('id', 'ts', 'n.a', 'n.d', 'x');
 DROP TABLE ttl_nested_through_ephemeral;
 
+-- `x` is stored only in the second part, so the reader of the first one still evaluates its default.
+DROP TABLE IF EXISTS ttl_nested_partly_stored_default;
+CREATE TABLE ttl_nested_partly_stored_default (id UInt64, ts DateTime, n Nested(a UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+INSERT INTO ttl_nested_partly_stored_default VALUES (0, '2000-01-01', [1, 2]), (1, '2000-01-01', []);
+ALTER TABLE ttl_nested_partly_stored_default ADD COLUMN x UInt64;
+INSERT INTO ttl_nested_partly_stored_default VALUES (2, '2000-01-01', [3, 4, 5], 7), (3, '2000-01-01', [6], 7);
+ALTER TABLE ttl_nested_partly_stored_default ADD COLUMN n.d Array(UInt8);
+ALTER TABLE ttl_nested_partly_stored_default MODIFY COLUMN x UInt64 DEFAULT length(n.d) * 10;
+ALTER TABLE ttl_nested_partly_stored_default MODIFY TTL ts + INTERVAL 1 DAY DELETE WHERE id = 1;
+
+OPTIMIZE TABLE ttl_nested_partly_stored_default FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT 'partly stored default', id, x, length(n.d) FROM ttl_nested_partly_stored_default ORDER BY id;
+SELECT 'partly stored default stored', arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_partly_stored_default' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d', 'x');
+DROP TABLE ttl_nested_partly_stored_default;
+
 DROP TABLE IF EXISTS ttl_nested_default_source_wide;
 CREATE TABLE ttl_nested_default_source_wide (id UInt64, ts DateTime, n Nested(a UInt64))
 ENGINE = MergeTree ORDER BY id

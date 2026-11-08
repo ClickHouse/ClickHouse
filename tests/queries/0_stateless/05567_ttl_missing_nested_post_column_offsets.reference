@@ -51,6 +51,10 @@ through alias stored	['id','m','n.a','ts']
 through ephemeral	0	20	2
 through ephemeral	2	30	3
 through ephemeral stored	['id','n.a','ts','x']
+partly stored default	0	20	2
+partly stored default	2	7	3
+partly stored default	3	7	1
+partly stored default stored	['id','n.a','ts','x']
 default source wide base	4
 default source wide projection	4
 0	2	2

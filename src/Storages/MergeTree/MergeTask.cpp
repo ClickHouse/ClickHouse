@@ -19,6 +19,7 @@
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
@@ -388,15 +389,79 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 namespace
 {
 
-/// The columns that the expressions evaluated by a merge may read: the TTL rules, the `DEFAULT` and
-/// `MATERIALIZED` expressions, the skip indices and the projections. An `ALIAS` or `EPHEMERAL` column, which is
-/// not stored, stands for the columns its expression reads, a subcolumn for its column and a flattened `Nested`
-/// for all of its arrays. The ASTs are walked syntactically, so an identifier that is not a column of the table
-/// (a lambda argument, a column of a subquery) at worst adds a column that is then read for nothing.
+bool hasStoredDefault(const ColumnDescription & column)
+{
+    const auto & default_desc = column.default_desc;
+    return default_desc.expression
+        && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized);
+}
+
+/// The columns whose `DEFAULT` or `MATERIALIZED` expression a merge may evaluate: the reader of a source part
+/// fills a column that the part does not store or that a pending mutation drops, and `TTLTransform` resets a
+/// column with a TTL or an expired column to its default and recomputes the `MATERIALIZED` columns that read one
+/// of them. The expression of any other column is never evaluated, as every source part already stores its value.
+NameSet getColumnsWithDefaultsEvaluatedByMerge(
+    const StorageInMemoryMetadata & metadata,
+    const MergeTreeData::DataPartsVector & parts,
+    const std::vector<AlterConversionsPtr> & alter_conversions,
+    const NamesAndTypesList & expired_columns,
+    bool share_nested_offsets,
+    const ContextPtr & context)
+{
+    const auto & columns = metadata.getColumns();
+
+    NameSet reset_columns;
+    for (const auto & [name, _] : metadata.getColumnTTLs())
+        reset_columns.insert(name);
+    for (const auto & column : expired_columns)
+        reset_columns.insert(column.name);
+
+    /// The same graph that `TTLTransform::analyzeDependentMaterializedColumns` uses to find the dependents.
+    const MaterializedColumnDependencies materialized_dependencies(columns, context);
+
+    /// Mirrors `injectRequiredColumns`, which decides what the reader of a part fills.
+    auto is_missing_in_some_part = [&](const String & name)
+    {
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            const auto * conversions = i < alter_conversions.size() ? alter_conversions[i].get() : nullptr;
+            String name_in_part = name;
+            if (conversions && conversions->isColumnRenamed(name_in_part))
+                name_in_part = conversions->getColumnOldName(name_in_part);
+
+            if (!parts[i]->getColumnPosition(name_in_part)
+                || (conversions && conversions->isColumnDropped(name_in_part, share_nested_offsets)))
+                return true;
+        }
+        return false;
+    };
+
+    NameSet result;
+    for (const auto & column : columns)
+    {
+        if (!hasStoredDefault(column))
+            continue;
+
+        if (reset_columns.contains(column.name)
+            || is_missing_in_some_part(column.name)
+            || !materialized_dependencies.findColumnsToRecalculate(column.name, reset_columns).empty())
+            result.insert(column.name);
+    }
+
+    return result;
+}
+
+/// The columns that the expressions evaluated by a merge may read: the TTL rules, the skip indices, the
+/// projections and the `DEFAULT` and `MATERIALIZED` expressions of @columns_with_evaluated_defaults. An `ALIAS` or
+/// `EPHEMERAL` column, which is not stored, stands for the columns its expression reads, a subcolumn for its column
+/// and a flattened `Nested` for all of its arrays. A stored column stands for itself: its own default is evaluated
+/// only if it is in @columns_with_evaluated_defaults too. The ASTs are walked syntactically, so an identifier that
+/// is not a column of the table (a lambda argument, a column of a subquery) at worst adds a column that is then
+/// read for nothing.
 class ColumnsReadByMergeExpressions
 {
 public:
-    explicit ColumnsReadByMergeExpressions(const StorageInMemoryMetadata & metadata)
+    ColumnsReadByMergeExpressions(const StorageInMemoryMetadata & metadata, const NameSet & columns_with_evaluated_defaults)
         : columns(metadata.getColumns())
     {
         if (const auto & table_ttl = metadata.getTableTTLs().definition_ast)
@@ -407,10 +472,8 @@ public:
             if (column.ttl)
                 addIdentifiers(*column.ttl);
 
-            const auto & default_desc = column.default_desc;
-            if (default_desc.expression
-                && (default_desc.kind == ColumnDefaultKind::Default || default_desc.kind == ColumnDefaultKind::Materialized))
-                addIdentifiers(*default_desc.expression);
+            if (hasStoredDefault(column) && columns_with_evaluated_defaults.contains(column.name))
+                addIdentifiers(*column.default_desc.expression);
         }
 
         for (const auto & index : metadata.getSecondaryIndices())
@@ -3631,7 +3694,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             if (std::find(merging_column_names.begin(), merging_column_names.end(), column.name) == merging_column_names.end())
             {
                 if (!columns_read_by_expressions)
-                    columns_read_by_expressions.emplace(*global_ctx->metadata_snapshot);
+                    columns_read_by_expressions.emplace(
+                        *global_ctx->metadata_snapshot,
+                        getColumnsWithDefaultsEvaluatedByMerge(
+                            *global_ctx->metadata_snapshot,
+                            global_ctx->future_part->parts,
+                            global_ctx->alter_conversions,
+                            global_ctx->merging_columns_expired_by_ttl,
+                            /* share_nested_offsets = */ true,
+                            global_ctx->data->getContext()));
 
                 if (!columns_read_by_expressions->contains(column.name))
                     continue;
