@@ -7,6 +7,7 @@
 -- aggregate function state and the ASTs of the descriptions of the statistics: one in the description of the
 -- column statistics and one in the statistics object.
 
+SET min_marks_per_part_to_load_statistics = 0;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 -- The statistics are loaded to reorder the PREWHERE conditions.
