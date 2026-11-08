@@ -67,7 +67,7 @@ private:
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
     std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
-    /// Field ids whose manifest bounds and null counts do not describe the values a read returns.
+    /// Field ids whose manifest bounds, null counts and partition values may not describe the values a read returns.
     std::unordered_set<Int32> columns_with_unreliable_statistics;
 
 public:

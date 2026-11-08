@@ -714,8 +714,7 @@ Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
-static void parseNameMappingFields(
-    const Poco::Dynamic::Var & fields_json, IcebergNameMapping & mapping, std::unordered_set<Int64> & named_field_ids)
+static void parseNameMappingFields(const Poco::Dynamic::Var & fields_json, IcebergNameMapping & mapping)
 {
     checkStackSize();
     if (fields_json.type() != typeid(Poco::JSON::Array::Ptr))
@@ -752,7 +751,7 @@ static void parseNameMappingFields(
         if (object->has(f_fields))
         {
             auto nested = std::make_shared<IcebergNameMapping>();
-            parseNameMappingFields(object->get(f_fields), *nested, named_field_ids);
+            parseNameMappingFields(object->get(f_fields), *nested);
             field.nested = std::move(nested);
         }
 
@@ -781,8 +780,32 @@ static void parseNameMappingFields(
                     "Table property `{}` has the name `{}` more than once in one list of fields",
                     f_name_mapping_default,
                     name.extract<String>());
-            if (field.field_id)
-                named_field_ids.insert(*field.field_id);
+        }
+    }
+}
+
+static void collectUnboundFieldIds(
+    const Poco::JSON::Array::Ptr & fields, const IcebergNameMapping * scope, std::unordered_set<Int64> & unbound_field_ids)
+{
+    checkStackSize();
+    for (UInt32 i = 0; i < fields->size(); ++i)
+    {
+        const auto field = fields->getObject(i);
+        const Int64 field_id = field->getValue<Int64>(f_id);
+        const IcebergNameMapping::Field * mapped = nullptr;
+        if (scope)
+        {
+            auto it = scope->fields.find(field->getValue<String>(f_name));
+            if (it != scope->fields.end() && it->second.field_id == field_id)
+                mapped = &it->second;
+        }
+        if (!mapped)
+            unbound_field_ids.insert(field_id);
+        if (field->isObject(f_type))
+        {
+            const auto type = field->getObject(f_type);
+            if (type->getValue<String>(f_type) == f_struct)
+                collectUnboundFieldIds(type->getArray(f_fields), mapped ? mapped->nested.get() : nullptr, unbound_field_ids);
         }
     }
 }
@@ -796,7 +819,12 @@ std::shared_ptr<const IcebergNameMapping> getNameMapping(const Poco::JSON::Objec
     const auto mapping_json = properties->getValue<String>(f_name_mapping_default);
     Poco::JSON::Parser parser;
     auto mapping = std::make_shared<IcebergNameMapping>();
-    parseNameMappingFields(parser.parse(mapping_json), *mapping, mapping->named_field_ids);
+    parseNameMappingFields(parser.parse(mapping_json), *mapping);
+    if (const auto schemas = metadata_object->getArray(f_schemas))
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+            collectUnboundFieldIds(schemas->getObject(i)->getArray(f_fields), mapping.get(), mapping->unbound_field_ids);
+    if (const auto schema = metadata_object->getObject(f_schema))
+        collectUnboundFieldIds(schema->getArray(f_fields), mapping.get(), mapping->unbound_field_ids);
     mapping->hash = sipHash64(mapping_json);
     return mapping;
 }

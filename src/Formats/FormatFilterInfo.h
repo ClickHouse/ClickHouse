@@ -65,9 +65,10 @@ struct IcebergNameMapping
         std::shared_ptr<const IcebergNameMapping> nested;
     };
     std::unordered_map<String, Field> fields;
-    /// The field ids that have at least one name, at any depth (filled at the root only): the ids a file column
-    /// can be bound to. An entry with `names: []` keeps its id out of this set.
-    std::unordered_set<Int64> named_field_ids;
+    /// Field ids (top level and in structs) to which some schema of the table gives a name that the mapping does not
+    /// map to them (filled at the root only): a data file without field ids may hold the column under that name and
+    /// no longer binds it, so the manifest metadata of such a file describes another binding than the read.
+    std::unordered_set<Int64> unbound_field_ids;
     /// Of the JSON text, for the query condition cache keys of the files read through the mapping.
     UInt64 hash = 0;
 };

@@ -178,9 +178,9 @@ ManifestFilesPruner::ManifestFilesPruner(
             min_max_column_types.emplace(used_column_id, name_and_type->type);
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
 
-            /// No column of a data file without field ids is bound to an id that the mapping does not name, so
-            /// such a file holds only NULLs for it, whatever metrics were recorded under the mapping of the import.
-            if (name_mapping && !name_mapping->named_field_ids.contains(used_column_id))
+            /// A data file without field ids binds this column through the mapping, which does not map every name the column
+            /// had in the schemas of the table to it, so the manifest metadata of such a file may describe another column.
+            if (name_mapping && name_mapping->unbound_field_ids.contains(used_column_id))
                 columns_with_unreliable_statistics.insert(used_column_id);
         }
 
@@ -458,6 +458,9 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
+        if (columns_with_unreliable_statistics.contains(column_id))
+            continue;
+
         DataTypePtr column_type;
         bool has_no_nulls = true;
 
@@ -498,7 +501,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
         }
 
         auto rect_it = entry_hyperrectangles.find(column_id);
-        if (has_no_nulls && rect_it != entry_hyperrectangles.end() && !columns_with_unreliable_statistics.contains(column_id)
+        if (has_no_nulls && rect_it != entry_hyperrectangles.end()
             && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;

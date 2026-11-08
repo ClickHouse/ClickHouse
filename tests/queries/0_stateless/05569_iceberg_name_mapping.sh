@@ -6,6 +6,8 @@
 # `data_iceberg/name_mapping_import` was written by PyIceberg 0.11.1: `add_files` of `import_0.parquet` (nested
 # fields under old names, list element named `item`) and `import_1.parquet` (`id` and `b` only), both without field
 # ids, then an `append` (with field ids, `id` 4), then one metadata file per change of the mapping or the schema.
+# `data_iceberg/name_mapping_partitioned` (PyIceberg 0.11.1, partitioned by `day(d)`): `add_files` of one file without
+# field ids, then `d` removed from the mapping and put back, then `b` renamed to `b_old` and a new column `b` added.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,6 +24,14 @@ function T()
     echo "icebergLocal('${3:-name_mapping_import}', ${2:+'$2', }SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
 }
 
+# P <metadata version>: the partitioned table at that version.
+function P()
+{
+    local metadata
+    metadata=$(cd "$CUR_DIR/data_iceberg/name_mapping_partitioned/metadata" && ls "$1"-*.metadata.json)
+    echo "icebergLocal('name_mapping_partitioned', SETTINGS iceberg_metadata_file_path = 'metadata/$metadata')"
+}
+
 V_BOTH=00004             # all fields mapped, `x`, `a`, `v` also under their old names
 V_UNMAPPED_B=00005       # `b` is not in the mapping
 V_B_NAMELESS=00006       # `b` is in the mapping with `names: []`
@@ -32,6 +42,9 @@ V_DROPPED_MAPPED=00012   # `b2` dropped, still in the mapping
 V_DROPPED_UNMAPPED=00013 # `b2` dropped, not in the mapping
 V_BAD=00014              # `names` is not an array
 SNAPSHOT_WITH_B=7321918627603401030
+V_P_MAPPED=00001         # all fields mapped
+V_P_UNMAPPED_D=00002     # `d` is not in the mapping
+V_P_REASSIGNED=00005     # `b` renamed to `b_old`, the name `b` given to a new column
 
 LAZY="query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_materialization_for_object_storage = 1"
 
@@ -63,12 +76,22 @@ SELECT count() FROM $(T $V_BOTH) WHERE b > 55 SETTINGS use_query_condition_cache
 SELECT 'names: []';
 SELECT count(), countIf(b IS NULL) FROM $(T $V_B_NAMELESS);
 SELECT count() FROM $(T $V_B_NAMELESS) WHERE b IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'partition values';
+SELECT count() FROM $(P $V_P_MAPPED) WHERE d IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT count(), countIf(d IS NULL) FROM $(P $V_P_UNMAPPED_D);
+SELECT count() FROM $(P $V_P_UNMAPPED_D) WHERE d IS NULL SETTINGS use_query_condition_cache = 0;
+SELECT 'name given to a new column';
+SELECT id, b_old FROM $(P $V_P_REASSIGNED) ORDER BY id;
+SELECT count() FROM $(P $V_P_REASSIGNED) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
 "
 
 # The query above prunes the data file of `id` 4 by its manifest statistics.
 $CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
     -q "SELECT count() FROM $(T $V_BOTH) WHERE b > 55 SETTINGS use_query_condition_cache = 0" 2>&1 >/dev/null \
     | grep -oE 'IcebergMinMaxIndexPrunedFiles: [1-9][0-9]*' | sed 's/: .*/ > 0/'
+$CLICKHOUSE_LOCAL --print-profile-events --profile-events-delay-ms=-1 \
+    -q "SELECT count() FROM $(P $V_P_MAPPED) WHERE d IS NULL SETTINGS use_query_condition_cache = 0" 2>&1 >/dev/null \
+    | grep -oE 'IcebergPartitionPrunedFiles: [1-9][0-9]*' | sed 's/: .*/ > 0/'
 
 # A query condition cache entry written under one mapping is not used under another one. On the server, because
 # `clickhouse-local` has no query condition cache.

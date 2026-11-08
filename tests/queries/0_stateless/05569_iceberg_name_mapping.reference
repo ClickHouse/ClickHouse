@@ -62,7 +62,17 @@ manifest statistics
 names: []
 6	5
 5
+partition values
+0
+3	3
+3
+name given to a new column
+1	\N
+2	\N
+3	\N
+3
 IcebergMinMaxIndexPrunedFiles > 0
+IcebergPartitionPrunedFiles > 0
 query condition cache
 0
 5
