@@ -2190,12 +2190,11 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
-    /// Streams of a renamed column are moved by its RENAME_COLUMN entry, unless the mutation rewrites the column.
-    NameSet moved_columns;
+    /// The streams of a renamed column are moved or removed by its RENAME_COLUMN entry.
+    NameSet renamed_columns;
     for (const auto & command : commands_for_renames)
-        if (command.type == MutationCommand::Type::RENAME_COLUMN && !updated_header.has(command.rename_to)
-            && !updated_columns_in_patches.contains(command.rename_to))
-            moved_columns.insert(command.column_name);
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            renamed_columns.insert(command.column_name);
 
     const auto new_part_column_names = new_part->getColumns().getNameSet();
 
@@ -2246,16 +2245,14 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                if (!new_part_column_names.contains(command.rename_to))
+                /// A rewritten target gets new files: writing through a hardlink would modify the source part.
+                if (!new_part_column_names.contains(command.rename_to) || updated_header.has(command.rename_to)
+                    || updated_columns_in_patches.contains(command.rename_to))
                 {
                     if (columns_renamed_to_not_stored.insert(command.column_name).second)
                         remove_column_streams(command.column_name);
                     continue;
                 }
-
-                /// Columns updated in patches should be rewritten by mutation.
-                if (updated_columns_in_patches.contains(command.rename_to))
-                    continue;
 
                 const auto * substreams = source_part->getColumnsSubstreams().tryGetColumnSubstreams(command.column_name);
                 if (substreams)
@@ -2334,7 +2331,7 @@ static NameToNameVector collectFilesForRenames(
                 /// type with higher number of streams (e.g. LowCardinality -> String).
                 Names columns_to_check;
                 for (const auto & name : source_part->getColumns().getNames())
-                    if (!moved_columns.contains(name))
+                    if (!renamed_columns.contains(name))
                         columns_to_check.push_back(name);
 
                 auto old_streams = getStreamCounts(source_part, source_part->checksums, columns_to_check);

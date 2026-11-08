@@ -2621,8 +2621,19 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
         /// but it's still present https://github.com/ClickHouse/ClickHouse/issues/65275
         /// chassert(mutation_pointer < it->second->entry->znode_name);
         mutation_ids.push_back(it->second->entry->znode_name);
-        const auto & commands_from_entry = it->second->entry->commands;
-        commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
+        const auto & entry = *it->second->entry;
+
+        /// A part at the ALTER's metadata version already has its column names, so replaying its renames and
+        /// drops would move or drop another column when a name is reused (RENAME a TO b, RENAME c TO a).
+        if (entry.alter_version != -1 && entry.alter_version <= part->getMetadataVersion()
+            && !part->old_part_with_no_metadata_version_on_disk)
+        {
+            for (const auto & command : entry.commands)
+                if (!AlterConversions::isSupportedMetadataMutation(command.type) || command.clear)
+                    commands.push_back(command);
+        }
+        else
+            commands.insert(commands.end(), entry.commands.begin(), entry.commands.end());
     }
 
     return commands;

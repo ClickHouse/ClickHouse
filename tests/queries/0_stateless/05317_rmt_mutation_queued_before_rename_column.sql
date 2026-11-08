@@ -124,3 +124,57 @@ ALTER TABLE t_attach_target UPDATE c = c + 1 WHERE 1 SETTINGS mutations_sync = 2
 SELECT 'attach target', id, a, c FROM t_attach_target ORDER BY id;
 CHECK TABLE t_attach_target SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_attach_target SYNC;
+
+-- ALTER UPDATE queued before a swap of two column names, wide and compact parts.
+DROP TABLE IF EXISTS t_swap_wide SYNC;
+CREATE TABLE t_swap_wide (id UInt32, x UInt32, a UInt32, c UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_wide', '1') ORDER BY tuple()
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_swap_wide VALUES (1, 10, 11, 100), (2, 20, 21, 200);
+ALTER TABLE t_swap_wide UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_swap_wide RENAME COLUMN a TO b, RENAME COLUMN c TO a SETTINGS alter_sync = 0;
+SYSTEM SYNC REPLICA t_swap_wide;
+SELECT 'swap wide pending', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_swap_wide' AND NOT is_done;
+ALTER TABLE t_swap_wide MODIFY SETTING max_replicated_mutations_in_queue = 16;
+ALTER TABLE t_swap_wide UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'swap wide', id, x, b, a FROM t_swap_wide ORDER BY id;
+CHECK TABLE t_swap_wide SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_swap_wide SYNC;
+
+DROP TABLE IF EXISTS t_swap_compact SYNC;
+CREATE TABLE t_swap_compact (id UInt32, x UInt32, a UInt32, c UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_compact', '1') ORDER BY tuple()
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000;
+
+INSERT INTO t_swap_compact VALUES (1, 10, 11, 100), (2, 20, 21, 200);
+ALTER TABLE t_swap_compact UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_swap_compact RENAME COLUMN a TO b, RENAME COLUMN c TO a SETTINGS alter_sync = 0;
+SYSTEM SYNC REPLICA t_swap_compact;
+ALTER TABLE t_swap_compact MODIFY SETTING max_replicated_mutations_in_queue = 16;
+ALTER TABLE t_swap_compact UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'swap compact', id, x, b, a FROM t_swap_compact ORDER BY id;
+DROP TABLE t_swap_compact SYNC;
+
+-- The swapped column is rewritten by the queued ALTER UPDATE; t_swap_shared shares the source part's files.
+DROP TABLE IF EXISTS t_swap_rewrite SYNC;
+DROP TABLE IF EXISTS t_swap_shared SYNC;
+CREATE TABLE t_swap_rewrite (id UInt32, x UInt32, a UInt32 MATERIALIZED x + 1, c UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_swap_rewrite', '1') ORDER BY tuple()
+SETTINGS max_replicated_mutations_in_queue = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+CREATE TABLE t_swap_shared (id UInt32, x UInt32, a UInt32 MATERIALIZED x + 1, c UInt32)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_swap_rewrite (id, x, c) VALUES (1, 10, 100), (2, 20, 200);
+ALTER TABLE t_swap_shared ATTACH PARTITION tuple() FROM t_swap_rewrite;
+ALTER TABLE t_swap_rewrite UPDATE x = x + 1 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_swap_rewrite RENAME COLUMN a TO b, RENAME COLUMN c TO a SETTINGS alter_sync = 0;
+SYSTEM SYNC REPLICA t_swap_rewrite;
+ALTER TABLE t_swap_rewrite MODIFY SETTING max_replicated_mutations_in_queue = 16;
+ALTER TABLE t_swap_rewrite UPDATE x = x WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'swap rewrite', id, x, b, a FROM t_swap_rewrite ORDER BY id;
+SELECT 'swap shared', id, x, a, c FROM t_swap_shared ORDER BY id;
+CHECK TABLE t_swap_shared SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_swap_rewrite SYNC;
+DROP TABLE t_swap_shared SYNC;
