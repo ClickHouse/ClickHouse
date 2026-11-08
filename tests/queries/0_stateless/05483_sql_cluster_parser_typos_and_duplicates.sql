@@ -2,14 +2,9 @@
 -- silently changed the topology. Duplicate keys at one level used to leave the last
 -- inherited value winning over a more specific one.
 
-CREATE CLUSTER t05483_missing_replica_paren (
-    SHARD (REPLICA host = '127.0.0.1', REPLICA host = '127.0.0.2')
-); -- { error SYNTAX_ERROR }
+CREATE CLUSTER t05483_missing_replica_paren (SHARD (REPLICA host = '127.0.0.1', REPLICA host = '127.0.0.2')); -- { clientError SYNTAX_ERROR }
 
-CREATE CLUSTER t05483_missing_shard_paren (
-    SHARD user = 'u1',
-    SHARD (host = '127.0.0.1', port = 9000)
-); -- { error SYNTAX_ERROR }
+CREATE CLUSTER t05483_missing_shard_paren (SHARD user = 'u1', SHARD (host = '127.0.0.1', port = 9000)); -- { clientError SYNTAX_ERROR }
 
 CREATE CLUSTER t05483_dup_cluster_user (
     user = 'a',
