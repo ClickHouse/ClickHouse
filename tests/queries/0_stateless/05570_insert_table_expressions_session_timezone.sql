@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS t_created_in_session;
 DROP TABLE IF EXISTS t_lambda;
 DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_null_in;
+DROP TABLE IF EXISTS t_dynamic;
 
 SELECT 'sorting key over a time zone dependent conversion';
 CREATE TABLE t_key (ts UInt32, id UInt32) ENGINE = MergeTree ORDER BY (toDate(toDateTime(ts)), id) SETTINGS index_granularity = 4;
@@ -91,6 +92,20 @@ SELECT (SELECT groupArray((Time, v)) FROM (SELECT Time, sum(Value) AS v FROM t_g
 SELECT (SELECT groupArray((Time, v)) FROM (SELECT Time, sum(Value) AS v FROM t_graphite_la GROUP BY Time ORDER BY Time))
     = (SELECT groupArray((Time, v)) FROM (SELECT Time, sum(Value) AS v FROM t_graphite_ref GROUP BY Time ORDER BY Time));
 
+SELECT 'sorting key over Dynamic DateTime values that the INSERT also serializes';
+CREATE TABLE t_dynamic (id UInt32, d Array(Dynamic), s String) ENGINE = MergeTree ORDER BY toString(d) SETTINGS index_granularity = 1;
+SYSTEM STOP MERGES t_dynamic;
+-- One row per block, so the key and `s` serialize `d` in turn on one thread: here the key of rows 0-3 comes first.
+INSERT INTO t_dynamic SELECT number, [CAST(toDateTime(1704067200 + number * 3600) AS Dynamic)] AS d, if(number < 4, '', toString(d)) FROM numbers(8)
+    SETTINGS session_timezone = 'Asia/Tokyo', max_threads = 1, max_insert_threads = 1, max_block_size = 1, min_insert_block_size_rows = 0,
+        min_insert_block_size_bytes = 0, optimize_trivial_insert_select = 0, short_circuit_function_evaluation = 'force_enable';
+-- Here `s` of row 0 comes first.
+INSERT INTO t_dynamic SELECT number + 8, [CAST(toDateTime(1704067200 + number * 3600) AS Dynamic)] AS d, toString(d) FROM numbers(8)
+    SETTINGS session_timezone = 'America/Los_Angeles', max_threads = 1, max_insert_threads = 1, max_block_size = 1, min_insert_block_size_rows = 0,
+        min_insert_block_size_bytes = 0, optimize_trivial_insert_select = 0;
+SELECT s FROM t_dynamic WHERE id IN (4, 12) ORDER BY id;
+SELECT id FROM t_dynamic WHERE toString(d) = toString([CAST(toDateTime(1704067200 + 4 * 3600) AS Dynamic)]) ORDER BY id SETTINGS force_primary_key = 1;
+
 SELECT 'table created and filled in one session';
 SET session_timezone = 'Asia/Tokyo';
 CREATE TABLE t_created_in_session (ts UInt32, id UInt32, INDEX i toDate(toDateTime(ts)) TYPE minmax GRANULARITY 1)
@@ -136,3 +151,4 @@ DROP TABLE t_created_in_session;
 DROP TABLE t_lambda;
 DROP TABLE t_set;
 DROP TABLE t_null_in;
+DROP TABLE t_dynamic;

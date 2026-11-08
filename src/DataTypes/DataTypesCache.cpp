@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/SessionTimezoneBlockerInThread.h>
 
 namespace DB
 {
@@ -159,7 +160,9 @@ void DataTypesCache::clearIfQueryContextChanged()
     bool same_session_timezone
         = current_session_timezone ? *current_session_timezone == session_timezone : session_timezone.empty();
 
-    if (same_query_context && same_session_timezone)
+    bool current_session_timezone_blocked = SessionTimezoneBlockerInThread::isBlocked();
+
+    if (same_query_context && same_session_timezone && current_session_timezone_blocked == session_timezone_blocked)
         return;
 
     /// The thread is now serving a different query, or `session_timezone` changed in place
@@ -168,6 +171,7 @@ void DataTypesCache::clearIfQueryContextChanged()
     cache.clear();
     query_context = current_query_context;
     session_timezone = current_session_timezone ? *current_session_timezone : String();
+    session_timezone_blocked = current_session_timezone_blocked;
 }
 
 const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name, const DataTypePtr * known_type)
