@@ -1218,10 +1218,25 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             data->build_streams.size());
     auto & build_stream = data->build_streams[context.getStream()];
 
-    /// Another build stream decided to compress; catch this build stream up before it stores the new block,
-    /// which is then compressed on insertion like every later one.
-    if (compress_stored_blocks.load(std::memory_order_relaxed) && !build_stream.compression_done)
-        compressBuildStreamBlocks(build_stream);
+    if (in_memory_compression_min_bytes)
+    {
+        /// Decide to compress before the block is stored, counting the block itself: a block stored uncompressed
+        /// and compressed only afterwards would be counted at its full size by the size-limit check of a
+        /// concurrent build stream in the meantime. With `join_in_memory_compression_min_bytes = 0` every block
+        /// is compressed on insertion.
+        if (!compress_stored_blocks.load(std::memory_order_relaxed)
+            && data->allocated_size.load(std::memory_order_relaxed) + block_to_save.allocatedBytes() >= *in_memory_compression_min_bytes)
+        {
+            bool expected = false;
+            if (compress_stored_blocks.compare_exchange_strong(expected, true, std::memory_order_relaxed))
+                LOG_DEBUG(log, "{}Started compressing stored blocks in memory, {} rows", instance_log_id, getTotalRowCount());
+        }
+
+        /// This or another build stream decided to compress; catch this build stream up before it stores the new
+        /// block, which is then compressed on insertion like every later one.
+        if (compress_stored_blocks.load(std::memory_order_relaxed) && !build_stream.compression_done)
+            compressBuildStreamBlocks(build_stream);
+    }
 
     /// Once `enable_join_in_memory_compression` started compressing the stored blocks, new blocks are
     /// compressed on insertion. It is applied below, after the structure check, since compressed columns
@@ -1430,10 +1445,13 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             }
         }
 
-        /// Independent of `joinChecksLimits`: the inserts into a `grace_hash` bucket do not check the limits here,
-        /// but they compress all the same.
+        /// Another build stream decided to compress while this block was being stored uncompressed (or the
+        /// threshold was crossed by more than the block itself), so compress it now rather than on the next insert,
+        /// which may never come. Independent of `joinChecksLimits`: the inserts into a `grace_hash` bucket do not
+        /// check the limits here, but they compress all the same.
         if (in_memory_compression_min_bytes && !build_stream.compression_done
-            && data->allocated_size.load(std::memory_order_relaxed) >= *in_memory_compression_min_bytes)
+            && (compress_stored_blocks.load(std::memory_order_relaxed)
+                || data->allocated_size.load(std::memory_order_relaxed) >= *in_memory_compression_min_bytes))
         {
             bool expected = false;
             if (compress_stored_blocks.compare_exchange_strong(expected, true, std::memory_order_relaxed))
@@ -3329,6 +3347,13 @@ bool HashJoin::recordsRowRefsForStats() const
 
 void HashJoin::onBuildPhaseFinish()
 {
+    /// A build stream that stored its last block before another one decided to compress has no later insert
+    /// to catch it up in `addBlockToJoin`. The build streams are done, so their lists can be rewritten here.
+    if (compress_stored_blocks.load(std::memory_order_relaxed))
+        for (auto & build_stream : data->build_streams)
+            if (!build_stream.compression_done)
+                compressBuildStreamBlocks(build_stream);
+
     freezeMapsForProbing();
     reinitUsedFlags();
 
