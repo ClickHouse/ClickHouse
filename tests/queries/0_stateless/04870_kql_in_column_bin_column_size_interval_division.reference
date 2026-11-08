@@ -60,7 +60,7 @@ LowCardinality(UInt8)	3
 14
 4
 2026-08-01 12:00:00.0000000
-2026-08-01
+2026-08-01 00:00:00.0000000
 \N
 5
 -- a LowCardinality(Nullable) timespan keeps its null map --
