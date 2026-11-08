@@ -18,3 +18,8 @@ SELECT nothingResampleIfResample(0, 2048, 1, 0, 2048, 1)(number, 1, number) FROM
 SELECT nothingResampleDistinctResample(0, 1048576, 1, 0, 1048576, 1)(number, number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 -- Multi-child wrappers must expose every nested function to the bound check.
 SELECT nothingResampleTupleResample(0, 1048576, 1, 0, 1048576, 1)(tuple(number), number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- -ForEach creates the states for an element count read from a serialized state before reading them.
+SELECT unhex('0000000010000000')::AggregateFunction(sumForEach, Array(Nullable(Nothing))); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- -ForEach over a zero-sized -Resample multiplies the nested states like nested -Resample does.
+SELECT nothingResampleForEach(0, 1048576, 1)(range(1048576), range(1048576)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT length(nothingForEach(range(1048576)));

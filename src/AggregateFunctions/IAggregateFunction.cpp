@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <base/arithmeticOverflow.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -11,6 +13,18 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+namespace
+{
+
+/// The choice of this number is arbitrary; it is the per-level limit of -Resample.
+constexpr size_t max_zero_sized_nested_states = 1048576;
+
+thread_local bool creating_nested_states = false;
+thread_local size_t zero_sized_nested_states = 0;
+
 }
 
 DataTypePtr IAggregateFunction::getStateType() const
@@ -88,6 +102,38 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
         rhs.argument_types.begin(),
         rhs.argument_types.end(),
         [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
+}
+
+void IAggregateFunction::createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const
+{
+    const bool outermost = !creating_nested_states;
+    if (outermost)
+    {
+        creating_nested_states = true;
+        zero_sized_nested_states = 0;
+    }
+    SCOPE_EXIT({
+        if (outermost)
+            creating_nested_states = false;
+    });
+
+    if (stride == 0
+        && (common::addOverflow(zero_sized_nested_states, count, zero_sized_nested_states)
+            || zero_sized_nested_states > max_zero_sized_nested_states))
+        throw Exception(
+            ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Too many states of aggregate function {} that occupy no memory would be created at once, the maximum is {}",
+            getName(),
+            max_zero_sized_nested_states);
+
+    size_t created = 0;
+    SCOPE_EXIT({
+        if (created != count)
+            for (size_t i = 0; i < created; ++i)
+                destroy(place + i * stride);
+    });
+    for (; created < count; ++created)
+        create(place + created * stride);
 }
 
 DataTypePtr IAggregateFunction::getReturnTypeToPredict() const

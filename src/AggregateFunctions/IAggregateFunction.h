@@ -179,6 +179,12 @@ public:
     /// Delete data for aggregation.
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
+    /** Create `count` states at `place + i * stride` for a combinator holding an array of states of this function;
+      * on exception destroys the ones already created. Throws if one outermost call would create too many states
+      * that occupy no memory (`stride == 0`): the memory limit does not bound those.
+      */
+    void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
+
     /// Delete all combinator states that were used after combinator -State.
     /// For example for uniqArrayStateForEachMap(...) it will destroy
     /// states that were created by combinators Map and ForEach.
@@ -574,15 +580,6 @@ public:
       * Otherwise return nullptr.
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
-
-    /** Call `callback` for every directly nested aggregate function.
-      * Most combinators wrap one function, while combinators such as `-Tuple` have several.
-      */
-    virtual void forEachNestedFunction(const std::function<void(const AggregateFunctionPtr &)> & callback) const
-    {
-        if (auto nested = getNestedFunction())
-            callback(nested);
-    }
 
     /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
       * seed draws from a thread-local generator for every state it creates, so it does not - and an
