@@ -102,7 +102,7 @@ SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int
     }
 
     /// Peer group indexes
-    if (params.required.peers)
+    if (params.requirements.peers)
     {
         index.peer_group_indexes = assignPeerGroupIndexes(materialized_columns, rows_count, params, index.partition_starts, last_order_key, last_peer_group_index);
         last_order_key = cutLastKey(materialized_columns, rows_count, params.order_by_indices);

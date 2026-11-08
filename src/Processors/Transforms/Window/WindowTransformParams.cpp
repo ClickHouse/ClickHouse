@@ -237,17 +237,17 @@ WindowDescription prepareDescriptionForExecution(
 
 WindowFunctionRequirements collectRequirements(const WindowDescription & description, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
 {
-    WindowFunctionRequirements required;
+    WindowFunctionRequirements requirements;
     for (const auto & function : functions)
     {
         if (auto general = asGeneralWindowFunction(function.aggregate_function))
-            required = unionOf(required, general->getRequirements(description));
+            requirements = unionOf(requirements, general->getRequirements(description));
         else
-            required = unionOf(required, WindowFunctionRequirements{.frame = true});
+            requirements = unionOf(requirements, WindowFunctionRequirements{.frame = true});
     }
 
-    const bool frame_reads_peers = required.frame && description.frame.type != WindowFrame::FrameType::ROWS;
-    return unionOf(required, WindowFunctionRequirements{.peers = frame_reads_peers});
+    const bool frame_reads_peers = requirements.frame && description.frame.type != WindowFrame::FrameType::ROWS;
+    return unionOf(requirements, WindowFunctionRequirements{.peers = frame_reads_peers});
 }
 
 }
@@ -264,7 +264,7 @@ WindowTransformParams WindowTransformParams::create(
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, window_description.order_by, order_by_indices);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
-    auto required = collectRequirements(description, functions);
+    auto requirements = collectRequirements(description, functions);
 
     return WindowTransformParams{
         std::move(header),
@@ -273,7 +273,7 @@ WindowTransformParams WindowTransformParams::create(
         std::move(order_by_indices),
         std::move(should_materialize),
         std::move(range_offset_comparator),
-        std::move(required),
+        std::move(requirements),
     };
 }
 

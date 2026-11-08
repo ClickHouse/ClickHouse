@@ -150,11 +150,11 @@ void WindowTransform::computeReadyRows()
             startNextPartition();
         }
 
-        if (params.required.peers)
+        if (params.requirements.peers)
             peers.advancePeerGroupBounds(blocks, partition.bounds());
-        if (params.required.frame)
+        if (params.requirements.frame)
             frame.advance(blocks, peers.current(), partition.bounds());
-        if (!isRowReady(params.required, frame, peers, partition))
+        if (!isRowReady(params.requirements, frame, peers, partition))
             break;
 
         recordCurrentRowBounds();
@@ -171,18 +171,18 @@ void WindowTransform::recordCurrentRowBounds()
         batch_start = current.location;
 
     bounds.row.push_back(current.row_index_in_partition);
-    if (params.required.frame)
+    if (params.requirements.frame)
     {
         bounds.frame_start.push_back(frame.bounds().start.row_index_in_partition);
         bounds.frame_end.push_back(frame.bounds().end.row_index_in_partition);
     }
-    if (params.required.peers)
+    if (params.requirements.peers)
     {
         bounds.peers_start.push_back(peers.bounds().start.row_index_in_partition);
         bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
         bounds.peer_group_index.push_back(peers.currentGroupIndex(blocks));
     }
-    if (params.required.partition)
+    if (params.requirements.partition)
     {
         bounds.partition_end.push_back(current.row_index_in_partition + blocks.rowsBetween(current.location, partition.bounds().end));
     }
@@ -315,7 +315,7 @@ void WindowTransform::work()
 void WindowTransform::releaseUnusedBlocks()
 {
     const RowPoint & current = peers.current();
-    const Int64 first_row_read_by_frame = params.required.frame ? frame.firstRowToRead() : std::numeric_limits<Int64>::max();
+    const Int64 first_row_read_by_frame = params.requirements.frame ? frame.firstRowToRead() : std::numeric_limits<Int64>::max();
     const Int64 first_row_to_keep = std::min({current.row_index_in_partition, first_row_read_by_frame, first_row_read_by_functions});
     const Int64 first_position_to_keep = blocks.positionOf(current.location) - (current.row_index_in_partition - first_row_to_keep);
 
