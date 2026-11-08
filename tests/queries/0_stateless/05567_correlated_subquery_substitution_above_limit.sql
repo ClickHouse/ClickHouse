@@ -56,11 +56,13 @@ INNER JOIN LATERAL (SELECT s.u FROM (SELECT p.id AS u FROM t AS p WHERE p.owner 
 ORDER BY r.id;
 
 SELECT '-- case 8: equalities below the LIMIT are still substituted';
-SELECT format('plan: substituted={}',
-              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
-FROM (EXPLAIN PLAN actions = 1 SELECT r.id FROM t AS r WHERE EXISTS (SELECT 1 FROM t AS p WHERE p.owner = r.owner AND p.id = r.id ORDER BY p.id LIMIT 1));
+-- The filter above the derived table keeps `optimizePlanForExists` from dropping the `LIMIT`.
+SELECT format('plan: limit_by={}, substituted={}',
+              countIf(explain LIKE '%LIMIT BY for decorrelated correlated subquery%'),
+              countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%'))
+FROM (EXPLAIN PLAN actions = 1 SELECT r.id FROM t AS r WHERE EXISTS (SELECT 1 FROM (SELECT p.id AS u FROM t AS p WHERE p.owner = r.owner AND p.id = r.id ORDER BY p.id LIMIT 1) AS s WHERE s.u = r.id));
 SELECT r.id FROM t AS r
-WHERE EXISTS (SELECT 1 FROM t AS p WHERE p.owner = r.owner AND p.id = r.id ORDER BY p.id LIMIT 1)
+WHERE EXISTS (SELECT 1 FROM (SELECT p.id AS u FROM t AS p WHERE p.owner = r.owner AND p.id = r.id ORDER BY p.id LIMIT 1) AS s WHERE s.u = r.id)
 ORDER BY r.id;
 
 SELECT '-- case 9: equality above the LIMIT on a column determined by an equality below it';
