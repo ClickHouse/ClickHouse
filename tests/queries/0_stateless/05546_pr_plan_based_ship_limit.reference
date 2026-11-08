@@ -46,3 +46,8 @@ deep offset, classic	500	500
 }
 --- each replica returns at most limit + offset rows
 replicas used	1	at most 150 rows each	1
+--- an outer WITH TOTALS does not make the inner LIMIT read till the end
+50
+
+100
+read rows < 10000	1

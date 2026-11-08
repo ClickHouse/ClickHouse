@@ -602,7 +602,7 @@ public:
             if (!local_limit || *local_limit == 0)
                 return;
 
-            const bool read_till_end = limit_step->alwaysReadTillEnd() || mustReadTillEnd();
+            const bool read_till_end = limit_step->alwaysReadTillEnd();
             auto * fragment_child = original_split_node->children.front();
             auto & local_limit_node = nodes.emplace_back();
             auto local_limit_step = std::make_unique<LimitStep>(fragment_child->step->getOutputHeader(), *local_limit, 0, read_till_end);
