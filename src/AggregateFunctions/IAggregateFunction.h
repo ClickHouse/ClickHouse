@@ -209,8 +209,8 @@ public:
         void addZeroSizedStates(size_t count, const IAggregateFunction & function);
 
     private:
-        static inline thread_local bool active = false;
-        static inline thread_local size_t zero_sized_states = 0;
+        static thread_local constinit bool active;
+        static thread_local constinit size_t zero_sized_states;
 
         const bool outermost;
     };

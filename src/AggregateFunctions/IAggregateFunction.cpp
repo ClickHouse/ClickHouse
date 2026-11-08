@@ -100,6 +100,9 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
         [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
 }
 
+thread_local constinit bool IAggregateFunction::NestedStatesScope::active = false;
+thread_local constinit size_t IAggregateFunction::NestedStatesScope::zero_sized_states = 0;
+
 void IAggregateFunction::NestedStatesScope::addZeroSizedStates(size_t count, const IAggregateFunction & function)
 {
     if (common::addOverflow(zero_sized_states, count, zero_sized_states) || zero_sized_states > max_zero_sized_nested_states)
