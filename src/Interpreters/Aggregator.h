@@ -189,10 +189,11 @@ public:
         /// this many candidate rows per bucket the saved materialization no longer pays for the selection scan.
         static constexpr size_t max_bucket_top_k = 65536;
 
-        /// Whether the adaptive aggregation prunes its merge by the top-K of `bucket_top_k` (see `AdaptiveTopKPruning`):
-        /// the count bins bound the ranks from above, which serves a descending order only, and a throw-mode group limit
-        /// needs every group counted, which a skipped unit is not.
-        bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending && !max_rows_to_group_by; }
+        /// Whether the adaptive aggregation prunes its merge by the top-K of `bucket_top_k` (see
+        /// `AdaptiveTopKPruning`): the count bins bound the ranks from above, which serves a descending
+        /// order only. It prunes under a throw-mode group limit too: the merge checks the limit against the
+        /// groups it builds (see `checkMergedGroupLimit`).
+        bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending; }
 
         /// Whether a frozen producer of the adaptive aggregation may thaw: not with `adaptive_aggregator_disable_thaw`,
         /// and not under the top-K pruning. There the frozen tables pay even for a repetitive stream: the merge skips
@@ -485,8 +486,9 @@ public:
     /// unit free with its arena, at once or with the chunk that captured it, and once the bucket's last unit converted,
     /// the slot retires. A unit reads the spill streams of its partitions back a block at a time and drains each block
     /// before the next, so the merge holds the unit's groups instead of all its spilled records; a count-first unit,
-    /// which passes over its records twice, reads the spill streams back twice. `full_group_count` receives the
-    /// bucket's group count over all its units, taken before any top-K truncation.
+    /// which passes over its records twice, reads the spill streams back twice. `merged_group_count` receives
+    /// the number of groups that the merge builds over all the bucket's units, before any top-K truncation.
+    /// The groups that the top-K pruning skips, with their unit or with their count bin, add none.
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
@@ -495,7 +497,7 @@ public:
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-        size_t * full_group_count) const;
+        size_t * merged_group_count) const;
 
     /// The destination of the adaptive merge: an empty two-level variants of the aggregation's method with an arena slot
     /// per bucket, which holds the arena in which the merge creates the states of the bucket's unit. For a merge that goes
@@ -513,6 +515,9 @@ public:
     /// total never exceeds the final group count: once it crosses the limit, so does the final count. The
     /// producers' checks miss what this catches: the baseline producers check their tables one by one, so
     /// they cannot see the merged cardinality, and the adaptive producers cannot see the staged keys at all.
+    /// The total covers only the groups that the merge builds: a merge that prunes by the top-K (the
+    /// threshold merge, the adaptive top-K pruning) skips the groups that cannot rank, and a merge that
+    /// stops early, as under a `LIMIT` without `ORDER BY`, never reaches its later buckets.
     /// The dropping modes keep the merge untouched: their contract is decided at the producers, and stopping
     /// the merge here would drop already-aggregated groups.
     void checkMergedGroupLimit(std::atomic<size_t> & merged_groups, size_t bucket_groups) const;
@@ -1069,7 +1074,7 @@ private:
         Int32 bucket,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
-        size_t * full_group_count) const;
+        size_t * merged_group_count) const;
 
     /// Drains one partition's records into `table`, only those whose routing hash `filter` takes: every record, those
     /// whose count bin the top-K pruning keeps alive (see `AdaptiveTopKPruning`), or those of the best groups of a
