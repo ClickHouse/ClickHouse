@@ -73,15 +73,14 @@ public:
 
     StoragePtr tryGetNested() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested;
+        return nestedIfResolved();
     }
 
     bool isLazyStandIn() const override { return true; }
 
     bool isNestedInUse() const override
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
         return nested && !isSharedPtrUnique(nested);
     }
 
@@ -96,8 +95,13 @@ public:
         /// A storage built for a `DROP` that did not go through is started and used from here on.
         auto nested_storage = built_for_drop ? std::exchange(built_for_drop, nullptr) : get_nested();
         nested_storage->startup();
-        nested_storage->renameInMemory(getStorageID());
-        nested = nested_storage;
+        {
+            /// Renamed under the same lock as `renameInMemory` below, so that a concurrent `RENAME` either sees
+            /// the new storage or is seen by it.
+            std::lock_guard resolved_lock{resolved_nested_mutex};
+            nested_storage->renameInMemory(getStorageID());
+            nested = nested_storage;
+        }
         get_nested = {};
         return nested;
     }
@@ -105,8 +109,8 @@ public:
     /// Answered from the engine while the storage does not exist, like `getName`.
     bool storesDataOnDisk() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested ? nested->storesDataOnDisk() : stores_data_on_disk;
+        auto storage = nestedIfResolved();
+        return storage ? storage->storesDataOnDisk() : stores_data_on_disk;
     }
 
     /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
@@ -250,20 +254,32 @@ public:
         return storage->write(query, nested_metadata, context, async_insert);
     }
 
+    /// `RENAME` calls this, `checkTableCanBeRenamed` and `storesDataOnDisk` with the database mutex held, while loading
+    /// the table holds `nested_mutex` and can take the database mutex (a constraint with a scalar subquery looks up
+    /// a table in the same database). So these take only `resolved_nested_mutex`.
     void renameInMemory(const StorageID & new_table_id) override
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
         IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
         if (nested)
             nested->renameInMemory(new_table_id);
     }
 
+    /// `DatabaseAtomic::renameTable` loads the table before taking the database mutex, so the storage exists here
+    /// and its restrictions apply. Other callers do not hold the database mutex, and loading is the cost of the check.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        auto storage = nestedIfResolved();
+        if (!storage)
+            storage = getNested();
+        storage->checkTableCanBeRenamed(new_name);
+    }
+
     /// A table that is still a stand-in has nothing to answer with, and is deliberately not loaded to ask.
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+        if (auto storage = nestedIfResolved())
+            storage->checkTableCanBeRenamedByDatabaseRename(new_database_name);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override
@@ -372,7 +388,17 @@ private:
         return built_for_drop;
     }
 
-    mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
+    /// The storage if it is already loaded, otherwise null. Does not wait for a load in progress.
+    StoragePtr nestedIfResolved() const
+    {
+        std::lock_guard lock{resolved_nested_mutex};
+        return nested;
+    }
+
+    mutable std::recursive_mutex nested_mutex; /// Guards `get_nested`, `built_for_drop` and loading `nested`.
+    /// Guards `nested` for the callers that hold the database mutex. `nested` is written while holding both mutexes.
+    /// Nothing that may take `nested_mutex` or a database mutex is called while holding it.
+    mutable std::mutex resolved_nested_mutex;
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
     const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.

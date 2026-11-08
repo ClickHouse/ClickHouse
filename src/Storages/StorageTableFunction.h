@@ -56,9 +56,11 @@ public:
 
         auto nested_storage = get_nested();
         nested_storage->startup();
-        nested_storage->renameInMemory(getStorageID());
         {
+            /// Renamed under the same lock as `renameInMemory` below, so that a concurrent `RENAME` either sees
+            /// the new storage or is seen by it.
             std::lock_guard resolved_lock{resolved_nested_mutex};
+            nested_storage->renameInMemory(getStorageID());
             nested = nested_storage;
         }
         get_nested = {};
@@ -316,13 +318,13 @@ public:
         return storage->write(query, metadata_snapshot, context, async_insert);
     }
 
+    /// `RENAME` calls this with the database mutex held, so it must not take `nested_mutex`, see `nestedIfResolved`.
     void renameInMemory(const StorageID & new_table_id) override
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
+        IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
         if (nested)
-            StorageProxy::renameInMemory(new_table_id);
-        else
-            IStorage::renameInMemory(new_table_id); /// NOLINT
+            nested->renameInMemory(new_table_id);
     }
 
     bool isView() const override { return false; }
@@ -347,8 +349,8 @@ private:
 
     /// Serializes resolving the table function and the operations on the nested storage.
     mutable std::recursive_mutex nested_mutex;
-    /// Guards `nested` for readers that must not wait for the resolution. A leaf mutex: nothing is
-    /// acquired or called while holding it. `nested` is written while holding both mutexes.
+    /// Guards `nested` for readers that must not wait for the resolution. `nested` is written while holding
+    /// both mutexes. Nothing that may take `nested_mutex` or a database mutex is called while holding it.
     mutable std::mutex resolved_nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;

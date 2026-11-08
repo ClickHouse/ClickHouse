@@ -337,6 +337,17 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (inside_database && table_name == to_table_name)
         return;
 
+    /// Load a lazily loaded table before taking the database mutex, so that `checkTableCanBeRenamed` below asks the
+    /// real storage: building it can look up a table in this database (a constraint with a scalar subquery does),
+    /// which takes the same mutex. The caller holds the DDL guards of both names, so the table is not replaced meanwhile.
+    if (auto table_to_load = tryGetTable(table_name, local_context))
+        resolveStorageProxyLoading(table_to_load);
+    if (exchange)
+    {
+        if (auto other_table_to_load = other_db.tryGetTable(to_table_name, local_context))
+            resolveStorageProxyLoading(other_table_to_load);
+    }
+
     std::unique_lock<std::mutex> db_lock;
     std::unique_lock<std::mutex> other_db_lock;
     if (inside_database)
