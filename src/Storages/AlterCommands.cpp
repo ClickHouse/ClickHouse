@@ -1878,7 +1878,7 @@ void AlterCommands::apply(
 
     const bool columns_changed = metadata_copy.columns != metadata.columns;
 
-    /// Key types are persisted in the parts, and `CREATE`, a reload and the writers resolve keys in the global context,
+    /// Keys must be what CREATE and a reload resolve in the global context (parts persist their types),
     /// so a session setting must not decide them here either.
     ContextPtr key_context = context->getGlobalContext();
     if (context->isAnalyzingBackgroundExpressions())
@@ -1917,7 +1917,7 @@ void AlterCommands::apply(
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
-        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, key_context);
 
     /// Changes in columns may lead to changes in secondary indices
     const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();

@@ -1,9 +1,9 @@
 -- Tags: zookeeper
 -- zookeeper: the last case uses ReplicatedMergeTree.
 
--- `transform_null_in` rewrites `in` to `nullIn`, which renames the key column and, for a Nullable
--- argument, changes its type. A table's keys must stay what `CREATE` and a reload derive, whatever
--- session the last `ALTER` ran in.
+-- A table's keys must stay what `CREATE` and a reload derive, whatever session the last `ALTER` ran in.
+-- `transform_null_in` rewrites `in` to `nullIn`, which renames the key column and, for a Nullable argument, changes its type.
+-- `cast_keep_nullable` makes `CAST` of a Nullable column Nullable.
 
 SELECT '-- Nullable sorting key, INSERT after the ALTER';
 DROP TABLE IF EXISTS t_null_in_sort;
@@ -41,10 +41,18 @@ ORDER BY partition;
 SELECT x FROM t_null_in_partition ORDER BY x;
 DROP TABLE t_null_in_partition;
 
+SELECT '-- Sampling key, SAMPLE after the ALTER';
+DROP TABLE IF EXISTS t_cast_sample;
+CREATE TABLE t_cast_sample (x Nullable(UInt64)) ENGINE = MergeTree ORDER BY CAST(x, 'UInt32') SAMPLE BY CAST(x, 'UInt32');
+ALTER TABLE t_cast_sample COMMENT COLUMN x 'c' SETTINGS cast_keep_nullable = 1;
+INSERT INTO t_cast_sample VALUES (1), (2), (3);
+SELECT count() FROM t_cast_sample SAMPLE 0.5;
+DROP TABLE t_cast_sample;
+
 SELECT '-- ReplicatedMergeTree, INSERT after a comment-only ALTER';
 DROP TABLE IF EXISTS t_null_in_replicated;
 CREATE TABLE t_null_in_replicated (x Nullable(UInt64))
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_null_in_replicated', 'r1') ORDER BY (x IN (NULL, 1))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_null_in_replicated', 'r1') ORDER BY (x IN (NULL, 1)) PRIMARY KEY (x IN (NULL, 1))
 SETTINGS allow_nullable_key = 1;
 ALTER TABLE t_null_in_replicated COMMENT COLUMN x 'c' SETTINGS transform_null_in = 1;
 INSERT INTO t_null_in_replicated VALUES (1), (2), (NULL);

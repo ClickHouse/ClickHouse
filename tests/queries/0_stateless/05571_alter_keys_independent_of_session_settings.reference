@@ -15,5 +15,7 @@
 1
 2
 \N
+-- Sampling key, SAMPLE after the ALTER
+3
 -- ReplicatedMergeTree, INSERT after a comment-only ALTER
 3
