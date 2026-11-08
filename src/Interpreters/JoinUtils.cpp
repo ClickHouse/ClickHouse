@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/getMostSubtype.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
@@ -274,6 +275,28 @@ static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
         tuple_type->getElements(),
         [](const auto & element)
         { return element->isLowCardinalityNullable() || hasNullableLowCardinalityTupleElement(element); });
+}
+
+DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    for (const auto & key_type : {left_type, right_type})
+    {
+        bool replaced = false;
+        auto result = replaceNestedTypesInPair(type, key_type,
+            [&](const DataTypePtr & leaf, const DataTypePtr & key_leaf) -> DataTypePtr
+            {
+                if (isBool(leaf) && !isBool(key_leaf) && leaf->equals(*key_leaf))
+                {
+                    replaced = true;
+                    return std::make_shared<DataTypeUInt8>();
+                }
+                return leaf;
+            },
+            /*left_is_common_type=*/ true);
+        if (replaced && result)
+            type = std::move(result);
+    }
+    return type;
 }
 
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
