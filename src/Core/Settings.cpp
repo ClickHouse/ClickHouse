@@ -11283,6 +11283,12 @@ With `cascades_join_enumeration = 'best_splits'`: how many of the cheapest split
 Cascades gets. Each costs one join expression in the memo.
 )", EXPERIMENTAL, \
         {"26.11", 4, 4, "New experimental setting."}) \
+    DECLARE(UInt64, cascades_join_enumeration_max_set_joins, 0, R"(
+With `cascades_join_enumeration = 'best_splits'`: the largest number of joins a join graph may import. Fewer splits
+per set are kept until the joins fit; a graph where one split per set does not fit gets the joins of `candidates`.
+0 means no limit.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New experimental setting."}) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", 0, \

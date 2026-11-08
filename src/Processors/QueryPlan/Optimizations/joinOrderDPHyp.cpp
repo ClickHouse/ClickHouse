@@ -33,6 +33,10 @@ public:
     DPJoinEntryPtr solve();
 
 private:
+    /// Fills the rest of `recorded_splits` once the search is done: the winner of every set with a split, the edges
+    /// and the relations each edge needs. DPhyp places an edge at the join where its sources meet.
+    void recordWinners(RecordedJoinSplits & recorded_splits) const;
+
     /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
 
@@ -90,6 +94,21 @@ private:
     QueryStatusPtr query_status;
     std::function<bool()> interactive_cancel_callback;
 };
+
+void DPHypJoinOrderOptimizer::recordWinners(RecordedJoinSplits & recorded_splits) const
+{
+    for (const auto & split : recorded_splits.splits)
+    {
+        const UInt64 relations = split.left | split.right;
+        if (!recorded_splits.winners.contains(relations))
+            recorded_splits.winners.emplace(relations, dp_table.at(BitSet::fromUInt(relations)));
+    }
+    recorded_splits.edges = query_graph.edges;
+    recorded_splits.edge_relations.resize(query_graph.edges.size());
+    for (size_t i = 0; i < query_graph.edges.size(); ++i)
+        recorded_splits.edge_relations[i] = query_graph.edges[i] ? toRelationMask(query_graph.edges[i].getSourceRelations()) : 0;
+    recorded_splits.complete = true;
+}
 
 void DPHypJoinOrderOptimizer::checkLimits()
 {
@@ -168,7 +187,8 @@ void DPHypJoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & r
         && !query_graph.areTransitivelyConnected(left_rels, right_rels))
         return;
 
-    evaluateJoin(query_graph, dp_table, expression_selectivity, left_entry->second, right_entry->second, *join_kind, connecting_predicates, log);
+    evaluateJoin(query_graph, dp_table, expression_selectivity, left_entry->second, right_entry->second, *join_kind, connecting_predicates, log,
+        query_graph.recorded_splits.get());
 }
 
 /// Build the hyperedge representation of the join graph used by DPhyp.
@@ -376,6 +396,8 @@ void DPHypJoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet &
         return;
     LOG_TEST(log, "DPhyp: emitCsgCmp({{ {} }}, {{ {} }})",
         fmt::join(left_csg, ","), fmt::join(right_csg, ","));
+    if (query_graph.recorded_splits)
+        ++query_graph.recorded_splits->considered_splits;
     tryJoin(left_csg, right_csg);
 }
 
@@ -568,7 +590,11 @@ std::shared_ptr<DPJoinEntry> DPHypJoinOrderOptimizer::solve()
 
     auto best = dp_table.find(BitSet::allSet(num_relations));
     if (best != dp_table.end())
+    {
+        if (auto & recorded_splits = query_graph.recorded_splits)
+            recordWinners(*recorded_splits);
         return best->second;
+    }
 
     /// DPhyp cannot produce a plan for disconnected graphs (no cross products).
     /// The caller's fallback chain (e.g. dphyp,greedy) handles this.

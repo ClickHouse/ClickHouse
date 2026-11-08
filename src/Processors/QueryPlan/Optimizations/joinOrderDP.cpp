@@ -10,6 +10,14 @@ namespace DB
 {
 
 /// Checks if predicate has sources from both left and right sets
+UInt64 toRelationMask(const BitSet & relations)
+{
+    UInt64 mask = 0;
+    for (auto relation : relations)
+        mask |= UInt64(1) << relation;
+    return mask;
+}
+
 bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
 {
     const auto & participating = predicate->getSourceRelations();
@@ -92,10 +100,23 @@ DPJoinEntryPtr evaluateJoin(
     const DPJoinEntryPtr & right,
     JoinKind join_kind,
     std::vector<JoinActionRef *> & predicates,
-    LoggerPtr log)
+    LoggerPtr log,
+    RecordedJoinSplits * recorded_splits)
 {
     auto keys = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
     auto new_cost = computeJoinCost(query_graph, left, right, keys, join_kind, query_graph.join_strictness);
+
+    if (recorded_splits)
+    {
+        RecordedJoinSplits::Split split{
+            .left = toRelationMask(left->relations),
+            .right = toRelationMask(right->relations),
+            .edges = {},
+            .local_cost = new_cost - left->cost - right->cost};
+        for (const auto * predicate : predicates)
+            split.edges.push_back(predicate - query_graph.edges.data());
+        recorded_splits->splits.push_back(std::move(split));
+    }
 
     const BitSet combined_rels = left->relations | right->relations;
     auto current_best = dp_table.find(combined_rels);

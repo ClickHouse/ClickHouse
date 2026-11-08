@@ -58,6 +58,14 @@ SELECT 'winners_candidates', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN 
     SETTINGS cascades_join_enumeration = 'winners_candidates', log_comment = 'join_enum_chain_winners_candidates';
 SELECT 'best_splits', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS cascades_join_enumeration = 'best_splits', cascades_join_enumeration_splits_per_set = 2, log_comment = 'join_enum_chain_best_splits';
+-- The joins that DPhyp accepted in place of those of DPsub.
+SELECT 'all_splits dphyp', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'all_splits', query_plan_optimize_join_order_algorithm = 'dphyp,greedy', log_comment = 'join_enum_chain_dphyp';
+SELECT 'best_splits dphyp', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'best_splits', query_plan_optimize_join_order_algorithm = 'dphyp,greedy', log_comment = 'join_enum_chain_best_splits_dphyp';
+-- A budget that one join per set does not fit: the graph gets the joins of the orders.
+SELECT 'best_splits budget', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'best_splits', cascades_join_enumeration_max_set_joins = 1, log_comment = 'join_enum_chain_best_splits_budget';
 SELECT 'one node', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS make_distributed_plan = 0;
 
@@ -126,18 +134,21 @@ SELECT 'limit', count() FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_en
     SETTINGS cascades_join_enumeration = 'all_splits', cascades_join_enumeration_max_splits = 2, log_comment = 'join_enum_limit';
 
 SYSTEM FLUSH LOGS query_log;
+-- `query_log` merges its parts while the test reads it; a distributed read is not what the test checks.
 SELECT '-- sets given to Cascades';
 SELECT log_comment, ProfileEvents['JoinEnumerationSetPlans'] AS graphs, ProfileEvents['JoinEnumerationSplits'] > 0 AS has_splits,
     ProfileEvents['JoinEnumerationRuleExpansions'] AS rule_expansions
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND log_comment LIKE 'join\_enum\_%' AND event_date >= yesterday()
-ORDER BY log_comment;
+ORDER BY log_comment
+SETTINGS make_distributed_plan = 0;
 SELECT '-- the rule adds the joins that the import of all splits gets';
 SELECT replaceOne(replaceOne(log_comment, '_rule', ''), '_all_splits', '') AS graph, count() AS runs, uniqExact(ProfileEvents['JoinEnumerationSplits']) AS split_counts
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment IN ('join_enum_chain_all_splits', 'join_enum_chain_rule', 'join_enum_cycle', 'join_enum_cycle_rule', 'join_enum_predicates', 'join_enum_predicates_rule')
-GROUP BY 1 ORDER BY 1;
+GROUP BY 1 ORDER BY 1
+SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_enum_a;
 DROP TABLE t_enum_b;

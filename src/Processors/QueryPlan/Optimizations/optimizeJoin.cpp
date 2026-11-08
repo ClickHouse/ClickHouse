@@ -31,6 +31,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -1207,7 +1208,8 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
     /// Chooses the splits Cascades gets for `mode` and returns true, or returns false with `reason` when the graph
     /// gets its orders imported instead.
     bool selectSetSplits(
-        QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set, String & reason);
+        QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set,
+        size_t max_set_joins, String & reason);
 
     /// Builds the plan of the join tree `optimized` over `input_nodes`, in `nodes`, and returns its root. The plan of
     /// a subtree that an order built before is not built again: the node of that plan is used.
@@ -1722,14 +1724,6 @@ const std::vector<const ActionsDAG::Node *> & JoinOrderPlanBuilder::inputsOf(con
     return inputs_of.emplace(node, std::move(inputs)).first->second;
 }
 
-static UInt64 toRelationMask(const BitSet & relations)
-{
-    UInt64 mask = 0;
-    for (auto relation : relations)
-        mask |= UInt64(1) << relation;
-    return mask;
-}
-
 /// The members of the equivalence classes, one list per class, each in the order of the global inputs.
 static std::vector<std::vector<JoinActionRef>> sortedEquivalenceClasses(
     const EquivalenceClasses<JoinActionRef> & classes, const std::unordered_map<const ActionsDAG::Node *, size_t> & input_node_map)
@@ -1821,13 +1815,14 @@ static std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
 }
 
 bool JoinOrderPlanBuilder::selectSetSplits(
-    QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set, String & reason)
+    QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set,
+    size_t max_set_joins, String & reason)
 {
     using JoinEnumeration = QueryPlanOptimizationSettings::JoinEnumeration;
 
     if (!recorded_splits || !recorded_splits->complete)
     {
-        reason = "DPsub did not plan the graph";
+        reason = "neither DPsub nor DPhyp planned the graph";
         return false;
     }
 
@@ -1869,6 +1864,26 @@ bool JoinOrderPlanBuilder::selectSetSplits(
         return std::nullopt;
     };
 
+    if (mode == JoinEnumeration::BestSplits)
+    {
+        /// The most splits per set whose joins fit into the budget; a graph where one split per set does not fit gets
+        /// the joins of the orders instead.
+        auto joins_for = [&](size_t per_set)
+        {
+            size_t joins = 0;
+            for (const auto & [_, indexes] : splits_by_set)
+                joins += std::min(per_set, indexes.size());
+            return joins;
+        };
+        while (splits_per_set > 0 && max_set_joins && joins_for(splits_per_set) > max_set_joins)
+            --splits_per_set;
+        if (splits_per_set == 0)
+        {
+            LOG_DEBUG(getLogger("optimizeJoin"), "{} sets do not fit into `cascades_join_enumeration_max_set_joins`, importing the orders",
+                splits_by_set.size());
+            mode = JoinEnumeration::Candidates;
+        }
+    }
     std::unordered_map<UInt64, std::vector<size_t>> selected;
     if (mode == JoinEnumeration::AllSplits)
     {
@@ -2491,7 +2506,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         import_sets = builder->selectSetSplits(
             join_enumeration, optimization_settings.cascades_join_enumeration_max_splits,
             optimization_settings.cascades_join_order_alternatives + 1, optimization_settings.cascades_join_enumeration_splits_per_set,
-            reason);
+            optimization_settings.cascades_join_enumeration_max_set_joins, reason);
         if (import_sets)
             LOG_DEBUG(getLogger("optimizeJoin"), "Cascades gets {} sets of the join graph from {} accepted of {} considered splits",
                 builder->set_splits.size(), recorded_splits->splits.size(), recorded_splits->considered_splits);

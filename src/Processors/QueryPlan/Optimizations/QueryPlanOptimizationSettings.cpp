@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsString cascades_join_enumeration;
     extern const SettingsUInt64 cascades_join_enumeration_max_splits;
     extern const SettingsUInt64 cascades_join_enumeration_splits_per_set;
+    extern const SettingsUInt64 cascades_join_enumeration_max_set_joins;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -440,6 +441,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             join_enumeration);
     cascades_join_enumeration_max_splits = from[Setting::cascades_join_enumeration_max_splits];
     cascades_join_enumeration_splits_per_set = from[Setting::cascades_join_enumeration_splits_per_set];
+    cascades_join_enumeration_max_set_joins = from[Setting::cascades_join_enumeration_max_set_joins];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

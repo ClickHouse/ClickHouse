@@ -7,6 +7,9 @@ topk	1860	50180
 winners	1860	50180
 winners_candidates	1860	50180
 best_splits	1860	50180
+all_splits dphyp	1860	50180
+best_splits dphyp	1860	50180
+best_splits budget	1860	50180
 one node	1860	50180
 -- transitive chain, transitive predicates on and off
 all_splits on	1860	3985
@@ -40,7 +43,10 @@ limit	1860
 join_enum_array_join	1	1	0
 join_enum_chain_all_splits	1	1	0
 join_enum_chain_best_splits	1	1	0
+join_enum_chain_best_splits_budget	1	1	0
+join_enum_chain_best_splits_dphyp	1	1	0
 join_enum_chain_candidates	1	1	0
+join_enum_chain_dphyp	1	1	0
 join_enum_chain_off	0	0	0
 join_enum_chain_rule	1	1	1
 join_enum_chain_topk	1	1	0
