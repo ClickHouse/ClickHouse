@@ -338,11 +338,14 @@ static Plan getPlan(
 
             /// Compaction reads the data files under the current schema, which the ORC and Avro readers resolve by name, not by field id.
             const auto & data_file_format = data_file->data_object_info->info.file_format;
-            if (Poco::toUpper(data_file_format) != "PARQUET")
+            const auto & delete_file_format = delete_file->parsed_entry->file_format;
+            if (Poco::toUpper(data_file_format) != "PARQUET" || Poco::toUpper(delete_file_format) != "PARQUET")
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
-                    "Compaction of Iceberg tables with position deletes is supported only for data files of Parquet format, but got {}",
-                    data_file_format);
+                    "Compaction of Iceberg tables with position deletes is supported only for data and delete files of Parquet format, "
+                    "but got a data file of format {} with a delete file of format {}",
+                    data_file_format,
+                    delete_file_format);
 
             data_file->data_object_info->addPositionDeleteFile(
                 delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
