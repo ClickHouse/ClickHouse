@@ -224,4 +224,19 @@ struct MergeTreeWriterSettings
     bool apply_adaptive_codec = false;
 };
 
+/// Write settings for a part produced by a merge or a mutation.
+///
+/// Adaptive write buffers make the compressed blocks smaller, which changes the offsets stored in the marks. Replicas
+/// compare the checksums of a merged or mutated part (`checkPartChecksumsAndAddCommitOps`), and the uncompressed
+/// content of marks is a part of them. So the choice of buffers for these parts must not depend on anything local to
+/// a replica, like its memory limit: otherwise replicas with different memory limits produce different parts, and
+/// one of them rejects its own result with `CHECKSUM_DOESNT_MATCH` and fetches the part. Inserted parts are not
+/// compared - other replicas fetch them.
+inline WriteSettings getWriteSettingsForMergeOrMutation(WriteSettings settings, bool is_replicated)
+{
+    if (is_replicated)
+        settings.allow_adaptive_write_buffer_by_memory_ratio = false;
+    return settings;
+}
+
 }

@@ -120,7 +120,8 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
-    , max_memory_ratio_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer])
+    , max_memory_ratio_to_activate_adaptive_write_buffer(query_write_settings_.allow_adaptive_write_buffer_by_memory_ratio
+        ? static_cast<float>((*storage_settings)[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer]) : 0.f)
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
 {

@@ -1523,6 +1523,10 @@ before writing a single byte, and every concurrent merge reserves it again. That
 server but a significant share of the budget on a small one, where it can make an `INSERT` fail with
 `MEMORY_LIMIT_EXCEEDED`.
 
+It applies to inserts and to merges and mutations of non-replicated tables. Merges and mutations of replicated
+tables ignore it: adaptive write buffers change the offsets stored in the marks, and replicas compare the checksums
+of the parts they merge, so the buffers must not depend on the memory limit of a replica.
+
 Set to `0` to disable this trigger and select adaptive write buffers by column count only.
 )", 0, \
         {"26.11", 0., 1. / 32, "New setting. Activate adaptive write buffers when the buffers a wide part preallocates would take at least this fraction of the server memory limit, so that a many-column table does not reserve hundreds of megabytes of write buffers on a small server. The previous value disables the trigger, preserving pre-26.11 behavior."}) \
