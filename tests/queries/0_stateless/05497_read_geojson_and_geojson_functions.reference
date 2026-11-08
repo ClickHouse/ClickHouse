@@ -1,0 +1,52 @@
+(1,2)	Point	{"type":"Point","coordinates":[1,2]}
+(1.5,2.5)	Point	{"type":"Point","coordinates":[1.5,2.5]}
+[(1,2),(3,4)]	MultiPoint	{"type":"MultiPoint","coordinates":[[1,2],[3,4]]}
+[(0,0),(1,1)]	LineString	{"type":"LineString","coordinates":[[0,0],[1,1]]}
+[[(0,0),(1,1)],[(2,2),(3,3)]]	MultiLineString	{"type":"MultiLineString","coordinates":[[[0,0],[1,1]],[[2,2],[3,3]]]}
+[[(0,0),(1,0),(1,1),(0,0)],[(0.1,0.1),(0.2,0.1),(0.2,0.2),(0.1,0.1)]]	Polygon	{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]],[[0.1,0.1],[0.2,0.1],[0.2,0.2],[0.1,0.1]]]}
+[[[(0,0),(1,0),(1,1),(0,0)]]]	MultiPolygon	{"type":"MultiPolygon","coordinates":[[[[0,0],[1,0],[1,1],[0,0]]]]}
+\N	None	\N
+Geometry	String	Nullable(String)
+(1,2)	{"type":"Point","coordinates":[1,2]}
+-- geoJSON of typed values
+{"type":"Point","coordinates":[1,2]}
+{"type":"MultiPoint","coordinates":[[1,2]]}
+{"type":"LineString","coordinates":[[0,0],[1,1]]}
+{"type":"MultiLineString","coordinates":[[[0,0],[1,1]]]}
+{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}
+{"type":"MultiPolygon","coordinates":[[[[0,0],[1,0],[1,1],[0,0]]]]}
+{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}
+{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}
+\N	Nullable(String)
+{"type":"Point","coordinates":[1,2]}	\N
+0	{"type":"Point","coordinates":[1,2]}
+1	{"type":"LineString","coordinates":[[1,2],[3,4]]}
+2	{"type":"Point","coordinates":[1,2]}
+{"type":"Point","coordinates":[1.5,0.30000000000000004]}
+{"type":"Point","coordinates":[0.30000000000000004,1e300]}
+-- NULL
+{"type":"Point","coordinates":[1,2]}	(1,2)
+\N	\N
+\N	Geometry
+(1,2)
+-- JSON, Dynamic and Tuple
+[(0,0),(1.5,1)]
+(9007199254740992,1)
+0	Point	(1,2)
+1	None	\N
+2	None	\N
+3	LineString	[(0,0),(1,1.5)]
+(1,2)	Geometry
+(1,2)
+\N
+(3,4)
+(0.5,2)
+\N	(1,2)
+[[(0,0),(1,0),(1,1),(0,0)]]
+-- settings
+{"type":"LineString","coordinates":[]}	[]
+\N
+-- errors
+-- LowCardinality
+(1,2)
+\N

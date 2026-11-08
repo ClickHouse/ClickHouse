@@ -354,6 +354,9 @@ bool isOneOf(std::string_view name, std::span<const std::string_view> names)
 constexpr std::array<std::string_view, 6> supported_geojson_geometry_types
     = {"Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
 
+/// The types of the `Geometry` Variant.
+constexpr std::array geo_type_names = {"Point", "MultiPoint", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"};
+
 /// Read the `type`, `coordinates`, and `geometries` members of a geometry object into strings (the
 /// opening `{` must already be consumed). `coordinates` and `geometries` are buffered verbatim so
 /// member order does not matter; any other member is skipped. A repeated `type`, `coordinates`, or
@@ -513,7 +516,7 @@ void validateGeoJSONGeometry(ReadBuffer & buf, const FormatSettings & format_set
 /// Validate the already-parsed members (`type`, `coordinates`, `geometries`) of a GeoJSON geometry.
 /// The members of a `GeometryCollection` are validated recursively, bounded by the JSON nesting
 /// limit. This is shared by `validateGeoJSONGeometry` and by the NULL-handling path of
-/// `GeoJSONRowInputFormat::readGeometry`, which has already buffered these members.
+/// `readGeoJSONGeometry`, which has already buffered these members.
 void validateGeoJSONGeometryMembers(
     const String & geo_type,
     const String & raw_coordinates,
@@ -564,6 +567,21 @@ void validateGeoJSONGeometryMembers(
 
 } /// anonymous namespace
 
+GeoJSONGeometryDiscriminators getGeoJSONGeometryDiscriminators(const DataTypePtr & type)
+{
+    GeoJSONGeometryDiscriminators discriminators;
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        for (const auto & geo_type_name : geo_type_names)
+        {
+            auto discr = variant_type->tryGetVariantDiscriminator(geo_type_name);
+            if (discr.has_value())
+                discriminators[geo_type_name] = *discr;
+        }
+    }
+    return discriminators;
+}
+
 
 GeoJSONRowInputFormat::GeoJSONRowInputFormat(
     ReadBuffer & in_,
@@ -593,19 +611,7 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
         else if (col.name == "geometry")
         {
             geometry_col_idx = i;
-            static constexpr std::array geo_type_names
-                = {"Point", "MultiPoint", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"};
-
-            const auto * variant_type = typeid_cast<const DataTypeVariant *>(col.type.get());
-            if (variant_type)
-            {
-                for (const auto & geo_type_name : geo_type_names)
-                {
-                    auto discr = variant_type->tryGetVariantDiscriminator(geo_type_name);
-                    if (discr.has_value())
-                        geometry_discriminators[geo_type_name] = *discr;
-                }
-            }
+            geometry_discriminators = getGeoJSONGeometryDiscriminators(col.type);
 
             /// The format always produces one of the geometry types of the `Geometry` type, so the column must
             /// contain the full set of them. Otherwise geometries would be silently inserted as NULL (data loss).
@@ -791,7 +797,8 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         {
             if (has_geometry)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'geometry' field in a feature");
-            readGeometry(geometry_col_idx.has_value() ? columns[*geometry_col_idx].get() : nullptr);
+            readGeoJSONGeometry(
+                buf, geometry_col_idx.has_value() ? columns[*geometry_col_idx].get() : nullptr, geometry_discriminators, format_settings);
             has_geometry = true;
             return true;
         }
@@ -834,10 +841,9 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return true;
 }
 
-void GeoJSONRowInputFormat::readGeometry(IColumn * col)
+void readGeoJSONGeometry(
+    ReadBuffer & buf, IColumn * col, const GeoJSONGeometryDiscriminators & geometry_discriminators, const FormatSettings & format_settings)
 {
-    auto & buf = getReadBuffer();
-
     if (!JSONUtils::checkAndSkipObjectStart(buf))
     {
         /// A null geometry is valid at the top level of a Feature.
