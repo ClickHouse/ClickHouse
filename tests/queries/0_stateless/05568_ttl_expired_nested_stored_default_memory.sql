@@ -136,3 +136,33 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE ttl_nested_delete_not_due;
+
+-- A text index that every source part has: the merge does not reduce rows, so it merges the files of the index
+-- instead of evaluating its expression, and `n.d` is not read for it.
+DROP TABLE IF EXISTS ttl_nested_text_index_merged;
+CREATE TABLE ttl_nested_text_index_merged (id UInt64, ts DateTime, n Nested(a UInt8))
+ENGINE = MergeTree ORDER BY id TTL ts + INTERVAL 100 YEAR
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, merge_max_block_size = 8192,
+    max_bytes_to_merge_at_max_space_in_pool = 1, enable_vertical_merge_algorithm = 0;
+INSERT INTO ttl_nested_text_index_merged SELECT number, '2000-01-01', range(16) FROM numbers(8192);
+INSERT INTO ttl_nested_text_index_merged SELECT number + 8192, '2000-01-01', range(16) FROM numbers(8192);
+ALTER TABLE ttl_nested_text_index_merged ADD COLUMN n.d Array(FixedString(256));
+ALTER TABLE ttl_nested_text_index_merged ADD INDEX i arrayConcat(arrayMap(x -> toString(x), n.a), arrayMap(x -> toString(x), n.d))
+    TYPE text(tokenizer = 'splitByNonAlpha');
+ALTER TABLE ttl_nested_text_index_merged MATERIALIZE INDEX i SETTINGS mutations_sync = 2;
+ALTER TABLE ttl_nested_text_index_merged CLEAR COLUMN n.d SETTINGS mutations_sync = 2;
+SELECT count(), countIf(secondary_indices_compressed_bytes > 0) FROM system.parts
+WHERE database = currentDatabase() AND table = 'ttl_nested_text_index_merged' AND active;
+
+OPTIMIZE TABLE ttl_nested_text_index_merged FINAL SETTINGS optimize_throw_if_noop = 1;
+SELECT count(), sum(length(n.a)), sum(length(n.d)) FROM ttl_nested_text_index_merged;
+SELECT arraySort(groupUniqArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'ttl_nested_text_index_merged' AND active
+    AND column IN ('id', 'ts', 'n.a', 'n.d');
+
+SYSTEM FLUSH LOGS part_log;
+SELECT (peak_memory_usage < 24 * 1024 * 1024 AS ok) ? ok : peak_memory_usage FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND database = currentDatabase() AND table = 'ttl_nested_text_index_merged' AND event_type = 'MergeParts';
+
+DROP TABLE ttl_nested_text_index_merged;
