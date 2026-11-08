@@ -395,6 +395,27 @@ constexpr uint64_t divide_by_single_limb(const uint64_t * numerator, unsigned m,
     if (m == 0)
         return 0;
 
+    if (std::has_single_bit(denominator))
+    {
+        const unsigned shift = static_cast<unsigned>(std::countr_zero(denominator));
+        if (shift == 0)
+        {
+            for (unsigned i = 0; i < m; ++i)
+                quotient[i] = numerator[i];
+            return 0;
+        }
+
+        const uint64_t remainder = numerator[0] & (denominator - 1);
+        uint64_t carry = 0;
+        for (unsigned i = m; i > 0; --i)
+        {
+            const uint64_t limb = numerator[i - 1];
+            quotient[i - 1] = (limb >> shift) | carry;
+            carry = limb << (64 - shift);
+        }
+        return remainder;
+    }
+
     /// The first step has no carried remainder, so a native 64-bit division suffices.
     uint64_t remainder = numerator[m - 1] % denominator;
     quotient[m - 1] = numerator[m - 1] / denominator;
