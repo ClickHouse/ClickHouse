@@ -48,11 +48,19 @@ LOG="${CLICKHOUSE_TMP:-.}/stats_dump_${CLICKHOUSE_DATABASE}.log"
 rm -f "$LOG"
 RESULT=
 
+# The three sets the test asserts, each extracted out of the collected log. The loop below waits
+# until every one of them is complete, so the break condition and the assertions cannot disagree:
+# counting lines is not enough, because one table can contribute more than one read group, so two
+# header lines can both belong to the same table.
+reads_rows() { sed -nE 's/^estimated_rows: ([0-9]+) .*physical_read_bytes: [0-9].*/\1/p' "$LOG" | sort -n -u; }
+key_cols() { grep -oE '`__table[12]\.k` NDV : [0-9]+ avg_bytes: [0-9]' "$LOG" | tr -d '`' | cut -d' ' -f1 | sort -u; }
+eq_members() { grep -oE 'equal columns:( `[^`]+`)+' "$LOG" | sed 's/equal columns://' | tr -d '`' | tr ' ' '\n' | grep . | sort -u; }
+
 # The server's logger is asynchronous (tests/config/config.d/logger_trace.xml), so a message
 # formatted while the query is planned can still sit in the logger's own queue when the query
 # ends, and is then never sent to the client. The query is repeated until the collected log holds
-# all three kinds of line the formatter writes - a group header with physical read bytes, the
-# per-column statistics of the two join keys, an equivalence class - and the lines of every
+# two distinct read-group row counts, the per-column statistics of both join keys and both members
+# of an equivalence class - the three kinds of line the formatter writes - and the lines of every
 # attempt are collected in one file. The query is read only, so repeating it changes nothing.
 #
 # Session settings, so they also override the settings the test runner randomizes on the command
@@ -63,7 +71,7 @@ RESULT=
 # automatic mode together with make_distributed_plan is rejected with SUPPORT_IS_DISABLED
 # (Optimizations/QueryPlanOptimizationSettings.cpp), and clearing enable_parallel_replicas alone
 # does not reset it.
-for _ in {1..5}; do
+for _ in {1..8}; do
     RESULT=$($CLICKHOUSE_CLIENT -q "
         SET send_logs_level = 'test';
         SET enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1;
@@ -73,21 +81,17 @@ for _ in {1..5}; do
         SELECT 'cascades', count(), sum(a.k), sum(b.w), sum(length(a.v))
         FROM t_stats_dump_a AS a INNER JOIN t_stats_dump_b AS b ON a.k = b.k;
     " 2>>"$LOG")
-    [ "$(grep -c '^estimated_rows: .*physical_read_bytes: ' "$LOG")" -ge 2 ] \
-        && [ "$(grep -c '^`__table[12]\.k` NDV : ' "$LOG")" -ge 2 ] \
-        && [ "$(grep -c '^equal columns: ' "$LOG")" -ge 1 ] && break
+    [ "$(reads_rows | wc -l)" -ge 2 ] && [ "$(key_cols | wc -l)" -ge 2 ] \
+        && [ "$(eq_members | wc -l)" -ge 2 ] && break
 done
 
 echo "$RESULT"
 # The estimated row count of every group that reads a table: the two table sizes, 20 and 100.
-echo "reads_estimated_rows $(sed -nE 's/^estimated_rows: ([0-9]+) .*physical_read_bytes: [0-9].*/\1/p' "$LOG" \
-    | sort -n -u | paste -sd, -)"
+echo "reads_estimated_rows $(reads_rows | paste -sd, -)"
 # The join key columns that have per-column statistics.
-echo "key_columns_with_stats $(grep -oE '`__table[12]\.k` NDV : [0-9]+ avg_bytes: [0-9]' "$LOG" \
-    | tr -d '`' | cut -d' ' -f1 | sort -u | paste -sd, -)"
+echo "key_columns_with_stats $(key_cols | paste -sd, -)"
 # The members of the equivalence class that the INNER join adds.
-echo "equal_columns_members $(grep -oE 'equal columns:( `[^`]+`)+' "$LOG" | sed 's/equal columns://' \
-    | tr -d '`' | tr ' ' '\n' | grep . | sort -u | paste -sd, -)"
+echo "equal_columns_members $(eq_members | paste -sd, -)"
 # A class of two members must be printed once per group, not once per member.
 echo "max_equal_columns_lines_per_group $(awk '
     /^estimated_rows: / { if (n > m) m = n; n = 0 }
