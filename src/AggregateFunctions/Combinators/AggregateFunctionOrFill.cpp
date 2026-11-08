@@ -24,6 +24,8 @@ public:
     /// Due to aggregate_functions_null_for_empty
     bool supportsNesting() const override { return true; }
 
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
     String getName() const override
     {
         return kind == Kind::OrNull ? "OrNull" : "OrDefault";

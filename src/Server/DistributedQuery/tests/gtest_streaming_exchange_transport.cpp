@@ -689,8 +689,8 @@ std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string by
         ExchangeTest::completeSinkHandshake(socket);
         StreamingExchangeProtocol::sendAll(socket, packet_bytes.data(), packet_bytes.size(), "test packet");
         if (then == ThenPeer::Resets)
-            socket.setLinger(true, 0);
-        if (then != ThenPeer::KeepsOpen)
+            ExchangeTest::resetAfterDelivery(socket);
+        else if (then == ThenPeer::Closes)
             socket.close();
     };
 }
