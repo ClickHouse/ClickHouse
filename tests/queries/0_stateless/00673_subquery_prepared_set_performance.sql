@@ -11,16 +11,17 @@ DROP TABLE IF EXISTS mergetree_00673;
 CREATE TABLE mergetree_00673 (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO mergetree_00673 VALUES (1);
 
-SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM mergetree_00673 WHERE x IN (SELECT * FROM numbers(1000000)))))))))))))))) SETTINGS log_queries = 1;
+SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM mergetree_00673 WHERE x IN (SELECT * FROM numbers(1000000)))))))))))))))) SETTINGS log_queries = 1, enable_parallel_replicas = 0;
 
 SET force_primary_key = 1;
 
-SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM mergetree_00673 WHERE x IN (SELECT * FROM numbers(1000000)))))))))))))))) SETTINGS log_queries = 1;
+SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM mergetree_00673 WHERE x IN (SELECT * FROM numbers(1000000)))))))))))))))) SETTINGS log_queries = 1, enable_parallel_replicas = 0;
 
 DROP TABLE mergetree_00673;
 
 -- One preparation of the set reads 1000000 rows from `numbers` plus a single row from the table;
 -- a per-level preparation would read a multiple of that.
+-- Parallel replicas are off: each replica builds its own set, and the initiator's `read_rows` includes theirs.
 SET force_primary_key = 0;
 SYSTEM FLUSH LOGS query_log;
 
