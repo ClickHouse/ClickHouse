@@ -651,7 +651,7 @@ bool unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                     /// box checks are far cheaper than the general overlay and its result validation.
                     auto component_boxes = [](const auto & geometry)
                     {
-                        std::array<Box, 64> boxes;
+                        std::array<Box, 64> boxes{};
                         for (size_t i = 0; i < geometry.size(); ++i)
                             boxes[i] = boost::geometry::return_envelope<Box>(geometry[i]);
                         return boxes;
