@@ -595,6 +595,15 @@ public:
         return true;
     }
 
+    /** Call `callback` for every directly nested aggregate function.
+      * Most combinators wrap one function, while combinators such as `-Tuple` have several.
+      */
+    virtual void forEachNestedFunction(const std::function<void(const AggregateFunctionPtr &)> & callback) const
+    {
+        if (auto nested = getNestedFunction())
+            callback(nested);
+    }
+
     /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
       * seed draws from a thread-local generator for every state it creates, so it does not - and an
       * expression that runs it (`arrayReduce('groupArraySample(2)', ...)`) must not be presented to the
@@ -1193,6 +1202,19 @@ public:
 };
 
 
+/// Which arguments of `Variant` type an aggregate function cannot process natively.
+/// `AggregateFunctionFactory` converts such arguments to `Nullable` of the least common supertype
+/// of the alternatives with `AggregateFunctionVariantAdapter`.
+enum class VariantArgumentsConversion : UInt8
+{
+    /// The function processes `Variant` arguments natively (example: any, count, groupArray), or does not accept them at all.
+    None,
+    /// The function does not support `Variant` arguments (example: sum, avg, quantile).
+    All,
+    /// The first argument is processed natively, and the other arguments are not supported (example: argMin, topKWeighted).
+    AllExceptFirst,
+};
+
 /// Properties of aggregate function that are independent of argument types and parameters.
 struct AggregateFunctionProperties
 {
@@ -1221,6 +1243,8 @@ struct AggregateFunctionProperties
 
     /// Whether arguments whose type can only contain `NULL` must be rejected instead of replacing the function with `nothingNull`.
     bool rejects_only_null_arguments = false;
+
+    VariantArgumentsConversion variant_arguments_conversion = VariantArgumentsConversion::None;
 };
 
 
