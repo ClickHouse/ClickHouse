@@ -430,10 +430,13 @@ For `MultiPoint`, `Ring`, `LineString`, and `MultiLineString`, all points are us
 For `Polygon`, only the outer ring points are used.
 For `MultiPolygon`, only the outer ring points of each polygon are used.
 `Geometry` arguments are also supported according to the active value type.
+An unnamed `Array(Tuple(Float64, Float64))` is accepted as a `Ring`; other unnamed arrays of geometry shape are ambiguous and must be cast to a geometry type.
 
-For polygonal inputs, every coordinate, including those of inner rings (holes), must be finite, and a polygon with an empty outer ring but non-empty inner rings is rejected. Inner-ring points are checked even though only outer-ring points contribute to the hull; other polygon topology constraints are not validated by this function.
+Every coordinate must be finite; a NaN or infinite coordinate raises an exception. For polygonal inputs this includes inner rings (holes), and a polygon with an empty outer ring but non-empty inner rings is rejected. Inner-ring points are checked even though only outer-ring points contribute to the hull; other polygon topology constraints are not validated by this function.
 
-Empty geometries contribute no points. The result is a `Ring` representing the convex hull, or an empty `Ring` when the group is empty or all inputs are empty.
+Empty geometries contribute no points. The result is a `Ring` representing the convex hull, or an empty `Ring` when the group is empty or all inputs are empty. Degenerate hulls are padded to a closed ring of four points: a single distinct point `p` gives `(p, p, p, p)`, and collinear points with extremes `a` and `b` give `(a, b, a, a)`.
+
+The result and the intermediate state do not depend on the order of the input rows or on how partial states are merged.
 
 `NULL` values inside a `Geometry` (Variant) column are skipped. For a `Nullable` argument (e.g. `Nullable(Point)`), `NULL` rows are skipped as well; because a `Ring` cannot be wrapped in `Nullable`, the result type stays `Ring` and a group with only `NULL` values yields an empty `Ring`, consistent with the empty-group result. A literal `NULL` argument yields `NULL`.
     )";
