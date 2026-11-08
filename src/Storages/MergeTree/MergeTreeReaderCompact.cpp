@@ -615,7 +615,7 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 }
 
 
-/// Its `checkTimeLimit` throws on a killed query, and past `max_execution_time` in throw mode.
+/// Its `throwIfKilled` also fires past `max_execution_time` in throw mode: `CancellationChecker` then cancels the query.
 static QueryStatusPtr getQueryStatusOfCurrentThread()
 {
     auto query_context = CurrentThread::tryGetQueryContext();
@@ -651,7 +651,7 @@ size_t MergeTreeReaderCompact::readGranules(
     while (read_rows < max_rows_to_read)
     {
         if (query_status)
-            query_status->checkTimeLimit();
+            query_status->throwIfKilled();
 
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
         readGranule(from_mark, rows_to_read, res_columns, nullptr);
@@ -825,7 +825,7 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
     for (size_t mark = from_mark; mark < end_mark; ++mark)
     {
         if (query_status)
-            query_status->checkTimeLimit();
+            query_status->throwIfKilled();
 
         const size_t granule_rows = index_granularity.getMarkRows(mark);
         const size_t granule_row_begin = index_granularity.getMarkStartingRow(mark);

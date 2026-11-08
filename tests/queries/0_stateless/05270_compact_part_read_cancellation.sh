@@ -63,10 +63,11 @@ inside_part_read() {
 # with a longer limit until the deadline lands inside the read, keyed on that diagnostic itself:
 # it is the only signal that reports where the query stopped. A limit that stops timing out at all
 # is already too generous, so the ladder ends there. The elapsed value is not asserted, because it
-# is everything before the read plus one mark, so it tracks machine load.
+# is everything before the read plus one mark, so it tracks machine load. It starts below a second,
+# because an optimized build on an idle machine reads the whole part in about one.
 timeout_err="${CLICKHOUSE_TMP}/05270_timeout_err.txt"
 timeout_ladder() {
-    for limit in 1 2 4 8 16 32 64; do
+    for limit in 0.25 0.5 1 2 4 8 16 32 64; do
         ${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
             --max_execution_time "$limit" --timeout_overflow_mode throw "$@" \
             -q "$read_query" >/dev/null 2>"$timeout_err"

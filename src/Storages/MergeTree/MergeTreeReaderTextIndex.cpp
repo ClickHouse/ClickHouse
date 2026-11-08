@@ -551,9 +551,9 @@ size_t MergeTreeReaderTextIndex::readRows(
 
     while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
-        /// Throws on a killed query, and past `max_execution_time` in throw mode.
+        /// Also fires past `max_execution_time` in throw mode: `CancellationChecker` then cancels the query.
         if (query_status)
-            query_status->checkTimeLimit();
+            query_status->throwIfKilled();
 
         /// Postings are addressed per mark: rows past a mark's last row belong to the next mark
         /// and would resolve against the wrong posting lists.
