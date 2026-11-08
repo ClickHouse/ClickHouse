@@ -12,8 +12,9 @@ CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
-# Disable statistics-based part pruning to keep key condition explain output stable
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_statistics_for_part_pruning=0"
+# Disable statistics-based part pruning to keep key condition explain output stable,
+# and the primary key probe of `min_marks_per_part_to_load_statistics`, which would count in the asserted `ProfileEvents`
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_statistics_for_part_pruning=0 --min_marks_per_part_to_load_statistics=0"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS test;
