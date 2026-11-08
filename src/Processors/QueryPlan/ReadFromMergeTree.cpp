@@ -3326,7 +3326,11 @@ bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const Matched
 /// A partial index has no data for rows outside its `WHERE`, so it can be used only if
 /// every conjunct of that condition is also a conjunct of the query filter.
 bool filterImpliesIndexCondition(
-    const ActionsDAG & filter_dag, const IndexDescription & index, const ContextPtr & context, size_t max_set_size_to_compare)
+    const ActionsDAG & filter_dag,
+    const ActionsDAG & index_analysis_dag,
+    const IndexDescription & index,
+    const ContextPtr & context,
+    size_t max_set_size_to_compare)
 {
     const auto & settings = context->getSettingsRef();
     if (!index.where_is_session_independent && queryConditionCacheSettingsSalt(settings) != index.where_settings_salt)
@@ -3354,11 +3358,12 @@ bool filterImpliesIndexCondition(
     if (!index_conjuncts.empty())
         return false;
 
-    /// Index conditions find indexed expressions by name, so the filter must calculate each of them like the writer did.
+    /// Index conditions find indexed expressions by name in `index_analysis_dag`, so the filter must calculate each of them
+    /// like the writer did.
     const auto indexed_matches = matchTrees(
-        index.selected_rows_expression->getActionsDAG().getOutputs(), filter_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
+        index.selected_rows_expression->getActionsDAG().getOutputs(), index_analysis_dag, /*check_monotonicity=*/false, max_set_size_to_compare);
     const NameSet index_columns(index.column_names.begin(), index.column_names.end());
-    for (const auto & node : filter_dag.getNodes())
+    for (const auto & node : index_analysis_dag.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION || !index_columns.contains(RPNBuilderTreeNode(&node, context).getColumnName()))
             continue;
@@ -3475,7 +3480,8 @@ void ReadFromMergeTree::buildIndexes(
 
         if (index.where_expression
             && (!filter_actions_dag_
-                || !filterImpliesIndexCondition(*filter_actions_dag_, index, query_context, settings[Setting::query_plan_max_set_size_for_projection_match])))
+                || !filterImpliesIndexCondition(
+                    *filter_actions_dag_, *filter_dag.dag, index, query_context, settings[Setting::query_plan_max_set_size_for_projection_match])))
             continue;
 
         ConditionTemplate<MergeTreeIndexConditionPtr>::Factory factory;
