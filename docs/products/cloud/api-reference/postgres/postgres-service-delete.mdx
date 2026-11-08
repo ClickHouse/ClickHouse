@@ -1,7 +1,7 @@
 ---
 title: "Delete a PostgreSQL service"
 openapi: "/_specs/cloud-openapi.json DELETE /v1/organizations/{organizationId}/postgres/{postgresId}"
-description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization"
+description: "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization. Returns 409 if deletion protection is enabled for the service."
 tag: "Beta"
 ---
 
@@ -9,7 +9,7 @@ tag: "Beta"
 
 <span data-endpoint-badge="Beta"><Badge color="blue">Beta</Badge></span>
 
-**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization
+**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization. Returns 409 if deletion protection is enabled for the service.
 
 <div data-permissions class="api-section">
 <div class="api-section-heading flex flex-col gap-y-4 w-full">
