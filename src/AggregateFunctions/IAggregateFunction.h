@@ -187,7 +187,8 @@ public:
     void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
 
     /// While alive, the zero-sized states created by `createNestedStates` on this thread count against one limit.
-    /// A combinator whose `create` creates states of several nested functions (`-Tuple`) opens one around them.
+    /// A combinator whose `create` creates states of several nested functions (`-Tuple`) opens one around them
+    /// and counts the zero-sized ones itself.
     class NestedStatesScope
     {
     public:
@@ -209,9 +210,10 @@ public:
         NestedStatesScope(const NestedStatesScope &) = delete;
         NestedStatesScope & operator=(const NestedStatesScope &) = delete;
 
-    private:
-        friend class IAggregateFunction;
+        /// Counts `count` states of `function` that occupy no memory against the limit; throws if it is exceeded.
+        void addZeroSizedStates(size_t count, const IAggregateFunction & function);
 
+    private:
         static inline thread_local bool active = false;
         static inline thread_local size_t zero_sized_states = 0;
 

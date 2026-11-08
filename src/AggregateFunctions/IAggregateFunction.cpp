@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/arithmeticOverflow.h>
-#include <base/scope_guard.h>
 
 
 namespace DB
@@ -101,27 +100,34 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
         [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
 }
 
-void IAggregateFunction::createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const
+void IAggregateFunction::NestedStatesScope::addZeroSizedStates(size_t count, const IAggregateFunction & function)
 {
-    NestedStatesScope scope;
-
-    if (stride == 0
-        && (common::addOverflow(NestedStatesScope::zero_sized_states, count, NestedStatesScope::zero_sized_states)
-            || NestedStatesScope::zero_sized_states > max_zero_sized_nested_states))
+    if (common::addOverflow(zero_sized_states, count, zero_sized_states) || zero_sized_states > max_zero_sized_nested_states)
         throw Exception(
             ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Too many states of aggregate function {} that occupy no memory would be created at once, the maximum is {}",
-            getName(),
+            function.getName(),
             max_zero_sized_nested_states);
+}
 
-    size_t created = 0;
-    SCOPE_EXIT({
-        if (created != count)
-            for (size_t i = 0; i < created; ++i)
-                destroy(place + i * stride);
-    });
-    for (; created < count; ++created)
-        create(place + created * stride);
+void IAggregateFunction::createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const
+{
+    NestedStatesScope scope;
+    if (stride == 0)
+        scope.addZeroSizedStates(count, *this);
+
+    size_t i = 0;
+    try
+    {
+        for (; i < count; ++i)
+            create(place + i * stride);
+    }
+    catch (...)
+    {
+        for (size_t j = 0; j < i; ++j)
+            destroy(place + j * stride);
+        throw;
+    }
 }
 
 DataTypePtr IAggregateFunction::getReturnTypeToPredict() const

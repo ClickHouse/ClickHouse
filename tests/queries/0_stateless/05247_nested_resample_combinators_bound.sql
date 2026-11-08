@@ -26,3 +26,6 @@ SELECT length(nothingForEach(range(1048576)));
 -- The nested states of one created state share the limit, also across the elements of a -Tuple.
 SELECT length(nothingResampleTupleResample(0, 524288, 1, 0, 2, 1)(tuple(number, number), number)) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT length(tupleElement(nothingResampleTuple(0, 1048576, 1)(tuple(number, number)), 1)) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Zero-sized -Tuple elements are counted, memory-backed ones are not.
+SELECT length(nothingTupleResample(0, 524289, 1)(tuple(number, number), number)) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT length(sumTupleResample(0, 524289, 1)(tuple(number, number), number)) FROM numbers(1);
