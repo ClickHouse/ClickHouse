@@ -29,12 +29,6 @@ public:
     void update(const String & full_file_path);
     void update(const String & filename, size_t size);
     void setEmpty(const String & full_file_path);
-
-    /// Record the current sizes of several files and persist them as a single unit.
-    /// The stored sizes stay unchanged unless all of them are persisted, because repair()
-    /// truncates every file to the size stored here.
-    void updateAndSave(const std::vector<String> & full_file_paths);
-
     void save() const;
     void save(WriteBuffer & buffer) const;
     bool empty() const { return map.empty(); }
@@ -88,12 +82,7 @@ public:
     };
 
 private:
-    using Map = std::map<String, size_t>;
-
     void load();
-
-    void save(const Map & map_to_save) const;
-    void save(WriteBuffer & buffer, const Map & map_to_save) const;
 
     bool fileReallyExists(const String & path_) const;
     size_t getRealFileSize(const String & path_) const;
@@ -102,7 +91,7 @@ private:
     const LoggerPtr log;
 
     String files_info_path;
-    Map map;
+    std::map<String, size_t> map;
 };
 
 }

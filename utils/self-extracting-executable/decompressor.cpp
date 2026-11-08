@@ -36,7 +36,7 @@
 #include <types.h>
 
 /// decompress part
-static int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
+int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
                off_t input_size, off_t output_size, ZSTD_DCtx* dctx)
 {
     size_t decompressed_size = ZSTD_decompressDCtx(dctx, output + out_offset, output_size, input + in_offset, input_size);
@@ -50,7 +50,7 @@ static int doDecompress(char * input, char * output, off_t & in_offset, off_t & 
 }
 
 /// decompress data from in_fd into out_fd
-static int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
+int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
 {
     off_t in_pointer = start;
     off_t out_pointer = 0;
@@ -66,7 +66,7 @@ static int decompress(char * input, char * output, off_t start, off_t end, size_
         std::cerr << "Error (ZSTD): failed to create decompression context" << std::endl;
         return 1;
     }
-    pid_t pid = 0;
+    pid_t pid;
     bool error_happened = false;
 
     /// Decompress data
@@ -114,7 +114,7 @@ static int decompress(char * input, char * output, off_t start, off_t end, size_
             while (number_of_forks >= max_number_of_forks)
             {
                 /// Wait any fork
-                int status = 0;
+                int status;
                 waitpid(0, &status, 0);
 
                 /// If error happened, stop processing
@@ -135,7 +135,7 @@ static int decompress(char * input, char * output, off_t start, off_t end, size_
     while (number_of_forks > 0)
     {
         /// Wait any fork
-        int status = 0;
+        int status;
         waitpid(0, &status, 0);
 
         if (WIFEXITED(status))
@@ -170,17 +170,17 @@ static int decompress(char * input, char * output, off_t start, off_t end, size_
     return 0;
 }
 
-static bool isSudo()
+bool isSudo()
 {
     return geteuid() == 0;
 }
 
 /// Read data about files and decompress them.
-static int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
+int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
-    struct stat info_in{};
+    struct stat info_in;
     if (0 != fstat(input_fd, &info_in))
     {
         perror("fstat");
@@ -212,7 +212,7 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
     }
 
     /// Check free space
-    struct statvfs fs_info{};
+    struct statvfs fs_info;
     if (0 != fstatvfs(input_fd, &fs_info))
     {
         perror("fstatvfs");
@@ -344,7 +344,7 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
 
 #if defined(OS_DARWIN)
 
-    static int read_exe_path(char *exe, size_t buf_sz)
+    int read_exe_path(char *exe, size_t buf_sz)
     {
         uint32_t size = static_cast<uint32_t>(buf_sz);
         std::vector<char> apple(size);
@@ -357,7 +357,7 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
 
 #elif defined(OS_FREEBSD)
 
-    static int read_exe_path(char *exe, size_t buf_sz)
+    int read_exe_path(char *exe, size_t buf_sz)
     {
         int name[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
         size_t length = buf_sz;
@@ -369,7 +369,7 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
 
 #else
 
-    static int read_exe_path(char *exe, size_t buf_sz)
+    int read_exe_path(char *exe, size_t buf_sz)
     {
         ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
         if (n > 0)
@@ -381,7 +381,7 @@ static int decompressFiles(int input_fd, char * path, char * name, bool & have_c
 
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 
-static uint64_t getInode(const char * self)
+uint64_t getInode(const char * self)
 {
     std::ifstream maps("/proc/self/maps");
     if (maps.fail())
@@ -435,7 +435,7 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path.data();
 
-    struct stat input_info{};
+    struct stat input_info;
     if (0 != stat(self, &input_info))
     {
         perror("stat");
@@ -480,7 +480,7 @@ int main(int/* argc*/, char* argv[])
     /// then file referred by path "self" is already pointing to different inode
     if (input_info.st_ino != inode)
     {
-        struct stat lock_info{};
+        struct stat lock_info;
         if (0 != fstat(lock, &lock_info))
         {
             perror("fstat lock");

@@ -1,12 +1,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/StorageSystemGraphite.h>
 
@@ -52,11 +47,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
+            auto table_data = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table_data)
                 continue;
 
@@ -152,6 +143,3 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGraphite) }

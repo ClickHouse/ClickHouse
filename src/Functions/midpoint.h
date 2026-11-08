@@ -6,7 +6,6 @@
 
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -18,7 +17,6 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/castTypeToEither.h>
 
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 
 #include <base/TypeList.h>
@@ -36,7 +34,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionMidpoint final : public IFunction
+class FunctionMidpoint : public IFunction
 {
 public:
     static constexpr auto name = "midpoint";
@@ -113,7 +111,7 @@ private:
     static void calculateForNumericType(
         auto & result_data,
         const Columns & input_columns,
-        const VectorWithMemoryTracking<const ColumnUInt8::Container *> & input_null_maps,
+        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
         ColumnUInt8::Container & result_null_map_data,
         size_t input_rows_count)
     {
@@ -185,7 +183,7 @@ private:
     static void calculateForDecimalType(
         auto & result_data,
         const Columns & input_columns,
-        const VectorWithMemoryTracking<const ColumnUInt8::Container *> & input_null_maps,
+        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
         ColumnUInt8::Container & result_null_map_data,
         size_t input_rows_count)
     {
@@ -254,7 +252,7 @@ private:
         Columns columns;
         columns.reserve(converted_columns.size());
 
-        VectorWithMemoryTracking<const ColumnUInt8::Container *> input_null_maps;
+        std::vector<const ColumnUInt8::Container *> input_null_maps;
         ColumnUInt8::MutablePtr result_null_map;
         ColumnUInt8::Container * result_null_map_data = nullptr;
 
@@ -456,9 +454,9 @@ class MidpointResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "midpoint";
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
+    static FunctionOverloadResolverPtr create(ContextPtr context)
     {
-        return std::make_unique<MidpointResolver<SpecializedFunction>>(context_);
+        return std::make_unique<MidpointResolver<SpecializedFunction>>(context);
     }
 
     explicit MidpointResolver(ContextPtr context_)
@@ -512,7 +510,7 @@ public:
         return getLeastSupertype(types);
     }
 
-private:
+protected:
     ContextPtr context;
 };
 

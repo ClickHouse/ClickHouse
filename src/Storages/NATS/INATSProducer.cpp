@@ -68,7 +68,7 @@ void INATSProducer::publish()
 {
     String payload;
 
-    natsStatus status = {};
+    natsStatus status;
     while (!payloads.empty())
     {
         if (!connection->isConnected() || natsConnection_Buffered(connection->getConnection()) > MAX_BUFFERED)
@@ -82,7 +82,7 @@ void INATSProducer::publish()
         if (status != NATS_OK)
         {
             LOG_DEBUG(log, "Something went wrong during publishing to NATS subject. Nats status text: {}. Last error message: {}",
-                      natsStatus_GetText(status), getNATSLastError());
+                      natsStatus_GetText(status), nats_GetLastError(nullptr));
             if (!payloads.pushFront(payload))
                 throw Exception(ErrorCodes::INVALID_STATE, "Could not push to payloads queue");
             break;

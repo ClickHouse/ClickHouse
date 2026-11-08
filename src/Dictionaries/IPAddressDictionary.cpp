@@ -1,5 +1,4 @@
 #include <Dictionaries/IPAddressDictionary.h>
-#include <Columns/ColumnFixedString.h>
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
@@ -237,7 +236,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     validateKeyTypes(key_types);
 
@@ -267,20 +266,6 @@ ColumnPtr IPAddressDictionary::getColumn(
 
                 getItemsShortCircuitImpl<ValueType>(
                     attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Map & value) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Object & value) { out->insert(value); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -315,26 +300,6 @@ ColumnPtr IPAddressDictionary::getColumn(
                     attribute,
                     key_columns,
                     [&](const size_t, const Array & value) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t, const Map & value) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t, const Object & value) { out->insert(value); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -1092,7 +1057,7 @@ static auto keyViewGetter()
         for (size_t row : collections::range(0, key_ip_column.size()))
         {
             UInt8 mask = key_mask_column.getElement(row);
-            size_t str_len = 0;
+            size_t str_len;
             if constexpr (IsIPv4)
                 str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else
@@ -1222,7 +1187,6 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
     return ipNotFound();
 }
 
-void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string &,
@@ -1259,129 +1223,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
         return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
-    factory.registerLayout("ip_trie", create_layout, true, true, Documentation{
-        .description = R"DOCS_MD(
-# ip_trie dictionary layout
-
-The `ip_trie` dictionary is designed for IP address lookups by network prefix.
-It stores IP ranges in CIDR notation and allows fast determination of which prefix (e.g. subnet or ASN range) a given IP falls into, making it ideal for IP-based searches like geolocation or network classification.
-
-<Frame>
-<iframe src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="IP based search with the ip_trie dictionary" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</Frame>
-
-**Example**
-
-Suppose we have a table in ClickHouse that contains our IP prefixes and mappings:
-
-```sql
-CREATE TABLE my_ip_addresses (
-    prefix String,
-    asn UInt32,
-    cca2 String
-)
-ENGINE = MergeTree
-PRIMARY KEY prefix;
-```
-
-```sql
-INSERT INTO my_ip_addresses VALUES
-    ('202.79.32.0/20', 17501, 'NP'),
-    ('2620:0:870::/48', 3856, 'US'),
-    ('2a02:6b8:1::/48', 13238, 'RU'),
-    ('2001:db8::/32', 65536, 'ZZ')
-;
-```
-
-Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requires a composite key:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-CREATE DICTIONARY my_ip_trie_dictionary (
-    prefix String,
-    asn UInt32,
-    cca2 String DEFAULT '??'
-)
-PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
-LAYOUT(IP_TRIE)
-LIFETIME(3600);
-```
-
-</Tab>
-<Tab title="Configuration file">
-
-```xml
-<structure>
-    <key>
-        <attribute>
-            <name>prefix</name>
-            <type>String</type>
-        </attribute>
-    </key>
-    <attribute>
-            <name>asn</name>
-            <type>UInt32</type>
-            <null_value />
-    </attribute>
-    <attribute>
-            <name>cca2</name>
-            <type>String</type>
-            <null_value>??</null_value>
-    </attribute>
-    ...
-</structure>
-<layout>
-    <ip_trie>
-        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
-        <!-- This option increases memory usage. -->
-        <access_to_key_from_attributes>true</access_to_key_from_attributes>
-    </ip_trie>
-</layout>
-```
-
-</Tab>
-</Tabs>
-<br/>
-
-The key must have only one `String` type attribute that contains an allowed IP prefix. Other types are not supported yet.
-
-The syntax is:
-
-```sql
-dictGetT('dict_name', 'attr_name', ip)
-```
-
-The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
-
-```sql
-SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
-
-┌─result─┐
-│ NP     │
-└────────┘
-
-SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
-
-┌─result─┐
-│  65536 │
-└────────┘
-
-SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
-
-┌─result───────┐
-│ (65536,'ZZ') │
-└──────────────┘
-```
-
-Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
-
-Data must completely fit into RAM.
-)DOCS_MD",
-        .syntax = "LAYOUT(IP_TRIE())",
-        .related = {}});
+    factory.registerLayout("ip_trie", create_layout, true);
 }
 
 }

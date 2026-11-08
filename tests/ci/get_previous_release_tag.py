@@ -14,13 +14,8 @@ from version_helper import (
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/releases"
 PACKAGE_REGEXP = r"\Aclickhouse-common-static_.+[.]deb"
-RELEASES_PER_PAGE = 100
 
 logger = logging.getLogger(__name__)
-
-
-class ReleaseNotFoundException(Exception):
-    pass
 
 
 class ReleaseInfo:
@@ -41,23 +36,21 @@ def find_previous_release(
 ) -> Tuple[bool, Optional[ReleaseInfo]]:
     releases.sort(key=lambda x: x.version, reverse=True)
 
-    if not releases:
-        return False, None
-
     if server_version is None:
         return True, releases[0]
 
     for release in releases:
         if release.version < server_version:
-            # A tag exists for a short period before its packages are uploaded.
+            # Check if the artifact exists on GitHub.
+            # It can be not true for a short period of time
+            # after creating a tag for a new release before uploading the packages.
             if any(re.match(PACKAGE_REGEXP, name) for name in release.assets.keys()):
                 return True, release
 
-            logger.warning(
-                "Skipping v%s-%s: no uploaded package matching %s",
+            logger.debug(
+                "The tag v%s-%s exists but the package is not yet available on GitHub",
                 release.version,
                 release.type,
-                PACKAGE_REGEXP,
             )
 
     return False, None
@@ -66,52 +59,31 @@ def find_previous_release(
 def get_previous_release(
     server_version: Optional[ClickHouseVersion],
 ) -> Optional[ReleaseInfo]:
-    response = get_gh_api(
-        CLICKHOUSE_TAGS_URL,
-        params={"page": 1, "per_page": RELEASES_PER_PAGE},
-        timeout=10,
-    )
-    if not response.ok:
-        logger.error("Cannot load the list of tags from github: %s", response.reason)
-        response.raise_for_status()
-
-    releases = response.json()
-    # The first page carries the newest releases, so a page shorter than requested is a
-    # degraded response rather than the end of the feed.
-    if len(releases) < RELEASES_PER_PAGE:
-        raise ReleaseNotFoundException(
-            f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
-            f"releases, expected {RELEASES_PER_PAGE}"
+    page = 1
+    found = False
+    while not found:
+        response = get_gh_api(
+            CLICKHOUSE_TAGS_URL, params={"page": page, "per_page": 100}, timeout=10
         )
+        if not response.ok:
+            logger.error(
+                "Cannot load the list of tags from github: %s", response.reason
+            )
+            response.raise_for_status()
 
-    release_infos = []  # type: List[ReleaseInfo]
-    for r in releases:
-        if re.match(TAG_REGEXP, r["tag_name"]):
-            assets = {
-                a["name"]: a["browser_download_url"]
-                for a in r["assets"]
-                if a["state"] == "uploaded"
-            }
-            release_infos.append(ReleaseInfo(r["tag_name"], assets))
+        releases = response.json()
 
-    found, previous_release = find_previous_release(server_version, release_infos)
-    if not found:
-        raise ReleaseNotFoundException(
-            f"Cannot find a release older than {server_version} among the "
-            f"{len(release_infos)} most recent releases "
-            f"(newest: {release_infos[0] if release_infos else 'none'}, "
-            f"oldest: {release_infos[-1] if release_infos else 'none'})"
-        )
-
-    # Only releases the page itself sorts below the answer show that the page reaches
-    # past it; without any, an even newer eligible release could sit off the page.
-    older_on_page = [r for r in release_infos if r.version < previous_release.version]
-    if not older_on_page:
-        raise ReleaseNotFoundException(
-            f"Resolved {previous_release} as the release before {server_version}, but "
-            f"it is the oldest of the {len(release_infos)} releases on the first page "
-            f"of {CLICKHOUSE_TAGS_URL}, which cannot show that no newer one precedes it"
-        )
+        release_infos = []  # type: List[ReleaseInfo]
+        for r in releases:
+            if re.match(TAG_REGEXP, r["tag_name"]):
+                assets = {
+                    a["name"]: a["browser_download_url"]
+                    for a in r["assets"]
+                    if a["state"] == "uploaded"
+                }
+                release_infos.append(ReleaseInfo(r["tag_name"], assets))
+        found, previous_release = find_previous_release(server_version, release_infos)
+        page += 1
 
     return previous_release
 

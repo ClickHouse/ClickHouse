@@ -14,13 +14,13 @@ class  PromQLParser : public antlr4::Parser {
 public:
   enum {
     NUMBER = 1, STRING = 2, ADD = 3, SUB = 4, MULT = 5, DIV = 6, MOD = 7, 
-    POW = 8, AND = 9, OR = 10, UNLESS = 11, ATAN2 = 12, EQ = 13, DEQ = 14, 
-    NE = 15, GT = 16, LT = 17, GE = 18, LE = 19, RE = 20, NRE = 21, BY = 22, 
-    WITHOUT = 23, ON = 24, IGNORING = 25, GROUP_LEFT = 26, GROUP_RIGHT = 27, 
-    OFFSET = 28, BOOL = 29, START = 30, END = 31, AGGREGATION_OPERATOR = 32, 
-    FUNCTION = 33, LEFT_BRACE = 34, RIGHT_BRACE = 35, LEFT_PAREN = 36, RIGHT_PAREN = 37, 
-    LEFT_BRACKET = 38, RIGHT_BRACKET = 39, COMMA = 40, AT = 41, SUBQUERY_RANGE = 42, 
-    SELECTOR_RANGE = 43, METRIC_NAME = 44, LABEL_NAME = 45, WS = 46, SL_COMMENT = 47
+    POW = 8, AND = 9, OR = 10, UNLESS = 11, EQ = 12, DEQ = 13, NE = 14, 
+    GT = 15, LT = 16, GE = 17, LE = 18, RE = 19, NRE = 20, BY = 21, WITHOUT = 22, 
+    ON = 23, IGNORING = 24, GROUP_LEFT = 25, GROUP_RIGHT = 26, OFFSET = 27, 
+    BOOL = 28, AGGREGATION_OPERATOR = 29, FUNCTION = 30, LEFT_BRACE = 31, 
+    RIGHT_BRACE = 32, LEFT_PAREN = 33, RIGHT_PAREN = 34, LEFT_BRACKET = 35, 
+    RIGHT_BRACKET = 36, COMMA = 37, AT = 38, SUBQUERY_RANGE = 39, SELECTOR_RANGE = 40, 
+    METRIC_NAME = 41, LABEL_NAME = 42, WS = 43, SL_COMMENT = 44
   };
 
   enum {
@@ -172,7 +172,6 @@ public:
     antlr4::tree::TerminalNode *MULT();
     antlr4::tree::TerminalNode *DIV();
     antlr4::tree::TerminalNode *MOD();
-    antlr4::tree::TerminalNode *ATAN2();
     GroupingContext *grouping();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -333,10 +332,6 @@ public:
     TimestampContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *NUMBER();
-    antlr4::tree::TerminalNode *START();
-    antlr4::tree::TerminalNode *LEFT_PAREN();
-    antlr4::tree::TerminalNode *RIGHT_PAREN();
-    antlr4::tree::TerminalNode *END();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -679,7 +674,6 @@ public:
     KeywordContext *keyword();
     antlr4::tree::TerminalNode *METRIC_NAME();
     antlr4::tree::TerminalNode *LABEL_NAME();
-    antlr4::tree::TerminalNode *STRING();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -733,7 +727,6 @@ public:
     antlr4::tree::TerminalNode *AND();
     antlr4::tree::TerminalNode *OR();
     antlr4::tree::TerminalNode *UNLESS();
-    antlr4::tree::TerminalNode *ATAN2();
     antlr4::tree::TerminalNode *BY();
     antlr4::tree::TerminalNode *WITHOUT();
     antlr4::tree::TerminalNode *ON();
@@ -742,8 +735,6 @@ public:
     antlr4::tree::TerminalNode *GROUP_RIGHT();
     antlr4::tree::TerminalNode *OFFSET();
     antlr4::tree::TerminalNode *BOOL();
-    antlr4::tree::TerminalNode *START();
-    antlr4::tree::TerminalNode *END();
     antlr4::tree::TerminalNode *AGGREGATION_OPERATOR();
     antlr4::tree::TerminalNode *FUNCTION();
 

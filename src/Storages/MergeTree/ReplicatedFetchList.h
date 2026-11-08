@@ -25,19 +25,19 @@ struct ReplicatedFetchInfo
 
     std::string source_replica_path;
     std::string source_replica_hostname;
-    UInt16 source_replica_port{};
+    UInt16 source_replica_port;
     std::string interserver_scheme;
     std::string uri;
 
-    UInt8 to_detached{};
+    UInt8 to_detached;
 
-    Float64 elapsed{};
-    Float64 progress{};
+    Float64 elapsed;
+    Float64 progress;
 
-    UInt64 total_size_bytes_compressed{};
-    UInt64 bytes_read_compressed{};
+    UInt64 total_size_bytes_compressed;
+    UInt64 bytes_read_compressed;
 
-    UInt64 thread_id{};
+    UInt64 thread_id;
 };
 
 
@@ -69,10 +69,6 @@ struct ReplicatedFetchListElement : private boost::noncopyable
 
     const UInt64 thread_id;
 
-    /// Set on server shutdown. Checked in `ReplicatedFetchReadCallback` on every buffer
-    /// refill of the part download, which aborts with the `ABORTED` exception.
-    std::atomic<bool> is_cancelled{};
-
     ReplicatedFetchListElement(
         const std::string & database_, const std::string & table_,
         const std::string & partition_id_, const std::string & result_part_name_,
@@ -90,38 +86,11 @@ class ReplicatedFetchList final : public BackgroundProcessList<ReplicatedFetchLi
 {
 private:
     using Parent = BackgroundProcessList<ReplicatedFetchListElement, ReplicatedFetchInfo>;
-    /// Set by cancelAll (on server shutdown): entries inserted after it are cancelled at birth.
-    std::atomic<bool> all_cancelled = false;
 
 public:
     ReplicatedFetchList ()
         : Parent(CurrentMetrics::ReplicatedFetch)
     {}
-
-    /// Whether `cancelAll` has been called (the server is shutting down).
-    /// Checked in `fetchSelectedPart` while reading the part header, before the fetch
-    /// is registered in the list and gets its own per-entry `is_cancelled` flag.
-    bool isAllCancelled() const { return all_cancelled; }
-
-    /// Cancel all current fetches, and also all inserted later.
-    /// Used on server shutdown, when their results would be discarded anyway.
-    void cancelAll()
-    {
-        /// See the comment in `MergeList::cancelAll` about the ordering with `insert`.
-        all_cancelled = true;
-        std::lock_guard lock{mutex};
-        for (auto & fetch_element : entries)
-            fetch_element.is_cancelled = true;
-    }
-
-    template <typename... Args>
-    EntryPtr insert(Args &&... args)
-    {
-        auto entry = Parent::insert(std::forward<Args>(args)...);
-        if (all_cancelled)
-            (*entry)->is_cancelled = true;
-        return entry;
-    }
 };
 
 }

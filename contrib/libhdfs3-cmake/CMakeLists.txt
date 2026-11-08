@@ -103,6 +103,8 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/StripedBlockUtil.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedInputStreamImpl.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedOutputStreamImpl.cpp"
+    "${HDFS3_SOURCE_DIR}/client/SlowMetrics.cpp"
+    "${HDFS3_SOURCE_DIR}/client/SlowNodeTracker.cpp"
     "${HDFS3_SOURCE_DIR}/client/SystemECPolicies.cpp"
     "${HDFS3_SOURCE_DIR}/client/dump.cpp"
     "${HDFS3_SOURCE_DIR}/client/erasure_coder.cpp"
@@ -195,6 +197,6 @@ endif()
 add_library(ch_contrib::hdfs ALIAS _hdfs3)
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
-    add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
+     add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
      target_link_libraries(perf_checksum PRIVATE ch_contrib::hdfs)
 endif ()

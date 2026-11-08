@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionLowCardinalityKeys final : public IFunction
+class FunctionLowCardinalityKeys: public IFunction
 {
 public:
     static constexpr auto name = "lowCardinalityKeys";
@@ -25,8 +25,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -55,7 +53,7 @@ public:
 REGISTER_FUNCTION(LowCardinalityKeys)
 {
     FunctionDocumentation::Description description = R"(
-Returns the dictionary values of a [LowCardinality](/reference/data-types/lowcardinality) column.
+Returns the dictionary values of a [LowCardinality](../data-types/lowcardinality.md) column.
 If the block is smaller or larger than the dictionary size, the result will be truncated or extended with default values.
 Since LowCardinality have per-part dictionaries, this function may return different dictionary values in different parts.
     )";

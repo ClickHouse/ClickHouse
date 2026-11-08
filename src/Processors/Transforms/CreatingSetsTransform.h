@@ -24,7 +24,7 @@ class PushingPipelineExecutor;
 /// Don't return any data. Sets are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
 /// Independent processors is created for each subquery.
-class CreatingSetsTransform final : public IAccumulatingTransform
+class CreatingSetsTransform : public IAccumulatingTransform
 {
 public:
     CreatingSetsTransform(
@@ -38,7 +38,6 @@ public:
 
     String getName() const override { return "CreatingSetsTransform"; }
 
-    Status prepare() override;
     void work() override;
     void consume(Chunk chunk) override;
     Chunk generate() override;

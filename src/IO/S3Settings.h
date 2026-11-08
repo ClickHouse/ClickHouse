@@ -6,7 +6,6 @@
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
-#include <Common/MapWithMemoryTracking.h>
 
 #include <IO/S3Common.h>
 #include <IO/S3AuthSettings.h>
@@ -17,8 +16,6 @@ namespace Poco::Util { class AbstractConfiguration; }
 
 namespace DB
 {
-
-using ObjectAttributes = std::map<std::string, std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 struct Settings;
 
@@ -69,7 +66,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    MapWithMemoryTracking<const String, const S3Settings> s3_settings;
+    std::map<const String, const S3Settings> s3_settings;
 };
 
 

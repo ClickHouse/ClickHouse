@@ -6,17 +6,13 @@
 namespace DB
 {
 
-class SerializationFixedString final : public ISerialization
+class SerializationFixedString : public ISerialization
 {
 private:
     size_t n;
 
-    explicit SerializationFixedString(size_t n_) : n(n_) {}
-
 public:
-    static UInt128 getHash(size_t n_);
-    static SerializationPtr create(size_t n_);
-
+    explicit SerializationFixedString(size_t n_) : n(n_) {}
     size_t getN() const { return n; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -25,7 +21,7 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 

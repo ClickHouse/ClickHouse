@@ -4,12 +4,7 @@
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
 
 #include <stack>
 
@@ -22,11 +17,7 @@ extern const int LOGICAL_ERROR;
 
 namespace DB
 {
-MatchedTrees::Matches matchTrees(
-    const ActionsDAG::NodeRawConstPtrs & inner_dag,
-    const ActionsDAG & outer_dag,
-    bool check_monotonicity,
-    size_t max_size_for_sets_from_tuple_to_compare)
+MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
 {
     using Parents = std::set<const ActionsDAG::Node *>;
     std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
@@ -131,7 +122,7 @@ MatchedTrees::Matches matchTrees(
                 {
                     if (frame.mapped_children[i])
                         any_child = frame.mapped_children[i];
-                    else if (!frame.node->children[i]->column)
+                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
                         found_all_children = false;
                 }
 
@@ -186,48 +177,9 @@ MatchedTrees::Matches matchTrees(
                                     {
                                         if (frame.mapped_children[i] == nullptr)
                                         {
-                                            const auto * inner_col = children[i]->column.get();
-                                            const auto * outer_col = frame.node->children[i]->column.get();
-                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
-                                            {
-                                                all_children_matched = false;
-                                            }
-                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner_col->getDataColumn()))
-                                            {
-                                                /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
-                                                /// set contents, so `getField()` cannot distinguish different
-                                                /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
-                                                /// hash (computed order-independently in its constructor) when both
-                                                /// fit under the size limit. Subquery/storage sets fall through to
-                                                /// non-matching: their content isn't known at planning time, and
-                                                /// matching them structurally here would be unsound.
-                                                all_children_matched = false;
-                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(&outer_col->getDataColumn()) : nullptr;
-                                                if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
-                                                {
-                                                    const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
-                                                        inner_set->getData().get());
-                                                    const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(
-                                                        outer_set->getData().get());
-                                                    if (inner_tuple && outer_tuple)
-                                                    {
-                                                        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
-                                                        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
-                                                        /// Sizes are deduplicated counts; different sizes ⇒ different
-                                                        /// contents, so skip hashing in that case.
-                                                        if (inner_rows == outer_rows
-                                                            && inner_rows <= max_size_for_sets_from_tuple_to_compare)
-                                                        {
-                                                            all_children_matched =
-                                                                inner_tuple->getContentHash() == outer_tuple->getContentHash();
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            else
-                                            {
-                                                all_children_matched = inner_col->getField() == outer_col->getField();
-                                            }
+                                            all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
+                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
+                                                && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
                                         }
                                         else
                                             all_children_matched = frame.mapped_children[i] == children[i];
@@ -356,7 +308,7 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
 }
 
 /// Check whether all the function in chain are monotonic
-static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
+bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
     auto it = chain.non_const_arg_pos.begin();
     while (node != chain.input_node)
@@ -552,105 +504,6 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     return new_inputs;
 }
 
-std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
-{
-    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true};
-
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
-        return {};
-
-    const auto function_name = node.function_base->getName();
-    ActionsDAGLineageKind kind{};
-    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
-        kind = ActionsDAGLineageKind::ValuePreserving;
-    else if (function_name == "_CAST" || function_name == "CAST")
-        kind = ActionsDAGLineageKind::DistinctValuesBound;
-    else if (node.children.size() == 1 && node.function_base->isDeterministic())
-        kind = ActionsDAGLineageKind::DistinctValuesBound;
-    else
-        return {};
-
-    /// NDV counts only non-null values. A hop turning a Nullable first argument into a
-    /// non-Nullable result can map NULL to one additional counted value.
-    const bool collapses_null
-        = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
-    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
-        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
-    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
-}
-
-std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
-{
-    using TraceState = std::optional<ActionsDAGInputLineage>;
-
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_positions;
-    const auto & inputs = actions.getInputs();
-    for (size_t input_position = 0; input_position < inputs.size(); ++input_position)
-        input_positions[inputs[input_position]] = input_position;
-
-    std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
-    const auto & outputs = actions.getOutputs();
-    for (const auto * output : outputs)
-    {
-        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
-        nodes_to_process.push({output, false});
-        while (!nodes_to_process.empty())
-        {
-            auto [node, child_pushed] = nodes_to_process.top();
-            if (traced.contains(node))
-            {
-                nodes_to_process.pop();
-                continue;
-            }
-
-            if (auto input = input_positions.find(node); input != input_positions.end())
-            {
-                traced[node] = ActionsDAGInputLineage{input->second, ActionsDAGLineageKind::Identity, 0, true};
-                nodes_to_process.pop();
-                continue;
-            }
-
-            const auto hop = describeActionsDAGLineageHop(*node);
-            if (hop && !child_pushed)
-            {
-                nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[0], false});
-                continue;
-            }
-
-            TraceState result;
-            if (hop)
-            {
-                const auto & child = traced.at(node->children[0]);
-                if (child)
-                {
-                    ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
-                    if (hop->kind == ActionsDAGLineageKind::DistinctValuesBound
-                        || child->kind == ActionsDAGLineageKind::DistinctValuesBound)
-                        kind = ActionsDAGLineageKind::DistinctValuesBound;
-                    else if (hop->kind == ActionsDAGLineageKind::ValuePreserving
-                        || child->kind == ActionsDAGLineageKind::ValuePreserving)
-                        kind = ActionsDAGLineageKind::ValuePreserving;
-                    result = ActionsDAGInputLineage{
-                        child->input_position,
-                        kind,
-                        child->ndv_delta + hop->ndv_delta,
-                        child->preserves_width && hop->preserves_width};
-                }
-            }
-            traced[node] = result;
-            nodes_to_process.pop();
-        }
-    }
-
-    std::vector<ActionsDAGOutputLineage> result;
-    result.reserve(outputs.size());
-    for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
-        result.push_back({output_position, traced.at(outputs[output_position])});
-    return result;
-}
-
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
     if (node->function_base->isInjective({}))
@@ -682,14 +535,11 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
     switch (node->type)
     {
         case ActionsDAG::ActionType::ALIAS:
-            chassert(node->children.size() == 1);
+            assert(node->children.size() == 1);
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            /// The result of an ARRAY JOIN is not a per-row function of its child, so it cannot be
-            /// reduced any further (see `buildArrayJoinDAG` for how such nodes enter key expressions).
-            irreducible.insert(node);
-            break;
+            UNREACHABLE();
         case ActionsDAG::ActionType::COLUMN:
             irreducible.insert(node);
             break;
@@ -733,7 +583,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
         switch (node->type)
         {
             case ActionsDAG::ActionType::ALIAS:
-                chassert(node->children.size() == 1);
+                assert(node->children.size() == 1);
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -759,14 +609,15 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 
 /// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
 /// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
-/// So it is left only to check that each key node depends only on the allowed set of nodes (`irreducible_nodes`).
+/// So it is left only to check that each output node depends only on the allowed set of nodes (`irreducible_nodes`).
 bool allOutputsDependsOnlyOnAllowedNodes(
-    const ActionsDAG::NodeRawConstPtrs & key_nodes, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
+    const ActionsDAG & partition_actions, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
 {
     NodeMap visited;
     bool res = true;
-    for (const auto * node : key_nodes)
-        res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
+    for (const auto & node : partition_actions.getOutputs())
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
     return res;
 }
 

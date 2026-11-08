@@ -18,9 +18,6 @@ std::optional<Entry> HashTablesStatistics<Entry>::getSizeHint(const Params & par
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
 
     const auto cache = getHashTableStatsCache(params);
-    if (!cache)
-        return std::nullopt;
-
     if (const auto hint = cache->get(params.key))
     {
         LOG_TRACE(getLogger("HashTablesStatistics"), "An entry for key={} found in cache: {}", params.key, hint->dump());
@@ -37,9 +34,6 @@ void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params &
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
 
     const auto cache = getHashTableStatsCache(params);
-    if (!cache)
-        return;
-
     const auto hint = cache->get(params.key);
     // We'll maintain the maximum among all the observed values until another prediction is much lower (that should indicate some change)
     if (!hint || hint->shouldBeUpdated(new_entry))
@@ -68,18 +62,7 @@ HashTablesStatistics<Entry>::CachePtr HashTablesStatistics<Entry>::getHashTableS
 {
     std::lock_guard lock(mutex);
     if (!hash_table_stats)
-    {
-        /// The capacity of this process-wide cache is fixed when the first query that touches it
-        /// creates it, so a caller with `max_entries_for_hash_table_stats = 0` must not create it:
-        /// a zero-capacity cache evicts every insertion immediately and misses every lookup, which
-        /// would silently disable the statistics for every later query in the process, whatever
-        /// the settings of that query. Report "no statistics" for such a caller instead and leave
-        /// the creation to a caller that is actually configured to keep entries.
-        if (params.max_entries_for_hash_table_stats == 0)
-            return nullptr;
-
         hash_table_stats = std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), params.max_entries_for_hash_table_stats * sizeof(Entry));
-    }
     return hash_table_stats;
 }
 
@@ -97,12 +80,6 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.entries += hash_join_stats->entries;
         res.hits += hash_join_stats->hits;
         res.misses += hash_join_stats->misses;
-    }
-    if (auto hash_join_match_stats = getHashTablesStatistics<HashJoinMatchEntry>().getCacheStats())
-    {
-        res.entries += hash_join_match_stats->entries;
-        res.hits += hash_join_match_stats->hits;
-        res.misses += hash_join_match_stats->misses;
     }
     return res;
 }
@@ -159,14 +136,6 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
     return std::nullopt;
 }
 
-std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params)
-{
-    if (stats_collecting_params.isCollectionAndUseEnabled())
-        return DB::getHashTablesStatistics<HashJoinMatchEntry>().getSizeHint(stats_collecting_params);
-    return std::nullopt;
-}
-
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
-template class HashTablesStatistics<HashJoinMatchEntry>;
 }

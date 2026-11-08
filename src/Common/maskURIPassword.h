@@ -1,129 +1,83 @@
 #pragma once
 
+#include <Common/re2.h>
+
+#include <algorithm>
 #include <array>
 #include <string>
 #include <string_view>
+#include <utility>
 
 
 namespace DB
 {
 
-/** Mask the value of `<key>=<value>` in a connection string, where the value runs up to the next
-  * ';' or to the end of the string. Only the first occurrence is masked, and nothing is masked if
-  * the key is absent.
-  *
-  * This replaces the regular expressions `AccountKey=.*?(;|$)` and `SharedAccessSignature=.*?(;|$)`
-  * that used to be applied here, so that masking a secret does not require a regex engine.
+/** Hides the secrets of an Azure connection string as the Azure SDK reads it (`Azure::Storage::_internal::ParseConnectionString`,
+  * `contrib/azure/sdk/storage/azure-storage-common/src/storage_credential.cpp`): a key runs to '=' and its value to ';', keys
+  * match exactly, and the last copy of a repeated key wins. Splitting at every ';' first can only hide more than the SDK reads.
+  *   - secret keys:   `AccountName=a;AccountKey=K;SharedAccessSignature=S` -> `AccountName=a;AccountKey=[HIDDEN];SharedAccessSignature=[HIDDEN]`
+  *   - repeated keys: `AccountKey=K1;AccountKey=K2` -> `AccountKey=[HIDDEN];AccountKey=[HIDDEN]`
+  *   - an endpoint is a url, so a query in it is a SAS: `BlobEndpoint=https://h/?sig=S` or `BlobEndpoint=https://u@h/` -> `BlobEndpoint=[HIDDEN]`
+  *   - the whole string is hidden when a '?', '#' or '@' is still shown, or when it has one and holds a url outside the pair
+  *     values (':' or '/' in a key or in a part without '='; no key has them): `https://h/?sig=S` or `https://u:p=s@h/` -> `[HIDDEN]`
+  * Returns whether anything was hidden.
   */
-inline bool maskConnectionStringKey(std::string & str, std::string_view key_with_eq)
+inline bool maskAzureConnectionStringSecrets(std::string & str)
 {
-    size_t key_position = str.find(key_with_eq);
-    if (key_position == std::string::npos)
-        return false;
+    static constexpr std::array<std::string_view, 2> secret_keys = {"AccountKey", "SharedAccessSignature"};
+    auto is_secret_key = [](std::string_view key) { return std::ranges::find(secret_keys, key) != secret_keys.end(); };
 
-    size_t value_begin = key_position + key_with_eq.length();
-    size_t value_end = str.find(';', value_begin);
-    if (value_end == std::string::npos)
-        value_end = str.length();
-
-    str.replace(value_begin, value_end - value_begin, "[HIDDEN]");
-    return true;
-}
-
-/** Replace the password in a URI of the form `scheme://user:password@host` with `[HIDDEN]`.
-  * Returns whether anything was masked. Only the first such occurrence is masked.
-  *
-  * This used to be the regular expression `([^:]+://[^:]*):([^@]*)@(.*)` rewritten to
-  * `\1:[HIDDEN]@\3` - a whole regex engine carried for one substitution. The scan below reproduces
-  * that expression exactly; `src/Common/tests/gtest_mask_uri_password.cpp` checks it against re2.
-  *
-  * Reading the expression: `[^:]+` is the scheme, so a match can only begin right after the
-  * preceding colon (or at the start of the string); `[^:]*` then runs up to the colon that opens
-  * the password; and `[^@]*` runs up to the '@' that closes it. If either is missing, the match
-  * fails at this `://` and the next one is tried.
-  */
-inline bool maskURIPassword(std::string * uri)
-{
-    static constexpr std::string_view SEPARATOR = "://";
-
-    for (size_t separator = uri->find(SEPARATOR); separator != std::string::npos;
-         separator = uri->find(SEPARATOR, separator + SEPARATOR.length()))
+    const bool has_url_delimiters = str.find_first_of("?#@") != std::string::npos;
+    bool url_outside_values = false;
+    std::string result;
+    size_t copied = 0;
+    bool masked = false;
+    for (size_t part_begin = 0; part_begin <= str.length();)
     {
-        /// `[^:]+` - at least one non-colon character in front of the separator.
-        size_t preceding_colon = separator ? uri->find_last_of(':', separator - 1) : std::string::npos;
-        size_t scheme_begin = (preceding_colon == std::string::npos) ? 0 : preceding_colon + 1;
-        if (scheme_begin >= separator)
-            continue;
-
-        /// `[^:]*:` - the colon that opens the password.
-        size_t password_begin = uri->find(':', separator + SEPARATOR.length());
-        if (password_begin == std::string::npos)
-            continue;
-        ++password_begin;
-
-        /// `[^@]*@` - the at sign that closes it.
-        size_t password_end = uri->find('@', password_begin);
-        if (password_end == std::string::npos)
-            continue;
-
-        uri->replace(password_begin, password_end - password_begin, "[HIDDEN]");
-        return true;
+        const size_t part_end = std::min(str.find(';', part_begin), str.length());
+        const std::string_view part = std::string_view(str).substr(part_begin, part_end - part_begin);
+        const size_t equals = part.find('=');
+        if (part.substr(0, equals).find_first_of(":/") != std::string_view::npos)
+            url_outside_values = true;
+        if (equals != std::string_view::npos
+            && (is_secret_key(part.substr(0, equals)) || part.substr(equals + 1).find_first_of("?@") != std::string_view::npos))
+        {
+            const size_t value_begin = part_begin + equals + 1;
+            result.append(str, copied, value_begin - copied);
+            result.append("[HIDDEN]");
+            copied = part_end;
+            masked = true;
+        }
+        part_begin = part_end + 1;
     }
 
-    return false;
+    if (masked)
+    {
+        result.append(str, copied, std::string::npos);
+        str = std::move(result);
+    }
+
+    if (str.find_first_of("?#@") != std::string::npos || (url_outside_values && has_url_delimiters))
+    {
+        str = "[HIDDEN]";
+        return true;
+    }
+    return masked;
 }
 
-/** Mask the userinfo part of a URL: `scheme://anything@rest` becomes `scheme://[HIDDEN]@rest`.
-  * Returns whether anything was masked.
-  *
-  * This used to be the regular expression `^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@` rewritten to
-  * `\1[HIDDEN]@`. Only a match at the start of the string counts, and the userinfo is taken
-  * greedily up to the last '@' before the path, so a password that itself contains an at-sign is
-  * masked whole. `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
-  */
-inline bool maskURIUserinfo(std::string & url)
+inline bool maskURIPassword(std::string * uri)
 {
-    static constexpr std::string_view SEPARATOR = "://";
-
-    /// `^[a-zA-Z][a-zA-Z0-9+.-]*` - the scheme. The character classes are spelled out rather than
-    /// taken from `<cctype>`, which depends on the locale.
-    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
-    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
-
-    if (url.empty() || !is_letter(url[0]))
-        return false;
-
-    size_t scheme_end = 1;
-    while (scheme_end < url.length()
-           && (is_letter_or_digit(url[scheme_end]) || url[scheme_end] == '+' || url[scheme_end] == '.' || url[scheme_end] == '-'))
-        ++scheme_end;
-
-    if (url.compare(scheme_end, SEPARATOR.length(), SEPARATOR) != 0)
-        return false;
-
-    /// `[^/?#]+@` - the userinfo, greedy, so it ends at the last '@' before the path.
-    size_t authority_begin = scheme_end + SEPARATOR.length();
-    size_t authority_end = url.find_first_of("/?#", authority_begin);
-    if (authority_end == std::string::npos)
-        authority_end = url.length();
-
-    size_t at_sign = url.rfind('@', authority_end == 0 ? 0 : authority_end - 1);
-    if (at_sign == std::string::npos || at_sign < authority_begin || at_sign >= authority_end || at_sign == authority_begin)
-        return false;
-
-    url.replace(authority_begin, at_sign - authority_begin, "[HIDDEN]");
-    return true;
+    return RE2::Replace(uri, R"(([^:]+://[^:]*):([^@]*)@(.*))", "\\1:[HIDDEN]@\\3");
 }
 
 /** Mask the values of the query parameters that carry credentials in a presigned URL, so that
   * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
   * is masked. Returns whether anything was masked.
   *
-  * This used to be the regular expression
+  * Mirrors the regular expression
   * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
-  * rewritten to `\1[HIDDEN]` globally. The parameter set mirrors
-  * `BackupInfo::removeCredentialsFromS3URL`. Matching is case-sensitive, as in the expression, and
-  * `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
+  * that `FunctionSecretArgumentsFinder` applies to a presigned URL, and the parameter set mirrors
+  * `BackupInfo::removeCredentialsFromS3URL`. Matching is case-sensitive, as in the expression.
   */
 inline bool maskPresignedURLParameters(std::string & url)
 {
@@ -201,6 +155,24 @@ inline bool maskPresignedURLParameters(std::string & url)
     result.append(url, copied, std::string::npos);
     url = std::move(result);
     return true;
+}
+
+/** Mask both credential carriers of a URL: the userinfo (`user:password@`) and the values of the
+  * presigned-URL query parameters. Returns whether anything was masked.
+  *
+  * This is the masking to use for a whole HTTP/S3 URL. Scanning for a presigned parameter is only
+  * sound on a value that is one whole URL (see `maskPresignedURLParameters`), so the argument must be
+  * one URL, not a URL embedded in a longer string.
+  */
+inline bool maskURICredentials(std::string & url)
+{
+    /// This release has no `maskURIUserinfo`; this is the regular expression it replaced. The userinfo
+    /// is taken greedily up to the last at-sign before the path, so a password that itself contains an
+    /// at-sign is masked whole.
+    static const re2::RE2 userinfo(R"(^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@)");
+    bool masked = RE2::Replace(&url, userinfo, "\\1[HIDDEN]@");
+    masked |= maskPresignedURLParameters(url);
+    return masked;
 }
 
 }

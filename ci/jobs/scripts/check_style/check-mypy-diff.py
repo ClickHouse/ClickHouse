@@ -469,7 +469,7 @@ def main():
     finally:
         # Cleanup worktree
         if worktree_dir and worktree_dir.exists():
-            print("\nCleaning up worktree...")
+            print(f"\nCleaning up worktree...")
             run_command(
                 ["git", "worktree", "remove", "--force", str(worktree_dir)],
                 cwd=git_root,

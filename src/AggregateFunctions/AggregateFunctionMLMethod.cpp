@@ -102,7 +102,6 @@ namespace
     }
 }
 
-void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
     // stochasticLinearRegression documentation
@@ -130,14 +129,10 @@ For fitting a query like this can be used:
 ```sql
 CREATE TABLE IF NOT EXISTS train_data
 (
-    target Float64,
-    x1 Float64,
-    x2 Float64
+    param1 Float64,
+    param2 Float64,
+    target Float64
 ) ENGINE = Memory;
-
-INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
-
-DROP TABLE IF EXISTS your_model;
 
 CREATE TABLE your_model ENGINE = Memory AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
@@ -154,14 +149,6 @@ Note that the column with target value (which we would like to learn to predict)
 After saving a state into the table, we may use it multiple times for prediction or even merge with other states and create new, even better models.
 
 ```sql
-CREATE TABLE IF NOT EXISTS test_data
-(
-    x1 Float64,
-    x2 Float64
-) ENGINE = Memory;
-
-INSERT INTO test_data VALUES (10, 0), (20, 0);
-
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, x1, x2) FROM test_data
 ```
@@ -185,7 +172,7 @@ This query will return a new `AggregateFunctionState` object.
 2. You may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
 
 ```sql
-SELECT stochasticLinearRegression(0.01)(target, x1, x2)
+SELECT stochasticLinearRegression(0.01)(target, param1, param2)
 FROM train_data
 ```
 
@@ -206,63 +193,26 @@ So in the example above the query will return a column with 3 values.
     {
         "Training a model",
         R"(
-DROP TABLE IF EXISTS train_data;
-
-CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
-
-DROP TABLE IF EXISTS your_model;
-
 CREATE TABLE your_model
 ENGINE = Memory
 AS SELECT
 stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
-AS state FROM train_data;
-
-SELECT count() FROM your_model
+AS state FROM train_data
         )",
-        "1"
+        "Saves trained model state to table"
     },
     {
         "Making predictions",
          R"(
-DROP TABLE IF EXISTS train_data;
-
-CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
-
-DROP TABLE IF EXISTS your_model;
-
-CREATE TABLE your_model
-ENGINE = Memory
-AS SELECT
-stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, x1, x2)
-AS state FROM train_data;
-
-DROP TABLE IF EXISTS test_data;
-
-CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO test_data VALUES (10, 0), (20, 0);
-
 WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, x1, x2) > 0 FROM test_data
+evalMLMethod(model, x1, x2) FROM test_data
         )",
-        R"(
-1
-1
-        )"
+        "Returns predicted values for test data"
     },
     {
         "Getting model weights",
-        R"(
-DROP TABLE IF EXISTS train_data;
-
-CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO train_data VALUES (1, 1, 0), (2, 2, 0), (3, 3, 0), (4, 4, 0), (5, 5, 0), (6, 6, 0);
-
-SELECT length(stochasticLinearRegression(0.01)(target, x1, x2)) FROM train_data
-        )",
-        "3"
+        "SELECT stochasticLinearRegression(0.01)(target, x1, x2) FROM train_data",
+        "Returns model weights without saving state"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_linear = {20, 1};
@@ -274,7 +224,7 @@ SELECT length(stochasticLinearRegression(0.01)(target, x1, x2)) FROM train_data
     // stochasticLogisticRegression documentation
     FunctionDocumentation::Description description_logistic = R"(
 This function implements stochastic logistic regression.
-It can be used for binary classification problem, supports the same custom parameters as [`stochasticLinearRegression`](/reference/functions/aggregate-functions/stochasticLinearRegression) and works the same way.
+It can be used for binary classification problem, supports the same custom parameters as [`stochasticLinearRegression`](/sql-reference/aggregate-functions/reference/stochasticlinearregression) and works the same way.
 
 **Usage**
 
@@ -287,17 +237,13 @@ For fitting a query like this can be used:
 ```sql
 CREATE TABLE IF NOT EXISTS train_data
 (
-    target Float64,
-    x1 Float64,
-    x2 Float64
+    param1 Float64,
+    param2 Float64,
+    target Float64
 ) ENGINE = Memory;
 
-INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
-
 CREATE TABLE your_model ENGINE = Memory AS SELECT
-stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
+stochasticLogisticRegression(0.1, 0.0, 5, 'SGD')(target, x1, x2)
 AS state FROM train_data;
 ```
 
@@ -313,16 +259,8 @@ Predicted labels have to be in [-1, 1].
 Using saved state we can predict the probability of an object having label `1`.
 
 ```sql
-CREATE TABLE IF NOT EXISTS test_data
-(
-    x1 Float64,
-    x2 Float64
-) ENGINE = Memory;
-
-INSERT INTO test_data VALUES (1, 1), (9, 9);
-
 WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, x1, x2) FROM test_data
+evalMLMethod(model, param1, param2) FROM test_data
 ```
 
 The query will return a column of probabilities.
@@ -333,7 +271,7 @@ We can also set a bound of probability, which assigns elements to different labe
 ```sql
 SELECT result < 1.1 AND result > 0.5 FROM
 (WITH (SELECT state FROM your_model) AS model SELECT
-evalMLMethod(model, x1, x2) AS result FROM test_data)
+evalMLMethod(model, param1, param2) AS result FROM test_data)
 ```
 
 Then the result will be labels.
@@ -354,87 +292,34 @@ Then the result will be labels.
     {
         "Training a model",
         R"(
-DROP TABLE IF EXISTS train_data;
-
-CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
-
 CREATE TABLE your_model
 ENGINE = MergeTree
 ORDER BY tuple()
 AS SELECT
 stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
-AS state FROM train_data;
-
-SELECT count() FROM your_model
+AS state FROM train_data
         )",
-        "1"
+        "Saves trained model state to table"
     },
     {
         "Making predictions",
         R"(
-DROP TABLE IF EXISTS train_data;
-
-CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
-
-CREATE TABLE your_model
-ENGINE = MergeTree
-ORDER BY tuple()
-AS SELECT
-stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
-AS state FROM train_data;
-
-DROP TABLE IF EXISTS test_data;
-
-CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO test_data VALUES (1, 1), (9, 9);
-
 WITH (SELECT state FROM your_model) AS model
 SELECT
-evalMLMethod(model, x1, x2) BETWEEN 0 AND 1
+evalMLMethod(model, x1, x2)
 FROM test_data
         )",
-        R"(
-1
-1
-        )"
+        "Returns probability values for test data"
     },
     {
         "Classification with threshold",
         R"(
-DROP TABLE IF EXISTS train_data;
-
-CREATE TABLE train_data (target Float64, x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO train_data VALUES (-1, 1, 1), (-1, 2, 1), (-1, 3, 2), (1, 8, 9), (1, 9, 8), (1, 10, 10);
-
-DROP TABLE IF EXISTS your_model;
-
-CREATE TABLE your_model
-ENGINE = MergeTree
-ORDER BY tuple()
-AS SELECT
-stochasticLogisticRegressionState(1.0, 1.0, 10, 'SGD')(target, x1, x2)
-AS state FROM train_data;
-
-DROP TABLE IF EXISTS test_data;
-
-CREATE TABLE test_data (x1 Float64, x2 Float64) ENGINE = Memory;
-INSERT INTO test_data VALUES (1, 1), (9, 9);
-
 SELECT result < 1.1 AND result > 0.5
 FROM (
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, x1, x2) AS result FROM test_data)
         )",
-        R"(
-0
-0
-        )"
+        "Returns binary classification labels using probability threshold"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_logistic = {20, 1};

@@ -18,14 +18,12 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 namespace DB
 {
@@ -242,12 +240,6 @@ String FormatSchemaInfo::querySchema(const String & query, const ContextPtr & cu
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected the schema query result to have one column");
 
         auto & column = block.getByPosition(0).column;
-        if (column->size() != 1)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Expected the schema query result to have one row, got {}",
-                column->size());
-
         if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
         {
             result = col_str->getDataAt(0);
@@ -289,9 +281,7 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         fs::create_directory(dir_path);
     }
 
-    /// The final file name is a hash of the schema source, so every writer of one schema targets
-    /// the same path; a shared temporary name would let them overwrite and delete each other's files.
-    auto temp_path = fs::path(file_path.string() + "." + getRandomASCIIString(8) + ".tmp");
+    auto temp_path = fs::path(file_path.string() + ".tmp");
 
     try
     {
@@ -370,7 +360,7 @@ String FormatSchemaInfo::generateSchemaFileName(const String & hashing_content, 
 
     String content_sample;
     content_sample.resize(content_sample_len * 2);
-    boost::algorithm::hex(hashing_content.begin(), hashing_content.begin() + content_sample_len, content_sample.data());
+    boost::algorithm::hex(content_sample.begin(), content_sample.begin() + content_sample_len, content_sample.data());
 
     if (file_extention.empty())
         return fmt::format("{}-{}", content_sample, content_hash_hex);

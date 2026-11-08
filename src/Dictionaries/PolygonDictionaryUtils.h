@@ -51,11 +51,6 @@ public:
     /** Finds polygon id the same way as IPolygonIndex. */
     bool find(const Point & point, size_t & id) const;
 
-    /** Returns the bytes held by this index's owned buffers (sorted_x, all_edges,
-      * and the segment-tree node vectors), including capacity overhead.
-      */
-    [[nodiscard]] size_t getBytesAllocated() const;
-
     /** Edge describes edge (adjacent points) of any polygon, and contains polygon's id.
       * Invariant here is first point has x not greater than second point.
       */
@@ -114,8 +109,6 @@ class ICell
 public:
     virtual ~ICell() = default;
     [[nodiscard]] virtual const ReturnCell * find(Coord x, Coord y) const = 0;
-    /** Bytes held by this cell and (recursively) its children, including capacity overhead. */
-    [[nodiscard]] virtual size_t getBytesAllocated() const = 0;
 };
 
 /** This leaf cell implementation simply stores the indexes of the intersections.
@@ -131,8 +124,6 @@ public:
     size_t first_covered = kNone;
 
     static constexpr size_t kNone = -1;
-
-    [[nodiscard]] size_t getBytesAllocated() const override;
 
 private:
     [[nodiscard]] const FinalCell * find(Coord x, Coord y) const override;
@@ -155,8 +146,6 @@ public:
     size_t first_covered = kNone;
 
     static constexpr size_t kNone = -1;
-
-    [[nodiscard]] size_t getBytesAllocated() const override;
 
 private:
     [[nodiscard]] const FinalCellWithSlabs * find(Coord x, Coord y) const override;
@@ -181,15 +170,6 @@ public:
         if (y_bin == kSplit)
             --y_bin;
         return children[y_bin + x_bin * kSplit]->find(x_ratio - static_cast<Coord>(x_bin), y_ratio - static_cast<Coord>(y_bin));
-    }
-
-    [[nodiscard]] size_t getBytesAllocated() const override
-    {
-        size_t total = sizeof(*this) + children.capacity() * sizeof(std::unique_ptr<ICell<ReturnCell>>);
-        for (const auto & child : children)
-            if (child)
-                total += child->getBytesAllocated();
-        return total;
     }
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
@@ -218,17 +198,7 @@ public:
         setBoundingBox();
         VectorWithMemoryTracking<size_t> order(polygons.size());
         iota(order.data(), order.size(), size_t(0));
-
-        /// Single pool shared across the whole recursion. `makeCell` only schedules work up to `kMultiProcessingDepth`;
-        /// constructing a pool per recursive call would create and destroy threads for the deeper levels that never
-        /// enqueue anything.
-        ThreadPool pool(
-            CurrentMetrics::PolygonDictionaryThreads,
-            CurrentMetrics::PolygonDictionaryThreadsActive,
-            CurrentMetrics::PolygonDictionaryThreadsScheduled,
-            128);
-
-        root = makeCell(min_x, min_y, max_x, max_y, order, 0, pool);
+        root = makeCell(min_x, min_y, max_x, max_y, order);
     }
 
     /** Retrieves the cell containing a given point.
@@ -241,11 +211,6 @@ public:
         if (y < min_y || y >= max_y)
             return nullptr;
         return root->find((x - min_x) / (max_x - min_x), (y - min_y) / (max_y - min_y));
-    }
-
-    [[nodiscard]] size_t getBytesAllocated() const override
-    {
-        return root ? root->getBytesAllocated() : 0;
     }
 
     /** Until this depth is reached each row of cells is calculated concurrently in a new thread. */
@@ -263,7 +228,7 @@ private:
 
     const VectorWithMemoryTracking<Polygon> & polygons;
 
-    std::unique_ptr<ICell<ReturnCell>> makeCell(Coord current_min_x, Coord current_min_y, Coord current_max_x, Coord current_max_y, VectorWithMemoryTracking<size_t> possible_ids, size_t depth, ThreadPool & pool)
+    std::unique_ptr<ICell<ReturnCell>> makeCell(Coord current_min_x, Coord current_min_y, Coord current_max_x, Coord current_max_y, VectorWithMemoryTracking<size_t> possible_ids, size_t depth = 0)
     {
         auto current_box = Box(Point(current_min_x, current_min_y), Point(current_max_x, current_max_y));
         Polygon tmp_poly;
@@ -292,23 +257,26 @@ private:
         VectorWithMemoryTracking<std::unique_ptr<ICell<ReturnCell>>> children;
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
 
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::POLYGON_DICT_LOAD);
-        for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
+        ThreadPool pool(CurrentMetrics::PolygonDictionaryThreads, CurrentMetrics::PolygonDictionaryThreadsActive, CurrentMetrics::PolygonDictionaryThreadsScheduled, 128);
         {
-            /// Capturing by reference is fine, all variables outlive runner
-            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &pool, depth, i, x = current_min_x, y = current_min_y]() mutable
+            ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::POLYGON_DICT_LOAD);
+            for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
             {
-                for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
+                /// Capturing by reference is fine, all variables outlive runner
+                auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, depth, i, x = current_min_x, y = current_min_y]() mutable
                 {
-                    children[i * DividedCell<ReturnCell>::kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth, pool);
-                }
-            };
-            if (depth <= kMultiProcessingDepth)
-                runner.enqueueAndKeepTrack(std::move(handle_row));
-            else
-                handle_row();
+                    for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
+                    {
+                        children[i * DividedCell<ReturnCell>::kSplit + j] = makeCell(x, y, x + x_shift, y + y_shift, possible_ids, depth);
+                    }
+                };
+                if (depth <= kMultiProcessingDepth)
+                    runner.enqueueAndKeepTrack(std::move(handle_row));
+                else
+                    handle_row();
+            }
+            runner.waitForAllToFinishAndRethrowFirstError();
         }
-        runner.waitForAllToFinishAndRethrowFirstError();
         return std::make_unique<DividedCell<ReturnCell>>(std::move(children));
     }
 

@@ -7,7 +7,7 @@
 namespace DB
 {
 
-bool isRetryableAzureException(const Azure::Core::RequestFailedException & e);
+bool isRetryableAzureException(const Azure::Core::RequestFailedException & e, bool may_be_provisioning_access = false);
 
 }
 
