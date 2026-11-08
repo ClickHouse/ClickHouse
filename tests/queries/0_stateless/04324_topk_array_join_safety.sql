@@ -13,6 +13,9 @@
 -- in `optimizeLazyMaterialization2`.
 
 SET enable_analyzer = 1;
+-- `topKThroughArrayJoin` rewrites this query into `ArrayJoin -> Sorting` with a `notEmpty` filter,
+-- which is correct on its own, but hides the lifted `Limit -> Expression -> Sorting` shape tested here.
+SET query_plan_top_k_through_array_join = 0;
 
 DROP TABLE IF EXISTS test_topk_array_join SYNC;
 CREATE TABLE test_topk_array_join
