@@ -2,8 +2,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <memory>
-
 #include <Common/HyperLogLogCounter.h>
 #include <Common/HashTable/SmallTable.h>
 
@@ -136,12 +134,7 @@ public:
         readBinary(is_large, in);
 
         if (is_large)
-        {
-            /// `read` overwrites all registers, so they are not zeroed first.
-            auto tmp_large = std::make_unique<Large>(DB::UninitializedTag{});
-            tmp_large->read(in);
-            large = tmp_large.release();
-        }
+            large = Large::createAndRead(in).release();
         else
             small.read(in);
     }

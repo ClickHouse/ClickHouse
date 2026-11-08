@@ -3,17 +3,13 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <Common/NoInitTag.h>
 
 #include <limits>
 #include <span>
 
 namespace DB
 {
-
-/// Tag for constructors that leave the contents uninitialized, for objects that are filled right away.
-struct UninitializedTag
-{
-};
 
 /** Compact array for data storage, size `content_width`, in bits, of which is
   * less than one byte. Instead of storing each value in a separate
@@ -27,8 +23,8 @@ class CompactArray final
 public:
     CompactArray() : bitset{} {}
 
-    /// The cells are uninitialized, only the padding byte is zeroed. For an array that is read right away.
-    explicit CompactArray(UninitializedTag) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the caller
+    /// Only the padding byte is zeroed.
+    explicit CompactArray(NoInitTag) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the caller
     {
         bitset[BITSET_SIZE] = 0;
     }

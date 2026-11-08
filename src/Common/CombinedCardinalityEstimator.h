@@ -218,9 +218,12 @@ public:
 
         /// Here our container is not smaller than the one of rhs.
         if (rhs_container_type == details::ContainerType::SMALL)
-            insertAll(rhs.small);
+        {
+            for (const auto & x : rhs.small)
+                insert(x.getValue());
+        }
         else if (rhs_container_type == details::ContainerType::MEDIUM)
-            insertAll(rhs.getContainer<Medium>());
+            insertFromMedium(rhs.getContainer<Medium>());
         else
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
@@ -257,37 +260,27 @@ private:
     /// Not inlined into `read`, so that reading a small set, which is common, stays cheap.
     void NO_INLINE readMedium(DB::ReadBuffer & in)
     {
-        if (getContainerType() != details::ContainerType::SMALL)
-            throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        auto tmp_medium = std::make_unique<Medium>();
+        /// `read` allocates the buffer for the size it reads.
+        auto tmp_medium = std::make_unique<Medium>(NoInitTag{});
         tmp_medium->read(in);
-        medium = tmp_medium.release();
-        setContainerType(details::ContainerType::MEDIUM);
+        toMedium(std::move(tmp_medium));
     }
 
     void NO_INLINE readLarge(DB::ReadBuffer & in)
     {
-        if (getContainerType() != details::ContainerType::SMALL)
-            throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        /// `read` overwrites all registers, so they are not zeroed first.
-        auto tmp_large = std::make_unique<Large>(DB::UninitializedTag{});
-        tmp_large->read(in);
-        large = tmp_large.release();
-        setContainerType(details::ContainerType::LARGE);
+        toLarge(Large::createAndRead(in));
     }
 
-    /// Inserts the values of a container in the order of iteration, as `insert` for each value would,
+    /// Inserts the values of `rhs` in the order of iteration, as `insert` for each value would,
     /// but through `insertMany`, which dispatches on the type of our container once per chunk instead of once per value.
-    template <typename Container>
-    void insertAll(const Container & container)
+    /// Not inlined into `merge`, so that the chunk on the stack does not make other merges more expensive.
+    void NO_INLINE insertFromMedium(const Medium & rhs)
     {
         static constexpr size_t chunk_elements = 4096 / sizeof(Key);
         Key chunk[chunk_elements]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before use
         size_t chunk_size = 0;
 
-        for (const auto & x : container)
+        for (const auto & x : rhs)
         {
             chunk[chunk_size++] = x.getValue();
             if (chunk_size == chunk_elements)
@@ -300,12 +293,11 @@ private:
         insertMany(chunk, chunk_size);
     }
 
-    void toMedium()
+    /// Inserts our values into `tmp_medium` (an empty set by default) and switches to it.
+    void toMedium(std::unique_ptr<Medium> tmp_medium = std::make_unique<Medium>())
     {
         if (getContainerType() != details::ContainerType::SMALL)
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        auto tmp_medium = std::make_unique<Medium>();
 
         for (const auto & x : small)
             tmp_medium->insert(x.getValue());

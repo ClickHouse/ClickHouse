@@ -14,6 +14,7 @@
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+#include <Common/NoInitTag.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -1164,6 +1165,14 @@ public:
         alloc(grower);
     }
 
+    /// Does not allocate the buffer: the table must be filled by `read` right away, which allocates it for the size it reads.
+    explicit HashTable(NoInitTag)
+        : buf(nullptr)
+    {
+        if (Cell::need_zero_value_storage)
+            this->zeroValue()->setZero();
+    }
+
     HashTable(size_t reserve_for_num_elements) /// NOLINT
     {
         if (Cell::need_zero_value_storage)
@@ -1753,10 +1762,6 @@ public:
     {
         Cell::State::read(rb);
 
-        /// The buffer of an empty table has only zero cells, so it can be kept if its size does not change.
-        /// Not with a state: e.g. `ClearableHashSet` marks the cells empty by the version of the state, which `read` replaces.
-        const bool keep_buffer = std::is_same_v<typename Cell::State, HashTableNoState> && m_size == 0 && buf;
-
         destroyElements();
         m_size = 0;
 
@@ -1765,17 +1770,10 @@ public:
         if (new_size > 100'000'000'000)
             throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
 
+        free();
         Grower new_grower = grower;
         new_grower.set(new_size);
-        if (keep_buffer && new_grower.bufSize() == grower.bufSize())
-        {
-            grower = new_grower;
-        }
-        else
-        {
-            free();
-            alloc(new_grower);
-        }
+        alloc(new_grower);
 
         if constexpr (is_arithmetic_key_cell<Cell>)
         {
