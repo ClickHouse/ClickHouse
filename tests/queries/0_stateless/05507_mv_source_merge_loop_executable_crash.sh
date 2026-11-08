@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
-# Inside a materialized view query, the source table read by the nested interpreter of `loop` or `executable`
-# is the inserted block, like the rest of the view query, while a `merge` child reads the table whatever its
-# siblings are. The database name is spelled out: `currentDatabase()` in the view query does not resolve to the
-# test database during the push.
+# Inside a materialized view query, the source table read by the nested interpreter of `loop`, `executable` or
+# `merge` is the inserted block, in the read itself and in its `IN` subqueries alike. The database name is spelled
+# out: `currentDatabase()` in the view query does not resolve to the test database during the push.
 # A refreshable view appending to the source table behaves like an INSERT; a refreshable view reading
 # the source table reads the table.
 
@@ -15,6 +14,7 @@ $CLICKHOUSE_CLIENT -m -q "
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1};
 DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_merge_policy;
+DROP TABLE IF EXISTS mv_merge_in;
 DROP ROW POLICY IF EXISTS policy_05507 ON child;
 DROP TABLE IF EXISTS child;
 DROP TABLE IF EXISTS mv_loop;
@@ -46,6 +46,12 @@ CREATE MATERIALIZED VIEW mv_merge_policy TO dst AS
         (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(child|dist)\$')) AS value
     FROM src;
 
+-- The source table in an `IN` subquery reads the same data as the source child it filters.
+CREATE MATERIALIZED VIEW mv_merge_in TO dst AS
+    SELECT 'merge_in' AS name, count() AS block_rows,
+        (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(src|child|dist)\$') WHERE x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src)) AS value
+    FROM src;
+
 CREATE MATERIALIZED VIEW mv_loop TO dst AS
     SELECT 'loop' AS name, count() AS block_rows,
         (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src) WHERE x > 0 LIMIT 25)) AS value
@@ -73,6 +79,10 @@ CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE_1}.rmv_read REFRESH EVERY 1 YEAR 
         (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$') WHERE x > 0) AS value
     FROM ${CLICKHOUSE_DATABASE}.src
     UNION ALL
+    SELECT 'merge_in', count(),
+        (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(src|child|dist)\$') WHERE x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src))
+    FROM ${CLICKHOUSE_DATABASE}.src
+    UNION ALL
     SELECT 'loop', count(), (SELECT max(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src) WHERE x > 0 LIMIT 25))
     FROM ${CLICKHOUSE_DATABASE}.src;
 SYSTEM REFRESH VIEW ${CLICKHOUSE_DATABASE_1}.rmv_read;
@@ -83,6 +93,7 @@ SELECT 'refreshable', * FROM dst ORDER BY name;
 DROP DATABASE ${CLICKHOUSE_DATABASE_1};
 DROP TABLE mv_merge;
 DROP TABLE mv_merge_policy;
+DROP TABLE mv_merge_in;
 DROP ROW POLICY policy_05507 ON child;
 DROP TABLE child;
 DROP TABLE mv_loop;
