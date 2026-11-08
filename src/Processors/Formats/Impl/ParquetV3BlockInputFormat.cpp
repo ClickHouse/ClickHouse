@@ -16,6 +16,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/VarInt.h>
+#include <IO/WithFileName.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Core/ProtocolDefines.h>
@@ -174,11 +175,37 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
         format_filter_info = std::make_shared<FormatFilterInfo>();
 }
 
-void ParquetV3BlockInputFormat::prefetch()
+void ParquetV3BlockInputFormat::prefetch(const InputFormatStreamMemoryPtr & stream_memory_, bool start_reading_data)
 {
+    stream_memory = stream_memory_;
     if (need_only_count)
         return;
-    readFileFooterIfNeeded();
+    try
+    {
+        readFileFooterIfNeeded();
+
+        /// Not with TopN dynamic filtering (previous files may still tighten its threshold), nor for files below `min_bytes_for_seek`.
+        /// Nor with the columns cache: the initialization takes the cached columns of all row groups of the file.
+        if (!start_reading_data || !read_options.is_remote_fs || format_filter_info->top_k_filter || read_options.columns_cache
+            || parser_shared_resources->parsing_runner.isManual())
+            return;
+        {
+            std::lock_guard lock(reader_mutex);
+            if (!reader_with_footer || !reader_with_footer->reader.prefetcher.readsInBackground()
+                || reader_with_footer->reader.prefetcher.readsThroughPageCache()
+                || reader_with_footer->reader.prefetcher.getFileSize() < read_options.min_bytes_for_seek)
+                return;
+        }
+        initializeIfNeeded(/* defer_decoding */ true);
+    }
+    catch (Exception & e)
+    {
+        /// Rethrown when the source switches to this file, outside of `IInputFormat::generate`.
+        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
+        if (!file_name.empty())
+            e.addMessage(fmt::format("(in file/uri {})", file_name));
+        throw;
+    }
 }
 
 void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
@@ -238,7 +265,7 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
     }
 }
 
-void ParquetV3BlockInputFormat::initializeIfNeeded()
+void ParquetV3BlockInputFormat::initializeIfNeeded(bool defer_decoding)
 {
     if (!reader)
     {
@@ -265,7 +292,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 }
                 reader->reader.max_key_condition_column_ranges_bytes = kept_statistics.remainingBytes();
             }
-            reader->init(parser_shared_resources, rowGroupSelection());
+            reader->init(parser_shared_resources, rowGroupSelection(), defer_decoding, stream_memory);
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
             if (footer_cache_hit)
                 metadata_cache->addColumnChunks(*footer_cache_key, footer_cache_cell, reader->reader.getColumnChunks());

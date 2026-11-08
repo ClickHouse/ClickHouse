@@ -1787,7 +1787,7 @@ void Reader::initializePrefetches()
             {
                 column.offset_index_prefetch = prefetcher.registerRange(
                     size_t(column.meta->offset_index_offset),
-                    size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true);
+                    size_t(column.meta->offset_index_length), /*likely_to_be_used*/ true, /*is_page_index=*/ true);
             }
 
             /// Column index.
@@ -1797,7 +1797,7 @@ void Reader::initializePrefetches()
             if (column.use_column_index)
                 column.column_index_prefetch = prefetcher.registerRange(
                     size_t(column.meta->column_index_offset),
-                    size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true);
+                    size_t(column.meta->column_index_length), /*likely_to_be_used=*/ true, /*is_page_index=*/ true);
 
             /// Data pages.
 

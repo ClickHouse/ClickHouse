@@ -240,6 +240,7 @@ protected:
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;
+    InputFormatStreamMemoryPtr stream_memory = std::make_shared<InputFormatStreamMemory>();
 
     /// Lazy materialization: when set, a `__global_row_index` column is appended to every chunk
     /// (the header must contain it), and every file is registered in the registry so that the
@@ -266,9 +267,11 @@ protected:
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
         ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
-        bool prefetch_input_format = false);
+        bool prefetch_input_format = false,
+        bool prefetch_input_data = false,
+        InputFormatStreamMemoryPtr stream_memory = nullptr);
 
-    ReaderHolder createReader(bool prefetch_input_format = false);
+    ReaderHolder createReader(bool prefetch_input_format = false, bool prefetch_input_data = false);
 
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();

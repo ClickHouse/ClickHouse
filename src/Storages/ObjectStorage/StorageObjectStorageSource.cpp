@@ -1324,7 +1324,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format, bool prefetch_input_data)
 {
     return createReader(
         0,
@@ -1343,7 +1343,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         format_filter_info,
         need_only_count,
         top_k_query_condition_cache_key,
-        prefetch_input_format);
+        prefetch_input_format,
+        prefetch_input_data,
+        stream_memory);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1363,7 +1365,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
     ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
-    bool prefetch_input_format)
+    bool prefetch_input_format,
+    bool prefetch_input_data,
+    InputFormatStreamMemoryPtr stream_memory)
 {
     ObjectInfoPtr object_info;
     /// Replaced by `format_filter_info_tracking_best_values` of the TopK key for a file that uses the key.
@@ -1999,7 +2003,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         if (prefetch_input_format)
-            input_format->prefetch();
+            input_format->prefetch(stream_memory, prefetch_input_data);
 
         builder.init(Pipe(input_format));
 
@@ -2225,7 +2229,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
+    /// Not while the first file is read: a query with a small LIMIT often needs only that file.
+    bool prefetch_input_data = total_files_read > 1 && read_context->getReadSettings().remote_fs_settings.prefetch
+        && object_storage->isRemote();
+    return create_reader_scheduler(
+        [=, this] { return createReader(/* prefetch_input_format */ true, prefetch_input_data); }, Priority{});
 }
 
 ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags)
