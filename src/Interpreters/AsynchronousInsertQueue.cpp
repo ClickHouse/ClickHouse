@@ -748,16 +748,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         auto [it, inserted] = shard.iterators.try_emplace(key.hash);
         auto now = std::chrono::steady_clock::now();
         auto timeout_ms = getBusyWaitTimeoutMs(settings, shard, flush_time_points, now);
-        if (timeout_ms != shard.busy_timeout_ms)
-        {
-            LOG_TRACE(
-                log,
-                "Asynchronous timeout {} from {} to {} for queue shard {}.",
-                timeout_ms < shard.busy_timeout_ms ? "decreased" : "increased",
-                shard.busy_timeout_ms.count(),
-                timeout_ms.count(),
-                shard_num);
-        }
 
         if (inserted)
         {
@@ -843,13 +833,19 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         /// if the elapsed time since the last insert exceeds the maximum busy wait timeout.
         /// We also use the limit settings from the query context.
         /// This works because queries with the same set of settings are already grouped together.
-        if (!flush_stopped && (has_enough_bytes || has_enough_queries || max_busy_timeout_exceeded() || batching_is_not_happening))
+        const char * flush_reason = nullptr;
+        if (has_enough_bytes)
+            flush_reason = "enough bytes accumulated";
+        else if (has_enough_queries)
+            flush_reason = "enough queries accumulated";
+        else if (max_busy_timeout_exceeded())
+            flush_reason = "maximum busy wait timeout exceeded";
+        else if (batching_is_not_happening)
+            flush_reason = "the previous insert with this key was not batched with any other";
+
+        if (!flush_stopped && flush_reason)
         {
-            LOG_TRACE(log, "Scheduling async insert processing job because {}",
-                      has_enough_bytes ? "enough bytes accumulated" :
-                      has_enough_queries ? "enough queries accumulated" :
-                      max_busy_timeout_exceeded() ? "maximum busy wait timeout exceeded" :
-                      "the previous insert was not batched with any other");
+            LOG_TRACE(log, "Scheduling async insert processing job because {}", flush_reason);
             if (data->entries.size() > 1)
                 shard.keys_without_batching.erase(key.hash);
             data->timeout_ms = Milliseconds::zero();
@@ -865,6 +861,17 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         /// Inserts that are not batched would make the shard look busy and raise the busy timeout of the other keys in it.
         if (!batching_is_not_happening)
         {
+            if (timeout_ms != shard.busy_timeout_ms)
+            {
+                LOG_TRACE(
+                    log,
+                    "Asynchronous timeout {} from {} to {} for queue shard {}.",
+                    timeout_ms < shard.busy_timeout_ms ? "decreased" : "increased",
+                    shard.busy_timeout_ms.count(),
+                    timeout_ms.count(),
+                    shard_num);
+            }
+
             shard.last_insert_time = now;
             shard.busy_timeout_ms = timeout_ms;
         }
@@ -1541,17 +1548,18 @@ try
 
         LOG_DEBUG(log, "Flushed {} rows, {} bytes", num_rows, num_bytes);
         /// Before the clients are notified, because they may send the next insert right away.
-        /// The flushes of keys without batching are not counted in the history, for the same reason as their inserts.
-        bool is_key_without_batching = false;
+        /// A flush of a key that already has one recorded did not wait for batching, so it is not counted in the history,
+        /// for the same reason as its insert. The flush after the deadline that remembered the key is counted.
+        bool flushed_without_batching = false;
         {
             std::lock_guard lock(queue_shard.mutex);
             if (auto it = queue_shard.keys_without_batching.find(key.hash); it != queue_shard.keys_without_batching.end())
             {
+                flushed_without_batching = it->second.last_flush_time.has_value();
                 it->second.last_flush_time = std::chrono::steady_clock::now();
-                is_key_without_batching = true;
             }
         }
-        if (!is_key_without_batching)
+        if (!flushed_without_batching)
             queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
