@@ -5,6 +5,7 @@
 
 # An Iceberg table metadata file without a field that the specification requires for its format version,
 # or with a field of the wrong type, is rejected with ICEBERG_SPECIFICATION_VIOLATION naming the field.
+# A file that the JSON parser cannot read is rejected with ICEBERG_SPECIFICATION_VIOLATION naming the file.
 # Every case is the valid file of `table()` with one change. Only the file a table uses is checked: another table's
 # metadata file in the same directory, read to select by `table-uuid`, may be invalid.
 # A metadata file served from the metadata cache is validated once.
@@ -125,6 +126,9 @@ cases["current_snapshot_id_out_of_range"] = change(
     snapshots=[snapshot(NOT_LONG)],
     refs={"main": {"snapshot-id": NOT_LONG, "type": "branch"}})
 cases["snapshot_id_out_of_range"] = change(table(), snapshots=[snapshot(NOT_LONG)])
+# Out of the range of both `long` and unsigned `long`, so the JSON parser rejects it.
+cases["current_snapshot_id_below_long"] = change(table(), current_snapshot_id=-2**63 - 1)
+cases["current_snapshot_id_above_unsigned_long"] = change(table(), current_snapshot_id=2**64)
 cases["snapshot_missing_timestamp"] = change(table(), snapshots=[change(snapshot(), timestamp_ms=DELETE)])
 cases["snapshot_not_object"] = change(table(), snapshots=[1])
 cases["snapshots_not_array"] = change(table(), snapshots={})
@@ -220,7 +224,8 @@ for name in missing_format_version format_version_0 format_version_string missin
     partition_field_missing_transform partition_field_missing_name partition_field_missing_source_id partition_field_not_object \
     sort_field_missing_null_order sort_field_missing_source_id v1_partition_spec_field_missing_name \
     v2_partition_field_source_ids_only v1_sort_field_source_ids_only \
-    current_snapshot_id_out_of_range snapshot_id_out_of_range snapshot_missing_timestamp snapshot_not_object \
+    current_snapshot_id_out_of_range snapshot_id_out_of_range current_snapshot_id_below_long current_snapshot_id_above_unsigned_long \
+    snapshot_missing_timestamp snapshot_not_object \
     snapshots_not_array snapshot_log_missing_snapshot_id metadata_log_missing_file ref_missing_type refs_not_object
 do
     QUERIES+="SELECT count() FROM icebergLocal('$DIR/$name');"

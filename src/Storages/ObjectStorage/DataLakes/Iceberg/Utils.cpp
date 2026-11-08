@@ -895,14 +895,25 @@ void validateTableMetadata(const Poco::JSON::Object & metadata, const String & m
     }
 }
 
-Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str)
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str, const String & metadata_file_path)
 {
     ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParses);
     ProfileEvents::increment(ProfileEvents::IcebergMetadataJSONParsedBytes, metadata_json_str.size());
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataJSONParseMicroseconds);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    Poco::Dynamic::Var json;
+    try
+    {
+        json = parser.parse(metadata_json_str);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot parse Iceberg table metadata file '{}': {}",
+            metadata_file_path, e.displayText());
+    }
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
@@ -965,7 +976,7 @@ static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
 
     if (!metadata_cache || !table_uuid.has_value())
     {
-        auto metadata_object = parseMetadataJSONString(read_fn());
+        auto metadata_object = parseMetadataJSONString(read_fn(), metadata_file_path);
         if (validate)
             validateTableMetadata(*metadata_object, metadata_file_path);
         return metadata_object;
@@ -979,7 +990,8 @@ static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
         [&]()
         {
             auto metadata_json_str = read_fn();
-            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
+            return std::make_shared<IcebergMetadataFilesCacheCell>(
+                parseMetadataJSONString(metadata_json_str, metadata_file_path), metadata_json_str.size());
         },
         validate_fn);
 }

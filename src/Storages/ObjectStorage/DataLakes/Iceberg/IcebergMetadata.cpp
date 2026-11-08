@@ -212,7 +212,7 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
     const auto & [metadata_version, metadata_file_path, compression_method] = latest_metadata;
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_json_str = readMetadataJSONString(metadata_file_path, object_storage, cache_ptr != nullptr, context_, log, compression_method);
-    auto metadata_object = parseMetadataJSONString(metadata_json_str);
+    auto metadata_object = parseMetadataJSONString(metadata_json_str, metadata_file_path);
     validateTableMetadata(*metadata_object, metadata_file_path);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);

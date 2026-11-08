@@ -110,7 +110,7 @@ String readMetadataJSONString(
     LoggerPtr log,
     CompressionMethod compression_method);
 
-Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str);
+Poco::JSON::Object::Ptr parseMetadataJSONString(const String & metadata_json_str, const String & metadata_file_path);
 
 /// Throws ICEBERG_SPECIFICATION_VIOLATION if the metadata file lacks a field that the Iceberg spec requires for its format version,
 /// or has a field of the wrong type.

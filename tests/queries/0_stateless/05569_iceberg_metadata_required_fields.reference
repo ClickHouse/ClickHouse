@@ -38,6 +38,8 @@ v2_partition_field_source_ids_only ICEBERG_SPECIFICATION_VIOLATION 'partition-sp
 v1_sort_field_source_ids_only ICEBERG_SPECIFICATION_VIOLATION 'sort-orders[0].fields[0].source-id'
 current_snapshot_id_out_of_range ICEBERG_SPECIFICATION_VIOLATION 'current-snapshot-id'
 snapshot_id_out_of_range ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0].snapshot-id'
+current_snapshot_id_below_long ICEBERG_SPECIFICATION_VIOLATION ?
+current_snapshot_id_above_unsigned_long ICEBERG_SPECIFICATION_VIOLATION ?
 snapshot_missing_timestamp ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0].timestamp-ms'
 snapshot_not_object ICEBERG_SPECIFICATION_VIOLATION 'snapshots[0]'
 snapshots_not_array ICEBERG_SPECIFICATION_VIOLATION 'snapshots'
