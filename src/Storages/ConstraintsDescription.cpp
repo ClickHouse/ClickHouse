@@ -29,6 +29,8 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageSet.h>
 
 namespace DB
 {
@@ -50,7 +52,7 @@ namespace
 /// `IN`-family operator (`x IN (SELECT ...)`): it becomes a "not-ready set" built lazily
 /// at insert time (see `getExpressions`), which matches the legacy behaviour. A table name
 /// on the set side (`x IN table`) is forbidden because it also produces a not-ready set,
-/// but without a SELECT pipeline to materialize it. A subquery hidden inside the set side
+/// but without a SELECT pipeline to materialize it - unless it is a `Set` table, see `isSetTable`. A subquery hidden inside the set side
 /// (`x IN (1, (SELECT 1))`) is not a not-ready set and is rejected like any other nested
 /// scalar subquery.
 ///
@@ -60,7 +62,30 @@ namespace
 /// a table identifier qualified with the current database (`x IN arr` becomes `x IN default.arr`)
 /// and stores it in that form in the table metadata. Use `has(arr, x)` to test membership in an
 /// array column.
-bool containsForbiddenSubquery(const ASTPtr & ast)
+///
+/// The one table allowed on the set side is a `Set` table (`x IN set_table`): its set is already
+/// built, so checking the constraint neither runs a query nor needs a pipeline to materialize it,
+/// and released versions accepted such constraints.
+bool isSetTable(const ASTPtr & set_side, const ContextPtr & context)
+{
+    boost::intrusive_ptr<ASTTableIdentifier> table_identifier;
+    if (const auto * table = set_side->as<ASTTableIdentifier>())
+        table_identifier = make_intrusive<ASTTableIdentifier>(table->getTableId());
+    else if (const auto * identifier = set_side->as<ASTIdentifier>())
+        table_identifier = identifier->createTable();
+
+    if (!table_identifier)
+        return false;
+
+    auto table_id = context->tryResolveStorageID(table_identifier->getTableId());
+    if (!table_id)
+        return false;
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    return storage && typeid_cast<const StorageSet *>(storage.get());
+}
+
+bool containsForbiddenSubquery(const ASTPtr & ast, const ContextPtr & context)
 {
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
         return true;
@@ -72,7 +97,7 @@ bool containsForbiddenSubquery(const ASTPtr & ast)
         {
             /// Validate every argument except the set side (the last one).
             for (size_t i = 0; i + 1 < arguments.size(); ++i)
-                if (containsForbiddenSubquery(arguments[i]))
+                if (containsForbiddenSubquery(arguments[i], context))
                     return true;
 
             /// The set side is allowed to be a direct subquery (`x IN (SELECT ...)`),
@@ -80,15 +105,16 @@ bool containsForbiddenSubquery(const ASTPtr & ast)
             /// shape must still be validated: a scalar subquery nested in a tuple or
             /// list (`x IN (1, (SELECT 1))`) would otherwise run on every insert.
             const auto & set_side = arguments.back();
-            if (set_side->as<ASTIdentifier>() || set_side->as<ASTTableIdentifier>()
-                || (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side)))
+            if (set_side->as<ASTIdentifier>() || set_side->as<ASTTableIdentifier>())
+                return !isSetTable(set_side, context);
+            if (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side, context))
                 return true;
         }
         return false;
     }
 
     for (const auto & child : ast->children)
-        if (containsForbiddenSubquery(child))
+        if (containsForbiddenSubquery(child, context))
             return true;
 
     return false;
@@ -103,9 +129,9 @@ void checkExpressionDoesntContainSubqueries(const ASTPtr & expr, const ContextPt
 {
     ASTPtr expanded_expr = expr->clone();
     UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
-    if (containsForbiddenSubquery(expanded_expr))
+    if (containsForbiddenSubquery(expanded_expr, context))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Subqueries and table names are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator. "
+            "Subqueries and table names are not allowed in CHECK constraints, except a direct subquery or a Set table on the right-hand side of an IN operator. "
             "A bare identifier on the right-hand side of IN is a table name, even if a column with that name exists; "
             "use has(arr, x) to test membership in an array column");
 }
@@ -285,7 +311,7 @@ bool ConstraintsDescription::hasForbiddenSubquery(const ASTPtr & constraint, con
 
     ASTPtr expanded_expr = constraint_ptr->expr->clone();
     UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
-    return containsForbiddenSubquery(expanded_expr);
+    return containsForbiddenSubquery(expanded_expr, context);
 }
 
 void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context)
