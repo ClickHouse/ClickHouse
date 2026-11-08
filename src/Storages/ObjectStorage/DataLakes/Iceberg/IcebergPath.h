@@ -87,7 +87,7 @@ struct BlobStorageDescription
 enum class PositionDeleteScope
 {
     None,     /// No row of the delete file can name the data file.
-    Range,    /// Rows for several data files, spelled like the data file path, whose raw bounds contain it.
+    Range,    /// Rows for several data files, with no bound spelled otherwise: pruned by the data file path's prefix.
     ThisFile, /// Attach without row-group pruning by the raw data file path: it may be spelled differently in the rows.
 };
 
@@ -141,9 +141,10 @@ public:
     /// Same, but throws as `resolve` does.
     String storageIdentityOrThrow(const IcebergPathFromMetadata & metadata_path) const;
 
-    /// The raw text in front of the components of `path` (scheme and authority, or `/`, or empty for a relative path),
-    /// if the components follow it separated by single `/`, none of them empty, `.` or `..`; otherwise `std::nullopt`.
-    /// All strings starting with one non-empty prefix form one contiguous range.
+    /// The raw text in front of the first component of an absolute `path` (scheme and authority, or `/`) and the first
+    /// byte of that component, if the components are separated by single `/` and none is empty, `.` or `..`;
+    /// otherwise `std::nullopt`. The strings starting with it form one contiguous range, and of the spellings of one
+    /// file only those with an empty, `.` or `..` component can share it.
     static std::optional<std::string_view> canonicalPrefix(std::string_view path);
 
     PositionDeleteMatchKey positionDeleteMatchKey(const IcebergPathFromMetadata & path) const;

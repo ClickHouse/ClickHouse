@@ -123,13 +123,21 @@ ${CLICKHOUSE_LOCAL} -q "
     SELECT groupArray(x) FROM (SELECT x FROM icebergLocal('r/warehouse/db/t') ORDER BY x);
     SELECT countIf(event = 'ParquetPrunedRowGroups' AND value > 0) FROM system.events" < /dev/null
 
-echo "expire_snapshots keeps a file a retained snapshot names in another spelling"
-create_table x "INSERT INTO t VALUES (1); INSERT INTO t VALUES (2);"
+echo "position deletes naming data files with a leading //"
+create_table q "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
+deletes=$(find q/warehouse/db/t/data -name '*-deletes.parquet')
+local_query "
+    INSERT INTO FUNCTION file('${deletes}.new', Parquet)
+    SELECT concat('/', file_path) AS file_path, pos FROM file('${deletes}', Parquet)"
+mv "${deletes}.new" "${deletes}"
+select_with_both_transforms q
+
+echo "expire_snapshots keeps a file a retained snapshot names in another spelling and deletes the others"
+create_table x "INSERT INTO t VALUES (1); INSERT INTO t VALUES (2); INSERT INTO t VALUES (3);"
 edit_metadata x "
 current = next(s for s in m['snapshots'] if s['snapshot-id'] == m['current-snapshot-id'])
-for s in m['snapshots']:
-    if s is not current:
-        s['manifest-list'] = 'file://' + current['manifest-list']
+parent = next(s for s in m['snapshots'] if s['snapshot-id'] == current['parent-snapshot-id'])
+parent['manifest-list'] = 'file://' + current['manifest-list']
 "
 local_query "
     CREATE TABLE t ENGINE = IcebergLocal('x/warehouse/db/t');

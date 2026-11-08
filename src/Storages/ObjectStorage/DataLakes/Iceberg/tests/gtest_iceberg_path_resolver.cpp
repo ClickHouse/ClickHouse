@@ -261,14 +261,17 @@ TEST(IcebergPathResolver, EmptyComponents)
 TEST(IcebergPathResolver, StorageIdentity)
 {
     IcebergPathResolver s3("s3://bucket/x/t", "x/t", s3Storage(/* allow_foreign_namespaces */ true));
+    ASSERT_TRUE(s3.storageIdentity(metadataPath("s3://other/k")).has_value());
     EXPECT_EQ(s3.storageIdentity(metadataPath("s3://other/k")), s3.storageIdentity(metadataPath("s3a://other/k")));
     EXPECT_NE(s3.storageIdentity(metadataPath("s3://other/k")), s3.storageIdentity(metadataPath("s3://bucket/k")));
     EXPECT_NE(s3.storageIdentity(metadataPath("s3://bucket/x//t/data/a")), s3.storageIdentity(metadataPath("s3://bucket/x/t/data/a")));
 
     IcebergPathResolver local("/t", "t", localStorage());
+    ASSERT_TRUE(local.storageIdentity(metadataPath("t//data/a")).has_value());
     EXPECT_EQ(local.storageIdentity(metadataPath("t//data/a")), local.storageIdentity(metadataPath("t/data/a")));
 
     IcebergPathResolver hdfs("hdfs://nn/x/t", "/x/t", hdfsStorage());
+    ASSERT_TRUE(hdfs.storageIdentity(metadataPath("hdfs://nn/x/t/data//a")).has_value());
     EXPECT_EQ(hdfs.storageIdentity(metadataPath("hdfs://nn/x/t/data//a")), hdfs.storageIdentity(metadataPath("hdfs://nn/x/t/data/a")));
 
     EXPECT_EQ(IcebergPathResolver("s3://bucket/x/t", "x/t", s3Storage()).storageIdentity(metadataPath("s3://other/y")), std::nullopt);
@@ -277,20 +280,25 @@ TEST(IcebergPathResolver, StorageIdentity)
 TEST(IcebergPathResolver, SameStorageIdentity)
 {
     auto identity = [](const IcebergPathResolver & resolver, const String & path) { return resolver.storageIdentity(metadataPath(path)); };
+    auto same = [&](const IcebergPathResolver & resolver, const String & lhs, const String & rhs)
+    {
+        const auto expected = identity(resolver, lhs);
+        ASSERT_TRUE(expected.has_value()) << lhs;
+        EXPECT_EQ(expected, identity(resolver, rhs)) << rhs;
+    };
 
     IcebergPathResolver impala("/test-warehouse/t", "w/t", localStorage());
-    EXPECT_EQ(
-        identity(impala, "/test-warehouse/t/data/a.parquet"), identity(impala, "hdfs://localhost:20500/test-warehouse/t/data/a.parquet"));
+    same(impala, "/test-warehouse/t/data/a.parquet", "hdfs://localhost:20500/test-warehouse/t/data/a.parquet");
     EXPECT_NE(identity(impala, "/test-warehouse/t/data/a.parquet"), identity(impala, "/test-warehouse/t/data/b.parquet"));
 
     IcebergPathResolver local("/tbl", "tbl", localStorage());
-    EXPECT_EQ(identity(local, "/tbl/data/x"), identity(local, "file:///tbl/data/x"));
-    EXPECT_EQ(identity(local, "/tbl/data/x"), identity(local, "tbl/data/x"));
-    EXPECT_EQ(identity(local, "/tbl/data/x"), identity(local, "/tbl/./data//x"));
+    same(local, "/tbl/data/x", "file:///tbl/data/x");
+    same(local, "/tbl/data/x", "tbl/data/x");
+    same(local, "/tbl/data/x", "/tbl/./data//x");
 
     IcebergPathResolver foreign("s3://bucket/x/t", "x/t", s3Storage(/* allow_foreign_namespaces */ true));
     EXPECT_NE(identity(foreign, "s3://other/shared/x"), identity(foreign, "s3://bucket/shared/x"));
-    EXPECT_EQ(identity(foreign, "s3a://bucket/x/t/data/a"), identity(foreign, "s3://bucket/x/t/data/a"));
+    same(foreign, "s3a://bucket/x/t/data/a", "s3://bucket/x/t/data/a");
 
     IcebergPathResolver s3("s3://bucket/x/t", "x/t", s3Storage());
     EXPECT_EQ(s3.storageIdentity(metadataPath("s3://other/y")), std::nullopt);
@@ -331,19 +339,26 @@ TEST(IcebergPathResolver, MatchPositionDeleteBounds)
     EXPECT_EQ(scope("s3a://b/x/data/a", "s3a://b/x/data/z", "s3://b/x/data/m"), PositionDeleteScope::ThisFile);
     EXPECT_EQ(scope("hdfs://localhost", "hdfs://localhosu", "/test-warehouse/t/data/a"), PositionDeleteScope::ThisFile);
     EXPECT_EQ(scope("/x/data/", "/x/data/z", "/x/data/m"), PositionDeleteScope::ThisFile);
-    EXPECT_EQ(scope(std::nullopt, std::nullopt, "/x/data/m"), PositionDeleteScope::ThisFile);
-    EXPECT_EQ(scope("/x/data/a", std::nullopt, "/x/data/m"), PositionDeleteScope::ThisFile);
+    /// Bounds straddling `/` may hold `file:///t/data/m`.
+    EXPECT_EQ(scope("file:/!/a", "file:/s/z", "file:/t/data/m"), PositionDeleteScope::ThisFile);
+    /// A relative path has no canonical prefix.
+    EXPECT_EQ(scope("x/data/n", "x/data/z", "x/data/m"), PositionDeleteScope::ThisFile);
+    /// One bound or none proves no range.
+    EXPECT_EQ(scope(std::nullopt, std::nullopt, "/x/data/m"), PositionDeleteScope::Range);
+    EXPECT_EQ(scope("/x/data/a", std::nullopt, "/x/data/m"), PositionDeleteScope::Range);
+    EXPECT_EQ(scope("/x/data/n", std::nullopt, "/x/data/m"), PositionDeleteScope::Range);
 }
 
 TEST(IcebergPathResolver, CanonicalPrefix)
 {
     using Prefix = std::optional<std::string_view>;
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/data/a"), Prefix("/"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("hdfs://nn:8020/t/a"), Prefix("hdfs://nn:8020/"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:/t/a"), Prefix("file:/"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:///t/m"), Prefix("file:///"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("s3a://b/t/a"), Prefix("s3a://b/"));
-    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("t/a"), Prefix(""));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/data/a"), Prefix("/t"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("hdfs://nn:8020/t/a"), Prefix("hdfs://nn:8020/t"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:/t/a"), Prefix("file:/t"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("file:///t/m"), Prefix("file:///t"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("s3a://b/t/a"), Prefix("s3a://b/t"));
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("t/a"), std::nullopt);
+    EXPECT_EQ(IcebergPathResolver::canonicalPrefix("s3://b"), std::nullopt);
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t//a"), std::nullopt);
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/./a"), std::nullopt);
     EXPECT_EQ(IcebergPathResolver::canonicalPrefix("/t/../t/a"), std::nullopt);

@@ -380,10 +380,12 @@ String IcebergPathResolver::storageIdentityOrThrow(const IcebergPathFromMetadata
 std::optional<std::string_view> IcebergPathResolver::canonicalPrefix(std::string_view path)
 {
     auto parsed = parsePath(path, /* is_filesystem */ false);
+    if (parsed.path_begin == 0 || parsed.components.empty())
+        return std::nullopt;
     for (const auto & component : parsed.components)
         if (auto name = componentOf(path, component); name.empty() || name == "." || name == "..")
             return std::nullopt;
-    return path.substr(0, parsed.path_begin);
+    return path.substr(0, parsed.path_begin + 1);
 }
 
 PositionDeleteMatchKey IcebergPathResolver::positionDeleteMatchKey(const IcebergPathFromMetadata & path) const
@@ -408,11 +410,15 @@ PositionDeleteScope IcebergPathResolver::matchPositionDeleteBounds(
             ? PositionDeleteScope::ThisFile
             : PositionDeleteScope::None;
 
-    if (!lower || !upper || !data_file_key.canonical_prefix || lower_key.canonical_prefix != data_file_key.canonical_prefix
-        || upper_key.canonical_prefix != data_file_key.canonical_prefix)
+    /// A bound spelled otherwise than the data file path means rows in that spelling: read them all.
+    auto spelled_like_data_file = [&](const PositionDeleteMatchKey & key) { return key.canonical_prefix == data_file_key.canonical_prefix; };
+    if (!data_file_key.canonical_prefix || (lower && !spelled_like_data_file(lower_key)) || (upper && !spelled_like_data_file(upper_key)))
         return PositionDeleteScope::ThisFile;
 
-    return *lower <= data_file_path && data_file_path <= *upper ? PositionDeleteScope::Range : PositionDeleteScope::None;
+    /// Only two bounds prove a range: Iceberg Java writes none for a delete file of several data files.
+    if (lower && upper && !(*lower <= data_file_path && data_file_path <= *upper))
+        return PositionDeleteScope::None;
+    return PositionDeleteScope::Range;
 }
 
 }

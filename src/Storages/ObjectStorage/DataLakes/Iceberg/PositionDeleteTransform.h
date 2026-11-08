@@ -73,6 +73,7 @@ private:
     bool namesDataFileInAnotherSpelling(std::string_view file_to_delete) const;
 
     std::optional<String> data_file_identity;
+    std::optional<String> data_file_name; /// `fileNameOf` of the data file path
     /// Rows are sorted by `file_path`, so the last checked value usually repeats.
     mutable String last_checked_file;
     mutable bool last_checked_file_matches = false;

@@ -207,15 +207,17 @@ void IcebergIterator::ensureDeletesReady()
             std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
             std::sort(position_deletes_files.begin(), position_deletes_files.end());
             const auto & path_resolver = persistent_components.path_resolver;
-            position_delete_bound_keys.reserve(position_deletes_files.size());
+            std::vector<std::pair<Iceberg::PositionDeleteMatchKey, Iceberg::PositionDeleteMatchKey>> bound_keys;
+            bound_keys.reserve(position_deletes_files.size());
             for (const auto & position_delete : position_deletes_files)
             {
                 const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
                 const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
                 auto lower_key = lower ? path_resolver.positionDeleteMatchKey(*lower) : Iceberg::PositionDeleteMatchKey{};
                 auto upper_key = upper == lower ? lower_key : (upper ? path_resolver.positionDeleteMatchKey(*upper) : Iceberg::PositionDeleteMatchKey{});
-                position_delete_bound_keys.emplace_back(std::move(lower_key), std::move(upper_key));
+                bound_keys.emplace_back(std::move(lower_key), std::move(upper_key));
             }
+            position_delete_bound_keys = std::move(bound_keys);
             deletes_ready = true;
             delete_manifest_parsed.notify_all();
             break;

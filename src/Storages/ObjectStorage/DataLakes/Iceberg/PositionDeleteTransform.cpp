@@ -39,6 +39,20 @@ extern const int LOGICAL_ERROR;
 namespace DB::Iceberg
 {
 
+namespace
+{
+
+/// The text after the last `/` of `path`, if it names a file. Every spelling of a file ends with its name.
+std::optional<std::string_view> fileNameOf(std::string_view path)
+{
+    auto name = path.substr(path.rfind('/') + 1);
+    if (name.empty() || name == "." || name == "..")
+        return std::nullopt;
+    return name;
+}
+
+}
+
 Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 {
     Poco::JSON::Array::Ptr pos_delete_schema = new Poco::JSON::Array;
@@ -65,11 +79,13 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     /// Create filter on the data object to get interested rows
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
-    /// Row groups are pruned by the min/max of their raw `file_path` values. All values starting with the data file
-    /// path's raw prefix form the range [prefix, prefix_end), so a row group holding a value with another prefix, which
-    /// may name the data file in another spelling, is never pruned.
+    if (auto name = fileNameOf(iceberg_data_path))
+        data_file_name = String(*name);
+    /// Row groups are pruned by the min/max of their raw `file_path` values. A row group is skipped only if all its
+    /// values lie in [prefix, prefix_end) of the data file path's `canonicalPrefix` and its range excludes the raw path;
+    /// a value spelling the data file with another scheme, authority or number of slashes lies outside that range.
     ASTPtr where_ast;
-    if (auto prefix = IcebergPathResolver::canonicalPrefix(iceberg_data_path); prefix && !prefix->empty())
+    if (auto prefix = IcebergPathResolver::canonicalPrefix(iceberg_data_path))
     {
         String prefix_end(*prefix);
         ++prefix_end.back();
@@ -213,6 +229,8 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
 bool IcebergPositionDeleteTransform::namesDataFileInAnotherSpelling(std::string_view file_to_delete) const
 {
     if (!data_file_identity)
+        return false;
+    if (auto name = fileNameOf(file_to_delete); data_file_name && name && *name != *data_file_name)
         return false;
     if (file_to_delete != last_checked_file)
     {
