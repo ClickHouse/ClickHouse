@@ -5,6 +5,7 @@
 #include <sstream>
 #include <unordered_set>
 #include <Common/Exception.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
