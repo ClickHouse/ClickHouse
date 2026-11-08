@@ -59,6 +59,15 @@ endif()
 
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
+# Used by `flight.cmake` to generate the Arrow Flight sources.
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    set(PROTOBUF_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+    set(GRPC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
+else ()
+    set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
+    set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+endif()
+
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
