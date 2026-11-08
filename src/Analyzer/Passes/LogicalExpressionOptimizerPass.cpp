@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -19,6 +20,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/indexHint.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -181,6 +183,15 @@ static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeN
     const auto [_, inserted] = set.emplace(node);
     if (inserted)
         nodes.push_back(std::move(node));
+}
+
+static bool isImpliedIndexHint(const QueryTreeNodePtr & node)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || function_node->getFunctionName() != "indexHint")
+        return false;
+    const auto * index_hint = FunctionIndexHint::tryGet(function_node->getFunction());
+    return index_hint && index_hint->isImplied();
 }
 
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
@@ -1305,8 +1316,11 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
             for (auto & and_argument : and_node->getArguments())
             {
-                if (common_exprs_set.contains(and_argument))
-                    insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, and_argument);
+                auto it = common_exprs_set.find(and_argument);
+                if (it == common_exprs_set.end())
+                    continue;
+                /// A factored hint stays implied only if every copy is, so keep a copy that is not.
+                insertIfNotPresentInSet(new_common_exprs_set, new_common_exprs, isImpliedIndexHint(and_argument) ? it->node : and_argument);
             }
 
             common_exprs_set = std::move(new_common_exprs_set);
@@ -2073,7 +2087,8 @@ private:
             /// share a single value, we do not want pruning, folding (e.g. `rand() % 2 < 1 AND
             /// rand() % 2 >= 1` → false) or merging notEquals into NOT IN to rely on that. Keep such
             /// operands as-is.
-            if (hasNonDeterministicFunction(expression))
+            /// Same for aggregate functions: removing the operand can leave the query without any.
+            if (hasNonDeterministicFunction(expression) || hasAggregateFunctionNodes(expression))
             {
                 all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
@@ -2112,6 +2127,10 @@ private:
 
             /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
             if (isNothing(function_node.getResultType()))
+                return;
+
+            /// The constant would also drop the kept operands, and with them the query's aggregation or `arrayJoin`.
+            if (hasAggregateFunctionNodes(node) || hasFunctionNode(node, "arrayJoin"))
                 return;
 
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
@@ -2604,8 +2623,7 @@ private:
                                     /// Not if the join's left side is preserved: the join evaluates the input-less `indexHint` there.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
-                                    index_hint_node->resolveAsFunction(
-                                        FunctionFactory::instance().get("indexHint", getContext()));
+                                    index_hint_node->resolveAsFunction(FunctionIndexHint::createImplied());
                                     function_node.getArguments().getNodes().push_back(index_hint_node);
                                 }
                             }
