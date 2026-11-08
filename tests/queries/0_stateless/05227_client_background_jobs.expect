@@ -228,6 +228,19 @@ submit {\bg RESTORE TEMPORARY TABLE t_05227 FROM Disk('no_such_disk_05227', 'b')
 expect -ex {A background job cannot run a statement whose effects are limited to its private session}
 expect ":) "
 
+# Wrappers are checked through to the statements they run.
+submit {\bg CREATE TEMPORARY TABLE a_05227 (x UInt8) ENGINE = Memory PARALLEL WITH CREATE TEMPORARY TABLE b_05227 (x UInt8) ENGINE = Memory}
+expect -ex {A background job cannot run a statement whose effects are limited to its private session}
+expect ":) "
+
+submit {\bg EXECUTE AS default CREATE TEMPORARY TABLE c_05227 (x UInt8) ENGINE = Memory}
+expect -ex {A background job cannot run a statement whose effects are limited to its private session}
+expect ":) "
+
+submit {\bg EXECUTE AS default}
+expect -ex {A background job cannot run a statement whose effects are limited to its private session}
+expect ":) "
+
 submit {\bg SELECT 1 SETTINGS run_query_in_background = 1}
 expect -ex {The run_query_in_background server setting cannot be combined with a client background job}
 expect ":) "

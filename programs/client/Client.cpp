@@ -40,10 +40,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -154,6 +156,26 @@ bool containsSetting(const ASTPtr & ast, std::string_view setting_name)
 
     return std::any_of(ast->children.begin(), ast->children.end(), [&](const auto & child)
         { return containsSetting(child, setting_name); });
+}
+
+/// True if the statement, or any statement it wraps, only affects its own session.
+bool hasSessionOnlyEffects(const ASTPtr & ast)
+{
+    if (ast->as<ASTParallelWithQuery>())
+        return std::ranges::any_of(ast->children, [](const auto & child) { return hasSessionOnlyEffects(child); });
+    if (const auto * execute_as = ast->as<ASTExecuteAsQuery>())
+        return !execute_as->subquery || hasSessionOnlyEffects(execute_as->subquery);
+
+    const auto * set_role = ast->as<ASTSetRoleQuery>();
+    if (ast->as<ASTSetQuery>() || ast->as<ASTUseQuery>() || ast->as<ASTTransactionControl>()
+        || (set_role && set_role->kind != ASTSetRoleQuery::Kind::SET_DEFAULT_ROLE))
+        return true;
+
+    const auto * table_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get());
+    const auto * backup_query = ast->as<ASTBackupQuery>();
+    return (table_query && table_query->isTemporary())
+        || (backup_query && std::ranges::any_of(backup_query->elements,
+            [](const auto & element) { return element.type == ASTBackupQuery::TEMPORARY_TABLE; }));
 }
 
 std::optional<String> getDetachableOutputFormat(
@@ -317,16 +339,7 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             return true;
         }
 
-        const auto * set_role = parsed_query->as<ASTSetRoleQuery>();
-        const bool changes_only_session_state = parsed_query->as<ASTSetQuery>() || parsed_query->as<ASTUseQuery>()
-            || parsed_query->as<ASTTransactionControl>()
-            || (set_role && set_role->kind != ASTSetRoleQuery::Kind::SET_DEFAULT_ROLE);
-        const auto * table_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(parsed_query.get());
-        const auto * backup_query = parsed_query->as<ASTBackupQuery>();
-        const bool uses_temporary_table = (table_query && table_query->isTemporary())
-            || (backup_query && std::ranges::any_of(backup_query->elements,
-                [](const auto & element) { return element.type == ASTBackupQuery::TEMPORARY_TABLE; }));
-        if (changes_only_session_state || uses_temporary_table)
+        if (hasSessionOnlyEffects(parsed_query))
         {
             error_stream << "A background job cannot run a statement whose effects are limited to its private session" << std::endl;
             return true;
