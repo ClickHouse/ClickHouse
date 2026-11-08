@@ -750,8 +750,8 @@ public:
     QueryTreeNodePtrWithHashSet array_joins;
 };
 
-/// The reductions treat atoms as booleans, but each distinct `arrayJoin` multiplies the rows and an aggregate function
-/// makes the query aggregating, so a filter that loses one of them is a different query.
+/// The reductions treat atoms as booleans, but each distinct `arrayJoin` multiplies the rows and aggregate functions
+/// make the query aggregating, so a filter that loses an `arrayJoin` or all aggregate functions is a different query.
 bool keepsArrayJoinsAndAggregation(const QueryTreeNodePtr & node, const QueryTreeNodePtr & new_node)
 {
     if (hasAggregateFunctionNodes(node) && !(new_node && hasAggregateFunctionNodes(new_node)))
