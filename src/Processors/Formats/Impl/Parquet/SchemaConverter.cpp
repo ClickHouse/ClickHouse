@@ -648,7 +648,8 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     /// no MAP annotation on it. Also fall back if Tuple type was requested
     /// (presumably `Tuple(Array(Tuple(key, value))` - a literal interpretation of the schema tree)
     /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
         return false;
     if (typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
         return false;
@@ -735,7 +736,12 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
+        return false;
+    /// A LIST map key requested as `Tuple` or `JSON` is read as the tuple of its children.
+    if (node.schema_context == SchemaContext::MapKey
+        && (typeid_cast<const DataTypeTuple *>(node.type_hint.get()) || typeid_cast<const DataTypeObject *>(node.type_hint.get())))
         return false;
     if (node.element->num_children != 1)
         return false;
