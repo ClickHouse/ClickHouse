@@ -177,7 +177,10 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
         if (wraparound.tuple_index >= hyperrectangle.size())
             continue;
         auto & range = hyperrectangle[wraparound.tuple_index];
-        if (range.left.getType() == Field::Types::Int64 && range.contains(Field(wraparound.stored))
+        /// The upper bound is `+inf` when the summary also contains NULL.
+        if (range.left.getType() == Field::Types::Int64 && range.left.safeGet<Int64>() <= wraparound.stored
+            && (range.right.isPositiveInfinity()
+                || (range.right.getType() == Field::Types::Int64 && wraparound.stored <= range.right.safeGet<Int64>()))
             && wraparound.value < range.left.safeGet<Int64>())
             range.left = Field(wraparound.value);
     }
