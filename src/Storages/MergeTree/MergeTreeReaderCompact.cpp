@@ -615,9 +615,7 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 }
 
 
-/// Checked per granule: query limits are otherwise checked only between blocks, and with a small
-/// `index_granularity` one block spans tens of thousands of granules. `checkTimeLimit` throws on a
-/// killed query, and past `max_execution_time` in throw mode.
+/// Its `checkTimeLimit` throws on a killed query, and past `max_execution_time` in throw mode.
 static QueryStatusPtr getQueryStatusOfCurrentThread()
 {
     auto query_context = CurrentThread::tryGetQueryContext();
