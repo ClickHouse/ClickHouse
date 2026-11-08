@@ -65,10 +65,9 @@ def control(query):
     assert result.returncode == 0, result.stderr
 
 
-def sql_opt_in(options, query):
+def sql_opt_in(options, query, marker=b"SETTINGS send_profile_traces = 0"):
     # The normal client promotes inline settings into its wire settings. Replacing only
-    # the same-width SQL literal preserves wire opt-out and exercises server-side opt-in.
-    marker = b"SETTINGS send_profile_traces = 0"
+    # the same-width SQL literal preserves the wire value and exercises the server-side change.
     assert query.encode().count(marker) == 1, query
     replacements = []
     errors = []
@@ -99,7 +98,7 @@ def sql_opt_in(options, query):
                         if connection is downstream:
                             data = pending + data
                             replacements.extend([1] * data.count(marker))
-                            data = data.replace(marker, marker[:-1] + b"1")
+                            data = data.replace(marker, marker[:-1] + (b"0" if marker.endswith(b"1") else b"1"))
                             # Retain only a possible marker prefix so the handshake is
                             # forwarded immediately, even if the SQL spans socket reads.
                             keep = min(len(marker) - 1, len(data))
@@ -128,9 +127,18 @@ def sql_opt_in(options, query):
 
 
 def backup(mode):
+    # Concurrent queries can fill the shared, bounded profiler pipe, which drops samples silently.
+    # Retry a backup whose background allocation samples were all lost.
+    for attempt in range(5):
+        if backup_attempt(mode, attempt):
+            return
+    raise AssertionError(f"{mode}: no background BACKUP allocation in {attempt + 1} attempts")
+
+
+def backup_attempt(mode, attempt):
     query_id = "profile_native_sql_" + uuid.uuid4().hex
     options = dict(settings, query_id=query_id, send_profile_traces=int(mode == "wire"))
-    query = f"BACKUP TABLE {source} TO Disk('backups', '{backup_prefix}_{mode}')"
+    query = f"BACKUP TABLE {source} TO Disk('backups', '{backup_prefix}_{mode}_{attempt}')"
     if mode != "wire":
         query += " SETTINGS send_profile_traces = 0"
     if mode == "sql":
@@ -145,16 +153,16 @@ def backup(mode):
     assert not any(sample["trace_type"] in {"Dropped", "Incomplete"} for sample in samples), "small query lost samples"
     if mode == "disabled":
         assert not samples, "wire and SQL opt-out emitted traces"
-        return
+        return True
     # `BackupStarter` runs on a thread inherited from the query's group before
     # `executeQuery` returns. Its allocations exclude late transport-only samples.
-    assert any(
+    return any(
         sample["trace_type"] == "MemorySample"
         and int(sample["size"]) > 0
         and any("DB::BackupsWorker::BackupStarter::doBackup" in frame for frame in sample["symbols"])
         and not any("DB::TCPHandler::" in frame for frame in sample["symbols"])
         for sample in samples
-    ), f"{mode}: no background BACKUP allocation among {len(samples)} trace rows"
+    )
 
 
 try:
@@ -166,6 +174,17 @@ try:
     print("Native wire and SQL opt-out complete BACKUP without traces")
     backup("sql")
     print("Native SQL-only opt-in captures background BACKUP allocations after one SQL rewrite")
+
+    # The subscription is created with the access granted by the wire settings, and SQL revokes it.
+    options = dict(settings, send_profile_traces=1, allow_introspection_functions=1)
+    result = sql_opt_in(
+        options,
+        "SELECT length(range(number + 100000)) FROM numbers(8) SETTINGS allow_introspection_functions = 1 FORMAT Null",
+        marker=b"SETTINGS allow_introspection_functions = 1",
+    )
+    assert result.returncode != 0 and "FUNCTION_NOT_ALLOWED" in result.stderr, (result.stdout, result.stderr)
+    assert not any(line.startswith('{"host_name":') for line in result.stderr.splitlines()), "revoked introspection emitted traces"
+    print("Native SQL revocation of introspection fails without traces")
 finally:
     control(f"DROP TABLE IF EXISTS {source} SYNC")
 PY

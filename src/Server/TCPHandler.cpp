@@ -6,6 +6,7 @@
 #include <string_view>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Access/ContextAccess.h>
 #include <Columns/ColumnBLOB.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -2164,6 +2165,10 @@ void TCPHandler::updateProfileTracesQueue(QueryState & state) const
 {
     const bool enabled = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_PROFILE_TRACES
         && state.query_context->getSettingsRef()[Setting::send_profile_traces];
+    /// SQL `SETTINGS` can revoke the access an existing subscription was created with,
+    /// for example by `allow_introspection_functions = 0`. Drop the queued samples and fail.
+    if (enabled && state.profile_traces_queue && !state.query_context->getAccess()->isGranted(AccessType::addressToSymbol))
+        cancelProfileTracesQueue(state);
     if (enabled && !state.profile_traces_queue)
     {
         state.profile_traces_queue = InternalProfileTracesQueue::create(state.query_context);

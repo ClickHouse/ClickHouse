@@ -79,16 +79,27 @@ def run(query, *, sql_framing=False, url_traces=0, expected_status=None, error=F
     return samples
 
 
-def require_worker_allocation(samples, operation, symbol):
+def has_worker_allocation(samples, symbol):
     # The work executes in background threads inherited from the query's group.
     # Their allocations distinguish real interpreter work from trailing response samples.
-    assert any(
+    return any(
         sample["trace_type"] == "MemorySample"
         and int(sample["size"]) > 0
         and any(symbol in frame for frame in sample["symbols"])
         and not any("DB::HTTPHandler::" in frame for frame in sample["symbols"])
         for sample in samples
-    ), f"no background {operation} allocation among {len(samples)} trace rows"
+    )
+
+
+def run_with_worker_allocation(make_query, operation, symbol, before_attempt=lambda: None, **kwargs):
+    # Concurrent queries can fill the shared, bounded profiler pipe, which drops samples silently.
+    # Retry an operation whose background allocation samples were all lost.
+    for attempt in range(5):
+        before_attempt()
+        samples = run(make_query(attempt), **kwargs)
+        if has_worker_allocation(samples, symbol):
+            return attempt
+    raise AssertionError(f"no background {operation} allocation among {len(samples)} trace rows")
 
 
 try:
@@ -99,22 +110,27 @@ try:
         ("sql_trace", 0, " SETTINGS send_profile_traces=1", False),
         ("sql_both", 0, " SETTINGS framing_output_format='JSONEachPacketString', send_profile_traces=1", True),
     ):
-        samples = run(
-            f"BACKUP TABLE {source} TO Disk('backups', '{backup_prefix}_{name}')" + sql_settings,
+        attempt = run_with_worker_allocation(
+            lambda attempt: f"BACKUP TABLE {source} TO Disk('backups', '{backup_prefix}_{name}_{attempt}')" + sql_settings,
+            "Backup",
+            "DB::BackupsWorker::BackupStarter::doBackup",
             url_traces=url_traces,
             sql_framing=sql_framing,
             expected_status="BACKUP_CREATED",
         )
-        require_worker_allocation(samples, "Backup", "DB::BackupsWorker::BackupStarter::doBackup")
+        if name == "sql_both":
+            restore_from = f"{backup_prefix}_{name}_{attempt}"
         print(f"{name} BACKUP captures background allocations")
 
-    samples = run(
-        f"RESTORE TABLE {source} AS {restored} FROM Disk('backups', '{backup_prefix}_sql_both') SETTINGS framing_output_format='JSONEachPacketString', send_profile_traces=1",
+    # The restore starter reads the table data in tasks it schedules on the restore thread pool.
+    run_with_worker_allocation(
+        lambda attempt: f"RESTORE TABLE {source} AS {restored} FROM Disk('backups', '{restore_from}') SETTINGS framing_output_format='JSONEachPacketString', send_profile_traces=1",
+        "Restore",
+        "DB::StorageMemory::restoreDataImpl",
+        before_attempt=lambda: control(f"DROP TABLE IF EXISTS {restored} SYNC"),
         sql_framing=True,
         expected_status="RESTORED",
     )
-    # The restore starter reads the table data in tasks it schedules on the restore thread pool.
-    require_worker_allocation(samples, "Restore", "DB::StorageMemory::restoreDataImpl")
     assert control(f"SELECT count(), sum(x) FROM {restored} FORMAT TSV") == "100000\t4999950000"
     print("SQL RESTORE captures background allocations and restores rows")
 
@@ -132,6 +148,15 @@ try:
         error=True,
     )
     print("SQL opt-in preserves the original analysis exception")
+
+    # The subscription is created with the access granted by the URL settings, and SQL revokes it.
+    status, body, _ = request(
+        "SELECT length(range(number + 100000)) FROM numbers(8) SETTINGS allow_introspection_functions=0 FORMAT Null",
+        {"framing_output_format": "JSONEachPacketString", "send_profile_traces": 1, "allow_introspection_functions": 1},
+    )
+    assert status != 200 and "FUNCTION_NOT_ALLOWED" in body, (status, body)
+    assert '"profile_traces"' not in body, "revoked introspection emitted traces"
+    print("SQL revocation of introspection fails without traces")
 
     status, body, _ = request(
         "SELECT 42 SETTINGS send_profile_traces=1 FORMAT TSV",

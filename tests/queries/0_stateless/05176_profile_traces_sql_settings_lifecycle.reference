@@ -4,4 +4,5 @@ sql_both BACKUP captures background allocations
 SQL RESTORE captures background allocations and restores rows
 SQL opt-out discards the URL trace subscription
 SQL opt-in preserves the original analysis exception
+SQL revocation of introspection fails without traces
 plain HTTP remains unframed with trace delivery enabled

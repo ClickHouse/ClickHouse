@@ -4478,6 +4478,14 @@ void syncFramingProfileTracesWithSettings(const ContextMutablePtr & context, Fra
 
     if (framing_enabled && settings[Setting::send_profile_traces])
     {
+        /// SQL `SETTINGS` can revoke the access an existing subscription was created with,
+        /// for example by `allow_introspection_functions = 0`. Drop the queued samples and fail.
+        if (queues.profile_traces_queue && !context->getAccess()->isGranted(AccessType::addressToSymbol))
+        {
+            queues.profile_traces_queue->cancel();
+            CurrentThread::attachInternalProfileTracesQueue(nullptr);
+            queues.profile_traces_queue.reset();
+        }
         if (!queues.profile_traces_queue)
         {
             queues.profile_traces_queue = InternalProfileTracesQueue::create(context);
