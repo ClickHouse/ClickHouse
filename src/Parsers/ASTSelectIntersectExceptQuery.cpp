@@ -1,4 +1,5 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/SipHash.h>
@@ -89,6 +90,43 @@ ASTPtr ASTSelectIntersectExceptQuery::getTrailingSettings(const ASTPtr & last_op
     if (const auto * select = operand ? operand->as<ASTSelectQuery>() : nullptr)
         return select->settings();
     return nullptr;
+}
+
+void ASTSelectIntersectExceptQuery::scopeNonTrailingSettings(ASTPtr & operand)
+{
+    auto wrap = [](ASTPtr & node)
+    {
+        auto wrapper = make_intrusive<ASTSelectWithUnionQuery>();
+        wrapper->union_mode = SelectUnionMode::UNION_ALL;
+        wrapper->is_normalized = true;
+        wrapper->list_of_selects = make_intrusive<ASTExpressionList>();
+        wrapper->list_of_selects->children.push_back(node);
+        wrapper->children.push_back(wrapper->list_of_selects);
+        node = std::move(wrapper);
+    };
+
+    ASTPtr * node = &operand;
+    if (const auto * select = (*node)->as<ASTSelectQuery>())
+    {
+        if (select->settings())
+            wrap(*node);
+        return;
+    }
+
+    while (auto * intersect_except = (*node)->as<ASTSelectIntersectExceptQuery>())
+    {
+        if (intersect_except->children.empty())
+            return;
+
+        auto & last = intersect_except->children.back();
+        if (const auto * select = last->as<ASTSelectQuery>())
+        {
+            if (select->settings())
+                wrap(*node);
+            return;
+        }
+        node = &last;
+    }
 }
 
 ASTs ASTSelectIntersectExceptQuery::getListOfSelects() const

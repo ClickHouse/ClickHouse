@@ -123,10 +123,17 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
             distinct_list->list_of_selects = make_intrusive<ASTExpressionList>();
             distinct_list->children.push_back(distinct_list->list_of_selects);
 
-            for (int j = 0; j <= i + 1; ++j)
+            for (int j = 0; j <= i; ++j)
             {
                 getSelectsFromUnionListNode(select_list[j], distinct_list->list_of_selects->children);
             }
+
+            /// The last operand of the `UNION DISTINCT` list ends it, but not the query if other operands follow:
+            /// then its `SETTINGS` clause must keep applying to it alone, not to the whole list.
+            ASTPtr last_distinct_operand = select_list[i + 1];
+            if (static_cast<size_t>(i + 2) < select_list.size())
+                ASTSelectIntersectExceptQuery::scopeNonTrailingSettings(last_distinct_operand);
+            getSelectsFromUnionListNode(last_distinct_operand, distinct_list->list_of_selects->children);
 
             distinct_list->union_mode = SelectUnionMode::UNION_DISTINCT;
             distinct_list->is_normalized = true;
