@@ -512,25 +512,34 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         /// `Tuple` or a dynamic path `json.a` of a `JSON` column, see `checkAccessRights`). Dynamic subcolumns are not
         /// listed in `column_names_and_types`, so they are resolved by name, and subcolumns must not be skipped when
         /// choosing among the allowed columns: reading another column may be denied, e.g. by an `Alias` table.
+        ///
+        /// A storage that does not support subcolumns (e.g. `StripeLog` or `Join`) can only read whole columns, so a
+        /// subcolumn is never chosen for it: the allowed subcolumns are ignored and a physical column is read instead.
+        const bool storage_supports_subcolumns = storage->supportsSubcolumns();
         NamesAndTypesList allowed_columns;
         NameSet listed_names;
         for (const auto & column : column_names_and_types)
         {
             listed_names.insert(column.name);
+            if (column.isSubcolumn() && !storage_supports_subcolumns)
+                continue;
             if (column_names_allowed_to_select.contains(column.name))
                 allowed_columns.push_back(column);
         }
 
-        Names not_listed_names;
-        for (const auto & name : column_names_allowed_to_select)
-            if (!listed_names.contains(name))
-                not_listed_names.push_back(name);
-        std::sort(not_listed_names.begin(), not_listed_names.end());
-        for (const auto & name : not_listed_names)
+        if (storage_supports_subcolumns)
         {
-            auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name);
-            if (column && column->isSubcolumn())
-                allowed_columns.push_back(std::move(*column));
+            Names not_listed_names;
+            for (const auto & name : column_names_allowed_to_select)
+                if (!listed_names.contains(name))
+                    not_listed_names.push_back(name);
+            std::sort(not_listed_names.begin(), not_listed_names.end());
+            for (const auto & name : not_listed_names)
+            {
+                auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name);
+                if (column && column->isSubcolumn())
+                    allowed_columns.push_back(std::move(*column));
+            }
         }
 
         if (!allowed_columns.empty())
