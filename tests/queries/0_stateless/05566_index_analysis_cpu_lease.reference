@@ -26,3 +26,5 @@ QUERY_WAS_CANCELLED_BY_CLIENT
 --- a soft time limit stops the wait of an analysis starved by a higher priority query
 break: 0
 1
+--- no hang in a workload with one CPU slot when the lease of the executor cannot be parked
+4

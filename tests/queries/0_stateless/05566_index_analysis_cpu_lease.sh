@@ -25,12 +25,14 @@ cleanup() {
         $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS ${P}_${w}" 2>/dev/null
     done
     $CLICKHOUSE_CLIENT -q "DROP RESOURCE IF EXISTS ${RES}" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP RESOURCE IF EXISTS ${RES}_w" 2>/dev/null
 }
 trap cleanup EXIT
 
 BIG_COND="b IN (1, 62501, 125001, 187501, 250001, 312501, 375001, 437501, 500001, 562501, 625001, 687501, 750001, 812501, 875001, 937501)"
 
 $CLICKHOUSE_CLIENT -m -q "
+    DROP RESOURCE IF EXISTS ${RES}_w;
     CREATE OR REPLACE RESOURCE ${RES} (MASTER THREAD, WORKER THREAD);
     CREATE WORKLOAD ${P}_all;
     CREATE WORKLOAD ${P}_wl IN ${P}_all;
@@ -190,4 +192,12 @@ $CLICKHOUSE_CLIENT -q "
 
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '${P}_hog' SYNC FORMAT Null"
 wait
+
+echo "--- no hang in a workload with one CPU slot when the lease of the executor cannot be parked"
+# Separate resources for MASTER THREAD and WORKER THREAD make every lease not parkable
+$CLICKHOUSE_CLIENT -m -q "
+    DROP RESOURCE ${RES};
+    CREATE RESOURCE ${RES} (MASTER THREAD);
+    CREATE RESOURCE ${RES}_w (WORKER THREAD);"
+timeout 300 $CLICKHOUSE_CLIENT --query_id "${P}_oneslot_np" -q "SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t, ${T_COND}) SETTINGS ${ONE}"
 rm -f "${CLICKHOUSE_TMP}/${P}_starved.out" "${CLICKHOUSE_TMP}/${P}_starved_r.out"
