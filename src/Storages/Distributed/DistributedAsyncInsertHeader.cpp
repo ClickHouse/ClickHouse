@@ -18,7 +18,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int UNKNOWN_DISTRIBUTED_ASYNC_INSERT_FORMAT_VERSION;
 }
 
 DistributedAsyncInsertHeader::DistributedAsyncInsertHeader()
@@ -38,7 +38,7 @@ DistributedAsyncInsertHeader readHeader(ReadBufferFromFile & in, LoggerPtr log)
 
     /// Files written before version 19.18 (without the checksummed header) are not supported anymore.
     if (signature != DBMS_DISTRIBUTED_SIGNATURE_HEADER)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
+        throw Exception(ErrorCodes::UNKNOWN_DISTRIBUTED_ASYNC_INSERT_FORMAT_VERSION,
             "Unknown signature {} of the {} batch: the file is either corrupted or written in the old format,"
             " which is no longer supported (written before version 19.18)",
             signature, in.getFileName());
