@@ -1,6 +1,8 @@
 #include <Common/EnvironmentChecks.h>
 #include <Common/IO.h>
 
+#include "config.h"
+
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -123,6 +125,32 @@ void checkPreloadConfigurationFile()
 }
 
 
+/// Returns the address of the ELF header of the vDSO, or zero if there is no vDSO.
+uintptr_t getVDSOAddress()
+{
+    if (uintptr_t address = getauxval(AT_SYSINFO_EHDR))
+        return address;
+
+    /// `getauxval` returns zero for `AT_SYSINFO_EHDR` in some cases, although the kernel maps the vDSO,
+    /// e.g., on AArch64 with glibc 2.35 when the program is started by invoking the dynamic loader explicitly
+    /// (`/lib/ld-linux-aarch64.so.1 ./clickhouse`). Read the auxiliary vector provided by the kernel directly.
+    std::string auxv;
+    /// `/proc` may be not mounted, e.g., in a chroot.
+    if (!readFile("/proc/self/auxv", auxv))
+        return 0;
+
+    for (size_t pos = 0; pos + sizeof(ElfW(auxv_t)) <= auxv.size(); pos += sizeof(ElfW(auxv_t)))
+    {
+        ElfW(auxv_t) entry;
+        memcpy(&entry, auxv.data() + pos, sizeof(entry));
+        if (entry.a_type == AT_NULL)
+            break;
+        if (entry.a_type == AT_SYSINFO_EHDR)
+            return entry.a_un.a_val;
+    }
+    return 0;
+}
+
 struct LoadedObject
 {
     std::string_view path;
@@ -143,16 +171,23 @@ uintptr_t correctAddress(uintptr_t base, uintptr_t ptr)
     return ptr > base ? ptr : base + ptr;
 }
 
+struct LoadedObjects
+{
+    std::vector<LoadedObject> objects;
+    uintptr_t vdso_address = 0;
+};
+
 int collectLoadedObject(dl_phdr_info * info, size_t, void * data)
 {
-    auto & objects = *static_cast<std::vector<LoadedObject> *>(data);
+    auto & state = *static_cast<LoadedObjects *>(data);
+    auto & objects = state.objects;
 
     LoadedObject object;
     object.path = info->dlpi_name ? info->dlpi_name : "";
     /// The first object is always the main executable.
     object.is_main_executable = objects.empty();
 
-    if (uintptr_t vdso_ehdr = getauxval(AT_SYSINFO_EHDR))
+    if (uintptr_t vdso_ehdr = state.vdso_address)
     {
         const auto * ehdr = reinterpret_cast<const ElfW(Ehdr) *>(vdso_ehdr);
         object.is_vdso = reinterpret_cast<uintptr_t>(info->dlpi_phdr) == vdso_ehdr + ehdr->e_phoff;
@@ -201,14 +236,17 @@ int collectLoadedObject(dl_phdr_info * info, size_t, void * data)
 
 /// Every shared object in our address space must be either the main executable, the vDSO,
 /// or a (transitive) dependency of the main executable, listed in `DT_NEEDED`.
-/// Anything else was injected - with `LD_PRELOAD`, `/etc/ld.so.preload`, or loaded with `dlopen`, which we don't use.
+/// Anything else was injected - with `LD_PRELOAD`, `/etc/ld.so.preload`, or loaded with `dlopen`, which we don't use
+/// (except for the OpenSSL FIPS provider, see below).
 /// This check has to run early in `main`, before glibc loads its own plugins on demand,
 /// such as NSS modules or `libgcc_s` for unwinding on thread cancellation.
 /// Returns the addresses of all loaded objects.
 std::vector<uintptr_t> checkLoadedObjects()
 {
-    std::vector<LoadedObject> objects;
-    dl_iterate_phdr(collectLoadedObject, &objects);
+    LoadedObjects state;
+    state.vdso_address = getVDSOAddress();
+    dl_iterate_phdr(collectLoadedObject, &state);
+    const auto & objects = state.objects;
 
     std::vector<bool> expected(objects.size());
     std::vector<std::string_view> expected_names;
@@ -219,8 +257,20 @@ std::vector<uintptr_t> checkLoadedObjects()
         expected_names.insert(expected_names.end(), objects[i].needed.begin(), objects[i].needed.end());
     };
 
+    /// In a build with OpenSSL FIPS, the FIPS provider is loaded with `dlopen` (which is allowed only in this build,
+    /// see `programs/main.cpp`) according to the OpenSSL configuration. It happens in the initialization
+    /// of OpenSSL by a global constructor, before `main`. The provider is not a dependency of the binary.
+    auto is_openssl_fips_provider = []([[maybe_unused]] const LoadedObject & object)
+    {
+#if USE_OPENSSL_FIPS
+        return object.name == "fips.so";
+#else
+        return false;
+#endif
+    };
+
     for (size_t i = 0; i < objects.size(); ++i)
-        if (objects[i].is_main_executable || objects[i].is_vdso)
+        if (objects[i].is_main_executable || objects[i].is_vdso || is_openssl_fips_provider(objects[i]))
             mark_expected(i);
 
     /// Compute the transitive closure of dependencies. The number of objects is tiny.
