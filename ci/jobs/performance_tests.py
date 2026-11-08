@@ -1914,7 +1914,8 @@ def dashboard_api_get(path, params=None, *, deadline):
     caller can retry the whole step or fail the check with the reason. It is a
     `PerfDashboardUnavailable` when the dashboard did not answer: a transport
     failure, or an HTTP error that `dashboard_did_not_answer` recognizes.
-    No request starts after `deadline`, and each socket operation waits at most until it."""
+    No request starts after `deadline`. Each socket operation of a request
+    waits at most 60 s, or the time that was left when the request started."""
     url = f"{PERF_DASHBOARD_API_URL}{path}"
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
@@ -2064,8 +2065,7 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     `PerfDashboardUnavailable` when no verdict could be obtained because CIDB
     or the dashboard did not answer, and a plain `PerfDashboardError` for every
     other reason; the caller fails the check on the latter rather than passing
-    a run nobody has judged. No request starts once `deadline` has passed, and
-    none waits past it on a socket operation."""
+    a run nobody has judged. No request starts once `deadline` has passed."""
     if missing_inputs:
         reasons = missing_inputs.values()
         unavailable = any(isinstance(r, CIDBUnavailableReason) for r in reasons) and all(
