@@ -25,7 +25,8 @@ public:
         SharedHeader header,
         const ColumnsDescription & columns_,
         IInputFormat & input_format_,
-        ContextPtr context_);
+        ContextPtr context_,
+        DefaultExpressionsSetsPtr default_expressions_sets_ = nullptr);
 
     String getName() const override { return "AddingDefaultsTransform"; }
 
@@ -41,6 +42,8 @@ private:
     ContextPtr context;
 
     /// The sets of the defaults that read a table (`x IN table`), built once for all chunks rather than per chunk.
+    /// The readers of one query that create a transform per file or stream pass the sets of the query
+    /// (`FormatParserSharedResources::default_expressions_sets`), so that they are built once per query.
     const DefaultExpressionsSetsPtr default_expressions_sets;
 
     /// The default-expression actions are built per chunk inside `transform`, so `onCancel`

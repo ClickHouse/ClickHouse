@@ -2377,7 +2377,8 @@ Chunk StorageFileSource::generate()
             {
                 builder.addSimpleTransform([&](const SharedHeader & header)
                 {
-                    return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    return std::make_shared<AddingDefaultsTransform>(
+                        header, columns_description, *input_format, getContext(), parser_shared_resources->default_expressions_sets);
                 });
             }
 
@@ -3232,7 +3233,9 @@ public:
                 {
                     builder.addSimpleTransform([&](const SharedHeader & block_header)
                     {
-                        return std::make_shared<AddingDefaultsTransform>(block_header, info.columns_description, *input_format, getContext());
+                        return std::make_shared<AddingDefaultsTransform>(
+                            block_header, info.columns_description, *input_format, getContext(),
+                            parser_shared_resources->default_expressions_sets);
                     });
                 }
 

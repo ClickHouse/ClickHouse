@@ -191,13 +191,14 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
-    ContextPtr context_)
+    ContextPtr context_,
+    DefaultExpressionsSetsPtr default_expressions_sets_)
     : ISimpleTransform(header, header, true)
     , columns(columns_)
     , column_defaults(columns.getDefaults())
     , input_format(input_format_)
     , context(context_)
-    , default_expressions_sets(createDefaultExpressionsSets())
+    , default_expressions_sets(default_expressions_sets_ ? std::move(default_expressions_sets_) : createDefaultExpressionsSets())
 {
 }
 
