@@ -1066,6 +1066,21 @@ def test_identity_partition_column_nested_field_sibling_kept_in_data_files(
         == "1\tx\t10\n2\ty\t20"
     )
 
+    # The files store `s` without `c`, so a TopN threshold applied inside the reader would drop the top row.
+    top_k_settings = {
+        "use_top_k_dynamic_filtering": 1,
+        "use_top_k_dynamic_filtering_for_variable_length_types": 1,
+        "max_threads": 1,
+    }
+    for direction, expected in [("ASC", "('x',10)"), ("DESC", "('y',20)")]:
+        assert (
+            instance.query(
+                f"SELECT s FROM {table_expression} ORDER BY s {direction} LIMIT 1",
+                settings=top_k_settings,
+            ).strip()
+            == expected
+        ), direction
+
     # A table-level format other than Parquet leaves the parent tuple as the only header column,
     # which is where taking the other elements from defaults would be least visible.
     orc_expression = (
