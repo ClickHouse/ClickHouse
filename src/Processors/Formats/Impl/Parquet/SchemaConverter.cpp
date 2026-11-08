@@ -645,7 +645,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         return false;
     /// If an element is declared as MAP, but doesn't have the expected structure of children
     /// and grandchildren, we fall back to interpreting it as array of tuples, as if there were
-    /// no MAP annotation on it. Also fall back if a Tuple type naming the repeated group was requested
+    /// no MAP annotation on it. Also fall back if a positional Tuple or one naming the repeated group was requested
     /// (presumably `Tuple(Array(Tuple(key, value))` - a literal interpretation of the schema tree)
     /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
     if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
@@ -657,8 +657,7 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         return false;
     if (const auto * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
     {
-        /// Matched as in processSubtreeTuple. A Tuple that names nothing in the file (e.g. a struct of a data lake schema)
-        /// is a different type and is rejected below.
+        /// Names are matched as in processSubtreeTuple; any other Tuple is rejected below.
         bool literal = !tuple_type_hint->hasExplicitNames() || tuple_type_hint->getElements().empty();
         if (!literal)
         {
