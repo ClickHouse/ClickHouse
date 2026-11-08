@@ -39,34 +39,17 @@ FROM
     ORDER BY part DESC
 );
 
--- A genuine small legacy state has the same payload fields. The new reader accepts version 2
--- and reserializes it as version 3 without losing points or changing the result.
-SELECT 'legacy_state';
-SELECT
-    length(groupConvexHullMerge(s)) = 5,
-    startsWith(hex(groupConvexHullMergeState(s)), '03')
-FROM
-(
-    SELECT CAST(unhex(concat('02', substring(hex(groupConvexHullState(pt)), 3)))
-        AS AggregateFunction(groupConvexHull, Point)) AS s
-    FROM
-    (
-        SELECT (toFloat64(number % 2), toFloat64(intDiv(number, 2) % 2))::Point AS pt
-        FROM numbers(10000)
-    )
-);
-
--- Earlier version-3 writers could leave an adaptive suffix. The current writer compacts
--- it, so construct the old metadata explicitly: 35,004 points, watermark 20,003.
-SELECT 'adaptive_legacy_suffix';
-SELECT length(finalizeAggregation(CAST(unhex(concat('03BC9102A39C01', substring(hex(s), 15)))
-    AS AggregateFunction(groupConvexHull, Point)))) = 35005 FROM hull_adaptive_state;
-
--- Downgrading that adaptive suffix must fail the version-2 invariant.
-SELECT 'legacy_rejects_adaptive_gap';
-SELECT finalizeAggregation(CAST(unhex(concat('02BC9102A39C01', substring(hex(s), 15)))
+-- Only the current state version is accepted.
+SELECT 'other_version_rejected';
+SELECT finalizeAggregation(CAST(unhex(concat('02', substring(hex(s), 3)))
     AS AggregateFunction(groupConvexHull, Point)))
 FROM hull_adaptive_state; -- { serverError INCORRECT_DATA }
+
+-- The format allows an uncompressed suffix proportional to the compressed prefix. The writer
+-- compacts it, so construct such metadata explicitly: 35,004 points, watermark 20,003.
+SELECT 'adaptive_suffix';
+SELECT length(finalizeAggregation(CAST(unhex(concat('03BC9102A39C01', substring(hex(s), 15)))
+    AS AggregateFunction(groupConvexHull, Point)))) = 35005 FROM hull_adaptive_state;
 
 -- Version 3 still rejects a growth gap beyond its adaptive threshold before reading payload.
 SELECT 'adaptive_rejects_excess_growth';

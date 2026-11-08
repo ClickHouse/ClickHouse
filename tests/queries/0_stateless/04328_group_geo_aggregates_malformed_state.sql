@@ -11,7 +11,7 @@ SELECT groupConvexHullMerge(state) FROM (
 ); -- { serverError INCORRECT_DATA }
 
 -- 2. `groupPolygonUnion`: reject a grossly oversized chunk count (varint 100000).
---    The version-1 reader retains the legacy limit of 16 chunks.
+--    A union state has at most 16 chunks.
 SELECT 'union_oversized_chunks';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
@@ -89,7 +89,7 @@ SELECT groupPolygonUnionMerge(state) FROM (
 SELECT 'convex_hull_oversized_points';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '02',          -- version
+        '03',          -- version
         '81C2D72F',    -- 100000001 points (limit 100000000)
         '81C2D72F'     -- watermark = point count; the size guard must fire first
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
@@ -116,7 +116,7 @@ SELECT groupPolygonUnionMerge(state) FROM (
 SELECT 'convex_hull_inf_coordinate';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '02',                  -- version
+        '03',                  -- version
         '01',                  -- 1 point
         '00',                  -- compression watermark
         '000000000000F07F',    -- x = +Inf (little-endian IEEE 754)
@@ -128,7 +128,7 @@ SELECT groupConvexHullMerge(state) FROM (
 SELECT 'convex_hull_invalid_watermark';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '02',  -- version
+        '03',  -- version
         '01',  -- 1 point
         '02'   -- compression watermark = 2
     )) AS AggregateFunction(groupConvexHull, Point)) AS state

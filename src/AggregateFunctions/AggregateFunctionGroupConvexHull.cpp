@@ -40,7 +40,6 @@ constexpr size_t CONVEX_HULL_COMPRESSION_THRESHOLD = 10000;
 /// Bound materialization independently of the size of the accumulated hull. The first
 /// complete batch exceeds the minimum compression threshold by one point.
 constexpr size_t CONVEX_HULL_INGESTION_BATCH_SIZE = CONVEX_HULL_COMPRESSION_THRESHOLD + 1;
-constexpr UInt8 GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION = 2;
 constexpr UInt8 GROUP_CONVEX_HULL_SERDE_VERSION = 3;
 
 size_t convexHullCompressionThreshold(size_t size_after_compression)
@@ -294,13 +293,12 @@ public:
     {
         UInt8 version = 0;
         readBinaryLittleEndian(version, buf);
-        if (version != GROUP_CONVEX_HULL_SERDE_VERSION && version != GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION)
+        if (version != GROUP_CONVEX_HULL_SERDE_VERSION)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Unsupported serialization version {} for aggregate function {} (expected {} or {})",
+                "Unsupported serialization version {} for aggregate function {} (expected {})",
                 static_cast<int>(version),
                 getName(),
-                static_cast<int>(GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION),
                 static_cast<int>(GROUP_CONVEX_HULL_SERDE_VERSION));
 
         UInt64 size = 0;
@@ -323,12 +321,9 @@ public:
                 size_after_compression,
                 size);
 
-        /// Version 2 had a fixed growth threshold. Version 3 preserves the same fields but
-        /// allows growth proportional to the compressed prefix. Check each writer's invariant
-        /// before reading the coordinate payload, including when accepting legacy states.
-        const size_t compression_threshold = version == GROUP_CONVEX_HULL_LEGACY_SERDE_VERSION
-            ? CONVEX_HULL_COMPRESSION_THRESHOLD
-            : convexHullCompressionThreshold(static_cast<size_t>(size_after_compression));
+        /// Growth since the last compression is bounded proportionally to the compressed prefix.
+        /// Check the writer's invariant before reading the coordinate payload.
+        const size_t compression_threshold = convexHullCompressionThreshold(static_cast<size_t>(size_after_compression));
         if (size - size_after_compression > compression_threshold)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,

@@ -31,7 +31,7 @@ namespace
 constexpr size_t MAX_SERIALIZED_UNION_CHUNKS = 16;
 
 
-/// A factor of four keeps the number of occupied tiers within the version-1 wire limit.
+/// A factor of four keeps the number of occupied tiers within the wire limit on chunks.
 /// Cache point counts: recounting a large retained chunk on each input would itself be quadratic.
 constexpr size_t unionChunkTier(size_t points)
 {
@@ -240,8 +240,8 @@ public:
         auto & data = AggregateFunctionGroupPolygonUnion::data(place);
         UInt64 chunk_count = 0;
         readVarUInt(chunk_count, buf);
-        /// Version 1 allowed up to 16 arbitrary chunks. The size tiers use fewer chunks without
-        /// changing that format; retain the old bound when reading existing states.
+        /// A written state has at most one chunk per size tier, which the `static_assert` above keeps
+        /// within this bound. Crafted states may order their chunks arbitrarily; they are re-tiered below.
         if (chunk_count > MAX_SERIALIZED_UNION_CHUNKS)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,

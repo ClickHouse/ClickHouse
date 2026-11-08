@@ -1,6 +1,6 @@
 -- A `NonEmpty` intersection state is always a fully reduced running intersection. Once two
--- inputs are disjoint, direct aggregation, state merging, and compatibility deserialization must
--- all persist the absorbing `Empty` mode (`01` version + `02` mode) rather than two pending chunks.
+-- inputs are disjoint, direct aggregation and state merging must both persist the absorbing
+-- `Empty` mode (`01` version + `02` mode) rather than two pending chunks.
 
 SELECT 'direct_state_serializes_empty';
 SELECT hex(groupPolygonIntersectionState(p)) = '0102'
@@ -30,7 +30,7 @@ FROM
     )
 );
 
-SELECT 'legacy_two_chunk_state_reduces_on_read';
+SELECT 'two_chunk_state_rejected';
 WITH
     hex(groupPolygonIntersectionState(
         readWKTPolygon('POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))'))) AS state1,
@@ -38,4 +38,4 @@ WITH
         readWKTPolygon('POLYGON ((10 10, 10 11, 11 11, 11 10, 10 10))'))) AS state2
 SELECT hex(CAST(
     unhex(concat('010102', substring(state1, 7), substring(state2, 7)))
-    AS AggregateFunction(groupPolygonIntersection, Polygon))) = '0102';
+    AS AggregateFunction(groupPolygonIntersection, Polygon))) = '0102'; -- { serverError INCORRECT_DATA }

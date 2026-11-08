@@ -31,9 +31,6 @@ extern const int INCORRECT_DATA;
 namespace
 {
 
-/// Keep accepting version-1 states emitted by the previous chunked implementation.
-constexpr size_t MAX_SERIALIZED_INTERSECT_CHUNKS = 8;
-
 /// Compare exact vertex cycles without changing the stored ring or allocating a rotated copy.
 /// Rings have already been oriented and checked for finite coordinates.
 bool equalExteriorCycles(const CartesianRing & left, const CartesianRing & right)
@@ -686,38 +683,22 @@ public:
         {
             UInt64 chunk_count = 0;
             readVarUInt(chunk_count, buf);
-            if (chunk_count == 0)
+            /// A `NonEmpty` state is always a fully reduced running intersection: exactly one chunk.
+            if (chunk_count != 1)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Corrupted state of aggregate function {}: mode is NonEmpty but chunk count is 0",
-                    getName());
-            /// Version-1 states from the previous chunked implementation could contain up to
-            /// eight chunks. Reject larger shapes before the expensive compatibility reduction.
-            if (chunk_count > MAX_SERIALIZED_INTERSECT_CHUNKS)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Corrupted state of aggregate function {}: {} chunks (limit {})",
+                    "Corrupted state of aggregate function {}: mode is NonEmpty but chunk count is {} (expected 1)",
                     getName(),
-                    chunk_count,
-                    MAX_SERIALIZED_INTERSECT_CHUNKS);
+                    chunk_count);
 
-            data.chunks.resize(chunk_count);
+            data.chunks.resize(1);
             PolygonalStateBudget budget;
-            for (UInt64 i = 0; i < chunk_count; ++i)
-            {
-                data.chunks[i] = deserializeGeoMultiPolygon(buf, name, budget);
-                validateDeserializedMultiPolygon(data.chunks[i], name);
-            }
+            data.chunks[0] = deserializeGeoMultiPolygon(buf, name, budget);
+            validateDeserializedMultiPolygon(data.chunks[0], name);
             /// `validateDeserializedMultiPolygon` runs `boost::geometry::correct`, which can
             /// append closing points not charged against `budget.points`. Recount from the
             /// normalized geometry and re-enforce the cap.
             data.total_points = recountPolygonalPointsAndCheck(data.chunks, name);
-
-            /// Restore the eager invariant before this state can be merged or serialized again.
-            /// A legacy state whose chunks are already disjoint becomes the absorbing `Empty`
-            /// state here rather than carrying a logically empty `NonEmpty` value forward.
-            if (data.chunks.size() > 1)
-                data.reduce(name);
         }
     }
 

@@ -8,9 +8,9 @@ add_after_finalization
 0	0
 merge_after_finalization
 561	33
-legacy_unordered_chunks
+crafted_unordered_chunks
 85	85
-legacy_open_rings
+crafted_open_rings
 1	1	5
 containing_polygon_first
 1	16384

@@ -1,6 +1,6 @@
--- Legacy version-1 states can contain up to 16 chunks for `groupPolygonUnion` and 8 for
--- `groupPolygonIntersection`. Readers must keep accepting these boundary states while rejecting
--- a fully valid crafted state with one additional chunk.
+-- A `groupPolygonUnion` state can contain up to 16 chunks, and a non-empty `groupPolygonIntersection`
+-- state exactly one. Readers must accept these boundary states and reject a fully valid crafted
+-- state with one additional chunk.
 
 SELECT 'union_chunk_count_at_limit';
 SELECT round(polygonAreaCartesian(groupPolygonUnionMerge(state)), 2)
@@ -32,15 +32,15 @@ FROM
     )
 ); -- { serverError INCORRECT_DATA }
 
-SELECT 'intersect_chunk_count_at_limit';
+SELECT 'intersect_chunk_count_one';
 SELECT round(polygonAreaCartesian(groupPolygonIntersectionMerge(state)), 2)
 FROM
 (
     SELECT CAST(unhex(concat(
         '01',  -- version
         '01',  -- mode = NonEmpty
-        '08',  -- 8 chunks
-        repeat(substring(hex(groupPolygonIntersectionState(p)), 7), 8)
+        '01',  -- 1 chunk
+        substring(hex(groupPolygonIntersectionState(p)), 7)
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
     FROM
     (
@@ -48,15 +48,15 @@ FROM
     )
 );
 
-SELECT 'intersect_chunk_count_above_limit';
+SELECT 'intersect_chunk_count_two';
 SELECT groupPolygonIntersectionMerge(state)
 FROM
 (
     SELECT CAST(unhex(concat(
         '01',  -- version
         '01',  -- mode = NonEmpty
-        '09',  -- 9 chunks
-        repeat(substring(hex(groupPolygonIntersectionState(p)), 7), 9)
+        '02',  -- 2 chunks
+        repeat(substring(hex(groupPolygonIntersectionState(p)), 7), 2)
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
     FROM
     (

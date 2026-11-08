@@ -58,9 +58,9 @@ FROM
     GROUP BY id ORDER BY id
 );
 
--- Legacy states can contain arbitrary chunk orders and several different point counts.
--- Assemble the old wire representation directly, with the largest chunk first.
-SELECT 'legacy_unordered_chunks';
+-- Crafted states can contain arbitrary chunk orders and several different point counts.
+-- Assemble the wire representation directly, with the largest chunk first.
+SELECT 'crafted_unordered_chunks';
 SELECT length(groupPolygonUnionMerge(s)), polygonAreaCartesian(groupPolygonUnionMerge(s))
 FROM
 (
@@ -82,8 +82,8 @@ FROM
     )
 );
 
--- Every open legacy ring gains a closing point before its size is assigned to a tier.
-SELECT 'legacy_open_rings';
+-- Every open ring in a crafted state gains a closing point before its size is assigned to a tier.
+SELECT 'crafted_open_rings';
 SELECT length(groupPolygonUnionMerge(s)), polygonAreaCartesian(groupPolygonUnionMerge(s)),
     arraySum(p -> arraySum(r -> length(r), p), groupPolygonUnionMerge(s))
 FROM
