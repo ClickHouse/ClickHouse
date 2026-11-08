@@ -97,7 +97,6 @@ private:
     VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
     VectorWithMemoryTracking<AggregateWindowFunctionSlot> aggregate_functions;
     MutableColumns current_results;
-    WindowFunctionRequirements required;
     Int64 first_row_read_by_functions = 0;
 
     /// Pending batch for evaluation.

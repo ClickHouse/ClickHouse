@@ -1,11 +1,12 @@
 #pragma once
 
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
+
 #include <Interpreters/WindowDescription.h>
+
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Block.h>
-
-#include <vector>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ struct WindowTransformParams
     const VectorWithMemoryTracking<size_t> order_by_indices;
     const VectorWithMemoryTracking<bool> should_materialize;
     const RangeOffsetComparator range_offset_comparator;
+    const WindowFunctionRequirements required;
 
 public:
     static WindowTransformParams create(

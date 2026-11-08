@@ -12,7 +12,7 @@ void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
     partition_bounds = PartitionBounds{
         .start = RowPoint{.location = first_row},
-        .end = RowPoint{.location = blocks.next(first_row), .row_index_in_partition = 1, .peer_group_index_in_partition = 1},
+        .end = RowPoint{.location = blocks.next(first_row), .row_index_in_partition = 1},
         .fully_visible = false,
     };
     advance(blocks);
@@ -32,7 +32,6 @@ void Partition::advance(const SlidingBlocks & blocks)
         const int64_t rows_passed = next_start - end.location.row;
         if (rows_passed > 0)
         {
-            end.peer_group_index_in_partition = block.index.peer_group_indexes[next_start - 1] + 1;
             end.row_index_in_partition += rows_passed;
             end.location = blocks.move(end.location, rows_passed);
         }
