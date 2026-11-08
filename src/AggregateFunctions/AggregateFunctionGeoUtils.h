@@ -77,7 +77,6 @@ void normalizeAndValidatePolygonalResult(
 /// concatenation of two valid operands separated by more than the validator's tolerance.
 bool unionPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
 void intersectPolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
-void differencePolygonalGeometries(const CartesianMultiPolygon & left, const CartesianMultiPolygon & right, CartesianMultiPolygon & result);
 
 size_t countMultiPolygonPoints(const CartesianMultiPolygon & mp);
 size_t recountPolygonalPointsAndCheck(

@@ -100,11 +100,13 @@ enum class IntersectMode : UInt8
 };
 
 
-/// Rows that share one exterior intersect to that exterior minus the union of all their holes. That
-/// is never empty, because a hole touches the exterior at most at points. Accumulate the union of the
-/// holes in size tiers, as `groupPolygonUnion` does, and compute the difference once, instead of
-/// overlaying and re-validating the whole growing state for every row.
-struct DeferredHoles
+/// Rows that share one exterior intersect to that exterior minus the union of their holes, which is never
+/// empty: a hole touches the exterior at most at points. Emptiness, the reason why the running intersection
+/// is otherwise reduced eagerly, therefore cannot be detected late, so such rows are intersected in size
+/// tiers, as `groupPolygonUnion` unites its inputs. Each row then takes part in a logarithmic number of
+/// overlays of comparable size instead of one overlay with the whole growing state. These are the same
+/// polygon intersections that the eager path performs, only associated differently.
+struct SharedExteriorRows
 {
     struct Chunk
     {
@@ -114,22 +116,23 @@ struct DeferredHoles
 
     CartesianRing exterior;
     std::vector<Chunk> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    size_t hole_points = 0;
+    size_t points = 0;
 
-    size_t points() const { return exterior.size() + hole_points; }
+    static size_t tier(size_t count) { return count ? (std::bit_width(count) - 1) / 2 : 0; }
 
-    static size_t tier(size_t points) { return points ? (std::bit_width(points) - 1) / 2 : 0; }
-
-    static Chunk unite(const Chunk & lhs, const Chunk & rhs, const char * function_name)
+    /// An empty result, which only rounding can produce here, is returned as an empty geometry.
+    static Chunk intersect(const Chunk & lhs, const Chunk & rhs, const char * function_name, std::optional<size_t> max_result_points)
     {
         CartesianMultiPolygon result;
-        const bool valid_by_construction = unionPolygonalGeometries(lhs.geometry, rhs.geometry, result);
-        normalizeAndValidatePolygonalResult(result, function_name, std::nullopt, valid_by_construction);
-        const size_t points = countMultiPolygonPoints(result);
-        return {std::move(result), points};
+        intersectPolygonalGeometries(lhs.geometry, rhs.geometry, result);
+        if (!result.empty())
+            normalizeAndValidatePolygonalResult(result, function_name, max_result_points);
+        const size_t count = countMultiPolygonPoints(result);
+        return {std::move(result), count};
     }
 
-    void insertChunk(Chunk chunk, const char * function_name)
+    /// Returns false if the intersection became empty.
+    bool insert(Chunk chunk, const char * function_name)
     {
         while (true)
         {
@@ -139,78 +142,61 @@ struct DeferredHoles
             });
             if (it == chunks.end())
             {
-                hole_points += chunk.points;
+                points += chunk.points;
                 chunks.push_back(std::move(chunk));
-                return;
+                break;
             }
-            auto combined = unite(*it, chunk, function_name);
-            hole_points -= it->points;
+            auto combined = intersect(*it, chunk, function_name, std::nullopt);
+            points -= it->points;
             chunks.erase(it);
+            if (combined.geometry.empty())
+                return false;
             chunk = std::move(combined);
         }
+        /// Overlap between tiers can make their sum larger than the actual intersection.
+        return points <= MAX_POINTS_IN_POLYGONAL_STATE || reduceAll(function_name);
     }
 
-    /// The holes of one valid polygon are a valid multi-polygon once each is oriented as an exterior:
-    /// their interiors are disjoint and they touch at most at points.
-    void addHoles(const CartesianPolygon & polygon, const char * function_name)
+    bool add(const CartesianMultiPolygon & row, const char * function_name)
     {
-        if (polygon.inners().empty())
-            return;
-        Chunk chunk{{}, 0};
-        chunk.geometry.resize(polygon.inners().size());
-        for (size_t i = 0; i < polygon.inners().size(); ++i)
-            chunk.geometry[i].outer() = polygon.inners()[i];
-        boost::geometry::correct(chunk.geometry);
-        chunk.points = countMultiPolygonPoints(chunk.geometry);
-        insertChunk(std::move(chunk), function_name);
-        compactIfOverBudget(function_name);
+        return insert({row, countMultiPolygonPoints(row)}, function_name);
     }
 
-    void reduceAll(const char * function_name)
+    /// Returns false if the intersection is empty. Otherwise leaves exactly one chunk within the point budget.
+    bool reduceAll(const char * function_name)
     {
         while (chunks.size() > 1)
         {
-            auto combined = unite(chunks[chunks.size() - 2], chunks.back(), function_name);
-            hole_points -= chunks[chunks.size() - 2].points + chunks.back().points;
-            hole_points += combined.points;
+            std::sort(chunks.begin(), chunks.end(), [](const auto & lhs, const auto & rhs) { return lhs.points > rhs.points; });
+            auto combined = intersect(
+                chunks[chunks.size() - 2], chunks.back(), function_name,
+                chunks.size() == 2 ? std::optional{MAX_POINTS_IN_POLYGONAL_STATE} : std::nullopt);
+            points -= chunks[chunks.size() - 2].points + chunks.back().points;
             chunks.pop_back();
+            if (combined.geometry.empty())
+            {
+                chunks.clear();
+                points = 0;
+                return false;
+            }
+            points += combined.points;
             chunks.back() = std::move(combined);
         }
-    }
-
-    void compactIfOverBudget(const char * function_name)
-    {
-        if (points() <= MAX_POINTS_IN_POLYGONAL_STATE)
-            return;
-        reduceAll(function_name);
-        if (points() > MAX_POINTS_IN_POLYGONAL_STATE)
+        if (points > MAX_POINTS_IN_POLYGONAL_STATE)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Aggregate function {} state has too many points after reduction: {} (limit {})",
-                function_name, points(), MAX_POINTS_IN_POLYGONAL_STATE);
+                function_name, points, MAX_POINTS_IN_POLYGONAL_STATE);
+        return true;
     }
 
-    /// The exterior minus the union of the holes, validated like any other overlay result.
+    /// The intersection of all rows, or an empty geometry. Does not change the state.
     CartesianMultiPolygon geometry(const char * function_name) const
     {
-        CartesianMultiPolygon holes;
-        if (!chunks.empty())
-        {
-            Chunk united = chunks[0];
-            for (size_t i = 1; i < chunks.size(); ++i)
-                united = unite(united, chunks[i], function_name);
-            holes = std::move(united.geometry);
-        }
-        CartesianMultiPolygon outer;
-        outer.resize(1);
-        outer[0].outer() = exterior;
-        CartesianMultiPolygon result;
-        differencePolygonalGeometries(outer, holes, result);
-        if (result.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} produced an empty difference for a common exterior", function_name);
-        normalizeAndValidatePolygonalResult(result, function_name, MAX_POINTS_IN_POLYGONAL_STATE);
-        return result;
+        SharedExteriorRows copy = *this;
+        if (!copy.reduceAll(function_name))
+            return {};
+        return std::move(copy.chunks[0].geometry);
     }
 };
 
@@ -229,48 +215,67 @@ struct GroupPolygonIntersectData
     std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t total_points = 0;
     std::unique_ptr<HoleIndex> hole_index;
-    /// While set, the state is `deferred_holes->exterior` minus the union of its holes and `chunks` is empty.
-    std::unique_ptr<DeferredHoles> deferred_holes;
+    /// While set, the state is the intersection of `shared_rows`, and `chunks` is empty.
+    std::unique_ptr<SharedExteriorRows> shared_rows;
 
-    /// Add a single polygon with the deferred exterior. Returns false for any other shape.
-    bool addToDeferredHoles(const CartesianMultiPolygon & incoming, const char * function_name)
+    void setEmpty()
     {
-        if (!deferred_holes || incoming.size() != 1 || !equalExteriorCycles(deferred_holes->exterior, incoming[0].outer()))
-            return false;
-        deferred_holes->addHoles(incoming[0], function_name);
-        total_points = deferred_holes->points();
-        return true;
-    }
-
-    /// Switch to deferred holes when the state and the incoming value are single polygons with the same
-    /// exterior, after the incremental hole paths have failed. Small states keep the eager overlay: its
-    /// cost is negligible there, and it keeps their exact output layout.
-    static constexpr size_t DEFERRED_HOLES_MIN_POINTS = 256;
-
-    bool startDeferredHoles(const CartesianMultiPolygon & incoming, const char * function_name)
-    {
-        if (monotone_hole || total_points < DEFERRED_HOLES_MIN_POINTS || chunks.size() != 1 || chunks[0].size() != 1
-            || incoming.size() != 1 || !equalExteriorCycles(chunks[0][0].outer(), incoming[0].outer()))
-            return false;
-        auto state = std::make_unique<DeferredHoles>();
-        state->exterior = chunks[0][0].outer();
-        state->addHoles(chunks[0][0], function_name);
-        state->addHoles(incoming[0], function_name);
-        deferred_holes = std::move(state);
+        mode = IntersectMode::Empty;
         chunks.clear();
         hole_index.reset();
-        total_points = deferred_holes->points();
+        monotone_hole.reset();
+        shared_rows.reset();
+        total_points = 0;
+    }
+
+    /// Add a single polygon with the shared exterior. Returns false for any other shape.
+    bool addToSharedRows(const CartesianMultiPolygon & incoming, const char * function_name)
+    {
+        if (!shared_rows || incoming.size() != 1 || !equalExteriorCycles(shared_rows->exterior, incoming[0].outer()))
+            return false;
+        if (shared_rows->add(incoming, function_name))
+            total_points = shared_rows->points;
+        else
+            setEmpty();
         return true;
     }
 
-    void materializeDeferredHoles(const char * function_name)
+    /// Start intersecting rows in tiers when the state and the incoming value are single polygons with the
+    /// same exterior, after the incremental hole paths have failed. Small states keep the eager overlay: its
+    /// cost is negligible there, and it keeps their exact output layout.
+    static constexpr size_t SHARED_ROWS_MIN_POINTS = 256;
+
+    bool startSharedRows(const CartesianMultiPolygon & incoming, const char * function_name)
     {
-        if (!deferred_holes)
-            return;
-        auto geometry = deferred_holes->geometry(function_name);
-        deferred_holes.reset();
+        if (monotone_hole || total_points < SHARED_ROWS_MIN_POINTS || chunks.size() != 1 || chunks[0].size() != 1
+            || incoming.size() != 1 || !equalExteriorCycles(chunks[0][0].outer(), incoming[0].outer()))
+            return false;
+        auto state = std::make_unique<SharedExteriorRows>();
+        state->exterior = chunks[0][0].outer();
+        if (!state->add(chunks[0], function_name) || !state->add(incoming, function_name))
+        {
+            setEmpty();
+            return true;
+        }
+        shared_rows = std::move(state);
         chunks.clear();
-        chunks.push_back(std::move(geometry));
+        hole_index.reset();
+        total_points = shared_rows->points;
+        return true;
+    }
+
+    void materializeSharedRows(const char * function_name)
+    {
+        if (!shared_rows)
+            return;
+        auto state = std::move(shared_rows);
+        if (!state->reduceAll(function_name))
+        {
+            setEmpty();
+            return;
+        }
+        chunks.clear();
+        chunks.push_back(std::move(state->chunks[0].geometry));
         recountPoints(function_name);
     }
 
@@ -574,17 +579,19 @@ struct GroupPolygonIntersectData
             chunks.clear();
             hole_index.reset();
             monotone_hole.reset();
-            deferred_holes.reset();
+            shared_rows.reset();
             total_points = 0;
             return;
         }
 
         if (mode == IntersectMode::NonEmpty)
         {
-            if (addToDeferredHoles(mp, function_name))
+            if (addToSharedRows(mp, function_name))
                 return;
-            materializeDeferredHoles(function_name);
-            if (appendOptimizedHoles(mp, function_name) || startDeferredHoles(mp, function_name))
+            materializeSharedRows(function_name);
+            if (mode == IntersectMode::Empty)
+                return;
+            if (appendOptimizedHoles(mp, function_name) || startSharedRows(mp, function_name))
                 return;
         }
 
@@ -612,7 +619,7 @@ struct GroupPolygonIntersectData
             chunks.clear();
             hole_index.reset();
             monotone_hole.reset();
-            deferred_holes.reset();
+            shared_rows.reset();
             total_points = 0;
             return;
         }
@@ -628,8 +635,8 @@ struct GroupPolygonIntersectData
             else
                 chunks = other.chunks;
             total_points = other.total_points;
-            if (other.deferred_holes)
-                deferred_holes = std::make_unique<DeferredHoles>(*other.deferred_holes);
+            if (other.shared_rows)
+                shared_rows = std::make_unique<SharedExteriorRows>(*other.shared_rows);
             if (other.monotone_hole)
             {
                 monotone_hole = std::make_unique<MonotoneHoleState>();
@@ -639,28 +646,38 @@ struct GroupPolygonIntersectData
                 if (other.monotone_hole->components)
                     monotone_hole->components = std::make_unique<GeoMonotoneComponents>(*other.monotone_hole->components);
             }
-            if (!monotone_hole && !deferred_holes && (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE))
+            if (!monotone_hole && !shared_rows && (chunks.size() > 1 || total_points > MAX_POINTS_IN_POLYGONAL_STATE))
                 reduce(function_name);
             return;
         }
 
-        if (other.deferred_holes && deferred_holes && equalExteriorCycles(deferred_holes->exterior, other.deferred_holes->exterior))
+        if (other.shared_rows && shared_rows && equalExteriorCycles(shared_rows->exterior, other.shared_rows->exterior))
         {
-            for (const auto & chunk : other.deferred_holes->chunks)
-                deferred_holes->insertChunk(chunk, function_name);
-            deferred_holes->compactIfOverBudget(function_name);
-            total_points = deferred_holes->points();
+            for (const auto & chunk : other.shared_rows->chunks)
+            {
+                if (!shared_rows->insert(chunk, function_name))
+                {
+                    setEmpty();
+                    return;
+                }
+            }
+            total_points = shared_rows->points;
             return;
         }
 
-        if (!deferred_holes && other.monotone_hole && mergeMonotoneHoles(*other.monotone_hole, function_name))
+        if (!shared_rows && other.monotone_hole && mergeMonotoneHoles(*other.monotone_hole, function_name))
             return;
 
         CartesianMultiPolygon other_geometry;
         const CartesianMultiPolygon * incoming = nullptr;
-        if (other.deferred_holes)
+        if (other.shared_rows)
         {
-            other_geometry = other.deferred_holes->geometry(function_name);
+            other_geometry = other.shared_rows->geometry(function_name);
+            if (other_geometry.empty())
+            {
+                setEmpty();
+                return;
+            }
             incoming = &other_geometry;
         }
         else if (other.monotone_hole)
@@ -670,10 +687,12 @@ struct GroupPolygonIntersectData
         }
         else if (other.chunks.size() == 1)
             incoming = other.chunks.data();
-        if (incoming && addToDeferredHoles(*incoming, function_name))
+        if (incoming && addToSharedRows(*incoming, function_name))
             return;
-        materializeDeferredHoles(function_name);
-        if (incoming && (appendOptimizedHoles(*incoming, function_name) || startDeferredHoles(*incoming, function_name)))
+        materializeSharedRows(function_name);
+        if (mode == IntersectMode::Empty)
+            return;
+        if (incoming && (appendOptimizedHoles(*incoming, function_name) || startSharedRows(*incoming, function_name)))
             return;
         materializeMonotoneHole();
 
@@ -690,7 +709,9 @@ struct GroupPolygonIntersectData
     /// Balanced pairwise reduction with early-empty short-circuit.
     void reduce(const char * function_name)
     {
-        materializeDeferredHoles(function_name);
+        materializeSharedRows(function_name);
+        if (mode == IntersectMode::Empty)
+            return;
         materializeMonotoneHole();
         if (chunks.size() <= 1)
         {
@@ -765,8 +786,8 @@ struct GroupPolygonIntersectData
                 chunks.push_back(monotoneGeometry());
             return chunks[0];
         }
-        /// Finalizing a deferred state keeps it as the materialized difference, which later rows extend
-        /// through the ordinary paths.
+        /// Finalizing tiered shared-exterior rows keeps their materialized intersection, which later rows
+        /// extend through the ordinary paths.
         reduce(function_name);
         if (mode == IntersectMode::Empty || chunks.empty())
             return empty_result;
@@ -829,20 +850,25 @@ public:
         writeBinaryLittleEndian(GEO_SERDE_VERSION, buf);
 
         const auto & data = AggregateFunctionGroupPolygonIntersect::data(place);
-        writeBinaryLittleEndian(static_cast<UInt8>(data.mode), buf);
+        /// Tiered rows are written as their intersection, which rounding alone could make empty.
+        std::optional<CartesianMultiPolygon> shared_geometry;
+        if (data.mode == IntersectMode::NonEmpty && data.shared_rows)
+            shared_geometry = data.shared_rows->geometry(name);
+        const auto mode = shared_geometry && shared_geometry->empty() ? IntersectMode::Empty : data.mode;
+        writeBinaryLittleEndian(static_cast<UInt8>(mode), buf);
 
-        if (data.mode == IntersectMode::NonEmpty)
+        if (mode == IntersectMode::NonEmpty)
         {
+            if (shared_geometry)
+            {
+                writeVarUInt(1, buf);
+                serializeGeoMultiPolygon(*shared_geometry, buf);
+                return;
+            }
             if (data.monotone_hole)
             {
                 writeVarUInt(1, buf);
                 serializeGeoMultiPolygon(data.monotoneGeometry(), buf);
-                return;
-            }
-            if (data.deferred_holes)
-            {
-                writeVarUInt(1, buf);
-                serializeGeoMultiPolygon(data.deferred_holes->geometry(name), buf);
                 return;
             }
             chassert(data.chunks.size() == 1);
@@ -867,7 +893,7 @@ public:
         auto & data = AggregateFunctionGroupPolygonIntersect::data(place);
         data.monotone_hole.reset();
         data.hole_index.reset();
-        data.deferred_holes.reset();
+        data.shared_rows.reset();
         UInt8 mode_val = 0;
         readBinaryLittleEndian(mode_val, buf);
         if (mode_val > static_cast<UInt8>(IntersectMode::Empty))
