@@ -628,6 +628,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         }
         case DatabaseDataLakeCatalogType::UNITY:
         {
+#if USE_DELTA_KERNEL_RS
             switch (type)
             {
 #if USE_AWS_S3
@@ -663,6 +664,10 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                                     "Server does not contain support for storage type {} for Unity catalog",
                                     type);
             }
+#else
+            /// The Unity catalogs mark Delta Lake tables unreadable without `delta-kernel-rs`.
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Unity catalog requires the server to be built with delta-kernel-rs");
+#endif
         }
         case DatabaseDataLakeCatalogType::GLUE:
         {

@@ -88,6 +88,7 @@ public:
 
     size_t getFileSize() const { return file_size; }
     bool isLocalFile() const { return is_local_file; }
+    bool isEntireFileInMemory() const { return read_mode == ReadMode::EntireFileIsInMemory; }
 
     /// Whether started prefetches are read by background tasks that can run in parallel.
     bool readsInBackground() const;
