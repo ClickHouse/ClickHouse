@@ -27,6 +27,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
@@ -657,6 +658,22 @@ void ReadFromMergeTree::initPartialAggregateCacheReaderSettings()
                 continue;
             const auto * virtual_column = virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All);
             if (virtual_column && !virtual_column->deterministic)
+            {
+                can_use = false;
+                break;
+            }
+        }
+    }
+
+    /// The reader computes the values of columns missing in a part from their default expressions. If such an expression
+    /// is not deterministic, e.g. it reads a dictionary with `dictGet`, the values change without a change of the part
+    /// or of the metadata. The determinism check of the query does not see these expressions, so check them here. All
+    /// columns are checked, not only the ones read, because a default expression can refer to other columns.
+    if (can_use)
+    {
+        for (const auto & column : storage_snapshot->metadata->getColumns())
+        {
+            if (column.default_desc.expression && astContainsNonDeterministicFunctions(column.default_desc.expression, context))
             {
                 can_use = false;
                 break;
