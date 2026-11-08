@@ -13,11 +13,12 @@ sys.path.append(".")
 from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
 from ci.praktika.git import Git
+from ci.praktika.info import Info
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
+from ci.settings.settings import CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
 class CheckStatuses:
@@ -155,7 +156,7 @@ class CreateIssue:
 Test name: {test_name}
 Failure reason: {failure_reason}
 {ci_report_line}
-Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
+Failing test history: [cidb]({CIDB(url=CIDB.get_read_url(Info()), user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
 ```
