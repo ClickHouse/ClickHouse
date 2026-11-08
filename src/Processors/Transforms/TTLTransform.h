@@ -38,14 +38,17 @@ public:
 
     static SharedHeader addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_);
 
-    /// The columns a transform built with the same arguments resets to their default: the ones with a
-    /// column TTL and the expired ones.
-    static NameSet getResetColumns(const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_);
-
-    /// The `MATERIALIZED` columns a transform built with the same arguments recomputes. A stale dependent
-    /// that is expired, read by a key or non-deterministic is not among them.
-    static NameSet getRecomputedColumns(
-        const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_);
+    /// The columns whose `DEFAULT` or `MATERIALIZED` expression a transform built with the same arguments
+    /// evaluates: the expired ones, the ones whose column TTL is due, which `TTLColumnAlgorithm` resets to their
+    /// default, and the dependents that it recomputes. A stale dependent that is expired, read by a key or
+    /// non-deterministic is not recomputed.
+    static NameSet getColumnsWithEvaluatedDefaults(
+        const MergeTreeData & storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeDataPartTTLInfos & ttl_infos,
+        const NamesAndTypesList & expired_columns_,
+        time_t current_time,
+        bool force);
 
 protected:
     void consume(Chunk chunk) override;
@@ -103,6 +106,9 @@ private:
 
     /// Ordered by `before_algorithm`.
     VectorWithMemoryTracking<RecomputeStage> recompute_stages;
+
+    /// The columns this transform may reset to their default: the ones with a column TTL and the expired ones.
+    static NameSet getResetColumns(const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_);
 
     /// The `MATERIALIZED` columns that resetting `reset_columns` makes stale, grouped into levels: a
     /// dependent may read another dependent (`m2 MATERIALIZED m1 + 1`), and a column of level `i` reads

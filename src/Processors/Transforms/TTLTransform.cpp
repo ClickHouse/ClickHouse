@@ -139,20 +139,37 @@ NameSet TTLTransform::getResetColumns(const StorageMetadataPtr & metadata_snapsh
     return reset_columns;
 }
 
-NameSet TTLTransform::getRecomputedColumns(
-    const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot, const NamesAndTypesList & expired_columns_)
+NameSet TTLTransform::getColumnsWithEvaluatedDefaults(
+    const MergeTreeData & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    const NamesAndTypesList & expired_columns_,
+    time_t current_time,
+    bool force)
 {
+    NameSet result = expired_columns_.getNameSet();
+
+    /// `TTLColumnAlgorithm::execute` evaluates the default only once the minimum TTL of the column is due,
+    /// as `ITTLAlgorithm::isMinTTLExpired` states. Its bound is the one this transform reads from the new part.
+    for (const auto & [name, _] : metadata_snapshot->getColumnTTLs())
+    {
+        auto it = ttl_infos.columns_ttl.find(name);
+        const time_t min_ttl = it == ttl_infos.columns_ttl.end() ? 0 : it->second.min;
+        if (force || (min_ttl && min_ttl <= current_time))
+            result.insert(name);
+    }
+
+    /// The dependents are recomputed whether the TTL is due or not. The dependency on a shared offsets
+    /// source only orders their levels, it does not add a dependent.
     const auto reset_columns = getResetColumns(metadata_snapshot, expired_columns_);
     if (reset_columns.empty())
-        return {};
+        return result;
 
-    /// The dependency on a shared offsets source only orders the levels, it does not add a dependent.
-    NameSet recomputed_columns;
     for (const auto & level : analyzeDependentMaterializedColumns(
              storage, metadata_snapshot, reset_columns, expired_columns_.getNameSet(), {}))
         for (const auto & dependent : level)
-            recomputed_columns.insert(dependent.name);
-    return recomputed_columns;
+            result.insert(dependent.name);
+    return result;
 }
 
 SharedHeader TTLTransform::addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_)

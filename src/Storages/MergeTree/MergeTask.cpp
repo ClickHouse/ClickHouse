@@ -396,20 +396,16 @@ bool hasStoredDefault(const ColumnDescription & column)
 }
 
 /// The columns whose `DEFAULT` or `MATERIALIZED` expression a merge may evaluate: the reader of a source part
-/// fills a column that the part does not store or that a pending mutation drops, and `TTLTransform` resets a
-/// column with a TTL or an expired column to its default and recomputes the `MATERIALIZED` columns of its plan.
-/// The expression of any other column is never evaluated, as every source part already stores its value.
+/// fills a column that the part does not store or that a pending mutation drops, and `TTLTransform` evaluates
+/// @columns_with_defaults_evaluated_by_ttl. The expression of any other column is never evaluated, as every
+/// source part already stores its value.
 NameSet getColumnsWithDefaultsEvaluatedByMerge(
-    const MergeTreeData & data,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageInMemoryMetadata & metadata,
     const MergeTreeData::DataPartsVector & parts,
     const std::vector<AlterConversionsPtr> & alter_conversions,
-    const NamesAndTypesList & expired_columns,
+    const NameSet & columns_with_defaults_evaluated_by_ttl,
     bool share_nested_offsets)
 {
-    const auto reset_columns = TTLTransform::getResetColumns(metadata_snapshot, expired_columns);
-    const auto recomputed_columns = TTLTransform::getRecomputedColumns(data, metadata_snapshot, expired_columns);
-
     /// Mirrors `injectRequiredColumns`, which decides what the reader of a part fills.
     auto is_missing_in_some_part = [&](const String & name)
     {
@@ -428,14 +424,12 @@ NameSet getColumnsWithDefaultsEvaluatedByMerge(
     };
 
     NameSet result;
-    for (const auto & column : metadata_snapshot->getColumns())
+    for (const auto & column : metadata.getColumns())
     {
         if (!hasStoredDefault(column))
             continue;
 
-        if (reset_columns.contains(column.name)
-            || recomputed_columns.contains(column.name)
-            || is_missing_in_some_part(column.name))
+        if (columns_with_defaults_evaluated_by_ttl.contains(column.name) || is_missing_in_some_part(column.name))
             result.insert(column.name);
     }
 
@@ -3692,11 +3686,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
                     columns_read_by_expressions.emplace(
                         *global_ctx->metadata_snapshot,
                         getColumnsWithDefaultsEvaluatedByMerge(
-                            *global_ctx->data,
-                            global_ctx->metadata_snapshot,
+                            *global_ctx->metadata_snapshot,
                             global_ctx->future_part->parts,
                             global_ctx->alter_conversions,
-                            global_ctx->merging_columns_expired_by_ttl,
+                            TTLTransform::getColumnsWithEvaluatedDefaults(
+                                *global_ctx->data,
+                                global_ctx->metadata_snapshot,
+                                global_ctx->new_data_part->ttl_infos,
+                                global_ctx->merging_columns_expired_by_ttl,
+                                global_ctx->time_of_merge,
+                                ctx->force_ttl),
                             /* share_nested_offsets = */ true));
 
                 if (!columns_read_by_expressions->contains(column.name))
