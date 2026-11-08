@@ -1487,8 +1487,11 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
 
     for (size_t i = 0; i < keys_count; ++i)
     {
-        if (!isScalarSetKeyType(removeNullable(removeLowCardinality(key_types[i])))
-            || !isScalarSetKeyType(removeNullable(removeLowCardinality(right_columns[i].type))))
+        const auto left_key_type = removeNullable(removeLowCardinality(key_types[i]));
+        const auto right_key_type = removeNullable(removeLowCardinality(right_columns[i].type));
+        /// A cast to a key type other than a number reads session settings, while the set casts without them.
+        if (!isScalarSetKeyType(left_key_type) || !isScalarSetKeyType(right_key_type)
+            || (left_key_type->getName() != right_key_type->getName() && !(isNumber(left_key_type) && isNumber(right_key_type))))
             throwCorrelatedInNotSupported(fmt::format(" for a key of type {} compared with {}", key_types[i]->getName(), right_columns[i].type->getName()), node);
 
         /// The columns of `x` become correlated columns of the new subquery. A NULL in a bare column key never
@@ -1588,13 +1591,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         }
         else
         {
-            auto comparison = makeFunctionNode("equals", {make_converted_left_key(), std::move(right_value)});
-            /// A `DateTime64` with a fraction of a second is not a member of a set of a coarser type.
-            if (isDateTime64(left_key_type) && !isDateTime64(right_key_type))
-                comparison = makeFunctionNode("and",
-                    {std::move(comparison),
-                     makeFunctionNode("equals", {makeFunctionNode("toStartOfSecond", {make_unresolved_key(i)}), make_unresolved_key(i)})});
-            comparisons.push_back(std::move(comparison));
+            comparisons.push_back(makeFunctionNode("equals", {make_converted_left_key(), std::move(right_value)}));
         }
     }
 

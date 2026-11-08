@@ -81,13 +81,7 @@ CREATE TABLE o (k UInt8, x String) ENGINE = Memory;
 CREATE TABLE i (k UInt8, e UInt8) ENGINE = Memory;
 INSERT INTO o VALUES (1, '1'), (1, 'x'), (1, '256'), (2, '2'), (3, '1');
 INSERT INTO i VALUES (1, 1), (1, 0), (2, 2);
-SELECT 'String / UInt8', k, x,
-    x IN (SELECT e FROM i WHERE i.k = o.k) AS got,
-    x NOT IN (SELECT e FROM i WHERE i.k = o.k) AS got_not,
-    isNotDistinctFrom(got, multiIf(k = 1, x IN (SELECT e FROM i WHERE k = 1), k = 2, x IN (SELECT e FROM i WHERE k = 2), x IN (SELECT e FROM i WHERE k = 3))),
-    isNotDistinctFrom(got_not, multiIf(k = 1, x NOT IN (SELECT e FROM i WHERE k = 1), k = 2, x NOT IN (SELECT e FROM i WHERE k = 2), x NOT IN (SELECT e FROM i WHERE k = 3))),
-    toTypeName(got) = toTypeName(x IN (SELECT e FROM i WHERE k = 1)) AND toTypeName(got_not) = toTypeName(x NOT IN (SELECT e FROM i WHERE k = 1))
-FROM o ORDER BY k, x;
+SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE o;
 DROP TABLE i;
 
@@ -95,13 +89,7 @@ CREATE TABLE o (k UInt8, x UInt8) ENGINE = Memory;
 CREATE TABLE i (k UInt8, e String) ENGINE = Memory;
 INSERT INTO o VALUES (1, 1), (1, 2), (2, 7), (3, 1);
 INSERT INTO i VALUES (1, '1'), (1, 'x'), (2, '07');
-SELECT 'UInt8 / String', k, x,
-    x IN (SELECT e FROM i WHERE i.k = o.k) AS got,
-    x NOT IN (SELECT e FROM i WHERE i.k = o.k) AS got_not,
-    isNotDistinctFrom(got, multiIf(k = 1, x IN (SELECT e FROM i WHERE k = 1), k = 2, x IN (SELECT e FROM i WHERE k = 2), x IN (SELECT e FROM i WHERE k = 3))),
-    isNotDistinctFrom(got_not, multiIf(k = 1, x NOT IN (SELECT e FROM i WHERE k = 1), k = 2, x NOT IN (SELECT e FROM i WHERE k = 2), x NOT IN (SELECT e FROM i WHERE k = 3))),
-    toTypeName(got) = toTypeName(x IN (SELECT e FROM i WHERE k = 1)) AND toTypeName(got_not) = toTypeName(x NOT IN (SELECT e FROM i WHERE k = 1))
-FROM o ORDER BY k, x;
+SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE o;
 DROP TABLE i;
 
@@ -151,13 +139,7 @@ CREATE TABLE o (k UInt8, x DateTime64(3, 'UTC')) ENGINE = Memory;
 CREATE TABLE i (k UInt8, e DateTime('UTC')) ENGINE = Memory;
 INSERT INTO o VALUES (1, '2020-01-01 10:00:00.000'), (1, '2020-01-01 10:00:00.500'), (2, '2020-01-01 10:00:01.000'), (3, '2020-01-01 10:00:00.000');
 INSERT INTO i VALUES (1, '2020-01-01 10:00:00'), (2, '2020-01-01 10:00:01');
-SELECT 'DateTime64(3) / DateTime', k, x,
-    x IN (SELECT e FROM i WHERE i.k = o.k) AS got,
-    x NOT IN (SELECT e FROM i WHERE i.k = o.k) AS got_not,
-    isNotDistinctFrom(got, multiIf(k = 1, x IN (SELECT e FROM i WHERE k = 1), k = 2, x IN (SELECT e FROM i WHERE k = 2), x IN (SELECT e FROM i WHERE k = 3))),
-    isNotDistinctFrom(got_not, multiIf(k = 1, x NOT IN (SELECT e FROM i WHERE k = 1), k = 2, x NOT IN (SELECT e FROM i WHERE k = 2), x NOT IN (SELECT e FROM i WHERE k = 3))),
-    toTypeName(got) = toTypeName(x IN (SELECT e FROM i WHERE k = 1)) AND toTypeName(got_not) = toTypeName(x NOT IN (SELECT e FROM i WHERE k = 1))
-FROM o ORDER BY k, x;
+SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE o;
 DROP TABLE i;
 
@@ -165,13 +147,7 @@ CREATE TABLE o (k UInt8, x Date) ENGINE = Memory;
 CREATE TABLE i (k UInt8, e String) ENGINE = Memory;
 INSERT INTO o VALUES (1, '2020-01-01'), (1, '2020-01-02'), (2, '2020-01-02'), (3, '2020-01-01');
 INSERT INTO i VALUES (1, '2020-01-01'), (1, 'not a date'), (2, '2020-01-02');
-SELECT 'Date / String', k, x,
-    x IN (SELECT e FROM i WHERE i.k = o.k) AS got,
-    x NOT IN (SELECT e FROM i WHERE i.k = o.k) AS got_not,
-    isNotDistinctFrom(got, multiIf(k = 1, x IN (SELECT e FROM i WHERE k = 1), k = 2, x IN (SELECT e FROM i WHERE k = 2), x IN (SELECT e FROM i WHERE k = 3))),
-    isNotDistinctFrom(got_not, multiIf(k = 1, x NOT IN (SELECT e FROM i WHERE k = 1), k = 2, x NOT IN (SELECT e FROM i WHERE k = 2), x NOT IN (SELECT e FROM i WHERE k = 3))),
-    toTypeName(got) = toTypeName(x IN (SELECT e FROM i WHERE k = 1)) AND toTypeName(got_not) = toTypeName(x NOT IN (SELECT e FROM i WHERE k = 1))
-FROM o ORDER BY k, x;
+SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE o;
 DROP TABLE i;
 
@@ -325,6 +301,8 @@ SELECT k FROM o GROUP BY k HAVING toInt32(count()) IN (SELECT e FROM i WHERE i.k
 SELECT k FROM o WHERE NULL IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE tuple(x) IN (SELECT tuple(e) FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE arr IN (SELECT [e] FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE toInt8(x) IN (SELECT e FROM values('k UInt8, e Enum8(\'a\' = 1, \'b\' = 2)', (1, 'a'), (2, 'b')) AS ie WHERE ie.k = o.k); -- { serverError NOT_IMPLEMENTED }
+SELECT k FROM o WHERE CAST(x, 'Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3)') IN (SELECT e FROM i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k LIMIT 1); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k OFFSET 1); -- { serverError NOT_IMPLEMENTED }
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.k LIMIT 1 BY e); -- { serverError NOT_IMPLEMENTED }
