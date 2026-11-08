@@ -1,0 +1,18 @@
+--- table written by Spark, Asia/Shanghai session ---
+Nullable(DateTime64(6, \'UTC\'))
+1970-01-01 07:00:00.000007
+1
+1
+8
+8
+--- table written by ClickHouse, rows as inserted ---
+2024-06-11 12:34:56.123456	1
+2024-06-12 01:00:00.000000	2
+--- table written by ClickHouse, Asia/Shanghai session ---
+2024-06-11 12:34:56.123456
+1
+1
+1
+1
+--- manifest partition field type ---
+"adjust-to-utc":false

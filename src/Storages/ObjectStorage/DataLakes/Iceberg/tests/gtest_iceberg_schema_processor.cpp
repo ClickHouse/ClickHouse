@@ -74,7 +74,7 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeTime)
 TEST(IcebergSchemaProcessor, GetSimpleTypeTimestamp)
 {
     auto type = IcebergSchemaProcessor::getSimpleType("timestamp");
-    EXPECT_EQ(type->getName(), "DateTime64(6)");
+    EXPECT_EQ(type->getName(), "DateTime64(6, 'UTC')");
 }
 
 TEST(IcebergSchemaProcessor, GetSimpleTypeTimestamptz)
@@ -86,7 +86,7 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeTimestamptz)
 TEST(IcebergSchemaProcessor, GetSimpleTypeTimestampNs)
 {
     auto type = IcebergSchemaProcessor::getSimpleType("timestamp_ns");
-    EXPECT_EQ(type->getName(), "DateTime64(9)");
+    EXPECT_EQ(type->getName(), "DateTime64(9, 'UTC')");
 }
 
 TEST(IcebergSchemaProcessor, GetSimpleTypeTimestamptzNs)
@@ -194,11 +194,12 @@ TEST(IcebergSchemaProcessor, RebindingSchemaIdToDifferentTypeStillRejected)
 /// is authoritative. Broken writers (observed with AWS S3 Tables maintenance jobs) store degraded
 /// copies in manifest headers under an already-used schema-id, e.g. `timestamp` instead of
 /// `timestamptz`. With toleration enabled (the default of `iceberg_tolerate_conflicting_manifest_schemas`),
-/// the divergent manifest copy must be ignored and the metadata.json schema kept.
+/// the divergent manifest copy must be ignored and the metadata.json schema kept. The tests use `timestamp_ns`
+/// as the degraded type because its ClickHouse type differs from the one of `timestamptz`.
 TEST(IcebergSchemaProcessor, ConflictingManifestSchemaToleratedWhenEnabled)
 {
     auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
-    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp_ns"}]})json");
     IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(from_metadata);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(
@@ -214,7 +215,7 @@ TEST(IcebergSchemaProcessor, ConflictingManifestSchemaToleratedWhenEnabled)
 TEST(IcebergSchemaProcessor, ConflictingManifestSchemaRejectedWhenDisabled)
 {
     auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
-    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp_ns"}]})json");
     IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(from_metadata);
     EXPECT_THROW(
@@ -254,7 +255,7 @@ TEST(IcebergSchemaProcessor, ManifestSchemaWithNewIdRegistersNormally)
 /// per-field lookups and the cached transformation DAGs derived from it.
 TEST(IcebergSchemaProcessor, ManifestHeaderRegisteredFirstIsReplacedByMetadata)
 {
-    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp_ns"}]})json");
     auto other = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"},{"id":2,"name":"v","required":false,"type":"int"}]})json");
     auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
     IcebergSchemaProcessor processor;
@@ -262,7 +263,7 @@ TEST(IcebergSchemaProcessor, ManifestHeaderRegisteredFirstIsReplacedByMetadata)
     processor.addIcebergTableSchema(other);
 
     /// Populate everything derived from the schema that came from the manifest.
-    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(6))");
+    EXPECT_EQ(processor.getFieldCharacteristics(0, 1).type->getName(), "Nullable(DateTime64(9, 'UTC'))");
     auto stale_dag = processor.getSchemaTransformationDagByIds(0, 1);
     ASSERT_NE(stale_dag, nullptr);
 
@@ -291,7 +292,7 @@ TEST(IcebergSchemaProcessor, ManifestHeaderRegisteredFirstIsConfirmedByIdentical
 {
     auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
     auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamptz"}]})json");
-    auto degraded = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp"}]})json");
+    auto degraded = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"ts","required":false,"type":"timestamp_ns"}]})json");
     IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata));
