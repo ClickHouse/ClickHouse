@@ -26,19 +26,21 @@ function check_cancel()
         sleep 0.1
     done
 
+    # `KILL QUERY SYNC` returns only when the query has stopped. If the serialization did not look
+    # at the cancellation, the query would send the whole file before it stops.
     $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC" > /dev/null
+
+    # Do not wait for the slow client to drain what is already buffered in the sockets.
+    kill "$PID" 2>/dev/null
     wait "$PID"
-
-    local SIZE
-    SIZE=$(stat -c %s "$OUT")
-    if [ "$SIZE" -gt 0 ] && [ "$SIZE" -lt "$3" ]
-    then
-        echo "OK"
-    else
-        echo "Unexpected size of the output for $1: $SIZE"
-    fi
-
     rm -f "$OUT"
+
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    $CLICKHOUSE_CLIENT -q "
+        SELECT '$1', type, exception_code, ProfileEvents['NetworkSendBytes'] < $3
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$QUERY_ID' AND type != 'QueryStart'
+        AND event_date >= yesterday()"
 }
 
 # 4194304 values of 8 bytes are 32 MiB of data.
