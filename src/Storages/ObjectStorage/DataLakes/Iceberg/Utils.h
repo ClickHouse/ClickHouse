@@ -51,6 +51,9 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
+/// Whether a conditional write failed because another writer created or changed the object first.
+bool isConditionalWriteConflict(const DB::Exception & e);
+
 /// Writes the metadata file with If-None-Match; false means the write was not confirmed or the path already exists.
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
