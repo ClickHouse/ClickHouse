@@ -56,6 +56,8 @@ SELECT 'winners', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b 
     SETTINGS cascades_join_enumeration = 'winners', log_comment = 'join_enum_chain_winners';
 SELECT 'winners_candidates', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS cascades_join_enumeration = 'winners_candidates', log_comment = 'join_enum_chain_winners_candidates';
+SELECT 'best_splits', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'best_splits', cascades_join_enumeration_splits_per_set = 2, log_comment = 'join_enum_chain_best_splits';
 SELECT 'one node', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS make_distributed_plan = 0;
 

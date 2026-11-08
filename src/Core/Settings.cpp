@@ -11264,7 +11264,9 @@ Experimental. How the Cascades optimizer gets the join orders of a join graph:
   found among all splits of every set (not only orders that differ in the top join), imported like `candidates`;
 - `winners`: the cheapest split by the join order optimizer's cost of every set of joined tables it reached, one join
   per set;
-- `winners_candidates`: the joins of `winners` and of `candidates` together.
+- `winners_candidates`: the joins of `winners` and of `candidates` together;
+- `best_splits`: the `cascades_join_enumeration_splits_per_set` cheapest splits of every set of joined tables by the
+  join order optimizer's cost, so that Cascades chooses between many orders at every level.
 
 `candidates` and `all_splits` take effect only for graphs of inner joins whose join keys compare the same way as
 hash keys and as values (no floating-point keys), and that `DPsub` plans; other graphs use `off`.
@@ -11276,6 +11278,11 @@ With `cascades_join_enumeration = 'all_splits'` or `'all_splits_rule'`: the larg
 graph may add to the Cascades memo. A larger graph uses `off`.
 )", EXPERIMENTAL, \
         {"26.11", 20000, 20000, "New experimental setting."}) \
+    DECLARE(UInt64, cascades_join_enumeration_splits_per_set, 4, R"(
+With `cascades_join_enumeration = 'best_splits'`: how many of the cheapest splits of every set of joined tables
+Cascades gets. Each costs one join expression in the memo.
+)", EXPERIMENTAL, \
+        {"26.11", 4, 4, "New experimental setting."}) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", 0, \

@@ -1206,7 +1206,8 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
 
     /// Chooses the splits Cascades gets for `mode` and returns true, or returns false with `reason` when the graph
     /// gets its orders imported instead.
-    bool selectSetSplits(QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, String & reason);
+    bool selectSetSplits(
+        QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set, String & reason);
 
     /// Builds the plan of the join tree `optimized` over `input_nodes`, in `nodes`, and returns its root. The plan of
     /// a subtree that an order built before is not built again: the node of that plan is used.
@@ -1820,7 +1821,7 @@ static std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
 }
 
 bool JoinOrderPlanBuilder::selectSetSplits(
-    QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, String & reason)
+    QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set, String & reason)
 {
     using JoinEnumeration = QueryPlanOptimizationSettings::JoinEnumeration;
 
@@ -1905,7 +1906,7 @@ bool JoinOrderPlanBuilder::selectSetSplits(
                 }
         }
     }
-    else if (mode != JoinEnumeration::Winners)
+    else if (mode != JoinEnumeration::Winners && mode != JoinEnumeration::BestSplits)
     {
         /// The splits of the chosen order and of the other orders.
         std::vector<const DPJoinEntry *> stack{chosen_order.get()};
@@ -1930,6 +1931,26 @@ bool JoinOrderPlanBuilder::selectSetSplits(
                 set.push_back(*index);
             stack.push_back(entry->left.get());
             stack.push_back(entry->right.get());
+        }
+    }
+
+    /// The cheapest splits of every set DPsub reached, by the cost of the split over the winners of its two sides. The
+    /// memo combines them, so the search chooses between many orders at every level for `splits_per_set` joins per set.
+    if (mode == JoinEnumeration::BestSplits)
+    {
+        auto winner_cost = [&](UInt64 relations) { return std::popcount(relations) == 1 ? 0.0 : recorded_splits->winners.at(relations)->cost; };
+        for (const auto & [relations, indexes] : splits_by_set)
+        {
+            auto ranked = indexes;
+            auto split_cost = [&](size_t index)
+            {
+                const auto & split = splits[index];
+                return split.local_cost + winner_cost(split.left) + winner_cost(split.right);
+            };
+            const size_t kept = std::min(splits_per_set, ranked.size());
+            std::ranges::partial_sort(ranked, ranked.begin() + kept, {}, split_cost);
+            ranked.resize(kept);
+            selected[relations] = std::move(ranked);
         }
     }
 
@@ -2469,7 +2490,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         String reason;
         import_sets = builder->selectSetSplits(
             join_enumeration, optimization_settings.cascades_join_enumeration_max_splits,
-            optimization_settings.cascades_join_order_alternatives + 1, reason);
+            optimization_settings.cascades_join_order_alternatives + 1, optimization_settings.cascades_join_enumeration_splits_per_set,
+            reason);
         if (import_sets)
             LOG_DEBUG(getLogger("optimizeJoin"), "Cascades gets {} sets of the join graph from {} accepted of {} considered splits",
                 builder->set_splits.size(), recorded_splits->splits.size(), recorded_splits->considered_splits);
