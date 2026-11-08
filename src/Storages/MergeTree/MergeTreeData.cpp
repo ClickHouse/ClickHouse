@@ -10158,6 +10158,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     }
     else
     {
+        /// The analysis below resolves the predicate against a `TableNode`, which takes a storage
+        /// snapshot and may cache it for the whole query. The lightweight update discards it with
+        /// `discardSharedStorageSnapshot` before reading, see `StorageReplicatedMergeTree::updateLightweight`.
         execution_context = Context::createCopy(query_context);
     }
 
@@ -10284,7 +10287,14 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (analyzed_partition_ids)
             analyzed_partition_ids->insert(part->info.getPartitionId());
 
-        if (!partition_pruner.canBePruned(*part))
+        /** The partition value decides, not the part: an empty part - the state a delete-all
+          * mutation or a `TTL` expiry leaves behind until the cleanup thread removes it - would
+          * otherwise prune its whole partition out of the mutation while ruling it analyzed, which
+          * also keeps `allocateBlockNumbersInAffectedPartitions` from widening the scope with the
+          * partitions only ZooKeeper knows. Rows another replica acknowledged in that partition
+          * would then survive the mutation on every replica.
+          */
+        if (!partition_pruner.canPartitionBePruned(*part))
             affected_partition_ids.insert(part->info.getPartitionId());
     }
 
@@ -13860,6 +13870,16 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     if (it != cache->end())
         return it->second;
     return cache->emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
+}
+
+void MergeTreeData::discardSharedStorageSnapshot(const ContextPtr & query_context) const
+{
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return;
+
+    auto [cache, lock] = query_metadata_cache->getStorageSnapshotCache();
+    cache->erase(this);
 }
 
 StorageSnapshotPtr
