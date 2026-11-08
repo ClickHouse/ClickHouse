@@ -18,8 +18,11 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
+#include <cstring>
 #include <limits>
+#include <numeric>
 #include <string_view>
 #include <type_traits>
 #include <typeinfo>
@@ -176,7 +179,8 @@ struct Node
 
     /// One per piece. String: the number of bytes of chars. Array: the number of elements.
     PaddedPODArray<size_t> sizes;
-    PaddedPODArray<char *> cursors;
+    /// Fixed: the cursors, and the staging lines when the column is written with `StoreMode::Combined`.
+    ScatterScratch scratch;
     PaddedPODArray<StringCursor> string_cursors;
     PaddedPODArray<ArrayCursor> array_cursors;
 };
@@ -215,8 +219,9 @@ void forEachChild(Kind kind, Column & column, F && f)
     }
 }
 
-/// The nodes of `column` and of its nested columns, with the cursors of `num_pieces` pieces.
-Node buildNode(const IColumn & column, size_t num_pieces)
+/// The nodes of `column` and of its nested columns, with the cursors of `num_pieces` pieces. `rows` is the number of rows
+/// scattered from all sources, or 0 when the rows of `column` are scattered by ranges, as the elements of an `Array` are.
+Node buildNode(const IColumn & column, size_t num_pieces, size_t rows, bool allow_combining)
 {
     Node node;
     node.kind = kernelKind(column);
@@ -224,7 +229,7 @@ Node buildNode(const IColumn & column, size_t num_pieces)
     {
         case Kind::Fixed:
             node.width = column.sizeOfValueIfFixed();
-            node.cursors.resize_fill(num_pieces, nullptr);
+            node.scratch.init(num_pieces, chooseStoreMode(node.width, num_pieces, rows, allow_combining));
             break;
         case Kind::String:
             node.needs_sizes = true;
@@ -247,7 +252,7 @@ Node buildNode(const IColumn & column, size_t num_pieces)
         column,
         [&](size_t, const IColumn & part)
         {
-            node.children.push_back(buildNode(part, num_pieces));
+            node.children.push_back(buildNode(part, num_pieces, node.kind == Kind::Array ? 0 : rows, allow_combining));
             node.needs_sizes = node.needs_sizes || node.children.back().needs_sizes;
         });
     return node;
@@ -372,8 +377,13 @@ void preparePiece(Node & node, IColumn & column, size_t piece, size_t rows)
     switch (node.kind)
     {
         case Kind::Fixed:
-            node.cursors[piece] = growUninitialized(column, rows).data();
+        {
+            char * cursor = growUninitialized(column, rows).data();
+            /// The staging lines of `StoreMode::Combined` fill to 64 bytes only from a cursor that is a multiple of the width.
+            chassert(node.scratch.mode() != StoreMode::Combined || reinterpret_cast<uintptr_t>(cursor) % node.width == 0);
+            node.scratch.seed(piece, cursor);
             break;
+        }
         case Kind::String:
         {
             auto & string = assert_cast<ColumnString &>(column);
@@ -487,6 +497,65 @@ NO_INLINE void scatterFixedRows(size_t width, const Id * ids, const char * data,
     }
 }
 
+bool combiningSupportsWidth(size_t width)
+{
+    return width == 1 || width == 2 || width == 4 || width == 8 || width == 16;
+}
+
+using Line = char __attribute__((vector_size(LINE_BYTES)));
+
+/// Stages row i in the line of piece `ids[i]`, and stores the line when it is full. Writes no byte outside the rows of a piece.
+template <size_t width, typename Id>
+void scatterFixedRowsCombinedOfWidth(const Id * ids, const char * data, size_t n, char * staging, char ** cursors, UInt32 * fill)
+{
+    for (size_t i = 0; i < n; ++i)
+    {
+        const size_t piece = ids[i];
+        char * line = staging + piece * LINE_BYTES;
+        UInt32 filled = fill[piece];
+        __builtin_memcpy_inline(line + filled, data + i * width, width);
+        filled += width;
+        if (filled == LINE_BYTES)
+        {
+            char * cursor = cursors[piece];
+            const UInt32 misalignment = static_cast<UInt32>(reinterpret_cast<uintptr_t>(cursor) & (LINE_BYTES - 1));
+            if (misalignment) /// The first line of a piece starts at its cursor, so it takes regular stores.
+            {
+                __builtin_memcpy(cursor, line + misalignment, LINE_BYTES - misalignment);
+                cursors[piece] = cursor + (LINE_BYTES - misalignment);
+            }
+            else
+            {
+                __builtin_nontemporal_store(*reinterpret_cast<const Line *>(line), reinterpret_cast<Line *>(cursor));
+                cursors[piece] = cursor + LINE_BYTES;
+            }
+            filled = 0;
+        }
+        fill[piece] = filled;
+    }
+}
+
+/// Precondition: `combiningSupportsWidth(width)`, and every cursor is a multiple of `width`.
+template <typename Id>
+/// Not inlined into `scatterRows`: there, the loop of the width 16 with `UInt64` ids takes one more spill on x86-64.
+NO_INLINE void scatterFixedRowsCombined(size_t width, const Id * ids, const char * data, size_t n, ScatterScratch & scratch)
+{
+    /// Passed as arguments: the non-temporal store through `char *` defeats type-based alias analysis, so the loop would
+    /// otherwise reload the members of `scratch` on every row.
+    char * const staging = scratch.lines();
+    char ** const cursors = scratch.cursors.data();
+    UInt32 * const fill = scratch.fills();
+    switch (width)
+    {
+        case 1: scatterFixedRowsCombinedOfWidth<1>(ids, data, n, staging, cursors, fill); return;
+        case 2: scatterFixedRowsCombinedOfWidth<2>(ids, data, n, staging, cursors, fill); return;
+        case 4: scatterFixedRowsCombinedOfWidth<4>(ids, data, n, staging, cursors, fill); return;
+        case 8: scatterFixedRowsCombinedOfWidth<8>(ids, data, n, staging, cursors, fill); return;
+        case 16: scatterFixedRowsCombinedOfWidth<16>(ids, data, n, staging, cursors, fill); return;
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Write combining does not support rows of {} bytes", width);
+    }
+}
+
 /// Copies the chars of each row to its piece and appends its offset, rebased on the piece. Reads and writes up to 15
 /// bytes past a row. The source and the chars of every piece are padded, and the next row of a piece overwrites the
 /// bytes written past the previous one.
@@ -549,7 +618,7 @@ void copyRange(Node & node, size_t begin, size_t end, size_t piece)
     switch (node.kind)
     {
         case Kind::Fixed:
-            copyFixedRange(node.data, node.width, node.cursors.data(), begin, end, piece);
+            copyFixedRange(node.data, node.width, node.scratch.cursors.data(), begin, end, piece);
             return;
         case Kind::String:
             copyStringRange(node.data, node.offsets, node.string_cursors.data(), begin, end, piece);
@@ -604,7 +673,7 @@ void scatterArrayRows(Node & node, const Id * ids, size_t n)
                 node.offsets,
                 n,
                 cursors,
-                [data = elements.data, width = elements.width, element_cursors = elements.cursors.data()](
+                [data = elements.data, width = elements.width, element_cursors = elements.scratch.cursors.data()](
                     size_t begin, size_t end, size_t piece) { copyFixedRange(data, width, element_cursors, begin, end, piece); });
             return;
         case Kind::String:
@@ -630,6 +699,15 @@ void scatterArrayRows(Node & node, const Id * ids, size_t n)
     }
 }
 
+/// Stores the rows that are still staged in the lines of the fixed-width columns of `node`.
+void drainNode(Node & node)
+{
+    if (node.scratch.mode() == StoreMode::Combined)
+        node.scratch.drain();
+    for (Node & child : node.children)
+        drainNode(child);
+}
+
 /// Scatters the rows of the source to the cursors of their pieces.
 template <typename Id>
 void scatterRows(Node & node, const Id * ids, size_t n)
@@ -637,7 +715,10 @@ void scatterRows(Node & node, const Id * ids, size_t n)
     switch (node.kind)
     {
         case Kind::Fixed:
-            scatterFixedRows(node.width, ids, node.data, n, node.cursors.data());
+            if (node.scratch.mode() == StoreMode::Combined)
+                scatterFixedRowsCombined(node.width, ids, node.data, n, node.scratch);
+            else
+                scatterFixedRows(node.width, ids, node.data, n, node.scratch.cursors.data());
             return;
         case Kind::String:
             scatterStringRows(ids, node.data, node.offsets, n, node.string_cursors.data());
@@ -659,11 +740,14 @@ void scatterRows(Node & node, const Id * ids, size_t n)
 /// another source does not have the structure of the first one.
 template <typename Id>
 VectorWithMemoryTracking<MutableColumnPtr> scatterWithKernels(
-    std::span<const IColumn * const> sources, std::span<const std::span<const Id>> ids, std::span<const size_t> counts)
+    std::span<const IColumn * const> sources,
+    std::span<const std::span<const Id>> ids,
+    std::span<const size_t> counts,
+    bool allow_combining)
 {
     const IColumn & sample = *sources[0];
     const size_t num_pieces = counts.size();
-    Node root = buildNode(sample, num_pieces);
+    Node root = buildNode(sample, num_pieces, std::accumulate(counts.begin(), counts.end(), size_t{0}), allow_combining);
 
     /// The pieces are clones of source 0, so another class, width, tuple size or `Decimal` scale would misread rows.
     for (size_t b = 1; b < sources.size(); ++b)
@@ -696,6 +780,7 @@ VectorWithMemoryTracking<MutableColumnPtr> scatterWithKernels(
         bindSource(root, *sources[b]);
         scatterRows(root, ids[b].data(), ids[b].size());
     }
+    drainNode(root);
     return pieces;
 }
 
@@ -739,12 +824,18 @@ void checkSameDataType(std::span<const IColumn * const> sources)
 
 template <typename Id>
 VectorWithMemoryTracking<MutableColumnPtr> scatterSeveral(
-    std::span<const IColumn * const> sources, std::span<const std::span<const Id>> ids, std::span<const size_t> counts);
+    std::span<const IColumn * const> sources,
+    std::span<const std::span<const Id>> ids,
+    std::span<const size_t> counts,
+    bool allow_combining);
 
 /// Several sources of a `Tuple`, one element at a time.
 template <typename Id>
 VectorWithMemoryTracking<MutableColumnPtr> scatterTupleElements(
-    std::span<const IColumn * const> sources, std::span<const std::span<const Id>> ids, std::span<const size_t> counts)
+    std::span<const IColumn * const> sources,
+    std::span<const std::span<const Id>> ids,
+    std::span<const size_t> counts,
+    bool allow_combining)
 {
     const size_t num_elements = assert_cast<const ColumnTuple &>(*sources[0]).tupleSize();
     for (size_t b = 1; b < sources.size(); ++b)
@@ -770,7 +861,7 @@ VectorWithMemoryTracking<MutableColumnPtr> scatterTupleElements(
     {
         for (size_t b = 0; b < sources.size(); ++b)
             element_sources[b] = &assert_cast<const ColumnTuple &>(*sources[b]).getColumn(element);
-        element_pieces[element] = scatterSeveral(element_sources, ids, counts);
+        element_pieces[element] = scatterSeveral(element_sources, ids, counts, allow_combining);
     }
 
     for (size_t piece = 0; piece < counts.size(); ++piece)
@@ -786,12 +877,15 @@ VectorWithMemoryTracking<MutableColumnPtr> scatterTupleElements(
 /// Several sources of a `Map`, through their nested `Array` columns, as `ColumnMap::scatter` does with one.
 template <typename Id>
 VectorWithMemoryTracking<MutableColumnPtr> scatterMapNested(
-    std::span<const IColumn * const> sources, std::span<const std::span<const Id>> ids, std::span<const size_t> counts)
+    std::span<const IColumn * const> sources,
+    std::span<const std::span<const Id>> ids,
+    std::span<const size_t> counts,
+    bool allow_combining)
 {
     ColumnRawPtrs nested(sources.size());
     for (size_t b = 0; b < sources.size(); ++b)
         nested[b] = &assert_cast<const ColumnMap &>(*sources[b]).getNestedColumn();
-    auto pieces = scatterSeveral(nested, ids, counts);
+    auto pieces = scatterSeveral(nested, ids, counts, allow_combining);
     const auto & statistics = assert_cast<const ColumnMap &>(*sources[0]).getStatistics();
     for (auto & piece : pieces)
         piece = ColumnMap::create(std::move(piece), statistics);
@@ -826,17 +920,20 @@ VectorWithMemoryTracking<MutableColumnPtr> scatterEachSource(
 /// Several sources with no wrappers.
 template <typename Id>
 VectorWithMemoryTracking<MutableColumnPtr> scatterSeveral(
-    std::span<const IColumn * const> sources, std::span<const std::span<const Id>> ids, std::span<const size_t> counts)
+    std::span<const IColumn * const> sources,
+    std::span<const std::span<const Id>> ids,
+    std::span<const size_t> counts,
+    bool allow_combining)
 {
     checkSameDataType(sources);
     const IColumn & sample = *sources[0];
 
     if (kernelKind(sample) == Kind::Tuple)
-        return scatterTupleElements(sources, ids, counts);
+        return scatterTupleElements(sources, ids, counts, allow_combining);
     if (typeid_cast<const ColumnMap *>(&sample))
-        return scatterMapNested(sources, ids, counts);
+        return scatterMapNested(sources, ids, counts, allow_combining);
     if (accepts(sample, false))
-        return scatterWithKernels(sources, ids, counts);
+        return scatterWithKernels(sources, ids, counts, allow_combining);
 
     return scatterEachSource(sources, ids, counts);
 }
@@ -885,12 +982,15 @@ VectorWithMemoryTracking<MutableColumnPtr> scatter(
 {
     const std::array<const IColumn *, 1> sources{&column};
     const std::array<std::span<const Id>, 1> ids{std::span<const Id>(selector.data(), selector.size())};
-    return scatterWithKernels<Id>(sources, ids, counts);
+    return scatterWithKernels<Id>(sources, ids, counts, false);
 }
 
 template <typename Id>
 VectorWithMemoryTracking<MutableColumnPtr> scatter(
-    std::span<const IColumn * const> sources, std::span<const std::span<const Id>> ids, std::span<const size_t> counts)
+    std::span<const IColumn * const> sources,
+    std::span<const std::span<const Id>> ids,
+    std::span<const size_t> counts,
+    bool allow_combining)
 {
     checkPieceCount<Id>(counts.size());
     if (sources.empty())
@@ -922,7 +1022,7 @@ VectorWithMemoryTracking<MutableColumnPtr> scatter(
     if (sources.size() == 1)
     {
         if (hasKernel(*sources[0]))
-            return scatterWithKernels(sources, ids, counts);
+            return scatterWithKernels(sources, ids, counts, allow_combining);
         const PaddedPODArray<Id> selector(ids[0].data(), ids[0].data() + ids[0].size());
         return sources[0]->scatterWithCounts(selector, counts);
     }
@@ -945,7 +1045,7 @@ VectorWithMemoryTracking<MutableColumnPtr> scatter(
         holders.push_back(source->convertToFullIfWrapped());
         normalized.push_back(holders.back().get());
     }
-    return scatterSeveral<Id>(normalized, ids, counts);
+    return scatterSeveral<Id>(normalized, ids, counts, allow_combining);
 }
 
 template <typename Id>
@@ -986,9 +1086,9 @@ template VectorWithMemoryTracking<MutableColumnPtr>
 template VectorWithMemoryTracking<MutableColumnPtr>
     scatter<UInt64>(const IColumn &, const PaddedPODArray<UInt64> &, std::span<const size_t>);
 template VectorWithMemoryTracking<MutableColumnPtr>
-    scatter<UInt16>(std::span<const IColumn * const>, std::span<const std::span<const UInt16>>, std::span<const size_t>);
+    scatter<UInt16>(std::span<const IColumn * const>, std::span<const std::span<const UInt16>>, std::span<const size_t>, bool);
 template VectorWithMemoryTracking<MutableColumnPtr>
-    scatter<UInt64>(std::span<const IColumn * const>, std::span<const std::span<const UInt64>>, std::span<const size_t>);
+    scatter<UInt64>(std::span<const IColumn * const>, std::span<const std::span<const UInt64>>, std::span<const size_t>, bool);
 template VectorWithMemoryTracking<size_t> countRowsPerPiece<UInt16>(std::span<const std::span<const UInt16>>, size_t);
 template VectorWithMemoryTracking<size_t> countRowsPerPiece<UInt64>(std::span<const std::span<const UInt64>>, size_t);
 
@@ -1012,9 +1112,137 @@ VectorWithMemoryTracking<size_t> computePassBits(size_t fanout, size_t max_fanou
     return result;
 }
 
-void scatterPidChunk(size_t width, const UInt16 * pids, const char * data, size_t n, ScatterScratch & scratch)
+namespace
 {
-    scatterFixedRows(width, pids, data, n, scratch.cursors.data());
+
+const char * storeModeName(StoreMode mode)
+{
+    return mode == StoreMode::Combined ? "combined" : "direct";
+}
+
+}
+
+StoreMode chooseStoreMode(size_t width, size_t pieces, size_t rows, bool allow_combining)
+{
+    if (!allow_combining || !COMBINING_ENABLED || !combiningSupportsWidth(width) || pieces < COMBINING_MIN_PIECES || pieces > COMBINING_MAX_PIECES)
+        return StoreMode::Direct;
+    return rows >= pieces * COMBINING_MIN_LINES_PER_PIECE * (LINE_BYTES / width) ? StoreMode::Combined : StoreMode::Direct;
+}
+
+StoreMode ScatterScratch::mode() const
+{
+    if (!hasStaging())
+        return StoreMode::Direct;
+    StoreMode result = StoreMode::Direct;
+    memcpy(&result, spare(), sizeof(result));
+    return result;
+}
+
+/// Layout of the bytes after the cursors, when there are staging lines: the mode in the first 8 bytes, the fill of each
+/// piece, then the staging lines from the next multiple of 64 bytes.
+UInt32 * ScatterScratch::fills()
+{
+    chassert(hasStaging());
+    return reinterpret_cast<UInt32 *>(spare() + sizeof(char *));
+}
+
+char * ScatterScratch::lines()
+{
+    chassert(hasStaging());
+    const uintptr_t end_of_fills = reinterpret_cast<uintptr_t>(fills() + cursors.size());
+    return reinterpret_cast<char *>((end_of_fills + LINE_BYTES - 1) & ~static_cast<uintptr_t>(LINE_BYTES - 1));
+}
+
+void ScatterScratch::init(size_t fanout, StoreMode mode_)
+{
+    /// Allocated exactly: a `Direct` scratch takes no more than its cursors, and a `Combined` one no more than its
+    /// cursors, fills and lines, plus up to 63 bytes to align the first line.
+    size_t spare_bytes = 0;
+    if (mode_ == StoreMode::Combined)
+        spare_bytes = sizeof(char *) + fanout * sizeof(UInt32) + LINE_BYTES - 1 + fanout * LINE_BYTES;
+    const size_t elements = fanout + (spare_bytes + sizeof(char *) - 1) / sizeof(char *);
+    if (cursors.capacity() != elements)
+    {
+        PaddedPODArray<char *> exact;
+        exact.reserve_exact(elements);
+        cursors.swap(exact);
+    }
+    cursors.clear();
+    cursors.resize_fill(fanout, nullptr);
+    if (mode_ == StoreMode::Combined)
+    {
+        memset(spare(), 0, sizeof(char *) + fanout * sizeof(UInt32));
+        memcpy(spare(), &mode_, sizeof(mode_));
+    }
+}
+
+void ScatterScratch::setStoreMode(StoreMode mode_)
+{
+    if (!hasStaging())
+    {
+        if (mode_ == StoreMode::Combined)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot combine writes: the scratch was initialized without staging lines");
+        return;
+    }
+    /// `drain` has stored the staged rows of the last column.
+    chassert(std::all_of(fills(), fills() + cursors.size(), [](UInt32 filled) { return filled == 0; }));
+    memcpy(spare(), &mode_, sizeof(mode_));
+}
+
+void ScatterScratch::seed(size_t piece, char * cursor)
+{
+    cursors[piece] = cursor;
+    if (mode() == StoreMode::Combined)
+        fills()[piece] = static_cast<UInt32>(reinterpret_cast<uintptr_t>(cursor) & (LINE_BYTES - 1));
+}
+
+void ScatterScratch::drain()
+{
+    if (mode() == StoreMode::Combined)
+    {
+        UInt32 * const fill = fills();
+        char * const staging = lines();
+        for (size_t piece = 0; piece < cursors.size(); ++piece)
+        {
+            const UInt32 filled = fill[piece];
+            if (!filled)
+                continue;
+            char * cursor = cursors[piece];
+            const UInt32 start = static_cast<UInt32>(reinterpret_cast<uintptr_t>(cursor) & (LINE_BYTES - 1));
+            if (filled > start)
+                memcpy(cursor, staging + piece * LINE_BYTES + start, filled - start);
+            fill[piece] = 0;
+        }
+        /// Non-temporal stores are weakly ordered.
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
+    /// The cursors of this column must not reach the next one: a stale cursor of a piece that gets no rows there could
+    /// fail the alignment check of `scatterPidChunk`.
+    std::fill(cursors.begin(), cursors.end(), nullptr);
+}
+
+void scatterPidChunk(size_t width, const UInt16 * pids, const char * data, size_t n, StoreMode mode, ScatterScratch & scratch)
+{
+    if (mode != scratch.mode())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot scatter a chunk in the {} store mode: the scratch is in the {} store mode",
+            storeModeName(mode),
+            storeModeName(scratch.mode()));
+
+    if (mode == StoreMode::Direct)
+    {
+        scatterFixedRows(width, pids, data, n, scratch.cursors.data());
+        return;
+    }
+
+    if (!combiningSupportsWidth(width))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Write combining does not support rows of {} bytes", width);
+    /// A line of staged rows must fill to exactly 64 bytes, so every cursor must be a multiple of the row width.
+    for (const char * cursor : scratch.cursors)
+        if ((reinterpret_cast<uintptr_t>(cursor) & (width - 1)) != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A piece cursor is not a multiple of the row width {}", width);
+    scatterFixedRowsCombined(width, pids, data, n, scratch);
 }
 
 void histogramPidChunk(const UInt16 * pids, size_t n, UInt64 * hist, UInt64 * lanes, size_t fanout)

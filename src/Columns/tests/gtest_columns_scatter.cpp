@@ -1524,7 +1524,7 @@ struct BatchResult
 
 /// Calls the batched `ColumnsScatter::scatter` with the counts of `countRowsPerPiece`.
 template <typename Id>
-BatchResult scatterBatch(const Batch<Id> & batch, size_t num_pieces)
+BatchResult scatterBatch(const Batch<Id> & batch, size_t num_pieces, bool allow_combining = false)
 {
     std::vector<const IColumn *> sources;
     std::vector<std::span<const Id>> ids;
@@ -1536,7 +1536,7 @@ BatchResult scatterBatch(const Batch<Id> & batch, size_t num_pieces)
 
     BatchResult result;
     result.counts = ColumnsScatter::countRowsPerPiece<Id>(ids, num_pieces);
-    result.pieces = ColumnsScatter::scatter<Id>(sources, ids, result.counts);
+    result.pieces = ColumnsScatter::scatter<Id>(sources, ids, result.counts, allow_combining);
     return result;
 }
 
@@ -1568,10 +1568,10 @@ Columns perSourcePieces(const Batch<Id> & batch, size_t num_pieces)
 /// The batched `ColumnsScatter::scatter` gives the pieces of `perSourcePieces`. With `exact`, each piece also has its
 /// exact size.
 template <typename Id>
-testing::AssertionResult sameAsPerSource(const Batch<Id> & batch, size_t num_pieces, bool exact)
+testing::AssertionResult sameAsPerSource(const Batch<Id> & batch, size_t num_pieces, bool exact, bool allow_combining = false)
 {
     const auto expected = perSourcePieces(batch, num_pieces);
-    const auto actual = scatterBatch(batch, num_pieces);
+    const auto actual = scatterBatch(batch, num_pieces, allow_combining);
     if (actual.pieces.size() != num_pieces)
         return testing::AssertionFailure() << actual.pieces.size() << " pieces, expected " << num_pieces;
 
@@ -1598,7 +1598,7 @@ struct BatchCase
 
 /// Runs each case in the given order and in the reverse order, with random ids.
 template <typename Id>
-void expectSameAsPerSource(const std::vector<BatchCase> & cases, size_t num_pieces)
+void expectSameAsPerSource(const std::vector<BatchCase> & cases, size_t num_pieces, bool allow_combining = false)
 {
     pcg64 rng(selector_seed);
     for (const auto & batch_case : cases)
@@ -1618,7 +1618,7 @@ void expectSameAsPerSource(const std::vector<BatchCase> & cases, size_t num_piec
             Batch<Id> batch;
             for (size_t index = 0; index < makes.size(); ++index)
                 batch.add(makes[index](rows[index]), randomIds<Id>(rng, rows[index], num_pieces));
-            EXPECT_TRUE(sameAsPerSource(batch, num_pieces, batch_case.exact)) << batch_case.name << (reversed ? ", in reverse order" : "");
+            EXPECT_TRUE(sameAsPerSource(batch, num_pieces, batch_case.exact, allow_combining)) << batch_case.name << (reversed ? ", in reverse order" : "");
         }
     }
 }
@@ -1989,9 +1989,10 @@ TYPED_TEST(ColumnScatterByIdType, BatchedMatchesPerSourceScatter)
 
     for (const auto & selector_case : selectorCases<TypeParam>())
     {
-        /// The batched `ColumnsScatter::scatter` and the kernels branch on the type, the width and empty pieces, never on
-        /// the row or piece count, so the short set reaches every branch. `SmallSelectorBoundary` runs it at 65536 pieces,
-        /// and `HistogramLanes` counts rows for more pieces than the lanes take.
+        /// Apart from the store mode, the batched `ColumnsScatter::scatter` and the kernels branch on the type, the width
+        /// and empty pieces, never on the row or piece count, so the short set reaches every branch. `BatchedWriteCombining`
+        /// covers the store mode. `SmallSelectorBoundary` runs 65536 pieces, and `HistogramLanes` counts rows for more
+        /// pieces than the lanes take.
         if (!selector_case.in_short_set)
             continue;
 
@@ -2283,9 +2284,9 @@ TEST(ColumnScatter, ComputePassBits)
 }
 
 /// The chunk kernels in the order a caller uses them: a histogram over two uneven chunks with and without the lanes,
-/// one exact allocation per piece, cursors seeded once per column, then both chunks scattered. One scratch serves
-/// columns of widths 8, 2, 4 and 32. The histogram must equal a plain count, and every piece must equal
-/// `insertFromPiece`.
+/// one exact allocation per piece, cursors seeded once per column, then both chunks scattered and drained. One scratch
+/// serves columns of widths 8, 2, 4 and 32, in the direct mode and, for the widths it supports, in the combined mode.
+/// The histogram must equal a plain count, and every piece must equal `insertFromPiece`.
 TEST(ColumnScatter, ChunkKernelsCompose)
 {
     constexpr size_t num_rows = 10000;
@@ -2322,30 +2323,398 @@ TEST(ColumnScatter, ChunkKernelsCompose)
             ASSERT_EQ(plain[piece], piece_rows.of(piece).size()) << "fanout " << fanout << ", piece " << piece << ", without lanes";
         }
 
-        ColumnsScatter::ScatterScratch scratch;
-        scratch.init(fanout);
-        for (const auto & column : group)
+        for (const auto scratch_mode : {ColumnsScatter::StoreMode::Direct, ColumnsScatter::StoreMode::Combined})
         {
-            const size_t width = column->sizeOfValueIfFixed();
-            MutableColumns pieces(fanout);
-            for (size_t piece = 0; piece < fanout; ++piece)
+            ColumnsScatter::ScatterScratch scratch;
+            scratch.init(fanout, scratch_mode);
+            for (const auto & column : group)
             {
-                auto [allocated, cursor] = ColumnsScatter::allocateUninitializedFixed(*column, hist[piece]);
-                ASSERT_EQ(allocated->size(), hist[piece]) << column->getName() << ", piece " << piece;
-                ASSERT_EQ(cursor.size(), hist[piece] * width) << column->getName() << ", piece " << piece;
-                scratch.seed(piece, cursor.data());
-                pieces[piece] = std::move(allocated);
-            }
+                const size_t width = column->sizeOfValueIfFixed();
+                const auto mode = width <= 16 ? scratch_mode : ColumnsScatter::StoreMode::Direct;
+                scratch.setStoreMode(mode);
+                MutableColumns pieces(fanout);
+                for (size_t piece = 0; piece < fanout; ++piece)
+                {
+                    auto [allocated, cursor] = ColumnsScatter::allocateUninitializedFixed(*column, hist[piece]);
+                    ASSERT_EQ(allocated->size(), hist[piece]) << column->getName() << ", piece " << piece;
+                    ASSERT_EQ(cursor.size(), hist[piece] * width) << column->getName() << ", piece " << piece;
+                    scratch.seed(piece, cursor.data());
+                    pieces[piece] = std::move(allocated);
+                }
 
-            const char * data = column->getRawData().data();
-            for (const auto & [offset, length] : chunks)
-                ColumnsScatter::scatterPidChunk(width, pids.data() + offset, data + offset * width, length, scratch);
+                const char * data = column->getRawData().data();
+                for (const auto & [offset, length] : chunks)
+                    ColumnsScatter::scatterPidChunk(width, pids.data() + offset, data + offset * width, length, mode, scratch);
+                scratch.drain();
 
-            for (size_t piece = 0; piece < fanout; ++piece)
-            {
-                ASSERT_TRUE(sameColumn(*insertFromPiece(*column, piece_rows.of(piece)), *pieces[piece], true))
-                    << column->getName() << ", fanout " << fanout << ", piece " << piece;
+                for (size_t piece = 0; piece < fanout; ++piece)
+                {
+                    ASSERT_TRUE(sameColumn(*insertFromPiece(*column, piece_rows.of(piece)), *pieces[piece], true))
+                        << column->getName() << ", fanout " << fanout << ", piece " << piece << ", store mode "
+                        << static_cast<UInt32>(mode);
+                }
             }
         }
     }
+}
+
+/// The limits of `chooseStoreMode`: the widths 1, 2, 4, 8 and 16, from 256 to 65536 pieces, and at least 2 lines of rows
+/// per piece on average.
+TEST(ColumnScatter, StoreModeTable)
+{
+    using ColumnsScatter::StoreMode;
+    const auto combined = [](size_t width, size_t pieces, size_t rows)
+    { return ColumnsScatter::chooseStoreMode(width, pieces, rows, true) == StoreMode::Combined; };
+
+    /// Without the hint, no shape combines.
+    for (const size_t width : {1, 2, 4, 8, 16})
+        EXPECT_EQ(ColumnsScatter::chooseStoreMode(width, 1024, size_t{1} << 30, false), StoreMode::Direct) << "width " << width;
+
+    if (!ColumnsScatter::COMBINING_ENABLED)
+    {
+        for (const size_t width : {1, 2, 4, 8, 16})
+            EXPECT_FALSE(combined(width, 1024, size_t{1} << 30)) << "width " << width;
+        return;
+    }
+
+    for (const size_t width : {1, 2, 4, 8, 16})
+    {
+        const size_t line_rows = ColumnsScatter::LINE_BYTES / width;
+        const size_t enough = 256 * ColumnsScatter::COMBINING_MIN_LINES_PER_PIECE * line_rows;
+        EXPECT_TRUE(combined(width, 256, enough)) << "width " << width;
+        EXPECT_FALSE(combined(width, 256, enough - 1)) << "width " << width << ", one row too few";
+        EXPECT_FALSE(combined(width, 255, 1000 * enough)) << "width " << width << ", 255 pieces";
+        EXPECT_TRUE(combined(width, 65536, 256 * enough)) << "width " << width << ", 65536 pieces";
+        EXPECT_FALSE(combined(width, 65537, 1000 * 256 * enough)) << "width " << width << ", 65537 pieces";
+        EXPECT_FALSE(combined(width, 1024, 0)) << "width " << width << ", no rows";
+    }
+    for (const size_t width : {0, 3, 5, 12, 24, 32, 64, 100})
+        EXPECT_FALSE(combined(width, 1024, size_t{1} << 30)) << "width " << width;
+}
+
+namespace
+{
+
+/// The piece ids of the cases that stress the staging lines: every piece gets rows, a few pieces get them, one piece
+/// takes 90% of them, one piece takes all of them, and the pieces take them in turn.
+template <typename Id>
+PaddedPODArray<Id> combiningIds(size_t kind, size_t rows, size_t pieces)
+{
+    pcg64 rng(selector_seed + kind);
+    PaddedPODArray<Id> ids;
+    ids.reserve_exact(rows);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        size_t piece = 0;
+        switch (kind)
+        {
+            case 0: piece = rng() % pieces; break;
+            case 1: piece = rng() % 4 == 0 ? pieces - 1 : rng() % 3; break;
+            case 2: piece = rng() % 10 != 0 ? 7 : rng() % pieces; break;
+            case 3: piece = 5; break;
+            default: piece = row % pieces; break;
+        }
+        ids.push_back(static_cast<Id>(piece));
+    }
+    return ids;
+}
+
+struct CombiningShape
+{
+    String name;
+    ColumnMaker make;
+    /// The widths of the parts that are written row by row.
+    std::vector<size_t> widths;
+    std::vector<size_t> pieces;
+};
+
+}
+
+/// For the shapes where `chooseStoreMode` turns write-combining on, the batched `scatter` with the hint must give the
+/// pieces of the `insertFrom` loop, with the exact sizes. Where `COMBINING_ENABLED` is false, the shapes run direct. The shapes have the 5 widths, the null map and the values of a `Nullable`, and the
+/// elements of a `Tuple`. The elements of an `Array` are copied by ranges, so they stay direct.
+TYPED_TEST(ColumnScatterByIdType, WriteCombiningMatchesInsertFrom)
+{
+    using Id = TypeParam;
+    const std::vector<CombiningShape> shapes = {
+        {"UInt8", randomFixed<ColumnUInt8>(), {1}, {256, 1024}},
+        {"UInt16", randomFixed<ColumnUInt16>(), {2}, {256, 1024}},
+        {"UInt32", randomFixed<ColumnUInt32>(), {4}, {256, 1024}},
+        {"UInt64", randomFixed<ColumnUInt64>(), {8}, {256, 1024, 65536}},
+        {"FixedString(16)", randomFixed<ColumnFixedString>(size_t{16}), {16}, {256, 1024}},
+        {"Nullable(UInt64)", nullableOf(randomFixed<ColumnUInt64>()), {1, 8}, {256, 1024}},
+        {"Nullable(Tuple(UInt16, UInt64))",
+         nullableOf(tupleOf({randomFixed<ColumnUInt16>(), randomFixed<ColumnUInt64>()})),
+         {1, 2, 8},
+         {256}},
+        {"Array(UInt64)", arrayOf(randomFixed<ColumnUInt64>()), {}, {256}},
+    };
+
+    for (const auto & shape : shapes)
+    {
+        for (const size_t pieces : shape.pieces)
+        {
+            /// The narrowest part needs the most rows.
+            const size_t narrowest = shape.widths.empty() ? 8 : *std::ranges::min_element(shape.widths);
+            const size_t rows = pieces * ColumnsScatter::COMBINING_MIN_LINES_PER_PIECE * (ColumnsScatter::LINE_BYTES / narrowest) + 777;
+            for (const size_t width : shape.widths)
+                ASSERT_EQ(ColumnsScatter::chooseStoreMode(width, pieces, rows, true) == ColumnsScatter::StoreMode::Combined, ColumnsScatter::COMBINING_ENABLED)
+                    << shape.name << ", width " << width << ", " << pieces << " pieces";
+
+            const ColumnPtr source = shape.make(rows);
+            const ColumnPtr empty_piece = source->cloneEmpty();
+            for (size_t kind = 0; kind < 5; ++kind)
+            {
+                const auto ids = combiningIds<Id>(kind, rows, pieces);
+                const PieceRows piece_rows(ids, pieces);
+                const std::array<const IColumn *, 1> sources{source.get()};
+                const std::array<std::span<const Id>, 1> id_spans{std::span<const Id>(ids.data(), ids.size())};
+                const auto counts = ColumnsScatter::countRowsPerPiece<Id>(id_spans, pieces);
+                const auto result = ColumnsScatter::scatter<Id>(sources, id_spans, counts, true);
+                ASSERT_EQ(result.size(), pieces) << shape.name;
+                for (size_t piece = 0; piece < pieces; ++piece)
+                {
+                    const auto piece_row_ids = piece_rows.of(piece);
+                    ASSERT_EQ(result[piece]->size(), piece_row_ids.size()) << shape.name << ", kind " << kind << ", piece " << piece;
+                    if (!comparedInFull(piece, pieces, piece_row_ids.size()))
+                        continue;
+                    const ColumnPtr oracle = piece_row_ids.empty() ? empty_piece : ColumnPtr(insertFromPiece(*source, piece_row_ids));
+                    ASSERT_TRUE(sameColumn(*oracle, *result[piece], true))
+                        << shape.name << ", " << pieces << " pieces, kind " << kind << ", piece " << piece;
+                    ASSERT_TRUE(exactPiece(*result[piece], *oracle))
+                        << shape.name << ", " << pieces << " pieces, kind " << kind << ", piece " << piece;
+                }
+            }
+        }
+    }
+}
+
+/// The first line of a piece starts at its cursor, which can be any multiple of the width inside a 64-byte line. In the
+/// combined mode, each row must land where the direct mode puts it, and the bytes around each piece must stay as they
+/// were: neither the regular stores of the first line nor the non-temporal stores of the full lines may spill.
+TEST(ColumnScatter, MisalignedCursorSeeding)
+{
+    constexpr size_t fanout = 128;
+    constexpr size_t rows = 20000;
+    constexpr size_t guard = 64;
+    pcg64 rng(selector_seed);
+
+    for (const size_t width : {1, 2, 4, 8, 16})
+    {
+        PaddedPODArray<char> data;
+        data.resize(rows * width);
+        for (char & byte : data)
+            byte = static_cast<char>(rng());
+        const auto pids = randomIds<UInt16>(rng, rows, fanout);
+        const PieceRows piece_rows(pids, fanout);
+
+        size_t most_rows = 0;
+        for (size_t piece = 0; piece < fanout; ++piece)
+            most_rows = std::max(most_rows, piece_rows.of(piece).size());
+        const size_t stride = (guard + most_rows * width + 64 + guard + 63) / 64 * 64;
+
+        PaddedPODArray<char> memory;
+        memory.resize(fanout * stride + 64);
+        std::memset(memory.data(), 0xAA, memory.size());
+        char * base = reinterpret_cast<char *>((reinterpret_cast<uintptr_t>(memory.data()) + 63) & ~uintptr_t{63});
+
+        std::vector<char *> starts(fanout);
+        ColumnsScatter::ScatterScratch scratch;
+        scratch.init(fanout, ColumnsScatter::StoreMode::Combined);
+        for (size_t piece = 0; piece < fanout; ++piece)
+        {
+            /// Every multiple of the width inside a line, in turn.
+            starts[piece] = base + piece * stride + guard + (piece % (ColumnsScatter::LINE_BYTES / width)) * width;
+            scratch.seed(piece, starts[piece]);
+        }
+
+        for (const auto & [offset, length] : std::to_array<std::pair<size_t, size_t>>({{0, 6000}, {6000, 1}, {6001, rows - 6001}}))
+            ColumnsScatter::scatterPidChunk(
+                width, pids.data() + offset, data.data() + offset * width, length, ColumnsScatter::StoreMode::Combined, scratch);
+        scratch.drain();
+
+        PaddedPODArray<char> expected;
+        expected.resize(memory.size());
+        std::memset(expected.data(), 0xAA, expected.size());
+        char * expected_base = expected.data() + (base - memory.data());
+        for (size_t piece = 0; piece < fanout; ++piece)
+        {
+            char * out = expected_base + (starts[piece] - base);
+            for (const UInt32 row : piece_rows.of(piece))
+            {
+                std::memcpy(out, data.data() + row * width, width);
+                out += width;
+            }
+        }
+        ASSERT_TRUE(sameBytes(bytesOf(expected), bytesOf(memory))) << "width " << width;
+    }
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+/// Each misuse of the chunk API throws `LOGICAL_ERROR`, which aborts Debug and sanitizer builds. So the test runs in
+/// Release builds only.
+TEST(ColumnScatter, ChunkMisuse)
+{
+    using ColumnsScatter::StoreMode;
+    alignas(64) char memory[1024] = {};
+    const std::vector<UInt16> pids(16, 1);
+    std::vector<UInt64> data(16, 7);
+    const char * rows = reinterpret_cast<const char *>(data.data());
+
+    const auto seed_all = [&](ColumnsScatter::ScatterScratch & scratch)
+    {
+        for (size_t piece = 0; piece < 4; ++piece)
+            scratch.seed(piece, memory + piece * 256);
+    };
+
+    ColumnsScatter::ScatterScratch direct;
+    direct.init(4, StoreMode::Direct);
+    seed_all(direct);
+    expectErrorCode(ErrorCodes::LOGICAL_ERROR, "combined mode without staging lines", [&] { direct.setStoreMode(StoreMode::Combined); });
+    expectErrorCode(
+        ErrorCodes::LOGICAL_ERROR,
+        "combined call on a direct scratch",
+        [&] { ColumnsScatter::scatterPidChunk(8, pids.data(), rows, 16, StoreMode::Combined, direct); });
+
+    ColumnsScatter::ScatterScratch combined;
+    combined.init(4, StoreMode::Combined);
+    seed_all(combined);
+    expectErrorCode(
+        ErrorCodes::LOGICAL_ERROR,
+        "direct call on a combined scratch",
+        [&] { ColumnsScatter::scatterPidChunk(8, pids.data(), rows, 16, StoreMode::Direct, combined); });
+    for (const size_t width : {3, 32})
+        expectErrorCode(
+            ErrorCodes::LOGICAL_ERROR,
+            "combined call with an unsupported width",
+            [&] { ColumnsScatter::scatterPidChunk(width, pids.data(), rows, 2, StoreMode::Combined, combined); });
+
+    combined.seed(2, memory + 256 * 2 + 4);
+    expectErrorCode(
+        ErrorCodes::LOGICAL_ERROR,
+        "combined call with a cursor that is not a multiple of the width",
+        [&] { ColumnsScatter::scatterPidChunk(8, pids.data(), rows, 16, StoreMode::Combined, combined); });
+
+    /// With the cursor back on a multiple of the width, the same call works.
+    combined.seed(2, memory + 256 * 2);
+    ColumnsScatter::scatterPidChunk(8, pids.data(), rows, 16, StoreMode::Combined, combined);
+    combined.drain();
+    EXPECT_EQ(std::memcmp(memory + 256, data.data(), 16 * sizeof(UInt64)), 0);
+}
+#endif
+
+/// A scratch serves the next column after `drain`, also when that column has another width and gives rows to fewer
+/// pieces. The pieces that get no rows keep no cursor of the column before, so its misaligned cursors do not fail the
+/// alignment check of the next one.
+TEST(ColumnScatter, ChunkScratchReuse)
+{
+    using ColumnsScatter::StoreMode;
+    constexpr size_t fanout = 8;
+    alignas(64) char memory[fanout * 256] = {};
+    pcg64 rng(selector_seed);
+
+    ColumnsScatter::ScatterScratch scratch;
+    scratch.init(fanout, StoreMode::Combined);
+
+    /// A column of 2-byte rows, with cursors that are multiples of 2 and not of 8.
+    const std::vector<UInt16> narrow_pids(64, 1);
+    const std::vector<UInt16> narrow_rows(64, 0x0102);
+    for (size_t piece = 0; piece < fanout; ++piece)
+        scratch.seed(piece, memory + piece * 256 + 2);
+    ColumnsScatter::scatterPidChunk(
+        2, narrow_pids.data(), reinterpret_cast<const char *>(narrow_rows.data()), 64, StoreMode::Combined, scratch);
+    scratch.drain();
+    for (const char * cursor : scratch.cursors)
+        EXPECT_EQ(cursor, nullptr);
+
+    /// A column of 8-byte rows that all go to piece 3, the only piece that is seeded.
+    std::vector<UInt64> wide_rows(100);
+    for (auto & row : wide_rows)
+        row = rng();
+    const std::vector<UInt16> wide_pids(100, 3);
+    scratch.seed(3, memory + 3 * 256 + 8);
+    ColumnsScatter::scatterPidChunk(
+        8, wide_pids.data(), reinterpret_cast<const char *>(wide_rows.data()), 100, StoreMode::Combined, scratch);
+    scratch.drain();
+    EXPECT_EQ(std::memcmp(memory + 3 * 256 + 8, wide_rows.data(), 100 * sizeof(UInt64)), 0);
+}
+
+/// `init` makes a scratch ready for another number of pieces and another mode, and `setStoreMode` switches the mode of a
+/// scratch that has staging lines. After each, the scratch scatters a column in its mode.
+TEST(ColumnScatter, ChunkScratchReinit)
+{
+    using ColumnsScatter::StoreMode;
+    ColumnsScatter::ScatterScratch scratch;
+    EXPECT_EQ(scratch.mode(), StoreMode::Direct);
+
+    /// The pieces take 10 rows of 8 bytes each, in turn. Each piece has 128 bytes and starts 16 bytes into them.
+    const auto scatter_and_check = [&scratch](size_t fanout, StoreMode mode)
+    {
+        EXPECT_EQ(scratch.mode(), mode);
+        EXPECT_EQ(scratch.cursors.size(), fanout);
+        std::vector<UInt64> rows(fanout * 10);
+        std::vector<UInt16> pids(rows.size());
+        for (size_t i = 0; i < rows.size(); ++i)
+        {
+            rows[i] = i;
+            pids[i] = static_cast<UInt16>(i % fanout);
+        }
+        std::vector<UInt64> memory(fanout * 16 + 2);
+        char * const base = reinterpret_cast<char *>(memory.data()) + 16;
+        for (size_t piece = 0; piece < fanout; ++piece)
+            scratch.seed(piece, base + piece * 128);
+        ColumnsScatter::scatterPidChunk(8, pids.data(), reinterpret_cast<const char *>(rows.data()), rows.size(), mode, scratch);
+        scratch.drain();
+        for (size_t piece = 0; piece < fanout; ++piece)
+            for (size_t k = 0; k < 10; ++k)
+            {
+                UInt64 value = 0;
+                memcpy(&value, base + piece * 128 + k * 8, sizeof(value));
+                ASSERT_EQ(value, piece + k * fanout) << "mode " << static_cast<int>(mode) << ", " << fanout << " pieces, piece " << piece;
+            }
+    };
+
+    for (const auto [fanout, mode] : std::vector<std::pair<size_t, StoreMode>>{
+             {256, StoreMode::Combined},
+             {300, StoreMode::Direct},
+             {1024, StoreMode::Combined},
+             {1024, StoreMode::Direct},
+             {256, StoreMode::Combined},
+             {256, StoreMode::Combined},
+             {17, StoreMode::Direct}})
+    {
+        scratch.init(fanout, mode);
+        scatter_and_check(fanout, mode);
+    }
+
+    scratch.init(512, StoreMode::Combined);
+    scratch.setStoreMode(StoreMode::Direct);
+    scatter_and_check(512, StoreMode::Direct);
+    scratch.setStoreMode(StoreMode::Combined);
+    scatter_and_check(512, StoreMode::Combined);
+
+    scratch.init(0, StoreMode::Direct);
+    EXPECT_EQ(scratch.cursors.size(), 0);
+    EXPECT_EQ(scratch.mode(), StoreMode::Direct);
+    scratch.init(0, StoreMode::Combined);
+    EXPECT_EQ(scratch.cursors.size(), 0);
+    EXPECT_EQ(scratch.mode(), StoreMode::Combined);
+    scratch.drain();
+}
+
+/// Several sources of fixed-width columns, at shapes where `chooseStoreMode` turns write-combining on, give with the hint
+/// the pieces that `scatter` gives for each source alone. The staging lines carry rows from one source to the next.
+TYPED_TEST(ColumnScatterByIdType, BatchedWriteCombining)
+{
+    expectSameAsPerSource<TypeParam>(
+        {
+            {.name = "UInt64", .makes = {randomFixed<ColumnUInt64>(), randomFixed<ColumnUInt64>()}, .rows = {3000, 2500}},
+            {.name = "UInt16", .makes = {randomFixed<ColumnUInt16>(), randomFixed<ColumnUInt16>()}, .rows = {9000, 8000}},
+            {.name = "UInt8", .makes = {randomFixed<ColumnUInt8>(), randomFixed<ColumnUInt8>()}, .rows = {20000, 15000}},
+            {.name = "Nullable(UInt64)",
+             .makes = {nullableOf(randomFixed<ColumnUInt64>()), nullableOf(randomFixed<ColumnUInt64>())},
+             .rows = {20000, 15000}},
+        },
+        256,
+        /*allow_combining=*/true);
 }
