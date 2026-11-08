@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS t_detach_lifetime;
 DROP TABLE IF EXISTS t_detach_keep_empty;
 DROP TABLE IF EXISTS t_detach_part;
 DROP TABLE IF EXISTS t_detach_reload;
+DROP TABLE IF EXISTS t_detach_readonly;
 DROP TABLE IF EXISTS t_detach_loading;
 
 SELECT 'empty_parts_lifetime';
@@ -73,6 +74,23 @@ ALTER TABLE t_detach_reload ATTACH PARTITION 1;
 SELECT count(), sum(k) FROM t_detach_reload;
 SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_detach_reload';
 
+SELECT 'table_readonly';
+-- A table loaded read-only outdates the empty part when it becomes writable.
+CREATE TABLE t_detach_readonly (p UInt8, k UInt32) ENGINE = MergeTree PARTITION BY p ORDER BY k
+SETTINGS remove_empty_parts = 0, old_parts_lifetime = 3600;
+INSERT INTO t_detach_readonly SETTINGS async_insert = 0 VALUES (1, 1), (1, 2), (1, 3);
+ALTER TABLE t_detach_readonly DETACH PARTITION 1;
+ALTER TABLE t_detach_readonly MODIFY SETTING table_readonly = 1;
+DETACH TABLE t_detach_readonly;
+ATTACH TABLE t_detach_readonly;
+ALTER TABLE t_detach_readonly MODIFY SETTING table_readonly = 0;
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_detach_readonly' AND active;
+INSERT INTO t_detach_readonly SETTINGS async_insert = 0 VALUES (1, 4);
+OPTIMIZE TABLE t_detach_readonly PARTITION 1 FINAL;
+ALTER TABLE t_detach_readonly DETACH PARTITION 1;
+ALTER TABLE t_detach_readonly ATTACH PARTITION 1;
+SELECT count(), sum(k) FROM t_detach_readonly;
+
 SELECT 'ATTACH TABLE before the outdated parts are loaded';
 -- The empty part outdated on load stays on disk while the outdated parts it covers are not loaded yet,
 -- otherwise the cleanup removes it and the next load makes them active again.
@@ -99,4 +117,5 @@ DROP TABLE t_detach_lifetime;
 DROP TABLE t_detach_keep_empty;
 DROP TABLE t_detach_part;
 DROP TABLE t_detach_reload;
+DROP TABLE t_detach_readonly;
 DROP TABLE t_detach_loading;
