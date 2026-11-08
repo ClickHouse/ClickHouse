@@ -2231,7 +2231,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedUnnestColumnNode
         auto column_node = std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource());
 
         IdentifierLookup identifier_lookup{Identifier(column_name), IdentifierLookupContext::EXPRESSION};
-        if (IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, /*table_expression_node_to_ignore=*/ nullptr, qualify_scope)
+        if (IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, /*table_expression_node=*/ nullptr, qualify_scope)
             || IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, qualify_scope)
             || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, qualify_scope, unnest_node.get()))
             node_to_projection_name.emplace(column_node, unnest_node_typed.getUnnestAlias() + '.' + column_name);
