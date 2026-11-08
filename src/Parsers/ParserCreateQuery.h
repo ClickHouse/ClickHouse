@@ -534,7 +534,6 @@ protected:
 };
 
 
-
 class ParserConstraintDeclaration : public IParserBase
 {
 protected:
