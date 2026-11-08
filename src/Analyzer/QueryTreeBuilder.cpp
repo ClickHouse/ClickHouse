@@ -389,41 +389,6 @@ void replaceUnnestQualifiedColumns(ASTPtr & ast, const String & table_alias, con
         replaceUnnestQualifiedColumns(child, table_alias, column_to_binder);
 }
 
-/// In the mask, `*` and `COLUMNS('re')` would see only the preceding tables and `u.*` nothing.
-void checkNoUnnestMatchers(const ASTPtr & ast, const String & table_alias, bool alias_shadowed = false)
-{
-    if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
-        return;
-
-    auto throw_not_supported = [&]()
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported in the ON condition of unnest(...) AS {}, name the columns instead",
-            ast->formatForErrorMessage(), table_alias);
-    };
-
-    if (ast->as<ASTAsterisk>() || ast->as<ASTColumnsRegexpMatcher>())
-        throw_not_supported();
-
-    ASTPtr qualifier;
-    if (const auto * qualified_asterisk = ast->as<ASTQualifiedAsterisk>())
-        qualifier = qualified_asterisk->qualifier;
-    else if (const auto * qualified_regexp_matcher = ast->as<ASTQualifiedColumnsRegexpMatcher>())
-        qualifier = qualified_regexp_matcher->qualifier;
-    else if (const auto * qualified_list_matcher = ast->as<ASTQualifiedColumnsListMatcher>())
-        qualifier = qualified_list_matcher->qualifier;
-
-    if (qualifier && !alias_shadowed)
-    {
-        const auto * qualifier_identifier = qualifier->as<ASTIdentifier>();
-        if (qualifier_identifier && qualifier_identifier->name_parts.size() == 1 && qualifier_identifier->name_parts[0] == table_alias)
-            throw_not_supported();
-    }
-
-    bool child_alias_shadowed = alias_shadowed || isLambdaWithParameter(ast, table_alias);
-    for (const auto & child : ast->children)
-        checkNoUnnestMatchers(child, table_alias, child_alias_shadowed);
-}
-
 /** `t, unnest(e1, ..., en) AS u(c1, ...)` is `t ARRAY JOIN e1 AS c1, ...`. A non-trivial `ON c` filters every array
   * with the per-row mask `arrayMap((c1, ..., ck, Q1, ..., Qk) -> c, A1, ..., Ak, A1, ..., Ak)`, where `u.ci` in `c` is
   * replaced by the fresh name `Qi`, so that no lambda in `c` can capture it.
@@ -439,8 +404,6 @@ ASTPtr buildUnnestArrayJoinExpressions(const UnnestTableExpression & unnest, con
 
     if (has_condition)
     {
-        checkNoUnnestMatchers(on_expression, unnest.table_alias);
-
         NameSet used_names(unnest.column_names.begin(), unnest.column_names.end());
         collectNames(on_expression, used_names);
 

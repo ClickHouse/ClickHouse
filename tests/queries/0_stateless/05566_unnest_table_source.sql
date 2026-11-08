@@ -69,6 +69,10 @@ SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS u(x) ON u.COLUMNS('x'
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(e -> e = COLUMNS('^x$'), [20]); -- { serverError NOT_IMPLEMENTED }
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON EXISTS (SELECT 1 WHERE u.x > 10); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON EXISTS (SELECT 1 WHERE x > 10); -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+WITH tuple(*) AS cols SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON cols.1 = 1; -- { serverError NOT_IMPLEMENTED }
+WITH tuple(u.*) AS cols SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON cols.1 = 20; -- { serverError NOT_IMPLEMENTED }
+SELECT id, x FROM t_unnest AS t, unnest(arrayMap(e -> tuple(*).1, t.arr)) AS u(x); -- { serverError NOT_IMPLEMENTED }
+WITH u.x AS y SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON y > 10; -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '-- lateral';
 SELECT id, x FROM t_unnest AS t, unnest(t.arr) AS x ORDER BY ALL;
@@ -118,6 +122,8 @@ SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON tuple(t.*).1 = 1 O
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON x IN (SELECT * FROM values('v UInt32', 20, 30)) ORDER BY ALL;
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON COLUMNS(x) > 15 ORDER BY ALL;
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(u -> tuple(u.*).1 = x, [CAST(tuple(20), 'Tuple(x UInt32)')]) ORDER BY ALL;
+WITH 15 AS lim SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON x > lim ORDER BY ALL;
+SELECT id, a, tag FROM t_unnest AS t ARRAY JOIN arrayConcat(COLUMNS('^arr$')) AS a CROSS JOIN unnest(t.tags) AS tag ORDER BY ALL;
 
 CREATE TABLE t_unnest_binder (id UInt32, arr Array(UInt32), __unnest_column_1 UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_unnest_binder VALUES (1, [10, 20], 0), (2, [30], 1), (3, [40], 0);

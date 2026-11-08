@@ -2427,7 +2427,8 @@ static void checkSemiAntiJoinTableAccess(
 }
 
 /// The resolved `unnest(...)` ARRAY JOIN of the nearest query whose unnest alias is `qualifier`.
-static QueryTreeNodePtr findUnnestArrayJoinNode(const Identifier & qualifier, const IdentifierResolveScope & scope)
+static QueryTreeNodePtr findUnnestArrayJoinNode(
+    const Identifier & qualifier, const IdentifierResolveScope & scope, bool * is_resolving_its_expressions = nullptr)
 {
     const auto * nearest_query_scope = scope.getNearestQueryScope();
     const auto * query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
@@ -2443,7 +2444,11 @@ static QueryTreeNodePtr findUnnestArrayJoinNode(const Identifier & qualifier, co
         if (const auto * array_join_node = node->as<ArrayJoinNode>())
         {
             if (array_join_node->isUnnest() && array_join_node->getUnnestAlias() == qualifier.getFullName())
+            {
+                if (is_resolving_its_expressions)
+                    *is_resolving_its_expressions = nearest_query_scope->resolving_join_on_expression == node.get();
                 return nearest_query_scope->table_expressions_in_resolve_process.contains(node.get()) ? nullptr : node;
+            }
             nodes_to_process.push_back(array_join_node->getTableExpressionNode());
         }
         else if (const auto * join_node = node->as<JoinNode>())
@@ -2459,6 +2464,15 @@ static QueryTreeNodePtr findUnnestArrayJoinNode(const Identifier & qualifier, co
     }
 
     return nullptr;
+}
+
+/// In the arguments and the `ON` mask of `unnest`, a matcher would not see the unnest columns.
+[[noreturn]] static void throwMatcherInUnnestExpressions(const QueryTreeNodePtr & matcher_node, const String & unnest_alias)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "{} is not supported in the arguments or the ON condition of unnest(...) AS {}, name the columns instead",
+        matcher_node->formatASTForErrorMessage(),
+        unnest_alias);
 }
 
 /** Resolve qualified tree matcher.
@@ -2554,7 +2568,12 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     }
 
     /// The qualifier of `unnest(...) AS u` names the unnest columns, like a table alias names the table columns.
-    if (auto unnest_node = findUnnestArrayJoinNode(matcher_node_typed.getQualifiedIdentifier(), scope))
+    bool unnest_is_resolving_its_expressions = false;
+    auto unnest_node = findUnnestArrayJoinNode(matcher_node_typed.getQualifiedIdentifier(), scope, &unnest_is_resolving_its_expressions);
+    if (unnest_is_resolving_its_expressions)
+        throwMatcherInUnnestExpressions(matcher_node, matcher_node_typed.getQualifiedIdentifier().getFullName());
+
+    if (unnest_node)
     {
         checkSemiAntiJoinTableAccess(unnest_node, scope, matcher_node);
 
@@ -2774,7 +2793,12 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     "Expected at least 1 table expressions on stack before ARRAY JOIN processing");
 
             if (table_expression_in_resolve_process)
+            {
+                if (const auto & array_join_node = table_expression->as<ArrayJoinNode &>();
+                    array_join_node.isUnnest() && nearest_query_scope->resolving_join_on_expression == table_expression.get())
+                    throwMatcherInUnnestExpressions(matcher_node, array_join_node.getUnnestAlias());
                 continue;
+            }
 
             auto & table_expression_column_nodes_with_names = table_expressions_column_nodes_with_names_stack.back();
 
