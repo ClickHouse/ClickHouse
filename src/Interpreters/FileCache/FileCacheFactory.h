@@ -60,6 +60,9 @@ public:
 
     void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context);
 
+    /// Every cache created after this works in an empty directory under `path` and leaves its own directory as it is.
+    void setScratchPath(const std::string & path);
+
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     void remove(FileCachePtr cache);
@@ -67,8 +70,12 @@ public:
     void clear();
 
 private:
+    FileCachePtr makeCache(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
+
     std::mutex mutex;
     CacheByName caches_by_name;
+    std::string scratch_path;
+    size_t scratch_caches = 0;
 };
 
 /// Get default path prefix for non-disk caches.

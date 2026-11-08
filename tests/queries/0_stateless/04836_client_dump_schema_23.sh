@@ -25,7 +25,22 @@ snapshot()
 echo '--- a dump changes no file of the data path ---'
 src="$work/src"
 cd "$work" || exit 1
-$CLICKHOUSE_LOCAL --path "$src" --allow_deprecated_database_ordinary=1 -n -q "
+# A filesystem cache of the configuration and the cache of a disk.
+config="$work/caches.xml"
+cat > "$config" <<EOF
+<clickhouse>
+    <filesystem_caches>
+        <fc><path>$src/fscache/</path><max_size>100Mi</max_size></fc>
+    </filesystem_caches>
+    <storage_configuration>
+        <disks>
+            <blob><type>local_blob_storage</type><path>$src/blob/</path></blob>
+            <cached><type>cache</type><disk>blob</disk><path>$src/cache/disk/</path><max_size>100Mi</max_size></cached>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+EOF
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$src" --allow_deprecated_database_ordinary=1 -n -q "
 CREATE DATABASE d;
 CREATE TABLE d.rocks (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
 INSERT INTO d.rocks VALUES (1, 'a');
@@ -36,6 +51,8 @@ INSERT INTO d.lg VALUES (1);
 INSERT INTO d.tl VALUES (1);
 INSERT INTO d.sl VALUES (1);
 CREATE TABLE d.mt (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE d.cached (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS disk = 'cached';
+INSERT INTO d.cached VALUES (1);
 CREATE DATABASE o ENGINE = Ordinary;
 CREATE TABLE o.t (x UInt64) ENGINE = Memory;
 CREATE DATABASE \`.tmp_restore_db_for_table_dropping_d\`;
@@ -60,9 +77,17 @@ mkdir -p "$src/named_collections"
 echo 'CREATE NAMED COLLECTION nc AS a = 1' > "$src/named_collections/nc.sql.tmp"
 printf 'PID: 1\n' > "$src/status"
 rm -rf "$src/dynamic_user_defined_executable_functions"
+# Leftover segments, which loading a cache removes, and the status file of a crashed instance, which it replaces.
+for cache in "$src/fscache" "$src/cache/disk"; do
+    mkdir -p "$cache/abc/abcdef0123456789abcdef0123456789"
+    printf 'x' > "$cache/abc/abcdef0123456789abcdef0123456789/0_temporary"
+    printf 'x' > "$cache/abc/abcdef0123456789abcdef0123456789/1_persistent"
+    touch "$cache/abc/abcdef0123456789abcdef0123456789/2"
+    printf 'PID: 1\n' > "$cache/status"
+done
 
 before=$(snapshot "$src")
-$CLICKHOUSE_LOCAL --path "$src" --dump-schema=d,o > "$work/dump.sql" 2> "$work/err.txt" || echo "FAIL: dump failed: $(cat "$work/err.txt")"
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$src" --dump-schema=d,o > "$work/dump.sql" 2> "$work/err.txt" || echo "FAIL: dump failed: $(cat "$work/err.txt")"
 echo "tables dumped: $(grep -c '^CREATE TABLE' "$work/dump.sql")"
 after=$(snapshot "$src")
 if [ "$before" = "$after" ]; then
@@ -85,7 +110,7 @@ echo '--- an object that was not dropped completely is refused ---'
 # The object still has its data, so loading would restore its metadata file.
 mkdir -p "$src/data/o/gone"
 before=$(snapshot "$src")
-$CLICKHOUSE_LOCAL --path "$src" --dump-schema=d,o > /dev/null 2> "$work/err.txt"
+$CLICKHOUSE_LOCAL --config-file "$config" --path "$src" --dump-schema=d,o > /dev/null 2> "$work/err.txt"
 echo "dump rc=$?, refused: $(grep -c 'was not dropped completely' "$work/err.txt")"
 after=$(snapshot "$src")
 [ "$before" = "$after" ] && echo 'data path unchanged by the refused dump' || diff <(echo "$before") <(echo "$after")

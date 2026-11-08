@@ -799,6 +799,8 @@ void LocalServer::tryInitPath()
         const fs::path scratch = fs::temp_directory_path() / fmt::format("clickhouse-local-{}", UUIDHelpers::generateV4());
         temporary_directory_to_delete = scratch;
         temporary_storage_path = scratch / "tmp" / "";
+        /// A filesystem cache removes leftover files from its directory and downloads into it, so the dump opens it here.
+        FileCacheFactory::instance().setScratchPath(scratch / "caches");
     }
     global_context->setTemporaryStoragePath(
         temporary_storage_path, max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
