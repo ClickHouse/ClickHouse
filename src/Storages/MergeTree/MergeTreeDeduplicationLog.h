@@ -178,7 +178,11 @@ public:
     /// to a `DROP`/`DETACH`/`TRUNCATE`/`REPLACE PARTITION` whose deduplication-log `DROP`
     /// records were never written (the previous leader died, or its lease went stale, between
     /// retiring the partition and updating the log).
-    void dropPart(const MergeTreePartInfo & drop_part_info);
+    /// With `sync_to_disk`, every record written so far is fsynced before returning, even if there was nothing to remove:
+    /// the covered records may have been evicted from the window by newer records, and the eviction is durable only if they are.
+    /// A failure to sync is propagated. After such a failure, every later call with `sync_to_disk` throws,
+    /// because the removal may not be durable.
+    void dropPart(const MergeTreePartInfo & drop_part_info, bool sync_to_disk = false);
 
     /// Load history from disk. Ignores broken logs, unless `throw_on_broken_log` is set: then an error
     /// reading any log propagates, because a partial history can silently drop a retried insert (a missing
@@ -232,6 +236,14 @@ private:
     const bool disk_supports_writing_with_append;
 
     bool stopped{false};
+
+    /// A durable removal (`dropPart` with `sync_to_disk`) did not complete: its records are already removed from memory,
+    /// but they may be lost on disk, and syncing the log again does not prove otherwise. Further durable removals fail.
+    bool durable_drop_failed{false};
+
+    /// Some records written by this process may be lost on disk: a log failed to be flushed or synced, and its writer
+    /// was canceled. Durable removals fail then, because they rely on all the records written so far being durable.
+    bool records_may_be_lost{false};
 
     /// Start new log
     void rotate();

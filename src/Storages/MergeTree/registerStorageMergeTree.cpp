@@ -1208,6 +1208,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
+        MergeTreeData::checkStoredExpressions(metadata, args.getLocalContext());
+
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
     {

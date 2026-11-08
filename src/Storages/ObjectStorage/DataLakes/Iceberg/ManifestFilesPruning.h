@@ -63,6 +63,9 @@ private:
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key = nullptr;
     std::optional<DB::KeyCondition> partition_key_condition;
+    /// The same key over Nullable inputs, for a partition tuple that holds NULL.
+    std::optional<DB::KeyDescription> nullable_partition_key;
+    std::optional<DB::KeyCondition> nullable_partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
