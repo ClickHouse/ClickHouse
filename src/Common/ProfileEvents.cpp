@@ -1819,6 +1819,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrefetcherUsedBytes, "Total bytes of the ranges read by DB::Parquet::Prefetcher that were actually used by the parquet reader.", ValueType::Bytes) \
     M(ParquetDecompressedBytes, "Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.", ValueType::Bytes) \
     M(ParquetPagesDecompressedToSkipRows, "Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).", ValueType::Number) \
+    M(ParquetTopKRowGroupsBoundedByDictionary, "The number of parquet row groups whose `ORDER BY ... LIMIT` sort column range was taken from the values of its dictionary that can pass the filter, because its min/max statistics could not bound it (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
     M(ParquetTopKSkippedRowGroups, "The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
     M(ParquetFilesSkippedByCachedStatistics, "The number of Parquet files that a read skipped without opening them, because the min/max statistics of the filter columns, kept with the cached file metadata by an earlier read of the same file version, exclude every row group", ValueType::Number) \
     M(ParquetReadMinMaxFromStatistics, "The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)", ValueType::Number) \
@@ -2265,8 +2266,7 @@ const std::string_view & getDocumentation(Event event)
     return docs[event];
 }
 
-/// Get ProfileEvent by its name
-Event getByName(std::string_view name)
+static const std::unordered_map<std::string_view, Event> & getNameToEventMap()
 {
     static const std::unordered_map<std::string_view, Event> map =
     {
@@ -2275,6 +2275,13 @@ Event getByName(std::string_view name)
 #undef M
     };
 
+    return map;
+}
+
+/// Get ProfileEvent by its name
+Event getByName(std::string_view name)
+{
+    const auto & map = getNameToEventMap();
     auto it = map.find(name);
     if (it == map.end())
     {
@@ -2287,6 +2294,15 @@ Event getByName(std::string_view name)
             name, DB::getHintsErrorMessageSuffix(DB::NamePrompter<3>::getHints(String(name), all_names)));
     }
 
+    return it->second;
+}
+
+std::optional<Event> tryGetByName(std::string_view name)
+{
+    const auto & map = getNameToEventMap();
+    auto it = map.find(name);
+    if (it == map.end())
+        return std::nullopt;
     return it->second;
 }
 
