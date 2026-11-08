@@ -229,7 +229,6 @@ namespace
         return ColumnBounds{*declared_left, *declared_right, *left, *right};
     }
 
-    /// The fields of the record type of the Avro field `name` in `fields`, nullptr if there is no such record.
     Poco::JSON::Array::Ptr getRecordFields(const Poco::JSON::Array::Ptr & fields, const String & name)
     {
         if (!fields)
@@ -246,8 +245,7 @@ namespace
         return nullptr;
     }
 
-    /// For a manifest without `partition-spec`, the position in its partition record of the value of each field of
-    /// `spec_fields`, matched by field id as the Java reader does, nullopt for a field the record does not have.
+    /// The position in the partition record of each field of `spec_fields`, matched by field id, nullopt if absent.
     /// Empty if the record is in the order of the spec or has no field ids, so its values are taken by position.
     std::vector<std::optional<size_t>> getPartitionValuePositions(
         const AvroForIcebergDeserializer & deserializer,
@@ -515,8 +513,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     }
     else
     {
-        /// Writers that rewrite manifests with a generic Avro library drop this key. Like the Java reader, take the spec
-        /// the manifest list names from the table metadata.
+        /// Some writers drop this key. Like the Java reader, take the spec the manifest list names from the table metadata.
         partition_specification = schema_processor.tryGetPartitionSpecFields(partition_spec_id_);
         if (!partition_specification)
             throw Exception(
@@ -545,8 +542,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     }
     else if (!schema_json_string.has_value())
     {
-        /// Without the schema the manifest was written with, take the metadata copy of it: the one the manifest names,
-        /// else the schema of the snapshot that added the manifest, else the schema the table is read with.
         if (header_schema_id.has_value())
             manifest_schema_id = *header_schema_id;
         else
