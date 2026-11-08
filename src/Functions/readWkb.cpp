@@ -241,6 +241,7 @@ REGISTER_FUNCTION(ReadWKB)
 {
     FunctionDocumentation::Description description_point = R"(
 Parses a Well-Known Binary (WKB) representation of a Point geometry and returns it in the internal ClickHouse format.
+ISO WKB and EWKB inputs with `Z`, `M`, or `ZM` coordinates are accepted. Only X and Y are returned; additional coordinates and any EWKB SRID are discarded without transforming the coordinate reference system.
     )";
     FunctionDocumentation::Syntax syntax_point = "readWKBPoint(wkb_string)";
     FunctionDocumentation::Arguments arguments_point = {
@@ -267,6 +268,7 @@ Point
 
     FunctionDocumentation::Description description_linestring = R"(
 Parses a Well-Known Binary (WKB) representation of a LineString geometry and returns it in the internal ClickHouse format.
+ISO WKB and EWKB inputs with `Z`, `M`, or `ZM` coordinates are accepted. Only X and Y are returned; additional coordinates and any EWKB SRID are discarded without transforming the coordinate reference system.
     )";
     FunctionDocumentation::Syntax syntax_linestring = "readWKBLineString(wkb_string)";
     FunctionDocumentation::Arguments arguments_linestring = {{"wkb_string", "The input WKB string representing a LineString geometry.", {"String"}}};
@@ -291,6 +293,7 @@ SELECT readWKBLineString(unhex('010200000004000000000000000000f03f000000000000f0
 
     FunctionDocumentation::Description description_multipoint = R"(
 Parses a Well-Known Binary (WKB) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
+ISO WKB and EWKB inputs with `Z`, `M`, or `ZM` coordinates are accepted. Only X and Y are returned; additional coordinates and any EWKB SRID are discarded without transforming the coordinate reference system.
     )";
     FunctionDocumentation::Syntax syntax_multipoint = "readWKBMultiPoint(wkb_string)";
     FunctionDocumentation::Arguments arguments_multipoint = {{"wkb_string", "The input WKB string representing a MultiPoint geometry.", {"String"}}};
@@ -315,6 +318,7 @@ SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f0000
 
     FunctionDocumentation::Description description_multilinestring = R"(
 Parses a Well-Known Binary (WKB) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
+ISO WKB and EWKB inputs with `Z`, `M`, or `ZM` coordinates are accepted. Only X and Y are returned; additional coordinates and any EWKB SRID are discarded without transforming the coordinate reference system.
     )";
     FunctionDocumentation::Syntax syntax_multilinestring = "readWKBMultiLineString(wkb_string)";
     FunctionDocumentation::Arguments arguments_multilinestring = {{"wkb_string", "The input WKB string representing a MultiLineString geometry.", {"String"}}};
@@ -339,6 +343,7 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
 
     FunctionDocumentation::Description description_polygon = R"(
 Parses a Well-Known Binary (WKB) representation of a Polygon geometry and returns it in the internal ClickHouse format.
+ISO WKB and EWKB inputs with `Z`, `M`, or `ZM` coordinates are accepted. Only X and Y are returned; additional coordinates and any EWKB SRID are discarded without transforming the coordinate reference system.
     )";
     FunctionDocumentation::Syntax syntax_polygon = "readWKBPolygon(wkb_string)";
     FunctionDocumentation::Arguments arguments_polygon = {{"wkb_string", "The input WKB string representing a Polygon geometry.", {"String"}}};
@@ -365,6 +370,7 @@ Polygon	[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
 
     FunctionDocumentation::Description description_multipolygon = R"(
 Parses a Well-Known Binary (WKB) representation of a MultiPolygon geometry and returns it in the internal ClickHouse format.
+ISO WKB and EWKB inputs with `Z`, `M`, or `ZM` coordinates are accepted. Only X and Y are returned; additional coordinates and any EWKB SRID are discarded without transforming the coordinate reference system.
     )";
     FunctionDocumentation::Syntax syntax_multipolygon = "readWKBMultiPolygon(wkb_string)";
     FunctionDocumentation::Arguments arguments_multipolygon = {{"wkb_string", "The input WKB string representing a MultiPolygon geometry.", {"String"}}};
@@ -401,6 +407,7 @@ readWKBMultiPolygon(unhex('01060000000200000001030000000200000005000000000000000
 
     FunctionDocumentation::Description description_common = R"(
 Parses a Well-Known Binary (WKB) representation of a Geometry and returns it in the internal ClickHouse format.
+ISO WKB and EWKB inputs with `Z`, `M`, or `ZM` coordinates are accepted. Only X and Y are returned; additional coordinates and any EWKB SRID are discarded without transforming the coordinate reference system.
     )";
     FunctionDocumentation::Syntax syntax_common = "readWKB(wkb_string)";
     FunctionDocumentation::Arguments arguments_common = {{"wkb_string", "The input WKB string representing a Point geometry.", {"String"}}};
