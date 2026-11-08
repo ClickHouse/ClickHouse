@@ -799,14 +799,16 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
     return can_bind_identifier_to_table_expression;
 }
 
-bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup,
+    const IdentifierResolveScope & scope,
+    const IQueryTreeNode * array_join_node_to_ignore)
 {
     bool result = false;
 
     for (const auto & table_expression : scope.registered_table_expression_nodes)
     {
         auto * array_join_node = table_expression->as<ArrayJoinNode>();
-        if (!array_join_node)
+        if (!array_join_node || table_expression.get() == array_join_node_to_ignore)
             continue;
 
         /// The aliases of an ARRAY JOIN on a hidden SEMI/ANTI JOIN side are not visible here either,

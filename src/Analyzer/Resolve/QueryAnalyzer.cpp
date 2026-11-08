@@ -2210,6 +2210,38 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     return matched_column_nodes_with_names;
 }
 
+/// As for a table column, an unnest column is named `<unnest alias>.<column>` when its name also binds to a table, an alias or another ARRAY JOIN.
+QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedUnnestColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
+    const QueryTreeNodePtr & unnest_node,
+    const IdentifierResolveScope & scope)
+{
+    auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
+    const auto & unnest_node_typed = unnest_node->as<ArrayJoinNode &>();
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const auto & qualify_scope = nearest_query_scope ? *nearest_query_scope : scope;
+
+    QueryTreeNodesWithNames matched_column_nodes_with_names;
+    for (const auto & array_join_expression : unnest_node_typed.getJoinExpressions().getNodes())
+    {
+        const auto & array_join_column = array_join_expression->as<ColumnNode &>();
+        const auto & column_name = array_join_column.getColumnName();
+        if (!matcher_node_typed.isMatchingColumn(column_name))
+            continue;
+
+        auto column_node = std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource());
+
+        IdentifierLookup identifier_lookup{Identifier(column_name), IdentifierLookupContext::EXPRESSION};
+        if (IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, /*table_expression_node_to_ignore=*/ nullptr, qualify_scope)
+            || IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, qualify_scope)
+            || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, qualify_scope, unnest_node.get()))
+            node_to_projection_name.emplace(column_node, unnest_node_typed.getUnnestAlias() + '.' + column_name);
+
+        matched_column_nodes_with_names.emplace_back(std::move(column_node), column_name);
+    }
+
+    return matched_column_nodes_with_names;
+}
+
 
 /// Columns resolved from a matcher can also be JOIN USING keys, whose type the join changes
 /// (the supertype of both sides, and Nullable when an OUTER side makes the data Nullable).
@@ -2577,16 +2609,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     {
         checkSemiAntiJoinTableAccess(unnest_node, scope, matcher_node);
 
-        QueryTreeNodesWithNames matched_column_nodes_with_names;
-        for (const auto & array_join_expression : unnest_node->as<ArrayJoinNode &>().getJoinExpressions().getNodes())
-        {
-            const auto & array_join_column = array_join_expression->as<ColumnNode &>();
-            if (matcher_node_typed.isMatchingColumn(array_join_column.getColumnName()))
-                matched_column_nodes_with_names.emplace_back(
-                    std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource()),
-                    array_join_column.getColumnName());
-        }
-
+        auto matched_column_nodes_with_names = getMatchedUnnestColumnNodesWithNames(matcher_node, unnest_node, scope);
         updateMatchedColumnsFromJoinUsing(
             matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
 
@@ -2815,16 +2838,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             }
 
             /// The columns of `unnest(...)` in `FROM` are a relation, so `*` includes them.
-            if (const auto & array_join_node = table_expression->as<ArrayJoinNode &>(); array_join_node.isUnnest())
+            if (table_expression->as<ArrayJoinNode &>().isUnnest())
             {
-                for (const auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
-                {
-                    const auto & array_join_column = array_join_expression->as<ColumnNode &>();
-                    if (matcher_node_typed.isMatchingColumn(array_join_column.getColumnName()))
-                        table_expression_column_nodes_with_names.emplace_back(
-                            std::make_shared<ColumnNode>(array_join_column.getColumn(), array_join_column.getColumnSource()),
-                            array_join_column.getColumnName());
-                }
+                for (auto & unnest_column_with_name : getMatchedUnnestColumnNodesWithNames(matcher_node, table_expression, scope))
+                    table_expression_column_nodes_with_names.push_back(std::move(unnest_column_with_name));
             }
 
             continue;

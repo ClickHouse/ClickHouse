@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS t_unnest_tuple;
 DROP VIEW IF EXISTS v_unnest;
 DROP VIEW IF EXISTS mv_unnest;
 DROP VIEW IF EXISTS v_unnest_ord;
+DROP VIEW IF EXISTS v_unnest_names;
+DROP VIEW IF EXISTS v_unnest_names_star;
 DROP VIEW IF EXISTS rmv_unnest;
 DROP TABLE IF EXISTS src_unnest;
 DROP TABLE IF EXISTS dst_unnest;
@@ -148,6 +150,11 @@ SELECT u.* FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS
 SELECT u.* FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 SELECT * FROM t_unnest_tuple AS t, unnest(t.arr) AS u(x) ORDER BY ALL FORMAT TSVWithNames;
 
+SELECT '-- unnest columns with the same name as other columns';
+SELECT * FROM (SELECT * FROM numbers(1) AS t, unnest([1, 2]) AS u(x), unnest([3, 4]) AS v(x)) ORDER BY ALL;
+SELECT * FROM (SELECT * FROM values('x UInt8', 1), unnest([2]) AS u(x)) FORMAT TSVWithNames;
+SELECT 5 AS x, u.* FROM numbers(1) AS t, unnest([1, 2]) AS u(x) ORDER BY ALL FORMAT TSVWithNames;
+
 SELECT '-- the unnest columns on the hidden side of a SEMI JOIN';
 SELECT u.x FROM t_unnest AS t, unnest(t.arr) AS u(x) RIGHT SEMI JOIN values('id UInt32', 1, 3) AS s ON s.id = t.id SETTINGS semi_join_include_columns_from_both_sides = 0; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT u.* FROM t_unnest AS t, unnest(t.arr) AS u(x) RIGHT SEMI JOIN values('id UInt32', 1, 3) AS s ON s.id = t.id SETTINGS semi_join_include_columns_from_both_sides = 0; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
@@ -194,6 +201,10 @@ SELECT * FROM v_unnest_ord ORDER BY n;
 SELECT position(create_table_query, 'UNNEST(') > 0 AND position(create_table_query, 'WITH ORDINALITY AS u(x, n)') > 0,
     position(create_table_query, 'HIDDEN')
 FROM system.tables WHERE database = currentDatabase() AND name = 'v_unnest_ord';
+CREATE VIEW v_unnest_names AS SELECT u.*, v.* FROM numbers(1) AS t, unnest([1, 2]) AS u(x), unnest([3, 4]) AS v(x);
+SELECT * FROM v_unnest_names ORDER BY ALL FORMAT TSVWithNames;
+CREATE VIEW v_unnest_names_star AS SELECT * FROM numbers(1) AS t, unnest([1, 2]) AS u(x), unnest([3, 4]) AS v(x);
+SELECT * FROM v_unnest_names_star ORDER BY ALL FORMAT TSVWithNames;
 CREATE TABLE ctas_unnest ENGINE = Memory AS SELECT x FROM unnest([1, 2]) AS x;
 SELECT * FROM ctas_unnest ORDER BY x;
 ALTER TABLE mv_unnest MODIFY QUERY SELECT id, x FROM src_unnest AS s, unnest(s.arr) AS x WHERE x > 6;
@@ -222,6 +233,8 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 FROM t'), '"type":
 SELECT unnest([1, 2]) AS y ORDER BY y;
 
 DROP VIEW rmv_unnest;
+DROP VIEW v_unnest_names_star;
+DROP VIEW v_unnest_names;
 DROP VIEW v_unnest_ord;
 DROP VIEW mv_unnest;
 DROP VIEW v_unnest;
