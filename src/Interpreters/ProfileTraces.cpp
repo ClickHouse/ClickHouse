@@ -313,7 +313,7 @@ Block InternalProfileTracesQueue::getBlock()
                     if (resolved.kind == StackTrace::AddressKind::MainObject)
                         it->second.first = reinterpret_cast<UInt64>(resolved.address);
 #if (defined(__ELF__) || defined(OS_DARWIN)) && !defined(OS_FREEBSD)
-                    if (const auto * symbol = SymbolIndex::instance().findSymbol(runtime_address))
+                    if (const auto * symbol = SymbolIndex::instance().findSymbolByAddress(runtime_address))
                         it->second.second = demangle(SymbolIndex::instance().getSymbolNameCString(*symbol));
 #endif
                 }
