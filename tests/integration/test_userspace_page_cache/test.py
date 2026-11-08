@@ -361,7 +361,7 @@ def test_text_index_lookahead(started_cluster):
     setting_on_result, setting_on_query_id = run_cold(search_query.format(1))
     seq_result, seq_query_id = run_cold(
         "select sum(n) from t_text_index_lookahead_seq settings "
-        "use_page_cache_for_disks_without_file_cache = 1, page_cache_block_size = 1024, max_threads = 1"
+        "use_page_cache_for_disks_without_file_cache = 1, page_cache_block_size = 1024, max_threads = 1, use_statistics_for_sum_avg_aggregation = 0"
     )
 
     assert default_result == "90000\n"
