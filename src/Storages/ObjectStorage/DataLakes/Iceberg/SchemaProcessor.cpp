@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -657,6 +658,8 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeString>();
     if (type_name == f_variant)
         return std::make_shared<DataTypeDynamic>();
+    if (type_name == f_unknown)
+        return makeNullable(std::make_shared<DataTypeNothing>());
 
     if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
     {
@@ -762,6 +765,10 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     {
         const String & type_name = type.extract<String>();
         auto data_type = getSimpleType(type_name, allow_geo_parser);
+        if (required && data_type->onlyNull())
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg type 'unknown' must be optional, but it is used for a required field, list element or map key or value");
         return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
     }
 
@@ -769,10 +776,11 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
 }
 
 /**
-* Iceberg allows only three types of primitive type conversion:
+* Iceberg allows only these types of primitive type conversion:
 * int -> long
 * float -> double
 * decimal(P, S) -> decimal(P', S) where P' > P
+* unknown -> any type (Iceberg v3; `unknown` has no values but NULL)
 * This function checks if `old_type` and `new_type` satisfy to one of these conditions.
 **/
 bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type_arg, const String & new_type_arg)
@@ -785,6 +793,7 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     bool allowed_type_conversion = (old_type == new_type);
     allowed_type_conversion |= (old_type == f_int) && (new_type == f_long);
     allowed_type_conversion |= (old_type == f_float) && (new_type == f_double);
+    allowed_type_conversion |= (old_type == f_unknown);
     if (old_type.starts_with("decimal(") && old_type.ends_with(')') && new_type.starts_with("decimal(") && new_type.ends_with(")"))
     {
         auto [old_precision, old_scale] = parseDecimal(old_type);
