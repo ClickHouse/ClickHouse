@@ -131,16 +131,6 @@ String joinPath(std::string_view base, std::string_view rest)
     return fmt::format("{}/{}", base, rest);
 }
 
-/// The raw text in front of the components, if they follow it separated by single `/`, none of them empty, `.` or `..`.
-std::optional<std::string_view> canonicalPrefix(std::string_view path)
-{
-    auto parsed = parsePath(path, /* is_filesystem */ false);
-    for (const auto & component : parsed.components)
-        if (auto name = componentOf(path, component); name.empty() || name == "." || name == "..")
-            return std::nullopt;
-    return path.substr(0, parsed.path_begin);
-}
-
 }
 
 bool hasIcebergURIScheme(std::string_view path)
@@ -356,11 +346,6 @@ void IcebergPathResolver::throwUnresolvable(const IcebergPathFromMetadata & meta
         table_root);
 }
 
-std::optional<String> IcebergPathResolver::tryResolve(const IcebergPathFromMetadata & metadata_path) const
-{
-    return resolveImpl(metadata_path.serialize());
-}
-
 String IcebergPathResolver::resolve(const IcebergPathFromMetadata & metadata_path) const
 {
     if (auto resolved = resolveImpl(metadata_path.serialize()))
@@ -392,34 +377,42 @@ String IcebergPathResolver::storageIdentityOrThrow(const IcebergPathFromMetadata
     throwUnresolvable(metadata_path);
 }
 
-bool IcebergPathResolver::isSameFile(const IcebergPathFromMetadata & lhs, const IcebergPathFromMetadata & rhs) const
+std::optional<std::string_view> IcebergPathResolver::canonicalPrefix(std::string_view path)
 {
-    if (lhs == rhs)
-        return true;
-    auto lhs_identity = storageIdentity(lhs);
-    return lhs_identity && lhs_identity == storageIdentity(rhs);
+    auto parsed = parsePath(path, /* is_filesystem */ false);
+    for (const auto & component : parsed.components)
+        if (auto name = componentOf(path, component); name.empty() || name == "." || name == "..")
+            return std::nullopt;
+    return path.substr(0, parsed.path_begin);
+}
+
+PositionDeleteMatchKey IcebergPathResolver::positionDeleteMatchKey(const IcebergPathFromMetadata & path) const
+{
+    PositionDeleteMatchKey key{.identity = storageIdentity(path), .canonical_prefix = std::nullopt};
+    if (auto prefix = canonicalPrefix(path.serialize()))
+        key.canonical_prefix = String(*prefix);
+    return key;
 }
 
 PositionDeleteScope IcebergPathResolver::matchPositionDeleteBounds(
     const std::optional<IcebergPathFromMetadata> & lower,
+    const PositionDeleteMatchKey & lower_key,
     const std::optional<IcebergPathFromMetadata> & upper,
-    const IcebergPathFromMetadata & data_file_path) const
+    const PositionDeleteMatchKey & upper_key,
+    const IcebergPathFromMetadata & data_file_path,
+    const PositionDeleteMatchKey & data_file_key) const
 {
     /// Always so for a deletion vector, whose bounds are its `referenced_data_file`.
     if (lower && upper && *lower == *upper)
-        return isSameFile(*lower, data_file_path) ? PositionDeleteScope::ThisFile : PositionDeleteScope::None;
+        return *lower == data_file_path || (lower_key.identity && lower_key.identity == data_file_key.identity)
+            ? PositionDeleteScope::ThisFile
+            : PositionDeleteScope::None;
 
-    const auto & data = data_file_path.serialize();
-    if (!lower || !upper || !isSpelledLike(lower->serialize(), data) || !isSpelledLike(upper->serialize(), data))
+    if (!lower || !upper || !data_file_key.canonical_prefix || lower_key.canonical_prefix != data_file_key.canonical_prefix
+        || upper_key.canonical_prefix != data_file_key.canonical_prefix)
         return PositionDeleteScope::ThisFile;
 
     return *lower <= data_file_path && data_file_path <= *upper ? PositionDeleteScope::Range : PositionDeleteScope::None;
-}
-
-bool IcebergPathResolver::isSpelledLike(std::string_view value, std::string_view path)
-{
-    auto value_prefix = canonicalPrefix(value);
-    return value_prefix && value_prefix == canonicalPrefix(path);
 }
 
 }

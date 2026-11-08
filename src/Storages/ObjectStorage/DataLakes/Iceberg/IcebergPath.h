@@ -91,6 +91,15 @@ enum class PositionDeleteScope
     ThisFile, /// Attach without row-group pruning by the raw data file path: it may be spelled differently in the rows.
 };
 
+/// The parts of a path that `IcebergPathResolver::matchPositionDeleteBounds` compares, computed once per path.
+struct PositionDeleteMatchKey
+{
+    /// `IcebergPathResolver::storageIdentity` of the path.
+    std::optional<String> identity;
+    /// `IcebergPathResolver::canonicalPrefix` of the path.
+    std::optional<String> canonical_prefix;
+};
+
 /// Converts Iceberg metadata paths to actual object storage paths.
 ///
 /// This is the ONLY way to go from a metadata path to a storage path.
@@ -125,7 +134,6 @@ public:
     /// Convert a metadata path to an actual storage path for I/O operations.
     /// Throws `BAD_ARGUMENTS` for a path that names no file of the configured storage.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
-    std::optional<String> tryResolve(const IcebergPathFromMetadata & metadata_path) const;
 
     /// The object `metadata_path` names in the configured storage: equal for every spelling of one file.
     /// `std::nullopt` if the path cannot be resolved.
@@ -133,19 +141,23 @@ public:
     /// Same, but throws as `resolve` does.
     String storageIdentityOrThrow(const IcebergPathFromMetadata & metadata_path) const;
 
-    /// Whether two metadata paths name the same file. False if either cannot be resolved.
-    bool isSameFile(const IcebergPathFromMetadata & lhs, const IcebergPathFromMetadata & rhs) const;
+    /// The raw text in front of the components of `path` (scheme and authority, or `/`, or empty for a relative path),
+    /// if the components follow it separated by single `/`, none of them empty, `.` or `..`; otherwise `std::nullopt`.
+    /// All strings starting with one non-empty prefix form one contiguous range.
+    static std::optional<std::string_view> canonicalPrefix(std::string_view path);
+
+    PositionDeleteMatchKey positionDeleteMatchKey(const IcebergPathFromMetadata & path) const;
 
     /// Which rows of a position delete file with these manifest bounds of `file_path` can name `data_file_path`.
+    /// `lower_key`, `upper_key`, `data_file_key`: `positionDeleteMatchKey` of the paths, default-constructed for an
+    /// absent bound.
     PositionDeleteScope matchPositionDeleteBounds(
         const std::optional<IcebergPathFromMetadata> & lower,
+        const PositionDeleteMatchKey & lower_key,
         const std::optional<IcebergPathFromMetadata> & upper,
-        const IcebergPathFromMetadata & data_file_path) const;
-
-    /// Whether `value` has the raw scheme and authority of `path`, and both are spelled without empty, `.` or `..`
-    /// components. Every string with that prefix sorts in one contiguous range, so raw comparisons between such
-    /// strings agree with comparisons of the files they name.
-    static bool isSpelledLike(std::string_view value, std::string_view path);
+        const PositionDeleteMatchKey & upper_key,
+        const IcebergPathFromMetadata & data_file_path,
+        const PositionDeleteMatchKey & data_file_key) const;
 
     static String parseNamespace(std::string_view path);
 

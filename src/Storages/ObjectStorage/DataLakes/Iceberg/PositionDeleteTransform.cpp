@@ -25,12 +25,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
-#include <base/unaligned.h>
-
-#if USE_PARQUET
-#include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
-#endif
-
 namespace DB::Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
@@ -44,54 +38,6 @@ extern const int LOGICAL_ERROR;
 
 namespace DB::Iceberg
 {
-
-namespace
-{
-
-/// Whether the footer statistics of the Parquet file `in` show that every `file_path` value is spelled like
-/// `data_file_path` (`IcebergPathResolver::isSpelledLike`). All strings with one raw prefix sort in one contiguous
-/// range, so a value with another prefix would be the minimum or the maximum of its row group.
-bool statisticsShowPathsSpelledLike(ReadBufferFromFileBase & in, size_t file_size, const String & data_file_path)
-{
-#if USE_PARQUET
-    /// A Parquet file ends with the serialized `FileMetaData`, its 4-byte size and the "PAR1" magic.
-    if (file_size <= 8)
-        return false;
-    char trailer[8];
-    in.seek(file_size - 8, SEEK_SET);
-    in.readStrict(trailer, 8);
-    const auto metadata_size = unalignedLoadLittleEndian<UInt32>(trailer);
-    if (memcmp(trailer + 4, "PAR1", 4) != 0 || metadata_size == 0 || metadata_size > file_size - 8)
-        return false;
-    String serialized(metadata_size, '\0');
-    in.seek(file_size - 8 - metadata_size, SEEK_SET);
-    in.readStrict(serialized.data(), metadata_size);
-    Parquet::parq::FileMetaData metadata;
-    Parquet::deserializeThriftStruct(metadata, serialized.data(), serialized.size());
-
-    const std::vector<std::string> column_path{IcebergPositionDeleteTransform::data_file_path_column_name};
-    for (const auto & row_group : metadata.row_groups)
-    {
-        auto column = std::find_if(
-            row_group.columns.begin(), row_group.columns.end(),
-            [&](const auto & chunk) { return chunk.meta_data.path_in_schema == column_path; });
-        if (column == row_group.columns.end() || !column->meta_data.__isset.statistics)
-            return false;
-        const auto & statistics = column->meta_data.statistics;
-        const auto * min = statistics.__isset.min_value ? &statistics.min_value : (statistics.__isset.min ? &statistics.min : nullptr);
-        const auto * max = statistics.__isset.max_value ? &statistics.max_value : (statistics.__isset.max ? &statistics.max : nullptr);
-        if (!min || !max || !IcebergPathResolver::isSpelledLike(*min, data_file_path)
-            || !IcebergPathResolver::isSpelledLike(*max, data_file_path))
-            return false;
-    }
-    return true;
-#else
-    UNUSED(in, file_size, data_file_path);
-    return false;
-#endif
-}
-
-}
 
 Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 {
@@ -119,10 +65,21 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     /// Create filter on the data object to get interested rows
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
-    ASTPtr where_ast = makeASTFunction(
-        "equals",
-        make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
-        make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
+    /// Row groups are pruned by the min/max of their raw `file_path` values. All values starting with the data file
+    /// path's raw prefix form the range [prefix, prefix_end), so a row group holding a value with another prefix, which
+    /// may name the data file in another spelling, is never pruned.
+    ASTPtr where_ast;
+    if (auto prefix = IcebergPathResolver::canonicalPrefix(iceberg_data_path); prefix && !prefix->empty())
+    {
+        String prefix_end(*prefix);
+        ++prefix_end.back();
+        auto file_path_column = [] { return make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name); };
+        where_ast = makeASTFunction(
+            "or",
+            makeASTFunction("equals", file_path_column(), make_intrusive<ASTLiteral>(Field(iceberg_data_path))),
+            makeASTFunction("less", file_path_column(), make_intrusive<ASTLiteral>(Field(String(*prefix)))),
+            makeASTFunction("greaterOrEquals", file_path_column(), make_intrusive<ASTLiteral>(Field(prefix_end))));
+    }
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
@@ -170,19 +127,11 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
 
-        /// The filter prunes row groups by the min/max of their raw `file_path` values, so it would drop the rows
-        /// that spell the data file path in another way.
-        bool prune_row_groups = !position_deletes_object.reference_data_file_path.has_value() && object_metadata.is_size_known;
-        if (prune_row_groups)
-        {
-            auto footer_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
-            prune_row_groups = statisticsShowPathsSpelledLike(*footer_buf, object_metadata.size_bytes, iceberg_data_path);
-        }
-
         delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log, read_settings));
 
+        /// A delete file attached as `PositionDeleteScope::ThisFile` holds rows of this data file only.
         std::shared_ptr<const ActionsDAG> actions_dag_ptr;
-        if (prune_row_groups)
+        if (where_ast && !position_deletes_object.reference_data_file_path.has_value())
         {
             auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
             ExpressionAnalyzer analyzer(where_ast, syntax_result, context);

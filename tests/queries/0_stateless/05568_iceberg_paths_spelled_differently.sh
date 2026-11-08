@@ -111,6 +111,18 @@ create_table p2 "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (
 respell_deletes p2
 select_with_both_transforms p2
 
+echo "row groups of a delete file spelled like the data paths are still pruned"
+create_table r "INSERT INTO t VALUES (1), (2), (3); INSERT INTO t VALUES (4), (5), (6); ALTER TABLE t DELETE WHERE x IN (2, 5);"
+deletes=$(find r/warehouse/db/t/data -name '*-deletes.parquet')
+local_query "
+    INSERT INTO FUNCTION file('${deletes}.new', Parquet)
+    SELECT file_path, pos FROM file('${deletes}', Parquet) ORDER BY file_path, pos
+    SETTINGS output_format_parquet_row_group_size = 1"
+mv "${deletes}.new" "${deletes}"
+${CLICKHOUSE_LOCAL} -q "
+    SELECT groupArray(x) FROM (SELECT x FROM icebergLocal('r/warehouse/db/t') ORDER BY x);
+    SELECT countIf(event = 'ParquetPrunedRowGroups' AND value > 0) FROM system.events" < /dev/null
+
 echo "expire_snapshots keeps a file a retained snapshot names in another spelling"
 create_table x "INSERT INTO t VALUES (1); INSERT INTO t VALUES (2);"
 edit_metadata x "

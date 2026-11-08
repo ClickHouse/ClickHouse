@@ -21,6 +21,9 @@ position deletes of two data files in the default file system
 equal bounds	0
 [1,3,4,6]
 [1,3,4,6]
+row groups of a delete file spelled like the data paths are still pruned
+[1,3,4,6]
+1
 expire_snapshots keeps a file a retained snapshot names in another spelling
 deleted_manifest_lists_count	0
 1
