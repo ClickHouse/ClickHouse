@@ -91,6 +91,9 @@ public:
     /// into skip-index conditions asks for it, and skip indexes are never read through a borrowed part.
     const MergeTreePartition & getPartition() const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BorrowedMergeTreeDataPartInfoForReader doesn't have partition information"); }
 
+    /// A borrowed part does not load the minmax index of its partition columns.
+    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return nullptr; }
+
     DataPartStoragePtr getDataPartStorage() const override { return data_part_storage; }
 
     const NamesAndTypesList & getColumns() const override { return columns; }
@@ -104,6 +107,9 @@ public:
     AlterConversionsPtr getAlterConversions() const override { return std::make_shared<AlterConversions>(); }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return checksums; }
+
+    /// Nothing is recorded for a borrowed part: skip indexes are never read through it.
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return secondary_index_column_types; }
 
     std::optional<size_t> getColumnPosition(const String & column_name) const override
     {
@@ -206,6 +212,7 @@ private:
     String table_name;
     size_t marks_count;
     MergeTreeSettingsPtr storage_settings;
+    SecondaryIndexColumnTypes secondary_index_column_types;
     std::unordered_map<std::string, size_t> column_name_to_position;
 };
 

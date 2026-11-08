@@ -167,8 +167,7 @@ Pipe StorageMergeTreeParts::read(
             actions_settings,
             reader_settings,
             /*merge_tree_index_build_context=*/ nullptr,
-            /*lazy_materializing_rows=*/ nullptr,
-            &storage_snapshot->metadata->getColumns());
+            /*lazy_materializing_rows=*/ nullptr);
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), getName());
         pipes.emplace_back(std::move(source));
     }
