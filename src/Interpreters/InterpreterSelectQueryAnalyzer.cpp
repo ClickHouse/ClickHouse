@@ -358,8 +358,16 @@ static void extractTableReferencesOutsideViews(
     }
 }
 
-void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
+void replaceStorageInQueryTree(
+    QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage, bool root_table_reads_catalog)
 {
+    /// The table in the join tree of the root query is not replaced, but rebuilt from its catalog storage,
+    /// so it has the metadata of the real table, not the one of the view source.
+    const IQueryTreeNode * root_table = nullptr;
+    if (root_table_reads_catalog)
+        if (const auto * root_query = query_tree->as<QueryNode>())
+            root_table = root_query->getJoinTreeNode().get();
+
     /// `tryResolveTableIdentifier` types every reference to the view source table outside view inner queries
     /// by the view source, not only those in the join tree, so all of them are replaced.
     bool with_expression_subqueries = storage == context->getViewSource();
@@ -375,7 +383,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         if (table_node.getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
             continue;
 
-        auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
+        auto replacement_table_expression = std::make_shared<TableNode>(node.get() == root_table ? table_node.getStorage() : storage, context);
         replacement_table_expression->setAlias(node->getAlias());
 
         if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
@@ -442,7 +450,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     }
 
     if (storage)
-        replaceStorageInQueryTree(query_tree, context, storage);
+        replaceStorageInQueryTree(query_tree, context, storage, select_query_options.root_table_reads_catalog);
 
     return query_tree;
 }
