@@ -418,7 +418,11 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!less(row[pos], next_value, getDirection(pos)))
         return false;
 
-    checkGeneratedValueFitsColumnType(next_value, pos);
+    /// A step that merely reaches the next input value does not introduce a new value: the row is the original
+    /// one, which is copied as is (or prefixes the rows filled in the following columns), so only values that are
+    /// not present in the input are checked.
+    if (!equals(next_value, next_original_row[pos]))
+        checkGeneratedValueFitsColumnType(next_value, pos);
 
     row[pos] = next_value;
     if (equals(row[pos], next_original_row[pos]))
