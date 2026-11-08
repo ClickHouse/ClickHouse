@@ -246,9 +246,8 @@ static void checkSchemaDepth(size_t depth, size_t max_parser_depth)
             max_parser_depth);
 }
 
-/// Assigns the ids of the subtree at `schema[idx]` like Iceberg's `ApplyNameMapping`: the element is looked up in
-/// `scope` as `lookup_name` (its own name if not set), a list element as `element`, the children of a map as `key`
-/// and `value`, and the repeated groups of lists and maps get no id. Returns the index after the subtree.
+/// Assigns the ids of the subtree at `schema[idx]` like Iceberg's `ApplyNameMapping`, looking the element up in `scope`
+/// as `lookup_name` (its own name if not set). Returns the index after the subtree.
 static size_t assignNameMappedFieldIds(
     const std::vector<parq::SchemaElement> & schema,
     size_t idx,

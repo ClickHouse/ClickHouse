@@ -54,8 +54,7 @@ struct FormatTopKFilterInfo
     bool filter_rows = true;
 };
 
-/// Iceberg `schema.name-mapping.default`: field ids for the fields of a data file written without field ids,
-/// by the names a field may have in such a file.
+/// Iceberg `schema.name-mapping.default`: field ids by the names a field may have in a data file without field ids.
 struct IcebergNameMapping
 {
     struct Field
@@ -66,10 +65,9 @@ struct IcebergNameMapping
     };
     std::unordered_map<String, Field> fields;
     /// Field ids (top level and in structs) to which some schema of the table gives a name that the mapping does not
-    /// map to them (filled at the root only): a data file without field ids may hold the column under that name and
-    /// no longer binds it, so the manifest metadata of such a file describes another binding than the read.
+    /// map to them. Filled at the root only.
     std::unordered_set<Int64> unbound_field_ids;
-    /// Of the JSON text, for the query condition cache keys of the files read through the mapping.
+    /// Of the JSON text, a part of the cache keys of the files read through the mapping.
     UInt64 hash = 0;
 };
 using IcebergNameMappingPtr = std::shared_ptr<const IcebergNameMapping>;

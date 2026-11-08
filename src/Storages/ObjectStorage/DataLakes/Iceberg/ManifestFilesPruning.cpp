@@ -183,9 +183,7 @@ ManifestFilesPruner::ManifestFilesPruner(
             min_max_column_types.emplace(used_column_id, name_and_type->type);
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
 
-            /// A data file without field ids binds this column through the mapping, which does not map every name the column
-            /// had in the schemas of the table (or of this file's manifest) to it, so the manifest metadata of such a file may
-            /// describe another column.
+            /// The manifest metadata of a data file without field ids may describe a column the mapping does not bind to this id.
             if (name_mapping
                 && (name_mapping->unbound_field_ids.contains(used_column_id) || unbound_in_file_schema.contains(used_column_id)))
                 columns_with_unreliable_statistics.insert(used_column_id);
@@ -434,8 +432,6 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 {
     const auto & partition_value = entry->normalized_partition_key_value;
 
-    /// The partition values of a data file without field ids may describe a binding the mapping no longer gives to a
-    /// column of the filter.
     bool partition_values_reliable = true;
     if (!columns_with_unreliable_statistics.empty() && entry->common_partition_specification)
     {

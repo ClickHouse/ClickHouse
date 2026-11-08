@@ -47,8 +47,7 @@ struct SchemaConverter
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
 
-    /// Indexed like `file_metadata.schema`: the field ids that an Iceberg name mapping assigns to the elements of
-    /// a file written without field ids. Empty if the file is not read through a name mapping.
+    /// Indexed like `file_metadata.schema`: the field ids an Iceberg name mapping assigns; empty without a mapping.
     std::vector<std::optional<Int64>> name_mapped_field_ids;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
