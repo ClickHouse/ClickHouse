@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-ordinary-database
 #
 # no-random-settings: the read-speed family (local_filesystem_read_method, max_read_buffer_size,
 # enable_filesystem_cache, use_page_cache_for_local_disks,
@@ -16,6 +16,8 @@
 # requirement is explicit.
 # no-parallel-replicas: parallel replicas hand out the part in mark ranges, so the read is not one
 # walk over every mark, and a finished range delivers rows before the cancel.
+# no-ordinary-database: a table there has a nil UUID, so the columns cache is not used and the cache
+# arm reads through the plain loop.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
