@@ -219,7 +219,7 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
 /// Returns the types the arguments of a window function must be cast to before it is resolved.
-DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types);
+DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types, const ContextPtr & context);
 
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
