@@ -316,10 +316,11 @@ const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes(const IMergeTreeD
 template <typename Part>
 bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
 {
-    /// A projection index has no storage metadata snapshot: its granules live in its own
-    /// projection part, and ALTER of a column a projection reads is rejected outright, so the
-    /// types the index was built with cannot drift away from the ones declared now.
-    if (skip_index.isProjectionIndex())
+    /// A projection index obtained for a query carries the metadata of the parent table, and `part` is the
+    /// parent part, so the same check applies: its output schema (`term`, `posting`) does not change when a
+    /// source column changes its type, e.g. by a metadata-only `MODIFY COLUMN` from `UInt32` to `DateTime`,
+    /// while the values of the indexed expression do. An index built for writing has no metadata.
+    if (skip_index.isProjectionIndex() && !skip_index.metadata_snapshot)
         return true;
 
     const auto & metadata_columns = skip_index.metadata_snapshot->getColumns();
