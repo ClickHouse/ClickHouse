@@ -556,6 +556,18 @@ std::optional<String> getColumnToReadInsteadOfSubcolumn(
     return {};
 }
 
+/// The name a child table reads to serve `column_name`: the name itself if the child declares it as a column or a
+/// subcolumn, otherwise the whole column it is derived from after the conversion to the `Merge` type (see
+/// `getColumnToReadInsteadOfSubcolumn`). Empty if the child does not read anything for it, then it gets a default.
+/// Both the read and the access check of a child use it, so the check authorizes exactly the column that is read.
+std::optional<String> getChildColumnToRead(
+    const String & column_name, const ColumnsDescription & child_columns, const ColumnsDescription & merge_columns)
+{
+    if (child_columns.has(column_name) || child_columns.hasSubcolumn(GetColumnsOptions::All, column_name))
+        return column_name;
+    return getColumnToReadInsteadOfSubcolumn(column_name, child_columns, merge_columns);
+}
+
 /// Whether a subcolumn of a column a child does not have is taken from the column's default. A subcolumn that only a
 /// custom serialization adds (the codes of the `Quantized` codec) is not part of the value and gets its own default.
 bool isSubcolumnOfDefaultValue(const NameAndTypePair & column)
@@ -1402,17 +1414,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 for (auto & column_name : column_names_to_read)
                 {
-                    String name_to_read = std::move(column_name);
-                    if (!child_columns.has(name_to_read) && !child_columns.hasSubcolumn(GetColumnsOptions::All, name_to_read))
-                    {
-                        auto column_to_read = getColumnToReadInsteadOfSubcolumn(name_to_read, child_columns, merge_columns);
-                        if (!column_to_read)
-                            continue;
-                        name_to_read = std::move(*column_to_read);
-                    }
+                    auto name_to_read = getChildColumnToRead(column_name, child_columns, merge_columns);
+                    if (!name_to_read)
+                        continue;
 
-                    if (resolved_column_names_set.emplace(name_to_read).second)
-                        resolved_column_names.push_back(std::move(name_to_read));
+                    if (resolved_column_names_set.emplace(*name_to_read).second)
+                        resolved_column_names.push_back(std::move(*name_to_read));
                 }
 
                 column_names_to_read = std::move(resolved_column_names);
@@ -2439,12 +2446,24 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                                 if (query_status && !query_status->checkTimeLimit())
                                     return res;
                                 child_metadata_snapshot = getChildMetadataSnapshot(storage, query_context);
+                                const auto & child_columns = child_metadata_snapshot->getColumns();
+                                /// A subcolumn that exists only in the `Merge` type of a column (e.g. `s.x` of a `String`
+                                /// child column `s` exposed as `JSON`) is read through the whole column, so authorize that
+                                /// column, the same one `createChildrenPlans` reads. A name the child reads nothing for
+                                /// is checked as is.
+                                Names columns_to_read;
+                                columns_to_read.reserve(columns_to_check.size());
+                                for (const auto & column_name : columns_to_check)
+                                {
+                                    auto column_to_read = getChildColumnToRead(column_name, child_columns, merge_storage_snapshot->metadata->getColumns());
+                                    columns_to_read.push_back(column_to_read ? std::move(*column_to_read) : column_name);
+                                }
                                 access->checkAccess(
                                     AccessType::SELECT,
                                     iterator->databaseName(),
                                     iterator->name(),
-                                    child_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
-                                        columns_to_check, query_context, StorageID(iterator->databaseName(), iterator->name())));
+                                    child_columns.getColumnNamesForSelectAccessCheck(
+                                        columns_to_read, query_context, StorageID(iterator->databaseName(), iterator->name())));
                             }
                             else
                             {
