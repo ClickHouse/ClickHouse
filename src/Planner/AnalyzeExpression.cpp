@@ -45,6 +45,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/StorageDummy.h>
 
 #include <algorithm>
@@ -635,7 +636,7 @@ static String getConstantASTName(const ColumnConst & constant, const DataTypePtr
 /// `ast_column_names`, and append source columns to outputs (matching the old
 /// `ExpressionAnalyzer::getActions(false, false)` behavior).
 static void applyASTNamingAndAppendSourceColumns(
-    ActionsDAG & actions, const std::vector<String> & ast_column_names, const NamesAndTypesList & available_columns)
+    ActionsDAG & actions, const std::vector<String> & ast_column_names, const NamesAndTypesList & available_columns, const ContextPtr & context)
 {
     auto & outputs = actions.getOutputs();
 
@@ -648,7 +649,16 @@ static void applyASTNamingAndAppendSourceColumns(
     /// function node names are rebuilt from already-renamed children.
     for (const auto & node : actions.getNodes())
     {
-        if (node.type == ActionsDAG::ActionType::COLUMN
+        /// A lambda - a capture function or a constant-folded one (a `ColumnFunction`, which holds only its
+        /// captured values, not its body) - is named `lambda(tuple(args), body)`, the way `KeyCondition`
+        /// names the same lambda in the query, so a key subexpression with a lambda
+        /// (`xxHash64(arrayMap(x -> x + 1, arr))`) still matches the predicate.
+        if ((node.type == ActionsDAG::ActionType::COLUMN || node.type == ActionsDAG::ActionType::FUNCTION)
+            && node.result_type && WhichDataType(node.result_type).isFunction())
+        {
+            const_cast<ActionsDAG::Node &>(node).result_name = RPNBuilderTreeNode(&node, context).getColumnName();
+        }
+        else if (node.type == ActionsDAG::ActionType::COLUMN
             && node.column && isColumnConst(*node.column)
             && (!node.result_type || node.result_type->getTypeId() != TypeIndex::Set))
         {
@@ -834,7 +844,7 @@ ActionsDAG analyzeExpressionToActionsDAG(
     }
     else
     {
-        applyASTNamingAndAppendSourceColumns(actions, ast_column_names, available_columns);
+        applyASTNamingAndAppendSourceColumns(actions, ast_column_names, available_columns, context);
     }
 
     return std::move(actions);
@@ -913,7 +923,7 @@ AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
     /// Apply AST-style intermediate renaming and append source columns to outputs
     /// so the resulting `ExpressionActions` matches the legacy
     /// `ExpressionAnalyzer::getActions(false, false)` shape.
-    applyASTNamingAndAppendSourceColumns(actions, names_no_aliases, available_columns);
+    applyASTNamingAndAppendSourceColumns(actions, names_no_aliases, available_columns, context);
 
     AnalyzedExpressionWithSampleBlock result;
     result.expression = std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(context, compile_expressions));
