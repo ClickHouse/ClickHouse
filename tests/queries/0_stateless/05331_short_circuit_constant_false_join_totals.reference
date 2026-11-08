@@ -1,0 +1,60 @@
+LEFT JOIN, right side WITH TOTALS
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
+LEFT JOIN, both sides WITH TOTALS
+0	20	0	0
+1	25	0	0
+
+0	45	0	6
+RIGHT JOIN, left side WITH TOTALS
+0	0	0
+0	0	0
+0	0	1
+0	0	1
+
+0	0	0
+INNER JOIN: only the input without totals becomes an empty source
+1
+an aggregation over a WITH TOTALS subquery has no totals, so it is still an empty source
+1
+totals from a remote server
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
+a remote input without totals is still an empty source
+1
+totals from a view with SQL SECURITY DEFINER
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
+totals through a Merge table
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
+totals from the query result cache
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
+0	0	0
+0	0	0
+1	0	0
+1	0	0
+
+0	0	6
+1
