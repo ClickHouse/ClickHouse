@@ -283,6 +283,16 @@ for format in Parquet ORC Avro; do
         SELECT 'readd, current schema', ${columns} FROM icebergLocal('${table}/');
         SELECT 'readd, current schema', ${columns} FROM icebergLocal('${table}/') WHERE j = 9;
     "
+
+    # A top-level field whose name has a dot is not a field of the struct named by its prefix.
+    if [ "${format}" != Avro ]; then
+        table="${format}_dotted"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (\`a.b\` Nullable(Int32), a Tuple(x Nullable(Int32))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES (7, (11));
+        "
+        ${LOCAL} -q "SELECT 'dotted', \`a.b\`, a FROM icebergLocal('${table}/')"
+    fi
 done
 
 # Malformed defaults.

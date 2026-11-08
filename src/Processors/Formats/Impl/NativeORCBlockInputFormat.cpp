@@ -1298,13 +1298,19 @@ static std::optional<std::vector<Int64>> getORCFieldIcebergIds(const ORC::Type &
     return result;
 }
 
+/// The parsed Iceberg field ids of the ORC structs of one file (see `getORCFieldIcebergIds`), by struct.
+using ORCFieldIdsCache = std::unordered_map<const ORC::Type *, std::optional<std::vector<Int64>>>;
+
 /// The field of the ORC struct `struct_type` with the Iceberg field id `field_id`: nullptr if no field has it, nullopt if
 /// `struct_type` is not a struct or one of its fields has no id (absence cannot be proven).
-static std::optional<const ORC::Type *> findORCFieldByIcebergId(const ORC::Type & struct_type, Int64 field_id)
+static std::optional<const ORC::Type *> findORCFieldByIcebergId(const ORC::Type & struct_type, Int64 field_id, ORCFieldIdsCache & cache)
 {
     if (struct_type.getKind() != ORC::STRUCT)
         return std::nullopt;
-    auto field_ids = getORCFieldIcebergIds(struct_type);
+    auto [cached, inserted] = cache.try_emplace(&struct_type);
+    if (inserted)
+        cached->second = getORCFieldIcebergIds(struct_type);
+    const auto & field_ids = cached->second;
     if (!field_ids)
         return std::nullopt;
     auto it = std::find(field_ids->begin(), field_ids->end(), field_id);
@@ -1316,7 +1322,8 @@ static std::optional<const ORC::Type *> findORCFieldByIcebergId(const ORC::Type 
 /// Whether the column `path` (a field of the data lake schema or a tuple element of one) is absent from the file, matching
 /// each struct on its way from the root by Iceberg field id, and whether its `initial-default` applies: inside an absent
 /// struct it applies only if every struct from the absent one down has a struct default (else NULL, as in Parquet).
-static std::pair<bool, bool> getORCFieldAbsence(const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema)
+static std::pair<bool, bool> getORCFieldAbsence(
+    const String & path, const ColumnMapper & column_mapper, const ORC::Type & file_schema, ORCFieldIdsCache & cache)
 {
     const auto & encoding = column_mapper.getStorageColumnEncoding();
     auto field = encoding.find(path);
@@ -1332,7 +1339,14 @@ static std::pair<bool, bool> getORCFieldAbsence(const String & path, const Colum
     const ORC::Type * level_type = &file_schema;
     for (size_t i = 0; i < levels.size(); ++i)
     {
-        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i].second);
+        /// Field ids are unique: a struct on the way that has the column's own id holds the column (a top-level `a.b` next to `a`).
+        if (i + 1 < levels.size())
+        {
+            auto column_field = findORCFieldByIcebergId(*level_type, field->second, cache);
+            if (column_field && *column_field)
+                return {false, false};
+        }
+        auto orc_field = findORCFieldByIcebergId(*level_type, levels[i].second, cache);
         if (!orc_field)
             return {false, false};
         if (!*orc_field)
@@ -1373,9 +1387,10 @@ void NativeORCBlockInputFormat::prepareFileReader()
     std::unordered_map<String, Field> absent_column_defaults;
     if (column_mapper)
     {
+        ORCFieldIdsCache field_ids_cache;
         for (const auto & column : header)
         {
-            const auto [absent, default_applies] = getORCFieldAbsence(column.name, *column_mapper, file_schema);
+            const auto [absent, default_applies] = getORCFieldAbsence(column.name, *column_mapper, file_schema, field_ids_cache);
             if (!absent)
                 continue;
             absent_columns.insert(column.name);
