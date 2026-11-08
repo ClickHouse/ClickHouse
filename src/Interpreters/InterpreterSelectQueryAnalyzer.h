@@ -118,6 +118,9 @@ private:
     QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 };
 
-void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
+/// With `root_table_reads_catalog`, the table in the join tree of the root query keeps the catalog storage
+/// even if it is `storage`; the other references to `storage` are replaced.
+void replaceStorageInQueryTree(
+    QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage, bool root_table_reads_catalog = false);
 
 }
