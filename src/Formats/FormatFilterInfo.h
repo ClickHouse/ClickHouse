@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <Common/PODArray_fwd.h>
 
 namespace DB
@@ -104,6 +105,20 @@ public:
     bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
     bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
+    /// Iceberg `initial-default` of fields, keyed like the storage encoding: the value of a field absent from a data file.
+    void setIcebergInitialDefaults(std::unordered_map<String, Field> && iceberg_initial_defaults_)
+    {
+        iceberg_initial_defaults = std::move(iceberg_initial_defaults_);
+    }
+    const Field * getIcebergInitialDefault(const String & path) const
+    {
+        auto it = iceberg_initial_defaults.find(path);
+        return it == iceberg_initial_defaults.end() ? nullptr : &it->second;
+    }
+    bool hasIcebergInitialDefaults() const { return !iceberg_initial_defaults.empty(); }
+    /// 0 if there are no defaults.
+    UInt64 getIcebergInitialDefaultsHash() const;
+
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
@@ -119,6 +134,7 @@ private:
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
+    std::unordered_map<String, Field> iceberg_initial_defaults;
     std::optional<Int64> last_assigned_field_id;
 };
 

@@ -34,6 +34,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
@@ -1133,7 +1134,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         return result;
     }
 
-    if (header.has(current_path))
+    if (header.has(current_path) && !absent_columns.contains(current_path))
     {
         auto target_column_idx = header.getPositionByName(current_path);
         const auto & column = header.getByPosition(target_column_idx);
@@ -1237,13 +1238,33 @@ AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & co
 
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_, const NameSet & absent_columns)
-    : null_as_default(null_as_default_), settings(settings_)
+AvroDeserializer::AvroDeserializer(
+    const Block & header,
+    avro::ValidSchema schema,
+    bool allow_missing_fields,
+    bool null_as_default_,
+    const FormatSettings & settings_,
+    const NameSet & absent_columns_,
+    const ColumnMapper * column_mapper)
+    : absent_columns(absent_columns_), null_as_default(null_as_default_), settings(settings_)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
     {
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Root schema must be a record");
+    }
+
+    if (column_mapper && column_mapper->hasIcebergInitialDefaults())
+    {
+        absent_column_defaults.resize(header.columns());
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            const auto & column = header.getByPosition(i);
+            if (!absent_columns.contains(column.name))
+                continue;
+            if (const Field * value = column_mapper->getIcebergInitialDefault(column.name))
+                absent_column_defaults[i] = convertFieldToTypeOrThrow(*value, *column.type);
+        }
     }
 
     column_found.resize(header.columns());
@@ -1269,7 +1290,14 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
     for (size_t i = 0; i < ext.read_columns.size(); ++i)
     {
         /// Insert default in missing columns.
-        if (columns[i]->size() != row)
+        if (columns[i]->size() == row)
+            continue;
+        if (i < absent_column_defaults.size() && absent_column_defaults[i])
+        {
+            columns[i]->insert(*absent_column_defaults[i]);
+            ext.read_columns[i] = true;
+        }
+        else
             columns[i]->insertDefault();
     }
 }
@@ -1360,7 +1388,7 @@ void AvroRowInputFormat::readPrefix()
         absent_columns = getColumnsAbsentFromIcebergFile(output.getHeader(), *column_mapper, file_reader_ptr->metadata());
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings,
-        absent_columns);
+        absent_columns, column_mapper.get());
     file_reader_ptr->init();
 }
 

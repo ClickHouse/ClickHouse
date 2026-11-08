@@ -252,6 +252,8 @@ struct Reader
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
+        /// If set, the value of the missing column (the data lake default of a field absent from the file).
+        std::optional<Field> missing_column_default;
         bool needs_cast = false; // if output_type is different from input_type
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group

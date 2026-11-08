@@ -20,6 +20,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
@@ -63,6 +64,49 @@ SchemaConverter::SchemaConverter(
     }
 }
 
+bool SchemaConverter::isAbsentFromFile(const String & path) const
+{
+    const auto & encoding = column_mapper->getStorageColumnEncoding();
+    auto field_id = encoding.find(path);
+    if (field_id == encoding.end())
+        return false;
+
+    /// The struct that has the field: the longest proper prefix of the path that is a field of the mapper.
+    std::optional<String> parent;
+    for (size_t pos = path.size(); pos != 0 && (pos = path.rfind('.', pos - 1)) != String::npos;)
+    {
+        if (encoding.contains(path.substr(0, pos)))
+        {
+            parent = path.substr(0, pos);
+            break;
+        }
+    }
+
+    const std::optional<std::unordered_set<Int64>> * level_field_ids = &top_level_field_ids;
+    if (parent)
+    {
+        auto it = struct_field_ids.find(*parent);
+        if (it == struct_field_ids.end())
+        {
+            /// The struct is not in the file either: the field has a value only if the struct has a default.
+            const Field * parent_default = column_mapper->getIcebergInitialDefault(*parent);
+            return parent_default && parent_default->getType() == Field::Types::Tuple && isAbsentFromFile(*parent);
+        }
+        level_field_ids = &it->second;
+    }
+    return level_field_ids->has_value() && !(*level_field_ids)->contains(field_id->second);
+}
+
+std::optional<Field> SchemaConverter::getAbsentFieldDefault(const String & path, const DataTypePtr & type) const
+{
+    if (!column_mapper)
+        return {};
+    const Field * value = column_mapper->getIcebergInitialDefault(path);
+    if (!value || !isAbsentFromFile(path))
+        return {};
+    return convertFieldToTypeOrThrow(*value, *type);
+}
+
 void SchemaConverter::checkHasColumns()
 {
     if (file_metadata.schema.size() < 2)
@@ -78,10 +122,15 @@ void SchemaConverter::prepareForReading()
 
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
+    top_level_field_ids.emplace();
     for (size_t i = 0; i < top_level_columns; ++i)
     {
         TraversalNode node;
         processSubtree(node);
+        if (!node.element->__isset.field_id)
+            top_level_field_ids.reset();
+        else if (top_level_field_ids)
+            top_level_field_ids->insert(node.element->field_id);
     }
 
     /// Check that all requested columns were found.
@@ -127,6 +176,7 @@ void SchemaConverter::prepareForReading()
         missing_output.input_type = sample_block->getByPosition(i).type;
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
+        missing_output.missing_column_default = getAbsentFieldDefault(missing_output.name, missing_output.output_type);
     }
 
 }
@@ -1083,8 +1133,14 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     size_t output_start = output_columns.size();
     size_t skipped_unsupported_columns = 0;
     std::vector<String> element_names_in_file;
+    std::optional<std::unordered_set<Int64>> element_field_ids{std::in_place};
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
+        if (!file_metadata.schema.at(schema_idx).__isset.field_id)
+            element_field_ids.reset();
+        else if (element_field_ids)
+            element_field_ids->insert(file_metadata.schema.at(schema_idx).field_id);
+
         bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
             useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
@@ -1150,6 +1206,11 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         }
     }
 
+    /// Only for a struct that is the field of the mapper with its id: one with another id can have the same name.
+    if (column_mapper && column_mapper->hasIcebergInitialDefaults() && node.element->__isset.field_id
+        && column_mapper->getFieldIdToClickHouseName().contains(node.element->field_id))
+        struct_field_ids[node.name] = std::move(element_field_ids);
+
     if (!node.requested)
         return;
 
@@ -1175,6 +1236,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
             missing_output.input_type = tuple_type_hint->getElement(i);
             missing_output.output_type = missing_output.input_type;
             missing_output.is_missing_column = true;
+            missing_output.missing_column_default = getAbsentFieldDefault(missing_output.name, missing_output.output_type);
         }
         output_type = node.type_hint;
     }

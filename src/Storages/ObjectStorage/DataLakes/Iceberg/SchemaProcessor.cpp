@@ -39,6 +39,11 @@
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
+#include <Common/DateLUT.h>
+#include <Common/Hex.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 
@@ -436,10 +441,306 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
     return {precision, scale};
 }
 
+String defaultValueToString(const Poco::Dynamic::Var & value)
+{
+    return value.isEmpty() ? "null" : value.toString();
+}
+
+[[noreturn]] void throwInvalidDefault(const Poco::Dynamic::Var & value, const Poco::Dynamic::Var & iceberg_type, const String & field_name)
+{
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Invalid initial-default {} for field {} of type {}",
+        defaultValueToString(value),
+        field_name,
+        defaultValueToString(iceberg_type));
+}
+
+/// `HH:MM:SS[.ffffff]` -> microseconds since midnight.
+std::optional<Int64> parseIcebergTime(std::string_view s)
+{
+    if (s.size() < 8 || s[2] != ':' || s[5] != ':')
+        return {};
+    auto two_digits = [&](size_t pos) -> Int64
+    {
+        if (!isNumericASCII(s[pos]) || !isNumericASCII(s[pos + 1]))
+            return -1;
+        return (s[pos] - '0') * 10 + (s[pos + 1] - '0');
+    };
+    Int64 hours = two_digits(0);
+    Int64 minutes = two_digits(3);
+    Int64 seconds = two_digits(6);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59)
+        return {};
+    Int64 micros = ((hours * 60 + minutes) * 60 + seconds) * 1000000;
+    if (s.size() == 8)
+        return micros;
+    if (s[8] != '.' || s.size() == 9 || s.size() > 15)
+        return {};
+    Int64 fraction = 0;
+    for (size_t i = 9; i < 15; ++i)
+    {
+        if (i < s.size() && !isNumericASCII(s[i]))
+            return {};
+        fraction = fraction * 10 + (i < s.size() ? s[i] - '0' : 0);
+    }
+    return micros + fraction;
+}
+
+/// Parses a value in the JSON single-value serialization of the Iceberg spec (Appendix D) of the Iceberg type
+/// `iceberg_type` into a Field of the ClickHouse type `type`. `required` is the Iceberg nullability of the position.
+Field parseIcebergDefaultValue(
+    const Poco::Dynamic::Var & value,
+    const Poco::Dynamic::Var & iceberg_type,
+    const DataTypePtr & type,
+    bool required,
+    const String & field_name)
+{
+    checkStackSize();
+
+    if (value.isEmpty())
+    {
+        if (required)
+            throwInvalidDefault(value, iceberg_type, field_name);
+        return type->isNullable() ? Field() : type->getDefault();
+    }
+
+    const DataTypePtr nested_type = removeNullable(type);
+
+    if (iceberg_type.isString())
+    {
+        const String type_name = canonicalizeTypeName(iceberg_type.extract<String>());
+        const bool is_number = value.isNumeric() && !value.isBoolean() && !value.isString();
+        if (type_name == f_boolean)
+        {
+            if (!value.isBoolean())
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return Field(value.convert<bool>());
+        }
+        if (type_name == f_int || type_name == f_long || type_name == f_bigint)
+        {
+            if (!is_number || !value.isInteger() || !value.isSigned())
+                throwInvalidDefault(value, iceberg_type, field_name);
+            Int64 number = value.convert<Int64>();
+            if (type_name == f_int && (number < std::numeric_limits<Int32>::min() || number > std::numeric_limits<Int32>::max()))
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return Field(number);
+        }
+        if (type_name == f_float)
+        {
+            if (!is_number)
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return Field(static_cast<Float64>(static_cast<Float32>(value.convert<Float64>())));
+        }
+        if (type_name == f_double)
+        {
+            if (!is_number)
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return Field(value.convert<Float64>());
+        }
+
+        if (!value.isString())
+            throwInvalidDefault(value, iceberg_type, field_name);
+        const String & text = value.extract<String>();
+
+        if (type_name == f_string)
+            return Field(text);
+        if (type_name == f_time)
+        {
+            auto micros = parseIcebergTime(text);
+            if (!micros)
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return Field(*micros);
+        }
+        if (type_name == f_timestamp || type_name == f_timestamptz || type_name == f_timestamp_ns || type_name == f_timestamptz_ns)
+        {
+            /// Parsed in UTC: the stored value of an Iceberg `timestamp` is the microseconds of its wall clock in UTC.
+            const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*nested_type).getScale();
+            DateTime64 result;
+            ReadBufferFromString buf(text);
+            if (!tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance("UTC"), DateLUT::instance("UTC")) || !buf.eof())
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return DecimalField<DateTime64>(result, scale);
+        }
+        if (type_name == f_binary || (type_name.starts_with("fixed[") && type_name.ends_with(']')))
+        {
+            if (text.size() % 2 != 0 || !std::all_of(text.begin(), text.end(), isHexDigit))
+                throwInvalidDefault(value, iceberg_type, field_name);
+            String bytes(text.size() / 2, '\0');
+            for (size_t i = 0; i < bytes.size(); ++i)
+                bytes[i] = static_cast<char>(unhex2(text.data() + 2 * i));
+            if (const auto * fixed_type = typeid_cast<const DataTypeFixedString *>(nested_type.get());
+                fixed_type && bytes.size() != fixed_type->getN())
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return Field(std::move(bytes));
+        }
+        if (type_name == f_date || type_name == f_uuid || (type_name.starts_with("decimal(") && type_name.ends_with(')')))
+        {
+            auto column = nested_type->createColumn();
+            ReadBufferFromString buf(text);
+            if (!nested_type->getDefaultSerialization()->tryDeserializeWholeText(*column, buf, FormatSettings{}) || !buf.eof()
+                || column->size() != 1)
+                throwInvalidDefault(value, iceberg_type, field_name);
+            return (*column)[0];
+        }
+        /// `variant`, `geometry`, `geography` and unknown types must default to null.
+        throwInvalidDefault(value, iceberg_type, field_name);
+    }
+
+    const auto & type_object = iceberg_type.extract<Poco::JSON::Object::Ptr>();
+    const String type_name = type_object->getValue<String>(f_type);
+    if (type_name == f_struct)
+    {
+        if (value.type() != typeid(Poco::JSON::Object::Ptr))
+            throwInvalidDefault(value, iceberg_type, field_name);
+        const auto & value_object = value.extract<Poco::JSON::Object::Ptr>();
+        const auto & element_types = assert_cast<const DataTypeTuple &>(*nested_type).getElements();
+        auto fields = type_object->getArray(f_fields);
+        Tuple result;
+        result.reserve(fields->size());
+        size_t used_keys = 0;
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto child = fields->getObject(i);
+            const String key = std::to_string(child->getValue<Int64>(f_id));
+            const bool child_required = child->getValue<bool>(f_required);
+            const String child_name = child->getValue<String>(f_name);
+            if (value_object->has(key))
+            {
+                ++used_keys;
+                result.push_back(
+                    parseIcebergDefaultValue(value_object->get(key), child->get(f_type), element_types[i], child_required, child_name));
+            }
+            else if (auto child_default = getIcebergInitialDefault(child, element_types[i]))
+                result.push_back(std::move(*child_default));
+            else
+                result.push_back(parseIcebergDefaultValue({}, child->get(f_type), element_types[i], child_required, child_name));
+        }
+        if (used_keys != value_object->size())
+            throwInvalidDefault(value, iceberg_type, field_name);
+        return result;
+    }
+    if (type_name == f_list)
+    {
+        if (value.type() != typeid(Poco::JSON::Array::Ptr))
+            throwInvalidDefault(value, iceberg_type, field_name);
+        const auto & value_array = value.extract<Poco::JSON::Array::Ptr>();
+        const auto & element_type = assert_cast<const DataTypeArray &>(*nested_type).getNestedType();
+        const bool element_required = type_object->getValue<bool>(f_element_required);
+        Array result;
+        result.reserve(value_array->size());
+        for (UInt32 i = 0; i < value_array->size(); ++i)
+            result.push_back(
+                parseIcebergDefaultValue(value_array->get(i), type_object->get(f_element), element_type, element_required, field_name));
+        return result;
+    }
+    if (type_name == f_map)
+    {
+        if (value.type() != typeid(Poco::JSON::Object::Ptr))
+            throwInvalidDefault(value, iceberg_type, field_name);
+        const auto & value_object = value.extract<Poco::JSON::Object::Ptr>();
+        if (value_object->size() != 2 || !value_object->isArray("keys") || !value_object->isArray("values")
+            || value_object->getArray("keys")->size() != value_object->getArray("values")->size())
+            throwInvalidDefault(value, iceberg_type, field_name);
+        const auto & map_type = assert_cast<const DataTypeMap &>(*nested_type);
+        const bool value_required = type_object->getValue<bool>(f_value_required);
+        auto keys = value_object->getArray("keys");
+        auto values = value_object->getArray("values");
+        Map result;
+        result.reserve(keys->size());
+        for (UInt32 i = 0; i < keys->size(); ++i)
+            result.push_back(Tuple{
+                parseIcebergDefaultValue(keys->get(i), type_object->get(f_key), map_type.getKeyType(), true, field_name),
+                parseIcebergDefaultValue(values->get(i), type_object->get(f_value), map_type.getValueType(), value_required, field_name)});
+        return result;
+    }
+    throwInvalidDefault(value, iceberg_type, field_name);
+}
+
+bool hasInitialDefault(const Poco::JSON::Object::Ptr & field)
+{
+    return field->has(f_initial_default) && !field->get(f_initial_default).isEmpty();
+}
+
+/// Whether `type` (a JSON string or object) has a field with an `initial-default` at any depth.
+bool typeHasInitialDefault(const Poco::Dynamic::Var & type)
+{
+    if (type.isString())
+        return false;
+    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
+    const auto type_name = type_object->getValue<String>(f_type);
+    if (type_name == f_struct)
+    {
+        auto fields = type_object->getArray(f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            if (hasInitialDefault(field) || typeHasInitialDefault(field->get(f_type)))
+                return true;
+        }
+        return false;
+    }
+    if (type_name == f_list)
+        return typeHasInitialDefault(type_object->get(f_element));
+    if (type_name == f_map)
+        return typeHasInitialDefault(type_object->get(f_key)) || typeHasInitialDefault(type_object->get(f_value));
+    return false;
+}
+
+/// Adds the effective `initial-default` of every field nested in `type` (of the ClickHouse type `data_type`) at
+/// `path`, with the paths of `traverseSchema`.
+void collectInitialDefaults(
+    const Poco::Dynamic::Var & type, const DataTypePtr & data_type, const String & path, std::unordered_map<String, Field> & result)
+{
+    if (type.isString())
+        return;
+    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
+    const auto type_name = type_object->getValue<String>(f_type);
+    if (type_name == f_struct)
+    {
+        const auto & element_types = assert_cast<const DataTypeTuple &>(*data_type).getElements();
+        auto fields = type_object->getArray(f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            auto child_path = Nested::concatenateName(path, field->getValue<String>(f_name));
+            if (auto value = getIcebergInitialDefault(field, element_types[i]))
+                result.emplace(child_path, std::move(*value));
+            collectInitialDefaults(field->get(f_type), element_types[i], child_path, result);
+        }
+    }
+    else if (type_name == f_list)
+    {
+        collectInitialDefaults(
+            type_object->get(f_element), assert_cast<const DataTypeArray &>(*data_type).getNestedType(),
+            Nested::concatenateName(path, "element"), result);
+    }
+    else if (type_name == f_map)
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
+        collectInitialDefaults(type_object->get(f_key), map_type.getKeyType(), Nested::concatenateName(path, "key"), result);
+        collectInitialDefaults(type_object->get(f_value), map_type.getValueType(), Nested::concatenateName(path, "value"), result);
+    }
+}
+
 }
 
 namespace Iceberg
 {
+
+std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type)
+{
+    if (!hasInitialDefault(field))
+        return {};
+    const auto value = field->get(f_initial_default);
+    const auto iceberg_type = field->get(f_type);
+    const auto field_name = field->getValue<String>(f_name);
+    /// The default of a struct field carries no values of its fields: those come from the fields' own defaults.
+    if (field->isObject(f_type) && field->getObject(f_type)->getValue<String>(f_type) == f_struct
+        && (value.type() != typeid(Poco::JSON::Object::Ptr) || value.extract<Poco::JSON::Object::Ptr>()->size() != 0))
+        throwInvalidDefault(value, iceberg_type, field_name);
+    return parseIcebergDefaultValue(value, iceberg_type, type, field->getValue<bool>(f_required), field_name);
+}
 
 std::string IcebergSchemaProcessor::default_link{};
 
@@ -492,9 +793,15 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
         if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
         {
-            /// An identical metadata.json copy confirms a copy that was registered from a manifest header.
-            if (source == SchemaSource::Metadata)
-                manifest_sourced_schema_ids.erase(schema_id);
+            /// An identical metadata.json copy confirms a copy that was registered from a manifest header, and replaces
+            /// it: the comparison ignores keys that a manifest header copy may lack, like `initial-default`.
+            if (source == SchemaSource::Metadata && manifest_sourced_schema_ids.erase(schema_id))
+            {
+                iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
+                std::erase_if(
+                    transform_dags_by_ids,
+                    [schema_id](const auto & item) { return item.first.first == schema_id || item.first.second == schema_id; });
+            }
             return;
         }
 
@@ -884,7 +1191,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            if (!type->isNullable() && !field->isObject(f_type))
+            auto initial_default = getIcebergInitialDefault(field, type);
+            if (!initial_default && !type->isNullable() && !field->isObject(f_type))
             {
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -895,7 +1203,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     old_id,
                     new_id);
             }
-            auto default_type_column = type->createColumnConstWithDefaultValue(0);
+            auto default_type_column
+                = initial_default ? type->createColumnConst(0, *initial_default) : type->createColumnConstWithDefaultValue(0);
             const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
             /// Materialize so the column leaves the transform as a full column, not a ColumnConst,
             /// like every other missing-column path (inplaceBlockConversions, IMergeTreeReader, ...).
@@ -1073,6 +1382,24 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
     return result;
 }
 
+std::unordered_map<String, Field> IcebergSchemaProcessor::collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema)
+{
+    std::unordered_map<String, Field> result;
+    IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto field = schema->getObject(i);
+        if (!hasInitialDefault(field) && !typeHasInitialDefault(field->get(f_type)))
+            continue;
+        auto name = field->getValue<String>(f_name);
+        auto type = processor.getFieldType(field, f_type, field->getValue<bool>(f_required));
+        if (auto value = getIcebergInitialDefault(field, type))
+            result.emplace(name, std::move(*value));
+        collectInitialDefaults(field->get(f_type), type, name, result);
+    }
+    return result;
+}
+
 void IcebergSchemaProcessor::updateLastColumnId(Int32 last_column_id_)
 {
     Int64 current = last_column_id.load();
@@ -1098,6 +1425,7 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)
     column_mapper->setIcebergStringPaths(IcebergSchemaProcessor::collectIcebergStringPaths(fields));
     column_mapper->setIcebergOptionalPaths(IcebergSchemaProcessor::collectIcebergOptionalPaths(fields));
     column_mapper->setIcebergTimeFieldIds(IcebergSchemaProcessor::collectIcebergTimeFieldIds(fields));
+    column_mapper->setIcebergInitialDefaults(IcebergSchemaProcessor::collectIcebergInitialDefaults(fields));
     return column_mapper;
 }
 

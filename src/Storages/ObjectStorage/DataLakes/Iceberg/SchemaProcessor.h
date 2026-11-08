@@ -28,6 +28,10 @@ ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields);
 
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
+/// The `initial-default` of the schema field `field` as a value of its ClickHouse type `type`, or nullopt if the field
+/// has none. Throws ICEBERG_SPECIFICATION_VIOLATION if the default is malformed.
+std::optional<Field> getIcebergInitialDefault(const Poco::JSON::Object::Ptr & field, const DataTypePtr & type);
+
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -131,6 +135,9 @@ public:
 
     /// Field ids (including nested ones) whose Iceberg type is `time`.
     static std::unordered_set<Int64> collectIcebergTimeFieldIds(Poco::JSON::Array::Ptr schema);
+
+    /// The effective `initial-default` of the fields (including nested ones) that have one, by the paths of `traverseSchema`.
+    static std::unordered_map<String, Field> collectIcebergInitialDefaults(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;

@@ -279,6 +279,8 @@ UUID QueryConditionCache::getTableIdForFileEntries(
             hash.update(name);
             hash.update(field_id);
         }
+        /// The value read for a field absent from the file.
+        hash.update(column_mapper->getIcebergInitialDefaultsHash());
     }
     hash.update(format_settings != nullptr);
     if (format_settings)

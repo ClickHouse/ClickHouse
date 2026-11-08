@@ -147,13 +147,18 @@ public:
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
     using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
 
+    /// `absent_columns` are proven missing from the file by Iceberg field id (see `column_mapper_`): no field of the file
+    /// is read into them, and they get their `absent_column_defaults_` if any.
     ORCColumnToCHColumn(
         const Block & header_,
         bool allow_missing_columns_,
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore,
+        const ColumnMapper * column_mapper_ = nullptr,
+        NameSet absent_columns_ = {},
+        std::unordered_map<String, Field> absent_column_defaults_ = {});
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -175,7 +180,8 @@ private:
         const ORC::Type * orc_type,
         const std::string & column_name,
         bool inside_nullable,
-        DataTypePtr type_hint = nullptr) const;
+        DataTypePtr type_hint = nullptr,
+        const String & mapper_path = {}) const;
 
     const Block & header;
     /// If false, throw exception if some columns in header not exists in arrow table.
@@ -184,6 +190,10 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
+    /// Iceberg schema of the file, to fill the fields of a struct that the file does not have.
+    const ColumnMapper * column_mapper;
+    NameSet absent_columns;
+    std::unordered_map<String, Field> absent_column_defaults;
 };
 }
 #endif

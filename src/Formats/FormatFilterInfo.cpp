@@ -5,6 +5,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 #include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
@@ -130,6 +131,26 @@ void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> &&
     for (const auto & [column_name, field_id] : storage_encoding)
         if (!field_id_to_clickhouse_name.emplace(field_id, column_name).second)
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
+}
+
+UInt64 ColumnMapper::getIcebergInitialDefaultsHash() const
+{
+    if (iceberg_initial_defaults.empty())
+        return 0;
+    std::vector<std::pair<std::string_view, const Field *>> sorted;
+    sorted.reserve(iceberg_initial_defaults.size());
+    for (const auto & [path, field] : iceberg_initial_defaults)
+        sorted.emplace_back(path, &field);
+    std::sort(sorted.begin(), sorted.end());
+    SipHash hash;
+    hash.update(sorted.size());
+    for (const auto & [path, field] : sorted)
+    {
+        hash.update(path.size());
+        hash.update(path);
+        applyVisitor(FieldVisitorHash(hash), *field);
+    }
+    return hash.get64();
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
