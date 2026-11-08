@@ -18,8 +18,6 @@
 #if USE_AVRO_RUST
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/Avro/AvroOcfReader.h>
 #include <Processors/Formats/Impl/Avro/AvroRustPlan.h>
 #elif USE_AVRO
@@ -27,12 +25,15 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #endif
 
+#if USE_AVRO_RUST || USE_PARQUET
+#include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
+#endif
+
 #if USE_PARQUET
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
