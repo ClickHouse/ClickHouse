@@ -37,8 +37,9 @@ for batch_size in 1 3 8 13 1000 100000; do
         SELECT $batch_size, (SELECT $DIGEST FROM ($QUERY)) = (SELECT $DIGEST FROM file('$FILE', 'ORC', '$STRUCTURE') SETTINGS input_format_orc_row_batch_size = $batch_size)"
 done
 
-# The skipped row groups make the reader seek into the middle of the streams.
+# Row groups before id 12345 are skipped (count = rows of the kept groups), so the reader seeks into the middle of the streams.
 $CLICKHOUSE_LOCAL -q "
+    SELECT count() FROM file('$FILE', 'ORC', '$STRUCTURE') WHERE indexHint(id >= 12345) SETTINGS input_format_orc_filter_push_down = 1;
     SELECT (SELECT $DIGEST FROM ($QUERY) WHERE id >= 12345)
         = (SELECT $DIGEST FROM file('$FILE', 'ORC', '$STRUCTURE') WHERE id >= 12345 SETTINGS input_format_orc_filter_push_down = 1);
     SELECT countIf(nb IS NULL), countIf(ni8 IS NULL), countIf(runs IS NULL), countIf(all_null IS NULL), countIf(t IS NULL),
