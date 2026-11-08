@@ -52,3 +52,9 @@ rejected
 2
 1
 rejected
+-- construction settings together with a profile
+rejected
+rejected
+1
+-- construction settings for a SELECT without FROM need a literal implicit_table_at_top_level
+rejected

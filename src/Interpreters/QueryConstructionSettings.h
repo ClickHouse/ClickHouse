@@ -34,8 +34,8 @@ void wrapPerArmConstructionSettings(
 bool hasConstructionSettings(const IAST & ast);
 
 /// Throw if the query of a new handler definition has construction settings in one of two query-level `SETTINGS`
-/// clauses (`SELECT ... SETTINGS a FORMAT TSV SETTINGS b`), under `EXPLAIN` / `EXECUTE AS` in both of them, or for
-/// a `SELECT` without `FROM` whose `implicit_table_at_top_level` is not a string literal.
+/// clauses (`SELECT ... SETTINGS a FORMAT TSV SETTINGS b`), under `EXPLAIN` / `EXECUTE AS` in both of them, together
+/// with `profile`, or for a `SELECT` without `FROM` unless the query sets `implicit_table_at_top_level` to a string literal.
 /// Not for stored definitions: those written by earlier versions must keep loading.
 void checkStoredQueryConstructionSettings(const IAST & query);
 

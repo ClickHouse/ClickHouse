@@ -12,13 +12,14 @@ BASE="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}
 # Per-test-unique names and URLs: handlers and users are global.
 DB="${CLICKHOUSE_DATABASE}"
 APP_USER="u_05566_${DB}"
+PROFILE="p_05566_${DB}"
 
 cleanup() {
     local drops=""
-    for i in 1 3 4 5 6 7 8 9 10 11 12 14 15 16 17 18 19 20 21; do
+    for i in 1 3 4 5 6 7 8 9 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25; do
         drops+="DROP HANDLER IF EXISTS h${i}_${DB}; "
     done
-    ${CLICKHOUSE_CLIENT} -q "${drops}DROP USER IF EXISTS ${APP_USER}"
+    ${CLICKHOUSE_CLIENT} -q "${drops}DROP USER IF EXISTS ${APP_USER}; DROP SETTINGS PROFILE IF EXISTS ${PROFILE}"
 }
 trap cleanup EXIT
 cleanup
@@ -116,4 +117,17 @@ ${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h19_${DB}?limit=1"
 ${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h20_${DB}"
 ${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h20_${DB}?limit=1"
 ${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h21_${DB} URL '/h21_${DB}' AS SELECT a SETTINGS implicit_table_at_top_level = {tb:String}, limit = 2" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+
+echo "-- construction settings together with a profile"
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE} SETTINGS limit = 1"
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h22_${DB} URL '/h22_${DB}' AS SELECT a FROM ${DB}.t ORDER BY a SETTINGS profile = '${PROFILE}', limit = 2" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h23_${DB} URL '/h23_${DB}' METHODS (POST) AS EXECUTE AS ${APP_USER} SELECT a FROM ${DB}.t ORDER BY a FORMAT TSV SETTINGS profile = '${PROFILE}', limit = 2" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h24_${DB} URL '/h24_${DB}' AS SELECT a FROM ${DB}.t ORDER BY a SETTINGS profile = '${PROFILE}'"
+${CLICKHOUSE_CURL} -sS "${BASE}/h24_${DB}"
+
+echo "-- construction settings for a SELECT without FROM need a literal implicit_table_at_top_level"
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h25_${DB} URL '/h25_${DB}' AS SELECT count() SETTINGS limit = 1" 2>&1 \
     | grep -q BAD_ARGUMENTS && echo rejected || echo accepted

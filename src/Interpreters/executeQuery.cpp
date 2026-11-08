@@ -1961,7 +1961,7 @@ void wrapNestedConstructionSettings(
         if (create_handler->query)
         {
             ASTPtr query = create_handler->query;
-            wrapStoredQueryConstructionSettings(query, String{}, max_query_size, max_parser_depth, max_parser_backtracks);
+            wrapStoredQueryConstructionSettings(query, std::nullopt, max_query_size, max_parser_depth, max_parser_backtracks);
             if (query != create_handler->query)
             {
                 for (auto & child : create_handler->children)
@@ -2599,12 +2599,63 @@ static bool wrapWrapperConstructionSettings(
     return true;
 }
 
+static void getStoredQuerySettingsClauses(const IAST & ast, std::vector<const ASTSetQuery *> & clauses)
+{
+    const ASTQueryWithOutput * wrapper = nullptr;
+    const IAST * statement = nullptr;
+    if (const auto * explain_query = ast.as<ASTExplainQuery>())
+    {
+        wrapper = explain_query;
+        statement = explain_query->getExplainedQuery().get();
+    }
+    else if (const auto * execute_as = ast.as<ASTExecuteAsQuery>())
+    {
+        wrapper = execute_as;
+        statement = execute_as->subquery.get();
+    }
+    else if (const auto * select_union = ast.as<ASTSelectWithUnionQuery>())
+    {
+        auto [trailing, arm] = getQueryLevelSettingsClauses(*select_union);
+        clauses.push_back(trailing);
+        clauses.push_back(arm);
+        return;
+    }
+
+    if (!wrapper)
+        return;
+    clauses.push_back(wrapper->settings_ast ? wrapper->settings_ast->as<ASTSetQuery>() : nullptr);
+    if (statement)
+        getStoredQuerySettingsClauses(*statement, clauses);
+}
+
+/// A `profile` in a query-level `SETTINGS` clause is expanded only when the query runs, and may set construction settings.
+static bool hasConstructionSettingsWithProfile(const IAST & ast)
+{
+    std::vector<const ASTSetQuery *> clauses;
+    getStoredQuerySettingsClauses(ast, clauses);
+    bool has_profile = false;
+    bool has_construction_settings = false;
+    for (const auto * clause : clauses)
+    {
+        if (!clause)
+            continue;
+        for (const auto & change : clause->changes)
+            has_profile = has_profile || change.name == "profile";
+        has_construction_settings = has_construction_settings || hasConstructionSettings(*clause);
+    }
+    return has_profile && has_construction_settings;
+}
+
 /// Materialize the construction settings of a query stored now and run later as a top-level query (a handler's query)
 /// as for a query sent directly. The statement of `EXPLAIN` / `EXECUTE AS` also runs as a top-level query.
 static void wrapStoredQueryConstructionSettings(
     ASTPtr & ast, const std::optional<String> & implicit_table, size_t max_query_size, size_t max_parser_depth,
     size_t max_parser_backtracks)
 {
+    /// Stays as written; `checkStoredQueryConstructionSettings` rejects it.
+    if (hasConstructionSettingsWithProfile(*ast))
+        return;
+
     if (auto * explain_query = ast->as<ASTExplainQuery>())
     {
         if (ASTPtr explained = explain_query->getExplainedQuery())
@@ -2742,11 +2793,15 @@ void checkStoredQueryConstructionSettings(const IAST & ast)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
             "handler cannot be combined with a second query-level `SETTINGS` clause. Put the settings into one clause.");
-    if (hasUnmaterializableImplicitTable(ast, String{}))
+    if (hasConstructionSettingsWithProfile(ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
-            "handler cannot be combined with a `SELECT` without `FROM` whose `implicit_table_at_top_level` is not a string "
-            "literal (for example, a query parameter).");
+            "handler cannot be combined with the `profile` setting in its `SETTINGS`. Put them into the profile or remove the profile.");
+    if (hasUnmaterializableImplicitTable(ast, std::nullopt))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
+            "handler cannot be combined with a `SELECT` without `FROM`, unless the query sets `implicit_table_at_top_level` "
+            "to a string literal.");
 }
 
 
