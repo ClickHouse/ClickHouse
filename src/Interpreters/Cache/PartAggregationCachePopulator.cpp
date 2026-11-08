@@ -151,7 +151,7 @@ void populatePartAggregationCache(
                 /* filtered_rows_count = */ nullptr,
                 /* apply_deleted_mask = */ true,
                 /* read_with_direct_io = */ false,
-                /* prefetch = */ false,
+                /* allow_remote_fs_prefetch = */ false,
                 /// This is a foreground read on behalf of the query, not a background merge:
                 /// pass the query context so the source reads with the query's own
                 /// `ReadSettings` (read priority, per-query bandwidth throttlers,
