@@ -9,6 +9,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -284,6 +285,14 @@ bool CompressionCodecMultiple::isCompression() const
     return false;
 }
 
+bool CompressionCodecMultiple::isEncryption() const
+{
+    for (const auto & codec : getCodecs())
+        if (codec->isEncryption())
+            return true;
+    return false;
+}
+
 bool CompressionCodecMultiple::isLossyCompression() const
 {
     for (const auto & codec : getCodecs())
@@ -292,12 +301,9 @@ bool CompressionCodecMultiple::isLossyCompression() const
     return false;
 }
 
-bool CompressionCodecMultiple::isEncryption() const
+bool CompressionCodecMultiple::dependsOnDataType() const
 {
-    for (const auto & codec : getCodecs())
-        if (codec->isEncryption())
-            return true;
-    return false;
+    return std::ranges::any_of(getCodecs(), [](const auto & codec) { return codec->dependsOnDataType(); });
 }
 
 

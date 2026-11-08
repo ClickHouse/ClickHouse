@@ -29,6 +29,8 @@ public:
 
     void updateHash(SipHash & hash) const override;
 
+    bool dependsOnDataType() const override;
+
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
@@ -36,8 +38,8 @@ protected:
 
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
-    bool isLossyCompression() const override;
     bool isEncryption() const override;
+    bool isLossyCompression() const override;
 
     String getDescription() const override { return "Apply multiple codecs consecutively defined by user."; }
 
