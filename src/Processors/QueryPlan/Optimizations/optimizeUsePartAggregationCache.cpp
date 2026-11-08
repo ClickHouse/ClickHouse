@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Cache/PartAggregationCachePopulator.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
@@ -426,6 +427,14 @@ void optimizeUsePartAggregationCache(
         extra_hash.update(source_filter_dag != nullptr);
         if (source_filter_dag)
             source_filter_dag->updateHash(extra_hash);
+
+        /// `ActionsDAG::updateHash` does not see the settings that ordinary functions capture at
+        /// build time (e.g. `formatdatetime_f_prints_single_zero` for `formatDateTime`,
+        /// `function_locate_has_mysql_compatible_argument_order` for `locate`, `session_timezone`).
+        /// The cache is shared across sessions, so the same expression evaluated under different
+        /// settings must not share a key. This covers keys, aggregate arguments, `WHERE`,
+        /// `PREWHERE` and source filters at once, as they all feed into this final hash.
+        extra_hash.update(queryConditionCacheSettingsSalt(settings));
 
         query_hash = getSipHash128AsPair(extra_hash);
     }
