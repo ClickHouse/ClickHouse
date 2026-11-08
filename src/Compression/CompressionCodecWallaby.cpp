@@ -2468,6 +2468,16 @@ UInt32 CompressionCodecWallaby::doDecompressData(const char * source, UInt32 sou
     return uncompressed_size;
 }
 
+namespace
+{
+
+bool isApplicableToType(const IDataType & column_type)
+{
+    return WhichDataType(column_type).isNativeFloat();
+}
+
+}
+
 void registerCodecWallaby(CompressionCodecFactory & factory)
 {
     const auto method_code = static_cast<UInt8>(CompressionMethodByte::Wallaby);
@@ -2479,7 +2489,7 @@ void registerCodecWallaby(CompressionCodecFactory & factory)
         UInt8 float_width = sizeof(Float64);
         if (column_type)
         {
-            if (!WhichDataType(column_type).isNativeFloat())
+            if (!isApplicableToType(*column_type))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Codec Wallaby is not applicable for {} because the data type is not Float*",
                     column_type->getName());
@@ -2489,7 +2499,7 @@ void registerCodecWallaby(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecWallaby>(float_width);
     };
-    factory.registerCompressionCodecWithType("Wallaby", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("Wallaby", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
 }
 
 CompressionCodecPtr getCompressionCodecWallaby(UInt8 float_width)
