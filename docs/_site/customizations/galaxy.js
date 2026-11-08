@@ -285,8 +285,8 @@
   //      data-galaxy-prop-os="linux">...</div>
   function getTrackedHref(anchor) {
     var href = anchor.getAttribute('href');
-    // Homepage components now render the canonical /docs base during SSR. Keep
-    // this normalization for older tracked links that still omit the mount.
+    // Mintlify renders tracked links with the /docs base. Keep this
+    // normalization for any link that still omits the mount.
     if (isCanonicalDocs && href && href.charAt(0) === '/' &&
         href.indexOf('//') !== 0 && !/^\/docs(?:\/|$)/.test(href)) {
       return '/docs' + href;
@@ -445,7 +445,15 @@
     if (!isCanonicalDocs) return;
 
     updateCloudLinks();
-    new MutationObserver(updateCloudLinks).observe(document.body, {
+    var scheduled = false;
+    new MutationObserver(function () {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(function () {
+        scheduled = false;
+        updateCloudLinks();
+      });
+    }).observe(document.body, {
       childList: true,
       subtree: true,
     });

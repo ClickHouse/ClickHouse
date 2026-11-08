@@ -67,8 +67,7 @@ CREATE TABLE t_buf_dst (k Int64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_buf_dist AS t_buf_dst ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_buf_dst);
 CREATE TABLE t_buf AS t_buf_dst ENGINE = Buffer(currentDatabase(), t_buf_dist, 1, 100000, 100000, 1000000, 1000000, 1000000000, 1000000000);
 INSERT INTO t_buf SELECT number FROM numbers(3);
--- With serialize_query_plan = 1 this server also plans the query `t_buf_dist` sends to its shard, which is not covered here.
-SELECT * FROM view(SELECT 5, k FROM t_buf ORDER BY ALL) ORDER BY ALL SETTINGS serialize_query_plan = 0;
+SELECT * FROM view(SELECT 5, k FROM t_buf ORDER BY ALL) ORDER BY ALL;
 
 SELECT 'cluster table function';
 INSERT INTO FUNCTION file(currentDatabase() || '_05401.tsv', 'TSV', 'x UInt8') SELECT number FROM numbers(3) SETTINGS engine_file_truncate_on_insert = 1;

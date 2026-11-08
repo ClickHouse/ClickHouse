@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, zookeeper, memory-engine, log-engine
+# Tags: no-replicated-database, zookeeper, memory-engine, log-engine, no-fasttest
+# no-fasttest: Too slow for fast test (~12s), covered by regular stateless runs.
 #
 # `TRUNCATE` of a MergeTree table in a `lazy_load_tables = 1` database must skip the exclusive
 # lock, exactly as it does for an eagerly loaded MergeTree. `InterpreterDropQuery` classified
