@@ -203,6 +203,33 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
     }
 }
 
+std::optional<int64_t> parquetTryPhysicalInteger(const Field & field, const parquet::ColumnDescriptor * parquet_column_descriptor)
+{
+    /// Mirrors `tryHashInt`: the value returned here is exactly the one `parquetTryHashField` hashes.
+    const auto physical_type = parquet_column_descriptor->physical_type();
+    if (physical_type != parquet::Type::type::INT32 && physical_type != parquet::Type::type::INT64)
+        return std::nullopt;
+    if (!isParquetIntegerTypeSupportedForBloomFilters(
+            parquet_column_descriptor->logical_type(), parquet_column_descriptor->converted_type()))
+        return std::nullopt;
+
+    const bool is_int32 = physical_type == parquet::Type::type::INT32;
+    auto narrow = [&](auto value) -> int64_t
+    {
+        if (is_int32)
+            return static_cast<int32_t>(value);
+        return static_cast<int64_t>(value);
+    };
+
+    if (field.getType() == Field::Types::Which::Int64)
+        return narrow(field.safeGet<int64_t>());
+    if (field.getType() == Field::Types::Which::UInt64)
+        return narrow(field.safeGet<uint64_t>());
+    if (field.getType() == Field::Types::IPv4 && is_int32)
+        return static_cast<int32_t>(field.safeGet<IPv4>());
+    return std::nullopt;
+}
+
 std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     const IColumn * column = data_column;
