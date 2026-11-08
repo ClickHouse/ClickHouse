@@ -181,6 +181,8 @@ Requires the global `DROP CLUSTER` grant (`GRANT DROP CLUSTER ON *.*`).
 DROP CLUSTER [IF EXISTS] name [ON CLUSTER cluster]
 ```
 
+With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), a single-node `DROP CLUSTER` is sufficient. `ON CLUSTER` is ignored when `ignore_on_cluster_for_replicated_sql_cluster_queries` is enabled (the default).
+
 **Example**
 
 ```sql

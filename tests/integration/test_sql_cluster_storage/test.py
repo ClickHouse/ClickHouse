@@ -311,6 +311,22 @@ def test_keeper_storage(cluster):
     )
 
 
+def test_keeper_storage_on_cluster(cluster):
+    """Keeper metadata is shared, so ON CLUSTER must not fan out CREATE/ALTER/DROP.
+
+    Without stripping the clause, the second replica hits CLUSTER_ALREADY_EXISTS on CREATE
+    and CLUSTER_DOESNT_EXIST on DROP. `ignore_on_cluster_for_replicated_sql_cluster_queries`
+    defaults to 1, so the initiator writes Keeper once and the others reload in the background.
+    """
+    run_storage_scenario(
+        cluster,
+        config_file="cluster_metadata_keeper.xml",
+        use_on_cluster=True,
+        encrypted=False,
+        keeper=True,
+    )
+
+
 def test_keeper_storage_encrypted(cluster):
     run_storage_scenario(
         cluster,

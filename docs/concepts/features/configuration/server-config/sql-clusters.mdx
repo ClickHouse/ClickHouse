@@ -125,7 +125,7 @@ With local storage, metadata exists independently on each server. Use `ON CLUSTE
 </clickhouse>
 ```
 
-For Keeper storage, `path` is required. Metadata is shared through Keeper, and other nodes reload changes automatically in the background. In this case, running the DDL on a single node is enough; `ON CLUSTER` is optional.
+For Keeper storage, `path` is required. Metadata is shared through Keeper, and other nodes reload changes automatically in the background. In this case, running the DDL on a single node is enough. `ON CLUSTER` is optional: with the default `ignore_on_cluster_for_replicated_sql_cluster_queries = 1` it is stripped, so every replica does not try to create or drop the same Keeper znode.
 
 An optional `update_timeout_ms` parameter controls how long the background sync waits for Keeper changes. It defaults to `5000`.
 

@@ -338,7 +338,7 @@ An optional `ON CLUSTER` clause runs the statement through the [distributed DDL]
 
 With [local metadata storage](/concepts/features/configuration/server-config/sql-clusters#local-storage-example), `ON CLUSTER` is required to create the metadata file on every node.
 
-With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), metadata is shared centrally and a single-node `CREATE CLUSTER` is sufficient.
+With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), metadata is shared centrally and a single-node `CREATE CLUSTER` is sufficient. `ON CLUSTER` is ignored when `ignore_on_cluster_for_replicated_sql_cluster_queries` is enabled (the default), because every replica would otherwise try to create the same Keeper znode.
 
 ## Example {#example}
 
@@ -426,7 +426,7 @@ An optional `ON CLUSTER` clause runs the statement through the [distributed DDL]
 
 With [local metadata storage](/concepts/features/configuration/server-config/sql-clusters#local-storage-example), use `ON CLUSTER` to update metadata on every node.
 
-With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), a single-node `ALTER CLUSTER` is sufficient.
+With [Keeper metadata storage](/concepts/features/configuration/server-config/sql-clusters#keeper-storage-example), a single-node `ALTER CLUSTER` is sufficient. `ON CLUSTER` is ignored when `ignore_on_cluster_for_replicated_sql_cluster_queries` is enabled (the default), because every replica would otherwise try to replace the same Keeper znode.
 
 ## Example {#example}
 
