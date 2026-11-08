@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/Exception.h>
@@ -26,12 +27,12 @@ namespace ErrorCodes
 namespace
 {
 
-/// Whether `key`, returned by listing `directory`, is an object directly inside it. A storage can put a root of its
-/// own in front of the directory (`LocalObjectStorage` resolves a relative path against its root), so the directory's
-/// first occurrence in `key` anchors the comparison.
+/// Whether `key`, returned by listing `directory`, is an object directly inside it. A storage may return the keys
+/// without leading separators and with the directory in normal form (HDFS canonicalizes it).
 bool isDirectlyInside(std::string_view key, const String & directory)
 {
-    const String haystack = "/" + String(key);
+    while (key.starts_with('/'))
+        key.remove_prefix(1);
     for (const String & spelling : {directory, std::filesystem::path(directory).lexically_normal().string()})
     {
         std::string_view dir = spelling;
@@ -39,11 +40,13 @@ bool isDirectlyInside(std::string_view key, const String & directory)
             dir.remove_prefix(1);
         while (dir.ends_with('/'))
             dir.remove_suffix(1);
-        const String needle = dir.empty() ? String("/") : "/" + String(dir) + "/";
-        const size_t pos = haystack.find(needle);
-        if (pos == String::npos)
-            continue;
-        const std::string_view rest = std::string_view(haystack).substr(pos + needle.size());
+        std::string_view rest = key;
+        if (!dir.empty())
+        {
+            if (!rest.starts_with(dir) || rest.size() == dir.size() || rest[dir.size()] != '/')
+                continue;
+            rest.remove_prefix(dir.size() + 1);
+        }
         return !rest.empty() && !rest.contains('/');
     }
     return false;
@@ -78,7 +81,10 @@ std::vector<String> listFilesNonRecursiveImpl(
     const String & name_prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
-    const auto directory = (std::filesystem::path(path) / prefix / "").string();
+    auto directory = (std::filesystem::path(path) / prefix / "").string();
+    /// The local storage lists a relative directory under its root, the same way it resolves any other key.
+    if (object_storage.getType() == ObjectStorageType::Local)
+        directory = resolvePathRelativelyToBase(directory, object_storage.getCommonKeyPrefix());
     return listFilesImpl(
         object_storage,
         path,

@@ -97,10 +97,24 @@ cp -r "${CUR_DIR}/data_minio/paimon_no_partition" "${PAIMON}"
 mkdir -p "${PAIMON}/schema/backup" "${PAIMON}/snapshot/backup"
 sed 's/"f_boolean"/"f_zzz"/' "${PAIMON}/schema/schema-0" > "${PAIMON}/schema/backup/schema-99"
 echo "paimon schema $(${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 --query "DESCRIBE TABLE paimonLocal('${PAIMON}')" | cut -f 1 | head -n 1)"
+# A relative path that leaves `user_files_path` and enters it again names the same table.
+REENTRY="../$(basename "${USER_FILES_PATH}")/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+echo "paimon schema reentry $(${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 --query "DESCRIBE TABLE paimonLocal('${REENTRY}/paimon')" | cut -f 1 | head -n 1)"
 rm -r "${PAIMON}/schema/backup"
 rm "${PAIMON}/snapshot/LATEST"
 echo garbage > "${PAIMON}/snapshot/backup/snapshot-99"
 ${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 --query "SELECT 'paimon snapshot', count() FROM paimonLocal('${PAIMON}')"
+${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 --query "SELECT 'paimon snapshot reentry', count() FROM paimonLocal('${REENTRY}/paimon')"
+
+$CLIENT --query "
+    CREATE TABLE local_other (zzz String) ENGINE = IcebergLocal('${LOCAL_DIR}/local_other');
+    INSERT INTO local_other VALUES ('x');
+    CREATE TABLE local_main (a Int64) ENGINE = IcebergLocal('${LOCAL_DIR}/local_main');
+    INSERT INTO local_main VALUES (1), (2), (3);"
+mkdir -p "${LOCAL_DIR}/local_main/metadata/backup"
+cp "${LOCAL_DIR}/local_other/metadata/v1.metadata.json" "${LOCAL_DIR}/local_main/metadata/backup/v99.metadata.json"
+$CLIENT --query "SELECT 'iceberg reentry', count() FROM icebergLocal('${REENTRY}/local_main')"
+echo "iceberg reentry $($CLIENT --query "DESCRIBE TABLE icebergLocal('${REENTRY}/local_main')" | cut -f 1 | head -n 1)"
 
 $CLIENT --query "
     DROP TABLE other;
@@ -109,4 +123,6 @@ $CLIENT --query "
     DROP TABLE main_nested_copy;
     DROP TABLE fresh;
     DROP TABLE opt;
-    DROP TABLE old_data_files;"
+    DROP TABLE old_data_files;
+    DROP TABLE local_other;
+    DROP TABLE local_main;"

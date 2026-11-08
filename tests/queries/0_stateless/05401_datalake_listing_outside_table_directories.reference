@@ -16,4 +16,8 @@ kept	metadata/nested/keep.csv
 kept	metadata_old/keep.csv
 opt	1
 paimon schema f_boolean
+paimon schema reentry f_boolean
 paimon snapshot	10
+paimon snapshot reentry	10
+iceberg reentry	3
+iceberg reentry a
