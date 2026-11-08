@@ -1,0 +1,14 @@
+--- rows
+1	1
+2	2
+3	3
+--- rows of partition 2
+2
+--- rows, read without cached metadata
+1	1
+2	2
+3	3
+--- added and total records of the UPDATE snapshot
+3	6
+--- data files pruned by the bounds of id
+2
