@@ -131,8 +131,7 @@ bool PartitionPruner::canBePruned(const DB::ObjectInfo & object_info) const
             partition_key_values.push_back(std::move(value));
     }
 
-    /// A NULL partition value is the point +inf, which only a Nullable key holds: the key without
-    /// Nullable drops the NULL elements of a set, which is exact only for a tuple without NULL.
+    /// The key without Nullable drops the NULL elements of a set, so it is exact only for a tuple without NULL.
     const auto & key = holds_null ? nullable_partition_key : partition_key;
     const auto & condition = holds_null ? *nullable_key_condition : *key_condition;
 
