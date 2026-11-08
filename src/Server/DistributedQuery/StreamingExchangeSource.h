@@ -24,6 +24,9 @@ using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancella
 /// recorded there and reported by the source driving the plan (see `tryGenerate`). On a worker the
 /// state is null and a lost peer is a plain `EXCHANGE_PEER_DISCONNECTED` failure of the task.
 ///
+/// `advisory`: the consumer can do without the data (a runtime filter). A producer lost after the
+/// handshake ends the stream early. A failed connect or handshake still throws.
+///
 /// With `output_is_serialized` the source does not deserialize: it hands every packet on as one row
 /// of a `String` column, for the `StreamingExchangeDeserializingTransform` on every stream behind
 /// it, and only reads the end-of-stream marker itself.
@@ -38,9 +41,11 @@ public:
         UInt16 port_,
         DistributedQueryCancellationPtr cancellation_,
         String auth_token_ = {},
-        bool output_is_serialized_ = false)
+        bool output_is_serialized_ = false,
+        bool advisory_ = false)
         : ISource(output_is_serialized_ ? StreamingExchangeProtocol::packetStreamHeader() : header_)
         , output_is_serialized(output_is_serialized_)
+        , advisory(advisory_)
         , host(std::move(host_))
         , port(port_)
         , query_id(std::move(query_id_))
@@ -84,7 +89,7 @@ private:
     /// Continue reading packet body until it is fully read.
     void tryReadBody();
 
-    /// `readChunk`, unless the peer went away and the query reports that instead (see the class comment).
+    /// `readChunk`, except that a lost peer may end the stream instead of throwing (see the class comment).
     std::optional<Chunk> tryGenerate() override;
 
     /// Read available data from the socket and deserialize a chunk when enough data was read.
@@ -95,6 +100,7 @@ private:
     void sendNoMoreDataNeeded();
 
     const bool output_is_serialized;
+    const bool advisory;
     const String host;
     const UInt16 port;
     const String query_id;
@@ -107,6 +113,7 @@ private:
     bool finished_reading = false;  /// All data has been read from socket.
     bool output_finished = false;   /// Output port is finished, do not need to receive more data.
     bool was_on_start_called = false;
+    bool handshake_completed = false;
 
     enum PacketReceiveState
     {

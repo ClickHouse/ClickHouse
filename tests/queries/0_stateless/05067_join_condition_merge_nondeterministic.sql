@@ -4,8 +4,6 @@
 -- row, and the build-side runtime filter clones it into a second evaluation site. With a two-row
 -- build side the merged plan drew `rand()` twice per query, so the count snapped to all-or-nothing.
 
-SET enable_analyzer = 1;
-
 SELECT count() BETWEEN 730000 AND 770000
 FROM (SELECT number % 2 AS a FROM numbers(1000000)) t1
 CROSS JOIN (SELECT DISTINCT number AS b FROM numbers(2)) t2

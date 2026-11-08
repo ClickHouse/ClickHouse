@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="url_base">
-  ## url_base
-</div>
+## url_base {#url_base}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "url テーブル関数および URL テーブルエンジンで相対URLを解決するためのベースURLを指定する新しい設定。"}]}]} />
 
@@ -37,9 +35,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * `/test/data.csv` は `https://example.com/test/data.csv` に解決されます
 * `//other.com/test/data.csv` は `https://other.com/test/data.csv` に解決されます
 
-<div id="url_wildcard_max_directories_to_read">
-  ## url_wildcard_max_directories_to_read
-</div>
+相対URLが[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)から取得される場合、その解決はコレクションの `url` キーのオーバーライドとして扱われるため、そのコレクションに対する `SHOW NAMED COLLECTIONS SECRETS` 権限が必要です。
+
+## url_wildcard_max_directories_to_read {#url_wildcard_max_directories_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 

@@ -59,7 +59,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
         format,
         compression_method,
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, true),
+        is_structure_not_overridable ? ColumnsDescription{} : columns,
         ConstraintsDescription{},
         configuration);
 }
@@ -125,7 +125,7 @@ The addresses are generated one by one as tasks are handed to the nodes of the c
 
 -   [HDFS engine](/reference/engines/table-engines/integrations/hdfs)
 -   [URL table function](/reference/engines/table-engines/special/url)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(1));
 }
 
 }

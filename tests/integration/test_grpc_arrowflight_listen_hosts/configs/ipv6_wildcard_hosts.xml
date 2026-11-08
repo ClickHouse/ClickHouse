@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- `::` is the only wildcard, and the node has no global IPv6 address. The node's own address
+         is covered by the dual-stack `::` socket, so binding it separately fails with a warning. -->
+    <listen_host>::</listen_host>
+    <listen_host>ipv6_wildcard_node</listen_host>
+
+    <listen_try>1</listen_try>
+
+    <grpc_port>9100</grpc_port>
+    <arrowflight_port>8888</arrowflight_port>
+</clickhouse>

@@ -42,7 +42,8 @@ public:
             return;
 
         auto if_function_value = if_function_ptr->build(function_node->getArgumentColumns());
-        if (!if_function_value->getResultType()->equals(*function_node->getResultType()))
+        /// A `group_by_use_nulls` copy of a `GROUP BY` key is the key made `Nullable`; `resolveAsFunction` keeps it `Nullable`.
+        if (!if_function_value->getResultType()->equals(*function_node->getFunctionOrThrow()->getResultType()))
         {
             /** We faced some corner case, when result type of `if` and `multiIf` are different.
               * For example, currently `if(NULL`, a, b)` returns type of `a` column,

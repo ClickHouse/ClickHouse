@@ -343,6 +343,5 @@ appeared to cost 41 bytes. The table is from a build that removes them from both
 
 ## Where the remaining size is
 
-re2 and abseil are pulled in by `COLUMNS('regexp')` matchers and by `ASTFunction`'s
-secret-argument finder. `ASTColumnsRegexpMatcher` compiles the pattern while *parsing*, which is
+re2 and abseil are pulled in by `COLUMNS('regexp')` matchers. `ASTColumnsRegexpMatcher` compiles the pattern while *parsing*, which is
 what forces a regex engine into a component that otherwise only builds a syntax tree.

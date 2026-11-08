@@ -5,7 +5,6 @@
 -- order and the merge would emit some groups twice.  The query is repeated because such
 -- duplication depends on chunk arrival order and would not appear on every run.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;

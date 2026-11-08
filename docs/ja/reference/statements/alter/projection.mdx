@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 このページでは、プロジェクションの概要、使用方法、およびプロジェクションを操作するための各種オプションについて説明します。
 
-<div id="overview">
-  ## プロジェクションの概要
-</div>
+## プロジェクションの概要 {#overview}
 
 プロジェクションは、クエリ実行を最適化するフォーマットでデータを格納します。この機能は、次のような場合に役立ちます。
 
@@ -30,13 +28,9 @@ doc_type: 'reference'
 
 プロジェクションが内部でどのように動作するかについて、より技術的な詳細はこの[ページ](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)で確認できます。
 
-<div id="examples">
-  ## プロジェクションを使う
-</div>
+## プロジェクションを使う {#examples}
 
-<div id="example-filtering-without-using-primary-keys">
-  ### 主キーを使わないフィルタリングの例
-</div>
+### 主キーを使わないフィルタリングの例 {#example-filtering-without-using-primary-keys}
 
 テーブルを作成します。
 
@@ -91,9 +85,7 @@ LIMIT 2
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="example-pre-aggregation-query">
-  ### 事前集計クエリの例
-</div>
+### 事前集計クエリの例 {#example-pre-aggregation-query}
 
 プロジェクション `projection_visits_by_user` を持つテーブルを作成します:
 
@@ -173,9 +165,7 @@ GROUP BY user_agent
 SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 ```
 
-<div id="projection-indexes">
-  ### プロジェクション索引の作成と使用
-</div>
+### プロジェクション索引の作成と使用 {#projection-indexes}
 
 [プロジェクション索引](/ja/reference/engines/table-engines/mergetree-family/mergetree#projection-index)を作成するには、次のようにします。
 
@@ -236,9 +226,7 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
-<div id="example-projection-with-where">
-  ### `WHERE` 句付きPROJECTIONの例
-</div>
+### `WHERE` 句付きPROJECTIONの例 {#example-projection-with-where}
 
 PROJECTIONには `WHERE` 句を含めて、行の一部だけを格納できます。これは、クエリで特定の述語による絞り込みが頻繁に行われる場合に便利です。PROJECTIONは条件に一致する行だけを実体化するため、ストレージ使用量を削減し、クエリパフォーマンスを向上させます。
 
@@ -287,15 +275,11 @@ SELECT time, message FROM events WHERE event_type = 'click';
 
 含意チェックは保守的です。正規化された式形式に対して、完全に一致する論理積の項だけを照合します。そのため、有効な最適化の機会 (たとえば範囲に関する含意) を一部見逃す可能性はありますが、誤った結果を生成することはありません。
 
-<div id="manipulating-projections">
-  ## プロジェクションの操作
-</div>
+## プロジェクションの操作 {#manipulating-projections}
 
 [プロジェクション](/ja/reference/engines/table-engines/mergetree-family/mergetree#projections)に対しては、次の操作を実行できます:
 
-<div id="add-projection">
-  ### ADD PROJECTION
-</div>
+### ADD PROJECTION {#add-projection}
 
 テーブルのメタデータにPROJECTIONの説明を追加するには、以下のステートメントを使用します。
 
@@ -311,9 +295,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (
   PROJECTIONで `WHERE` 句を定義すると、述語条件に一致する行のみがマテリアライズされます。オプティマイザは、クエリの `WHERE` が論理的にPROJECTIONの `WHERE` を含意しており、かつそのPROJECTIONがクエリプランに有利である場合、そのようなPROJECTIONを利用できます。これは通常のPROJECTIONと集約PROJECTIONの両方に当てはまります。
 </Note>
 
-<div id="with-settings">
-  #### `WITH SETTINGS` 句
-</div>
+#### `WITH SETTINGS` 句 {#with-settings}
 
 `WITH SETTINGS` では**プロジェクションレベルの設定**を定義し、プロジェクションでのデータの格納方法 (たとえば `index_granularity` や `index_granularity_bytes`) をカスタマイズできます。
 これらは **MergeTree のテーブル設定** に直接対応していますが、適用されるのは**このプロジェクションのみ**です。
@@ -332,27 +314,26 @@ ADD PROJECTION p (
 
 プロジェクション設定は、検証ルールに従い、当該プロジェクションに適用される実効的なテーブル設定を上書きします (例: 無効または互換性のない上書きは拒否されます) 。
 
-<div id="modify-projection">
-  ### MODIFY PROJECTION
-</div>
+### MODIFY PROJECTION {#modify-projection}
 
-以下のステートメントを使用すると、既存のプロジェクションのデータを再構築せずに、[`WITH SETTINGS`](#with-settings) 句を変更できます。
+以下のステートメントを使用すると、既存のPROJECTIONのデータを再構築せずに、[`WITH SETTINGS`](#with-settings) 句を変更できます。
 
 ```sql
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
-[プロジェクション索引](/ja/reference/engines/table-engines/mergetree-family/mergetree#projection-index)の場合は、`SELECT` クエリではなく `INDEX` 宣言を再度指定します：
+[PROJECTION索引](/ja/reference/engines/table-engines/mergetree-family/mergetree#projection-index)の場合は、`SELECT` クエリではなく `INDEX` 宣言を再度指定します：
 
 ```sql
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
-このステートメントではプロジェクション定義全体を再指定しますが、既存の定義と異なってよいのは `WITH SETTINGS` 句のみです。
-既存のプロジェクションパーツにはこの定義に基づいて構築されたデータが格納されているため、プロジェクションのクエリ自体 (プロジェクション索引の場合は索引式と型) は変更できません。変更するには、[`DROP PROJECTION`](#drop-projection) の後に [`ADD PROJECTION`](#add-projection) を使用します。
+このステートメントではPROJECTION定義全体を再指定しますが、既存の定義と異なってよいのは `WITH SETTINGS` 句のみです。
+既存のPROJECTIONパーツにはこの定義に基づいて構築されたデータが格納されているため、PROJECTIONのクエリ自体 (PROJECTION索引の場合は索引式と型) は変更できません。変更するには、[`DROP PROJECTION`](#drop-projection) の後に [`ADD PROJECTION`](#add-projection) を使用します。
 
-このコマンドはテーブルのメタデータのみを変更し、データの書き換えは行いません。既存のプロジェクションパーツは書き込まれた時点の設定を保持し、以降の挿入およびマージで書き込まれるプロジェクションパーツには新しい設定が使用されます。
-新しい設定で既存のパーツを再構築するには、[`MATERIALIZE PROJECTION`](#materialize-projection) を実行します。
+このコマンドはテーブルのメタデータのみを変更し、データの書き換えは行いません。既存のPROJECTIONパーツは書き込まれた時点の設定を保持し、以降の挿入およびマージで書き込まれるPROJECTIONパーツには新しい設定が使用されます。
+[`MATERIALIZE PROJECTION`](#materialize-projection) を実行しても、既存のパーツに新しい設定は適用されません。このコマンドは、PROJECTIONが存在しないパーツや破損しているパーツに対してのみPROJECTIONを構築し、既存のPROJECTIONパーツには手を加えません。
+新しい設定で既存のパーツを再構築するには、[`CLEAR PROJECTION`](#clear-projection) の後に [`MATERIALIZE PROJECTION`](#materialize-projection) を実行するか、[`OPTIMIZE TABLE ... FINAL`](/ja/reference/statements/optimize) などでパーツをマージします。
 
 例:
 
@@ -365,9 +346,7 @@ MODIFY PROJECTION p (
 );
 ```
 
-<div id="drop-projection">
-  ### DROP PROJECTION
-</div>
+### DROP PROJECTION {#drop-projection}
 
 以下のステートメントを使用して、テーブルのメタデータからPROJECTIONの定義を削除し、ディスク上のPROJECTIONファイルを削除します。
 これは [ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。
@@ -376,20 +355,17 @@ MODIFY PROJECTION p (
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
 ```
 
-<div id="materialize-projection">
-  ### MATERIALIZE PROJECTION
-</div>
+### MATERIALIZE PROJECTION {#materialize-projection}
 
-以下のステートメントを使用して、パーティション `partition_name` のPROJECTION `name` を再構築します。
+以下のステートメントを使用して、PROJECTION `name` が存在しないパーツ、または破損しているパーツでPROJECTIONをビルドします。必要に応じて、対象をパーティション `partition_name` のみに限定することもできます。
+すでにPROJECTIONを持つパーツは、書き込み後に [`MODIFY PROJECTION`](#modify-projection) でPROJECTIONの設定が変更された場合でも、変更されません。これらのパーツを再構築するには、先に [`CLEAR PROJECTION`](#clear-projection) を実行してください。
 これは [ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。
 
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
 ```
 
-<div id="clear-projection">
-  ### CLEAR PROJECTION
-</div>
+### CLEAR PROJECTION {#clear-projection}
 
 説明を削除せずにディスク上のPROJECTIONファイルを削除するには、以下のステートメントを使用します。
 これは [ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。
@@ -405,9 +381,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
   PROJECTIONの操作は、[`*MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンのテーブルでのみサポートされます ([レプリケーション対応](/ja/reference/engines/table-engines/mergetree-family/replication)のバリアントを含む) 。
 </Note>
 
-<div id="control-projections-merges">
-  ### プロジェクションのマージ動作を制御する
-</div>
+### プロジェクションのマージ動作を制御する {#control-projections-merges}
 
 クエリを実行すると、ClickHouse は元のテーブルまたはそのプロジェクションのいずれから読み取るかを選択します。
 元のテーブルとそのプロジェクションのどちらから読み取るかの判断は、各テーブルパーツごとに個別に行われます。
@@ -435,9 +409,7 @@ Delete mutations も、元のテーブルのパーツ内の行を削除する �
 * `drop`: 影響を受けるプロジェクションテーブルパーツは削除されます。影響を受けたプロジェクションパーツについては、クエリは元のテーブルパーツにフォールバックします。
 * `rebuild`: 影響を受けたプロジェクションパーツは、元のテーブルパーツ内のデータとの整合性を保つために再構築されます。
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
 プロジェクションの`ORDER BY`句では、`ALIAS`カラムは使用できません。例:
 
@@ -478,9 +450,7 @@ CREATE TABLE t
 ENGINE = MergeTree ORDER BY id;
 ```
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [&quot;マージ時のプロジェクション制御&quot; (ブログ記事) ](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
 * [&quot;プロジェクション&quot; (ガイド) ](/ja/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)

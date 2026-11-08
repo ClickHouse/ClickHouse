@@ -22,14 +22,6 @@ These settings are available in [system.settings](/reference/system-tables/setti
  /// preferred over 'allow_statistics_optimize' because of consistency with 'use_primary_key' and 'use_skip_indexes'
 Allows using statistics to optimize queries
 
-## use_statistics_cache {#use_statistics_cache}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Enable statistics cache"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "New setting"}]}]}/>
-
-Use statistics cache in a query to avoid the overhead of loading statistics of every parts
-
 ## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

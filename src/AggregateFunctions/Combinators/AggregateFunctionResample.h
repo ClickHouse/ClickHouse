@@ -27,6 +27,9 @@ extern const char aggregate_function_state_transfer_throw[];
 template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
+    template <typename OtherKey>
+    friend class AggregateFunctionResample;
+
 private:
     /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
     static constexpr size_t max_elements = 1048576;
@@ -95,6 +98,55 @@ public:
         if (total > max_elements)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
                     getName());
+
+        /// Nested -Resample combinators multiply the number of nested states, and every `create`,
+        /// `destroy`, `merge`, ... loops over all of them. `sizeOfData` / `max_state_size` already bound
+        /// the total state size (and therefore the number of iterations) whenever a single nested state
+        /// occupies at least one byte, so a legitimate nested chain like `countResampleIfResample(
+        /// 0, 2048, 1, 0, 2048, 1)` (4M buckets of 8-byte count state = ~32 MiB) stays allowed.
+        ///
+        /// The pathological case is a zero-byte nested -Resample state: its `sizeOfData` is zero no
+        /// matter how many buckets, so the state-size cap passes vacuously, but every loop still
+        /// iterates over `total` no-op calls and nested -Resample combinators multiply those loops.
+        /// A wrapper such as -Distinct can add its own state bytes without eliminating those calls,
+        /// so inspect the full nested chain instead of only the immediate nested state. For example
+        /// `nothingResampleIfResample(0, 1048576, 1, 0, 1048576, 1)` has a zero-sized state yet spins
+        /// through 2^40 nested calls; before `(begin, begin, step)` was rejected up front, an empty
+        /// innermost range made the entire nested state zero bytes and triggered the same explosion in
+        /// `countResampleIfResampleIfResampleIfResample(0, 0, 1, 0, 1048576, 1, 0, 1048576, 1, 0, 1048576, 1)`.
+        /// Bound the number of nested states directly in that case; chains without a zero-sized
+        /// -Resample state remain bounded by `sizeOfData` / `max_state_size` alone.
+        const auto check_nested_resamples = [&](const auto & self, const AggregateFunctionPtr & nested,
+                                                size_t parent_elements, bool parent_elements_overflow,
+                                                bool has_zero_sized_resample) -> void
+        {
+            size_t nested_elements = parent_elements;
+            bool nested_elements_overflow = parent_elements_overflow;
+
+            if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
+            {
+                has_zero_sized_resample |= resample->size_of_data == 0;
+                nested_elements_overflow |= common::mulOverflow(nested_elements, resample->total, nested_elements);
+            }
+            else if (const auto * signed_resample = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
+            {
+                has_zero_sized_resample |= signed_resample->size_of_data == 0;
+                nested_elements_overflow |= common::mulOverflow(nested_elements, signed_resample->total, nested_elements);
+            }
+
+            if (has_zero_sized_resample && (nested_elements_overflow || nested_elements > max_elements))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The nested -Resample combinators of function {} would iterate over too many "
+                    "zero-sized nested states", getName());
+
+            nested->forEachNestedFunction(
+                [&](const AggregateFunctionPtr & child)
+                {
+                    self(self, child, nested_elements, nested_elements_overflow, has_zero_sized_resample);
+                });
+        };
+
+        check_nested_resamples(check_nested_resamples, nested_function, total, false, size_of_data == 0);
     }
 
     String getName() const override
@@ -144,6 +196,11 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_function);
     }
 
     bool allocatesMemoryInArena() const override
@@ -222,6 +279,54 @@ public:
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
+    }
+
+    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        /// The whole state with all its buckets is deferred as one unit (the deferred pointers are later passed
+        /// to `parallelizeMergeMulti` of this function), so it is large as soon as one bucket pair is.
+        for (size_t i = 0; i < total; ++i)
+            if (nested_function->isLargeMergePair(place + i * size_of_data, rhs + i * size_of_data))
+                return true;
+        return false;
+    }
+
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    {
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < total; ++i)
+        {
+            for (size_t p = 0; p < places.size(); ++p)
+                nested_places[p] = places[p] + i * size_of_data;
+            nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
+        }
+    }
+
+    void mergeImpl(
+        AggregateDataPtr __restrict place,
+        ConstAggregateDataPtr rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < total; ++i)
+            nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, thread_pool, is_cancelled, arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < total; ++i)
+        {
+            if (is_cancelled.load(std::memory_order_seq_cst))
+                return;
+            for (size_t p = 0; p < places.size(); ++p)
+                nested_places[p] = places[p] + i * size_of_data;
+            nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

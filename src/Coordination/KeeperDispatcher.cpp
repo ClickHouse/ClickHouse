@@ -9,7 +9,7 @@
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
@@ -86,9 +86,11 @@ namespace CoordinationSetting
     extern const CoordinationSettingsNonZeroUInt64 max_requests_batch_size;
     extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_read_batch_size;
+    extern const CoordinationSettingsMilliseconds min_session_timeout_ms;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
+    extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsMilliseconds sleep_before_leader_change_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
@@ -110,6 +112,8 @@ namespace FailPoints
 KeeperDispatcher::KeeperDispatcher()
     : server_config(std::make_shared<KeeperConfiguration>())
     , log(getLogger("KeeperDispatcher"))
+    /// Random start: entries this server wrote before a restart are committed again after it and must not match new requests.
+    , internal_session_id_counter(static_cast<int64_t>(thread_local_rng() >> 2))
 {}
 
 void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros)
@@ -146,12 +150,12 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshots_queue,
         keeper_context,
         snapshot_s3,
-        [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
+        [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session, int32_t dispatcher_server_id)
         {
             if (dispatcher_old)
                 dispatcher_old->onCommit(request_for_session);
             else
-                dispatcher->onCommit(request_for_session);
+                dispatcher->onCommit(request_for_session, dispatcher_server_id);
         });
 
     bool new_dispatcher_response_thread_started = false;
@@ -682,7 +686,14 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
             std::lock_guard lock(new_session_id_mutex);
             new_session_id_requests.erase(request->internal_id);
         }
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot receive session id within session timeout");
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Cannot receive session id within session timeout ({} ms). "
+            "Effective session timeout is bounded by keeper_server.coordination_settings: "
+            "min_session_timeout_ms={}, session_timeout_ms={}",
+            session_timeout_ms,
+            keeper_context->getCoordinationSettings()[CoordinationSetting::min_session_timeout_ms].totalMilliseconds(),
+            keeper_context->getCoordinationSettings()[CoordinationSetting::session_timeout_ms].totalMilliseconds());
     }
 
     /// Forcefully wait for request execution because we cannot process any other
