@@ -11,7 +11,7 @@ and	1
 not equals	250
 not equals	3
 default	0
-default	3
+default	0
 or other column	51
 or other column	3
 disabled	50
@@ -24,14 +24,20 @@ merged	1
 merged	10
 merged	1
 nullable equals	100
-nullable equals	1
+nullable equals	2
 nullable is null	50
-nullable is null	2
 nullable coalesce	150
 nullable coalesce	2
-overflow	3
-overflow	3
+unused cast	1
+unused cast	1
+unused conversion	1
+unused conversion	1
+used null	1
+used default	1
+used default	1
+overflow	0
 overflow	1
+overflow	104
 overflow	2
 compact	100
 compact	2

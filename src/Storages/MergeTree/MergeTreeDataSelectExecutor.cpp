@@ -1179,6 +1179,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictio
     {
         NameAndTypePair column;
         std::shared_ptr<const SerializationLowCardinality> serialization;
+        /// `IMergeTreeIndex` refers to its description, which is not in the metadata.
+        std::shared_ptr<const IndexDescription> index_description;
         MergeTreeIndexPtr index;
         MergeTreeIndexConditionPtr condition;
     };
@@ -1199,13 +1201,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictio
         if (!serialization)
             continue;
 
-        auto index_description = createImplicitSetIndexDescription(column->name, columns, context);
-        auto index = std::make_shared<MergeTreeIndexSet>(metadata_snapshot, index_description, /*max_rows=*/ 0);
+        auto index_description = std::make_shared<const IndexDescription>(createImplicitSetIndexDescription(column->name, columns, context));
+        auto index = std::make_shared<MergeTreeIndexSet>(metadata_snapshot, *index_description, /*max_rows=*/ 0);
         auto condition = index->createIndexCondition(predicate, context);
         if (!condition || condition->alwaysUnknownOrTrue())
             continue;
 
-        conditions.push_back({*column, std::move(serialization), std::move(index), std::move(condition)});
+        conditions.push_back({*column, std::move(serialization), std::move(index_description), std::move(index), std::move(condition)});
     }
 
     if (conditions.empty())

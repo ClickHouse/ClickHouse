@@ -27,7 +27,7 @@ SELECT 'no match', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc WHERE s
 SELECT 'and', count() FROM t_lc WHERE s = 'c' AND id >= 100;
 SELECT 'and', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc WHERE s = 'c' AND id >= 100);
 
--- The dictionaries always contain the default value, so they cannot skip parts for it.
+-- Every dictionary contains the default value, but the parts where no row has it are skipped for it.
 SELECT 'not equals', count() FROM t_lc WHERE s != 'a';
 SELECT 'not equals', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc WHERE s != 'a');
 SELECT 'default', count() FROM t_lc WHERE s = '';
@@ -59,7 +59,7 @@ SELECT 'merged', count() FROM t_lc_merge WHERE s = 'p0_7';
 SELECT 'merged', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_merge WHERE s = 'p0_7');
 DROP TABLE t_lc_merge;
 
--- NULL is always in the dictionaries of LowCardinality(Nullable).
+-- LowCardinality(Nullable) is pruned like by a skip index of type `set`.
 DROP TABLE IF EXISTS t_lc_null;
 CREATE TABLE t_lc_null (id UInt64, s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
@@ -69,30 +69,49 @@ INSERT INTO t_lc_null SELECT number + 100, 'y' FROM numbers(100);
 SELECT 'nullable equals', count() FROM t_lc_null WHERE s = 'y';
 SELECT 'nullable equals', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_null WHERE s = 'y');
 SELECT 'nullable is null', count() FROM t_lc_null WHERE s IS NULL;
-SELECT 'nullable is null', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_null WHERE s IS NULL);
+-- The number of parts is not checked: `optimize_functions_to_subcolumns` reads `s IS NULL` from the subcolumn `s.null`.
 SELECT 'nullable coalesce', count() FROM t_lc_null WHERE coalesce(s, 'y') = 'y';
 SELECT 'nullable coalesce', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_null WHERE coalesce(s, 'y') = 'y');
 DROP TABLE t_lc_null;
 
--- When a dictionary overflows, the keys that do not fit are written next to the granules,
--- so the dictionaries do not contain all values, and the part is not skipped.
+-- Every dictionary has `NULL` and the default value, but the filter is evaluated on them only if the rows use them,
+-- like when the column is read: here `CAST` to a non-Nullable type would throw on `NULL`, and `toUInt32` on ''.
+DROP TABLE IF EXISTS t_lc_unused;
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_lc_unused (id UInt64, n LowCardinality(Nullable(Int32)), s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, write_low_cardinality_complete_dictionaries_marker = 1;
+SYSTEM STOP MERGES t_lc_unused;
+INSERT INTO t_lc_unused SELECT number, number + 1, toString(number + 1) FROM numbers(10);
+INSERT INTO t_lc_unused SELECT number + 10, number + 101, toString(number + 101) FROM numbers(10);
+SELECT 'unused cast', count() FROM t_lc_unused WHERE CAST(CAST(n, 'LowCardinality(String)'), 'String') = '5';
+SELECT 'unused cast', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_unused WHERE CAST(CAST(n, 'LowCardinality(String)'), 'String') = '5');
+SELECT 'unused conversion', count() FROM t_lc_unused WHERE toUInt32(s) = 105;
+SELECT 'unused conversion', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_unused WHERE toUInt32(s) = 105);
+INSERT INTO t_lc_unused VALUES (100, NULL, '');
+SELECT 'used null', count() FROM t_lc_unused WHERE n IS NULL;
+SELECT 'used default', count() FROM t_lc_unused WHERE s = '';
+SELECT 'used default', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_unused WHERE s = '');
+DROP TABLE t_lc_unused;
+
+-- When a dictionary overflows (more distinct values than `low_cardinality_max_dictionary_size`, 8192 by default),
+-- the keys that do not fit are written next to the granules, so the dictionaries do not contain all values,
+-- and the part is not skipped.
 DROP TABLE IF EXISTS t_lc_overflow;
 CREATE TABLE t_lc_overflow (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 10, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, write_low_cardinality_complete_dictionaries_marker = 1;
 SYSTEM STOP MERGES t_lc_overflow;
-INSERT INTO t_lc_overflow SETTINGS low_cardinality_max_dictionary_size = 10 SELECT number, toString(number) FROM numbers(100);
-INSERT INTO t_lc_overflow SETTINGS low_cardinality_max_dictionary_size = 10, low_cardinality_use_single_dictionary_for_part = 1 SELECT number + 100, toString(number + 100) FROM numbers(100);
-INSERT INTO t_lc_overflow SETTINGS low_cardinality_max_dictionary_size = 1000, max_block_size = 1000 SELECT number + 200, toString(number + 200) FROM numbers(100);
-SELECT 'overflow', count() FROM t_lc_overflow WHERE s IN ('99', '199', '299');
-SELECT 'overflow', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_overflow WHERE s IN ('99', '199', '299'));
-SELECT 'overflow', count() FROM t_lc_overflow WHERE s = '99';
-SELECT 'overflow', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_overflow WHERE s = '99');
+INSERT INTO t_lc_overflow SELECT number, toString(number) FROM numbers(20000);
+INSERT INTO t_lc_overflow SELECT number + 20000, 'small' FROM numbers(100);
+SELECT 'overflow', count() FROM t_lc_overflow WHERE s = 'zzz';
+SELECT 'overflow', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_overflow WHERE s = 'zzz');
+SELECT 'overflow', count() FROM t_lc_overflow WHERE s IN ('0', '8191', '8192', '19999', 'small');
+SELECT 'overflow', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_overflow WHERE s = 'small');
 DROP TABLE t_lc_overflow;
 
 -- Compact parts and parts without the marker are not skipped.
 DROP TABLE IF EXISTS t_lc_compact;
 CREATE TABLE t_lc_compact (id UInt64, s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, write_low_cardinality_complete_dictionaries_marker = 1;
+SETTINGS min_bytes_for_wide_part = 10000000000, min_rows_for_wide_part = 1000000000, write_low_cardinality_complete_dictionaries_marker = 1;
 SYSTEM STOP MERGES t_lc_compact;
 INSERT INTO t_lc_compact SELECT number, 'a' FROM numbers(100);
 INSERT INTO t_lc_compact SELECT number + 100, 'b' FROM numbers(100);
