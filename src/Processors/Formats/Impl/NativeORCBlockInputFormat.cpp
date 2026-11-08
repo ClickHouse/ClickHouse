@@ -1199,8 +1199,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             if (array_type)
             {
                 updateIncludeTypeIds(array_type->getNestedType(), orc_type->getSubtype(0), ignore_case, include_typeids);
+                return;
             }
-            return;
+            break;
         }
         case ORC::MAP: {
             const auto * map_type = typeid_cast<const DataTypeMap *>(non_nullable_type.get());
@@ -1208,8 +1209,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
             {
                 updateIncludeTypeIds(map_type->getKeyType(), orc_type->getSubtype(0), ignore_case, include_typeids);
                 updateIncludeTypeIds(map_type->getValueType(), orc_type->getSubtype(1), ignore_case, include_typeids);
+                return;
             }
-            return;
+            break;
         }
         case ORC::STRUCT: {
             /// To make sure tuple field pruning work fine, we should include only the fields of ORC struct type which are also contained in CH tuple types, instead of all fields of ORC struct type.
@@ -1233,8 +1235,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
                     for (size_t i = 0; i < tuple_type->getElements().size() && i < orc_type->getSubtypeCount(); ++i)
                         updateIncludeTypeIds(tuple_type->getElement(i), orc_type->getSubtype(i), ignore_case, include_typeids);
                 }
+                return;
             }
-            return;
+            break;
         }
         case ORC::UNION: {
             /// ORC union maps to the ClickHouse Variant type. A branch that gets a forced type hint
@@ -1261,6 +1264,9 @@ updateIncludeTypeIds(DataTypePtr type, const ORC::Type * orc_type, bool ignore_c
         default:
             return;
     }
+
+    /// A requested type of another kind reads the whole node, and the cast to the requested type converts it or throws.
+    include_typeids.insert(orc_type->getColumnId());
 }
 
 NativeORCBlockInputFormat::NativeORCBlockInputFormat(
@@ -1447,6 +1453,9 @@ Chunk NativeORCBlockInputFormat::read()
     const auto & schema = stripe_reader->getSelectedType();
     orc_column_to_ch_column->orcTableToCHChunk(res, &schema, batch.get(), num_rows, &block_missing_values);
     LOG_TEST(getLogger("NativeORCBlockInputFormat"), "Convert {} rows take {} ms", num_rows, time.elapsedMilliseconds());
+
+    if (format_filter_info && format_filter_info->need_row_numbers)
+        res.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(stripe_reader->getRowNumber()));
 
     approx_bytes_read_for_chunk = num_rows * ORC::Reader::getStripeLength(*current_stripe_info) / current_stripe_info->number_of_rows;
     return res;
@@ -2791,6 +2800,9 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_value_type = orc_type->getSubtype(1);
 
             auto key_column = readColumnFromORCColumn(orc_key_column, orc_key_type, "key", false, key_type_hint);
+            /// A map key cannot be Nullable.
+            if (!key_type_hint && !DataTypeMap::isValidKeyType(key_column.type))
+                key_type_hint = removeNullableOrLowCardinalityNullable(key_column.type);
             if (key_type_hint && !key_type_hint->equals(*key_column.type))
             {
                 /// Cast key column to target type, because it can happen

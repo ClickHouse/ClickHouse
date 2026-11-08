@@ -67,6 +67,8 @@ public:
     UInt64 getNumberOfStripes() const { return footer.stripes.size(); }
     const Proto::StripeInformation & getStripe(size_t index) const { return footer.stripes.at(index); }
     static UInt64 getStripeLength(const Proto::StripeInformation & stripe) { return stripe.index_length + stripe.data_length + stripe.footer_length; }
+    /// The number of rows in the stripes before the stripe `index`.
+    UInt64 getStripeFirstRow(size_t index) const { return stripe_first_rows.at(index); }
 
     const Proto::Footer & getFooter() const { return footer; }
     const Proto::PostScript & getPostScript() const { return postscript; }
@@ -125,6 +127,7 @@ private:
     Proto::PostScript postscript;
     UInt64 postscript_length = 0;
     Proto::Footer footer;
+    VectorWithMemoryTracking<UInt64> stripe_first_rows;
     std::optional<Proto::Metadata> metadata;
     std::unique_ptr<Type> schema;
 
@@ -146,6 +149,9 @@ public:
 
     /// The type of the file with only the selected columns. The batches have this structure.
     const Type & getSelectedType() const { return *selected_type; }
+
+    /// The row number in the file of the first row of the batch filled by the last successful `next`.
+    UInt64 getRowNumber() const { return batch_first_row; }
 
 private:
     class StripeStreamsImpl;
@@ -170,6 +176,7 @@ private:
     UInt64 last_stripe = 0;
     UInt64 rows_in_current_stripe = 0;
     UInt64 current_row_in_stripe = 0;
+    UInt64 batch_first_row = 0;
     bool file_statistics_evaluated = false;
     bool file_statistics_result = true;
 
