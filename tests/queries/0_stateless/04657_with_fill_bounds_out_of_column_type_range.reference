@@ -174,3 +174,8 @@ a UInt64 fill from an explicit FROM continues past INT64_MAX
 ['2020-01-01 00:00:00']
 ['2020-01-01 00:00:00.0','2020-01-01 00:00:00.1','2020-01-01 00:00:00.2']
 ['2020-01-01 00:00:01.0','2020-01-01 00:00:00.9','2020-01-01 00:00:00.8']
+a step that merely reaches the next input value is not checked
+2
+2
+3
+3

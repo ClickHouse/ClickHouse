@@ -388,3 +388,14 @@ SELECT groupArray(x) FROM (SELECT toUInt64(9223372036854775810) AS x ORDER BY x 
 SELECT groupArray(t) FROM (SELECT toDateTime64('2020-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t WITH FILL TO toDateTime64('2020-01-01 00:00:01', 0, 'UTC') STALENESS INTERVAL 1 MILLISECOND);
 SELECT groupArray(t) FROM (SELECT toDateTime64('2020-01-01 00:00:00', 1, 'UTC') AS t ORDER BY t WITH FILL TO toDateTime64('2020-01-01 00:00:01', 1, 'UTC') STEP INTERVAL 100 MILLISECOND STALENESS INTERVAL 250 MILLISECOND);
 SELECT groupArray(t) FROM (SELECT toDateTime64('2020-01-01 00:00:01', 1, 'UTC') AS t ORDER BY t DESC WITH FILL TO toDateTime64('2020-01-01 00:00:00', 1, 'UTC') STEP INTERVAL -100 MILLISECOND STALENESS INTERVAL -250 MILLISECOND);
+
+SELECT 'a step that merely reaches the next input value is not checked';
+
+-- Consecutive input values leave no gap to fill, so the input is returned as is even when a value is past the
+-- calendar of DateTime64; only the values introduced by the filling are checked.
+SELECT count() FROM (SELECT toDateTime64('9999-12-31 23:59:59', 0, 'UTC') + toIntervalSecond(number) AS t FROM numbers(2) ORDER BY t WITH FILL);
+SELECT count() FROM (SELECT toDateTime64(-62167219200, 0, 'UTC') - toIntervalSecond(number) AS t FROM numbers(2) ORDER BY t DESC WITH FILL);
+SELECT count() FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') + toIntervalSecond(number * 2) AS t FROM numbers(2) ORDER BY t WITH FILL);
+SELECT count() FROM (SELECT toDateTime64(-62167219199, 0, 'UTC') - toIntervalSecond(number * 2) AS t FROM numbers(2) ORDER BY t DESC WITH FILL);
+SELECT count() FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') + toIntervalSecond(number * 3) AS t FROM numbers(2) ORDER BY t WITH FILL); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT count() FROM (SELECT toDateTime64(-62167219199, 0, 'UTC') - toIntervalSecond(number * 3) AS t FROM numbers(2) ORDER BY t DESC WITH FILL); -- { serverError INVALID_WITH_FILL_EXPRESSION }
