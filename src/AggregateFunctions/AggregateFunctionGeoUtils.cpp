@@ -18,6 +18,7 @@
 #include <boost/multiprecision/cpp_bin_float.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -605,7 +606,7 @@ bool unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
     {
         if constexpr (std::is_same_v<std::decay_t<decltype(first)>, CartesianMultiPolygon>)
         {
-            if (!first.empty() && !second.empty() && (first.size() > 1 || second.size() > 1))
+            if (!first.empty() && !second.empty())
             {
                 using Box = boost::geometry::model::box<CartesianPoint>;
                 const auto first_box = boost::geometry::return_envelope<Box>(first);
@@ -633,7 +634,34 @@ bool unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                 /// adjacent boundaries use the general overlay. Both operands are already valid,
                 /// so their concatenation is valid by construction and only its budget is checked.
                 bool disjoint = separated.template operator()<0>() || separated.template operator()<1>();
-                if (!disjoint && first.size() + second.size() >= 64)
+                if (!disjoint && first.size() + second.size() < 64 && (first.size() > 1 || second.size() > 1))
+                {
+                    /// For small operands, compare every pair of component envelopes. At most 32 * 32
+                    /// box checks are far cheaper than the general overlay and its result validation.
+                    auto component_boxes = [](const auto & geometry)
+                    {
+                        std::array<Box, 64> boxes;
+                        for (size_t i = 0; i < geometry.size(); ++i)
+                            boxes[i] = boost::geometry::return_envelope<Box>(geometry[i]);
+                        return boxes;
+                    };
+                    const auto first_boxes = component_boxes(first);
+                    const auto second_boxes = component_boxes(second);
+                    disjoint = true;
+                    for (size_t i = 0; i < first.size() && disjoint; ++i)
+                    {
+                        for (size_t j = 0; j < second.size() && disjoint; ++j)
+                        {
+                            const auto & a = first_boxes[i];
+                            const auto & b = second_boxes[j];
+                            disjoint = geoSeparatedBy(a.max_corner().template get<0>(), b.min_corner().template get<0>(), margin)
+                                || geoSeparatedBy(b.max_corner().template get<0>(), a.min_corner().template get<0>(), margin)
+                                || geoSeparatedBy(a.max_corner().template get<1>(), b.min_corner().template get<1>(), margin)
+                                || geoSeparatedBy(b.max_corner().template get<1>(), a.min_corner().template get<1>(), margin);
+                        }
+                    }
+                }
+                else if (!disjoint && first.size() + second.size() >= 64)
                 {
                     /// A global envelope can hide gaps between components. Probe those gaps only
                     /// for larger operands, where avoiding the overlay pays for a temporary index.
