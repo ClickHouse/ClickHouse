@@ -56,3 +56,10 @@ NOT_IMPLEMENTED
 4
 [1,2]
 [4]
+--- manifest-list pruning
+x = 5	[1]
+x = 25	[2]
+x = -2147483648	[3]
+ml_1	1
+ml_2	1
+ml_3	2

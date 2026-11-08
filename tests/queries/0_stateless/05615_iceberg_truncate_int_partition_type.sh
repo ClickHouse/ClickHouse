@@ -128,7 +128,27 @@ ${CH} --use_iceberg_partition_pruning=1 --query "
     SELECT groupArray(id) FROM (SELECT id FROM legacy WHERE x = -2147483648 ORDER BY id);
     SELECT groupArray(id) FROM (SELECT id FROM legacy WHERE x = 5 ORDER BY id)"
 
+echo '--- manifest-list pruning'
+${CH} --query "
+    CREATE TABLE t_ml (id Int32, x Int32) ENGINE = IcebergLocal('${LAKE}/t_ml', 'Parquet') PARTITION BY icebergTruncate(10, x);
+    INSERT INTO t_ml VALUES (1, 5);
+    INSERT INTO t_ml VALUES (2, 25);
+    INSERT INTO t_ml VALUES (3, -2147483648);"
+n=0
+for predicate in 'x = 5' 'x = 25' 'x = -2147483648'; do
+    n=$((n + 1))
+    ${CH} --query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_ml_${n}" --use_iceberg_partition_pruning=1 --query "
+        SELECT '${predicate}', groupArray(id) FROM (SELECT id FROM t_ml WHERE ${predicate} ORDER BY id)"
+done
+${CH} --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT replaceOne(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_', ''), ProfileEvents['IcebergPartitionPrunedManifestFiles']
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+        AND query_id IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_ml_1', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ml_2', '${CLICKHOUSE_TEST_UNIQUE_NAME}_ml_3')
+    ORDER BY query_id"
+
 ${CH} --query "
     DROP TABLE t_int; DROP TABLE t_nullable; DROP TABLE t_int16; DROP TABLE t_wide; DROP TABLE t_too_wide;
-    DROP TABLE t_too_wide_long; DROP TABLE t_long; DROP TABLE t_string; DROP TABLE legacy;"
+    DROP TABLE t_too_wide_long; DROP TABLE t_long; DROP TABLE t_string; DROP TABLE legacy; DROP TABLE t_ml;"
 rm -rf "${LAKE}"
