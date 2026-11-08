@@ -2,6 +2,8 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <memory>
+
 #include <Common/HyperLogLogCounter.h>
 #include <Common/HashTable/SmallTable.h>
 
@@ -135,8 +137,10 @@ public:
 
         if (is_large)
         {
-            toLarge();
-            large->read(in);
+            /// `read` overwrites all registers, so they are not zeroed first.
+            auto tmp_large = std::make_unique<Large>(DB::UninitializedTag{});
+            tmp_large->read(in);
+            large = tmp_large.release();
         }
         else
             small.read(in);

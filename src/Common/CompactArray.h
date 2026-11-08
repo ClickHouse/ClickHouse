@@ -10,6 +10,11 @@
 namespace DB
 {
 
+/// Tag for constructors that leave the contents uninitialized, for objects that are filled right away.
+struct UninitializedTag
+{
+};
+
 /** Compact array for data storage, size `content_width`, in bits, of which is
   * less than one byte. Instead of storing each value in a separate
   * bytes, which leads to a waste of 37.5% of the space for content_width = 5, CompactArray stores
@@ -20,7 +25,13 @@ template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
 class CompactArray final
 {
 public:
-    CompactArray() = default;
+    CompactArray() : bitset{} {}
+
+    /// The cells are uninitialized, only the padding byte is zeroed. For an array that is read right away.
+    explicit CompactArray(UninitializedTag) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the caller
+    {
+        bitset[BITSET_SIZE] = 0;
+    }
 
     UInt8 ALWAYS_INLINE operator[](BucketIndex bucket_index) const
     {
@@ -60,7 +71,7 @@ private:
     static constexpr size_t BITSET_SIZE = (bucket_count * content_width + 7) / 8;
 
     /// The last byte is padding for the branchless 16-bit access; it stays zero and is not serialized.
-    UInt8 bitset[BITSET_SIZE + 1] = { 0 };
+    UInt8 bitset[BITSET_SIZE + 1];
 
     /// Checks
     static_assert((content_width > 0) && (content_width < 8), "Invalid parameter value");

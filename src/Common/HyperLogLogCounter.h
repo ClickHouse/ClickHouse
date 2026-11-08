@@ -365,6 +365,11 @@ private:
 public:
     using value_type = Value;
 
+    HyperLogLogCounter() = default;
+
+    /// The registers are uninitialized: the counter must be filled by `read` right away.
+    explicit HyperLogLogCounter(DB::UninitializedTag tag) : rank_store(tag) {}
+
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     void ALWAYS_INLINE insert(Value value)
     {

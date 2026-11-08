@@ -218,15 +218,9 @@ public:
 
         /// Here our container is not smaller than the one of rhs.
         if (rhs_container_type == details::ContainerType::SMALL)
-        {
-            for (const auto & x : rhs.small)
-                insert(x.getValue());
-        }
+            insertAll(rhs.small);
         else if (rhs_container_type == details::ContainerType::MEDIUM)
-        {
-            for (const auto & x : rhs.getContainer<Medium>())
-                insert(x.getValue());
-        }
+            insertAll(rhs.getContainer<Medium>());
         else
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
@@ -241,15 +235,9 @@ public:
         if (container_type == details::ContainerType::SMALL)
             small.read(in);
         else if (container_type == details::ContainerType::MEDIUM)
-        {
-            toMedium();
-            getContainer<Medium>().read(in);
-        }
+            readMedium(in);
         else if (container_type == details::ContainerType::LARGE)
-        {
-            toLarge();
-            getContainer<Large>().read(in);
-        }
+            readLarge(in);
     }
 
     void write(DB::WriteBuffer & out) const
@@ -266,6 +254,52 @@ public:
     }
 
 private:
+    /// Not inlined into `read`, so that reading a small set, which is common, stays cheap.
+    void NO_INLINE readMedium(DB::ReadBuffer & in)
+    {
+        if (getContainerType() != details::ContainerType::SMALL)
+            throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+
+        auto tmp_medium = std::make_unique<Medium>();
+        tmp_medium->read(in);
+        medium = tmp_medium.release();
+        setContainerType(details::ContainerType::MEDIUM);
+    }
+
+    void NO_INLINE readLarge(DB::ReadBuffer & in)
+    {
+        if (getContainerType() != details::ContainerType::SMALL)
+            throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+
+        /// `read` overwrites all registers, so they are not zeroed first.
+        auto tmp_large = std::make_unique<Large>(DB::UninitializedTag{});
+        tmp_large->read(in);
+        large = tmp_large.release();
+        setContainerType(details::ContainerType::LARGE);
+    }
+
+    /// Inserts the values of a container in the order of iteration, as `insert` for each value would,
+    /// but through `insertMany`, which dispatches on the type of our container once per chunk instead of once per value.
+    template <typename Container>
+    void insertAll(const Container & container)
+    {
+        static constexpr size_t chunk_elements = 4096 / sizeof(Key);
+        Key chunk[chunk_elements]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before use
+        size_t chunk_size = 0;
+
+        for (const auto & x : container)
+        {
+            chunk[chunk_size++] = x.getValue();
+            if (chunk_size == chunk_elements)
+            {
+                insertMany(chunk, chunk_size);
+                chunk_size = 0;
+            }
+        }
+
+        insertMany(chunk, chunk_size);
+    }
+
     void toMedium()
     {
         if (getContainerType() != details::ContainerType::SMALL)

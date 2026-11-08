@@ -1,0 +1,23 @@
+<test>
+    <!-- Reading stored `uniqCombined` states, and merging medium sets into medium sets. K = 17: medium sets hold up to 8192 values. -->
+    <create_query>CREATE TABLE uniq_combined_states_40 (k UInt32, s AggregateFunction(uniqCombined, UInt64)) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE uniq_combined_states_3000 (k UInt32, s AggregateFunction(uniqCombined, UInt64)) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE uniq_combined_states_hll (k UInt32, s AggregateFunction(uniqCombined, UInt64)) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <!-- Medium sets that fit the initial buffer of the hash table. -->
+    <fill_query>INSERT INTO uniq_combined_states_40 SELECT intDiv(number, 40), uniqCombinedState(number) FROM numbers(40000000) GROUP BY intDiv(number, 40)</fill_query>
+    <!-- Medium sets that do not. -->
+    <fill_query>INSERT INTO uniq_combined_states_3000 SELECT intDiv(number, 3000), uniqCombinedState(number) FROM numbers(30000000) GROUP BY intDiv(number, 3000)</fill_query>
+    <!-- HyperLogLog counters. -->
+    <fill_query>INSERT INTO uniq_combined_states_hll SELECT intDiv(number, 20000), uniqCombinedState(number) FROM numbers(20000000) GROUP BY intDiv(number, 20000)</fill_query>
+
+    <query>SELECT sum(finalizeAggregation(s)) FROM uniq_combined_states_40 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT sum(finalizeAggregation(s)) FROM uniq_combined_states_3000 FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT sum(finalizeAggregation(s)) FROM uniq_combined_states_hll FORMAT Null SETTINGS max_threads = 1</query>
+    <!-- Four medium sets per group, merged into a medium set. -->
+    <query>SELECT intDiv(k, 4) AS g, uniqCombinedMerge(s) FROM uniq_combined_states_40 GROUP BY g FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS uniq_combined_states_40</drop_query>
+    <drop_query>DROP TABLE IF EXISTS uniq_combined_states_3000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS uniq_combined_states_hll</drop_query>
+</test>

@@ -213,6 +213,13 @@ struct HashTableCell
 
 };
 
+/// Whether the serialized form of the cell is only its arithmetic key in little endian, so that many cells can be read at once.
+template <typename Cell>
+constexpr bool is_arithmetic_key_cell = false;
+
+template <typename Key, typename Hash>
+constexpr bool is_arithmetic_key_cell<HashTableCell<Key, Hash, HashTableNoState>> = std::is_arithmetic_v<Key> && !std::is_same_v<Key, bool>;
+
 /** Determines the size of the hash table, and when and how much it should be resized.
   * Has very small state (one UInt8) and useful for Set-s allocated in automatic memory (see uniqExact as an example).
   */
@@ -1746,6 +1753,10 @@ public:
     {
         Cell::State::read(rb);
 
+        /// The buffer of an empty table has only zero cells, so it can be kept if its size does not change.
+        /// Not with a state: e.g. `ClearableHashSet` marks the cells empty by the version of the state, which `read` replaces.
+        const bool keep_buffer = std::is_same_v<typename Cell::State, HashTableNoState> && m_size == 0 && buf;
+
         destroyElements();
         m_size = 0;
 
@@ -1754,16 +1765,47 @@ public:
         if (new_size > 100'000'000'000)
             throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
 
-        free();
         Grower new_grower = grower;
         new_grower.set(new_size);
-        alloc(new_grower);
-
-        for (size_t i = 0; i < new_size; ++i)
+        if (keep_buffer && new_grower.bufSize() == grower.bufSize())
         {
-            Cell x;
-            x.read(rb);
-            insert(x.getValue());
+            grower = new_grower;
+        }
+        else
+        {
+            free();
+            alloc(new_grower);
+        }
+
+        if constexpr (is_arithmetic_key_cell<Cell>)
+        {
+            /// Read the keys in chunks: it is cheaper than reading them one at a time.
+            /// The keys are inserted in the same order, so the layout of the table is the same.
+            constexpr size_t chunk_elements = 4096 / sizeof(Key);
+            Key chunk[chunk_elements]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by readStrict before use
+
+            for (size_t left = new_size; left > 0;)
+            {
+                const size_t chunk_size = std::min(left, chunk_elements);
+                rb.readStrict(reinterpret_cast<char *>(chunk), chunk_size * sizeof(Key));
+
+                for (size_t i = 0; i < chunk_size; ++i)
+                {
+                    DB::transformEndianness<std::endian::native, std::endian::little>(chunk[i]);
+                    insert(chunk[i]);
+                }
+
+                left -= chunk_size;
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < new_size; ++i)
+            {
+                Cell x;
+                x.read(rb);
+                insert(x.getValue());
+            }
         }
     }
 
