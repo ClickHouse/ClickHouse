@@ -63,16 +63,32 @@ inside_part_read() {
 # is already too generous, so the ladder ends there. The elapsed value is not asserted, because it
 # is everything before the read plus one mark, so it tracks machine load.
 timeout_err="${CLICKHOUSE_TMP}/05270_timeout_err.txt"
-for limit in 1 2 4 8 16 32 64; do
-    ${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
-        --max_execution_time "$limit" --timeout_overflow_mode throw \
-        -q "$read_query" >/dev/null 2>"$timeout_err"
-    grep -qF 'While reading part' "$timeout_err" && break
-    grep -q 'Timeout exceeded' "$timeout_err" || break
-done
+timeout_ladder() {
+    for limit in 1 2 4 8 16 32 64; do
+        ${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
+            --max_execution_time "$limit" --timeout_overflow_mode throw "$@" \
+            -q "$read_query" >/dev/null 2>"$timeout_err"
+        grep -qF 'While reading part' "$timeout_err" && break
+        grep -q 'Timeout exceeded' "$timeout_err" || break
+    done
+}
 
+timeout_ladder
 echo -n 'timeout observed '
 inside_part_read "$timeout_err"
+
+# With the columns cache the granules are read in another loop. Writes are off, so every granule is
+# read from the part, and a retry of the ladder does not find the granules of the previous one cached.
+cache_query_id="compact_read_cancel_cache_${CLICKHOUSE_DATABASE}_$$"
+timeout_ladder --use_columns_cache 1 --enable_writes_to_columns_cache 0 --query_id "$cache_query_id"
+echo -n 'columns cache timeout observed '
+inside_part_read "$timeout_err"
+# Misses are counted only by the columns cache loop, so this proves the ladder went through it.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+SELECT 'columns cache read', max(ProfileEvents['ColumnsCacheMisses']) > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND query_id = '$cache_query_id'
+  AND type != 'QueryStart' AND event_date >= yesterday()"
 
 query_id="compact_read_cancel_${CLICKHOUSE_DATABASE}_$$"
 kill_err="${CLICKHOUSE_TMP}/05270_kill_err.txt"
