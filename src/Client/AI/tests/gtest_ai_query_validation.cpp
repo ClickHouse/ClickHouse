@@ -457,14 +457,14 @@ TEST(AIQueryValidation, CollectsFunctionNames)
 {
     /// Every called name, deduplicated and sorted, for the server to tell whether any of them is a
     /// user-defined function there.
-    EXPECT_EQ(collectFunctionNamesForAIAgent(*parse("SELECT 1")), Strings{});
+    EXPECT_EQ(collectFunctionNamesForAIAgent(*parse("SELECT 1")), std::vector<String>{});
     EXPECT_EQ(
         collectFunctionNamesForAIAgent(*parse("SELECT lengthCartesian(s), length(s), length(t) FROM tbl WHERE plus(1, 2) > 0")),
-        (Strings{"greater", "length", "lengthCartesian", "plus"}));
+        (std::vector<String>{"greater", "length", "lengthCartesian", "plus"}));
     /// Nested in a subquery and in a table function.
     EXPECT_EQ(
         collectFunctionNamesForAIAgent(*parse("SELECT * FROM numbers(10) WHERE number IN (SELECT abs(x) FROM tbl)")),
-        (Strings{"abs", "in", "numbers"}));
+        (std::vector<String>{"abs", "in", "numbers"}));
 }
 
 TEST(AIQueryValidation, RejectsSendLogsLevel)

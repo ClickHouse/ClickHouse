@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <base/types.h>
 
 #include <string_view>
@@ -95,7 +94,7 @@ std::vector<AIQueryTableReference> collectNamedTablesForAIAgent(const IAST & ast
 /// the server resolves the name on its own: a server that predates a builtin of this client can
 /// have a user-defined function of the same name, which it expands instead. The caller asks the
 /// server whether any of these names is a user-defined function there.
-Strings collectFunctionNamesForAIAgent(const IAST & ast);
+std::vector<String> collectFunctionNamesForAIAgent(const IAST & ast);
 
 /// Whether the database is owned by the server, so that its tables are judged by name
 /// (`isAllowedServerOwnedTableForAIAgent`) rather than by engine: `system` and the two spellings
