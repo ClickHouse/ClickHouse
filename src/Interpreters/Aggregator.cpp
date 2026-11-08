@@ -1200,11 +1200,11 @@ void NO_INLINE Aggregator::executeImpl(
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-    /// With the admitted keys kept across spills, the `no_more_keys` path revives the null state
-    /// of a found cold cell in place, so its lookups must return table cells, never a per-block
-    /// copy of the mapped value (see `keepsKeysAcrossSpills`) - the consecutive-keys cache makes
-    /// such copies.
-    bool use_cache = !is_simple_count && !(no_more_keys && keepsKeysAcrossSpills())
+    /// With the admitted keys kept across spills a found cell may hold a null state, which the
+    /// `revivable` batch replaces in place, so its lookups must return table cells, never a
+    /// per-block copy of the mapped value (see `keepsKeysAcrossSpills`) - the consecutive-keys
+    /// cache makes such copies. Hence that mode has only the no-cache instantiation.
+    bool use_cache = !is_simple_count && !keepsKeysAcrossSpills()
         && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     using State = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::State>, typename Method::State>;
@@ -1218,17 +1218,20 @@ void NO_INLINE Aggregator::executeImpl(
     if (use_cache)
     {
         State state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        executeImpl</*revivable=*/false>(method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         StateNoCache state(key_columns, key_sizes, aggregation_state_cache, rows);
-        executeImpl(method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        if (keepsKeysAcrossSpills())
+            executeImpl</*revivable=*/true>(method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        else
+            executeImpl</*revivable=*/false>(method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
 
-template <typename Method, typename State>
+template <bool revivable, typename Method, typename State>
 void Aggregator::executeImpl(
     Method & method,
     State & state,
@@ -1275,7 +1278,7 @@ void Aggregator::executeImpl(
 
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
-        executeImplBatch<prefetch_v, top_k_v>(
+        executeImplBatch<prefetch_v, top_k_v, revivable>(
             method, state, key_columns, aggregates_pool, key_arena, row_begin, row_end,
             aggregate_instructions, no_more_keys_arg, all_keys_are_const,
             use_compiled_functions, overflow_row);
@@ -1417,7 +1420,7 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         /// per-slice `after_slice` keeps the consecutive-keys cache statistics exact:
         /// `executeImplBatch` resets the cache on entry, so the misses must be collected
         /// slice by slice, not once at the end.
-        const auto run_slices = [&](auto & state, auto && after_slice) -> size_t
+        const auto run_slices = [&]<bool revivable>(auto & state, auto && after_slice) -> size_t
         {
             size_t pos = row_begin;
             while (pos < row_end)
@@ -1427,7 +1430,7 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
                     return pos;
 
                 const size_t slice = std::min(row_end - pos, std::max(threshold - table_size, adaptive_learning_slice_rows));
-                executeImpl(
+                executeImpl<revivable>(
                     method,
                     state,
                     key_columns,
@@ -1447,7 +1450,9 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
 
         UInt64 total_records = cache_stats.hits + cache_stats.misses;
         double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-        bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+        /// See `executeImpl` for why the kept-keys mode runs without the cache.
+        bool use_cache = !is_simple_count && !keepsKeysAcrossSpills()
+            && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
         /// The hashing state is constructed once and shared by all slices: for the serialized
         /// and fixed-key methods its constructor does whole-block work (batch key serialization
@@ -1455,10 +1460,13 @@ size_t Aggregator::executeImplUntilAdaptiveFreeze(
         if (use_cache)
         {
             typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+            return run_slices.template operator()</*revivable=*/false>(
+                state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
         }
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        return run_slices(state, [](size_t) {});
+        if (keepsKeysAcrossSpills())
+            return run_slices.template operator()</*revivable=*/true>(state, [](size_t) {});
+        return run_slices.template operator()</*revivable=*/false>(state, [](size_t) {});
     };
 
     #define M(NAME) \
@@ -1605,7 +1613,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 }
 
 /// A set method has no aggregate states at all, so the batch never gets past registering the keys.
-template <bool prefetch, bool top_k, typename Method, typename State>
+template <bool prefetch, bool top_k, bool revivable, typename Method, typename State>
 requires SetAggregationState<State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1629,7 +1637,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     executeImplBatchNoAggregates<prefetch, top_k>(method, state, key_columns, aggregates_pool, row_begin, row_end, all_keys_are_const);
 }
 
-template <bool prefetch, bool top_k, typename Method, typename State>
+template <bool prefetch, bool top_k, bool revivable, typename Method, typename State>
 requires MapAggregationState<State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -2036,13 +2044,15 @@ void NO_INLINE Aggregator::executeImplBatch(
             else
             {
                 aggregate_data = emplace_result.getMapped();
-                /// A kept key gone cold after a spill. The first touch of a key in a block always
-                /// reaches the table cell, so `setMapped` revives the cell, and any per-block
-                /// cache then carries the revived state.
-                if (aggregate_data == nullptr) [[unlikely]]
+                if constexpr (revivable)
                 {
-                    aggregate_data = reviveKeptKey(aggregates_pool, use_compiled_functions);
-                    emplace_result.setMapped(aggregate_data);
+                    /// A kept key gone cold after a spill. `executeImpl` runs this mode without
+                    /// the consecutive-keys cache, so `setMapped` reaches the table cell.
+                    if (aggregate_data == nullptr) [[unlikely]]
+                    {
+                        aggregate_data = reviveKeptKey(aggregates_pool, use_compiled_functions);
+                        emplace_result.setMapped(aggregate_data);
+                    }
                 }
             }
 
@@ -2097,12 +2107,15 @@ void NO_INLINE Aggregator::executeImplBatch(
             if (find_result.isFound())
             {
                 aggregate_data = find_result.getMapped();
-                /// A kept key gone cold after a spill. `executeImpl` runs this loop without the
-                /// consecutive-keys cache then, so `getMapped` is the table cell itself.
-                if (aggregate_data == nullptr) [[unlikely]]
+                if constexpr (revivable)
                 {
-                    aggregate_data = reviveKeptKey(aggregates_pool, use_compiled_functions);
-                    find_result.getMapped() = aggregate_data;
+                    /// A kept key gone cold after a spill. `executeImpl` runs this mode without
+                    /// the consecutive-keys cache, so `getMapped` is the table cell itself.
+                    if (aggregate_data == nullptr) [[unlikely]]
+                    {
+                        aggregate_data = reviveKeptKey(aggregates_pool, use_compiled_functions);
+                        find_result.getMapped() = aggregate_data;
+                    }
                 }
             }
             else
@@ -5836,7 +5849,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
 /// A set method has no aggregate states, so merging a partial block back into the table is only a matter
 /// of re-registering each key's presence - none of the state building of the map version applies.
-template <typename State, typename Table>
+template <bool revivable, typename State, typename Table>
 requires SetAggregationState<State>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * aggregates_pool,
@@ -5862,7 +5875,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
 }
 
-template <typename State, typename Table>
+template <bool revivable, typename State, typename Table>
 requires MapAggregationState<State>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * aggregates_pool,
@@ -5893,12 +5906,15 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             auto find_result = state.findKey(data, i, *aggregates_pool);
             /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
             AggregateDataPtr value = find_result.isFound() ? find_result.getMapped() : overflow_row;
-            /// A kept key gone cold after a spill. `mergeStreamsImpl` runs this loop without the
-            /// consecutive-keys cache then, so `getMapped` is the table cell itself.
-            if (find_result.isFound() && value == nullptr) [[unlikely]]
+            if constexpr (revivable)
             {
-                value = reviveKeptKey(aggregates_pool);
-                find_result.getMapped() = value;
+                /// A kept key gone cold after a spill. `mergeStreamsImpl` runs this mode without
+                /// the consecutive-keys cache, so `getMapped` is the table cell itself.
+                if (find_result.isFound() && value == nullptr) [[unlikely]]
+                {
+                    value = reviveKeptKey(aggregates_pool);
+                    find_result.getMapped() = value;
+                }
             }
             places[i] = value;
         }
@@ -5915,12 +5931,15 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             if (!emplace_result.isInserted())
             {
                 places[i] = emplace_result.getMapped();
-                /// A kept key gone cold after a spill: the first touch of a key in a block always
-                /// reaches the table cell, so `setMapped` revives the cell.
-                if (places[i] == nullptr) [[unlikely]]
+                if constexpr (revivable)
                 {
-                    places[i] = reviveKeptKey(aggregates_pool);
-                    emplace_result.setMapped(places[i]);
+                    /// A kept key gone cold after a spill. `mergeStreamsImpl` runs this mode
+                    /// without the consecutive-keys cache, so `setMapped` reaches the table cell.
+                    if (places[i] == nullptr) [[unlikely]]
+                    {
+                        places[i] = reviveKeptKey(aggregates_pool);
+                        emplace_result.setMapped(places[i]);
+                    }
                 }
             }
             else
@@ -6030,9 +6049,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-    /// See the matching condition in `executeImpl`: the `no_more_keys` path may revive the null
-    /// state of a found cold cell in place, so it needs table cells, not cached copies.
-    bool use_cache = !is_simple_count && !(no_more_keys && keepsKeysAcrossSpills())
+    /// See the matching condition in `executeImpl`: the `revivable` loops replace the null
+    /// state of a found cold cell in place, so they need table cells, not cached copies.
+    bool use_cache = !is_simple_count && !keepsKeysAcrossSpills()
         && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
     auto merge_count_variant = [&]<typename State>(State & state)
@@ -6087,7 +6106,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
         else
         {
-            mergeStreamsImplCase(
+            mergeStreamsImplCase</*revivable=*/false>(
                 aggregates_pool,
                 state,
                 data,
@@ -6116,18 +6135,32 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
         else
         {
-            mergeStreamsImplCase(
-                aggregates_pool,
-                state,
-                data,
-                no_more_keys,
-                overflow_row,
-                row_begin,
-                row_end,
-                aggregate_columns_data,
-                is_cancelled,
-                arena_for_keys,
-                deferred);
+            if (keepsKeysAcrossSpills())
+                mergeStreamsImplCase</*revivable=*/true>(
+                    aggregates_pool,
+                    state,
+                    data,
+                    no_more_keys,
+                    overflow_row,
+                    row_begin,
+                    row_end,
+                    aggregate_columns_data,
+                    is_cancelled,
+                    arena_for_keys,
+                    deferred);
+            else
+                mergeStreamsImplCase</*revivable=*/false>(
+                    aggregates_pool,
+                    state,
+                    data,
+                    no_more_keys,
+                    overflow_row,
+                    row_begin,
+                    row_end,
+                    aggregate_columns_data,
+                    is_cancelled,
+                    arena_for_keys,
+                    deferred);
         }
     }
 }

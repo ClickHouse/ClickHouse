@@ -806,7 +806,8 @@ private:
     void createAggregateStates(AggregateDataPtr & aggregate_data, bool use_compiled_functions) const;
 
     /// Fresh aggregate states for a kept key found with a null state: a spill flushed its states
-    /// and left the key in the table (see `keepsKeysAcrossSpills`).
+    /// and left the key in the table (see `keepsKeysAcrossSpills`). Called only from the
+    /// `revivable` instantiations of the batch loops.
     AggregateDataPtr reviveKeptKey(Arena * aggregates_pool, bool use_compiled_functions = false) const
     {
         AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
@@ -849,7 +850,10 @@ private:
         bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
-    template <typename Method, typename State>
+    /// `revivable`: the table may hold kept keys with null states left by a flush (see
+    /// `keepsKeysAcrossSpills`), which the batch revives on their next row. The check is compiled
+    /// only into this instantiation, so every other query runs the loops unchanged.
+    template <bool revivable, typename Method, typename State>
     void executeImpl(
         Method & method,
         State & state,
@@ -877,7 +881,7 @@ private:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool prefetch, bool top_k = false, typename Method, typename State>
+    template <bool prefetch, bool top_k, bool revivable, typename Method, typename State>
     requires MapAggregationState<State>
     void executeImplBatch(
         Method & method,
@@ -903,7 +907,7 @@ private:
     void trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const;
 
     /// A set method has no aggregate states: the batch only registers the keys.
-    template <bool prefetch, bool top_k = false, typename Method, typename State>
+    template <bool prefetch, bool top_k, bool revivable, typename Method, typename State>
     requires SetAggregationState<State>
     void executeImplBatch(
         Method & method,
@@ -1615,7 +1619,8 @@ private:
         size_t num_partitions,
         std::atomic<bool> & is_cancelled) const;
 
-    template <typename State, typename Table>
+    /// `revivable` as in `executeImpl`.
+    template <bool revivable, typename State, typename Table>
     requires MapAggregationState<State>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
@@ -1631,7 +1636,7 @@ private:
         DeferredMerges * deferred = nullptr) const;
 
     /// A set method has no aggregate states: merging a block back only re-registers its keys.
-    template <typename State, typename Table>
+    template <bool revivable, typename State, typename Table>
     requires SetAggregationState<State>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
@@ -1735,6 +1740,8 @@ private:
     /// live table with a null state; the first later row of such a key allocates it a fresh one.
     /// So the limit counts every key ever admitted, the rows of admitted keys keep aggregating
     /// after their states were flushed, and a flush never rewrites keys that got no new rows.
+    /// The null-state check on the row path exists only in the `revivable` instantiations of the
+    /// batch loops, which this predicate selects: other queries pay nothing for it.
     /// The keys must then outlive the state arenas: `keysArena` gives the arena to materialize
     /// them in. A set method has no states, so a flush could free nothing - its table holds only
     /// the admitted keys, which must stay in memory anyway - and it is excluded here; its spills
