@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_MONGODB
@@ -43,7 +44,7 @@ private:
     mongocxx::cursor cursor;
 
     Block sample_block;
-    std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
     const UInt64 max_block_size;
     bool all_read = false;
 

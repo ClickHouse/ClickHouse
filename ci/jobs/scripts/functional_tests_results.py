@@ -83,7 +83,8 @@ NO_TESTS_SIGN = "No tests were run"
 NO_TESTS_FILTERED_OUT_SIGN = (
     "No tests were run because every explicitly requested test was filtered out"
 )
-SUCCESS_FINISH_SIGNS = ["All tests have finished", NO_TESTS_SIGN]
+ALL_TESTS_FINISHED_SIGN = "All tests have finished"
+SUCCESS_FINISH_SIGNS = [ALL_TESTS_FINISHED_SIGN, NO_TESTS_SIGN]
 
 RETRIES_SIGN = "Some tests were restarted"
 
@@ -111,12 +112,17 @@ class FTResultsProcessor:
         hung: bool = False
         retries: bool = False
         success_finish: bool = False
+        all_tests_finished: bool = False
         no_tests_run: bool = False
         test_end: bool = True
 
     def __init__(self, wd):
         self.tests_output_file = f"{wd}/test_result.txt"
         self.debug_files = []
+        # Set by `run`: whether the runner went through the whole test list.
+        # Unlike the result status, it is not affected by later aggregation
+        # (e.g. `extend_sub_results` turning a runner-level `ERROR` into `FAIL`).
+        self.run_completed = False
 
     def _process_test_output(self):
         total = 0
@@ -127,6 +133,7 @@ class FTResultsProcessor:
         hung = False
         retries = False
         success_finish = False
+        all_tests_finished = False
         no_tests_run = False
         test_results = []
         test_end = True
@@ -138,6 +145,8 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
+                if ALL_TESTS_FINISHED_SIGN in line:
+                    all_tests_finished = True
                 if NO_TESTS_FILTERED_OUT_SIGN in line:
                     no_tests_run = True
                 # Ignore hung check report, since it may be quite large.
@@ -236,6 +245,7 @@ class FTResultsProcessor:
             test_results=test_results,
             hung=hung,
             success_finish=success_finish,
+            all_tests_finished=all_tests_finished,
             no_tests_run=no_tests_run,
             retries=retries,
         )
@@ -252,6 +262,17 @@ class FTResultsProcessor:
         state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
+
+        # A completed run went through the whole test list: failed tests are
+        # allowed, but not an abort (server death, kill by signal, hung check),
+        # an early stop on too many failures or on the time limit, or hung queries.
+        self.run_completed = (
+            s.all_tests_finished
+            and not s.hung
+            and runner_exit_code not in ABORTED_RUN_EXIT_CODES
+            and runner_exit_code
+            not in (MAX_FAILURES_EXIT_CODE, GLOBAL_TIME_LIMIT_EXIT_CODE)
+        )
 
         if s.no_tests_run and allow_no_tests and not s.hung:
             # The job was given an explicit list of tests (a flaky or targeted

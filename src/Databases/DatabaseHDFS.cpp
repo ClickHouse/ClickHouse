@@ -191,7 +191,7 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(database_name), source);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS({})", backQuoteIfNeed(database_name), quoteString(source));
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
@@ -276,7 +276,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn, {
+    factory.registerDatabase("HDFS", create_fn, SecretArgumentsSpec{}, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,

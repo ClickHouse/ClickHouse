@@ -93,8 +93,7 @@ FORMAT Null;
 -- counting it is about.
 SELECT s FROM file('05043_' || currentDatabase() || '.parquet', Parquet, 'k UInt64, s String')
 ORDER BY k LIMIT 3
-SETTINGS log_queries = 1, log_comment = '05043_file_lazy_rows', ast_fuzzer_runs = 0,
-    enable_analyzer = 1, query_plan_optimize_lazy_materialization = 1,
+SETTINGS log_queries = 1, log_comment = '05043_file_lazy_rows', ast_fuzzer_runs = 0, query_plan_optimize_lazy_materialization = 1,
     query_plan_max_limit_for_lazy_materialization = 0,
     query_plan_optimize_lazy_materialization_for_file = 1,
     use_top_k_dynamic_filtering = 0

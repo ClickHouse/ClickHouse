@@ -3,6 +3,7 @@
 #include <Backups/BackupFactory.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -17,6 +18,8 @@
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
+
+#include <filesystem>
 
 #endif
 
@@ -44,8 +47,6 @@ namespace
         AzureBlobStorage::ConnectionParams connection_params;
         String blob_path;
         String archive_name;
-        /// `blob_path` before a trailing archive filename is stripped off it.
-        String blob_path_with_archive;
     };
 
     String removeFileNameFromURL(String & url)
@@ -178,7 +179,6 @@ namespace
                 "(storage account URL, container, path, account name, account key)");
         }
 
-        location.blob_path_with_archive = location.blob_path;
         if (hasRegisteredArchiveFileExtension(location.blob_path))
             location.archive_name = removeFileNameFromURL(location.blob_path);
         return location;
@@ -198,7 +198,11 @@ namespace
             return target;
         }
 
-        target.uri = resolveAzureBackupLocation(backup_info, context).blob_path_with_archive;
+        /// The key that is accessed: an archive is opened under the split-off `blob_path`.
+        const auto location = resolveAzureBackupLocation(backup_info, context);
+        target.uri = location.archive_name.empty()
+            ? location.blob_path
+            : String(std::filesystem::path(location.blob_path) / location.archive_name);
         return target;
     }
 
@@ -355,7 +359,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 #endif
     };
 
-    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn);
+    factory.registerBackupEngine("AzureBlobStorage", creator_fn, destination_identity_fn, source_access_fn, azureBackupSecretArguments());
 }
 
 }

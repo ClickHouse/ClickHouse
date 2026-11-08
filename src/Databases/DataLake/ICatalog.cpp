@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <iterator>
+#include <set>
 #include <tuple>
 
 #include <Common/FailPoint.h>
@@ -68,6 +69,9 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
         // convert s3://, file://, etc. to s3, file etc.
         storage_type_str = storage_type_str.substr(0,pos);
     }
+    if (storage_type_str == "hdfs")
+        return StorageType::HDFS;
+
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
     else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
@@ -377,13 +381,27 @@ CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
         case TableNameFilter::Kind::All:
             return getTables();
 
-        case TableNameFilter::Kind::Equals:
+        case TableNameFilter::Kind::In:
         {
-            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
-            const auto pos = filter.value.rfind('.');
-            if (pos == std::string::npos)
-                return getTables();
-            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+            /// `name IN ('ns.a', 'other.b')` -> list only namespaces `ns` and `other`; the outer
+            /// filter keeps the exact rows. A name without a namespace tells us nothing about
+            /// which namespace to list, so fall back to the whole catalog.
+            std::set<std::string> namespaces;
+            for (const auto & value : filter.values)
+            {
+                const auto pos = value.rfind('.');
+                if (pos == std::string::npos)
+                    return getTables();
+                namespaces.emplace(value.substr(0, pos));
+            }
+
+            CatalogTables result;
+            for (const auto & namespace_name : namespaces)
+            {
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
         }
 
         case TableNameFilter::Kind::Like:

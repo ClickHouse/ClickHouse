@@ -245,6 +245,14 @@ public:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
+    void checkSourceObjectAccess(const ContextPtr & context, bool for_structure) const override
+    {
+        /// The structure is static, so nothing is owed for resolving it. Only the database-and-table
+        /// form names a table before it is resolved, which is what can be checked here.
+        if (!for_structure && !source_table_id.hasUUID())
+            checkSourceTableAccess(context, source_table_id, AccessType::SHOW_TABLES);
+    }
+
 private:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -432,7 +440,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .description = "Internal function for index analysis",
             .syntax = "mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])",
             .category = FunctionDocumentation::Category::TableFunction
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true}
     });
 
@@ -442,7 +450,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
             .description = "Internal function for index analysis",
             .syntax = "mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])",
             .category = FunctionDocumentation::Category::TableFunction
-        },
+        }, SecretArgumentsSpec{},
         {.allow_readonly = true}
     });
 }
