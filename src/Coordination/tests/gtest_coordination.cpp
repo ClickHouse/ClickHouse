@@ -1929,18 +1929,18 @@ TEST_P(CoordinationTest, ListWithOptionsV2IsRejectedWhenFeatureFlagDisabled)
     v2->options_version = ListOptionsVersion::V2;
     v2->options.start_after = "";
 
-    EXPECT_TRUE(this->keeper_context->isRequestSupported(*v1));
-    EXPECT_TRUE(this->keeper_context->isRequestSupported(*v2));
+    EXPECT_TRUE(this->keeper_context->isOperationSupported(*v1));
+    EXPECT_TRUE(this->keeper_context->isOperationSupported(*v2));
 
     this->keeper_context->disableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
-    EXPECT_TRUE(this->keeper_context->isRequestSupported(*v1));
-    EXPECT_FALSE(this->keeper_context->isRequestSupported(*v2));
+    EXPECT_TRUE(this->keeper_context->isOperationSupported(*v1));
+    EXPECT_FALSE(this->keeper_context->isOperationSupported(*v2));
 
     ZooKeeperMultiRequest multi_v2(Requests{v2}, ACLs{});
-    EXPECT_FALSE(this->keeper_context->isRequestSupported(multi_v2));
+    EXPECT_FALSE(this->keeper_context->isOperationSupported(multi_v2));
 
     ZooKeeperMultiRequest multi_v1(Requests{v1}, ACLs{});
-    EXPECT_TRUE(this->keeper_context->isRequestSupported(multi_v1));
+    EXPECT_TRUE(this->keeper_context->isOperationSupported(multi_v1));
 
     this->keeper_context->enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
 }

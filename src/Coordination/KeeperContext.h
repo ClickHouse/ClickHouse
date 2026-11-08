@@ -135,11 +135,10 @@ public:
     bool shouldBlockACL() const;
     void setBlockACL(bool block_acl_);
 
-    bool isOperationSupported(Coordination::OpNum operation) const;
-    /// Like `isOperationSupported`, but also rejects `ListWithOptions` V2 when
-    /// `LIST_WITH_OPTIONS_V2` is off. V2 reuses the V1 opcode, so the opnum gate
-    /// alone would still enqueue it and write it to the Raft log.
-    bool isRequestSupported(const Coordination::ZooKeeperRequest & request) const;
+    /// Opcode feature flags, plus `ListWithOptions` V2 (same opcode as V1) and
+    /// nested `Multi` / `MultiRead` children. Ingress must call this on the
+    /// deserialized request so a disabled V2 is not written to the Raft log.
+    bool isOperationSupported(const Coordination::ZooKeeperRequest & request) const;
 
     bool shouldLogRequests() const;
     void setLogRequests(bool log_requests_);

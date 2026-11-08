@@ -794,7 +794,10 @@ void KeeperContext::setBlockACL(bool block_acl_)
     block_acl = block_acl_;
 }
 
-bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
+namespace
+{
+
+bool isOpNumSupported(const KeeperFeatureFlags & feature_flags, Coordination::OpNum operation)
 {
     switch (operation)
     {
@@ -852,22 +855,11 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
     }
 }
 
-bool KeeperContext::isRequestSupported(const Coordination::ZooKeeperRequest & request) const
+}
+
+bool KeeperContext::isOperationSupported(const Coordination::ZooKeeperRequest & request) const
 {
-    if (const auto * multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(&request))
-    {
-        if (!isOperationSupported(request.getOpNum()))
-            return false;
-
-        for (const auto & subrequest : multi->requests)
-        {
-            if (!isRequestSupported(*subrequest))
-                return false;
-        }
-        return true;
-    }
-
-    if (!isOperationSupported(request.getOpNum()))
+    if (!isOpNumSupported(feature_flags, request.getOpNum()))
         return false;
 
     if (const auto * list_with_options = dynamic_cast<const Coordination::ZooKeeperListWithOptionsRequest *>(&request))
@@ -875,6 +867,15 @@ bool KeeperContext::isRequestSupported(const Coordination::ZooKeeperRequest & re
         if (list_with_options->options_version == Coordination::ListOptionsVersion::V2
             && !feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
             return false;
+    }
+
+    if (const auto * multi = dynamic_cast<const Coordination::ZooKeeperMultiRequest *>(&request))
+    {
+        for (const auto & subrequest : multi->requests)
+        {
+            if (!isOperationSupported(*subrequest))
+                return false;
+        }
     }
 
     return true;

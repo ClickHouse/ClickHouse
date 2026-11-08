@@ -864,19 +864,15 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
     auto request_validator = [&](const Coordination::ZooKeeperRequest & current_request)
     {
-        if (!keeper_context->isRequestSupported(current_request))
+        if (!keeper_context->isOperationSupported(current_request))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", current_request.getOpNum(), current_request.getPath());
     };
 
     if (auto * multi_request = dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get()))
-    {
         multi_request->readImpl(read_buffer, request_validator);
-    }
     else
-    {
         request->readImpl(read_buffer);
-        request_validator(*request);
-    }
+    request_validator(*request);
 
     if (expect_opentelemetry_tracing_context)
     {

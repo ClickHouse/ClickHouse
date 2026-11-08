@@ -502,8 +502,7 @@ void KeeperDispatcher::waitForFourLetterCommands()
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
-    /// Same gate as `KeeperTCPHandler`: V2 must not be enqueued, or `quorum_reads` writes it to Raft.
-    if (keeper_context && !keeper_context->isRequestSupported(*request))
+    if (keeper_context && !keeper_context->isOperationSupported(*request))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported operation: {}, Path: '{}'", request->getOpNum(), request->getPath());
 
     if (dispatcher_old)
