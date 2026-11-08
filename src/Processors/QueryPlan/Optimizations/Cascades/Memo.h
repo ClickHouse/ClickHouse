@@ -8,8 +8,8 @@
 namespace DB
 {
 
-/// A join graph imported as one group per set of its relations, whose remaining joins the `JoinEnumeration` rule adds
-/// to the memo once, see `JoinGraphStep::OrderBuilder::buildRemainingSets`.
+/// A join graph imported as one group per set of its relations. When the import left joins out, the `JoinEnumeration`
+/// rule adds them to the memo once, see `JoinGraphStep::OrderBuilder::buildRemainingSets`.
 struct JoinGraphExpansion
 {
     std::shared_ptr<JoinGraphStep::OrderBuilder> order_builder;
@@ -44,6 +44,7 @@ public:
 
     /// The expansion of the join graph whose group of all relations is `group_id`, if any.
     void addJoinGraphExpansion(GroupId group_id, JoinGraphExpansionPtr expansion) { join_graph_expansions[group_id] = std::move(expansion); }
+    const std::unordered_map<GroupId, JoinGraphExpansionPtr> & getJoinGraphExpansions() const { return join_graph_expansions; }
     JoinGraphExpansionPtr getJoinGraphExpansion(GroupId group_id) const
     {
         auto it = join_graph_expansions.find(group_id);

@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// The largest number of relations DPsub plans; a larger join graph goes to the next algorithm.
-inline constexpr size_t DPSUB_MAX_RELATIONS = 12;
+inline constexpr size_t DPSUB_MAX_RELATIONS = 20;
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

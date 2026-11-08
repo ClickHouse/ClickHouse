@@ -62,6 +62,8 @@ private:
     /// Imports a `JoinGraphStep`: each input once, and the joins of every join order over the input groups.
     std::pair<GroupId, ExpressionProperties> addJoinGraph(QueryPlan::Node & node, const JoinGraphStep & graph_step);
     /// Imports the joins of every set of a join graph's relations, one group per set, see `JoinGraphStep::SetPlan`.
+    /// Logs a hash of the statistics of every set of the imported join graphs.
+    void logJoinSetStatistics() const;
     std::pair<GroupId, ExpressionProperties> addJoinSets(QueryPlan::Node & node, JoinGraphStep::SetPlan set_plan, const JoinGraphStep & graph_step);
 
     void addRule(OptimizationRulePtr rule);

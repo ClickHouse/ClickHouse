@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <functional>
+#include <Common/SipHash.h>
 #include <map>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
@@ -252,6 +253,24 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
     return {group_id, {}};
 }
 
+void CascadesOptimizer::logJoinSetStatistics() const
+{
+    /// The experiments of `cascades_join_enumeration` compare the plans of the modes only if every set that two modes
+    /// share has the same statistics in both.
+    for (const auto & [graph_group_id, expansion] : memo.getJoinGraphExpansions())
+    {
+        std::map<UInt64, GroupId> sorted_sets(expansion->set_groups.begin(), expansion->set_groups.end());
+        for (const auto & [relations, group_id] : sorted_sets)
+        {
+            if (std::popcount(relations) < 2)
+                continue;
+            const auto & set_statistics = memo.getGroup(group_id)->statistics;
+            LOG_DEBUG(log, "Join set statistics: graph of group #{}, set {}, rows {}, hash {}", graph_group_id, relations,
+                set_statistics ? set_statistics->estimated_row_count : -1.0, set_statistics ? sipHash64(set_statistics->dump()) : 0);
+        }
+    }
+}
+
 std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinSets(
     QueryPlan::Node & node, JoinGraphStep::SetPlan set_plan, const JoinGraphStep & graph_step)
 {
@@ -287,14 +306,12 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinSets(
     if (!last_group_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A join graph without sets of relations");
 
-    if (graph_step.getOrderBuilder().hasRemainingSets())
-    {
-        auto expansion = std::make_shared<JoinGraphExpansion>();
-        expansion->order_builder = graph_step.getOrderBuilderPtr();
-        expansion->set_groups = std::move(set_groups);
-        expansion->input_pending_props = std::move(input_pending_props);
-        memo.addJoinGraphExpansion(*last_group_id, std::move(expansion));
-    }
+    auto expansion = std::make_shared<JoinGraphExpansion>();
+    expansion->order_builder = graph_step.getOrderBuilderPtr();
+    expansion->set_groups = std::move(set_groups);
+    expansion->input_pending_props = std::move(input_pending_props);
+    expansion->expanded = !graph_step.getOrderBuilder().hasRemainingSets();
+    memo.addJoinGraphExpansion(*last_group_id, std::move(expansion));
     return {*last_group_id, {}};
 }
 
@@ -532,6 +549,8 @@ void CascadesOptimizer::optimize()
             "or simplify the query.",
             executed_tasks_limit, root_group_id, root_required_properties.dump(),
             memo.getGroupCount(), tasks.size(), tasks.top()->describe());
+
+    logJoinSetStatistics();
 
     auto best_plan = buildBestPlan(root_group_id, root_required_properties);
 
