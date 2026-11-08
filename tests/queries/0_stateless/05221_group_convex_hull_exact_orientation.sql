@@ -1,4 +1,7 @@
 SET max_threads = 1;
+-- `groupConvexHull` is order-independent, so `RemoveRedundantSorting` would drop the subquery `ORDER BY`
+-- that this test uses to vary the input order.
+SET query_plan_remove_redundant_sorting = 0;
 
 -- Check vertices, not area: area itself underflows for the smallest triangles.
 CREATE TEMPORARY TABLE hull_exact_points (exponent Int16, p Point);

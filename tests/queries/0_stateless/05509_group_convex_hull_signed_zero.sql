@@ -1,4 +1,7 @@
 -- `+0.0` and `-0.0` compare equal, so the hull must not depend on which of them comes first.
+-- `groupConvexHull` is order-independent, so `RemoveRedundantSorting` would drop the subquery `ORDER BY`
+-- that this test uses to vary the input order.
+SET query_plan_remove_redundant_sorting = 0;
 
 CREATE TEMPORARY TABLE points (id UInt64, p Point);
 INSERT INTO points VALUES (1, (0., 0.)), (2, (-0., -0.)), (3, (1., 0.)), (4, (0., 1.));

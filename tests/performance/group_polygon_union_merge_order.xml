@@ -1,4 +1,5 @@
-<test>
+<test iceberg="0">
+    <!-- Not on Iceberg tables: Iceberg has no type for the geometry columns (`Point`, `Ring`, `Polygon`, `MultiPolygon`); the test measures the aggregate functions, not the storage. -->
     <drop_query>DROP TABLE IF EXISTS bench_review_merge_order</drop_query>
     <create_query>CREATE TABLE bench_review_merge_order (id UInt64, p Polygon) ENGINE = Memory</create_query>
     <fill_query>

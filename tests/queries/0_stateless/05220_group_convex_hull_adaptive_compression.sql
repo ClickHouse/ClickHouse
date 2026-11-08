@@ -1,4 +1,7 @@
 SET max_threads = 1;
+-- `groupConvexHull` is order-independent, so `RemoveRedundantSorting` would drop the subquery `ORDER BY`
+-- that this test uses to vary the input order.
+SET query_plan_remove_redundant_sorting = 0;
 
 CREATE TEMPORARY TABLE hull_adaptive_points (id UInt64, pt Point);
 INSERT INTO hull_adaptive_points
