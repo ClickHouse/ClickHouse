@@ -158,6 +158,10 @@ cases["sort_field_missing_source_id"] = change(
     table(), sort_orders=[{"order-id": 1, "fields": [change(dict(sort_field), source_id=DELETE)]}], default_sort_order_id=1)
 cases["v1_partition_spec_field_missing_name"] = change(
     table(1), partition_specs=DELETE, default_spec_id=DELETE, partition_spec=[change(dict(identity_field), name=DELETE)])
+cases["v2_partition_field_source_ids_only"] = change(
+    table(), partition_specs=[{"spec-id": 0, "fields": [change(dict(identity_field), source_id=DELETE, source_ids=[1])]}], last_partition_id=1000)
+cases["v1_sort_field_source_ids_only"] = change(
+    table(1), sort_orders=[{"order-id": 1, "fields": [change(dict(sort_field), source_id=DELETE, source_ids=[1])]}], default_sort_order_id=1)
 
 # Selection by `last-updated-ms` reads it from every metadata file.
 cases["missing_last_updated_ms_by_field"] = change(table(), last_updated_ms=DELETE)
@@ -215,6 +219,7 @@ for name in missing_format_version format_version_0 format_version_string missin
     missing_default_sort_order_id v1_missing_partition_spec missing_spec_id sort_order_missing_order_id \
     partition_field_missing_transform partition_field_missing_name partition_field_missing_source_id partition_field_not_object \
     sort_field_missing_null_order sort_field_missing_source_id v1_partition_spec_field_missing_name \
+    v2_partition_field_source_ids_only v1_sort_field_source_ids_only \
     current_snapshot_id_out_of_range snapshot_id_out_of_range snapshot_missing_timestamp snapshot_not_object \
     snapshots_not_array snapshot_log_missing_snapshot_id metadata_log_missing_file ref_missing_type refs_not_object
 do

@@ -694,8 +694,9 @@ struct MetadataField
     MetadataFieldType type;
     /// The first format version that requires the field, 0 if the field is optional.
     Int32 required_since;
-    /// If set, the field is not required when this field is present instead.
+    /// If set, the field is not required from format version `required_unless_since` on when this field is present instead.
     const char * required_unless = nullptr;
+    Int32 required_unless_since = 0;
 };
 
 /// The fields of a table metadata file and of its entries that the Iceberg spec requires or types,
@@ -719,7 +720,7 @@ constexpr MetadataField table_metadata_fields[] = {
 constexpr MetadataField partition_spec_fields[] = {{f_spec_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
 constexpr MetadataField sort_order_fields[] = {{f_order_id, MetadataFieldType::Int32, 1}, {f_fields, MetadataFieldType::Array, 1}};
 constexpr MetadataField partition_field_fields[] = {
-    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids},
+    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids, 3},
     {f_source_ids, MetadataFieldType::Array, 0},
     {f_field_id, MetadataFieldType::Int32, 0},
     {f_name, MetadataFieldType::String, 1},
@@ -727,7 +728,7 @@ constexpr MetadataField partition_field_fields[] = {
 };
 constexpr MetadataField sort_field_fields[] = {
     {f_transform, MetadataFieldType::String, 1},
-    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids},
+    {f_source_id, MetadataFieldType::Int32, 1, f_source_ids, 3},
     {f_source_ids, MetadataFieldType::Array, 0},
     {f_direction, MetadataFieldType::String, 1},
     {f_null_order, MetadataFieldType::String, 1},
@@ -790,7 +791,7 @@ void checkField(
     if (value.isEmpty())
     {
         if (field.required_since && format_version >= field.required_since
-            && (!field.required_unless || object.isNull(field.required_unless)))
+            && (!field.required_unless || format_version < field.required_unless_since || object.isNull(field.required_unless)))
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Iceberg table metadata file '{}' doesn't contain required field '{}{}'",
