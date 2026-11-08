@@ -956,9 +956,10 @@ public:
 
     /// The rejection part of `delayInsertOrThrowIfNeeded` as a callable that a sink registers as its
     /// pre-write check (see `SinkToStorage::getPreWriteCheck`). It does not keep the table alive: once
-    /// it is gone, there is no write to check any more. It keeps the context alive, though: a `Buffer`
-    /// keeps the pending decision of a query (see `InsertStartGates`) after the query and its sinks are
-    /// gone, until it flushes the rows of the query, and the check must still use the limits of that query.
+    /// it is gone, there is no write to check any more. It does not keep the context alive either, only
+    /// the limits of the query (see `getTooManyPartsLimits`): a `Buffer` keeps the pending decision of a
+    /// query (see `InsertStartGates`) after the query and its sinks are gone, until it flushes the rows of
+    /// the query, and the check must still use the limits of that query.
     std::function<void()> makeTooManyPartsCheck(const ContextPtr & query_context) const;
 
     /// The query-level limits the check of `makeTooManyPartsCheck` depends on: two checks of the table with the
@@ -1819,6 +1820,17 @@ protected:
     String relative_data_path;
 
 private:
+    /// The query-level settings of `delayInsertOrThrowIfNeeded`. Zero means the table-level setting is used.
+    struct InsertQueryLimits
+    {
+        UInt64 parts_to_delay_insert = 0;
+        UInt64 parts_to_throw_insert = 0;
+        UInt64 dead_blobs_to_delay_insert = 0;
+        UInt64 dead_blobs_to_throw_insert = 0;
+    };
+
+    void delayInsertOrThrowIfNeededImpl(Poco::Event * until, const InsertQueryLimits & query_limits, bool allow_throw, bool allow_delay) const;
+
     /// Columns and secondary indices sizes can be calculated lazily.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;
     mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
