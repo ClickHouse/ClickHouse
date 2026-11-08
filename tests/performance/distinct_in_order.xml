@@ -32,6 +32,8 @@
 
     <query>SELECT DISTINCT k4, k, a, s FROM distinct_in_order_small_ranges FORMAT Null</query>
     <query>SELECT DISTINCT k4, a, s FROM distinct_in_order_small_ranges FORMAT Null</query>
+    <query>SELECT DISTINCT k4, k, a, s FROM distinct_in_order_small_ranges ORDER BY k4, k FORMAT Null</query>
+    <query>SELECT DISTINCT k4, a, s FROM distinct_in_order_small_ranges ORDER BY k4 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS distinct_in_order_small_ranges</drop_query>
 </test>

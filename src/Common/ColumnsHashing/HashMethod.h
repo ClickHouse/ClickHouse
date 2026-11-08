@@ -913,8 +913,9 @@ struct HashMethodHashed
 
         if constexpr (prepare_keys)
         {
-            prepared.enabled = !rows.skips_rows;
             prepared.rows_end = std::min(rows.end, key_columns.empty() ? 0 : key_columns[0]->size());
+            /// A state asked about fewer than `min_rows` rows has no lookups to overlap.
+            prepared.enabled = !rows.skips_rows && prepared.rows_end >= rows.begin + PreparedKeys::min_rows;
         }
     }
 
