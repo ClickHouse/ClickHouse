@@ -147,13 +147,7 @@ public:
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
     using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
 
-    ORCColumnToCHColumn(
-        const Block & header_,
-        bool allow_missing_columns_,
-        bool null_as_default_,
-        bool case_insensitive_matching_ = false,
-        bool dictionary_as_low_cardinality_ = false,
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
+    ORCColumnToCHColumn(const Block & header_, const FormatSettings & format_settings_);
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -177,7 +171,16 @@ private:
         bool inside_nullable,
         DataTypePtr type_hint = nullptr) const;
 
+    /// Reads an ORC struct of the binary fields `metadata` and `value`, an unshredded variant, as `type_hint`,
+    /// which is `Dynamic`, `JSON` or `Nullable(JSON)`. Throws for any other struct.
+    ColumnWithTypeAndName readVariantFromORCStruct(
+        const ORC::ColumnVectorBatch * orc_column,
+        const ORC::Type * orc_type,
+        const std::string & column_name,
+        const DataTypePtr & type_hint) const;
+
     const Block & header;
+    const FormatSettings format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
