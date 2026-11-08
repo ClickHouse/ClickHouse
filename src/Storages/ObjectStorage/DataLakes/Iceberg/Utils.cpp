@@ -1471,7 +1471,6 @@ void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
     const auto default_spec = getDefaultPartitionSpec(metadata);
     if (!metadata->has(f_partition_specs))
     {
-        /// Like Java's `TableMetadataParser`, write the spec list along with the deprecated field.
         Poco::JSON::Array::Ptr specs = new Poco::JSON::Array;
         specs->add(deepCopy(default_spec));
         metadata->set(f_partition_specs, specs);
