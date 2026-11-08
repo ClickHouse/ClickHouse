@@ -109,7 +109,7 @@ Supported storage types:
 </clickhouse>
 ```
 
-If `path` is omitted, the default is `{data_path}/sql_clusters_metadata`.
+If `path` is omitted, the default is `{data_path}/sql_clusters_metadata`. `clickhouse-local --path` uses that default under its data directory and loads saved SQL clusters at startup, the same way it loads named collections.
 
 With local storage, metadata exists independently on each server. Use `ON CLUSTER` when creating, altering, or dropping SQL clusters so the DDL runs on every node and each node writes its own metadata file.
 
