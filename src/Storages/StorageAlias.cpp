@@ -151,6 +151,28 @@ std::vector<std::pair<String, String>> StorageAlias::getTargetChain() const
     return chain;
 }
 
+NameSet StorageAlias::filterColumnsSelectableThroughChain(
+    ContextPtr query_context, const ColumnsDescription & columns, const Names & column_names) const
+{
+    NameSet selectable(column_names.begin(), column_names.end());
+    auto access = query_context->getAccess();
+    for (const auto & [database, table] : getTargetChain())
+    {
+        if (selectable.empty())
+            break;
+        const StorageID table_id(database, table);
+        std::erase_if(selectable, [&](const String & column_name)
+        {
+            return !access->isGranted(
+                AccessType::SELECT,
+                database,
+                table,
+                columns.getColumnNamesForSelectAccessCheck({column_name}, query_context, table_id).front());
+        });
+    }
+    return selectable;
+}
+
 bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     return !filterColumnsGrantedThroughChain(query_context, access_type, {column_name}).empty();

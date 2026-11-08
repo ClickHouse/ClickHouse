@@ -35,6 +35,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Planner/Utils.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -443,49 +444,8 @@ void checkAccessRightsForSelect(
         /// In this case just checking access for `required_columns` doesn't work correctly
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
-        auto access = context->getAccess();
-        /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
-        const auto access_rights = access->getAccessRightsWithImplicit();
-        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        const auto & columns = table_metadata->getColumns();
-
-        /// Through an `Alias` the exact subcolumn grant can also be on a table of its chain, while the alias grants
-        /// its column or the whole table, so candidates are collected from every table of the chain.
-        std::vector<std::pair<String, String>> tables_to_probe{{table_id.database_name, table_id.table_name}};
-        if (alias)
-        {
-            auto chain = alias->getTargetChain();
-            tables_to_probe.insert(tables_to_probe.end(), chain.begin(), chain.end());
-        }
-
-        for (const auto & column : columns)
-        {
-            /// An `Alias` also requires access to the same column of its target table.
-            if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name)
-                && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
-                return;
-
-            /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its
-            /// column in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so such a
-            /// subcolumn is readable even without a grant on its column, and it is enough for a trivial query too.
-            /// The subcolumn must be readable on the table itself, checked like a query that reads it (a candidate can
-            /// come from a grant on a table of the `Alias` chain).
-            for (const auto & [database, table] : tables_to_probe)
-            {
-                for (const auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
-                         *access_rights, AccessType::SELECT, database, table, column.name))
-                {
-                    if (access->isGranted(
-                            AccessType::SELECT,
-                            table_id.database_name,
-                            table_id.table_name,
-                            columns.getColumnNamesForSelectAccessCheck({subcolumn}, context, table_id).front())
-                        && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, subcolumn)
-                            || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
-                        return;
-                }
-            }
-        }
+        if (!getColumnsSelectableByTrivialQuery(storage, table_id, table_metadata->getColumns(), context).empty())
+            return;
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
