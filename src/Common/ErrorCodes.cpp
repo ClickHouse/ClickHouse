@@ -690,6 +690,7 @@
     M(905, DISTRIBUTED_CACHE_SERVER_IN_BACKOFF) \
     M(906, AST_FUZZER_ORACLE_MISMATCH) \
     M(907, DISTRIBUTED_CACHE_UNEXPECTED_SERVER_CERTIFICATE) \
+    M(908, DISTRIBUTED_CACHE_SERVER_SLOW_DOWN) \
 \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
@@ -718,6 +719,7 @@
     M(1023, XGBOOST_ERROR) \
     M(1024, BUZZHOUSE_ORACLE) \
     M(1025, GPU_ERROR) \
+    M(1026, ICEBERG_CATALOG_CONCURRENT_UPDATE) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
