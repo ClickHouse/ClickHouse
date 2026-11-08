@@ -49,7 +49,7 @@ already use those same NEON implementations above that boundary at a vector
 length of 16 bytes. Only sizes from 17 through 64 bytes need runtime selection
 for these three functions. This avoids dispatch overhead in these size ranges.
 
-Zero fills from 256 bytes through 2 MiB use `DC ZVA` when `DCZID_EL0`
+Zero fills from 512 bytes through 2 MiB use `DC ZVA` when `DCZID_EL0`
 permits it and the range contains at least two zeroing blocks. The prefix
 and suffix use exact stores; zeroing instructions touch only complete aligned
 blocks inside the requested range. The byte conversion is applied before

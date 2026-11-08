@@ -138,7 +138,7 @@ static inline __attribute__((always_inline)) void *fill_bulk(void *dst, int c, s
     } else {
         /* Repeated cache-resident clears benefit from zero-by-address. Keep
            streaming fills on NEON: the measured crossover is above 2 MiB. */
-        if ((u8)c == 0 && n >= 256 && n <= 2 * 1024 * 1024)
+        if ((u8)c == 0 && n >= 512 && n <= 2 * 1024 * 1024)
         {
             uint64_t dczid;
             __asm__ volatile("mrs %0, dczid_el0" : "=r"(dczid));
