@@ -90,6 +90,8 @@ private:
     /// The buffer the data is formatted into: the compressing wrapper if the data is compressed,
     /// the object storage buffer otherwise.
     WriteBuffer & getWriteBuffer();
+    /// The number of bytes written into `destination_buf`, read under the writing lock of `writer`.
+    size_t getWrittenBytes();
 
     void initialize();
     void finalizeBuffers();

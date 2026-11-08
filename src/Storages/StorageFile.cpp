@@ -3679,7 +3679,7 @@ public:
 
         /// Continue writing into a new file as soon as the current one became large enough.
         /// The current block is always written in full, so the file can be larger than the requested size.
-        if (split_on_write_by_size_bytes && bytes_in_file_before_write + naked_buffer->count() >= split_on_write_by_size_bytes)
+        if (split_on_write_by_size_bytes && bytes_in_file_before_write + getWrittenBytes() >= split_on_write_by_size_bytes)
         {
             finalizeBuffers();
             releaseBuffers();
@@ -3695,6 +3695,14 @@ public:
     }
 
 private:
+    /// The number of bytes in the buffer that writes into the file. A format can write into the buffer from its own
+    /// thread (`Pretty` formats write the squashed blocks there), so the count is read under the writing lock.
+    size_t getWrittenBytes()
+    {
+        auto lock = writer->lockWriting();
+        return naked_buffer->count();
+    }
+
     void finalizeBuffers()
     {
         if (!writer)

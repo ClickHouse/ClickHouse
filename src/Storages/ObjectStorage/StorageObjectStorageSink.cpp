@@ -147,11 +147,19 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
 
     /// Continue writing into a new object as soon as the current one became large enough.
     /// The current block is always written in full, so the object can be larger than the requested size.
-    if (split_on_write_by_size_bytes && destination_buf->count() >= split_on_write_by_size_bytes)
+    if (split_on_write_by_size_bytes && getWrittenBytes() >= split_on_write_by_size_bytes)
     {
         finalizeBuffers();
         releaseBuffers();
     }
+}
+
+size_t StorageObjectStorageSink::getWrittenBytes()
+{
+    /// A format can write into the buffer from its own thread (`Pretty` formats write the squashed blocks there),
+    /// so the count is read under the writing lock. It is released before finalizing, which takes it again.
+    auto lock = writer->lockWriting();
+    return destination_buf->count();
 }
 
 void StorageObjectStorageSink::onFinish()
