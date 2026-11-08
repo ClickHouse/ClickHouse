@@ -17,6 +17,7 @@
 #include <Common/DateLUT.h>
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 #include <base/unaligned.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 }
 
@@ -971,7 +973,8 @@ private:
         std::unordered_set<std::string_view> distinct;
         for (size_t i = 0; i < value_ends.size(); ++i)
             distinct.insert(getValue(i));
-        use_dictionary = distinct.size() <= static_cast<size_t>(static_cast<double>(value_ends.size()) * context.dictionary_key_size_threshold);
+        /// Compare as doubles: the threshold is user-provided and the product may not fit in `size_t`.
+        use_dictionary = static_cast<double>(distinct.size()) <= static_cast<double>(value_ends.size()) * context.dictionary_key_size_threshold;
     }
 
     void encodeDirect()
@@ -1090,12 +1093,26 @@ public:
                 nano = 0;
             }
 
-            Int64 utc_seconds = is_utc ? secs : secs + context.timezone->timezoneOffset(secs);
-            index_statistics.updateTimestamp(utc_seconds * 1000 + nano / 1000000, static_cast<Int32>(nano % 1000000));
+            /// The statistics have the milliseconds rounded down and the rest of the nanoseconds, which is not negative.
+            Int64 nano_millis = nano / 1000000;
+            Int64 nano_rest = nano % 1000000;
+            if (nano_rest < 0)
+            {
+                nano_rest += 1000000;
+                --nano_millis;
+            }
+            Int64 utc_seconds = secs;
+            Int64 millis = 0;
+            Int64 encoded_seconds = 0;
+            if ((!is_utc && common::addOverflow(secs, static_cast<Int64>(context.timezone->timezoneOffset(secs)), utc_seconds))
+                || common::mulOverflow(utc_seconds, Int64{1000}, millis)
+                || common::addOverflow(millis, nano_millis, millis)
+                || common::subOverflow(secs + (secs < 0 && nano > 999999), epoch_offset, encoded_seconds))
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Timestamp (seconds={}, nanoseconds={}) in ORC column {} is out of the range supported by the ORC format", secs, nano, column_id);
+            index_statistics.updateTimestamp(millis, static_cast<Int32>(nano_rest));
 
-            if (secs < 0 && nano > 999999)
-                secs += 1;
-            seconds_encoder.write(secs - epoch_offset);
+            seconds_encoder.write(encoded_seconds);
             nanos_encoder.write(formatNanos(nano));
         }
         countValues(null_map, num_values);
