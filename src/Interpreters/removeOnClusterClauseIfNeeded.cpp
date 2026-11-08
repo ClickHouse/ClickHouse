@@ -27,7 +27,7 @@
 #include <Parsers/ASTSQLClusterQuery.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLClusters/SQLClusterFactory.h>
-#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 
 
 namespace DB
