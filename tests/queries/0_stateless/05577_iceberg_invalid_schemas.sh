@@ -261,7 +261,8 @@ DESCRIBE ${TABLE}_reopened SETTINGS describe_compact_output = 1;
 "
 for alter in "DROP COLUMN id" "DROP COLUMN k" "MODIFY COLUMN id Nullable(Int64)"
 do
-    echo "$alter $(${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=0 -q "ALTER TABLE ${TABLE}_reopened ${alter}" 2>&1 | grep -oE '\([A-Z_]+\)' | tail -1)"
+    out=$(${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=0 -q "ALTER TABLE ${TABLE}_reopened ${alter}" 2>&1)
+    echo "$alter $(grep -oE '\([A-Z_]+\)' <<< "$out" | tail -1) $(grep -oF 'its new schema would be invalid' <<< "$out" | head -1)"
 done
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=0 --multiquery -q "
 ALTER TABLE ${TABLE}_reopened DROP COLUMN v;

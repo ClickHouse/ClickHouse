@@ -513,6 +513,15 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
 }
 
+TEST(IcebergSchemaProcessor, GetSimpleTypeRejectsInvalidGeoParameters)
+{
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geography(OGC:CRS84, bogus)"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geography(, spherical)"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geometry()"), DB::Exception);
+    EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("geometryfoo"), DB::Exception);
+    EXPECT_NO_THROW(IcebergSchemaProcessor::getSimpleType("geography(OGC:CRS84, Karney)"));
+}
+
 /// A manifest header copy is checked only for what reading data needs: AWS S3 Tables writes copies with only some
 /// of the columns, whose `identifier-field-ids` can then name a field that is not there. A metadata.json schema is not.
 TEST(IcebergSchemaProcessor, ManifestHeaderSchemaSkipsTableRules)
@@ -537,4 +546,24 @@ TEST(IcebergSchemaProcessor, ManifestHeaderSchemaSkipsTableRules)
         EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
         EXPECT_NE(e.message().find("identifier field id 2 does not exist"), std::string::npos) << e.message();
     }
+}
+
+/// A manifest header copy still gets the structural rules: a list without `element-id` is rejected.
+TEST(IcebergSchemaProcessor, ManifestHeaderSchemaStructuralRulesAreChecked)
+{
+    Poco::JSON::Parser parser;
+    const std::string json = R"json({"schema-id":1,"fields":[{"id":1,"name":"l","required":false,"type":{"type":"list","element-required":false,"element":"long"}}]})json";
+    IcebergSchemaProcessor from_manifest;
+    try
+    {
+        from_manifest.addIcebergTableSchema(
+            parser.parse(json).extract<Poco::JSON::Object::Ptr>(), IcebergSchemaProcessor::SchemaSource::ManifestFile, true);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+        EXPECT_NE(e.message().find("has no 'element-id'"), std::string::npos) << e.message();
+    }
+    EXPECT_FALSE(from_manifest.hasClickHouseTableSchemaById(1));
 }

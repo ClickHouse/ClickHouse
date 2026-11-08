@@ -53,9 +53,9 @@ id	Int64
 k	Tuple(\n    part Int64)
 v	Nullable(Int64)
 w	Int64
-DROP COLUMN id (BAD_ARGUMENTS)
-DROP COLUMN k (BAD_ARGUMENTS)
-MODIFY COLUMN id Nullable(Int64) (BAD_ARGUMENTS)
+DROP COLUMN id (BAD_ARGUMENTS) its new schema would be invalid
+DROP COLUMN k (BAD_ARGUMENTS) its new schema would be invalid
+MODIFY COLUMN id Nullable(Int64) (BAD_ARGUMENTS) its new schema would be invalid
 1	(10)	1000
 id	Int64
 k	Tuple(\n    part Int64)
