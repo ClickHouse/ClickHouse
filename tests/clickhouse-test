@@ -5720,7 +5720,9 @@ def run_tests_array(
                     try_claim_stop_cause(stop_exit_code, STOP_TESTING_EXIT_CODE)
                     print_sql_stacktraces(args)
                     print_c_stacktraces(args)
-                    stop_tests()
+                    if not is_concurrent:
+                        # A parallel worker must not SIGTERM the parent, which stops the run.
+                        stop_tests()
                     stop_testing.set()
                     raise StopTesting(
                         f"ClickHouse server died during test '{test_case.name}'"
