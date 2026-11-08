@@ -8,7 +8,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <Formats/FormatFactory.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Cluster.h>
@@ -61,7 +60,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 distributed_connections_pool_size;
-    extern const SettingsURI format_avro_schema_registry_url;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsString log_comment;
     extern const SettingsBool log_queries;
@@ -83,7 +81,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int USER_EXPIRED;
 }
 
 namespace
@@ -127,22 +124,6 @@ struct QueryRunnerJobOrigin
 {
     std::optional<UUID> user_id;
     std::optional<std::vector<UUID>> roles;
-    /// External (pushed) roles of the originating session. Carried over and re-applied via `setUser`
-    /// so a role that exists only as an external role is not lost or rejected with
-    /// `SET_NON_GRANTED_ROLE` when the deferred job rebuilds the context. Empty in the DEFINER/NONE
-    /// cases, which intentionally run as a different (or no) principal.
-    std::vector<UUID> external_roles;
-    /// Credential grant limit of the originating session (null if the session is not limited).
-    /// Carried over so a limited credential does not regain full rights when the deferred job runs
-    /// under a freshly-built context. Only meaningful in the INVOKER case; the DEFINER/NONE cases
-    /// intentionally run as a different (or no) principal, so it stays null there.
-    std::shared_ptr<const AccessRightsElements> authentication_grants;
-    /// Expiry (VALID UNTIL) of the authenticating method of the originating session, 0 if none.
-    /// Carried over so the deferred job fails closed if the credential has expired between the
-    /// insert and the moment the job runs. The synchronous path re-checks expiry per query in
-    /// `Session::checkIfUserIsStillValid`, but the deferred job has no session, so it must re-check
-    /// here. Only meaningful in the INVOKER case; 0 (no expiry) in the DEFINER/NONE cases.
-    time_t authentication_valid_until = 0;
     String current_user;
     String initial_user;
     String authenticated_user;
@@ -425,34 +406,12 @@ private:
         if (job.origin->user_id)
         {
             chassert(cluster_name.empty());
-            /// Fail closed if the authentication method that queued this job has expired between the
-            /// insert and now. The synchronous path re-checks per query in
-            /// `Session::checkIfUserIsStillValid`; the deferred job has no session, so without this a
-            /// token could enqueue work just before expiry and keep executing it afterwards.
-            /// `authentication_valid_until` is 0 (no check) in the DEFINER/NONE cases and for an
-            /// unrestricted credential.
-            if (job.origin->authentication_valid_until != 0)
-            {
-                const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                if (now > job.origin->authentication_valid_until)
-                    throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred query has expired");
-            }
-
-            /// Replay the whole originating identity in one call: the external (pushed) roles, the
-            /// credential grant limit and its expiry are restored together with the user, so a limited
-            /// credential does not regain full rights and a pushed-role session does not fail role
-            /// revalidation when the deferred job runs. `authentication_grants` is null in the
-            /// DEFINER/NONE cases (a no-op).
-            job_context->setUser(*job.origin->user_id, job.origin->external_roles, job.origin->authentication_grants, job.origin->authentication_valid_until);
+            job_context->setUser(*job.origin->user_id);
         }
         if (job.origin->roles)
         {
             chassert(cluster_name.empty());
-            /// These are the session's *effective* current roles, which already include the external
-            /// roles restored above. Re-apply them without the grant check: external roles are not
-            /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
-            /// granted current roles are kept and the external ones come from `setUser`.
-            job_context->setCurrentRoles(*job.origin->roles, /*check_grants=*/ false);
+            job_context->setCurrentRoles(*job.origin->roles);
         }
 
         job_context->setCurrentUserName(job.origin->current_user);
@@ -589,15 +548,6 @@ private:
         const auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(job_context->getSettingsRef());
         auto connection = getPool(shard_num, job.database)->get(timeouts, getContext()->getSettingsRef());
 
-        /// The remote server runs the job as an initial query and applies its binary type encoding settings to the wire,
-        /// so this connection reads what the remote writes and writes what the remote reads.
-        /// The remote checks the job's Avro schema registry URL against its own allowlist, not against this server's.
-        Settings wire_settings = job_context->getSettingsCopy();
-        wire_settings[Setting::format_avro_schema_registry_url] = "";
-        auto format_settings = getFormatSettings(job_context, wire_settings);
-        std::swap(format_settings.native.encode_types_in_binary_format, format_settings.native.decode_types_in_binary_format);
-        connection->setFormatSettings(format_settings);
-
         auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, *connection, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
             return;
@@ -665,7 +615,7 @@ private:
             element.is_internal = true;
 
             if (settings[Setting::log_query_settings])
-                element.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+                element.query_settings = settings.changedToMap(/* show_secrets */ false);
 
             if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
             {
@@ -837,9 +787,6 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
         origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
             .user_id = {},
             .roles = {},
-            .external_roles = {},
-            .authentication_grants = {},
-            .authentication_valid_until = 0,
             .current_user = {},
             .initial_user = {},
             .authenticated_user = inserter.authenticated_user,
@@ -853,9 +800,6 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = local_context->getUserID(),
                     .roles = local_context->getCurrentRoles(),
-                    .external_roles = local_context->getExternalRoles(),
-                    .authentication_grants = local_context->getAuthenticationGrants(),
-                    .authentication_valid_until = local_context->getAuthenticationValidUntil(),
                     .current_user = inserter.current_user,
                     .initial_user = inserter.initial_user,
                     .authenticated_user = inserter.authenticated_user,
@@ -865,9 +809,6 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = metadata_snapshot->getDefinerID(local_context),
                     .roles = {},
-                    .external_roles = {},
-                    .authentication_grants = {},
-                    .authentication_valid_until = 0,
                     .current_user = *metadata_snapshot->definer,
                     .initial_user = *metadata_snapshot->definer,
                     .authenticated_user = inserter.authenticated_user,
@@ -877,9 +818,6 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = {},
                     .roles = {},
-                    .external_roles = {},
-                    .authentication_grants = {},
-                    .authentication_valid_until = 0,
                     .current_user = {},
                     .initial_user = {},
                     .authenticated_user = inserter.authenticated_user,
@@ -997,7 +935,6 @@ void registerStorageQueryRunner(StorageFactory & factory)
             settings,
             args.getContext());
     },
-    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,

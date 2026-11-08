@@ -5,12 +5,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/SecretArguments.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/CurrentThread.h>
-#include <Common/HiddenSecret.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -25,8 +23,7 @@ namespace ErrorCodes
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(ObjectStorageQueueMode, mode, ObjectStorageQueueMode::ORDERED, \
       "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeepeer." \
-      "With ordered mode, only the max name of the successfully consumed file stored." \
-      "With exclusive mode, no tracking is done; assumes only one node will ever access this S3-compatible storage.", \
+      "With ordered mode, only the max name of the successfully consumed file stored.", \
       0) \
     DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete, keep, move or tag file after successful processing", 0) \
     DECLARE(String, keeper_path, "", "Zookeeper node path", 0) \
@@ -36,7 +33,7 @@ namespace ErrorCodes
     DECLARE(UInt32, enable_logging_to_queue_log, 1, "Enable logging to system table system.(s3/azure_)queue_log", 0) \
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
     DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
-    DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default). Not for exclusive mode", 0) \
+    DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
     DECLARE(UInt64, metadata_cache_size_bytes, 1_GiB, "Size in bytes for the in-memory cache for metadata received from ZooKeeper", 0) \
     DECLARE(UInt64, metadata_cache_size_elements, 10000, "Size in elements for the in-memory cache for metadata received from ZooKeeper", 0) \
     DECLARE(UInt64, polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
@@ -45,10 +42,9 @@ namespace ErrorCodes
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
     DECLARE(Bool, use_persistent_processing_nodes, true, "This setting is deprecated", 0) \
-    DECLARE(Bool, commit_on_select, false, "Whether SELECT query from queue table (not materialized view, but direct select from a queue table) needs to commit data and apply after_processing action. See also profile level setting stream_like_engine_allow_direct_select, which needs to be enabled if you want to use direct SELECT queries. Always enabled for exclusive mode", 0) \
+    DECLARE(Bool, commit_on_select, false, "Whether SELECT query from queue table (not materialized view, but direct select from a queue table) needs to commit data and apply after_processing action. See also profile level setting stream_like_engine_allow_direct_select, which needs to be enabled if you want to use direct SELECT queries", 0) \
     DECLARE(Bool, deduplication_v2, true, "Deduplicate blocks in dependent materialized views using user token set as object_etag:chunk_offset", 0) \
     DECLARE(UInt32, persistent_processing_node_ttl_seconds, 6 * 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
-    DECLARE(UInt32, processing_state_cache_ttl_seconds, 5 * 60, "How long a `Processing` file state which was read from keeper, i.e. the file is held by another processor, is trusted without rechecking keeper. Zero means to always recheck keeper. A `Processing` state set by a processor of this server is not affected: its owner updates it itself", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, "Override for profile setting min_insert_block_size_rows_for_materialized_views", 0) \
@@ -96,8 +92,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     MutableColumnsAndConstraints & params,
     const std::string & table_name,
     const std::string & database_name,
-    const StorageObjectStorageQueue & storage,
-    bool display_secrets) const
+    const StorageObjectStorageQueue & storage) const
 {
     MutableColumns & res_columns = params.res_columns;
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
@@ -118,16 +113,6 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     {
         return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
     };
-    /// Hides what `SHOW CREATE TABLE` hides. A secret is hidden whole, as its masker renders SQL.
-    auto render_value = [&](const std::string & setting_name, const Field & value) -> String
-    {
-        if (!display_secrets)
-        {
-            if (auto masked = getSecretArgumentsFinder().renderSecretSetting(setting_name, value); masked && masked->contains(HIDDEN_SECRET))
-                return String(HIDDEN_SECRET);
-        }
-        return convertFieldToString(value);
-    };
 
     for (const auto & change : impl->all())
     {
@@ -136,7 +121,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
         res_columns[i++]->insert(database_name);
         res_columns[i++]->insert(table_name);
         res_columns[i++]->insert(name);
-        res_columns[i++]->insert(render_value(name, change.getValue()));
+        res_columns[i++]->insert(convertFieldToString(change.getValue()));
         res_columns[i++]->insert(change.getTypeName());
         res_columns[i++]->insert(is_changed(name));
         res_columns[i++]->insert(change.getDescription());
@@ -210,11 +195,10 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
                     {
                         if (is_attach)
                         {
-                            /// `applyChanges` below applies the changes in order, so the last one wins.
                             LOG_WARNING(
                                 getLogger("StorageObjectStorageQueue"),
                                 "Storage {} has a duplicated setting {}. "
-                                "Will use the last declared setting's value",
+                                "Will use the first declared setting's value",
                                 storage_id.getNameForLogs(), change.name);
                         }
                         else
