@@ -1,3 +1,4 @@
+#include <Formats/FormatSettings.h>
 #include <sys/types.h>
 
 #include <optional>

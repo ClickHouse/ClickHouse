@@ -5,8 +5,8 @@
 namespace DB
 {
 
-/// The enums of `FormatSettings` that are also setting types (`Core/SettingsEnums.h`). `FormatSettings` inherits them,
-/// so they are still named `FormatSettings::X`; they live here so that `Core/SettingsEnums.h` does not need `Formats/FormatSettings.h`.
+/// The enums of `FormatSettings` that are also setting types. `FormatSettings` inherits them, so they are still named
+/// `FormatSettings::X`; they are here so that `Core/SettingsEnums.h` does not need `Formats/FormatSettings.h`.
 struct FormatSettingsEnums
 {
     enum class AggregateFunctionInputFormat : uint8_t
