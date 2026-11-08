@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/IColumn.h>
@@ -111,6 +112,10 @@ std::vector<ColumnSampling> columnsSampling(const Block & block)
         /// before writing it, so a `JSON` that uses its shared data - or holds a `Dynamic` that uses
         /// its shared variant, or such an object nested deeper - is not sampled either.
         ///
+        /// The plain serialization of `JSON` writes a `Map` in it (a typed path, or a value of a
+        /// dynamic path) through the JSON serialization of `Map`, which renders every key whole into
+        /// a temporary string before writing it, so a `JSON` that holds a `Map` is not sampled either.
+        ///
         /// The text of a `QBit` is the vector reconstructed whole from its bit planes into
         /// temporary vectors of the full dimension before the first element of it is written, so it
         /// is not sampled either, wherever it is nested.
@@ -133,6 +138,10 @@ std::vector<ColumnSampling> columnsSampling(const Block & block)
                 renders_whole_values = true;
             }
             else if (typeid_cast<const ColumnQBit *>(&column))
+            {
+                renders_whole_values = true;
+            }
+            else if (is_json && typeid_cast<const ColumnMap *>(&column))
             {
                 renders_whole_values = true;
             }

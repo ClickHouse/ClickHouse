@@ -411,6 +411,40 @@ TEST(QueryContextBuffer, JSONWithSharedDataIsNotSampled)
     EXPECT_EQ(text.find("xxx"), String::npos) << text;
 }
 
+TEST(QueryContextBuffer, JSONWithMapIsNotSampled)
+{
+    /// The plain serialization of `JSON` writes a `Map` through the JSON serialization of `Map`,
+    /// which renders every key whole into a temporary string, so a `JSON` column holding a `Map`,
+    /// also nested, is not serialized at all for the sample - the placeholder is written instead.
+    /// The columns after it are sampled.
+    const String huge_key(1'000'000, 'x');
+    const std::pair<const char *, String> cases[] = {
+        {"JSON(m Map(String, UInt8))", R"({"m":{")" + huge_key + R"(":1}})"},
+        {"JSON(m Array(Map(String, UInt8)))", R"({"m":[{")" + huge_key + R"(":1}]})"},
+    };
+    for (const auto & [type_name, object] : cases)
+    {
+        const auto type = DataTypeFactory::instance().get(type_name);
+        auto json = type->createColumn();
+        ReadBufferFromString in(object);
+        type->getDefaultSerialization()->deserializeWholeText(*json, in, FormatSettings{});
+
+        auto string = ColumnString::create();
+        string->insert(Field(String("after")));
+
+        QueryContextBuffer buffer;
+        buffer.startQuery("SELECT j, 'after'", false);
+        buffer.addBlock(Block{
+            ColumnWithTypeAndName{std::move(json), type, "j"},
+            ColumnWithTypeAndName{std::move(string), std::make_shared<DataTypeString>(), "s"}});
+        buffer.finishQuery(0.1, false);
+
+        const String text = buffer.format(0, false);
+        EXPECT_NE(text.find("[value not sampled]\tafter"), String::npos) << type_name << ": " << text;
+        EXPECT_EQ(text.find("xxx"), String::npos) << type_name << ": " << text;
+    }
+}
+
 TEST(QueryContextBuffer, QBitIsNotSampled)
 {
     /// The text of a `QBit` is reconstructed whole into temporary vectors of the full dimension
