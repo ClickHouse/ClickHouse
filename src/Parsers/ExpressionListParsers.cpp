@@ -3153,11 +3153,14 @@ public:
             ASTPtr query;
             auto select_pos = pos;
             auto select_expected = expected;
+            /// The speculation keeps its failed keyword readings to itself, as its variants may be discarded.
+            select_expected.failed_keyword_readings = nullptr;
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
             {
                 pos = select_pos;
+                select_expected.failed_keyword_readings = expected.failed_keyword_readings;
                 expected = select_expected;
                 elements = {make_intrusive<ASTSubquery>(std::move(query))};
                 finished = true;
