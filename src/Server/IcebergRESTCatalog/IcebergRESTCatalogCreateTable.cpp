@@ -45,7 +45,10 @@ void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<In
     if (type.isString())
     {
         /// Reuse type validation logic in IcebergSchemaProcessor.
-        IcebergSchemaProcessor::getSimpleType(type.extract<String>());
+        const auto & name = type.extract<String>();
+        if (IcebergSchemaProcessor::getSimpleType(name)->onlyNull())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Iceberg type '{}' requires format-version 3, but only format-version 2 tables can be created", name);
         return;
     }
 

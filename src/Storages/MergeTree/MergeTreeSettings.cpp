@@ -779,9 +779,26 @@ Default: 300 (force fetch after 5 minutes).
 )", 0, \
         {"26.4", 300, 300, "New setting"}) \
     DECLARE(Bool, fsync_after_insert, false, R"(
-Do fsync for every inserted part. Significantly decreases performance of
-inserts, not recommended to use with wide parts.
+Do fsync for every inserted part, so the data is durable when the `INSERT` query
+is acknowledged. Decreases performance of inserts, especially with wide parts.
+See also `group_fsync_before_insert_finish`.
 )", 0) \
+    DECLARE(BoolAuto, group_fsync_before_insert_finish, Field("auto"), R"(
+Takes effect with `fsync_after_insert`, if the table is stored on local disks.
+An `INSERT` writing many parts does not wait for the fsync after every part: the parts
+are committed right after they are written, and the files of all the parts are fsynced
+together before the `INSERT` finishes (the parts committed more than 30 seconds ago are
+fsynced earlier). In the meantime, the OS writes the data back in the background.
+The parts can become visible to queries before they are durable, but the `INSERT`
+is acknowledged only after that.
+
+If disabled, every part is fsynced right after it is written, before it is committed.
+
+The default value `auto` enables it only for non-replicated tables. For replicated tables,
+another replica can deduplicate an `INSERT` against a part that is committed but not yet
+fsynced on this replica, and acknowledge it before the data is durable.
+)", 0, \
+        {"26.11", false, "auto", "New setting"}) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \
@@ -2308,6 +2325,13 @@ Allow usage of '_part_offset' column in projections select query.
 Remove empty parts after they were pruned by TTL, mutation, or collapsing
 merge algorithm.
 )", 0) \
+    DECLARE(Seconds, empty_parts_lifetime, 0, R"(
+Minimal age in seconds of an empty part before `remove_empty_parts` removes it. The age is counted from the part's
+`modification_time`, so a merge or a mutation that produces a new empty part starts it again. It does not delay
+other ways to replace the part: a merge that includes it, or a `TRUNCATE` or `DROP` that covers it, makes it outdated
+as for any other part. 0 removes empty parts without waiting.
+)", 0, \
+        {"26.11", 0, 0, "New setting"}) \
     DECLARE(Bool, remove_unused_patch_parts, true, R"(
 Remove in background patch parts which are applied for all active parts.
 )", 0, \
@@ -2829,6 +2853,10 @@ Compression codec selecting order for a column:
     1. Compression codec defined for the column in the table declaration
     2. Compression codec defined in `default_compression_codec` (this setting)
     3. Default compression codec defined in `compression` settings
+
+The codec combinator `FirstApplicable` selects a codec for the data type of every column (and every stream of it),
+e.g. `FirstApplicable(PCO, ZSTD(3))` compresses numbers with `PCO` and other data with `ZSTD(3)`. At least one of its
+alternatives must be applicable to any data type, and lossy codecs are not allowed among them.
 Default value: an empty string (not defined).
 )", 0, \
         {"25.4", "", "", "New setting"}) \
