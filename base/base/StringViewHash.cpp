@@ -14,7 +14,10 @@ template <size_t Segment> inline UInt32 crc32HashFoldBlocks(UInt32 crc, const ch
     constexpr UInt64 k2 = Segment == 64 ? 1947135746 : 3702618788;
     while (size >= 4 * Segment + 8)
     {
-        UInt32 a = crc, b = 0, c = 0, d = 0;
+        UInt32 a = crc;
+        UInt32 b = 0;
+        UInt32 c = 0;
+        UInt32 d = 0;
         for (size_t offset = 0; offset < Segment; offset += 8)
         {
             a = __crc32cd(a, unalignedLoadLittleEndian<UInt64>(data + offset));

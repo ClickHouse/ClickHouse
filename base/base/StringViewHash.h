@@ -343,7 +343,7 @@ struct CRC32Hash
             return (res << 32) | res;
         }
         if (size >= 1024)
-            return crc32HashLong(x.data(), size, static_cast<UInt32>(res));
+            return crc32HashLong(x.data(), x.size(), static_cast<UInt32>(res));
 #endif
 
 
