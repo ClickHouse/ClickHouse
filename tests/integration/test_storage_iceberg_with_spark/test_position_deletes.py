@@ -771,3 +771,58 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
                 f"Data file {data_file_path} was processed but is NOT within bounds [{lower}, {upper}]"
 
     assert get_matching_info_from_profile_events(instance, query_id) == (3, 6)
+
+
+@pytest.mark.parametrize("file_format", ["orc", "avro"])
+def test_position_deletes_and_deletion_vectors_orc_avro_data_files(started_cluster_iceberg_with_spark, file_format):
+    storage_type = "local"
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = f"test_position_deletes_{file_format}_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg PARTITIONED BY (bucket(5, id))
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.format.default' = '{file_format}',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(0, 100)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 10")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    table_path = Path(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}")
+    assert any(table_path.rglob(f"*-deletes.{file_format}")), f"Spark did not write position delete files in {file_format}"
+
+    expression = get_creation_expression(storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True)
+    for use_roaring_bitmaps in [0, 1]:
+        settings = {"use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps}
+        assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 100))
+
+    spark.sql(f"ALTER TABLE {TABLE_NAME} SET TBLPROPERTIES ('format-version' = '3')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 90")
+    verify_puffin_deletion_vector_exists(
+        TABLE_NAME, "Spark Iceberg runtime did not produce Puffin deletion vector files after v3 upgrade")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, format_version=3, table_function=True)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(10, 90))
+    assert int(instance.query(f"SELECT count() FROM {expression}")) == 80

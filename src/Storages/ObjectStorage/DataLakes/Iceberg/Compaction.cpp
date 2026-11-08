@@ -374,11 +374,8 @@ static void writeDataFiles(
 
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
-        /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
-        /// to delete, and only the Parquet input formats attach it. Data files with attached
-        /// position deletes are guaranteed to be Parquet by `addPositionDeleteFile`, but a data
-        /// file without them (e.g. an ORC file newer than all position deletes) may be in any
-        /// format, so the transform must be skipped for it.
+        /// Only data files with position deletes need the transform; `addPositionDeleteFile` admits
+        /// only formats whose readers attach `ChunkInfoRowNumbers`.
         std::shared_ptr<IcebergBitmapPositionDeleteTransform> delete_file_transform;
         if (data_file->data_object_info->info.hasPositionDeletes())
             delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(

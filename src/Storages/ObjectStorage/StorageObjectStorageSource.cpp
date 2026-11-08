@@ -1046,9 +1046,13 @@ Chunk StorageObjectStorageSource::generate()
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
             {
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
-                first_row_id = iceberg_info->info.first_row_id;
-                if (first_row_id.has_value())
+                if (iceberg_info->info.first_row_id.has_value())
+                {
                     last_updated_sequence_number = iceberg_info->info.sequence_number;
+                    /// The stored row ids of ORC files are not read, so their `_row_id` is not derived from positions either.
+                    if (Poco::toUpper(iceberg_info->info.file_format) != "ORC")
+                        first_row_id = iceberg_info->info.first_row_id;
+                }
             }
 #endif
 
