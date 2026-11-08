@@ -17,6 +17,8 @@
 #include <cerrno>
 #include <cstdlib>
 #include <limits>
+#include <new>
+#include <optional>
 
 namespace DB::ErrorCodes
 {
@@ -167,6 +169,43 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
 
     EXPECT_GE(CurrentThread::get().memory_tracker.get() - before_thread, -64 * 1024);
     EXPECT_GE(total_memory_tracker.get() - before_global, -64 * 1024);
+}
+
+/// Sized `operator delete` credits the size class computed from the size it is given, not the one jemalloc
+/// reports for the pointer, so it must match what `operator new` charged, also for over-page alignments.
+TEST(AllocationInterceptors, SizedDeleteCreditsWhatNewCharged)
+{
+    MainThreadStatus::getInstance();
+    const size_t page_size = getPageSize();
+
+    auto check = [](size_t size, std::optional<size_t> alignment)
+    {
+        CurrentThread::flushUntrackedMemory();
+        const Int64 before = CurrentThread::get().memory_tracker.get();
+
+        if (alignment)
+        {
+            void * ptr = ::operator new(size, std::align_val_t{*alignment});
+            useMisterPointer(ptr);
+            ::operator delete(ptr, size, std::align_val_t{*alignment});
+        }
+        else
+        {
+            void * ptr = ::operator new(size);
+            useMisterPointer(ptr);
+            ::operator delete(ptr, size);
+        }
+
+        CurrentThread::flushUntrackedMemory();
+        EXPECT_EQ(CurrentThread::get().memory_tracker.get(), before) << "size " << size << ", alignment " << alignment.value_or(0);
+    };
+
+    check(100, {});
+    check(100000, {});
+    check(100, 64);
+    /// With `size` rounded up to `alignment` before allocating, these got a larger size class than charged.
+    check(1, 8 * page_size);
+    check(4 * page_size + 1, 2 * page_size);
 }
 
 namespace
