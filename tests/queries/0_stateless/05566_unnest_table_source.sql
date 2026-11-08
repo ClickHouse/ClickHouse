@@ -67,6 +67,8 @@ SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON length(tuple(*)) =
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON tuple(u.*) = tuple(20); -- { serverError NOT_IMPLEMENTED }
 SELECT id, x FROM t_unnest AS t LEFT JOIN unnest(t.arr) AS u(x) ON u.COLUMNS('x') > 15; -- { serverError NOT_IMPLEMENTED }
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(e -> e = COLUMNS('^x$'), [20]); -- { serverError NOT_IMPLEMENTED }
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON EXISTS (SELECT 1 WHERE u.x > 10); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON EXISTS (SELECT 1 WHERE x > 10); -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
 
 SELECT '-- lateral';
 SELECT id, x FROM t_unnest AS t, unnest(t.arr) AS x ORDER BY ALL;
