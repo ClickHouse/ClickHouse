@@ -12,9 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 TMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-rm -rf "$TMP_DIR"
+CLUSTER_DIR="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "$TMP_DIR" "$CLUSTER_DIR"
 mkdir -p "$TMP_DIR"
-trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'rm -rf "$TMP_DIR" "$CLUSTER_DIR"' EXIT
 
 T="$CUR_DIR/data_iceberg/impala/iceberg_partitioned"
 CORPUS="$CUR_DIR/data_lake_corpus/iceberg/py_v2_schema_evolution"
@@ -59,7 +60,8 @@ local_query "
 "
 
 # The legacy `schema` renamed `user`, or dropped it and added another `user`, while the manifest keeps the old schema without
-# `schema-id`, which the files are read with, and which `system.iceberg_files` shows as schema 0.
+# `schema-id`, which the files are read with, and which `system.iceberg_files` shows as schema 0. The cluster function workers
+# do not read the manifests, and lazy materialization, which reads them, is disabled.
 # `data_iceberg/legacy_v1_orc` is three data files of `iceberg_partitioned` rewritten as ORC, which is read by name.
 echo '--- legacy, evolved'
 for table in "$T" "$CUR_DIR/data_iceberg/legacy_v1_orc"; do
@@ -83,6 +85,11 @@ json.dump(metadata, open(path, 'w'))
             CREATE TABLE t_evolved ENGINE = IcebergLocal('$TMP_DIR/evolved');
             SELECT groupUniqArray(schema_id) FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_evolved';
         "
+        mkdir -p "$CLUSTER_DIR"
+        cp -r "$TMP_DIR/evolved" "$CLUSTER_DIR/$(basename "$table")_$mode"
+        $CLICKHOUSE_CLIENT --query "
+            SELECT * FROM icebergLocalCluster('test_cluster_two_shards_localhost', '$CLUSTER_DIR/$(basename "$table")_$mode') ORDER BY id LIMIT 3
+            SETTINGS query_plan_optimize_lazy_materialization = 0"
     done
 done
 

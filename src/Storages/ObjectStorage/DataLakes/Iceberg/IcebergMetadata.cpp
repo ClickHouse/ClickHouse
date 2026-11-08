@@ -737,11 +737,24 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     return {data_snapshot, table_state_snapshot};
 }
 
-std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const
+void IcebergMetadata::registerManifestSchemaIfUnknown(const ContextPtr & local_context, Int32 schema_id) const
+{
+    if (schema_id >= 0 || persistent_components.schema_processor->hasClickHouseTableSchemaById(schema_id))
+        return;
+    auto [data_snapshot, table_state_snapshot] = getRelevantState(local_context);
+    if (!data_snapshot)
+        return;
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+        getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, table_state_snapshot.schema_id);
+}
+
+std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
+    registerManifestSchemaIfUnknown(local_context, iceberg_object_info->info.underlying_format_read_schema_id);
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
             || (!iceberg_object_info->info.equality_deletes_objects.empty()))
@@ -749,11 +762,12 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
         : nullptr;
 }
 
-std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr, ObjectInfoPtr object_info) const
+std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
+    registerManifestSchemaIfUnknown(local_context, iceberg_object_info->info.underlying_format_read_schema_id);
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator)
         ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
               iceberg_object_info->info.underlying_format_read_schema_id, iceberg_object_info->info.schema_id_relevant_to_iterator)

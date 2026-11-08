@@ -19,6 +19,7 @@
 #include <Functions/IFunction.h>
 #include <base/types.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <base/scope_guard.h>
 
@@ -582,19 +583,23 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
 
 Int32 IcebergSchemaProcessor::addIcebergTableSchemaWithoutId(Poco::JSON::Object::Ptr schema_ptr)
 {
-    std::lock_guard schemas_without_id_lock(schemas_without_id_mutex);
     Int32 schema_id = 0;
     /// A schema without fields is a placeholder that addIcebergTableSchema does not register.
     if (schema_ptr->isArray(f_fields) && schema_ptr->getArray(f_fields)->size() != 0)
     {
-        SharedLockGuard lock(mutex);
-        auto it = iceberg_table_schemas_by_ids.find(0);
-        bool found = it != iceberg_table_schemas_by_ids.end() && !manifest_sourced_schema_ids.contains(0)
-            && schemasAreIdentical(*it->second, *schema_ptr, {});
-        while (!found)
+        bool is_schema_0 = false;
         {
-            it = iceberg_table_schemas_by_ids.find(--schema_id);
-            found = it == iceberg_table_schemas_by_ids.end() || schemasAreIdentical(*it->second, *schema_ptr, {});
+            SharedLockGuard lock(mutex);
+            auto it = iceberg_table_schemas_by_ids.find(0);
+            is_schema_0 = it != iceberg_table_schemas_by_ids.end() && !manifest_sourced_schema_ids.contains(0)
+                && schemasAreIdentical(*it->second, *schema_ptr, {});
+        }
+        if (!is_schema_0)
+        {
+            /// A function of the fields, so that every server that reads the manifest gives the schema the same id.
+            std::stringstream fields; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            schema_ptr->getArray(f_fields)->stringify(fields);
+            schema_id = -1 - static_cast<Int32>(sipHash64(fields.str()) % std::numeric_limits<Int32>::max());
         }
     }
     schema_ptr->set(f_schema_id, schema_id);
