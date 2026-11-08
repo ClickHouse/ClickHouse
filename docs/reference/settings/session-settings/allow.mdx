@@ -229,6 +229,18 @@ Disabling this refuses reads only: creating, attaching, dropping and describing 
 
 Allow execute multiIf function columnar
 
+## allow_expire_snapshots {#allow_expire_snapshots}
+
+<ExperimentalBadge/>
+
+**Aliases**: `allow_experimental_expire_snapshots`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_expire_snapshots`."}]}]}/>
+
+Allow to execute the Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
+
 ## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
 <ExperimentalBadge/>

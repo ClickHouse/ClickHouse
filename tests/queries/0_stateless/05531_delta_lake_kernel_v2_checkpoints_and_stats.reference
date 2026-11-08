@@ -1,0 +1,179 @@
+=== V2 checkpoints
+--- v2-checkpoints-json-with-sidecars
+1233	509835
+missing	0
+unexpected	0
+--- v2-checkpoints-parquet-with-sidecars
+1233	509835
+missing	0
+unexpected	0
+--- v2-checkpoints-json-without-sidecars
+11	2763
+missing	0
+unexpected	0
+--- v2-checkpoints-parquet-without-sidecars
+11	2763
+missing	0
+unexpected	0
+--- v2-classic-checkpoint-json
+20	190
+missing	0
+unexpected	0
+--- v2-classic-checkpoint-parquet
+20	190
+missing	0
+unexpected	0
+--- v2-checkpoints-json-with-last-checkpoint
+10	45
+missing	0
+unexpected	0
+--- v2-checkpoints-parquet-with-last-checkpoint
+10	45
+missing	0
+unexpected	0
+=== statistics only as structs in checkpoints
+--- v1-single-part-struct-stats-only WHERE id > 3
+4	value_4
+5	value_5
+scanned files: ok
+--- v1-multi-part-struct-stats-only WHERE id > 3
+4	value_4
+5	value_5
+scanned files: ok
+--- v2-parquet-sidecars-struct-stats-only WHERE id > 3
+4	value_4
+5	value_5
+scanned files: ok
+--- v2-json-sidecars-struct-stats-only WHERE id > 3
+4	value_4
+5	value_5
+scanned files: ok
+--- v2-classic-parquet-struct-stats-only WHERE id > 3
+4	value_4
+5	value_5
+scanned files: ok
+--- v1-multi-part-partitioned-struct-stats-only WHERE part = 0
+3	value_3	0
+scanned files: ok
+=== partition values and statistics
+--- app-txn-checkpoint WHERE modified = "2021-02-01"
+16
+scanned files: ok
+--- app-txn-checkpoint WHERE modified = "2099-01-01"
+0
+scanned files: ok
+--- app-txn-checkpoint WHERE modified != "2021-02-01"
+6
+scanned files: ok
+--- app-txn-checkpoint WHERE modified > "2021-02-01"
+6
+scanned files: ok
+--- app-txn-checkpoint WHERE modified < "2021-02-02"
+16
+scanned files: ok
+--- app-txn-checkpoint WHERE modified >= "2021-02-01"
+22
+scanned files: ok
+--- app-txn-checkpoint WHERE modified >= "2021-02-01" AND modified <= "2021-02-01"
+16
+scanned files: ok
+--- app-txn-checkpoint WHERE value > 9
+10
+10
+11
+11
+scanned files: ok
+--- app-txn-checkpoint WHERE value < 4
+1
+1
+2
+2
+3
+3
+scanned files: ok
+--- app-txn-checkpoint WHERE value > 11
+0
+scanned files: ok
+--- app-txn-checkpoint WHERE value <= 11
+22
+scanned files: ok
+--- app-txn-checkpoint WHERE value >= 1 AND value <= 3
+1
+1
+2
+2
+3
+3
+scanned files: ok
+--- app-txn-checkpoint WHERE modified = "2021-02-01" AND value > 9
+10
+10
+11
+11
+scanned files: ok
+--- app-txn-checkpoint WHERE modified = "2021-02-02" OR value > 9
+10
+scanned files: ok
+--- app-txn-checkpoint WHERE modified >= "2021-02-01" AND (value < 2 OR value > 11)
+1
+1
+scanned files: ok
+--- parsed-stats WHERE id > 400
+200	401	600
+scanned files: ok
+--- parsed-stats WHERE id BETWEEN 150 AND 250
+101	150	250
+scanned files: ok
+=== timestamp statistics truncated to milliseconds
+--- timestamp-truncation-stats WHERE ts_col > toDateTime64("1970-01-01 00:00:04.000400", 6, "UTC")
+4	1970-01-01 00:00:04.000500
+5	1970-01-01 00:00:07.000000
+6	1970-01-01 00:00:08.000000
+scanned files: ok
+--- timestamp-truncation-stats WHERE ts_col >= toDateTime64("1970-01-01 00:00:04.000400", 6, "UTC")
+4	1970-01-01 00:00:04.000500
+5	1970-01-01 00:00:07.000000
+6	1970-01-01 00:00:08.000000
+scanned files: ok
+--- timestamp-truncation-stats WHERE ts_col < toDateTime64("1970-01-01 00:00:04.000400", 6, "UTC")
+1	1970-01-01 00:00:01.000000
+2	1970-01-01 00:00:02.000000
+3	1970-01-01 00:00:03.000000
+scanned files: ok
+--- timestamp-truncation-stats WHERE ts_col <= toDateTime64("1970-01-01 00:00:04.000400", 6, "UTC")
+1	1970-01-01 00:00:01.000000
+2	1970-01-01 00:00:02.000000
+3	1970-01-01 00:00:03.000000
+scanned files: ok
+--- timestamp-truncation-stats WHERE ts_col = toDateTime64("1970-01-01 00:00:04.000400", 6, "UTC")
+scanned files: ok
+--- timestamp-truncation-stats WHERE ts_col = toDateTime64("1970-01-01 00:00:04.000500", 6, "UTC")
+4	1970-01-01 00:00:04.000500
+scanned files: ok
+=== null counts
+--- mixed-nulls WHERE n IS NULL
+0	\N
+0	\N
+0	\N
+0	\N
+0	\N
+2	\N
+2	\N
+2	\N
+scanned files: ok
+--- mixed-nulls WHERE n IS NOT NULL
+1	non-null
+1	non-null
+1	non-null
+1	non-null
+1	non-null
+2	non-null-mix
+2	non-null-mix
+scanned files: ok
+--- mixed-nulls WHERE n = "non-null"
+1	non-null
+1	non-null
+1	non-null
+1	non-null
+1	non-null
+scanned files: ok
