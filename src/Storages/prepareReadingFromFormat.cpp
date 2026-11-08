@@ -389,18 +389,7 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
-namespace
-{
-
-bool isRowLineageColumn(const String & name)
-{
-    return name == "_row_id" || name == "_last_updated_sequence_number";
-}
-
-}
-
-std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(
-    const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns) const
+std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(const std::shared_ptr<const ActionsDAG> & filter_actions_dag) const
 {
     if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))
         return filter_actions_dag;
@@ -409,8 +398,7 @@ std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(
 
     auto is_added_after_format = [&](const String & name)
     {
-        return hive_partition_columns_to_read_from_file_path.contains(name)
-            || (requested_virtual_columns.contains(name) && !(keep_row_lineage_columns && isRowLineageColumn(name)));
+        return hive_partition_columns_to_read_from_file_path.contains(name) || requested_virtual_columns.contains(name);
     };
 
     auto reads_added_column = [&](const ActionsDAG::Node * atom)
