@@ -258,6 +258,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
+        IAggregateFunction::NestedStatesScope scope;
 
         if constexpr (Plain)
         {

@@ -180,10 +180,25 @@ public:
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
     /** Create `count` states at `place + i * stride` for a combinator holding an array of states of this function;
-      * on exception destroys the ones already created. Throws if one outermost call would create too many states
-      * that occupy no memory (`stride == 0`): the memory limit does not bound those.
+      * on exception destroys the ones already created. Throws if the states that occupy no memory
+      * (`stride == 0`) created within one `NestedStatesScope` (this call opens one if none is open) would be too
+      * many: the memory limit does not bound those.
       */
     void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
+
+    /// While alive, the zero-sized states created by `createNestedStates` on this thread count against one limit.
+    /// A combinator opens one for a call that reaches several nested states (one created state, one added row).
+    class NestedStatesScope
+    {
+    public:
+        NestedStatesScope();
+        ~NestedStatesScope();
+        NestedStatesScope(const NestedStatesScope &) = delete;
+        NestedStatesScope & operator=(const NestedStatesScope &) = delete;
+
+    private:
+        const bool outermost;
+    };
 
     /// Delete all combinator states that were used after combinator -State.
     /// For example for uniqArrayStateForEachMap(...) it will destroy

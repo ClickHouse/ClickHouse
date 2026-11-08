@@ -118,6 +118,7 @@ DataTypePtr AggregateFunctionTuple::getStateType() const
 
 void AggregateFunctionTuple::create(AggregateDataPtr __restrict place) const
 {
+    IAggregateFunction::NestedStatesScope scope;
     size_t i = 0;
     try
     {

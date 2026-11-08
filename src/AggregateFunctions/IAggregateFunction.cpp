@@ -104,18 +104,25 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
         [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
 }
 
-void IAggregateFunction::createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const
+IAggregateFunction::NestedStatesScope::NestedStatesScope()
+    : outermost(!creating_nested_states)
 {
-    const bool outermost = !creating_nested_states;
     if (outermost)
     {
         creating_nested_states = true;
         zero_sized_nested_states = 0;
     }
-    SCOPE_EXIT({
-        if (outermost)
-            creating_nested_states = false;
-    });
+}
+
+IAggregateFunction::NestedStatesScope::~NestedStatesScope()
+{
+    if (outermost)
+        creating_nested_states = false;
+}
+
+void IAggregateFunction::createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const
+{
+    NestedStatesScope scope;
 
     if (stride == 0
         && (common::addOverflow(zero_sized_nested_states, count, zero_sized_nested_states)
