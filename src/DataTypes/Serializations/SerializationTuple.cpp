@@ -474,9 +474,12 @@ ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBu
                 {
                     if (settings.json.ignore_unknown_keys_in_named_tuple)
                     {
+                        /// An ignored key is skipped like an unknown top-level field, so it may hold
+                        /// the MongoDB shell `ISODate("...")` wrapper, as an undeclared `DateTime64` would.
+                        const auto skip_json_settings = JSONUtils::getJSONSettingsForSkippingField(settings.json);
                         if constexpr (throw_exception)
-                            skipJSONField(istr, name, settings.json);
-                        else if (!trySkipJSONField(istr, name, settings.json))
+                            skipJSONField(istr, name, skip_json_settings);
+                        else if (!trySkipJSONField(istr, name, skip_json_settings))
                             return false;
 
                         skipWhitespaceIfAny(istr);

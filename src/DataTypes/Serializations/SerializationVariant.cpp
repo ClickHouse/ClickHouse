@@ -115,11 +115,20 @@ SerializationVariant::SerializationVariant(
     for (const auto & variant_type : variant_types)
     {
         if (anyInTypeTree(*variant_type, [](const IDataType & type) { return isDateTime64(type); }))
-        {
             has_datetime64_in_variants = true;
-            break;
-        }
+
+        if (anyInTypeTree(*variant_type, [](const IDataType & type)
+            {
+                const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type);
+                return tuple_type && tuple_type->hasExplicitNames();
+            }))
+            has_named_tuple_in_variants = true;
     }
+}
+
+bool SerializationVariant::allowsISODateWrapperInJSON(const FormatSettings & settings) const
+{
+    return has_datetime64_in_variants || (has_named_tuple_in_variants && settings.json.ignore_unknown_keys_in_named_tuple);
 }
 
 
@@ -1440,12 +1449,12 @@ void SerializationVariant::serializeTextJSONPretty(const IColumn & column, size_
         variant_serializations[global_discr]->serializeTextJSONPretty(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings, indent);
 }
 
-/// The MongoDB shell `ISODate("...")` wrapper is not valid JSON, only `DateTime64` understands it.
-/// So it is tokenized only when some variant contains `DateTime64`.
-static FormatSettings::JSON getJSONSettingsForReadingField(const FormatSettings::JSON & settings, bool has_datetime64_in_variants)
+/// The MongoDB shell `ISODate("...")` wrapper is not valid JSON, only `DateTime64` understands it,
+/// and a named `Tuple` skips it in ignored keys. So it is tokenized only when some variant may accept it.
+static FormatSettings::JSON getJSONSettingsForReadingField(const FormatSettings::JSON & settings, bool allow_isodate_wrapper)
 {
     FormatSettings::JSON result = settings;
-    result.allow_mongodb_isodate_wrapper = has_datetime64_in_variants;
+    result.allow_mongodb_isodate_wrapper = allow_isodate_wrapper;
     return result;
 }
 
@@ -1453,7 +1462,7 @@ static FormatSettings::JSON getJSONSettingsForReadingField(const FormatSettings:
 /// a `String` variant must not take an object or an array containing the wrapper as a raw string.
 bool SerializationVariant::tryDeserializeTextJSONField(IColumn & column, const String & field, const FormatSettings & settings) const
 {
-    if (!has_datetime64_in_variants || !field.contains("ISODate("))
+    if (!allowsISODateWrapperInJSON(settings) || !field.contains("ISODate("))
         return tryDeserializeTextJSONImpl(column, field, settings);
 
     /// The wrapper text may also be inside a JSON string, check whether the value is valid JSON without it.
@@ -1471,7 +1480,7 @@ bool SerializationVariant::tryDeserializeTextJSONField(IColumn & column, const S
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    if (!tryReadJSONField(field, istr, getJSONSettingsForReadingField(settings.json, has_datetime64_in_variants)))
+    if (!tryReadJSONField(field, istr, getJSONSettingsForReadingField(settings.json, allowsISODateWrapperInJSON(settings))))
         return false;
     return tryDeserializeTextJSONField(column, field, settings);
 }
@@ -1479,7 +1488,7 @@ bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer &
 void SerializationVariant::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readJSONField(field, istr, getJSONSettingsForReadingField(settings.json, has_datetime64_in_variants));
+    readJSONField(field, istr, getJSONSettingsForReadingField(settings.json, allowsISODateWrapperInJSON(settings)));
     if (!tryDeserializeTextJSONField(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON value of type {} here: {}", variant_name, field);
 }
