@@ -896,8 +896,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         new_id);
                 }
                 auto old_type = getFieldType(old_json, "type", required);
-                /// The evolution function only changes the structure, so promoted nested primitives keep the old
-                /// type in its result and are cast to the new type afterwards, like top-level columns.
+                /// EvolutionFunctionStruct does not convert primitives, so promoted nested ones are cast afterwards.
                 Poco::JSON::Object::Ptr evolved_field = new Poco::JSON::Object(*field);
                 evolved_field->set(f_type, getTypeWithOldPrimitives(old_json, field, f_type));
                 auto evolved_type = getFieldType(evolved_field, f_type, required);
