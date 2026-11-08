@@ -22,9 +22,6 @@ namespace
 /// The choice of this number is arbitrary; it is the per-level limit of -Resample.
 constexpr size_t max_zero_sized_nested_states = 1048576;
 
-thread_local bool creating_nested_states = false;
-thread_local size_t zero_sized_nested_states = 0;
-
 }
 
 DataTypePtr IAggregateFunction::getStateType() const
@@ -104,29 +101,13 @@ bool IAggregateFunction::haveEqualArgumentTypes(const IAggregateFunction & rhs) 
         [](const auto & t1, const auto & t2) { return t1->equals(*t2); });
 }
 
-IAggregateFunction::NestedStatesScope::NestedStatesScope()
-    : outermost(!creating_nested_states)
-{
-    if (outermost)
-    {
-        creating_nested_states = true;
-        zero_sized_nested_states = 0;
-    }
-}
-
-IAggregateFunction::NestedStatesScope::~NestedStatesScope()
-{
-    if (outermost)
-        creating_nested_states = false;
-}
-
 void IAggregateFunction::createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const
 {
     NestedStatesScope scope;
 
     if (stride == 0
-        && (common::addOverflow(zero_sized_nested_states, count, zero_sized_nested_states)
-            || zero_sized_nested_states > max_zero_sized_nested_states))
+        && (common::addOverflow(NestedStatesScope::zero_sized_states, count, NestedStatesScope::zero_sized_states)
+            || NestedStatesScope::zero_sized_states > max_zero_sized_nested_states))
         throw Exception(
             ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Too many states of aggregate function {} that occupy no memory would be created at once, the maximum is {}",

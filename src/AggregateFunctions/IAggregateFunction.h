@@ -191,12 +191,30 @@ public:
     class NestedStatesScope
     {
     public:
-        NestedStatesScope();
-        ~NestedStatesScope();
+        NestedStatesScope() : outermost(!active)
+        {
+            if (outermost)
+            {
+                active = true;
+                zero_sized_states = 0;
+            }
+        }
+
+        ~NestedStatesScope()
+        {
+            if (outermost)
+                active = false;
+        }
+
         NestedStatesScope(const NestedStatesScope &) = delete;
         NestedStatesScope & operator=(const NestedStatesScope &) = delete;
 
     private:
+        friend class IAggregateFunction;
+
+        static inline thread_local bool active = false;
+        static inline thread_local size_t zero_sized_states = 0;
+
         const bool outermost;
     };
 
