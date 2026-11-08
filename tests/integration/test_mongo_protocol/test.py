@@ -1421,6 +1421,8 @@ def test_insert_arrays_of_bson_scalars(started_cluster):
     found = list(events.find({}, {"_id": 0}))
     assert found[0]["id"] == 1
     assert found[0]["events"][0]["name"] == "start"
+    # The date inside the subdocument of the array reads back as the BSON date it was written as.
+    assert found[0]["events"][0]["at"] == datetime.datetime(2020, 1, 1, 0, 0, 0)
 
 
 def test_find_projection_excludes_id(started_cluster):
@@ -3636,6 +3638,100 @@ def test_a_union_of_fields_in_another_order_is_refused(started_cluster):
 
     node.query("DROP TABLE db.union_xy", password="123")
     node.query("DROP TABLE db.union_yx", password="123")
+
+
+def test_a_union_of_fields_of_other_kinds_is_refused(started_cluster):
+    """The common type of a `UNION ALL` would return the `true` of a boolean field united with an
+    integer one as `1`; numbers of different types are one kind and are united."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    for table, column_type, value in [("union_bool", "Bool", "true"), ("union_int", "Int32", "2"), ("union_long", "Int64", "3")]:
+        node.query(f"DROP TABLE IF EXISTS db.{table}", password="123")
+        node.query(f"CREATE TABLE db.{table} (v {column_type}) ENGINE = MergeTree ORDER BY tuple()", password="123")
+        node.query(f"INSERT INTO db.{table} VALUES ({value})", password="123")
+
+    database = make_client()["db"]
+    with pytest.raises(pymongo.errors.OperationFailure, match="value of another kind"):
+        list(database["union_bool"].aggregate([{"$project": {"_id": 0, "v": 1}}, {"$unionWith": "union_int"}]))
+
+    documents = database["union_int"].aggregate(
+        [{"$project": {"_id": 0, "v": 1}}, {"$unionWith": {"coll": "union_long", "pipeline": [{"$project": {"_id": 0, "v": 1}}]}}]
+    )
+    assert sorted(document["v"] for document in documents) == [2, 3]
+
+    for table in ["union_bool", "union_int", "union_long"]:
+        node.query(f"DROP TABLE db.{table}", password="123")
+
+
+def test_the_filter_of_a_find_reads_the_input(started_cluster):
+    """A projection that computes a field under the name of a column does not change what the
+    filter of the same `find` compares."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.find_scope", password="123")
+    node.query("CREATE TABLE db.find_scope (a Int64) ENGINE = MergeTree ORDER BY a", password="123")
+    node.query("INSERT INTO db.find_scope VALUES (1)", password="123")
+    collection = make_client()["db"]["find_scope"]
+    assert list(collection.find({"a": 99}, {"_id": 0, "a": {"$literal": 99}})) == []
+    assert list(collection.find({"a": 1}, {"_id": 0, "a": {"$literal": 99}})) == [{"a": 99}]
+    node.query("DROP TABLE db.find_scope", password="123")
+
+
+def encode_op_query(full_collection_name, query, request_id=1):
+    """Encodes a legacy OP_QUERY frame."""
+    payload = (
+        struct.pack("<i", 0)
+        + full_collection_name.encode()
+        + b"\x00"
+        + struct.pack("<ii", 0, -1)
+        + bson.encode(query)
+    )
+    return struct.pack("<iiii", 16 + len(payload), request_id, 0, 2004) + payload
+
+
+def read_op_reply(sock):
+    """Reads one OP_REPLY frame and returns its first document."""
+    header = b""
+    while len(header) < 16:
+        chunk = sock.recv(16 - len(header))
+        assert chunk, "connection closed while reading a reply header"
+        header += chunk
+    length = struct.unpack("<i", header[:4])[0]
+    payload = b""
+    while len(payload) < length - 16:
+        chunk = sock.recv(length - 16 - len(payload))
+        assert chunk, "connection closed while reading a reply body"
+        payload += chunk
+    # The response flags, the cursor id, the starting position and the number of documents.
+    return bson.decode(payload[20:])
+
+
+def test_raw_commands_cannot_address_another_namespace(started_cluster):
+    """A zero byte in a name is refused rather than cutting the name there, and a command sent over
+    `OP_QUERY` is answered only when it is a handshake."""
+    client = make_client()
+    client["raw_namespace"]["important"].drop()
+    client["raw_namespace"]["important"].insert_one({"x": 1})
+
+    with connect_raw() as sock:
+        sock.sendall(encode_op_msg({"drop": "important\x00junk", "$db": "raw_namespace"}, request_id=1))
+        assert read_op_msg(sock)["ok"] == 0.0
+        sock.sendall(encode_op_msg({"dropDatabase": 1, "$db": "raw_namespace\x00junk"}, request_id=2))
+        assert read_op_msg(sock)["ok"] == 0.0
+    assert "important" in client["raw_namespace"].list_collection_names()
+
+    with connect_raw() as sock:
+        sock.sendall(encode_op_query("admin.$cmd", {"isMaster": 1}, request_id=1))
+        assert read_op_reply(sock)["ok"] == 1.0
+        sock.sendall(encode_op_query("admin.$cmd", {"$query": {"hello": 1}, "$readPreference": {"mode": "primary"}}, request_id=2))
+        assert read_op_reply(sock)["ok"] == 1.0
+        sock.sendall(encode_op_query("raw_namespace.$cmd", {"dropDatabase": 1}, request_id=3))
+        assert read_op_reply(sock)["ok"] == 0.0
+        sock.sendall(encode_op_query("raw_namespace.important", {"isMaster": 1}, request_id=4))
+        assert read_op_reply(sock)["ok"] == 0.0
+    assert "important" in client["raw_namespace"].list_collection_names()
+
+    client.drop_database("raw_namespace")
 
 
 def test_the_write_errors_of_a_reply_are_bounded(started_cluster):

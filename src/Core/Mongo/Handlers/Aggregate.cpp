@@ -107,10 +107,74 @@ void writeNestedFieldNames(const DataTypePtr & type, WriteBuffer & out)
     }
 }
 
-/** The fields of the documents a select produces, in their order: the name of each column, with
-  * the names of the fields of the subdocuments its type holds.
+/** The kind of BSON value a value of the type is returned as: the numbers are one kind, because
+  * Mongo compares them as equals whatever their type, and a type that holds values of any type -
+  * `Dynamic`, `Variant`, `JSON`, or `Nothing` of a `null` - has none.
   */
-std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<QueryExecutor> executor)
+std::optional<std::string_view> bsonKind(const DataTypePtr & type)
+{
+    if (isBool(type))
+        return "bool";
+    WhichDataType which(type);
+    if (which.isDynamic() || which.isVariant() || which.isObject() || which.isNothing())
+        return std::nullopt;
+    if (which.isNativeInteger() || which.isFloat() || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
+        return "number";
+    if (which.isDecimal())
+        return "decimal";
+    if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64())
+        return "date";
+    if (which.isStringOrFixedString() || which.isEnum() || which.isUUID() || which.isIPv4() || which.isIPv6())
+        return "string";
+    return type->getFamilyName();
+}
+
+/** Whether a value of each type is returned as the same kind of BSON value, down to the elements of
+  * arrays and the fields of subdocuments: the common type a `UNION ALL` casts both of them to would
+  * otherwise change it, and return the `true` of a boolean field united with an integer one as `1`.
+  */
+bool haveSameBSONKinds(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    const auto left = removeLowCardinalityAndNullable(left_type);
+    const auto right = removeLowCardinalityAndNullable(right_type);
+
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+    if (left_array && right_array)
+        return haveSameBSONKinds(left_array->getNestedType(), right_array->getNestedType());
+
+    const auto * left_map = typeid_cast<const DataTypeMap *>(left.get());
+    const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+    if (left_map && right_map)
+        return haveSameBSONKinds(left_map->getValueType(), right_map->getValueType());
+
+    const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get());
+    const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+    if (left_tuple && right_tuple)
+    {
+        if (left_tuple->getElements().size() != right_tuple->getElements().size())
+            return false;
+        for (size_t i = 0; i < left_tuple->getElements().size(); ++i)
+            if (!haveSameBSONKinds(left_tuple->getElement(i), right_tuple->getElement(i)))
+                return false;
+        return true;
+    }
+
+    const auto left_kind = bsonKind(left);
+    const auto right_kind = bsonKind(right);
+    return !left_kind || !right_kind || *left_kind == *right_kind;
+}
+
+/** The fields of the documents a select produces, in their order: the name of each column, with
+  * the names of the fields of the subdocuments its type holds, and the type of each column.
+  */
+struct ResultColumns
+{
+    std::vector<String> names;
+    DataTypes types;
+};
+
+ResultColumns resultColumns(const ASTPtr & select, std::shared_ptr<QueryExecutor> executor)
 {
     String select_text;
     {
@@ -118,7 +182,7 @@ std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<Que
         select->format(buffer, IAST::FormatSettings(true));
     }
 
-    std::vector<String> names;
+    ResultColumns result;
     for (const auto & line : splitByNewline(executor->execute(fmt::format("DESCRIBE TABLE ({}) FORMAT TabSeparated", select_text))))
     {
         if (line.empty())
@@ -130,12 +194,14 @@ std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<Que
         assertChar('\t', in);
         readEscapedString(type_name, in);
 
+        auto type = DataTypeFactory::instance().get(type_name);
         WriteBufferFromOwnString fields;
         writeEscapedString(name, fields);
-        writeNestedFieldNames(DataTypeFactory::instance().get(type_name), fields);
-        names.push_back(fields.str());
+        writeNestedFieldNames(type, fields);
+        result.names.push_back(fields.str());
+        result.types.push_back(std::move(type));
     }
-    return names;
+    return result;
 }
 
 /** A `$unionWith` is lowered into a `UNION ALL`, which matches the columns of its selects by their
@@ -144,7 +210,8 @@ std::vector<String> resultColumnNames(const ASTPtr & select, std::shared_ptr<Que
   * analyzed, so the union is refused when its selects do not produce the same names in the same
   * order, rather than answered with values under the wrong fields. The same holds for the fields
   * of a subdocument, a named tuple: the common type of two tuples with different names has no
-  * names at all, and would be returned as an array.
+  * names at all, and would be returned as an array. And the values of each field must be of the
+  * same kind of BSON value on both sides (see `haveSameBSONKinds`).
   */
 void checkUnionColumnNames(const ASTPtr & node, std::shared_ptr<QueryExecutor> executor)
 {
@@ -155,14 +222,24 @@ void checkUnionColumnNames(const ASTPtr & node, std::shared_ptr<QueryExecutor> e
         union_query && union_query->list_of_selects && union_query->list_of_selects->children.size() > 1)
     {
         const auto & selects = union_query->list_of_selects->children;
-        const auto first_names = resultColumnNames(selects.front(), executor);
+        const auto first = resultColumns(selects.front(), executor);
         for (size_t i = 1; i < selects.size(); ++i)
         {
-            if (resultColumnNames(selects[i], executor) != first_names)
+            const auto other = resultColumns(selects[i], executor);
+            if (other.names != first.names)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "A '$unionWith' whose documents do not have the same fields in the same order as the documents of the pipeline it "
                     "is added to is not supported: project the same fields in the same order on both sides");
+            for (size_t column = 0; column < first.types.size(); ++column)
+                if (!haveSameBSONKinds(first.types[column], other.types[column]))
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "A '$unionWith' whose field '{}' has a value of another kind than the same field of the pipeline it is added to "
+                        "({} and {}) is not supported: the union would convert the values of one of them",
+                        first.names[column],
+                        first.types[column]->getName(),
+                        other.types[column]->getName());
         }
     }
 

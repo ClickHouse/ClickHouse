@@ -206,7 +206,7 @@ using HandlerPtr = std::shared_ptr<IHandler>;
 Header makeResponseHeader(Header request_header, Int32 message_size, Int32 response_id);
 
 std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor);
-std::vector<Document> runQueryRequst(const std::vector<Document> & documents, std::shared_ptr<QueryExecutor> executor);
+std::vector<Document> runQueryRequst(const String & full_collection_name, const Document & query, std::shared_ptr<QueryExecutor> executor);
 
 /** Handles a single message. `payload` must contain exactly the bytes of that message
   * following its header, so that message boundaries are respected.

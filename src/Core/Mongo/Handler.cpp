@@ -591,6 +591,96 @@ struct WideIntegerPreservingHandler
 
 }
 
+namespace
+{
+
+/** The milliseconds of a date or a time that a value of a `JSON` column holds, given the text it is
+  * written as: `YYYY-MM-DD` for a `Date`, and `YYYY-MM-DDThh:mm:ss[.fraction]Z` for a `DateTime` or
+  * a `DateTime64` (`date_time_output_format = 'iso'`, see `MongoProtocol.cpp`). The `JSON` type
+  * infers a date from a string of either shape when it stores it, so a string of that shape is
+  * never stored as a string, and the text says the type.
+  */
+std::optional<Int64> tryParseJSONDate(std::string_view text)
+{
+    auto digits = [&](size_t begin, size_t end)
+    {
+        for (size_t i = begin; i < end; ++i)
+            if (!isNumericASCII(text[i]))
+                return false;
+        return true;
+    };
+    if (text.size() < 10 || !digits(0, 4) || text[4] != '-' || !digits(5, 7) || text[7] != '-' || !digits(8, 10))
+        return std::nullopt;
+
+    if (text.size() == 10)
+    {
+        ExtendedDayNum day;
+        ReadBufferFromString in(text);
+        if (!tryReadDateText(day, in, DateLUT::instance("UTC")) || !in.eof())
+            return std::nullopt;
+        return static_cast<Int64>(day.toUnderType()) * 86400000;
+    }
+
+    if (text.size() < 20 || text[10] != 'T' || !digits(11, 13) || text[13] != ':' || !digits(14, 16) || text[16] != ':'
+        || !digits(17, 19) || text.back() != 'Z')
+        return std::nullopt;
+    UInt32 scale = 0;
+    if (text.size() > 20)
+    {
+        if (text[19] != '.' || text.size() == 21 || text.size() - 21 > 9 || !digits(20, text.size() - 1))
+            return std::nullopt;
+        scale = static_cast<UInt32>(text.size() - 21);
+    }
+    else if (text[19] != 'Z')
+        return std::nullopt;
+
+    DateTime64 datetime(0);
+    ReadBufferFromString in(text);
+    if (!tryParseDateTime64BestEffort(datetime, scale, in, DateLUT::instance("UTC"), DateLUT::instance("UTC")) || !in.eof())
+        return std::nullopt;
+    return dateTime64ToMilliseconds(datetime, scale);
+}
+
+/** A value of a `JSON` column that the type of its column says nothing more about: the document
+  * that is an element of an `Array(JSON)`, for which `JSONAllPathsWithTypes` reports the type of
+  * the array only. Its dates are told by their text (see `tryParseJSONDate`), and everything else
+  * is what the JSON says.
+  */
+void appendJSONValue(bson_t * document, const String & key, const rapidjson::Value & value)
+{
+    const int key_length = static_cast<int>(key.size());
+    if (value.IsString())
+    {
+        if (auto milliseconds = tryParseJSONDate(std::string_view(value.GetString(), value.GetStringLength())))
+        {
+            bson_append_date_time(document, key.data(), key_length, *milliseconds);
+            return;
+        }
+    }
+    else if (value.IsObject())
+    {
+        bson_t child;
+        bson_append_document_begin(document, key.data(), key_length, &child);
+        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+            appendJSONValue(&child, String(it->name.GetString(), it->name.GetStringLength()), it->value);
+        bson_append_document_end(document, &child);
+        return;
+    }
+    else if (value.IsArray())
+    {
+        bson_t child;
+        bson_append_array_begin(document, key.data(), key_length, &child);
+        size_t index = 0;
+        for (const auto & element : value.GetArray())
+            appendJSONValue(&child, std::to_string(index++), element);
+        bson_append_array_end(document, &child);
+        return;
+    }
+    appendUntypedValue(document, key, value);
+}
+
+}
+
 bool parseResultRow(rapidjson::Document & row, std::string_view line, const std::vector<DataTypePtr> & column_types)
 {
     if (std::none_of(column_types.begin(), column_types.end(), [](const auto & type) { return type && hasWideIntegers(type); }))
@@ -807,6 +897,11 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
             bson_append_array_end(document, &child);
             return;
         }
+    }
+    if (which.isObject() && value.IsObject())
+    {
+        appendJSONValue(document, key, value);
+        return;
     }
     if (which.isMap() && value.IsObject())
     {
@@ -1215,7 +1310,12 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
     if (database_it == json.MemberEnd() || !database_it->value.IsString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command '{}' does not contain the '$db' database name", command_name);
 
-    CollectionRef result{.database = database_it->value.GetString(), .collection = collection_it->value.GetString()};
+    /// The length is taken from the value, not from the terminating zero: a BSON string may contain a
+    /// zero byte, and cutting the name there would address another collection, which the check of
+    /// the characters below would not see.
+    CollectionRef result{
+        .database = String(database_it->value.GetString(), database_it->value.GetStringLength()),
+        .collection = String(collection_it->value.GetString(), collection_it->value.GetStringLength())};
 
     if (result.database.empty() || result.collection.empty())
         throw Exception(
@@ -1412,8 +1512,31 @@ std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & se
     return handler->handle(normalizeMessageSections(sections, command), executor);
 }
 
-std::vector<Document> runQueryRequst(const std::vector<Document> &, std::shared_ptr<QueryExecutor> executor)
+std::vector<Document> runQueryRequst(const String & full_collection_name, const Document & query, std::shared_ptr<QueryExecutor> executor)
 {
+    /// Drivers use the legacy `OP_QUERY` only for the first handshake of a connection. Anything
+    /// else sent over it would be ignored, so it is an error rather than a successful handshake.
+    if (!full_collection_name.ends_with(".$cmd"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only commands are supported over OP_QUERY, got the namespace '{}'", full_collection_name);
+
+    auto keys = query.getDocumentKeys();
+    if (keys.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command document is empty");
+
+    String command = keys[0];
+    /// A driver may wrap the command into `$query`, next to `$readPreference`.
+    if (command == "$query")
+    {
+        auto json = query.getRapidJSONRepresentation();
+        const auto & wrapped = json.FindMember("$query")->value;
+        if (!wrapped.IsObject() || wrapped.MemberBegin() == wrapped.MemberEnd())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '$query' of an OP_QUERY command must be a non-empty document");
+        command = String(wrapped.MemberBegin()->name.GetString(), wrapped.MemberBegin()->name.GetStringLength());
+    }
+
+    if (command != "isMaster" && command != "ismaster" && command != "hello")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only the handshake commands are supported over OP_QUERY, got '{}'", command);
+
     auto handler = IsMasterHandler();
     return handler.handle({}, executor);
 }
@@ -1515,7 +1638,7 @@ void handle(
             std::vector<Document> response_doc;
             try
             {
-                response_doc = runQueryRequst({request.query}, executor);
+                response_doc = runQueryRequst(request.full_collection_name, request.query, executor);
             }
             catch (...)
             {

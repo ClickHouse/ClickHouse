@@ -39,7 +39,8 @@ String databaseName(const Document & command, const String & command_name)
     if (database_it == json.MemberEnd() || !database_it->value.IsString())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command '{}' does not contain the '$db' database name", command_name);
 
-    String database = database_it->value.GetString();
+    /// Up to the length of the value: a zero byte in it must reach the check of the characters below.
+    String database(database_it->value.GetString(), database_it->value.GetStringLength());
     if (database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Mongo database name in the command '{}'", command_name);
     for (char symbol : database)
