@@ -94,6 +94,9 @@ private:
         /// If `parquet_name` is nullopt, the clickhouse and parquet names are equal.
         String name;
         std::optional<String> parquet_name;
+        /// The path of the node in the names of `ColumnMapper`, if it differs from `name`: a list element is `l.element`
+        /// there and `l` here. The mapped names of the children are relative to it.
+        std::optional<String> column_mapper_path;
         DataTypePtr type_hint;
         bool requested = false;
 
@@ -106,6 +109,11 @@ private:
             return parquet_name.has_value() ? *parquet_name : name;
         }
 
+        const String & getColumnMapperPath() const
+        {
+            return column_mapper_path.has_value() ? *column_mapper_path : name;
+        }
+
         String getNameForLogging() const
         {
             if (parquet_name.has_value() && *parquet_name != name)
@@ -115,6 +123,12 @@ private:
 
         void appendNameComponent(const String & parquet_field_name, std::string_view mapped_field_name)
         {
+            if (column_mapper_path.has_value())
+            {
+                if (!column_mapper_path->empty())
+                    *column_mapper_path += ".";
+                *column_mapper_path += mapped_field_name;
+            }
             if (!name.empty())
                 name += ".";
             name += mapped_field_name;
@@ -174,6 +188,8 @@ private:
     /// column names with dots (e.g. `integer.col` in Iceberg).
     std::string_view useColumnMapperIfNeeded(
         const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+    /// `subnode` is the element of a list, at `schema_idx`.
+    void setListElementColumnMapperPath(TraversalNode & subnode) const;
 };
 
 }

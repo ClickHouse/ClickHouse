@@ -77,6 +77,8 @@ LAZY="query_plan_optimize_lazy_materialization = 1, query_plan_optimize_lazy_mat
 $CLICKHOUSE_LOCAL -q "
 SELECT 'struct, list and map fields';
 SELECT id, b, s.x, l, m FROM $(T $V_BOTH) ORDER BY id;
+SELECT id, l.a, l.c FROM $(T $V_BOTH) ORDER BY id;
+SELECT count() FROM $(T $V_BOTH) WHERE has(l.a, 3);
 SELECT 'not in the mapping';
 SELECT id, b FROM $(T $V_UNMAPPED_B) ORDER BY id;
 SELECT 'empty mapping';
@@ -118,7 +120,7 @@ SELECT id, b_old FROM $(R $V_R_REWRITTEN) ORDER BY id;
 SELECT count() FROM $(R $V_R_REWRITTEN) WHERE b_old IS NULL SETTINGS use_query_condition_cache = 0;
 SELECT 'columns cache';
 SELECT id, s FROM $(S $V_S_MAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
-SELECT count() > 0 FROM system.columns_cache WHERE database = '';
+SELECT count() > 0 FROM system.columns_cache WHERE database = '' AND column = 's';
 SELECT id, s FROM $(S $V_S_SWAPPED) ORDER BY id SETTINGS use_columns_cache = 1;
 "
 
