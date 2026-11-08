@@ -287,6 +287,7 @@ void StorageMergeTree::startup()
     const bool readonly = isTableReadonly();
     if (!readonly)
     {
+        outdateEmptyPartsCoveringDetachedParts();
         clearEmptyParts();
 
         /// Temporary directories contain incomplete results of merges (after forced restart)
@@ -1085,6 +1086,8 @@ void StorageMergeTree::alter(
         {
             FailPointInjection::pauseFailPoint(FailPoints::mt_alter_readonly_pause_after_metadata_commit);
 
+            /// `startup` skips it for a read-only table, and it must run before merges are enabled.
+            outdateEmptyPartsCoveringDetachedParts();
             enableBackgroundWorkers();
             wakeupBackgroundWorkers();
 
@@ -3785,29 +3788,54 @@ void StorageMergeTree::dropEmptyPartsCoveringDetachedParts(const Strings & empty
     /// An empty part that stays active covers the block range of the part just copied to `detached/`.
     /// A later `DETACH` would copy that empty part, or a part merged from it, to `detached/` as well,
     /// and `ATTACH` would then treat the earlier detached part as covered and rename it to `inactive_`.
-    ///
-    /// Outdating it is not enough: while it is on disk, a restart loads it as active again, and
-    /// `remove_empty_parts = 0` or `empty_parts_lifetime` keep it. So it is removed without waiting for
-    /// `old_parts_lifetime`, and so are the outdated parts it covers, because `grabOldParts` removes it only
-    /// after them. Their rows are in `detached/` or were removed from the table before.
-    /// While outdated parts are still loading, some of the covered ones are not known yet, so the empty part is kept.
-    if (!outdated_data_parts_loading_finished.load(std::memory_order_relaxed))
-        return;
-
+    /// It stays on disk until the outdated parts it covers are removed, see `outdateEmptyPartsCoveringDetachedParts`.
     for (const auto & part_name : empty_part_names)
     {
+        if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}); part && isPinnedByDeleteBitmap(*part))
+            continue;
+
+        dropPartNoWaitNoThrow(part_name);
+    }
+}
+
+void StorageMergeTree::outdateEmptyPartsCoveringDetachedParts()
+{
+    /// `grabOldParts` removes an empty part only after the outdated parts it covers. If the table is loaded before
+    /// that, the empty part that `dropEmptyPartsCoveringDetachedParts` outdated is active again, and
+    /// `remove_empty_parts = 0` or `empty_parts_lifetime` keep it. So outdate an active empty part that covers
+    /// a part in `detached/` again, before it can be merged or detached. It stays on disk to cover the outdated parts.
+    try
+    {
+        DataPartsVector empty_parts;
+        for (const auto & part : getDataPartsVectorForInternalUsage())
+            if (part->rows_count == 0)
+                empty_parts.push_back(part);
+
+        if (empty_parts.empty())
+            return;
+
+        /// The parts that `tryLoadPartsToAttach` considers for `ATTACH PARTITION`.
+        auto detached_parts = getDetachedParts();
+        std::erase_if(detached_parts, [](const DetachedPartInfo & part_info)
         {
-            auto parts_lock = lockParts();
-            auto part = getPartIfExistsUnlocked(part_name, {MergeTreeDataPartState::Active}, parts_lock);
-            if (!part || isPinnedByDeleteBitmap(*part, parts_lock))
+            return !part_info.valid_name || !part_info.prefix.empty() || part_info.has_try_suffix;
+        });
+
+        for (const auto & part : empty_parts)
+        {
+            if (std::ranges::none_of(detached_parts, [&](const DetachedPartInfo & part_info) { return part->info.contains(part_info); }))
                 continue;
 
-            for (const auto & covered_part : getCoveredOutdatedParts(part, parts_lock))
-                covered_part->remove_time.store(0, std::memory_order_relaxed);
-        }
+            if (!part->version->isVisibleByLatestSnapshot() || isPinnedByDeleteBitmap(*part))
+                continue;
 
-        if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ true); part && deduplication_log)
-            deduplication_log->dropPart(part->info);
+            LOG_INFO(log, "Outdating empty part {}, because it covers a detached part", part->name);
+            outdatePart(NO_TRANSACTION_RAW, part->name, /*force=*/ false, /*clear_without_timeout=*/ false);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "while outdating the empty parts that cover detached parts");
     }
 }
 
@@ -3872,10 +3900,6 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
-    /// `dropEmptyPartsCoveringDetachedParts` needs all outdated parts.
-    if (detach)
-        waitForOutdatedPartsToBeLoaded();
-
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
@@ -3951,18 +3975,11 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
     }
 
     clearOldPartsFromFilesystem();
-    /// `grabOldParts` skips an empty part while the outdated parts it covers are not removed yet.
-    if (detach)
-        clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
 {
-    /// `dropEmptyPartsCoveringDetachedParts` needs all outdated parts.
-    if (detach)
-        waitForOutdatedPartsToBeLoaded();
-
     {
         const auto * partition_ast = partition->as<ASTPartition>();
 
@@ -4080,9 +4097,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     }
 
     clearOldPartsFromFilesystem();
-    /// `grabOldParts` skips an empty part while the outdated parts it covers are not removed yet.
-    if (detach)
-        clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
 

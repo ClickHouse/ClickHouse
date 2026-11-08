@@ -10,5 +10,9 @@ DETACH PART
 2	3
 0
 DETACH TABLE
+0
 4	10
 0
+ATTACH TABLE before the outdated parts are loaded
+0
+3	6
