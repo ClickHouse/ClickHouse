@@ -9,6 +9,7 @@
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
 #include <Processors/ISource.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -17,6 +18,7 @@ namespace DB
 class BlockMissingValues;
 struct SelectQueryInfo;
 class ColumnMapper;
+struct RelativePathWithMetadata;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
@@ -55,8 +57,12 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
-    virtual void serialize(WriteBuffer & buffer) = 0;
-    virtual void deserialize(ReadBuffer & buffer) = 0;
+    FileBucketInfo() = default;
+    FileBucketInfo(const FileBucketInfo &) = default;
+    FileBucketInfo & operator=(const FileBucketInfo &) = default;
+
+    virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
+    virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
     virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
@@ -70,7 +76,17 @@ struct IBucketSplitter
 {
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual std::vector<FileBucketInfoPtr> splitToBuckets(
+        size_t bucket_size,
+        ReadBuffer & buf,
+        const RelativePathWithMetadata & object,
+        const FormatSettings & format_settings_,
+        const ContextPtr & context) = 0;
+
+    virtual std::vector<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const std::vector<UInt64> & /*split_offsets*/)
+    {
+        return {};
+    }
 
     virtual ~IBucketSplitter() = default;
 };
@@ -141,6 +157,8 @@ public:
     virtual void setQueryParameters(const NameToNameMap & /*parameters*/) {}
 
     virtual void needOnlyCount() { need_only_count = true; }
+
+    virtual void prefetch() {}
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
