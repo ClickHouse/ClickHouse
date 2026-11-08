@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/sortBlock.h>
 #include <Parsers/ASTExpressionList.h>
@@ -75,6 +76,12 @@ void ProjectionIndexText::fillProjectionDescription(
         index_ast, columns, /* is_implicitly_created */ true, /* escape_filenames */ true, query_context);
     /// TODO(amos): this also should be moved out to check whether `attach` or not
     textIndexValidator(index_description, true /* attach */, projection_settings);
+
+    /// `calculate` assigns document ids to the rows of the parent part, so the indexed expression must produce
+    /// exactly one value per row. The projection-level `arrayJoin` check does not apply: the `INDEX` syntax has
+    /// no projection query. The analyzed expression also covers `arrayJoin` reached through aliases and SQL UDFs.
+    if (index_description.expression && index_description.expression->hasArrayJoin())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection text index expression cannot contain `arrayJoin`");
 
     /// Projection-specific shape validation: reject `Nullable(LowCardinality(...))` because the
     /// projection's tokenize fast path (see calculate()) requires either a per-row null map OR a
