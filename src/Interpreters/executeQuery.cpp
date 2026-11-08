@@ -1532,6 +1532,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     if (!context->getExternalTables().empty())
         return nullptr;
 
+    /// Scalars that exist before the analysis are supplied by the client (the `Scalar` packet, i.e.
+    /// `clickhouse-client --external --scalar`; secondary queries never reach the plan cache). The
+    /// analyzer folds `__getScalar` of such a scalar into the plan as a constant, while neither the
+    /// cache key nor the dependency set include the scalar contents. A hit would return the scalar
+    /// of the execution that warmed the entry, possibly from another session of the same user.
+    /// Keep such queries off the plan cache.
+    if (!context->getScalars().empty())
+        return nullptr;
+
     /// The planner checks that every storage read by the query supports transactions
     /// (`checkStoragesSupportTransactions`), and a hit skips the planner, while the cache key does not
     /// include the transaction state. Keep queries inside a transaction off the plan cache, so that a
