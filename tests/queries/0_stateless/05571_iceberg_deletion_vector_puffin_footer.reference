@@ -23,3 +23,8 @@ cherry	3
 elderberry	5
 duplicate_range
 describes two blobs at offset 4 and size 44
+large_footer
+apple	1
+cherry	3
+elderberry	5
+3

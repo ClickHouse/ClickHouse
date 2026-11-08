@@ -57,3 +57,23 @@ $CLICKHOUSE_LOCAL -q "SELECT fruit, count FROM icebergLocal('mixed_blobs') ORDER
 
 echo 'duplicate_range'
 $CLICKHOUSE_LOCAL -q "SELECT fruit, count FROM icebergLocal('duplicate_range') ORDER BY ALL" 2>&1 | grep -o -m1 'describes two blobs at offset 4 and size 44'
+
+# Iceberg writers put all vectors of one write into one Puffin file, so its footer can exceed the 16 MiB limit of the
+# `Puffin` format. The table is `iceberg_v3_deletion_vector` with a 17 MiB property added to its Puffin footer.
+echo 'large_footer'
+tmpdir=$(realpath "$(mktemp -d "${CLICKHOUSE_TMP}/05571.XXXXXX")")
+trap 'rm -rf "$tmpdir"' EXIT
+mkdir -p "$tmpdir/$T"
+cp -r "$CUR_DIR/data_iceberg/sirius/$T/iceberg_v3_deletion_vector" "$tmpdir/$T/"
+python3 - "$tmpdir/$T"/iceberg_v3_deletion_vector/data/*.puffin <<'PY'
+import json, struct, sys
+data = open(sys.argv[1], "rb").read()
+start = len(data) - 12 - struct.unpack("<i", data[-12:-8])[0]
+footer = json.loads(data[start:-12])
+footer["properties"]["padding"] = "x" * (17 << 20)
+payload = json.dumps(footer).encode()
+open(sys.argv[1], "wb").write(data[:start] + payload + struct.pack("<i", len(payload)) + data[-8:])
+PY
+cd "$tmpdir" || exit 1
+$CLICKHOUSE_LOCAL -q "SELECT fruit, count FROM icebergLocal('$T/iceberg_v3_deletion_vector') ORDER BY ALL"
+$CLICKHOUSE_LOCAL -q "SELECT count() FROM icebergLocal('$T/iceberg_v3_deletion_vector')"

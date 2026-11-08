@@ -70,7 +70,9 @@ std::shared_ptr<const PuffinBlobDescriptors> readPuffinBlobDescriptors(
     auto read_settings = context->getReadSettings();
     read_settings.remote_fs_settings.random_access = true;
     auto read_buffer = createReadBuffer(object_info, object_storage, context, log, read_settings);
-    auto footer = readPuffinFooter(*read_buffer, /*seekable_read=*/ true, /*other_blob_types_allowed=*/ true);
+    /// The Puffin spec does not bound the footer, and Iceberg writers put all vectors of one write into one file.
+    auto footer = readPuffinFooter(
+        *read_buffer, /*seekable_read=*/ true, /*other_blob_types_allowed=*/ true, /*limit_footer_size=*/ false);
 
     auto descriptors = std::make_shared<PuffinBlobDescriptors>();
     for (auto & blob : footer.blobs)
