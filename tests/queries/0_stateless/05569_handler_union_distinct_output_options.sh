@@ -18,6 +18,7 @@ cleanup() {
     for h in "${HANDLERS[@]}"; do
         drops+="DROP HANDLER IF EXISTS \`${h}_${DB}\`; "
     done
+    drops+="DROP TABLE IF EXISTS ${DB}.t"
     $CLICKHOUSE_CLIENT -q "$drops"
 }
 trap cleanup EXIT
