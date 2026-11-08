@@ -288,7 +288,7 @@ private:
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQueryForInsert();
+    bool receiveEndOfQueryForInsert(ASTPtr parsed_query);
     void cancelQuery();
     bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
@@ -631,6 +631,10 @@ protected:
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
+
+    /// The output of the current query result failed (`LocalFormatError`): the query is cancelled,
+    /// and the rest of its result is only drained.
+    bool local_format_error_happened = false;
 
     std::function<void(bool)> on_waiting_for_query_input;
 

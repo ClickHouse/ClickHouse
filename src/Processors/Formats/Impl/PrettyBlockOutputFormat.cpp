@@ -1134,7 +1134,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         if (color)
         {
-            serialized_fragment += "\033[31;1m";
+            /// Reset first: the cut may have dropped the reset of an escape sequence opened in the kept part.
+            serialized_fragment += "\033[0;31;1m";
             serialized_fragment += ellipsis;
             serialized_fragment += "\033[0m";
         }

@@ -435,7 +435,6 @@ static void explainStep(
 {
 
     settings.out << settings.header_prefix << step.getName();
-    const auto & prefix = settings.detail_prefix;
 
     auto description = step.getStepDescription();
 
@@ -466,6 +465,17 @@ static void explainStep(
     }
 
     settings.out.write('\n');
+
+    explainStepDetails(step, settings, options, steps_to_stats);
+}
+
+void explainStepDetails(
+    IQueryPlanStep & step,
+    ExplainFormatSettings & settings,
+    const ExplainPlanOptions & options,
+    const AnalyzeStepsStats * steps_to_stats)
+{
+    const auto & prefix = settings.detail_prefix;
 
     const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
     {
@@ -985,10 +995,16 @@ DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimization
 
     for (const auto & stage : distributed_plan.stages)
     {
-        auto it = distributed_plan.stage_depends_on.find(stage.first);
-        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
+        auto format_dependencies = [&]
+        {
+            Strings dependencies;
+            if (auto it = distributed_plan.stage_depends_on.find(stage.first); it != distributed_plan.stage_depends_on.end())
+                for (const auto & [dependency, exchange] : it->second)
+                    dependencies.push_back(fmt::format("{} ({})", dependency, exchange));
+            return fmt::format("{}", fmt::join(dependencies, ", "));
+        };
         LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
-            stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
+            stage.first, format_dependencies(), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
     auto & main_stage = distributed_plan.stages["main"];
