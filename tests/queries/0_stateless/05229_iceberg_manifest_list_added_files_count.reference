@@ -9,3 +9,7 @@ partitioned	added_files_count=3	manifest_entries=3	matches=yes	existing_files_co
 after delete	added_files_count=1	manifest_entries=1	matches=yes	existing_files_count=0	existing_entries=0
 after delete	added_files_count=5	manifest_entries=5	matches=yes	existing_files_count=0	existing_entries=0
 rows	9
+after delete of 3 data files	added_files_count=1	manifest_entries=1	matches=yes	existing_files_count=0	existing_entries=0
+after delete of 3 data files	added_files_count=3	manifest_entries=3	matches=yes	existing_files_count=0	existing_entries=0
+after delete of 3 data files	added_files_count=5	manifest_entries=5	matches=yes	existing_files_count=0	existing_entries=0
+rows	6
