@@ -1,0 +1,8 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sum(length(highlightQuery(concat('SELECT ', repeat('f(1), ', 1000), toString(number))))) FROM numbers(100)</query>
+    <query>SELECT sum(length(highlightQuery(concat('SELECT ', repeat('INTERVAL 1 DAY, ', 1000), toString(number))))) FROM numbers(100)</query>
+</test>
