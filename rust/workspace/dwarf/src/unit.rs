@@ -12,7 +12,7 @@ use crate::attribute::{
 };
 use crate::control::{Control, Work};
 use crate::error::{DwarfError, Result};
-use crate::file::{parse_abbreviations, FileInner, Sections};
+use crate::file::{FileInner, Sections};
 use crate::line::{parse_filename_table, FilenameTable};
 use crate::names::{lookup_encoding_name, lookup_language_name};
 use crate::outbuf::{
@@ -140,7 +140,7 @@ struct Walk {
 /// a unit is never entered concurrently.
 pub struct UnitState {
     file: Arc<FileInner>,
-    abbrevs: Option<Abbreviations>,
+    abbrevs: Option<Arc<Abbreviations>>,
     params: FormParams,
     unit_offset: u64,
     end_offset: u64,
@@ -204,7 +204,7 @@ impl UnitState {
                 "Failed to parse compilation unit entry: the root DIE is a null entry",
             ));
         }
-        let abbrevs = parse_abbreviations(sections.abbrev, desc.abbrev_offset)?;
+        let abbrevs = file.abbreviations_for(sections.abbrev, desc.abbrev_offset)?;
         let abbrev = abbrevs.get(code).ok_or_else(|| {
             DwarfError::dwarf(format!(
                 "Failed to parse compilation unit entry: abbreviation code {code} is not declared"

@@ -18,8 +18,9 @@ use gimli::{Abbreviations, DebugAbbrev, DebugAbbrevOffset, DebugInfo, Encoding, 
 use object::elf;
 use object::read::elf::{FileHeader as _, SectionHeader as _};
 use object::LittleEndian as ObjLe;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 static NEXT_FILE_GENERATION: AtomicU64 = AtomicU64::new(1);
 
@@ -76,6 +77,12 @@ pub struct Sections<'a> {
 }
 
 #[derive(Debug)]
+pub struct SharedAbbrevs {
+    pub remaining_uses: usize,
+    pub parsed: Option<Arc<Abbreviations>>,
+}
+
+#[derive(Debug)]
 pub struct FileInner {
     pub generation: u64,
     pub raw_ptr: usize,
@@ -91,6 +98,7 @@ pub struct FileInner {
     pub debug_line_str: Option<SectionRange>,
     pub debug_str_offsets: Option<SectionRange>,
     pub units: Vec<UnitDescriptor>,
+    pub shared_abbrevs: Mutex<BTreeMap<u64, SharedAbbrevs>>,
 }
 
 #[inline]
@@ -223,6 +231,7 @@ impl FileInner {
         let abbrev_bytes = debug_abbrev.slice(bytes)?;
 
         let abbrev_len = abbrev_bytes.len() as u64;
+        let mut abbrev_uses: BTreeMap<u64, usize> = BTreeMap::new();
         let mut units = Vec::new();
         let mut headers = DebugInfo::new(info_bytes, LittleEndian).units();
         while let Some(header) = headers.next().map_err(|e| {
@@ -264,6 +273,7 @@ impl FileInner {
                     "abbreviation table offset {abbrev_offset} is outside .debug_abbrev"
                 )));
             }
+            *abbrev_uses.entry(abbrev_offset).or_insert(0) += 1;
 
             units.push(UnitDescriptor {
                 unit_offset,
@@ -273,6 +283,20 @@ impl FileInner {
                 abbrev_offset,
             });
         }
+
+        let shared_abbrevs = abbrev_uses
+            .into_iter()
+            .filter(|&(_, uses)| uses > 1)
+            .map(|(off, uses)| {
+                (
+                    off,
+                    SharedAbbrevs {
+                        remaining_uses: uses,
+                        parsed: None,
+                    },
+                )
+            })
+            .collect();
 
         Ok(Arc::new(Self {
             generation: NEXT_FILE_GENERATION.fetch_add(1, Ordering::Relaxed),
@@ -289,7 +313,59 @@ impl FileInner {
             debug_line_str: table.llvm_line_str,
             debug_str_offsets: table.llvm_str_offsets,
             units,
+            shared_abbrevs: Mutex::new(shared_abbrevs),
         }))
+    }
+
+    /// Returns the parsed `Abbreviations` for `abbrev_offset`. Offsets referenced by multiple
+    /// units (such as `-fdebug-types-section` type units sharing a CU's abbreviation table) are
+    /// parsed once and evicted as soon as their last referencing unit opens.
+    pub fn abbreviations_for(
+        &self,
+        abbrev_bytes: &[u8],
+        abbrev_offset: u64,
+    ) -> Result<Arc<Abbreviations>> {
+        {
+            let mut guard = self
+                .shared_abbrevs
+                .lock()
+                .map_err(|_| DwarfError::internal("shared_abbrevs mutex poisoned"))?;
+            if let Some(entry) = guard.get_mut(&abbrev_offset) {
+                if let Some(arc) = &entry.parsed {
+                    let out = Arc::clone(arc);
+                    entry.remaining_uses = entry.remaining_uses.saturating_sub(1);
+                    if entry.remaining_uses == 0 {
+                        guard.remove(&abbrev_offset);
+                    }
+                    return Ok(out);
+                }
+            } else {
+                drop(guard);
+                return Ok(Arc::new(parse_abbreviations(abbrev_bytes, abbrev_offset)?));
+            }
+        }
+
+        let parsed = Arc::new(parse_abbreviations(abbrev_bytes, abbrev_offset)?);
+        let mut guard = self
+            .shared_abbrevs
+            .lock()
+            .map_err(|_| DwarfError::internal("shared_abbrevs mutex poisoned"))?;
+        if let Some(entry) = guard.get_mut(&abbrev_offset) {
+            let out = match &entry.parsed {
+                Some(existing) => Arc::clone(existing),
+                None => {
+                    entry.parsed = Some(Arc::clone(&parsed));
+                    parsed
+                }
+            };
+            entry.remaining_uses = entry.remaining_uses.saturating_sub(1);
+            if entry.remaining_uses == 0 {
+                guard.remove(&abbrev_offset);
+            }
+            Ok(out)
+        } else {
+            Ok(parsed)
+        }
     }
 
     /// Views of every section inside `bytes`, which must be the span given to [`FileInner::open`].

@@ -14,16 +14,16 @@
 
 #include <dwarf_rust.h>
 
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <array>
 #include <atomic>
 #include <condition_variable>
-#include <deque>
 #include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace DB
 {
@@ -96,7 +96,7 @@ private:
     ColumnPtr attr_form_dict_column;
 
     /// For each column of the requested header, its position in the fixed DWARF schema.
-    std::vector<size_t> output_columns;
+    VectorWithMemoryTracking<size_t> output_columns;
     /// Which of the fixed-schema columns were requested.
     std::array<bool, 16> need{};
     ChDwarfProjection projection{};
@@ -111,8 +111,8 @@ private:
     std::mutex mutex;
     std::condition_variable deliver_chunk;
     std::condition_variable wake_up_threads;
-    std::deque<UnitState> units_queue;
-    std::deque<std::pair<Chunk, size_t>> delivery_queue;
+    DequeWithMemoryTracking<UnitState> units_queue;
+    DequeWithMemoryTracking<std::pair<Chunk, size_t>> delivery_queue;
     size_t units_in_progress = 0;
 
     bool initialized = false;
