@@ -1002,7 +1002,8 @@ def test_where(started_cluster):
 
 
 @pytest.mark.parametrize("bool_type", ["Bool", "Nullable(Bool)"])
-def test_where_bool_number_comparisons(started_cluster, bool_type):
+@pytest.mark.parametrize("layout", ["native", "swapped"])
+def test_where_bool_number_comparisons(started_cluster, bool_type, layout):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
@@ -1010,14 +1011,22 @@ def test_where_bool_number_comparisons(started_cluster, bool_type):
     collection_name = "bool_number_comparisons"
     drop_mongo_collection_if_exists(db, collection_name)
     collection = db[collection_name]
-    collection.insert_many(
-        [
+    # A `Bool` column also reads BSON numbers, and a numeric column also reads BSON bools.
+    documents = {
+        "native": [
             {"flag": False, "n": 0},
             {"flag": True, "n": 1},
             {"flag": True, "n": 1},
             {"flag": False, "n": 2},
-        ]
-    )
+        ],
+        "swapped": [
+            {"flag": 0, "n": False},
+            {"flag": 1, "n": True},
+            {"flag": 1, "n": True},
+            {"flag": 0, "n": 2},
+        ],
+    }
+    collection.insert_many(documents[layout])
 
     node = started_cluster.instances["node"]
     structure = f"flag {bool_type}, n UInt8"
@@ -1038,6 +1047,12 @@ def test_where_bool_number_comparisons(started_cluster, bool_type):
                 "n = true": "2\n",
                 "true < n": "1\n",
                 "flag IN (1)": "2\n",
+                "flag != 0": "2\n",
+                "flag IN (1, 2)": "2\n",
+                "flag NOT IN (2)": "4\n",
+                "flag NOT IN (0, 2)": "2\n",
+                "n IN (true)": "2\n",
+                "n NOT IN (true)": "2\n",
             }
             actual = {
                 predicate: node.query(f"SELECT count() FROM {source} WHERE {predicate}")

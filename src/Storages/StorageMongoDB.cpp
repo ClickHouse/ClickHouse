@@ -355,6 +355,29 @@ static std::string invertMongoComparison(const std::string & func)
     return func;
 }
 
+/// `Bool` is a `UInt8` that `IDataType::equals` does not tell apart, but its values are written as BSON bools.
+static bool boolDiffers(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    return isBool(removeNullable(lhs)) != isBool(removeNullable(rhs));
+}
+
+/// The source-type hint for converting a constant of type `from` to `to`. A `Bool` hint for `UInt8` (or the reverse)
+/// compares equal to the target, so it would let even strict conversion keep a value outside the target's domain.
+static const IDataType * conversionHint(const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (from && boolDiffers(from, to) && removeNullable(from)->equals(*removeNullable(to)))
+        return nullptr;
+    return from.get();
+}
+
+/// The reader takes both BSON bools and BSON numbers for `Bool` and numeric columns (`BSONElementAsNumber`), but a MongoDB
+/// comparison only matches values of its bound's BSON type. A comparison between a `Bool` and a number then has to match
+/// both encodings of the bound.
+static bool isBoolNumberComparison(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    return lhs && boolDiffers(lhs, rhs) && isNativeNumber(removeNullable(lhs)) && isNativeNumber(removeNullable(rhs));
+}
+
 static const ColumnNode * getColumnNode(const QueryTreeNodePtr & node, const JoinNode * join_node, const StorageID & storage_id)
 {
     const auto * column = node->as<ColumnNode>();
@@ -417,6 +440,10 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
     bool is_const_number = WhichDataType(const_type).isNumber() && !isBool(const_type);
     bool is_column_number = WhichDataType(column_type).isNumber() && !isBool(column_type);
 
+    /// The bound in the BSON type of the constant, for a `Bool`-number comparison; the filter matches it besides the
+    /// bound converted to the column's type.
+    std::vector<std::pair<Field, DataTypePtr>> other_encodings;
+
     if (func_name == "$in" || func_name == "$nin")
     {
         /// A list of one member arrives as a plain constant.
@@ -451,25 +478,28 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
             /// Every element is converted: the list is written with the column's type, so a `Float64`
             /// element under an integer column would be read back as an integer.
-            if (element_type && element_type->equals(*column_type))
+            if (element_type && element_type->equals(*column_type) && !boolDiffers(element_type, column_type))
             {
                 converted_elements.push_back(elements[i]);
                 continue;
             }
 
-            auto converted = tryConvertFieldToType(elements[i], *column_type, element_type.get(), {}, /*strict=*/ true);
+            const auto * element_hint = conversionHint(element_type, column_type);
+            auto converted = tryConvertFieldToType(elements[i], *column_type, element_hint, {}, /*strict=*/ true);
             if (converted.isNull())
             {
                 auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
                 LOG_DEBUG(log, "Constant value {} matches no value of column type {}", value_string, column_type->getName());
                 continue;
             }
-            if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_type.get()).isNull())
+            if (func_name == "$in" && tryConvertFieldToTypeExact(elements[i], *column_type, element_hint).isNull())
             {
                 auto value_string = applyVisitor(FieldVisitorToString(), elements[i]);
                 LOG_DEBUG(log, "Constant value {} is not stored as a value of column type {}", value_string, column_type->getName());
                 return {};
             }
+            if (isBoolNumberComparison(element_type, column_type))
+                other_encodings.emplace_back(elements[i], element_type);
             converted_elements.push_back(std::move(converted));
         }
 
@@ -480,15 +510,10 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
 
     /// Conversion is required because MongoDB cannot perform implicit cast and the result of WHERE clause may be incorrect.
     /// But implicit conversion between numbers works well and doesn't affect the result of WHERE clause.
-    const bool different_bool_types = isBool(removeNullable(const_type)) != isBool(removeNullable(column_type));
-    if ((!const_type->equals(*column_type) || different_bool_types) && (!is_const_number || !is_column_number))
+    if ((!const_type->equals(*column_type) || boolDiffers(const_type, column_type)) && (!is_const_number || !is_column_number))
     {
         /// The constant becomes an exact filter bound; a lossy one is refused like any other predicate MongoDB cannot take.
-        const auto * const_type_hint = const_type.get();
-        /// `Bool` and `UInt8` compare equal, so the hint would bypass even strict conversion.
-        if (different_bool_types && removeNullable(const_type)->equals(*removeNullable(column_type)))
-            const_type_hint = nullptr;
-        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, const_type_hint);
+        auto converted_value = tryConvertFieldToTypeExact(const_value, *column_type, conversionHint(const_type, column_type));
 
         if (converted_value.isNull())
         {
@@ -497,21 +522,47 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunctionArgume
             return {};
         }
 
+        if (isBoolNumberComparison(const_type, column_type))
+            other_encodings.emplace_back(const_value, const_type);
         const_type = column_type;
         const_value = std::move(converted_value);
     }
 
-    auto func_value = BSONCXXHelper::fieldAsBSONValue(
-        const_value,
-        const_type,
-        configuration.isOidColumn(column_node->getColumnName()));
+    const bool is_oid = configuration.isOidColumn(column_node->getColumnName());
+    auto func_value = BSONCXXHelper::fieldAsBSONValue(const_value, const_type, is_oid);
 
     if (func_name == "$in" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
         func_name = "$eq";
     if (func_name == "$nin" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
         func_name = "$ne";
 
-    return make_document(kvp(column_node->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
+    const auto & column_name = column_node->getColumnName();
+    if (other_encodings.empty())
+        return make_document(kvp(column_name, make_document(kvp(func_name, std::move(func_value)))));
+
+    /// A list matches each member in both BSON types. A range bound only matches values of its own BSON type, so the
+    /// filter takes either bound.
+    if (func_name == "$eq" || func_name == "$ne" || func_name == "$in" || func_name == "$nin")
+    {
+        auto values = bsoncxx::builder::basic::array{};
+        if (func_value.view().type() == bsoncxx::v_noabi::type::k_array)
+        {
+            for (const auto & value : func_value.view().get_array().value)
+                values.append(value.get_value());
+        }
+        else
+            values.append(func_value.view());
+        for (const auto & [value, type] : other_encodings)
+            values.append(BSONCXXHelper::fieldAsBSONValue(value, type, is_oid).view());
+
+        const std::string list_name = (func_name == "$eq" || func_name == "$in") ? "$in" : "$nin";
+        return make_document(kvp(column_name, make_document(kvp(list_name, values.extract()))));
+    }
+
+    auto other_value = BSONCXXHelper::fieldAsBSONValue(other_encodings.front().first, other_encodings.front().second, is_oid);
+    return make_document(kvp("$or", make_array(
+        make_document(kvp(column_name, make_document(kvp(func_name, std::move(func_value))))),
+        make_document(kvp(column_name, make_document(kvp(func_name, std::move(other_value))))))));
 }
 
 std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
