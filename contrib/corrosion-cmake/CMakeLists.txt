@@ -22,6 +22,8 @@ macro(set_rust_target)
             set(Rust_CARGO_TARGET "riscv64gc-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-loongarch64")
             set(Rust_CARGO_TARGET "loongarch64-unknown-linux-gnu" CACHE INTERNAL "Rust config")
+        elseif(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-s390x")
+            set(Rust_CARGO_TARGET "s390x-unknown-linux-gnu" CACHE INTERNAL "Rust config")
         else()
             message(FATAL_ERROR "Unknown rust target for toolchain ${CMAKE_TOOLCHAIN_FILE}")
         endif()
@@ -192,6 +194,14 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     # a stray munmap of live memory at thread exit: https://github.com/bytecodealliance/wasmtime/issues/13857
     set(RUST_CARGO_BUILD_STD "-Zbuild-std=std,panic_abort,core,alloc")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
+endif()
+
+# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
+# general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
+# libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
+if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
 endif()
 
 # Force `rustix` to use its libc backend under sanitizers.

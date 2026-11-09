@@ -33,34 +33,33 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t VALUES (1, 0), (2, 0), (3, 0), 
 -- An assignment reads the table of the updated database (2), not the table of the session (99).
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0))
-    WHERE id = 1 SETTINGS enable_analyzer = 1;
+    WHERE id = 1;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 1;
 
 -- The `ALTER TABLE ... UPDATE` spelling of the same expression answers the same.
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     UPDATE v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0))
-    WHERE id = 1 SETTINGS mutations_sync = 2, enable_analyzer = 1;
+    WHERE id = 1 SETTINGS mutations_sync = 2;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE id = 1;
 
 -- The predicate is expanded by a separate call, so it is asserted separately: it marks the row the
 -- updated database names (2), not the one the session database names (99).
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = 11
-    WHERE id IN (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0))
-    SETTINGS enable_analyzer = 1;
+    WHERE id IN (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0));
 SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE v = 11;
 
 ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t
     UPDATE v = 11
     WHERE id IN (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS enable_global_with_statement = 0))
-    SETTINGS mutations_sync = 2, enable_analyzer = 1;
+    SETTINGS mutations_sync = 2;
 SELECT id FROM {CLICKHOUSE_DATABASE_1:Identifier}.t WHERE v = 11;
 
 -- The effective value of the setting is read, so a profile that carries it answers the same as the
 -- setting written out.
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS compatibility = '20.3'))
-    WHERE id = 3 SETTINGS enable_analyzer = 1;
+    WHERE id = 3;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 3;
 
 -- A trailing clause of a union is query-level: the parser leaves it on the last arm, but it applies
@@ -72,27 +71,27 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
                  SELECT max(id) * 1000 AS m FROM src
                  UNION ALL
                  SELECT max(id) AS m FROM src SETTINGS enable_global_with_statement = 0))
-    WHERE id = 8 SETTINGS enable_analyzer = 1;
+    WHERE id = 8;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 8;
 
 -- With the setting at its default the alias IS visible in the subquery, so the same reference reads
 -- the common table expression (7) and must not be qualified as a table.
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src))
-    WHERE id = 4 SETTINGS enable_analyzer = 1;
+    WHERE id = 4;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 4;
 
 -- A reference in the select that declares the alias keeps reading the alias, and the table its body
 -- names is resolved in the updated database (2).
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH c AS (SELECT max(id) AS m FROM src) SELECT m FROM c)
-    WHERE id = 5 SETTINGS enable_analyzer = 1;
+    WHERE id = 5;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 5;
 
 -- An identifier that no alias hides was always resolved in the updated database (2).
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (SELECT max(id) FROM src)
-    WHERE id = 6 SETTINGS enable_analyzer = 1;
+    WHERE id = 6;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 6;
 
 -- The same expansion carries a `WITH` expression alias down, and such an alias is visible in a nested
@@ -110,7 +109,7 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH [7] AS src
         SELECT (SELECT toUInt8(7 IN src) * 100 + toUInt8(2 IN src) * 10 + toUInt8(99 IN src)
                 SETTINGS enable_global_with_statement = 0))
-    WHERE id = 21 SETTINGS enable_analyzer = 1;
+    WHERE id = 21;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 21;
 
 -- Both selects disable `enable_scopes_for_with_statement`, so the reading one resolves the copy and
@@ -119,7 +118,7 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH [7] AS src
         SELECT (SELECT toUInt8(7 IN src) * 100 + toUInt8(2 IN src) * 10 + toUInt8(99 IN src)
                 SETTINGS enable_global_with_statement = 0))
-    WHERE id = 22 SETTINGS enable_analyzer = 1, enable_scopes_for_with_statement = 0;
+    WHERE id = 22 SETTINGS enable_scopes_for_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 22;
 
 -- Mixed: the declaring select disables the scopes and the reading one keeps them, so the copy is not
@@ -128,7 +127,7 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH [7] AS src
         SELECT (SELECT toUInt8(7 IN src) * 100 + toUInt8(2 IN src) * 10 + toUInt8(99 IN src)
                 SETTINGS enable_global_with_statement = 0, enable_scopes_for_with_statement = 1))
-    WHERE id = 23 SETTINGS enable_analyzer = 1, enable_scopes_for_with_statement = 0;
+    WHERE id = 23 SETTINGS enable_scopes_for_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 23;
 
 -- The other mixed combination: the reading select disables the scopes and the declaring one does
@@ -138,7 +137,7 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH [7] AS src
         SELECT (SELECT toUInt8(7 IN src) * 100 + toUInt8(2 IN src) * 10 + toUInt8(99 IN src)
                 SETTINGS enable_global_with_statement = 0, enable_scopes_for_with_statement = 0))
-    WHERE id = 24 SETTINGS enable_analyzer = 1;
+    WHERE id = 24;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 24;
 
 -- Nothing anywhere is named `lit`, so a hidden alias leaves an identifier that resolves to no table
@@ -146,7 +145,7 @@ SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 24;
 -- silently reading the substituted array.
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH [5] AS lit SELECT (SELECT toUInt8(5 IN lit) SETTINGS enable_global_with_statement = 0))
-    WHERE id = 25 SETTINGS enable_analyzer = 1; -- { serverError UNKNOWN_IDENTIFIER }
+    WHERE id = 25; -- { serverError UNKNOWN_IDENTIFIER }
 
 -- The copy reaches a select through an intermediate one that does not read it, so the alias is
 -- hidden in the middle select and visible again in the innermost (100). An implementation that
@@ -156,7 +155,7 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
         SELECT (SELECT (SELECT toUInt8(7 IN src) * 100 + toUInt8(2 IN src) * 10 + toUInt8(99 IN src)
                         SETTINGS enable_global_with_statement = 0, enable_scopes_for_with_statement = 0)
                 SETTINGS enable_global_with_statement = 0, enable_scopes_for_with_statement = 1))
-    WHERE id = 26 SETTINGS enable_analyzer = 1, enable_scopes_for_with_statement = 0;
+    WHERE id = 26 SETTINGS enable_scopes_for_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 26;
 
 -- A nearer declaration made with the scopes enabled does not shadow the copy, so the outer alias
@@ -168,7 +167,7 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
                            + toUInt8(99 IN src)
                     SETTINGS enable_scopes_for_with_statement = 0)
             SETTINGS enable_scopes_for_with_statement = 1))
-    WHERE id = 27 SETTINGS enable_analyzer = 1, enable_scopes_for_with_statement = 0;
+    WHERE id = 27 SETTINGS enable_scopes_for_with_statement = 0;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 27;
 
 -- The predicate is expanded by its own call, so the alias carrier is asserted there too: with the
@@ -178,8 +177,7 @@ SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 27;
 UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = 28
     WHERE id = 28 AND (WITH [7] AS src
-        SELECT (SELECT toUInt8(2 IN src) SETTINGS enable_global_with_statement = 0))
-    SETTINGS enable_analyzer = 1;
+        SELECT (SELECT toUInt8(2 IN src) SETTINGS enable_global_with_statement = 0));
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 28;
 
 DROP TABLE src;

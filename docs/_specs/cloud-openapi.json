@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1300420",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1384330",
       "email": "support@clickhouse.com"
     }
   },
@@ -1496,7 +1496,7 @@
     "/v1/organizations/{organizationId}/serviceProfiles": {
       "get": {
         "summary": "List available service profiles",
-        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. The list is empty when the organization tier does not include custom hardware profiles.",
+        "description": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).",
         "operationId": "serviceProfilesList",
         "parameters": [
           {
@@ -1613,8 +1613,243 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. The list is empty when the organization tier does not include custom hardware profiles.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
+          "content": "Returns the custom instance profiles the organization can use in a region. Pass byoc_id to list the profiles configured for a BYOC infrastructure; the region is then taken from the infrastructure and region_id may be omitted. Some profiles have their own availability rules; every other profile, v1-default included, is listed only when the organization has custom hardware profiles (through its plan or a per-organization override).\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/previews": {
+      "get": {
+        "summary": "Get list of organization preview features",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the preview features offered to the organization, with whether each one is on and whether the caller can switch it.",
+        "operationId": "organizationPublicPreviewsGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PublicPreview"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/previews/{previewId}": {
+      "patch": {
+        "summary": "Update organization preview feature",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Switches a preview feature on or off for the organization. Use an ID returned by the list endpoint; an unknown ID returns 404. Only previews offered to the organization can be switched on, otherwise the request returns 403; switching off is always allowed.",
+        "operationId": "organizationPublicPreviewPatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "previewId",
+            "description": "ID of the requested preview feature.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicPreviewPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PublicPreview"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services": {
@@ -2779,7 +3014,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/scaling": {
       "patch": {
         "summary": "Update service auto scaling settings",
-        "description": "Updates minimum and maximum total memory limits and idle mode scaling behavior for the service. The memory settings are available only for \"production\" services and must be a multiple of 12 starting from 24GB. Please contact support to enable adjustment of numReplicas.",
+        "description": "Updates minimum and maximum total memory limits and idle mode scaling behavior for the service. The memory settings are available only for \"production\" services and must be a multiple of 12 starting from 24GB.",
         "operationId": "instanceScalingUpdate",
         "parameters": [
           {
@@ -2900,7 +3135,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/replicaScaling": {
       "patch": {
         "summary": "Update service auto scaling settings",
-        "description": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For vertical autoscaling, please contact support to enable adjustment of numReplicas. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization.",
+        "description": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile.",
         "operationId": "instanceReplicaScalingUpdate",
         "parameters": [
           {
@@ -3016,7 +3251,7 @@
           "Service"
         ],
         "x-mint": {
-          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For vertical autoscaling, please contact support to enable adjustment of numReplicas. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
+          "content": "Updates minimum and maximum memory limits per replica and idle mode scaling behavior for the service. Supports both vertical autoscaling (fixed replica count, variable memory) and horizontal autoscaling (variable replica count, fixed memory). The memory settings are available only for \"production\" services and must be a multiple of 4 starting from 8GB. For horizontal autoscaling (autoscalingMode \"horizontal\" with minReplicas/maxReplicas), contact support to enable the feature for your organization. An optional profile changes the custom instance profile in place. Omit it to keep the current profile.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-scaling-config` permission.\n\n</div>\n</div>"
         }
       }
     },
@@ -4060,6 +4295,630 @@
         "x-mint": {
           "content": "Deletes the upgrade window for a service, restoring the default scheduling behaviour. The upgrade window can only be deleted on primary services. Deletion succeeds even if the organization has lost the scheduled upgrades entitlement, so a window can be cleared after entitlement loss.\n\nErrors:\n- 400: the service is a secondary service.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service.\n- 404: service does not exist, is not visible to the caller, or no upgrade window is configured.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/jwtProviders": {
+      "get": {
+        "summary": "List service JWT providers",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the JWT authentication providers configured on the service. A service has at most 5 providers.\n\nErrors:\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.",
+        "operationId": "jwtProviderGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/JwtProvider"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Adds a JWT authentication provider to the service. Users can then connect to the service with a JWT issued by the provider; they are signed in as the `default` user and receive the roles listed in the roles claim. The JWKS URL is fetched and validated before the provider is saved. If the service already has a provider with this name and the same configuration, the request succeeds without changing it, so it is safe to retry.\n\nErrors:\n- 400: invalid field values, the JWKS URL is unreachable or does not return a valid RS256 key set, or the service already has 5 providers.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist or is not visible to the caller.\n- 409: the service already has a provider with this name and a different configuration.",
+        "operationId": "jwtProviderCreate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JwtProviderPostRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/JwtProvider"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/jwtProviders/{jwtProviderName}": {
+      "get": {
+        "summary": "Get service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a single JWT authentication provider of the service.\n\nErrors:\n- 400: invalid provider name.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "operationId": "jwtProviderGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jwtProviderName",
+            "description": "Name of the JWT authentication provider.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/JwtProvider"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "put": {
+        "summary": "Update service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Replaces the configuration of a JWT authentication provider. The JWKS URL is fetched and validated before the change is saved.\n\nErrors:\n- 400: invalid provider name or field values, or the JWKS URL is unreachable or does not return a valid RS256 key set.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "operationId": "jwtProviderUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jwtProviderName",
+            "description": "Name of the JWT authentication provider.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JwtProviderPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/JwtProvider"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Delete service JWT provider",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Removes a JWT authentication provider from the service. Tokens issued by the provider are no longer accepted.\n\nErrors:\n- 400: invalid provider name.\n- 401: missing, invalid, or disabled API key.\n- 403: caller lacks `control-plane:service:manage` on the service, or the organization does not have the JWT authentication providers feature (Enterprise tier).\n- 404: service does not exist, is not visible to the caller, or has no provider with this name.",
+        "operationId": "jwtProviderDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jwtProviderName",
+            "description": "Name of the JWT authentication provider.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings": {
@@ -5544,7 +6403,7 @@
       },
       "patch": {
         "summary": "Update service snapshot configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, gap and timeFrame (in minutes) must together be one of the supported (gap, timeFrame) pairs: (30, 1440), (60, 2880). Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, the resulting configuration (in minutes) must satisfy: gap must be one of 10, 20, 30, 60; timeFrame must be a whole number of days (a multiple of 1440), at least 1440; and timeFrame / gap (the number of snapshots the configuration keeps) must not exceed 300. Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Gap or timeFrame may be changed on its own; the rules are checked against the configuration that results from merging the request into the stored one. After a change to gap or timeFrame, snapshots taken under the previous configuration expire by the new timeFrame, and cleanup also deletes the oldest snapshots beyond the limit of 300, including ones still inside the new timeFrame. Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
         "operationId": "snapshotConfigurationUpdate",
         "parameters": [
           {
@@ -8790,7 +9649,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes": {
       "get": {
         "summary": "List ClickPipes",
-        "description": "Returns a list of ClickPipes.",
+        "description": "Returns the ClickPipes in the specified service. If neither `limit` nor `cursor` is provided, returns all ClickPipes. In this case, `limit` and `totalCount` both equal the number of ClickPipes, and `nextCursor` is `null`. To paginate results, provide `limit` or `cursor`. Paginated results are sorted by creation date in descending order. Use `limit` to set the page size (default: 50). The server caps `limit` at its maximum page size and may return fewer results. Each response includes `limit`, `totalCount`, and `nextCursor`. To retrieve the next page, pass `nextCursor` as the `cursor` query parameter. Continue until `nextCursor` is `null`.",
         "operationId": "clickPipeGetList",
         "parameters": [
           {
@@ -8811,6 +9670,23 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -8837,6 +9713,24 @@
                       "items": {
                         "$ref": "#/components/schemas/ClickPipe"
                       }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "totalCount": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "Total number of results across all pages. It has only informative value, thus is not guaranteed and it is provided on a best-effort basis. Null if the total count is unknown."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
                     }
                   }
                 }
@@ -8900,7 +9794,7 @@
           "ClickPipes"
         ],
         "x-mint": {
-          "content": "Returns a list of ClickPipes.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
+          "content": "Returns the ClickPipes in the specified service. If neither `limit` nor `cursor` is provided, returns all ClickPipes. In this case, `limit` and `totalCount` both equal the number of ClickPipes, and `nextCursor` is `null`. To paginate results, provide `limit` or `cursor`. Paginated results are sorted by creation date in descending order. Use `limit` to set the page size (default: 50). The server caps `limit` at its maximum page size and may return fewer results. Each response includes `limit`, `totalCount`, and `nextCursor`. To retrieve the next page, pass `nextCursor` as the `cursor` query parameter. Continue until `nextCursor` is `null`.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:service:manage-clickpipes` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -14767,7 +15661,7 @@
       },
       "delete": {
         "summary": "Delete a PostgreSQL service",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Deletes a Postgres service that belongs to the organization. Returns 409 if deletion protection is enabled for the service.",
         "operationId": "postgresServiceDelete",
         "parameters": [
           {
@@ -15367,7 +16261,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/state": {
       "patch": {
         "summary": "Update Postgres service state",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Initiate a process for a Postgres service:\n* restart: Initiates a service restart\n* promote: Promotes a read replica to primary\n* switchover: Switch a primary over to a standby\n",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Initiate a process for a Postgres service:\n* restart: Initiates a service restart\n* promote: Promotes a read replica to primary\n* switchover: Switch a primary over to a standby. If there is no standby, replace the primary with a newly provisioned server and switch over to it.\n",
         "operationId": "postgresServicePatchState",
         "parameters": [
           {
@@ -16232,7 +17126,7 @@
     "/v1/organizations/{organizationId}/postgres/{postgresId}/backups": {
       "get": {
         "summary": "List of Postgres service backups",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp rather than with a backup key from this list.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of the base backups retained for a Postgres service, ordered by last modified date, newest first. Results are capped at `limit` (default and maximum 100) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null. A Postgres service is recovered to a point in time rather than to a single backup, so restore it with the restore endpoint and a timestamp between the service's `earliestRestoreTime` and now, rather than with a backup key from this list.",
         "operationId": "postgresServiceBackupGetList",
         "parameters": [
           {
@@ -16843,9 +17737,19 @@
           {
             "in": "query",
             "name": "severity",
-            "description": "Filter to log entries with this PostgreSQL severity (for example, ERROR, WARNING, LOG).",
+            "description": "Filter to log entries with this PostgreSQL severity. Case-sensitive; an empty value applies no filter.",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "DEBUG",
+                "LOG",
+                "INFO",
+                "NOTICE",
+                "WARNING",
+                "ERROR",
+                "FATAL",
+                "PANIC"
+              ]
             }
           },
           {
@@ -24779,7 +25683,7 @@
             "example": 120
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
+            "description": "Number of replicas for the service. The number of replicas must be between 1 and 50. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -26027,7 +26931,7 @@
             "example": "*.my-service.example.com"
           },
           "targetId": {
-            "description": "Optional DNS target ID. Supported only for VPC_RESOURCE, where it is the CHILD resource configuration ID (rcfg-…), or the configuration ID for a single resource. Set it at create time to route a custom DNS name to that resource. If the target is not reported in dnsTargets yet, the mapping is not served until it appears; it does not fall back to the default target. If omitted, the default target is used. Once dnsTargets is non-empty, adding or changing a targetId requires an ID in that list; unchanged target IDs are not re-checked.",
+            "description": "Optional DNS target ID. For VPC_RESOURCE, it is the CHILD resource configuration ID (rcfg-…), or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, it is an AWS availability zone ID (for example use1-az1, not the zone name us-east-1a) that the endpoint service offers and ClickPipes supports in the region; if the endpoint is not in that zone yet, ClickPipes adds the zone to the endpoint. Cross-region VPC endpoint services reject targetId. Not supported for other endpoint types. Set it at create time to route a custom DNS name to that target. If the target is not reported in dnsTargets yet, the mapping is not served until it appears; it does not fall back to the default target. If omitted, the default target is used. For VPC_RESOURCE, once dnsTargets is non-empty, adding or changing a targetId requires an ID in that list; unchanged target IDs are not re-checked.",
             "type": "string",
             "example": "rcfg-097648d8068504966"
           }
@@ -26050,16 +26954,13 @@
       "ReversePrivateEndpointDnsTarget": {
         "properties": {
           "id": {
-            "description": "DNS target ID. For VPC_RESOURCE, the associated CHILD resource configuration ID, or the configuration ID for a single resource.",
+            "description": "DNS target ID. For VPC_RESOURCE, the associated CHILD resource configuration ID, or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, the AWS availability zone ID of the zonal endpoint DNS name.",
             "type": "string",
             "example": "rcfg-097648d8068504966"
           },
           "kind": {
-            "description": "DNS target kind.",
+            "description": "DNS target kind. Current values: 'RESOURCE_CONFIGURATION', 'AVAILABILITY_ZONE'. RESOURCE_CONFIGURATION is used for VPC_RESOURCE targets and AVAILABILITY_ZONE for VPC_ENDPOINT_SERVICE zonal targets. New kinds may be added, so clients must accept unknown values.",
             "type": "string",
-            "enum": [
-              "RESOURCE_CONFIGURATION"
-            ],
             "example": "RESOURCE_CONFIGURATION"
           },
           "internalDnsName": {
@@ -26298,7 +27199,7 @@
           },
           "dnsTargets": {
             "type": "array",
-            "description": "Read-only DNS targets the Reverse Private Endpoint currently reports. For VPC_RESOURCE, there is one RESOURCE_CONFIGURATION target per resource configuration association, identified by its CHILD resource configuration ID, or the configuration ID for a single resource. Other endpoint types report an empty list. Targets can appear over time; a custom mapping with a targetId that is not reported yet is not served until it appears.",
+            "description": "Read-only DNS targets the Reverse Private Endpoint currently reports. For VPC_RESOURCE, there is one RESOURCE_CONFIGURATION target per resource configuration association, identified by its CHILD resource configuration ID, or the configuration ID for a single resource. For VPC_ENDPOINT_SERVICE, there is one AVAILABILITY_ZONE target per zonal endpoint DNS name, identified by its AWS availability zone ID; the regional DNS name is the default target and is not listed. Cross-region VPC endpoint services report no AVAILABILITY_ZONE targets. Other endpoint types report an empty list. Targets can appear over time; a custom mapping with a targetId that is not reported yet is not served until it appears.",
             "items": {
               "$ref": "#/components/schemas/ReversePrivateEndpointDnsTarget"
             },
@@ -26802,7 +27703,14 @@
             "minLength": 1,
             "writeOnly": true
           }
-        }
+        },
+        "required": [
+          "type",
+          "format",
+          "brokers",
+          "topics",
+          "authentication"
+        ]
       },
       "ClickPipePatchKafkaSource": {
         "properties": {
@@ -27727,7 +28635,7 @@
             "example": "production_db"
           },
           "authentication": {
-            "description": "Authentication method for Postgres connection.",
+            "description": "Authentication method for Postgres connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27737,7 +28645,7 @@
             "example": "IAM_ROLE"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -27819,7 +28727,7 @@
             "$ref": "#/components/schemas/ClickPipePostgresPipeSettings"
           },
           "authentication": {
-            "description": "Authentication method for Postgres connection.",
+            "description": "Authentication method for Postgres connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -27829,7 +28737,7 @@
             "example": "IAM_ROLE"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -28213,7 +29121,7 @@
             "example": 3306
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -28223,7 +29131,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -28308,7 +29216,7 @@
             "$ref": "#/components/schemas/ClickPipeMySQLPipeSettings"
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": "string",
             "enum": [
               "basic",
@@ -28318,7 +29226,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": "string",
             "example": "arn:aws:iam::123456789012:role/MyApplicationRole"
           },
@@ -28389,7 +29297,7 @@
             "example": 3306
           },
           "authentication": {
-            "description": "Authentication method for MySQL connection.",
+            "description": "Authentication method for MySQL connection. IAM_ROLE is only available for services on AWS.",
             "type": [
               "string",
               "null"
@@ -28402,7 +29310,7 @@
             "example": "basic"
           },
           "iamRole": {
-            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication).",
+            "description": "IAM role ARN for IAM authentication (required for IAM_ROLE authentication, services on AWS only).",
             "type": [
               "string",
               "null"
@@ -28916,6 +29824,16 @@
           "enabled"
         ]
       },
+      "ClickPipeMongoDBTableConfig": {
+        "properties": {
+          "persistDeletedDocuments": {
+            "description": "Persist the full document as it was right before it was deleted, instead of only its _id. Requires changeStreamPreAndPostImages to be enabled on the source collection.",
+            "type": "boolean",
+            "example": false,
+            "default": false
+          }
+        }
+      },
       "ClickPipeMongoDBPipeTableMapping": {
         "properties": {
           "sourceDatabaseName": {
@@ -28945,6 +29863,9 @@
           },
           "structuredIngestion": {
             "$ref": "#/components/schemas/ClickPipeMongoDBStructuredIngestion"
+          },
+          "mongoConfig": {
+            "$ref": "#/components/schemas/ClickPipeMongoDBTableConfig"
           }
         },
         "required": [
@@ -29800,6 +30721,13 @@
             "maximum": 10000,
             "example": 100
           },
+          "object_storage_max_file_size": {
+            "description": "Max file size. Files larger than this are skipped and not retried. Can only lower the limit. Private preview. Contact support to enable it for your organization.",
+            "type": "integer",
+            "minimum": 1048576,
+            "maximum": 536870912000,
+            "example": 10737418240
+          },
           "clickhouse_max_threads": {
             "description": "Max threads. Maximum number of concurrent threads for file processing",
             "type": [
@@ -30110,6 +31038,13 @@
             "maximum": 10000,
             "example": 100
           },
+          "object_storage_max_file_size": {
+            "description": "Max file size. Files larger than this are skipped and not retried. Can only lower the limit. Private preview. Contact support to enable it for your organization.",
+            "type": "integer",
+            "minimum": 1048576,
+            "maximum": 536870912000,
+            "example": 10737418240
+          },
           "clickhouse_max_threads": {
             "description": "Max threads. Maximum number of concurrent threads for file processing",
             "type": "integer",
@@ -30192,6 +31127,20 @@
           },
           "optional": {
             "description": "Whether the field is optional (nullable) in the source.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "isVirtual": {
+            "description": "Whether the field is metadata added by ClickPipes (for example `_topic` or `_path`) rather than part of the source data.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "isVirtualDisabledDefault": {
+            "description": "Whether this metadata field is left unselected by default when building destination columns.",
             "type": [
               "boolean",
               "null"
@@ -31005,11 +31954,11 @@
             "type": "boolean"
           },
           "gap": {
-            "description": "Interval between snapshots, in minutes. Set together with timeFrame; only supported preset pairs are accepted.",
+            "description": "Interval between snapshots, in minutes. One of 10, 20, 30, 60. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           },
           "timeFrame": {
-            "description": "Retention window the snapshots cover, in minutes. Set together with gap; only supported preset pairs are accepted.",
+            "description": "Retention window the snapshots cover, in minutes. A whole number of days (a multiple of 1440), at least 1440; timeFrame / gap must not exceed 300 snapshots. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           }
         }
@@ -31425,6 +32374,101 @@
           "displayType"
         ]
       },
+      "ClickStackPromqlRangeExpression": {
+        "properties": {
+          "expression": {
+            "description": "PromQL expression. Supports dashboard variables and the $__interval, $__rate_interval, and $__range macros.",
+            "type": "string",
+            "example": "sum by (job) (rate(http_requests_total[$__rate_interval]))"
+          },
+          "alias": {
+            "description": "Prefixed to every series name this expression produces.",
+            "type": "string",
+            "example": "Requests"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
+      "ClickStackLinePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions to plot.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for series names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}} - {{instance}}"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "displayType": {
+            "description": "Display as a line time-series chart.",
+            "type": "string",
+            "enum": [
+              "line"
+            ],
+            "example": "line"
+          },
+          "compareToPreviousPeriod": {
+            "description": "Overlay the equivalent previous time period for comparison.",
+            "type": "boolean"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"smooth\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "expressions",
+          "displayType"
+        ]
+      },
       "ClickStackLineChartConfig": {
         "oneOf": [
           {
@@ -31432,6 +32476,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackLinePromqlChartConfig"
           }
         ]
       },
@@ -31455,6 +32502,16 @@
           }
         ]
       },
+      "ClickStackAlertLinePromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackLinePromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertLineChartConfig": {
         "oneOf": [
           {
@@ -31462,6 +32519,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertLinePromqlChartConfig"
           }
         ]
       },
@@ -31582,6 +32642,70 @@
           "displayType"
         ]
       },
+      "ClickStackBarPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions to plot.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for series names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}} - {{instance}}"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "displayType": {
+            "description": "Display as a stacked-bar time-series chart.",
+            "type": "string",
+            "enum": [
+              "stacked_bar"
+            ],
+            "example": "stacked_bar"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "expressions",
+          "displayType"
+        ]
+      },
       "ClickStackBarChartConfig": {
         "oneOf": [
           {
@@ -31589,6 +32713,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackBarRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackBarPromqlChartConfig"
           }
         ]
       },
@@ -31612,6 +32739,16 @@
           }
         ]
       },
+      "ClickStackAlertBarPromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackBarPromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertBarChartConfig": {
         "oneOf": [
           {
@@ -31619,6 +32756,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertBarRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertBarPromqlChartConfig"
           }
         ]
       },
@@ -31759,6 +32899,80 @@
           "displayType"
         ]
       },
+      "ClickStackStackedLinePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions to plot.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for series names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}} - {{instance}}"
+          },
+          "fillNulls": {
+            "description": "Fill missing time buckets with zero instead of leaving gaps.",
+            "type": "boolean"
+          },
+          "alignDateRangeToGranularity": {
+            "description": "Expand date range boundaries to the query granularity interval.",
+            "type": "boolean"
+          },
+          "seriesLimit": {
+            "description": "Maximum number of series rendered (top-N by value). Omit to use the default render cap, set 0 for unlimited, or a positive N to keep the top N series.",
+            "type": "integer",
+            "example": 5
+          },
+          "displayType": {
+            "description": "Display as a stacked-line time-series chart.",
+            "type": "string",
+            "enum": [
+              "stacked_line"
+            ],
+            "example": "stacked_line"
+          },
+          "lineInterpolation": {
+            "description": "How points are connected. Defaults to \"linear\" when omitted.",
+            "type": "string",
+            "enum": [
+              "smooth",
+              "linear",
+              "step"
+            ],
+            "example": "step"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "expressions",
+          "displayType"
+        ]
+      },
       "ClickStackStackedLineChartConfig": {
         "oneOf": [
           {
@@ -31766,6 +32980,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackStackedLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLinePromqlChartConfig"
           }
         ]
       },
@@ -31789,6 +33006,16 @@
           }
         ]
       },
+      "ClickStackAlertStackedLinePromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackStackedLinePromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertStackedLineChartConfig": {
         "oneOf": [
           {
@@ -31796,6 +33023,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertStackedLineRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertStackedLinePromqlChartConfig"
           }
         ]
       },
@@ -32139,6 +33369,146 @@
           "displayType"
         ]
       },
+      "ClickStackPromqlInstantExpression": {
+        "properties": {
+          "expression": {
+            "description": "PromQL expression. Supports dashboard variables and the $__interval, $__rate_interval, and $__range macros.",
+            "type": "string",
+            "example": "sum by (job) (rate(http_requests_total[$__rate_interval]))"
+          },
+          "alias": {
+            "description": "Prefixed to every series name this expression produces.",
+            "type": "string",
+            "example": "Requests"
+          },
+          "queryType": {
+            "description": "Whether to evaluate over the time range or at its end. Defaults to \"range\" when omitted.",
+            "type": "string",
+            "enum": [
+              "range",
+              "instant"
+            ],
+            "example": "instant"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
+      "ClickStackPromqlReducibleExpression": {
+        "properties": {
+          "expression": {
+            "description": "PromQL expression. Supports dashboard variables and the $__interval, $__rate_interval, and $__range macros.",
+            "type": "string",
+            "example": "sum by (job) (rate(http_requests_total[$__rate_interval]))"
+          },
+          "alias": {
+            "description": "Prefixed to every series name this expression produces.",
+            "type": "string",
+            "example": "Requests"
+          },
+          "queryType": {
+            "description": "Whether to evaluate over the time range or at its end. Defaults to \"range\" when omitted.",
+            "type": "string",
+            "enum": [
+              "range",
+              "instant"
+            ],
+            "example": "instant"
+          },
+          "reducer": {
+            "description": "How each series' samples are reduced to one value. Defaults to \"lastNotNull\" when omitted. It also applies to instant queries, where each series has a single sample, so e.g. \"count\" turns every value into 1.",
+            "type": "string",
+            "enum": [
+              "lastNotNull",
+              "min",
+              "max",
+              "mean",
+              "sum",
+              "count"
+            ],
+            "example": "max"
+          }
+        },
+        "required": [
+          "expression"
+        ]
+      },
+      "ClickStackNumberPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a single big-number chart.",
+            "type": "string",
+            "enum": [
+              "number"
+            ],
+            "example": "number"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored. The tile displays the first value.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlReducibleExpression"
+            }
+          },
+          "color": {
+            "description": "Optional static color applied to the displayed number.",
+            "type": "string",
+            "enum": [
+              "chart-blue",
+              "chart-orange",
+              "chart-red",
+              "chart-cyan",
+              "chart-green",
+              "chart-pink",
+              "chart-purple",
+              "chart-light-blue",
+              "chart-brown",
+              "chart-gray",
+              "chart-success",
+              "chart-warning",
+              "chart-error"
+            ]
+          },
+          "colorRules": {
+            "type": "array",
+            "description": "Ordered conditional color rules evaluated against the displayed value (last match wins). Falls back to color, then the default text color when no rule matches.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackNumberTileColorCondition"
+            }
+          },
+          "backgroundChart": {
+            "$ref": "#/components/schemas/ClickStackBackgroundChart"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
       "ClickStackNumberChartConfig": {
         "oneOf": [
           {
@@ -32146,6 +33516,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackNumberRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackNumberPromqlChartConfig"
           }
         ]
       },
@@ -32169,6 +33542,16 @@
           }
         ]
       },
+      "ClickStackAlertNumberPromqlChartConfig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ClickStackNumberPromqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertChartConfigOverlay"
+          }
+        ]
+      },
       "ClickStackAlertNumberChartConfig": {
         "oneOf": [
           {
@@ -32176,6 +33559,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackAlertNumberRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackAlertNumberPromqlChartConfig"
           }
         ]
       },
@@ -33861,6 +35247,76 @@
           "select"
         ]
       },
+      "ClickStackHeatmapPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a heatmap.",
+            "type": "string",
+            "enum": [
+              "heatmap"
+            ],
+            "example": "heatmap"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlRangeExpression"
+            }
+          },
+          "heatmapMode": {
+            "description": "\"distribution\" buckets the values of all series over time, \"series\" draws one row per series, and \"histogram\" draws one row per Prometheus histogram bucket (series need an \"le\" label). Defaults to \"distribution\" when omitted.",
+            "type": "string",
+            "enum": [
+              "distribution",
+              "series",
+              "histogram"
+            ],
+            "example": "histogram"
+          },
+          "heatmapScaleType": {
+            "description": "Y-axis scale of a distribution heatmap.",
+            "type": "string",
+            "enum": [
+              "log",
+              "linear"
+            ],
+            "example": "log"
+          },
+          "legendTemplate": {
+            "description": "Template for row names of a series heatmap, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}}"
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
       "ClickStackHeatmapChartConfig": {
         "oneOf": [
           {
@@ -33868,6 +35324,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackHeatmapSeriesChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackHeatmapPromqlChartConfig"
           }
         ]
       },
@@ -34106,6 +35565,164 @@
           "displayType"
         ]
       },
+      "ClickStackTablePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a table chart.",
+            "type": "string",
+            "enum": [
+              "table"
+            ],
+            "example": "table"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlInstantExpression"
+            }
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
+      "ClickStackPiePromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a pie chart.",
+            "type": "string",
+            "enum": [
+              "pie"
+            ],
+            "example": "pie"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlReducibleExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for slice names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}}"
+          },
+          "limit": {
+            "description": "Maximum number of slices (top-N by value), at most 500. Omit or set 0 to show up to 500.",
+            "type": "integer",
+            "example": 10
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
+      "ClickStackCategoricalBarPromqlChartConfig": {
+        "properties": {
+          "configType": {
+            "description": "Must be \"promql\" to use the PromQL chart config variant.",
+            "type": "string",
+            "enum": [
+              "promql"
+            ],
+            "example": "promql"
+          },
+          "sourceId": {
+            "description": "ID of the PromQL source to query. Must be a source of kind \"promql\".",
+            "type": "string",
+            "example": "65f5e4a3b9e77c001a333333"
+          },
+          "granularity": {
+            "description": "Resolution of range queries, used as the Prometheus step and the $__interval macro. Defaults to \"auto\", which picks one from the time range.",
+            "type": "string",
+            "example": "5 minute"
+          },
+          "numberFormat": {
+            "$ref": "#/components/schemas/ClickStackNumberFormat"
+          },
+          "displayType": {
+            "description": "Display as a categorical bar chart.",
+            "type": "string",
+            "enum": [
+              "bar"
+            ],
+            "example": "bar"
+          },
+          "expressions": {
+            "type": "array",
+            "description": "PromQL expressions. Only the first is queried; the rest are kept but ignored.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackPromqlReducibleExpression"
+            }
+          },
+          "legendTemplate": {
+            "description": "Template for bar names, using the series' Prometheus labels in double braces.",
+            "type": "string",
+            "example": "{{job}}"
+          },
+          "limit": {
+            "description": "Maximum number of bars (top-N by value), at most 500. Omit or set 0 to show up to 500.",
+            "type": "integer",
+            "example": 10
+          }
+        },
+        "required": [
+          "configType",
+          "sourceId",
+          "displayType",
+          "expressions"
+        ]
+      },
       "ClickStackTableChartConfig": {
         "oneOf": [
           {
@@ -34113,6 +35730,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackTableRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackTablePromqlChartConfig"
           }
         ]
       },
@@ -34123,6 +35743,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackPieRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackPiePromqlChartConfig"
           }
         ]
       },
@@ -34133,6 +35756,9 @@
           },
           {
             "$ref": "#/components/schemas/ClickStackCategoricalBarRawSqlChartConfig"
+          },
+          {
+            "$ref": "#/components/schemas/ClickStackCategoricalBarPromqlChartConfig"
           }
         ]
       },
@@ -35911,6 +37537,14 @@
             ],
             "example": "SeverityText"
           },
+          "severityNumberExpression": {
+            "description": "Expression for the numeric OpenTelemetry SeverityNumber (1-24).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "SeverityNumber"
+          },
           "bodyExpression": {
             "description": "Expression to extract the log message body.",
             "type": [
@@ -35918,6 +37552,14 @@
               "null"
             ],
             "example": "Body"
+          },
+          "eventNameExpression": {
+            "description": "Expression for the OpenTelemetry log EventName.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "EventName"
           },
           "eventAttributesExpression": {
             "description": "Expression to extract event-level attributes.",
@@ -36537,7 +38179,7 @@
             "example": "promql"
           },
           "connection": {
-            "description": "ID of the connection used by this source. Should reference a Prometheus-compatible connection.",
+            "description": "ID of the connection used by this source. Either a ClickHouse connection holding the TimeSeries table, or a Prometheus-compatible connection.",
             "type": "string",
             "example": "507f1f77bcf86cd799439012"
           },
@@ -36552,7 +38194,7 @@
             }
           },
           "timestampValueExpression": {
-            "description": "Required by the API for all source kinds; not used when querying a Prometheus endpoint.",
+            "description": "Required by the API for all source kinds; not used by PromQL queries.",
             "type": "string",
             "example": "timestamp"
           }
@@ -38776,6 +40418,44 @@
           "isAvailable"
         ]
       },
+      "PublicPreview": {
+        "properties": {
+          "id": {
+            "description": "Stable identifier of the preview feature.",
+            "type": "string",
+            "example": "preview-id"
+          },
+          "name": {
+            "description": "Name of the preview feature.",
+            "type": "string"
+          },
+          "description": {
+            "description": "What the preview feature does.",
+            "type": "string"
+          },
+          "docsUrl": {
+            "description": "Link to the documentation of the preview feature.",
+            "type": "string",
+            "example": "https://clickhouse.com/docs"
+          },
+          "enabled": {
+            "description": "Whether the preview feature is on for the organization.",
+            "type": "boolean"
+          },
+          "canToggle": {
+            "description": "Whether the caller may switch the preview feature on or off.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "docsUrl",
+          "enabled",
+          "canToggle"
+        ]
+      },
       "OrganizationQuota": {
         "properties": {
           "quotaCode": {
@@ -39179,6 +40859,18 @@
               "TLSv1.3"
             ]
           },
+          "default_toast_compression": {
+            "type": "string",
+            "description": "Sets the default compression method for compressible values stored out of line (TOAST).",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/default_toast_compression/"
+            },
+            "example": "lz4",
+            "enum": [
+              "pglz",
+              "lz4"
+            ]
+          },
           "maintenance_work_mem": {
             "type": [
               "string",
@@ -39299,6 +40991,134 @@
             "example": 25,
             "minimum": 25,
             "maximum": 75
+          },
+          "temp_buffers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sets the maximum memory each session uses for temporary table buffers.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/temp_buffers/"
+            },
+            "example": "8MB",
+            "minimum": 800
+          },
+          "hash_mem_multiplier": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Multiple of work_mem that hash-based operations may use.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/hash_mem_multiplier/"
+            },
+            "example": 2,
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "enable_parallel_hash": {
+            "type": "string",
+            "description": "Enables the planner's use of parallel hash plans.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/enable_parallel_hash/"
+            },
+            "example": "on",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "maintenance_io_concurrency": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Number of concurrent disk I/O operations used for maintenance work such as vacuum.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/maintenance_io_concurrency/"
+            },
+            "example": 10,
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "io_method": {
+            "type": "string",
+            "description": "Selects the method used to perform asynchronous I/O.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_method/"
+            },
+            "example": "worker",
+            "enum": [
+              "sync",
+              "worker",
+              "io_uring"
+            ]
+          },
+          "io_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Number of I/O worker processes used when io_method is worker.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/io_workers/"
+            },
+            "example": 3,
+            "minimum": 1,
+            "maximum": 32
+          },
+          "bgwriter_delay": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Sleep time between background writer activity rounds.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_delay/"
+            },
+            "example": "200ms",
+            "minimum": 10,
+            "maximum": 10000
+          },
+          "bgwriter_flush_after": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Amount of data written by the background writer after which the OS is asked to flush it to disk.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_flush_after/"
+            },
+            "example": "512kB",
+            "minimum": 0,
+            "maximum": 2048
+          },
+          "bgwriter_lru_maxpages": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of buffers the background writer writes per round.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_lru_maxpages/"
+            },
+            "example": 100,
+            "minimum": 0,
+            "maximum": 1073741823
+          },
+          "bgwriter_lru_multiplier": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Multiple of the average recent buffer demand that the background writer cleans per round.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/bgwriter_lru_multiplier/"
+            },
+            "example": 2,
+            "minimum": 0,
+            "maximum": 10
           },
           "statement_timeout": {
             "type": [
@@ -39460,6 +41280,70 @@
             "minimum": 32,
             "maximum": 262144
           },
+          "max_replication_slots": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of replication slots. Standbys and logical replication each use slots.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_replication_slots/"
+            },
+            "example": 10,
+            "minimum": 10,
+            "maximum": 262143
+          },
+          "max_wal_senders": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of simultaneously running WAL sender processes.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_wal_senders/"
+            },
+            "example": 10,
+            "minimum": 10,
+            "maximum": 262143
+          },
+          "max_logical_replication_workers": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of logical replication workers for subscriptions on this server.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_logical_replication_workers/"
+            },
+            "example": 4,
+            "minimum": 0,
+            "maximum": 262143
+          },
+          "max_sync_workers_per_subscription": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum number of table synchronization workers per subscription.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/max_sync_workers_per_subscription/"
+            },
+            "example": 2,
+            "minimum": 0,
+            "maximum": 262143
+          },
+          "logical_decoding_work_mem": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum memory used for logical decoding before changes spill to disk.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/logical_decoding_work_mem/"
+            },
+            "example": "64MB",
+            "minimum": 64
+          },
           "autovacuum_max_workers": {
             "type": [
               "string",
@@ -39607,6 +41491,83 @@
             },
             "example": "2ms",
             "minimum": 0
+          },
+          "vacuum_cost_delay": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Time in milliseconds a manual VACUUM sleeps when its cost limit is exceeded. 0 disables cost-based delay.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/vacuum_cost_delay/"
+            },
+            "example": "0",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "log_min_duration_statement": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Logs statements that run at least this many milliseconds. 0 logs all statements; -1 disables.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_min_duration_statement/"
+            },
+            "example": 1000,
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "log_temp_files": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Logs temporary files of at least this size in kilobytes. 0 logs all temporary files; -1 disables.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_temp_files/"
+            },
+            "example": "-1",
+            "minimum": -1,
+            "maximum": 2147483647
+          },
+          "log_lock_waits": {
+            "type": "string",
+            "description": "Logs a message when a session waits longer than deadlock_timeout to acquire a lock.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_lock_waits/"
+            },
+            "example": "off",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "log_parameter_max_length": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Maximum bytes of each bind parameter value logged with statements. 0 disables; -1 logs values in full.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/log_parameter_max_length/"
+            },
+            "example": "-1",
+            "minimum": -1,
+            "maximum": 1073741823
+          },
+          "track_activity_query_size": {
+            "type": [
+              "string",
+              "integer"
+            ],
+            "description": "Bytes reserved to store the text of the currently running command of each session, shown in pg_stat_activity.",
+            "externalDocs": {
+              "url": "https://postgresqlco.nf/doc/en/param/track_activity_query_size/"
+            },
+            "example": 4096,
+            "minimum": 100,
+            "maximum": 1048576
           }
         },
         "additionalProperties": false,
@@ -39771,6 +41732,26 @@
           "c4d-standard-lssd-96",
           "c4d-standard-lssd-192",
           "c4d-standard-lssd-384",
+          "c3-standard-lssd-4",
+          "c3-standard-lssd-8",
+          "c3-standard-lssd-22",
+          "c3-standard-lssd-44",
+          "c3-standard-lssd-88",
+          "c3-standard-lssd-176",
+          "c3d-highmem-lssd-8",
+          "c3d-highmem-lssd-16",
+          "c3d-highmem-lssd-30",
+          "c3d-highmem-lssd-60",
+          "c3d-highmem-lssd-90",
+          "c3d-highmem-lssd-180",
+          "c3d-highmem-lssd-360",
+          "c3d-standard-lssd-8",
+          "c3d-standard-lssd-16",
+          "c3d-standard-lssd-30",
+          "c3d-standard-lssd-60",
+          "c3d-standard-lssd-90",
+          "c3d-standard-lssd-180",
+          "c3d-standard-lssd-360",
           "z3-highmem-highlssd-8",
           "z3-highmem-highlssd-16",
           "z3-highmem-highlssd-22",
@@ -39781,7 +41762,36 @@
           "z3-highmem-standardlssd-22",
           "z3-highmem-standardlssd-44",
           "z3-highmem-standardlssd-88",
-          "z3-highmem-standardlssd-176"
+          "z3-highmem-standardlssd-176",
+          "n2-highmem-2xlssd-4",
+          "n2-highmem-2xlssd-8",
+          "n2-highmem-2xlssd-16",
+          "n2-highmem-2xlssd-32",
+          "n2-highmem-2xlssd-48",
+          "n2-highmem-2xlssd-64",
+          "n2-highmem-2xlssd-96",
+          "n2-standard-2xlssd-4",
+          "n2-standard-2xlssd-8",
+          "n2-standard-2xlssd-16",
+          "n2-standard-2xlssd-32",
+          "n2-standard-2xlssd-48",
+          "n2-standard-2xlssd-64",
+          "n2-standard-2xlssd-96",
+          "n2-highmem-4xlssd-2",
+          "n2-highmem-4xlssd-4",
+          "n2-highmem-4xlssd-8",
+          "n2-highmem-4xlssd-16",
+          "n2-highmem-4xlssd-32",
+          "n2-highmem-4xlssd-48",
+          "n2-highmem-8xlssd-2",
+          "n2-highmem-8xlssd-4",
+          "n2-highmem-8xlssd-8",
+          "n2-highmem-8xlssd-16",
+          "n2-highmem-8xlssd-32",
+          "n2-highmem-16xlssd-2",
+          "n2-highmem-16xlssd-4",
+          "n2-highmem-16xlssd-8",
+          "n2-highmem-16xlssd-16"
         ]
       },
       "pgHaType": {
@@ -39823,6 +41833,11 @@
         "maxItems": 50,
         "title": "Postgres Tags",
         "description": "Tags associated with the Postgres service. Tag keys starting with “chc_” are reserved for internal use."
+      },
+      "pgDeletionProtectionProperty": {
+        "type": "boolean",
+        "title": "Postgres Service Deletion Protection",
+        "description": "When true, the service cannot be deleted until deletion protection is turned off. Only available for organizations with deletion protection enabled."
       },
       "pgNameProperty": {
         "type": "string",
@@ -39950,6 +41965,14 @@
           "hostname": {
             "description": "Hostname for the Postgres service",
             "type": "string"
+          },
+          "deletionProtection": {
+            "$ref": "#/components/schemas/pgDeletionProtectionProperty"
+          },
+          "earliestRestoreTime": {
+            "description": "Earliest point in time the service can be restored to with the restore endpoint. ISO-8601. Only present for a primary service once its first backup has completed.",
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -40013,6 +42036,9 @@
           },
           "tags": {
             "$ref": "#/components/schemas/pgTags"
+          },
+          "deletionProtection": {
+            "$ref": "#/components/schemas/pgDeletionProtectionProperty"
           }
         }
       },
@@ -40113,6 +42139,9 @@
           },
           "isPrimary": {
             "$ref": "#/components/schemas/pgIsPrimaryProperty"
+          },
+          "deletionProtection": {
+            "$ref": "#/components/schemas/pgDeletionProtectionProperty"
           }
         }
       },
@@ -40187,8 +42216,12 @@
             "type": "string",
             "example": "basebackups_005/000000010000000000000002_backup_stop_sentinel.json"
           },
+          "status": {
+            "description": "Status of the backup. Only completed backups are listed, so this is always `ready`.",
+            "type": "string"
+          },
           "lastModified": {
-            "description": "Time the backup was last written to. ISO-8601.",
+            "description": "Time the backup finished. ISO-8601. This is not the earliest point a service can be restored to; use `earliestRestoreTime` on the Postgres service for that.",
             "type": "string",
             "format": "date-time",
             "example": "2026-03-31T18:17:37Z"
@@ -40196,6 +42229,7 @@
         },
         "required": [
           "key",
+          "status",
           "lastModified"
         ]
       },
@@ -40322,7 +42356,7 @@
           },
           "avgDurationUs": {
             "description": "Average execution time per call, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "maxDurationUs": {
             "description": "Maximum execution time of any call, in microseconds.",
@@ -40330,15 +42364,15 @@
           },
           "p50DurationUs": {
             "description": "50th percentile execution time, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "p95DurationUs": {
             "description": "95th percentile execution time, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "p99DurationUs": {
             "description": "99th percentile execution time, in microseconds.",
-            "type": "integer"
+            "type": "number"
           },
           "totalRows": {
             "description": "Total number of rows returned or affected across all calls.",
@@ -40700,6 +42734,118 @@
           "startHourUtc"
         ]
       },
+      "JwtProvider": {
+        "properties": {
+          "name": {
+            "description": "Name of the JWT provider, unique within the service. Lowercase letters, digits and hyphens, at most 59 characters. Cannot be one of, or start with one of followed by a hyphen: `cloud`, `clickhouse`, `ch`, `internal`, `system`, `default`.",
+            "type": "string",
+            "example": "my-oidc-provider",
+            "maxLength": 59,
+            "pattern": "^[a-z0-9-]{1,59}$"
+          },
+          "issuer": {
+            "description": "Expected `iss` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "https://auth.example.com",
+            "maxLength": 256
+          },
+          "audience": {
+            "description": "Expected `aud` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "my-clickhouse-service",
+            "maxLength": 256
+          },
+          "jwksUrl": {
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "type": "string",
+            "example": "https://auth.example.com/.well-known/jwks.json",
+            "maxLength": 256
+          },
+          "rolesClaim": {
+            "description": "Name of the token claim that lists the ClickHouse roles to grant the user. Printable ASCII without whitespace, at most 256 characters, and not a registered JWT claim (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`). Absent when no roles claim is configured.",
+            "type": "string",
+            "example": "clickhouse:roles"
+          }
+        },
+        "required": [
+          "name",
+          "issuer",
+          "audience",
+          "jwksUrl"
+        ]
+      },
+      "JwtProviderPostRequest": {
+        "properties": {
+          "name": {
+            "description": "Name of the JWT provider, unique within the service. Lowercase letters, digits and hyphens, at most 59 characters. Cannot be one of, or start with one of followed by a hyphen: `cloud`, `clickhouse`, `ch`, `internal`, `system`, `default`.",
+            "type": "string",
+            "example": "my-oidc-provider",
+            "maxLength": 59,
+            "pattern": "^[a-z0-9-]{1,59}$"
+          },
+          "issuer": {
+            "description": "Expected `iss` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "https://auth.example.com",
+            "maxLength": 256
+          },
+          "audience": {
+            "description": "Expected `aud` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "my-clickhouse-service",
+            "maxLength": 256
+          },
+          "jwksUrl": {
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "type": "string",
+            "example": "https://auth.example.com/.well-known/jwks.json",
+            "maxLength": 256
+          },
+          "rolesClaim": {
+            "description": "Name of the token claim that lists the ClickHouse roles to grant the user. Printable ASCII without whitespace, at most 256 characters, and not a registered JWT claim (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`). Omit to configure no roles claim.",
+            "type": "string",
+            "example": "clickhouse:roles"
+          }
+        },
+        "required": [
+          "name",
+          "issuer",
+          "audience",
+          "jwksUrl"
+        ]
+      },
+      "JwtProviderPutRequest": {
+        "properties": {
+          "issuer": {
+            "description": "Expected `iss` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "https://auth.example.com",
+            "maxLength": 256
+          },
+          "audience": {
+            "description": "Expected `aud` claim of the tokens. Printable ASCII without whitespace, at most 256 characters.",
+            "type": "string",
+            "example": "my-clickhouse-service",
+            "maxLength": 256
+          },
+          "jwksUrl": {
+            "description": "Public `https://` URL of the JSON Web Key Set used to verify token signatures, at most 256 characters. The key set must contain at least one RS256 (RSA) key; it is fetched and validated when the provider is created or updated.",
+            "type": "string",
+            "example": "https://auth.example.com/.well-known/jwks.json",
+            "maxLength": 256
+          },
+          "rolesClaim": {
+            "description": "Name of the token claim that lists the ClickHouse roles to grant the user. Printable ASCII without whitespace, at most 256 characters, and not a registered JWT claim (`iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`). The request replaces the whole provider configuration, so omitting this field removes an existing roles claim.",
+            "type": "string",
+            "example": "clickhouse:roles"
+          }
+        },
+        "required": [
+          "issuer",
+          "audience",
+          "jwksUrl"
+        ]
+      },
       "OrganizationPatchRequest": {
         "properties": {
           "name": {
@@ -40714,6 +42860,17 @@
             "type": "boolean"
           }
         }
+      },
+      "PublicPreviewPatchRequest": {
+        "properties": {
+          "enabled": {
+            "description": "Whether the preview feature should be on.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
       },
       "InstanceServiceQueryApiEndpointsPostRequest": {
         "properties": {
@@ -40907,14 +43064,6 @@
           "backupEncryptionConfig": {
             "$ref": "#/components/schemas/BackupEncryptionConfig"
           },
-          "encryptionKey": {
-            "description": "Optional customer provided disk encryption key",
-            "type": "string"
-          },
-          "encryptionAssumedRoleIdentifier": {
-            "description": "Optional role to use for disk encryption",
-            "type": "string"
-          },
           "privateEndpointIds": {
             "type": "array",
             "description": "DEPRECATED. To associate the service with private endpoints, first create the service, then use the `Update Service Basic Details` endpoint with the `privateEndpointIds` field to modify private endpoints.",
@@ -41063,7 +43212,7 @@
             "deprecated": true
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers.",
+            "description": "Number of replicas for the service. The number of replicas must be between 1 and 50. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -41215,7 +43364,7 @@
             "example": 120
           },
           "numReplicas": {
-            "description": "Number of replicas for the service. The number of replicas must be between 2 and 50 for the first service in a warehouse. Services that are created in an existing warehouse can have a number of replicas as low as 1. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
+            "description": "Number of replicas for the service. The number of replicas must be between 1 and 50. Further restrictions may apply based on your organization's tier and its per-warehouse replica limit. It defaults to 1 for the BASIC tier and 3 for the SCALE and ENTERPRISE tiers. Present only when the service uses vertical autoscaling. For horizontal autoscaling, use minReplicas and maxReplicas instead.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -41399,7 +43548,7 @@
             "example": "vertical"
           },
           "numReplicas": {
-            "description": "Fixed replica count for vertical autoscaling (autoscalingMode \"vertical\"). Mutually exclusive with minReplicas/maxReplicas. When switching to vertical (autoscalingMode \"vertical\") with numReplicas and no memory, the service's stored baseline per-replica memory is kept as the new vertical range. Please contact support to enable adjustment of numReplicas.",
+            "description": "Fixed replica count for vertical autoscaling (autoscalingMode \"vertical\"). Mutually exclusive with minReplicas/maxReplicas. When switching to vertical (autoscalingMode \"vertical\") with numReplicas and no memory, the service's stored baseline per-replica memory is kept as the new vertical range.",
             "type": "integer",
             "minimum": 1,
             "maximum": 50,
@@ -41426,6 +43575,10 @@
           "idleTimeoutMinutes": {
             "description": "Set minimum idling timeout (in minutes). Must be >= 5 minutes.",
             "type": "number"
+          },
+          "profile": {
+            "description": "Custom instance profile. Omit to leave the current profile unchanged. Only available for ENTERPRISE and BYOC organization tiers. Standard values: 'v1-default', 'v1-highmem-xs', 'v1-highmem-s', 'v1-highmem-m', 'v1-highmem-l', 'v1-highmem-xl'. A BYOC profile (e.g. 'v1-standard-byoc-16') is a pin: minReplicaMemoryGb and maxReplicaMemoryGb must both be sent and equal that profile's memory size, and a memory range cannot be combined with it. A non-BYOC custom profile cannot be combined with a memory change; send the profile alone to change only the name. While a schedule entry is active the new profile is stored on the schedule base config and the running service keeps the entry profile until the window ends. Use the serviceProfiles endpoint to list the profiles available to the organization.",
+            "type": "string"
           }
         }
       },
@@ -41506,11 +43659,11 @@
             "type": "boolean"
           },
           "gap": {
-            "description": "Interval between snapshots, in minutes. Set together with timeFrame; only supported preset pairs are accepted.",
+            "description": "Interval between snapshots, in minutes. One of 10, 20, 30, 60. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           },
           "timeFrame": {
-            "description": "Retention window the snapshots cover, in minutes. Set together with gap; only supported preset pairs are accepted.",
+            "description": "Retention window the snapshots cover, in minutes. A whole number of days (a multiple of 1440), at least 1440; timeFrame / gap must not exceed 300 snapshots. Validated when an enabled configuration is saved; stored values are not re-validated on read.",
             "type": "number"
           }
         }
@@ -42284,6 +44437,7 @@
               },
               "functionName": {
                 "type": "string",
+                "maxLength": 64,
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
             },
@@ -42393,6 +44547,7 @@
               },
               "functionName": {
                 "type": "string",
+                "maxLength": 64,
                 "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
               }
             },

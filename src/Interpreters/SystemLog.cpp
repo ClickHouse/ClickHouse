@@ -16,6 +16,9 @@
 #include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -1208,6 +1211,7 @@ void SystemLog<LogElement>::prepareTable()
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
+
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
@@ -1364,6 +1368,21 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         /// with an unlimited query size, so the limit must not fail this internal `ALTER`
         /// (e.g. marking a rotated table as readonly).
         mutable_context->setSetting("max_query_size", Field{UInt64{0}});
+    }
+    else if (query_kind == IAST::QueryKind::Create)
+    {
+        /// Ensure system tables keep a stable schema.
+        /// Disable user-configurable type-related settings to avoid implicit data type changes.
+        /// This applies to the log table as well as to its union table: both are created from
+        /// the same explicit column list, so a session that flips one of these settings would
+        /// otherwise be able to give them different structures, which makes the union table
+        /// mismatch its definition on every check and be recreated on every flush.
+        /// Note: `data_type_default_nullable` is the live half of this pin (several log tables
+        /// declare plain types that it would wrap into `Nullable`), while `flatten_nested` is
+        /// defensive: no system log element currently declares a `Nested` column, so it only
+        /// protects future schema additions and cannot be exercised by a regression test today.
+        mutable_context->setSetting("flatten_nested", false);
+        mutable_context->setSetting("data_type_default_nullable", false);
     }
 }
 
@@ -1548,6 +1567,15 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
     auto alias_columns = LogElement::getNamesAndAliases();
     if constexpr (std::is_same_v<LogElement, BucketedMetricLogElement>)
     {
+        /// The `Enum16` keys of `metrics` are numbered by the position of a metric, which changes between versions,
+        /// and a cast between two such enums fails or relabels the keys. A `String` key is cast by name.
+        ordinary_columns.modify("metrics", [](ColumnDescription & column)
+        {
+            const auto & map_type = typeid_cast<const DataTypeMap &>(*column.type);
+            column.type = std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), map_type.getValueType());
+        });
+
         /// The per-metric columns of the `bucketed` schema are `ALIAS metrics['...']`, while the rotated
         /// tables of the `wide` schema (which was the default before) have them as ordinary columns and
         /// have no `metrics` column at all. An `ALIAS` in the union table would be expanded before reading

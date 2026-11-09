@@ -17,6 +17,8 @@ public:
     {
         chassert(num_buckets > 0);
         updateInputHeaders({std::move(input_header_)});
+        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
+        setStepDescription(exchange_id, exchange_id.size());
     }
 
     String getName() const override { return "BroadcastSend"; }
