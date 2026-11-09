@@ -3,9 +3,14 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Resolve/ScopeAliases.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+
+/// Whether `groupConcat(x, sep)` takes the separator from its second argument, see `QueryAnalyzer::resolveFunction`.
+bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, const ContextPtr & context);
 
 /** Visitor that extracts expression and function aliases from node and initialize scope tables with it.
   * Does not go into child lambdas and queries.
@@ -34,8 +39,9 @@ namespace DB
 class QueryExpressionsAliasVisitor : public InDepthQueryTreeVisitor<QueryExpressionsAliasVisitor>
 {
 public:
-    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_)
+    QueryExpressionsAliasVisitor(ScopeAliases & aliases_, ContextPtr context_)
         : aliases(aliases_)
+        , context(std::move(context_))
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -43,7 +49,7 @@ public:
         updateAliasesIfNeeded(node);
     }
 
-    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child)
+    bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
     {
         if (auto * /*lambda_node*/ _ = child->as<LambdaNode>())
         {
@@ -64,6 +70,16 @@ public:
                 return false;
 
             updateAliasesIfNeeded(child);
+            return false;
+        }
+        if (auto * function_node = parent->as<FunctionNode>(); function_node && child == function_node->getParametersNode()
+            && !function_node->getParameters().getNodes().empty() && isGroupConcatWithSeparatorArgument(*function_node, context))
+        {
+            /// The delimiter parameter is replaced by the separator argument, so its aliases must not be visible.
+            auto & parameters_nodes = function_node->getParameters().getNodes();
+            for (size_t i = 1; i < parameters_nodes.size(); ++i)
+                if (needChildVisit(child, parameters_nodes[i]))
+                    visit(parameters_nodes[i]);
             return false;
         }
 
@@ -136,6 +152,7 @@ private:
     }
 
     ScopeAliases & aliases;
+    ContextPtr context;
 };
 
 }

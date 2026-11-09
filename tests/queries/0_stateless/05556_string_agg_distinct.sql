@@ -18,3 +18,5 @@ SELECT groupConcatArgMax(x, '-', y) FROM values('x String, y UInt8', ('a', 2), (
 SELECT groupConcatArray(arr, '-') FROM values('arr Array(String)', ['a', 'b'], ['c']);
 SELECT groupConcat(x, 2)(x, '-') FROM values('x String', 'a', 'b');
 SELECT groupConcat(untuple((',', 1)))(x, '-') FROM values('x String', 'a', 'b');
+SELECT groupConcat('old' AS x)(x, '-'), any(x) FROM values('x String', 'a', 'b');
+SELECT groupConcat('old' AS x)(x, '-') FROM values('x String', 'a', 'b') WHERE x != 'old';

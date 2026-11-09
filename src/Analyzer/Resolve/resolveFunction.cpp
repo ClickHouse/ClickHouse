@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
+#include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -143,6 +144,21 @@ std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & f
         nested_name.resize(nested_name.size() - suffix.size());
     }
 }
+
+}
+
+bool isGroupConcatWithSeparatorArgument(const FunctionNode & function_node, const ContextPtr & context)
+{
+    const auto & function_name = function_node.getFunctionName();
+    auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
+    return arguments_count && function_node.getArguments().getNodes().size() == *arguments_count
+        && (function_node.isWindowFunction()
+            || (!UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
+                && !UserDefinedExecutableFunctionFactory::has(function_name, context))); /// NOLINT(readability-static-accessed-through-instance)
+}
+
+namespace
+{
 
 /// The arity of a registered function name, or nothing when no function with this name is
 /// registered. Used by the rewrites that turn a function name into a lambda (the bare function
@@ -1478,11 +1494,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// `groupConcat(x, sep)` is `groupConcat(sep)(x)`. A scoped lambda, a SQL UDF or an executable UDF
     /// with this name keeps its arguments.
-    if (auto arguments_count = getGroupConcatArgumentsCountWithSeparator(function_name);
-        arguments_count && function_node_ptr->getArguments().getNodes().size() == *arguments_count
-        && (function_node_ptr->isWindowFunction()
-            || (!lambda_expression_untyped && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
-                && !UserDefinedExecutableFunctionFactory::has(function_name, scope.context)))) /// NOLINT(readability-static-accessed-through-instance)
+    if (isGroupConcatWithSeparatorArgument(*function_node_ptr, scope.context)
+        && (function_node_ptr->isWindowFunction() || !lambda_expression_untyped))
     {
         auto & arguments_nodes = function_node_ptr->getArguments().getNodes();
         const auto * separator_node = arguments_nodes[1]->as<ConstantNode>();
