@@ -86,13 +86,13 @@ const QueryPlan::Node * findSourceFilter(const QueryPlan::Node * node, const Add
 
 /// The `MergeTree` read below the target's `Expression`/`Filter` chain, `nullptr` when the chain ends
 /// elsewhere (a remote read, an aggregation, a nested join): the pass does not copy onto such targets
-const ReadFromMergeTree * findTargetMergeTreeRead(const QueryPlan::Node * target_root)
+ReadFromMergeTree * findTargetMergeTreeRead(const QueryPlan::Node * target_root)
 {
     const auto * read = walkDown(target_root, [](const auto * n)
     {
         return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
     });
-    return read ? typeid_cast<const ReadFromMergeTree *>(read->step.get()) : nullptr;
+    return read ? typeid_cast<ReadFromMergeTree *>(read->step.get()) : nullptr;
 }
 
 /// Bytes a comparison reads from this argument per row, `std::nullopt` when they are not bounded
@@ -277,7 +277,7 @@ size_t tryPropagateToSide(
     if (!source_filter_node)
         return 0;
     const auto & source_filter = typeid_cast<const FilterStep &>(*source_filter_node->step);
-    const auto * target_read = findTargetMergeTreeRead(target_root);
+    auto * target_read = findTargetMergeTreeRead(target_root);
     if (!target_read)
         return 0;
     /// With index analysis off a key column prunes nothing, so an expensive atom has nothing to earn
@@ -341,6 +341,9 @@ size_t tryPropagateToSide(
     auto * added_filter = join_node->children[target_idx];
     added_filter->step->setStepDescription("Propagated equi-join filter");
     added_filters.insert(added_filter);
+    /// the copy merges into the read's filter but not into `filter_actions_dag`, which keys the read's cache entries
+    if (stage == PredicatePropagationStage::Shrinking)
+        target_read->disableQueryConditionCache();
     if (target_idx == 1)
         rekeyBuildSideStatistics(typeid_cast<JoinStepLogical &>(*join_node->step), *added_filter);
     return 1;
