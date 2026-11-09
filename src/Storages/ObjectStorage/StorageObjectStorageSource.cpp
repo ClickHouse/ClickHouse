@@ -278,47 +278,80 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
 }
 
 /// The schema transform of a data lake object outputs whole columns, but the query can request subcolumns
-/// (e.g. `struct_col.field`), which the format reader reads by themselves. Passes such a subcolumn through
-/// if its column is an input of the transform, or extracts it from the column that the transform makes.
-static void addRequestedSubcolumns(ActionsDAG & dag, const NamesAndTypesList & requested_columns, const ContextPtr & context)
+/// (e.g. `struct_col.field`), which are extracted from the columns in storage that the transform outputs. A column
+/// in storage can be a subcolumn itself (e.g. `t.x` for `t.x.null`). Passes it through if the format reader reads it by
+/// itself (it is in `input_header`, the header of the input of the transform), otherwise extracts it from the column that
+/// the transform outputs: e.g. the format reads only `t` if the query needs both `t` and `t.x`.
+static void addRequestedSubcolumns(
+    ActionsDAG & dag, const NamesAndTypesList & requested_columns, const Block & input_header, const ContextPtr & context)
 {
-    for (const auto & column : requested_columns)
+    /// Several requested subcolumns can be extracted from the same subcolumn the format reads, which can be requested too.
+    auto get_or_add_input = [&dag](const String & name, const DataTypePtr & type) -> const ActionsDAG::Node &
     {
-        if (dag.tryFindInOutputs(column.name))
+        for (const auto * input : dag.getInputs())
+            if (input->result_name == name)
+                return *input;
+        return dag.addInput(name, type);
+    };
+
+    /// Finds the column with the longest name that is a prefix of `name` and has such a subcolumn.
+    auto find_longest_prefix = [](const String & name, size_t min_size, const auto & columns, auto get_name, auto get_type)
+    {
+        decltype(&*columns.begin()) result = nullptr;
+        size_t result_size = min_size;
+        for (const auto & column : columns)
+        {
+            const String & column_name = get_name(column);
+            if (column_name.size() < result_size || (result && column_name.size() == result_size)
+                || name.size() <= column_name.size() + 1 || !name.starts_with(column_name) || name[column_name.size()] != '.')
+                continue;
+            if (!get_type(column)->tryGetSubcolumnType(name.substr(column_name.size() + 1)))
+                continue;
+            result = &column;
+            result_size = column_name.size();
+        }
+        return result;
+    };
+
+    for (const auto & requested_column : requested_columns)
+    {
+        const String name = requested_column.getNameInStorage();
+        const DataTypePtr type = requested_column.getTypeInStorage();
+        if (dag.tryFindInOutputs(name))
             continue;
 
-        /// A subcolumn can come as an ordinary column named by its full name, so find the output with the longest name
-        /// that is a prefix of the column name and has such a subcolumn.
-        const ActionsDAG::Node * storage_column = nullptr;
-        String subcolumn_name;
-        for (const auto * output : dag.getOutputs())
-        {
-            const auto & output_name = output->result_name;
-            if (column.name.size() <= output_name.size() + 1 || !column.name.starts_with(output_name)
-                || column.name[output_name.size()] != '.')
-                continue;
-            if (storage_column && storage_column->result_name.size() >= output_name.size())
-                continue;
-            auto candidate_subcolumn_name = column.name.substr(output_name.size() + 1);
-            if (!output->result_type->tryGetSubcolumnType(candidate_subcolumn_name))
-                continue;
-            storage_column = output;
-            subcolumn_name = std::move(candidate_subcolumn_name);
-        }
-        if (!storage_column)
+        /// A subcolumn can come as an ordinary column named by its full name.
+        const auto * const * storage_column_ptr = find_longest_prefix(
+            name, 0, dag.getOutputs(),
+            [](const ActionsDAG::Node * node) -> const String & { return node->result_name; },
+            [](const ActionsDAG::Node * node) { return node->result_type; });
+        if (!storage_column_ptr)
             continue;
 
-        if (storage_column->type == ActionsDAG::ActionType::INPUT)
+        const ActionsDAG::Node * source = *storage_column_ptr;
+        if (source->type == ActionsDAG::ActionType::INPUT)
         {
-            dag.getOutputs().push_back(&dag.addInput(column.name, column.type));
+            if (input_header.has(name))
+            {
+                dag.getOutputs().push_back(&get_or_add_input(name, type));
+                continue;
+            }
+
+            /// The format can read a subcolumn of the column that the transform passes through instead of the
+            /// whole column, e.g. `t.x` for `t.x.null`: extract the subcolumn from the longest one it reads.
+            const auto * read_subcolumn = find_longest_prefix(
+                name, source->result_name.size() + 1, input_header,
+                [](const ColumnWithTypeAndName & column) -> const String & { return column.name; },
+                [](const ColumnWithTypeAndName & column) { return column.type; });
+            if (read_subcolumn)
+                source = &get_or_add_input(read_subcolumn->name, read_subcolumn->type);
         }
-        else
-        {
-            auto string_type = std::make_shared<DataTypeString>();
-            const auto & subcolumn_name_node = dag.addColumn(string_type->createColumnConst(1, subcolumn_name), string_type, subcolumn_name);
-            dag.getOutputs().push_back(&dag.addFunction(
-                FunctionFactory::instance().get("getSubcolumn", context), {storage_column, &subcolumn_name_node}, column.name));
-        }
+
+        const String subcolumn_name = name.substr(source->result_name.size() + 1);
+        auto string_type = std::make_shared<DataTypeString>();
+        const auto & subcolumn_name_node = dag.addColumn(string_type->createColumnConst(1, subcolumn_name), string_type, subcolumn_name);
+        dag.getOutputs().push_back(&dag.addFunction(
+            FunctionFactory::instance().get("getSubcolumn", context), {source, &subcolumn_name_node}, name));
     }
 }
 
@@ -1992,10 +2025,35 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     return true;
                 return stripped_prewhere_info && stripped_prewhere_info->prewhere_actions.getRequiredColumns().contains(column_name);
             };
+            bool header_extended = false;
             for (const auto & column : object_info->data_lake_metadata->additional_file_columns)
             {
                 if (!initial_header.has(column.name) && is_needed(column.name))
+                {
                     initial_header.insert({column.type->createColumn(), column.type, column.name});
+                    header_extended = true;
+                }
+            }
+
+            /// The key condition of a filter info refers to the columns by their positions in the header it is built for
+            /// (once), and the filter info of the query is shared by the objects, which have different headers now:
+            /// make a copy for this object, with its own key condition.
+            if (header_extended && filter_info)
+            {
+                auto filter_info_for_header = std::make_shared<FormatFilterInfo>(
+                    filter_info->filter_actions_dag,
+                    context_,
+                    filter_info->column_mapper,
+                    filter_info->row_level_filter,
+                    filter_info->prewhere_info);
+                filter_info_for_header->current_schema_column_mapper = filter_info->current_schema_column_mapper;
+                filter_info_for_header->condition_hash = filter_info->condition_hash;
+                filter_info_for_header->rows_to_read = filter_info->rows_to_read;
+                filter_info_for_header->need_row_numbers = filter_info->need_row_numbers;
+                filter_info_for_header->top_k_filter = filter_info->top_k_filter;
+                filter_info_for_header->min_max_from_statistics = filter_info->min_max_from_statistics;
+                filter_info_for_header->keep_filter_column_statistics = filter_info->keep_filter_column_statistics;
+                filter_info = filter_info_for_header;
             }
         }
 
@@ -2120,7 +2178,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// FIXME: This is currently not done for the below case (configuration->getSchemaTransformer())
             /// because it is an iceberg case where transformer contains columns ids (just increasing numbers)
             /// which do not match requested_columns (while here requested_columns were adjusted to match physical columns).
-            Names needed_names = read_from_format_info.requested_columns.getNames();
+            /// The columns in storage: the requested subcolumns are extracted from them after the transform.
+            Names needed_names;
+            for (const auto & column : read_from_format_info.requested_columns)
+                needed_names.push_back(column.getNameInStorage());
             auto add_filter_required_names = [&needed_names](const ActionsDAG & dag)
             {
                 for (const auto & required : dag.getRequiredColumns())
@@ -2130,7 +2191,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_required_names(stripped_row_level_filter->actions);
             if (stripped_prewhere_info)
                 add_filter_required_names(stripped_prewhere_info->prewhere_actions);
-            addRequestedSubcolumns(*schema_transform, read_from_format_info.requested_columns, context_);
+            addRequestedSubcolumns(*schema_transform, read_from_format_info.requested_columns, builder.getHeader(), context_);
             /// A file read under its own schema has all its columns as inputs, as in the `getSchemaTransformer` case below.
             if (!schema_changed)
                 schema_transform->removeUnusedActions(needed_names);
