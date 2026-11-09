@@ -126,7 +126,7 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(parsed_arguments);
-    paths = {path};
+    setPaths({path});
 }
 void StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure)
 {
@@ -147,6 +147,6 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(parsed_arguments);
-    paths = {path};
+    setPaths({path});
 }
 }

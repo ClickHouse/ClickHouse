@@ -64,7 +64,7 @@ public:
     void setRawPath(const Path & path_) override
     {
         path = path_;
-        paths = {path};
+        setPaths({path});
         setPathForRead(path);
     }
     const String & getRawURI() const override { return raw_url; }

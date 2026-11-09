@@ -43,7 +43,8 @@ public:
         GetNextPathCallback get_next_path_ = {},
         PublishPathCallback publish_path_ = {},
         bool path_is_published_ = true,
-        RemovedPathCallback on_path_removed_ = {});
+        RemovedPathCallback on_path_removed_ = {},
+        bool fail_if_exists_ = false);
 
     ~StorageObjectStorageSink() override;
 
@@ -77,6 +78,9 @@ private:
     /// is registered only after it has been written and committed.
     bool path_is_published = true;
     const RemovedPathCallback on_path_removed;
+    /// Every object of the insert is written conditionally, so that the insert fails instead of overwriting an object
+    /// that another writer - not necessarily an insert into this table - has created after the key was chosen.
+    const bool fail_if_exists;
 
     /// The buffer that writes into the object storage. It is also used to count the number of bytes
     /// written to the object. It is declared before `write_buf` so that it outlives the compressing

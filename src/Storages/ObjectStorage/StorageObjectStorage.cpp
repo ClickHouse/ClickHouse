@@ -1188,7 +1188,9 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         /// A cancelled rewrite of the starting key in HDFS or in ADLS Gen2 (OneLake) deletes the file the previous insert has committed, and the
         /// key must not stay taken: the next insert would refuse to write it, or step aside from it, leaving the table
         /// without its base file. It is still reserved by this insert while the cancelled write cleans up.
-        [config = configuration](const String & removed_key) { config->forgetPathCommittedByInsert(removed_key); });
+        [config = configuration](const String & removed_key) { config->forgetPathCommittedByInsert(removed_key); },
+        /// Another writer can take the same key between the probe above and the end of the upload.
+        /* fail_if_exists = */ settings.create_new_file_on_insert && !settings.truncate_on_insert);
 
     /// A truncating insert overwrites the table: it starts from the key chosen above, the split objects
     /// of the previous split inserts are forgotten, and the numbering starts over, overwriting them one by one.

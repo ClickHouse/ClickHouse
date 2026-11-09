@@ -76,7 +76,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     GetNextPathCallback get_next_path_,
     PublishPathCallback publish_path_,
     bool path_is_published_,
-    RemovedPathCallback on_path_removed_)
+    RemovedPathCallback on_path_removed_,
+    bool fail_if_exists_)
     : SinkToStorage(sample_block_)
     , path(path_)
     , object_storage(object_storage_)
@@ -91,6 +92,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     , publish_path(std::move(publish_path_))
     , path_is_published(path_is_published_)
     , on_path_removed(std::move(on_path_removed_))
+    , fail_if_exists(fail_if_exists_)
 {
     if (split_on_write_by_size_bytes && !get_next_path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Splitting the data by size is requested without a way to get the name of the next object");
@@ -103,11 +105,16 @@ void StorageObjectStorageSink::initialize()
     const auto & settings = context->getSettingsRef();
     const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
+    auto write_settings = context->getWriteSettings();
+    /// HDFS rejects conditional writes, so it keeps writing unconditionally.
+    if (fail_if_exists && object_storage->getType() != ObjectStorageType::HDFS)
+        write_settings.object_storage_write_if_none_match = "*";
+
     /// The sink keeps the ownership of the buffer that writes into the object storage, so that the amount
     /// of the data written into the object can be checked for splitting. The compressing wrapper, if any,
     /// is created as a non-owning one on top of it.
     destination_buf = object_storage->writeObject(
-        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
 
     if (chosen_compression_method != CompressionMethod::None)
         write_buf = wrapWriteBufferWithCompressionMethod(
@@ -355,7 +362,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         std::move(publish_path),
         /* path_is_published = */ false,
         /// See the same callback in `StorageObjectStorage::write`.
-        [config = configuration](const String & removed_key) { config->forgetPathCommittedByInsert(removed_key); });
+        [config = configuration](const String & removed_key) { config->forgetPathCommittedByInsert(removed_key); },
+        /* fail_if_exists = */ query_settings.create_new_file_on_insert && !query_settings.truncate_on_insert);
 
     /// A partitioned sink keeps no list of the objects it has written, so there is nothing to attribute
     /// the numbered keys of a previous insert to, and the removal is done only for a truncating insert
