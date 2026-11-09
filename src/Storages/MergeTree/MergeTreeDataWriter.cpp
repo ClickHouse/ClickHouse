@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -607,7 +608,11 @@ Block MergeTreeDataWriter::mergeBlock(
     for (const auto * column_name : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
     {
         if (!column_name->empty() && !block.has(*column_name))
-            block.insert(block.getSubcolumnByName(*column_name));
+        {
+            /// Another column (e.g. a JSON path) may have a subcolumn with the same name, the table columns define its owner.
+            auto subcolumn = metadata_snapshot->getColumns().getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, *column_name);
+            block.insert({getColumnFromBlock(block, subcolumn), subcolumn.type, *column_name});
+        }
     }
 
     SharedHeader header = std::make_shared<const Block>(std::move(block));
