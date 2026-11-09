@@ -584,10 +584,17 @@ UInt64 ActionsDAG::getComputedOutputsHash(const Block & input_header) const
         }
     }
 
+    /// Mix the outputs in a fixed order: a `Project names` folded into this step in only one plan build may reorder them.
+    std::vector<UInt64> output_hashes;
+    output_hashes.reserve(outputs.size());
+    for (const auto * output : outputs)
+        output_hashes.push_back(node_hashes.at(output));
+    std::sort(output_hashes.begin(), output_hashes.end());
+
     SipHash hash;
     hash.update(outputs.size());
-    for (const auto * output : outputs)
-        hash.update(node_hashes.at(output));
+    for (const auto output_hash : output_hashes)
+        hash.update(output_hash);
     return hash.get64();
 }
 
