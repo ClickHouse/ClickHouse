@@ -66,6 +66,8 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
     {
+        options.output_decimal_minimal_physical_type = format_filter_info_->column_mapper->isIcebergSchema();
+
         /// The mapper outlives this format (and the encoder threads) via format_filter_info.
         /// It has to be consulted identically here and on the data paths below: the reader takes its
         /// max definition level from the schema, while the writer takes the level bit width from the

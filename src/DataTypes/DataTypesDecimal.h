@@ -295,6 +295,9 @@ extern template DataTypePtr createDecimalMaxPrecision<Decimal64>(UInt64 scale);
 extern template DataTypePtr createDecimalMaxPrecision<Decimal128>(UInt64 scale);
 extern template DataTypePtr createDecimalMaxPrecision<Decimal256>(UInt64 scale);
 
+/// The minimum number of bytes that hold every value of the given precision as a two's-complement integer.
+size_t getDecimalMinimalByteSize(UInt32 precision);
+
 extern template class DataTypeDecimal<Decimal32>;
 extern template class DataTypeDecimal<Decimal64>;
 extern template class DataTypeDecimal<Decimal128>;

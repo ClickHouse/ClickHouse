@@ -322,13 +322,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             schema.__set_logicalType(*logical);
     };
 
-    auto decimal = [&](Int32 bytes, UInt32 precision, UInt32 scale)
+    auto decimal_annotation = [&](UInt32 precision, UInt32 scale)
     {
-        /// Currently we encode all decimals as byte arrays, even though Decimal32 and Decimal64
-        /// could be INT32 and INT64 instead. There doesn't seem to be much difference.
-        state.column_chunk.meta_data.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
-        schema.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
-        schema.__set_type_length(bytes);
         schema.__set_scale(static_cast<Int32>(scale));
         schema.__set_precision(static_cast<Int32>(precision));
         schema.__set_converted_type(parq::ConvertedType::DECIMAL);
@@ -338,6 +333,14 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         parq::LogicalType t;
         t.__set_DECIMAL(d);
         schema.__set_logicalType(t);
+    };
+
+    auto decimal = [&](Int32 bytes, UInt32 precision, UInt32 scale)
+    {
+        state.column_chunk.meta_data.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
+        schema.__set_type(parq::Type::FIXED_LEN_BYTE_ARRAY);
+        schema.__set_type_length(bytes);
+        decimal_annotation(precision, scale);
     };
 
     switch (type->getTypeId())
@@ -527,10 +530,25 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         /// Parquet doesn't have a logical type for `IPv6`.
         case TypeIndex::IPv6:    fixed_string(16); break;
 
-        case TypeIndex::Decimal32:  decimal(4, getDecimalPrecision(*type), getDecimalScale(*type)); break;
-        case TypeIndex::Decimal64:  decimal(8, getDecimalPrecision(*type), getDecimalScale(*type)); break;
-        case TypeIndex::Decimal128: decimal(16, getDecimalPrecision(*type), getDecimalScale(*type)); break;
-        case TypeIndex::Decimal256: decimal(32, getDecimalPrecision(*type), getDecimalScale(*type)); break;
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+        {
+            const UInt32 precision = getDecimalPrecision(*type);
+            const UInt32 scale = getDecimalScale(*type);
+            const TypeIndex type_id = type->getTypeId();
+            if (!options.output_decimal_minimal_physical_type)
+                decimal(static_cast<Int32>(type->getSizeOfValueInMemory()), precision, scale);
+            else if (type_id == TypeIndex::Decimal32 || type_id == TypeIndex::Decimal64)
+            {
+                types(type_id == TypeIndex::Decimal32 ? T::INT32 : T::INT64);
+                decimal_annotation(precision, scale);
+            }
+            else
+                decimal(static_cast<Int32>(getDecimalMinimalByteSize(precision)), precision, scale);
+            break;
+        }
 
         default:
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of column '{}' is not supported for conversion into Parquet data format.", type->getFamilyName(), name);

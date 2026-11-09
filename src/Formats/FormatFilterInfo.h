@@ -104,6 +104,10 @@ public:
     bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
     bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
 
+    /// Built from an Iceberg schema: a writer stores values in the physical types the Iceberg spec gives them.
+    void setIcebergSchema() { is_iceberg_schema = true; }
+    bool isIcebergSchema() const { return is_iceberg_schema; }
+
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
@@ -119,6 +123,7 @@ private:
     bool has_iceberg_required_info = false;
     std::unordered_set<String> local_timestamp_paths;
     std::unordered_set<Int64> iceberg_time_field_ids;
+    bool is_iceberg_schema = false;
     std::optional<Int64> last_assigned_field_id;
 };
 

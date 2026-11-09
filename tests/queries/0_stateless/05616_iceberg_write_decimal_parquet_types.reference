@@ -1,0 +1,72 @@
+--- physical types
+d10	['INT64']	['Decimal(precision=10, scale=2)']	[0]
+d20	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=20, scale=2)']	[9]
+d38	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=38, scale=2)']	[16]
+d5	['INT32']	['Decimal(precision=5, scale=2)']	[0]
+d9	['INT32']	['Decimal(precision=9, scale=2)']	[0]
+id	['INT32']	['None']	[0]
+n6	['INT32']	['Decimal(precision=6, scale=2)']	[0]
+s.x	['INT32']	['Decimal(precision=5, scale=2)']	[0]
+s.y	['INT32']	['None']	[0]
+--- statistics
+d10	-9999999999	9999999999
+d20	250 148 56 161 210 156 240 0 1	5 107 199 94 45 99 15 255 255
+d38	180 196 179 87 165 121 59 133 246 117 221 192 0 0 0 1	75 59 76 168 90 134 196 122 9 138 34 63 255 255 255 255
+d5	-99999	99999
+d9	-999999999	999999999
+id	1	5
+n6	-999999	999999
+s.x	-99999	99999
+s.y	1	5
+--- round trip
+1	1.23	1.23	1.23	1.23	1.23	1.23	(1.23,1)
+2	-4.56	-4.56	-4.56	-4.56	-4.56	\N	(-4.56,2)
+3	999.99	9999999.99	99999999.99	999999999999999999.99	999999999999999999999999999999999999.99	9999.99	(999.99,3)
+4	-999.99	-9999999.99	-99999999.99	-999999999999999999.99	-999999999999999999999999999999999999.99	-9999.99	(-999.99,4)
+5	0	0	0	0	0	0	(0,5)
+--- filtered reads
+d5 = 1.23	[1]
+d9 = -9999999.99	[4]
+d10 IN (toDecimal64(\'1.23\', 2), toDecimal64(\'-4.56\', 2))	[1,2]
+d20 = toDecimal128(\'-4.56\', 2)	[2]
+d38 = toDecimal128(\'-999999999999999999999999999999999999.99\', 2)	[4]
+d20 < 0	[2,4]
+n6 = -9999.99	[4]
+n6 IS NULL	[2]
+s.x = 1.23	[1]
+--- DELETE and OPTIMIZE
+0
+d10	['INT64']	['Decimal(precision=10, scale=2)']	[0]
+d20	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=20, scale=2)']	[9]
+d38	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=38, scale=2)']	[16]
+d5	['INT32']	['Decimal(precision=5, scale=2)']	[0]
+d9	['INT32']	['Decimal(precision=9, scale=2)']	[0]
+id	['INT32']	['None']	[0]
+n6	['INT32']	['Decimal(precision=6, scale=2)']	[0]
+s.x	['INT32']	['Decimal(precision=5, scale=2)']	[0]
+s.y	['INT32']	['None']	[0]
+1	1.23	1.23	1.23	1.23	1.23	1.23	(1.23,1)
+2	-4.56	-4.56	-4.56	-4.56	-4.56	\N	(-4.56,2)
+3	999.99	9999999.99	99999999.99	999999999999999999.99	999999999999999999999999999999999999.99	9999.99	(999.99,3)
+4	-999.99	-9999999.99	-99999999.99	-999999999999999999.99	-999999999999999999999999999999999999.99	-9999.99	(-999.99,4)
+--- UPDATE
+1
+d10	['INT64']	['Decimal(precision=10, scale=2)']	[0]
+d20	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=20, scale=2)']	[9]
+d38	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=38, scale=2)']	[16]
+d5	['INT32']	['Decimal(precision=5, scale=2)']	[0]
+d9	['INT32']	['Decimal(precision=9, scale=2)']	[0]
+id	['INT32']	['None']	[0]
+n6	['INT32']	['Decimal(precision=6, scale=2)']	[0]
+s.x	['INT32']	['Decimal(precision=5, scale=2)']	[0]
+s.y	['INT32']	['None']	[0]
+1	-1.11	-1.11	-1.11	(-1.11,1)
+2	-4.56	-4.56	-4.56	(-4.56,2)
+3	999.99	99999999.99	999999999999999999.99	(999.99,3)
+4	-999.99	-99999999.99	-999999999999999999.99	(-999.99,4)
+--- a value out of the range of its precision
+DECIMAL_OVERFLOW
+1	-999999999999999999.99
+--- plain Parquet output is unchanged
+d20	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=20, scale=2)']	[16]
+d5	['FIXED_LEN_BYTE_ARRAY']	['Decimal(precision=5, scale=2)']	[4]

@@ -27,6 +27,9 @@ struct WriteOptions
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
+    /// Write decimals as INT32, INT64 or FIXED_LEN_BYTE_ARRAY of the minimum width for the precision,
+    /// as the Iceberg spec requires, instead of FIXED_LEN_BYTE_ARRAY of the column's width.
+    bool output_decimal_minimal_physical_type = false;
 
     /// Note: the meaning of some compression methods here is different from
     /// wrapReadBufferWithCompressionMethod:
