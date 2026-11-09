@@ -34,6 +34,10 @@ SELECT estimateCompressionRatio('UInt8')(n) FROM src WHERE n < 256 FORMAT Null;
 SELECT estimateCompressionRatio('String')(nullIf(s, 'region_5')) FROM src; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT estimateCompressionRatio('Nullable(String)')(nullIf(s, 'region_5')) > 0 FROM src;
 SELECT estimateCompressionRatio('UInt32')(s) FROM src; -- { serverError CANNOT_PARSE_TEXT }
+-- The conversion follows the settings of the query, as `accurateCast`.
+SELECT estimateCompressionRatio('Enum8(\'only\' = 1)')(toUInt8(2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT estimateCompressionRatio('DateTime')('01/02/2020') > 0 SETTINGS cast_string_to_date_time_mode = 'best_effort';
+SELECT estimateCompressionRatio('DateTime')('01/02/2020') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
 -- A codec the target type cannot take, or that compresses nothing by itself.
 SELECT estimateCompressionRatio('T64', 'String')(n) FROM src WHERE n > 1000000; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 SELECT estimateCompressionRatio('Delta', 'LowCardinality(String)')(n) FROM src WHERE n > 1000000; -- { serverError BAD_ARGUMENTS }
@@ -74,6 +78,13 @@ CREATE TABLE results (r Float64) ENGINE = Memory;
 INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 1000;
 INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 8192;
 INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 65409;
+SELECT uniqExact(r), count() FROM results;
+-- Also with rows wide enough to end granules by bytes, of varying width.
+TRUNCATE TABLE results;
+INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) SETTINGS max_block_size = 1000;
+INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) SETTINGS max_block_size = 8192;
+INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) SETTINGS max_block_size = 65409;
+INSERT INTO results SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(if(intDiv(number, 3000) % 2 = 0, repeat('a', 10 + number % 7), repeat(toString(number % 97), 40 + number % 300))) FROM numbers(20000) GROUP BY number % 1;
 SELECT uniqExact(r), count() FROM results;
 
 SELECT 'aggregation';

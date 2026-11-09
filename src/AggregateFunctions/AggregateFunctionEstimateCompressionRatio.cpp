@@ -33,6 +33,8 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Arena.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/assert_cast.h>
@@ -362,10 +364,15 @@ public:
             codec_description = CompressionCodecFactory::instance().getDefaultCodec()->getFullCodecDescription();
         }
 
-        /// Prepared once here, so that a conversion the types do not allow is reported here and not at the first granule.
+        /// Prepared once here, so that a conversion the types do not allow is reported here and not at the first granule. With the
+        /// settings of the query, as `accurateCast` (enum values, date and time parsing); the cast copies them.
         if (!source_type->equals(*target_type))
         {
-            cast = createInternalCast({source_type->createColumn(), source_type, ""}, target_type, CastType::accurate, {}, nullptr);
+            ContextPtr query_context;
+            if (CurrentThread::isInitialized())
+                query_context = CurrentThread::get().tryGetQueryContext();
+            cast = createInternalCast(
+                {source_type->createColumn(), source_type, ""}, target_type, CastType::accurate, {}, query_context);
             cast->prepare({});
         }
 
@@ -506,7 +513,18 @@ private:
             const size_t room_bytes = GRANULE_BYTES - std::min(GRANULE_BYTES, pending.byteSize());
             const size_t rows = std::max<size_t>(1, std::min({row_end - row_begin, room_rows, room_bytes / bytes_per_row}));
             pending.insertRangeFrom(column, row_begin, rows);
-            row_begin += rows;
+            /// A granule ends after the first row that fills it, as in `add`, whatever the blocks. The bytes only grow with
+            /// the rows, so only a range that went past `GRANULE_BYTES` is added again row by row to find that row.
+            if (rows > 1 && pending.byteSize() >= GRANULE_BYTES)
+            {
+                pending.popBack(rows);
+                while (row_begin < row_end && !isGranuleFull(data_ref))
+                    pending.insertFrom(column, row_begin++);
+            }
+            else
+            {
+                row_begin += rows;
+            }
             if (isGranuleFull(data_ref))
                 writePending(data_ref);
         }
