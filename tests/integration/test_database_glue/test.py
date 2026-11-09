@@ -1407,14 +1407,28 @@ def test_native_create_s3_scheme_storage_endpoint(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
-def test_native_create_force_add_bucket_rejected(started_cluster):
+@pytest.mark.parametrize(
+    "database_settings, expected_setting",
+    [
+        ({"force_add_bucket": 1}, "`force_add_bucket`"),
+        (
+            {
+                "storage_endpoint": "http://minio1:9001",
+                "storage_uri_style": "virtual_hosted",
+                "default_base_location": "s3://warehouse-glue/prefix",
+            },
+            "`storage_uri_style = 'virtual_hosted'`",
+        ),
+    ],
+)
+def test_native_create_bucket_settings_rejected(started_cluster, database_settings, expected_setting):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_native_create_force_add_bucket_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, {"force_add_bucket": 1})
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, database_settings)
     error = node.query_and_get_error(
         f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
         settings={
@@ -1423,7 +1437,7 @@ def test_native_create_force_add_bucket_rejected(started_cluster):
             "write_full_path_in_iceberg_metadata": 1,
         },
     )
-    assert "`force_add_bucket`" in error, error
+    assert expected_setting in error, error
 
     glue_client = boto3.client(
         "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)

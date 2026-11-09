@@ -1617,14 +1617,20 @@ void DatabaseDataLake::createTable(
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     /// Glue stages the first metadata file in the bucket of `storage_endpoint` under the path of the location,
-    /// while reopening with `force_add_bucket` puts the bucket of the location in front of that path.
+    /// while reopening with `force_add_bucket` puts the bucket of the location in front of that path, and reopening
+    /// with `storage_uri_style = 'virtual_hosted'` puts the bucket of the location into the host of the endpoint.
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::GLUE
-        && settings[DatabaseDataLakeSetting::force_add_bucket]
-        && !settings[DatabaseDataLakeSetting::storage_endpoint].value.empty()
-        && settings[DatabaseDataLakeSetting::storage_uri_style].value != S3UriStyle::VIRTUAL_HOSTED)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "CREATE TABLE without a table engine is not supported for a Glue DataLakeCatalog with `force_add_bucket` "
-            "and `storage_endpoint`: the table would be unreadable immediately after creation");
+        && !settings[DatabaseDataLakeSetting::storage_endpoint].value.empty())
+    {
+        if (settings[DatabaseDataLakeSetting::storage_uri_style].value == S3UriStyle::VIRTUAL_HOSTED)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "CREATE TABLE without a table engine is not supported for a Glue DataLakeCatalog with "
+                "`storage_uri_style = 'virtual_hosted'` and `storage_endpoint`: the table would be unreadable immediately after creation");
+        if (settings[DatabaseDataLakeSetting::force_add_bucket])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "CREATE TABLE without a table engine is not supported for a Glue DataLakeCatalog with `force_add_bucket` "
+                "and `storage_endpoint`: the table would be unreadable immediately after creation");
+    }
 
     const String location = getNewTableLocation(settings, catalog, namespace_name, table_name);
 

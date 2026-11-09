@@ -1195,9 +1195,13 @@ bool StorageObjectStorage::prepareForDropImpl(
             return false;
     }
 
-    /// Dropping a data lake deletes its data with the client it holds.
+    /// Dropping a data lake deletes its data with the client it holds, which may have been built for another session:
+    /// rebuild it under the credential restriction of this one.
     if (configuration->isDataLakeConfiguration())
+    {
         checkSessionMayUseServerIdentity(*object_storage, query_context);
+        configuration->StorageObjectStorageConfiguration::update(object_storage, query_context);
+    }
 
     /// `drop` runs in the background, where the metadata of a table that has not been accessed since the server
     /// started is still unloaded and `configuration->drop` would find nothing to delete: load it now, with the
