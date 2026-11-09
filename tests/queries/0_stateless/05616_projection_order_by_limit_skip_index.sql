@@ -8,6 +8,8 @@ SET optimize_read_in_order = 1;
 SET use_query_condition_cache = 0;
 SET optimize_projection_skip_index_ratio = 0.5;
 SET explain_query_plan_default = 'legacy';
+-- With `read_overflow_mode = 'throw'`, the `max_rows_to_read` of the CI profile disables the deferral of skip indexes.
+SET max_rows_to_read = 0;
 
 DROP TABLE IF EXISTS t_proj_topn;
 
