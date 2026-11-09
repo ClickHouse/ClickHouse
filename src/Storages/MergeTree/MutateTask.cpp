@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
@@ -493,35 +494,36 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
 }
 
 /// Whether a column's explicit codec descriptor resolves the table's default codec, i.e. references
-/// `Default` -- either directly (`CODEC(Default)`) or inside a pipeline (`CODEC(Delta, Default)`).
-/// `CompressionCodecFactory::get` substitutes `Default` with the codec passed as `current_default`,
-/// so such a codec's effective compression changes with the table's `default_compression_codec`
-/// setting. The wide-part fast path resolves it against the part's *stored* default codec, so it
-/// cannot honor a change of that setting -- those columns must go through the whole-part rewrite.
+/// `Default` -- either directly (`CODEC(Default)`), inside a pipeline (`CODEC(Delta, Default)`), or
+/// as an alternative of a combinator (`CODEC(FirstApplicable(T64, Default))`, including inside its
+/// `Multiple` alternatives). `CompressionCodecFactory::get` substitutes `Default` with the codec
+/// passed as `current_default` (`CompressionCodecFirstApplicable` resolves its nested `Default`
+/// the same way), so such a codec's effective compression changes with the table's
+/// `default_compression_codec` setting. The wide-part fast path resolves it against the part's
+/// *stored* default codec, so it cannot honor a change of that setting -- those columns must go
+/// through the whole-part rewrite.
+static bool codecElementsDependOnDefault(const ASTs & elements)
+{
+    return std::ranges::any_of(elements, [](const ASTPtr & element)
+    {
+        /// Compare case-insensitively like `CompressionCodecFactory::get` does: the original AST
+        /// (e.g. `CODEC(Delta, default)` of a heterogeneous `Tuple`) can reach here as is.
+        const auto [name, arguments] = CompressionCodecFactory::getCodecNameAndArguments(element);
+        if (equalsCaseInsensitive(name, DEFAULT_CODEC_NAME))
+            return true;
+        if (arguments && (equalsCaseInsensitive(name, FIRST_APPLICABLE_CODEC_NAME) || equalsCaseInsensitive(name, "Multiple")))
+            return codecElementsDependOnDefault(arguments->children);
+        return false;
+    });
+}
+
 static bool codecDependsOnDefault(const ASTPtr & codec_ast)
 {
     const auto * func = codec_ast->as<ASTFunction>();
     if (!func || !func->arguments)
         return false;
 
-    for (const auto & child : func->arguments->children)
-    {
-        /// `Default` is parsed as a bare identifier (it takes no arguments), but accept the function
-        /// form defensively as well. Compare case-insensitively like `CompressionCodecFactory::get` does:
-        /// the original AST (e.g. `CODEC(Delta, default)` of a heterogeneous `Tuple`) can reach here as is.
-        if (const auto * identifier = child->as<ASTIdentifier>())
-        {
-            if (equalsCaseInsensitive(identifier->name(), DEFAULT_CODEC_NAME))
-                return true;
-        }
-        else if (const auto * child_func = child->as<ASTFunction>())
-        {
-            if (equalsCaseInsensitive(child_func->name, DEFAULT_CODEC_NAME))
-                return true;
-        }
-    }
-
-    return false;
+    return codecElementsDependOnDefault(func->arguments->children);
 }
 
 /// Wide parts written before `columns_substreams.txt` was introduced (in 25.8) can contain a column

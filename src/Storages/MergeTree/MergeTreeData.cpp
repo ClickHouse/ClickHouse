@@ -7559,7 +7559,30 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
         return found && structural;
     };
 
-    const auto storage_columns = columns.getAllPhysical().getNameSet();
+    /// Resolve the column that owns a required name by type, not by the longest stored prefix:
+    /// with a column `a` and a stored column `a.b Tuple(x Float64)`, `a.b.x` is a subcolumn of
+    /// `a.b`, while `Nested::tryGetColumnNameInStorage` would attribute it to `a`.
+    auto get_owning_column = [&](const String & name, GetColumnsOptions::Kind kind) -> std::optional<String>
+    {
+        if (auto column = columns.tryGetColumnOrSubcolumn(kind, name))
+            return column->getNameInStorage();
+        return std::nullopt;
+    };
+    auto get_owning_stored_column = [&](const String & name) { return get_owning_column(name, GetColumnsOptions::AllPhysical); };
+    /// The same over the stored, `EPHEMERAL` and `ALIAS` columns. `ColumnsDescription` does not
+    /// register subcolumns of `ALIAS` columns, so check the subcolumns of those by their types.
+    auto get_owning_column_or_helper = [&](const String & name) -> std::optional<String>
+    {
+        if (auto owning_column = get_owning_column(name, GetColumnsOptions::All))
+            return owning_column;
+        for (const auto & alias_column : columns.getAliases())
+        {
+            if (name.size() > alias_column.name.size() + 1 && name.starts_with(alias_column.name) && name[alias_column.name.size()] == '.'
+                && alias_column.type->hasSubcolumn(name.substr(alias_column.name.size() + 1)))
+                return alias_column.name;
+        }
+        return std::nullopt;
+    };
 
     /// Resolve the expressions of `MATERIALIZED` columns the same way `MutationsInterpreter` does
     /// when it collects the affected `MATERIALIZED` columns: over the physical columns plus the
@@ -7577,10 +7600,8 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     /// `replaceSubcolumnsToGetSubcolumnFunctionInQuery` below still collapses them to the owning
     /// column, which conservatively counts as reading its values.
     NamesAndTypesList analysis_columns = all_columns_with_helpers;
-    NameSet resolvable_column_names;
     for (const auto & column : all_columns_with_helpers)
     {
-        resolvable_column_names.insert(column.name);
         for (const auto & subcolumn_name : column.type->getSubcolumnNames())
             analysis_columns.emplace_back(column.name, subcolumn_name, column.type, column.type->getSubcolumnType(subcolumn_name));
     }
@@ -7635,7 +7656,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
                 if (!visited_columns.emplace(required_column).second)
                     continue;
                 /// The required name may be an `EPHEMERAL` or an `ALIAS` column or one of their subcolumns.
-                auto owning_column = Nested::tryGetColumnNameInStorage(required_column, resolvable_column_names);
+                auto owning_column = get_owning_column_or_helper(required_column);
                 const auto * required_column_desc = owning_column ? columns.tryGet(*owning_column) : nullptr;
                 if (required_column_desc
                     && (required_column_desc->default_desc.kind == ColumnDefaultKind::Ephemeral
@@ -7689,7 +7710,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
             if (!visited_columns.emplace(required_column).second)
                 continue;
 
-            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            auto column_in_storage = get_owning_stored_column(required_column);
             const auto * required_column_desc = column_in_storage ? columns.tryGet(*column_in_storage) : nullptr;
             if (!required_column_desc || *column_in_storage == column_name
                 || (required_column_desc->default_desc.kind != ColumnDefaultKind::Default
@@ -7721,7 +7742,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     {
         return std::ranges::any_of(expand_columns_absent_from_part(required_columns), [&](const String & required_column)
         {
-            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            auto column_in_storage = get_owning_stored_column(required_column);
             if (!column_in_storage || *column_in_storage != column_name)
                 return false;
             if (required_column.size() > column_name.size()
@@ -7791,7 +7812,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     {
         return std::ranges::any_of(required_columns, [&](const String & required_column)
         {
-            auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+            auto column_in_storage = get_owning_stored_column(required_column);
             return column_in_storage && columns_updated_by_task.contains(*column_in_storage);
         });
     };
