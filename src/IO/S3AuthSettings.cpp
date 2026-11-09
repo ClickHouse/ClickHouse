@@ -179,6 +179,21 @@ bool S3AuthSettings::hasUpdates(const S3AuthSettings & other) const
 
 void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
 {
+    /// The Google credential mechanisms (the ADC triple and `google_service_account_key`) are mutually exclusive, so a
+    /// layer that supplies one of them replaces the other one of this base as well, instead of leaving an ambiguous
+    /// pair: a key of an endpoint section replaces the ADC triple of the general `<s3>` section, and a key that takes
+    /// the place of the ADC triple in the server config replaces, on reload, the triple an existing table kept from
+    /// the previous config. A single layer that supplies both is still refused when the client is built.
+    if (settings.impl->isChanged("google_service_account_key"))
+    {
+        impl->set("google_adc_client_id", "");
+        impl->set("google_adc_client_secret", "");
+        impl->set("google_adc_refresh_token", "");
+    }
+    if (settings.impl->isChanged("google_adc_client_id") || settings.impl->isChanged("google_adc_client_secret")
+        || settings.impl->isChanged("google_adc_refresh_token"))
+        impl->set("google_service_account_key", "");
+
     for (auto & setting : settings.impl->all())
     {
         if (setting.isValueChanged())

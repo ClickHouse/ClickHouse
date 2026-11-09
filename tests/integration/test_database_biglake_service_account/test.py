@@ -87,6 +87,21 @@ def create_database(instance, name, key, catalog_host="localhost", extra_setting
     )
 
 
+def issuers_of_new_assertions(instance, query, allow_server_credentials):
+    """Run the query and return the `iss` claims of the assertions the mock received during it, and the query error."""
+    mock_ctl("/__reset__")
+    _, error = instance.query_and_get_answer_with_error(
+        query,
+        settings={
+            "s3_allow_server_credentials_in_user_queries": allow_server_credentials
+        },
+    )
+    assertions = json.loads(mock_ctl("/__stats__"))["assertions"]
+    return [
+        json.loads(b64url_decode(a.split(".")[1]))["iss"] for a in assertions
+    ], error
+
+
 def test_service_account_key_auth():
     mock_ctl("/__reset__")
     node.query("DROP DATABASE IF EXISTS biglake_sa")
@@ -216,19 +231,6 @@ def test_server_key_not_used_by_restricted_session():
         )
         server_key_node.query("SYSTEM RELOAD CONFIG")
 
-    def issuers_of_new_assertions(query, allow_server_credentials):
-        mock_ctl("/__reset__")
-        _, error = server_key_node.query_and_get_answer_with_error(
-            query,
-            settings={
-                "s3_allow_server_credentials_in_user_queries": allow_server_credentials
-            },
-        )
-        assertions = json.loads(mock_ctl("/__stats__"))["assertions"]
-        return [
-            json.loads(b64url_decode(a.split(".")[1]))["iss"] for a in assertions
-        ], error
-
     set_server_key(service_account_key(token_host="node"))
     assert (
         server_key_node.query(
@@ -244,22 +246,29 @@ def test_server_key_not_used_by_restricted_session():
     )
 
     # The opt-in session uses the server key.
-    issuers, _ = issuers_of_new_assertions("SELECT * FROM t_server_key", 1)
+    issuers, _ = issuers_of_new_assertions(
+        server_key_node, "SELECT * FROM t_server_key", 1
+    )
     assert SA_CLIENT_EMAIL in issuers
 
     # The table follows a rotation of the server key, because it did not supply the key itself.
     set_server_key(service_account_key(client_email=rotated_email, token_host="node"))
-    issuers, _ = issuers_of_new_assertions("SELECT * FROM t_server_key", 1)
+    issuers, _ = issuers_of_new_assertions(
+        server_key_node, "SELECT * FROM t_server_key", 1
+    )
     assert rotated_email in issuers
     assert SA_CLIENT_EMAIL not in issuers
 
     # A restricted session is refused and never mints a token with the server key, also after the reload.
-    issuers, error = issuers_of_new_assertions("SELECT * FROM t_server_key", 0)
+    issuers, error = issuers_of_new_assertions(
+        server_key_node, "SELECT * FROM t_server_key", 0
+    )
     assert issuers == []
     assert "ACCESS_DENIED" in error
 
     # A key supplied by a named collection is explicit, so a restricted session still uses it.
     issuers, error = issuers_of_new_assertions(
+        server_key_node,
         "SELECT * FROM s3(user_key_collection, format = 'TSV', structure = 'x UInt8')",
         0,
     )
@@ -267,3 +276,64 @@ def test_server_key_not_used_by_restricted_session():
     assert issuers and set(issuers) == {user_email}
 
     server_key_node.query("DROP TABLE t_server_key")
+
+
+def test_google_credential_layers_replace_each_other():
+    """A configuration layer that supplies one Google credential mechanism replaces the other mechanism of the layer
+    below it, instead of leaving an ambiguous ADC triple plus key: a key in an endpoint section over an ADC triple in
+    the general `<s3>` section, and a key that takes the place of the ADC triple in the server config of an existing table.
+    """
+    layered_url = f"http://node:{MOCK_PORT}/layered"
+    migrated_url = f"http://node:{MOCK_PORT}/migrated"
+    key = service_account_key(token_host="node")
+    adc_triple = """
+            <google_adc_client_id>client-id</google_adc_client_id>
+            <google_adc_client_secret>client-secret</google_adc_client_secret>
+            <google_adc_refresh_token>refresh-token</google_adc_refresh_token>"""
+    key_credential = f"""
+            <google_service_account_key>{key}</google_service_account_key>"""
+
+    def set_server_config(general_credential, migrated_credential):
+        server_key_node.replace_config(
+            "/etc/clickhouse-server/config.d/server_s3_service_account.xml",
+            f"""<clickhouse>
+    <s3>{general_credential}
+        <gcs_layered>
+            <endpoint>{layered_url}/</endpoint>
+            <http_client>gcp_oauth</http_client>{key_credential}
+        </gcs_layered>
+        <gcs_migrated>
+            <endpoint>{migrated_url}/</endpoint>
+            <http_client>gcp_oauth</http_client>{migrated_credential}
+        </gcs_migrated>
+    </s3>
+</clickhouse>""",
+        )
+        server_key_node.query("SYSTEM RELOAD CONFIG")
+
+    # The general section supplies an ADC triple; the endpoint of `t_layered` overrides it with a key, while the
+    # endpoint of `t_migrated` inherits it.
+    set_server_config(adc_triple, "")
+    for table, url in (("t_layered", layered_url), ("t_migrated", migrated_url)):
+        server_key_node.query(f"DROP TABLE IF EXISTS {table}")
+        server_key_node.query(
+            f"CREATE TABLE {table} (x UInt8) ENGINE = S3('{url}/{table}.tsv', 'TSV')",
+            settings={"s3_allow_server_credentials_in_user_queries": 1},
+        )
+
+    issuers, error = issuers_of_new_assertions(
+        server_key_node, "SELECT * FROM t_layered", 1
+    )
+    assert "BAD_ARGUMENTS" not in error
+    assert issuers and set(issuers) == {SA_CLIENT_EMAIL}
+
+    # The server config moves `t_migrated` from the ADC triple to a key: the existing table must not keep the triple.
+    set_server_config("", key_credential)
+    issuers, error = issuers_of_new_assertions(
+        server_key_node, "SELECT * FROM t_migrated", 1
+    )
+    assert "BAD_ARGUMENTS" not in error
+    assert issuers and set(issuers) == {SA_CLIENT_EMAIL}
+
+    server_key_node.query("DROP TABLE t_layered")
+    server_key_node.query("DROP TABLE t_migrated")
