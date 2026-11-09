@@ -887,6 +887,13 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         {
             size_t prev_size = column.size();
             auto ignored_size = stream->tryIgnore(limit);
+            if (settings.row_ranges)
+            {
+                size_t num_selected_rows = 0;
+                for (const auto & [begin, end] : *settings.row_ranges)
+                    num_selected_rows += std::min(end, ignored_size) - std::min(begin, ignored_size);
+                ignored_size = num_selected_rows;
+            }
             typeid_cast<ColumnTuple &>(column).addSize(ignored_size);
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         }
@@ -934,6 +941,14 @@ size_t SerializationTuple::allocatedBytes() const
 bool SerializationTuple::supportsPooling() const
 {
     return elems_support_pooling;
+}
+
+bool SerializationTuple::supportsRowRanges() const
+{
+    for (const auto & elem : elems)
+        if (!elem->supportsRowRanges())
+            return false;
+    return true;
 }
 
 MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const

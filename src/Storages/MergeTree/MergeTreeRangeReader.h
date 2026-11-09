@@ -219,6 +219,9 @@ private:
 
         bool isFinished() const { return is_finished; }
 
+        /// If set, the rows are read with `IMergeTreeReader::readRowsWithFilter`; points to the filter of the next row to read.
+        const UInt8 * row_filter = nullptr;
+
     private:
         size_t current_mark = 0;
         /// Offset from current mark in rows
@@ -237,7 +240,7 @@ private:
 
         /// Current position from the beginning of file in rows
         size_t position() const;
-        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows, const UInt8 * filter);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -488,6 +491,9 @@ private:
     ColumnPtr createPartGranuleOffsetColumn(ReadResult & result);
 
     void updatePerformanceCounters(size_t num_rows_read);
+
+    /// Whether the columns of this step can be deserialized only for the rows that passed the filters of the previous steps.
+    bool canReadWithFilter(const ReadResult & result) const;
 
     /// Special logic for vector search: fills a virtual column "_distance" and fills a filter on part offsets returned by vector index
     void fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & result, ColumnPtr & part_offsets_auto_column);

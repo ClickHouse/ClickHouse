@@ -43,6 +43,11 @@ public:
         MergeTreeMapSerializationVersion serialization_version_);
 
     bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
+    /// Only the basic serialization reads the rows in order, the rows of the buckets are reordered afterwards.
+    bool supportsRowRanges() const override
+    {
+        return serialization_version == MergeTreeMapSerializationVersion::BASIC && nested_serialization->supportsRowRanges();
+    }
 
     /// Whether a resolved subcolumn is really the `.keys` / `.values` array, which its name alone
     /// cannot tell. A `Map` exposes them through its nested `Array(Tuple(keys, values))`, so the last

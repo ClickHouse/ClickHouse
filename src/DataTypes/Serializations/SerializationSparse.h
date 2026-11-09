@@ -151,6 +151,7 @@ public:
     static UInt128 getHash();
     static SerializationPtr create();
     size_t allocatedBytes() const override;
+    bool supportsRowRanges() const override { return false; }
 
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,
