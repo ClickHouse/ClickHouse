@@ -1144,6 +1144,69 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 }
 
 
+namespace
+{
+
+/// Whether every function of `node` that depends on the input `column_name` cannot throw on any value of its arguments.
+/// Pruning by dictionaries evaluates the filter on all values of a part, including the values of the rows that the query
+/// skips by other indexes or does not read at all, so a function that can throw on some values (e.g. a conversion, or
+/// `CAST` of `NULL` to a non-Nullable type) would make a query fail that succeeds without the pruning.
+class SafeFunctionsChecker
+{
+public:
+    explicit SafeFunctionsChecker(const String & column_name_) : column_name(column_name_) {}
+
+    bool isSafe(const ActionsDAG::Node & node) { return check(node).safe; }
+
+private:
+    struct Result
+    {
+        bool depends = false;
+        bool safe = true;
+    };
+
+    const String & column_name;
+    std::unordered_map<const ActionsDAG::Node *, Result> visited;
+
+    Result check(const ActionsDAG::Node & node)
+    {
+        if (auto it = visited.find(&node); it != visited.end())
+            return it->second;
+
+        Result result;
+        for (const auto * child : node.children)
+        {
+            auto child_result = check(*child);
+            result.depends = result.depends || child_result.depends;
+            result.safe = result.safe && child_result.safe;
+        }
+
+        if (node.type == ActionsDAG::ActionType::INPUT)
+            result.depends = node.result_name == column_name;
+        else if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            result.safe = result.safe && !result.depends;
+        else if (node.type == ActionsDAG::ActionType::FUNCTION && result.depends)
+            result.safe = result.safe && node.function_base && safe_functions.contains(node.function_base->getName());
+
+        visited[&node] = result;
+        return result;
+    }
+
+    static inline const std::unordered_set<std::string_view> safe_functions = {
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+        "in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
+        "like", "notLike", "ilike", "notILike", "match",
+        "startsWith", "endsWith", "startsWithUTF8", "endsWithUTF8",
+        "position", "positionCaseInsensitive", "positionUTF8", "positionCaseInsensitiveUTF8",
+        "empty", "notEmpty", "length", "lengthUTF8",
+        "lower", "upper", "lowerUTF8", "upperUTF8",
+        "isNull", "isNotNull", "coalesce", "ifNull", "assumeNotNull", "toLowCardinality", "materialize", "identity",
+        "and", "or", "not", "xor", "indexHint",
+    };
+};
+
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictionaries(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1199,6 +1262,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByLowCardinalityDictio
 
         auto serialization = std::dynamic_pointer_cast<const SerializationLowCardinality>(column->type->getDefaultSerialization());
         if (!serialization)
+            continue;
+
+        if (!SafeFunctionsChecker(column->name).isSafe(*predicate))
             continue;
 
         auto index_description = std::make_shared<const IndexDescription>(createImplicitSetIndexDescription(column->name, columns, context));

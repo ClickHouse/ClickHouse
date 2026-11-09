@@ -29,9 +29,9 @@ nullable is null	50
 nullable coalesce	150
 nullable coalesce	2
 unused cast	1
-unused cast	1
 unused conversion	1
-unused conversion	1
+unused conversion	2
+skipped null	1
 used null	1
 used default	1
 used default	1

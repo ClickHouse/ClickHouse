@@ -74,8 +74,9 @@ SELECT 'nullable coalesce', count() FROM t_lc_null WHERE coalesce(s, 'y') = 'y';
 SELECT 'nullable coalesce', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_null WHERE coalesce(s, 'y') = 'y');
 DROP TABLE t_lc_null;
 
--- Every dictionary has `NULL` and the default value, but the filter is evaluated on them only if the rows use them,
--- like when the column is read: here `CAST` to a non-Nullable type would throw on `NULL`, and `toUInt32` on ''.
+-- The filter is evaluated on all values of the dictionaries, including the values of the rows that the query skips
+-- by other indexes, so the parts are not skipped by a filter with functions that can throw on some values:
+-- here `CAST` to a non-Nullable type would throw on `NULL`, and `toUInt32` on ''.
 DROP TABLE IF EXISTS t_lc_unused;
 SET allow_suspicious_low_cardinality_types = 1;
 CREATE TABLE t_lc_unused (id UInt64, n LowCardinality(Nullable(Int32)), s LowCardinality(String)) ENGINE = MergeTree ORDER BY id
@@ -84,10 +85,11 @@ SYSTEM STOP MERGES t_lc_unused;
 INSERT INTO t_lc_unused SELECT number, number + 1, toString(number + 1) FROM numbers(10);
 INSERT INTO t_lc_unused SELECT number + 10, number + 101, toString(number + 101) FROM numbers(10);
 SELECT 'unused cast', count() FROM t_lc_unused WHERE CAST(CAST(n, 'LowCardinality(String)'), 'String') = '5';
-SELECT 'unused cast', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_unused WHERE CAST(CAST(n, 'LowCardinality(String)'), 'String') = '5');
 SELECT 'unused conversion', count() FROM t_lc_unused WHERE toUInt32(s) = 105;
 SELECT 'unused conversion', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_unused WHERE toUInt32(s) = 105);
 INSERT INTO t_lc_unused VALUES (100, NULL, '');
+SELECT 'skipped null', count() FROM t_lc_unused WHERE id < 10 AND CAST(CAST(n, 'LowCardinality(String)'), 'String') = '5';
+-- Every dictionary has `NULL` and the default value, but the parts where the rows do not have them are skipped for them.
 SELECT 'used null', count() FROM t_lc_unused WHERE n IS NULL;
 SELECT 'used default', count() FROM t_lc_unused WHERE s = '';
 SELECT 'used default', sum(parts) FROM (EXPLAIN ESTIMATE SELECT id FROM t_lc_unused WHERE s = '');
