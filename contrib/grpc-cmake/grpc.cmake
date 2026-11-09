@@ -1701,6 +1701,29 @@ target_link_libraries(upb_mini_descriptor_lib
   upb_mini_table_lib
 )
 
+add_library(upb_descriptor_lib
+  ${_gRPC_SOURCE_DIR}/src/core/ext/upb-gen/google/protobuf/descriptor.upb_minitable.c
+)
+
+target_compile_features(upb_descriptor_lib PUBLIC cxx_std_17)
+
+target_include_directories(upb_descriptor_lib
+  PUBLIC ${_gRPC_SOURCE_DIR}/include
+  PRIVATE
+    ${_gRPC_SOURCE_DIR}
+    ${_gRPC_ADDRESS_SORTING_INCLUDE_DIR}
+    ${_gRPC_RE2_INCLUDE_DIR}
+    ${_gRPC_SSL_INCLUDE_DIR}
+    ${_gRPC_UPB_GENERATED_DIR}
+    ${_gRPC_UPB_GRPC_GENERATED_DIR}
+    ${_gRPC_UPB_INCLUDE_DIR}
+    ${_gRPC_XXHASH_INCLUDE_DIR}
+    ${_gRPC_ZLIB_INCLUDE_DIR}
+)
+target_link_libraries(upb_descriptor_lib
+  ${_gRPC_ALLTARGETS_LIBRARIES}
+)
+
 add_library(upb_reflection_lib
   ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/copy.c
   ${_gRPC_SOURCE_DIR}/third_party/upb/upb/message/merge.c
@@ -1740,6 +1763,7 @@ target_include_directories(upb_reflection_lib
 )
 target_link_libraries(upb_reflection_lib
   ${_gRPC_ALLTARGETS_LIBRARIES}
+  upb_descriptor_lib
   upb_mini_descriptor_lib
   upb_wire_lib
 )
