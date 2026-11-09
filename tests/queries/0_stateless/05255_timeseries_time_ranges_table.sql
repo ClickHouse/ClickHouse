@@ -32,10 +32,10 @@ SELECT '-- a second insert extends the time range';
 INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(500, 3), 0.), (toDateTime64(1500, 3), 4.)]);
 
 SELECT '-- a selector returns the samples of the matching time series in the time range, the ranges of a time series are not merged yet';
-SELECT count() FROM timeSeriesSelector(ts, 'm', 0, 2500) SETTINGS log_comment = 'ts_m';
-SELECT count() FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 2500) SETTINGS log_comment = 'ts_m_h1';
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts, 'm', 0, 2500, 'samples') SETTINGS log_comment = 'ts_m';
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 2500, 'samples') SETTINGS log_comment = 'ts_m_h1';
 -- In [0, 1500] the only time series failing the matcher (h2) has no samples, so the probe decides that the selector matches the whole metric.
-SELECT count() FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 1500) SETTINGS log_comment = 'ts_m_h1_1500';
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 1500, 'samples') SETTINGS log_comment = 'ts_m_h1_1500';
 
 SELECT '-- the ranges of a time series are merged into one';
 OPTIMIZE TABLE ts FINAL;
@@ -49,10 +49,10 @@ INSERT INTO ts_no_ranges (metric_name, tags, samples) VALUES
     ('m', map('host', 'h2'), [(toDateTime64(2000, 3), 3.)]),
     ('m', map('host', 'h3'), []);
 INSERT INTO ts_no_ranges (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(500, 3), 0.), (toDateTime64(1500, 3), 4.)]);
-SELECT count() FROM timeSeriesSelector(ts_no_ranges, 'm', 0, 2500) SETTINGS log_comment = 'ts_no_ranges_m';
-SELECT count() FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 2500) SETTINGS log_comment = 'ts_no_ranges_m_h1';
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_no_ranges, 'm', 0, 2500, 'samples') SETTINGS log_comment = 'ts_no_ranges_m';
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 2500, 'samples') SETTINGS log_comment = 'ts_no_ranges_m_h1';
 -- Without stored time ranges the probe has no time information, so h2 stays a counterexample in [0, 1500] and the selector is not treated as matching the whole metric.
-SELECT count() FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 1500) SETTINGS log_comment = 'ts_no_ranges_m_h1_1500';
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts_no_ranges, 'm{host="h1"}', 0, 1500, 'samples') SETTINGS log_comment = 'ts_no_ranges_m_h1_1500';
 
 SELECT '-- a TIME RANGES clause requires store_time_ranges to be enabled and is rejected for version 7 or earlier';
 CREATE TABLE ts_bad ENGINE = TimeSeries SETTINGS store_time_ranges = 0 TIME RANGES INNER ENGINE = AggregatingMergeTree ORDER BY id; -- { serverError INCORRECT_QUERY }
@@ -67,9 +67,9 @@ INSERT INTO ts_v7 (metric_name, tags, samples) VALUES
 INSERT INTO ts_v7 (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(500, 3), 0.), (toDateTime64(1500, 3), 4.)]);
 OPTIMIZE TABLE ts_v7 FINAL;
 SELECT min_time, max_time FROM timeSeriesTags(ts_v7) ORDER BY min_time;
-SELECT count() FROM timeSeriesSelector(ts_v7, 'm', 0, 2500) SETTINGS log_comment = 'ts_v7_m';
-SELECT count() FROM timeSeriesSelector(ts_v7, 'm{host="h1"}', 0, 2500) SETTINGS log_comment = 'ts_v7_m_h1';
-SELECT count() FROM timeSeriesSelector(ts_v7, 'm{host="h1"}', 0, 1500) SETTINGS log_comment = 'ts_v7_m_h1_1500';
+SELECT count() FROM timeSeriesSelector(ts_v7, 'm', 0, 2500, 'timestamp_and_value') SETTINGS log_comment = 'ts_v7_m';
+SELECT count() FROM timeSeriesSelector(ts_v7, 'm{host="h1"}', 0, 2500, 'timestamp_and_value') SETTINGS log_comment = 'ts_v7_m_h1';
+SELECT count() FROM timeSeriesSelector(ts_v7, 'm{host="h1"}', 0, 1500, 'timestamp_and_value') SETTINGS log_comment = 'ts_v7_m_h1_1500';
 
 SELECT '-- the selector reads the time ranges table only if the table has one';
 SYSTEM FLUSH LOGS query_log;

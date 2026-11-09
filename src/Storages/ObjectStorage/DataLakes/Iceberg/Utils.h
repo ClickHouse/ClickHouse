@@ -56,6 +56,9 @@ void writeMessageToFile(
 /// its staged files on it: they may belong to the snapshot the table now points at.
 bool isCommitStateUnknown(const DB::Exception & e);
 
+/// Whether a conditional write failed because another writer created or changed the object first.
+bool isConditionalWriteConflict(const DB::Exception & e);
+
 /// Writes the metadata file with If-None-Match. Returns false only when the commit is known not to have taken
 /// effect (the path already exists or another writer's content is stored there); an outcome that cannot be
 /// established throws `UNKNOWN_STATUS_OF_TRANSACTION`.
@@ -101,6 +104,7 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
+/// The metadata file of the table, its schemas checked with IcebergSchemaProcessor::checkTableSchemas.
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -134,6 +138,12 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ASTPtr order_by,
     ContextPtr context,
     UInt64 format_version = 2);
+
+/// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
+void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
+
+/// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
 
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
@@ -197,8 +207,8 @@ void forEachAvroEntry(
 
 /// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
 /// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian
-/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`.
-/// Bring such a value to the column type; any other value is returned unchanged.
+/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`
+/// and a `Bool` one as an `int`. Bring such a value to the column type; any other value is returned unchanged.
 /// The result of a decimal always uses `Decimal256` as its carrier, independently of the width of the
 /// ClickHouse type, because `DB::Field` compares and orders on its variant tag first and Iceberg allows
 /// widening `decimal(P, S)` to `decimal(P', S)` between schemas of the same table.
