@@ -270,16 +270,19 @@ std::optional<UInt64> ManifestColumnStatistics::estimateDistinctValues(
 
 void ManifestColumnStatistics::subtractDeletedRows(UInt64 rows)
 {
-    chassert(rows <= total_rows);
-    total_rows -= std::min(rows, total_rows);
+    chassert(rows <= total_rows - deleted_rows);
+    deleted_rows += std::min(rows, total_rows - deleted_rows);
 }
 
 void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
 {
-    estimate.rows = total_rows;
+    const UInt64 live_rows = total_rows - deleted_rows;
+    estimate.rows = live_rows;
 
-    /// Selectivities are shares of these rows.
+    /// Selectivities are shares of the live rows. The statistics still count the deleted rows, so their coverage is
+    /// checked against all rows of the files: a file without metrics leaves it partial, whatever the deletes.
     statistics_builder.incrementRowCount(total_rows);
+    statistics_builder.subtractDeletedRows(deleted_rows);
     const auto estimator = statistics_builder.getEstimator();
     if (!estimator)
         return;
@@ -299,7 +302,7 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
         const auto & column_stats = it->second;
         const auto & distinct_value_input = distinct_values_inputs[i];
         /// Without one, the estimator keeps its own guess, as for MergeTree without a `uniq` statistic.
-        if (const auto distinct_values = estimateDistinctValues(col_target, distinct_value_input, column_stats, total_rows))
+        if (const auto distinct_values = estimateDistinctValues(col_target, distinct_value_input, column_stats, live_rows))
             statistics_builder.setCardinality(col_name, *distinct_values);
     }
     estimate.estimator = estimator;

@@ -433,6 +433,50 @@ TEST(Statistics, SummaryWithoutBoundsMakesRangePartial)
     EXPECT_TRUE(built->getEstimate().min_max_covers_all_values);
 }
 
+TEST(Statistics, DeletedRowsDoNotHideFilesWithoutStatistics)
+{
+    /// Deleted rows, e.g. of Iceberg position deletes, leave the rows of the relation, while the statistics still count
+    /// them. A file without statistics leaves the coverage partial however many rows are deleted.
+    tryRegisterFunctions();
+
+    const auto int64 = std::make_shared<DataTypeInt64>();
+    /// Values 0..199, with bounds.
+    const auto bounded = ColumnStatistics::createBasicFromSummary(int64, 200, Field(Int64(0)), Field(Int64(199)), 0);
+
+    auto merge_files = [&](UInt64 rows_without_statistics, UInt64 deleted_rows)
+    {
+        ConditionSelectivityEstimatorBuilder builder(getContext().context);
+        builder.addStatistics("k", bounded);
+        builder.incrementRowCount(bounded->getNumRows());
+        builder.incrementRowCount(rows_without_statistics);
+        builder.subtractDeletedRows(deleted_rows);
+        return builder.getEstimator();
+    };
+
+    /// 100 rows of a file without statistics and 100 deleted rows: the live rows are as many as the counted ones.
+    const auto with_unmeasured_file = merge_files(/*rows_without_statistics=*/100, /*deleted_rows=*/100)->estimateRelationProfile(nullptr);
+    EXPECT_EQ(with_unmeasured_file.rows, 200);
+    auto partial = with_unmeasured_file.column_stats.at("k");
+    EXPECT_TRUE(partial.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_TRUE(partial.range_provenance.has(PartialStatisticsCoverage));
+    /// The read records the deleted rows as a row subset; the range still misses the values of the other file.
+    partial.addTransformation(RowSubset);
+    EXPECT_FALSE(partial.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Deleted rows alone leave the remaining values within the bounds.
+    const auto deletes_only_estimator = merge_files(/*rows_without_statistics=*/0, /*deleted_rows=*/100);
+    const auto deletes_only = deletes_only_estimator->estimateRelationProfile(nullptr);
+    EXPECT_EQ(deletes_only.rows, 100);
+    auto enclosing = deletes_only.column_stats.at("k");
+    EXPECT_FALSE(enclosing.ndv_provenance.has(PartialStatisticsCoverage));
+    EXPECT_FALSE(enclosing.range_provenance.has(PartialStatisticsCoverage));
+    enclosing.addTransformation(RowSubset);
+    EXPECT_TRUE(enclosing.valueRange(ValueRangeGuarantee::Superset));
+
+    /// Selectivities are shares of the live rows: half of the values, half of the 100 live rows.
+    EXPECT_NEAR(static_cast<Float64>(estimateRowsFor(deletes_only_estimator, "k < 100", {{"k", int64}})), 50.0, 1.0);
+}
+
 TEST(Statistics, NullableEstimatorWithBasic)
 {
     /// Two Nullable(Int32) columns with three-valued logic exercised across ranges and IS [NOT] NULL.

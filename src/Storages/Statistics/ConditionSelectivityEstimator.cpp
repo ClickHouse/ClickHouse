@@ -126,8 +126,9 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
 }
 
 /// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
-/// describe the selected parts regardless of the filter.
-static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats, UInt64 total_rows)
+/// describe the selected parts regardless of the filter. `described_rows` are the rows the statistics
+/// have to count to cover the relation, deleted rows included.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats, UInt64 described_rows)
 {
     ColumnStats result;
     result.num_distinct_values = num_distinct_values;
@@ -148,7 +149,9 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
     if (!estimate.min_max_covers_all_values)
         result.addTransformation(PartialStatisticsCoverage);
 
-    if (stats->getNumRows() < total_rows)
+    /// Compared with the rows before deletes: the statistics still count the deleted rows, so the live rows can be
+    /// as few as the counted ones although a part or file has no statistic.
+    if (stats->getNumRows() < described_rows)
         result.addTransformation(PartialStatisticsCoverage);
     return result;
 }
@@ -250,7 +253,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
 
         const UInt64 estimated_cardinality = estimator.estimateCardinality();
         UInt64 cardinality = std::min(result.rows, estimated_cardinality);
-        auto column_stats = makeColumnStats(cardinality, estimator.stats, total_rows);
+        auto column_stats = makeColumnStats(cardinality, estimator.stats, described_rows);
         column_stats.addTransformation(RowSubset);
         if (result.rows < estimated_cardinality)
             column_stats.ndv_provenance.add(EstimatedRowCountClamp);
@@ -267,7 +270,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     {
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
-        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats, total_rows));
+        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats, described_rows));
     }
     return result;
 }
@@ -653,6 +656,13 @@ ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(Conte
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
     estimator->total_rows += rows;
+    estimator->described_rows += rows;
+}
+
+void ConditionSelectivityEstimatorBuilder::subtractDeletedRows(UInt64 rows)
+{
+    chassert(rows <= estimator->total_rows);
+    estimator->total_rows -= std::min(rows, estimator->total_rows);
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)

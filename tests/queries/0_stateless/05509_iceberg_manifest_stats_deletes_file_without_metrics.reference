@@ -1,0 +1,11 @@
+--- fixture after the DELETE: content, rows and whether the file has a NULL count of x (field id 2)
+DATA	1000	1
+DATA	1000	0
+POSITION_DELETE	1000	0
+live rows, min and max of x: 1000 1001 1999
+--- the read: 1000 live rows, as many as the statistics of x count, which still miss the second file
+__table1.x: (ndv: synthetic-fallback[row-subset,partial-statistics-coverage], range: measured-statistics[row-subset,partial-statistics-coverage])
+--- control: k has metrics in both files, so its range only drops rows
+__table1.k: (ndv: synthetic-fallback[row-subset], range: measured-statistics[row-subset])
+--- behind GROUP BY, which keeps only enclosing ranges
+__table1.x: (ndv: synthetic-fallback[row-subset,partial-statistics-coverage], range: measured-statistics[row-subset,partial-statistics-coverage])
