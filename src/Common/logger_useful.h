@@ -124,8 +124,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::bad_alloc & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
                                                                                                                     \
     try                                                                                                             \
@@ -145,8 +145,8 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
     catch (const std::exception & logger_exception)                                                                 \
     {                                                                                                               \
         (void)::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
-        const char * logger_exception_message = logger_exception.what();                                            \
-        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message), strlen(logger_exception_message)); \
+        std::string_view logger_exception_message = logger_exception.what();                                        \
+        (void)::write(STDERR_FILENO, static_cast<const void *>(logger_exception_message.data()), logger_exception_message.size()); \
     }                                                                                                               \
     catch (...)                                                                                                     \
     {                                                                                                               \
