@@ -1,0 +1,133 @@
+{
+  "format-version": 3,
+  "table-uuid": "14075827-29af-4c64-bcf5-c3987694e6cc",
+  "location": "file:///iceberg-row-lineage/materialized",
+  "last-sequence-number": 2,
+  "last-updated-ms": 1783020879533,
+  "last-column-id": 2,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "value",
+          "required": false,
+          "type": "double"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "write.metadata.compression-codec": "none",
+    "write.parquet.compression-codec": "uncompressed"
+  },
+  "current-snapshot-id": 3229079127447003078,
+  "next-row-id": 10,
+  "refs": {
+    "main": {
+      "snapshot-id": 3229079127447003078,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 7114920857487230890,
+      "timestamp-ms": 1783020879431,
+      "summary": {
+        "operation": "append",
+        "manifests-created": "1",
+        "manifests-kept": "0",
+        "manifests-replaced": "0",
+        "added-data-files": "1",
+        "added-records": "5",
+        "added-files-size": "732",
+        "changed-partition-count": "1",
+        "total-records": "5",
+        "total-files-size": "732",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-row-lineage/materialized/metadata/snap-7114920857487230890-1-6e8a3355-c801-44a1-96b1-ff828b3402ac.avro",
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 5
+    },
+    {
+      "sequence-number": 2,
+      "snapshot-id": 3229079127447003078,
+      "parent-snapshot-id": 7114920857487230890,
+      "timestamp-ms": 1783020879533,
+      "summary": {
+        "operation": "append",
+        "manifests-created": "1",
+        "manifests-kept": "1",
+        "manifests-replaced": "0",
+        "added-data-files": "1",
+        "added-records": "5",
+        "added-files-size": "1060",
+        "changed-partition-count": "1",
+        "total-records": "10",
+        "total-files-size": "1792",
+        "total-data-files": "2",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-row-lineage/materialized/metadata/snap-3229079127447003078-1-e8e01139-ea5e-44a8-b10d-82ceed797978.avro",
+      "schema-id": 0,
+      "first-row-id": 5,
+      "added-rows": 5
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1783020879431,
+      "snapshot-id": 7114920857487230890
+    },
+    {
+      "timestamp-ms": 1783020879533,
+      "snapshot-id": 3229079127447003078
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1783020878859,
+      "metadata-file": "file:///iceberg-row-lineage/materialized/metadata/v1.metadata.json"
+    },
+    {
+      "timestamp-ms": 1783020879434,
+      "metadata-file": "file:///iceberg-row-lineage/materialized/metadata/v2.metadata.json"
+    }
+  ]
+}
