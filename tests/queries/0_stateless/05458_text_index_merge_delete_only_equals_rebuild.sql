@@ -1,4 +1,3 @@
--- Tags: no-random-merge-tree-settings
 -- A text index merged in a merge that drops rows must be identical to the index rebuilt for the resulting part:
 -- the same tokens, posting list formats, row ids and positions.
 -- Tokens are chosen so that the merge removes all postings of some of them, shrinks large posting lists
