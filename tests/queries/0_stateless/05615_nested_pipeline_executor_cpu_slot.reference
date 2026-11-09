@@ -1,0 +1,5 @@
+cpu_slot_preemption	0
+direct	100
+complex_key_direct	100
+direct, max_threads = 4	100
+dictGetKeys, max_threads = 4	100

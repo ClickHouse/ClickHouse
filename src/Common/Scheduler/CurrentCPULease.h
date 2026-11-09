@@ -12,6 +12,21 @@ namespace DB
 ISlotLease * getCurrentCPULease();
 void setCurrentCPULease(ISlotLease * lease);
 
+IAcquiredSlot * getCurrentCPUSlot();
+
+/// RAII: publishes `slot` as the CPU slot of the current thread, and restores the previous one on scope exit.
+class CurrentCPUSlotScope
+{
+public:
+    explicit CurrentCPUSlotScope(IAcquiredSlot * slot);
+    ~CurrentCPUSlotScope();
+    CurrentCPUSlotScope(const CurrentCPUSlotScope &) = delete;
+    CurrentCPUSlotScope & operator=(const CurrentCPUSlotScope &) = delete;
+
+private:
+    IAcquiredSlot * const previous_slot;
+};
+
 /// RAII: parks the current thread's CPU lease (if any) for a non-CPU wait and unparks it on scope exit.
 /// Nesting-safe: only the outermost guard parks.
 class CPULeaseParkGuard
