@@ -61,6 +61,12 @@ elif mode == "readd_nested":
     struct = next(f for f in fields if f["name"] == "t")["type"]["fields"][0]["type"]
     struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
     struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9, "write-default": 9})
+elif mode == "readd_in_list":
+    by_name = {f["name"]: f for f in fields}
+    u = by_name["u"]["type"]["fields"][1]["type"]["element"]
+    for struct in (by_name["t"]["type"]["fields"][0]["type"]["element"], by_name["l"]["type"]["element"]["fields"][0]["type"], u):
+        struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
+        struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9})
 elif mode == "bad_long":
     fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
 elif mode == "bad_timestamp":
@@ -314,6 +320,24 @@ for format in Parquet ORC Avro; do
             SELECT 'readd nested', tupleElement(t, 's') FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 1;
             SELECT 'readd nested', tupleElement(t, 's') FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 0;
             SELECT 'readd nested', t.s.x, t.s.j FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 1;
+        "
+    fi
+
+    # The same below a list, read through the column that holds it; `u.element` is a field, not the element of a list.
+    if [ "${format}" = ORC ]; then
+        table="${format}_readd_in_list"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (t Tuple(s Array(Tuple(x Nullable(Int32), j Nullable(Int32)))),
+                l Array(Tuple(s Tuple(x Nullable(Int32), j Nullable(Int32)))),
+                u Tuple(element Nullable(Int32), a Array(Tuple(x Nullable(Int32), j Nullable(Int32)))))
+            ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES (([(10, 100)]), [((10, 100))], (1, [(10, 100)]));
+        "
+        add_fields "${table}" readd_in_list
+        bind_to_current_schema "${table}"
+        ${LOCAL} -q "
+            SELECT 'readd in list', t, l, u FROM icebergLocal('${table}/');
+            SELECT 'readd in list', t.s.j, l.s.j, u.a.j FROM icebergLocal('${table}/');
         "
     fi
 

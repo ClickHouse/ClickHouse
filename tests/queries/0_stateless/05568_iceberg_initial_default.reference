@@ -114,6 +114,8 @@ readd nested	((10,9))
 readd nested	(10,9)
 readd nested	(10,9)
 readd nested	10	9
+readd in list	([(10,9)])	[((10,9))]	(1,[(10,9)])
+readd in list	[9]	[9]	[9]
 dotted	7	(11)
 Avro
 schema ids	[0]
