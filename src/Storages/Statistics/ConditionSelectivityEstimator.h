@@ -129,6 +129,8 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+    /// The type of a column, or of a subcolumn that has statistics (a path of a `JSON` column).
+    DataTypePtr tryGetColumnType(const StorageMetadataPtr & metadata, const String & name) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
     /// the share of rows inside the set's bounding range, capped by the share of distinct values the set
