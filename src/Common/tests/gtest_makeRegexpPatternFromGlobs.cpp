@@ -47,6 +47,21 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("file{1,2,3}"), "file(1|2|3)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("{1,2,3}blabla{a.x,b.x,c.x}smth[]_else{aa,bb}?*"), "(1|2|3)blabla(a\\.x|b\\.x|c\\.x)smth\\[\\]_else(aa|bb)[^/][^/]*");
 
+    /// Wildcards keep their meaning inside an alternation: `{csv,csv.*}` is `.csv` or `.csv.<anything>`,
+    /// which no single wildcard can spell (`.csv*` is a prefix match and also takes `.csvwithnames`).
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{a,b*}"), "(a|b[^/]*)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{a?,b}.csv"), "(a[^/]|b)\\.csv");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("data/**/*.{csv,csv.*}"), "data/([^/]*/)*[^/]*\\.(csv|csv\\.[^/]*)");
+    {
+        re2::RE2 re(makeRegexpPatternFromGlobs("data/**.{csv,csv.*}"));
+        EXPECT_TRUE(RE2::FullMatch("data/key=1/a.csv", re));
+        EXPECT_TRUE(RE2::FullMatch("data/key=1/a.csv.gz", re));
+        EXPECT_TRUE(RE2::FullMatch("data/key=1/a.csv.custom", re));
+        EXPECT_FALSE(RE2::FullMatch("data/key=1/a.csvwithnames", re));
+        EXPECT_FALSE(RE2::FullMatch("data/key=1/a.csvwithnames.gz", re));
+        EXPECT_FALSE(RE2::FullMatch("data/key=1/a.csv.gz/b", re));
+    }
+
     /// `**` (double-star / globstar) tests
     /// `**/` matches zero or more directory components
     EXPECT_EQ(makeRegexpPatternFromGlobs("**/file.txt"), "([^/]*/)*file\\.txt");

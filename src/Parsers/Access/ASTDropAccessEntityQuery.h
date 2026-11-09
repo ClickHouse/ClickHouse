@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/Common/AccessEntityType.h>
 
 
@@ -22,7 +23,7 @@ class ASTDropAccessEntityQuery final : public IAST, public ASTQueryWithOnCluster
 public:
     AccessEntityType type{};
     bool if_exists = false;
-    Strings names;
+    boost::intrusive_ptr<ASTUserNamesWithHost> names;
     String storage_name;
     boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     std::shared_ptr<MaskingPolicyName> masking_policy_name;

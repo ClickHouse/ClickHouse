@@ -26,6 +26,13 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
     }
 }
 
+DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
+    : DataFileStatistics(schema_)
+{
+    if (!written_field_ids.empty())
+        field_ids = std::move(written_field_ids);
+}
+
 static Range getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
@@ -62,7 +69,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     }
 }
 
-void DataFileStatistics::addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block)
+void DataFileStatistics::addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block)
 {
     if (sizes_by_column_name.empty())
         return;

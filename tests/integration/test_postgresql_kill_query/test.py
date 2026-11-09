@@ -1,5 +1,6 @@
 import pytest
 import socket
+import struct
 from contextlib import contextmanager
 import uuid
 import threading
@@ -360,6 +361,63 @@ class ResponseStallingProxy(StatementStallingProxy):
                 self._stalled.set()
                 self._release.wait(timeout=60)
                 destination.sendall(bytes(buf[first:]))
+            except OSError:
+                break
+
+        for s in (source, destination):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+
+class CancelResettingProxy(StatementStallingProxy):
+    """Forwards the wire protocol. When a cancel request arrives, it first resets the client's other
+    connections with a TCP RST and only then forwards the cancel, so the reading thread sees its
+    connection fail instead of the server's reply."""
+
+    CANCEL_REQUEST = struct.pack("!ii", 16, 80877102)
+
+    def __init__(self):
+        super().__init__()
+        self._reset = threading.Event()
+        self._reset_done = threading.Event()
+
+    def connection_was_reset(self):
+        return self._reset_done.is_set()
+
+    def _pump(self, source, destination, is_client_to_server):
+        head = b""
+        decided = not is_client_to_server
+        is_cancel = False
+        while not self._stop:
+            try:
+                data = source.recv(4096)
+            except socket.timeout:
+                if decided and is_client_to_server and not is_cancel and self._reset.is_set():
+                    source.setsockopt(
+                        socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+                    )
+                    source.close()
+                    self._reset_done.set()
+                    break
+                continue
+            except OSError:
+                break
+            if not data:
+                break
+            if not decided:
+                head += data
+                if len(head) < len(self.CANCEL_REQUEST):
+                    continue
+                decided = True
+                data, head = head, b""
+                if data.startswith(self.CANCEL_REQUEST):
+                    is_cancel = True
+                    self._reset.set()
+                    self._reset_done.wait(timeout=30)
+            try:
+                destination.sendall(data)
             except OSError:
                 break
 
@@ -738,6 +796,56 @@ def test_kill_query_when_postgresql_cancel_connection_fails(
     assert not query_thread.is_alive()
     assert not query_exceptions
     assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+
+
+def test_kill_query_when_the_connection_resets_during_the_cancel(
+    started_cluster, setup_infinite_query
+):
+    """The connection fails while the cancel request is in flight, so the reading thread drops the
+    connection itself while the cancelling thread is still cancelling."""
+    proxy = CancelResettingProxy()
+    port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
+    proxy_host = socket.gethostbyname(socket.gethostname())
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    # A declared structure keeps the read the only connection. `infinite_counter` never answers
+    # the COPY, so the reading thread stays inside `stream_from`'s constructor.
+    node1.query("DROP TABLE IF EXISTS reset_counter")
+    node1.query(
+        f"""CREATE TABLE reset_counter (counter Nullable(Int32))
+ENGINE = PostgreSQL(
+    '{proxy_host}:{port}',
+    'postgres_database',
+    'infinite_counter',
+    'postgres',
+    'ClickHouse_PostgreSQL_P@ssw0rd')"""
+    )
+
+    def execute_query():
+        _, error = node1.query_and_get_answer_with_error(
+            "SELECT * FROM reset_counter", query_id=query_id, timeout=120
+        )
+        query_errors.append(error)
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    try:
+        node1.wait_for_log_line(f"{query_id}.*Stream data from database")
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+
+        query_thread.join(timeout=60)
+        assert not query_thread.is_alive(), "cancelled query kept running"
+        assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+        assert proxy.connection_was_reset(), "the cancel arrived without the data connection being reset"
+        assert node1.query("SELECT 1").strip() == "1"
+    finally:
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+        proxy.stop()
+        query_thread.join(timeout=60)
+        node1.query("DROP TABLE IF EXISTS reset_counter")
+        assert not query_thread.is_alive(), "query thread outlived the test"
 
 
 def test_kill_infinite_query(setup_infinite_query):

@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -55,6 +56,8 @@ struct FormatSettings;
 struct NameAndTypePair;
 
 struct MergeTreeSettings;
+
+class StringValueFilter;
 
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
   * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
@@ -183,6 +186,16 @@ public:
         virtual ~SerializeBinaryBulkState() = default;
     };
 
+    struct DeserializeBinaryBulkState;
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
+    /// Maps original states to their clones, so that a state shared by several readers stays shared among the clones.
+    struct DeserializeBinaryBulkStateCloneContext
+    {
+        std::unordered_map<const DeserializeBinaryBulkState *, DeserializeBinaryBulkStatePtr> cloned;
+    };
+
     struct DeserializeBinaryBulkState
     {
         DeserializeBinaryBulkState() = default;
@@ -190,11 +203,13 @@ public:
 
         virtual ~DeserializeBinaryBulkState() = default;
 
-        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
-    };
+        /// Returns the clone made earlier in the same context if there is one.
+        DeserializeBinaryBulkStatePtr clone(DeserializeBinaryBulkStateCloneContext & context) const;
 
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+    protected:
+        /// Nested states must be cloned through clone with the same context.
+        virtual DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext &) const { return std::make_shared<DeserializeBinaryBulkState>(); }
+    };
 
     struct SubstreamData
     {
@@ -311,6 +326,12 @@ public:
             ObjectSharedDataCopySizes,
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
+            ObjectTypedSharedData,
+            ObjectTypedSharedDataHeader,
+            ObjectTypedSharedDataPathsData,
+            ObjectTypedSharedDataPathsMarks,
+            /// A SHARED typed path of Object: the identity element of the resolved path, with no file of its own.
+            ObjectTypedSharedDataPath,
             ObjectStructure,
 
             MapKeyValue,
@@ -344,6 +365,14 @@ public:
 
         /// Index of a bucket in Object shared data serialization or Map serialization with buckets.
         size_t bucket = 0;
+
+        /// For a stream shared with other subcolumns: this subcolumn's bytes of it, set by the serialization that knows them.
+        struct SizeHint
+        {
+            size_t compressed = 0;
+            size_t uncompressed = 0;
+        };
+        std::optional<SizeHint> size_hint;
 
         /// Data for current substream.
         SubstreamData data;
@@ -509,6 +538,13 @@ public:
         /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
         size_t min_compress_block_size = 0;
 
+        /// False if the granule being written continues in the next call. Used only in MergeTree.
+        bool granule_is_complete = true;
+
+        /// Serialization version of the typed shared data of Object. 0 is reserved, so the field is not value-initialized.
+        MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
+            = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
+
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -527,7 +563,8 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;
@@ -592,6 +629,12 @@ public:
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
         /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
         std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
+
+        /// If set, string values that do not match the filter may be replaced with empty strings
+        /// during deserialization. It is extracted from a substring search condition in PREWHERE
+        /// which is guaranteed to filter out the rows with non-matching values, so the replacement
+        /// cannot change the query result. Used only by `SerializationString`.
+        std::shared_ptr<const StringValueFilter> string_value_filter;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # no-parallel: `SYSTEM DISABLE ALL FAILPOINTS` disarms every fail point on the server.
 
 # The contract of `SYSTEM DISABLE ALL FAILPOINTS` is not only that `enabled` drops to 0 in
