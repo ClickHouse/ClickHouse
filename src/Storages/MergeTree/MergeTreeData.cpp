@@ -1457,7 +1457,8 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
-    const MergeTreeSettings * alter_effective_settings) const
+    const MergeTreeSettings * alter_effective_settings,
+    std::vector<std::pair<int, String>> * secondary_index_errors) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1607,8 +1608,9 @@ void MergeTreeData::checkProperties(
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
-        Strings index_errors;
-        int first_index_error_code = 0;
+        std::vector<std::pair<int, String>> index_errors;
+        if (secondary_index_errors)
+            index_errors = *secondary_index_errors;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1666,9 +1668,7 @@ void MergeTreeData::checkProperties(
             }
             catch (Exception & e)
             {
-                if (index_errors.empty())
-                    first_index_error_code = e.code();
-                index_errors.push_back(fmt::format("{}: {}", backQuoteIfNeed(index.name), e.message()));
+                index_errors.emplace_back(e.code(), fmt::format("{}: {}", backQuoteIfNeed(index.name), e.message()));
                 continue;
             }
 
@@ -1694,7 +1694,18 @@ void MergeTreeData::checkProperties(
         }
 
         if (!index_errors.empty())
-            throw Exception(first_index_error_code, "Cannot validate secondary indices: {}", fmt::join(index_errors, "; "));
+        {
+            Strings errors;
+            for (const auto & [code, error] : index_errors)
+            {
+                (void)code;
+                errors.push_back(error);
+            }
+            throw Exception(
+                index_errors.front().first,
+                "Cannot validate secondary indices: {}",
+                fmt::join(errors, "; "));
+        }
     }
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
@@ -6294,7 +6305,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     removeImplicitStatistics(new_metadata.columns);
     auto settings_defaults = getDefaultSettings();
-    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
+    std::vector<std::pair<int, String>> secondary_index_errors;
+    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get(), &secondary_index_errors);
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
@@ -7241,7 +7253,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        false,
+        false,
+        allow_nullable_key,
+        local_context,
+        alter_effective_settings.get(),
+        &secondary_index_errors);
     /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
     if (!is_secondary_replay)
         checkLossyCodecOnLowCardinality(new_metadata.columns);

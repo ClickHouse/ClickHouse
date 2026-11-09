@@ -160,6 +160,27 @@ if [[ "$bloom_filter_invalid_index_error" != *'Code: 36.'* || "$bloom_filter_inv
     exit 1
 fi
 
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_mixed_invalid_indices"
+$CLICKHOUSE_CLIENT --query="
+CREATE TABLE bloom_filter_mixed_invalid_indices
+(
+    x String,
+    INDEX idx_length length(x) TYPE minmax,
+    INDEX idx_token x TYPE tokenbf_v1(256, 2, 0)
+) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 0"
+
+bloom_filter_mixed_invalid_indices_error=$($CLICKHOUSE_CLIENT --query="ALTER TABLE bloom_filter_mixed_invalid_indices MODIFY COLUMN x UInt64" 2>&1)
+if [[ "$bloom_filter_mixed_invalid_indices_error" != *'Code: 43.'* \
+    || "$bloom_filter_mixed_invalid_indices_error" != *'ILLEGAL_TYPE_OF_ARGUMENT'* \
+    || "$bloom_filter_mixed_invalid_indices_error" != *'idx_length'* \
+    || "$bloom_filter_mixed_invalid_indices_error" != *'idx_token'* ]]; then
+    echo "$bloom_filter_mixed_invalid_indices_error"
+    echo 'Expected ALTER to report both invalid indices and preserve ILLEGAL_TYPE_OF_ARGUMENT'
+    exit 1
+fi
+$CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_mixed_invalid_indices"
+
 # NGRAM BF with IPv6
 $CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_ipv6_idx
