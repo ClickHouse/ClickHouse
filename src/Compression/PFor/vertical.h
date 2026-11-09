@@ -148,19 +148,8 @@ inline ALWAYS_INLINE void deltaDecode32(uint32_t * out, unsigned cnt, uint32_t &
         std::memcpy(out + i + 4, &y, 16);
         cv = __builtin_shufflevector(y, y, 3, 3, 3, 3);
     }
-    for (; i + 4 <= cnt; i += 4)
-    {
-        v4u32 x;
-        std::memcpy(&x, out + i, 16);
-        x += plusv;
-        x += __builtin_shufflevector(zero, x, 3, 4, 5, 6); // inclusive prefix sum, step 1
-        x += __builtin_shufflevector(zero, x, 2, 3, 4, 5); // step 2 -> {a, a+b, a+b+c, a+b+c+d}
-        x += cv;                                           // add the running carry
-        std::memcpy(out + i, &x, 16);
-        cv = __builtin_shufflevector(x, x, 3, 3, 3, 3);    // keep the carry in a vector register
-    }
     uint32_t c = cv[0];
-    for (; i < cnt; ++i) // tail (cnt not a multiple of 4)
+    for (; i < cnt; ++i) // tail of at most 7 values
     {
         c += out[i] + plus;
         out[i] = c;
