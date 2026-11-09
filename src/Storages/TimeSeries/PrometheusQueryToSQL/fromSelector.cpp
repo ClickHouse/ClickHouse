@@ -89,12 +89,15 @@ namespace
         /// of the table itself, rounding them towards the inside of the range.
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
+        bool no_samples_in_bounds = false;
         if (time_bounds)
         {
             min_time = std::max(min_time, time_bounds->first);
             max_time = std::min(max_time, time_bounds->second);
-            if (min_time > max_time)
-                return SQLQueryPiece{node, ResultType::RANGE_VECTOR, StoreMethod::EMPTY};
+            /// No sample is within the bounds: read nothing, but don't return EMPTY, which would drop the series of info().
+            no_samples_in_bounds = (min_time > max_time);
+            if (no_samples_in_bounds)
+                min_time = max_time;
         }
 
         builder.from_table_function = makeASTFunction(
@@ -105,6 +108,9 @@ namespace
             timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
             timeSeriesTimestampToAST(max_time, context.result_timestamp_type),
             make_intrusive<ASTLiteral>(String{table_has_bucketed_samples ? "samples" : "timestamp_and_value"}));
+
+        if (no_samples_in_bounds)
+            builder.where = make_intrusive<ASTLiteral>(UInt64{0});
 
         res.select_query = builder.getSelectQuery();
         return res;

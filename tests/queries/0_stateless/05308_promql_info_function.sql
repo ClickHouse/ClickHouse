@@ -166,7 +166,7 @@ SELECT 'info(other) from 0 to 600 step 300';
 SELECT tags, arrayMap(x -> (toUnixTimestamp64Milli(x.1), x.2), samples) FROM prometheusQueryRange(ts_e, 'info(other)', 0, 600, 300) ORDER BY tags;
 DROP TABLE ts_e;
 
-SELECT '-- a label selector without a matcher that doesn't match the empty string';
+SELECT '-- a label selector whose every matcher matches the empty string';
 DROP TABLE IF EXISTS ts_f;
 CREATE TABLE ts_f ENGINE = TimeSeries;
 INSERT INTO ts_f (metric_name, tags, samples) VALUES
