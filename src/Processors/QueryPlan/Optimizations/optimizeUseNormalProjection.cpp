@@ -768,7 +768,6 @@ UseProjectionsResult optimizeUseNormalProjections(
             || (candidate.sum_marks == parent_reading_marks && (parent_reading_marks == 0 || projection_sort_order_useful(candidate.projection)));
     };
 
-    /// Whether the `LIMIT` of the outer sorting can stop the read once it is reached.
     auto limit_stops_reading = [&]
     {
         if (!outer_sorting_step || outer_sorting_step->getLimit() == 0)
@@ -785,8 +784,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         return false;
     };
 
-    /// A read in the projection's order stops at the `LIMIT`, so the marks of the whole projection overstate
-    /// its cost and must not be compared with the skip-index-refined parent estimate.
+    /// A read in the projection's order stops at the `LIMIT`, so its total marks overstate its cost.
     const bool best_serves_order_by_with_limit = projection_sort_order_useful(best_candidate->projection) && limit_stops_reading();
 
     /// The pass is driven only by the base table's deferred skip indexes and the ratio: a projection
