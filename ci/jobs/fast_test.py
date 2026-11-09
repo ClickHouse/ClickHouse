@@ -73,6 +73,7 @@ def clone_submodules():
         "contrib/heks",
         "contrib/sql-console",
         "contrib/optimized-routines",
+        "contrib/str",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)

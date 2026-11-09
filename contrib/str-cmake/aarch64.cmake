@@ -1,4 +1,4 @@
-set (str_arm_dir "${CMAKE_CURRENT_SOURCE_DIR}/aarch64")
+set (str_arm_dir "${STR_SOURCE_DIR}/aarch64/selected")
 add_library (str_neon OBJECT
     "${str_arm_dir}/aarch64_neon_bulk.c"
     "${str_arm_dir}/aarch64_neon_extra.c"

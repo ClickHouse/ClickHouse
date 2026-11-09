@@ -122,6 +122,7 @@ add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
+include (cmake/pg83_str.cmake)
 
 option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
 if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)

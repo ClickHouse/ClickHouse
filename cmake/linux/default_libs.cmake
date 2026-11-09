@@ -6,12 +6,7 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
 include (cmake/compiler_rt_link.cmake)
 
-option (ENABLE_PG83_STR "Use experimental pg83/str string and memory functions" OFF)
 if (ENABLE_PG83_STR)
-    if (NOT (ARCH_AMD64 OR ARCH_AARCH64) OR SANITIZE OR SANITIZE_COVERAGE)
-        message (FATAL_ERROR "ENABLE_PG83_STR requires an x86-64 or AArch64 Linux build without sanitizers")
-    endif ()
-
     set (STR_LIBRARY "${CMAKE_BINARY_DIR}/contrib/str-cmake/libstr.a")
     target_link_libraries (global-libs INTERFACE ch_contrib::str)
     # Load the definitions before other archives, including LLVM libc and Rust runtimes.

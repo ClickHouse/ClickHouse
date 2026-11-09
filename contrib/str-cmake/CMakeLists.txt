@@ -1,7 +1,7 @@
 set (STR_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/str")
 
-if (NOT OS_LINUX OR NOT (ARCH_AMD64 OR ARCH_AARCH64) OR SANITIZE OR SANITIZE_COVERAGE)
-    message (FATAL_ERROR "pg83/str requires an x86-64 or AArch64 Linux build without sanitizers")
+if (NOT OS_LINUX OR NOT (ARCH_AMD64 OR ARCH_AARCH64) OR SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ENABLE_FUZZING OR FUZZER OR ENABLE_CLICKHOUSE_PGO_GENERATE)
+    message (FATAL_ERROR "pg83/str requires an x86-64 or AArch64 Linux build without sanitizer, coverage, fuzzer or PGO-generation instrumentation")
 endif ()
 
 if (NOT OBJCOPY_PATH)
@@ -13,7 +13,7 @@ if (ARCH_AARCH64)
     return ()
 endif ()
 
-find_package (Python3 REQUIRED COMPONENTS Interpreter)
+find_program (STR_PYTHON_EXECUTABLE NAMES python3 REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 
 set (str_objects)
 foreach (unit sse2 sse42 avx2 evex evex512 dispatch)
@@ -56,7 +56,7 @@ set (str_archive "${CMAKE_CURRENT_BINARY_DIR}/libstr.a")
 add_custom_command (
     OUTPUT "${str_archive}"
     BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/libstr-prefixed.a" "${CMAKE_CURRENT_BINARY_DIR}/post/report.txt"
-    COMMAND "${Python3_EXECUTABLE}" "${STR_SOURCE_DIR}/dev/post.py"
+    COMMAND "${STR_PYTHON_EXECUTABLE}" "${STR_SOURCE_DIR}/dev/post.py"
         --check --out "${CMAKE_CURRENT_BINARY_DIR}/post"
         --archive "${CMAKE_CURRENT_BINARY_DIR}/libstr-prefixed.a"
         --report "${CMAKE_CURRENT_BINARY_DIR}/post/report.txt"

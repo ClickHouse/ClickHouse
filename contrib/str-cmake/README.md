@@ -2,12 +2,19 @@
 
 `ENABLE_PG83_STR=ON` replaces the libc entry points for `memcpy`, `memmove`,
 `memset`, `memcmp`, `strlen`, `strcpy`, `strcat`, `strcmp`, `strspn`, `strcspn`,
-and `memchr` with [pg83/str](https://github.com/pg83/str). The option is off by
-default and requires Linux x86-64 or AArch64 without sanitizers. Other LLVM libc functions,
+and `memchr` with the [ClickHouse fork of pg83/str](https://github.com/ClickHouse/pg83str).
+The option defaults to on for Linux x86-64 and AArch64 without sanitizer,
+coverage, fuzzing or PGO-generation instrumentation, so release performance CI exercises the
+provider. It defaults to off elsewhere; explicitly enabling it on an unsupported
+configuration is an error. Set `ENABLE_PG83_STR=OFF` to restore the previous
+providers. Other LLVM libc functions,
 including `bcmp`, `memmem`, and the math functions, keep their existing providers.
 
-The submodule pins upstream commit `21ad0a33534c63096e2d2ee879a9f435cd474a3c`.
-Upstream is MIT licensed. No implementation changes are made in the submodule.
+The submodule pins a commit from `ClickHouse/pg83str`. The fork retains upstream
+base `21ad0a33534c63096e2d2ee879a9f435cd474a3c` and adds the ARM workbench and
+selected provider. The implementation and its MIT license live in the library
+fork; this directory contains the ClickHouse build integration and benchmark
+notes.
 
 Each translation unit is compiled for its own CPU level. The dispatcher and
 SSE2 implementation retain the x86-64 baseline. Upstream selects the appropriate
@@ -28,11 +35,11 @@ profiling must verify that stacks traverse the rewritten functions correctly.
 
 ## Experimental AArch64 provider
 
-The AArch64 extension lives in `aarch64/` while the upstream submodule retains
-its published x86 revision. Only selected kernel bodies and their helpers are
-included from our ARM workbench; `aarch64/provenance.json` records source hashes
-and the selection. The MIT license is included. This makes an ARM build
-reproducible without depending on an unpublished fork commit.
+The selected AArch64 implementation lives in
+`contrib/str/aarch64/selected/`, with its source hashes and history in
+`provenance.json`. ClickHouse compiles those submodule sources directly.
+The library retains its separate historical 20-slot development API and
+workbench; the selected provider exposes the eleven libc-shaped entry points.
 
 The ARM objects use the compiler output directly, retaining unwind information.
 Most entries retain frame pointers. The leaf public `memcpy`, `memmove`,
@@ -80,8 +87,9 @@ earlier machine-code proof snapshots.
 The overlapping strong definitions are excluded from the existing Arm
 optimized-routines archive only while this option is enabled. Its `strchr`
 and `strnlen` remain in use. LLVM libc math and other memory routines retain
-their existing providers. Sanitizer and sanitizer-coverage builds reject the
-experimental option so their interceptors remain authoritative.
+their existing providers. Sanitizer, coverage, fuzzing and PGO-generation builds default the option to off and reject
+an explicit enablement so their interceptors and instrumentation retain the
+existing providers.
 
 The workbench has partial machine-code proof coverage. The preserved native
 `21150DDAAA53A58AAF97D2ED50634F7366A9E0B4` object snapshot passed bounded
@@ -96,7 +104,9 @@ bytes. The helper proof uses a 16-byte SVE model; native and emulated API tests
 also exercise NEON and additional vector lengths. These checks do not certify
 the changed public copy router or its constructor state. Constructors, longer
 paths and the complete ClickHouse executable remain outside those proofs.
-This option remains experimental and disabled by default.
+The provider remains experimental. Its default enablement in eligible builds
+is intended to obtain ordinary CI correctness and performance comparisons;
+the bounded proofs do not certify the entire library.
 
 See the [2026-11-07 native AArch64 comparison](benchmarks/aarch64-2026-11-07.md)
 for the build configuration, query results, and limits of the measurements.
@@ -114,12 +124,12 @@ On a native AArch64 glibc host, test the prefixed archive against the independen
 host libc, including protected pages and oversized early-match `memchr`:
 
 ```sh
-clang -O2 -fno-builtin contrib/str-cmake/test_aarch64.c \
+clang -O2 -UNDEBUG -fno-builtin contrib/str/tst/aarch64_selected.c \
     build_candidate/contrib/str-cmake/libstr-prefixed.a \
     -o build_candidate/str-contract-test
 build_candidate/str-contract-test > build_candidate/test_str_contract.log 2>&1
-clang -O2 -fno-builtin -DSTR_TEST_NO_SVE -Wl,--wrap=getauxval \
-    contrib/str-cmake/test_aarch64.c \
+clang -O2 -UNDEBUG -fno-builtin -DSTR_TEST_NO_SVE -Wl,--wrap=getauxval \
+    contrib/str/tst/aarch64_selected.c \
     build_candidate/contrib/str-cmake/libstr-prefixed.a \
     -o build_candidate/str-contract-neon-test
 build_candidate/str-contract-neon-test > build_candidate/test_str_contract_neon.log 2>&1
@@ -132,7 +142,7 @@ the test requests that SVE vector length with `prctl`; unavailable lengths
 return status 77. Test other vector lengths on supporting hardware or an
 emulator for correctness; use native hardware for performance measurements.
 
-## Validation before enabling by default
+## Validation and CI comparison
 
 Build two release binaries from the same revision and toolchain, changing only
 `ENABLE_PG83_STR`. Preserve each binary and its CMake cache in a separate
@@ -172,7 +182,12 @@ plus broader workloads to detect changes beyond string functions. Record CPU,
 build revision, compiler, settings, binary paths, and old/new timings. The
 upstream synthetic results alone do not establish a ClickHouse improvement.
 
-Use the same option in a candidate CI build after native correctness and dev
-comparisons pass. Regular CI builds retain the default until this experimental
-implementation is explicitly enabled. Performance under CPU emulation is not
-usable evidence for enabling it.
+Eligible release CI builds use the provider by default; reference binaries
+from master retain their own default. Use the `pr-performance` label to request
+both AMD and ARM performance jobs. Normal CI query limits and long-test
+exclusions still apply; this does not turn a PR run into a complete local
+suite run. Performance under CPU emulation is not usable timing evidence.
+
+The dated benchmark notes preserve the build settings used for each historical
+measurement, including their then-disabled default. Their results predate this
+submodule migration and current-master CI comparison.

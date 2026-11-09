@@ -483,4 +483,4 @@
 	branch = gdeflate
 [submodule "contrib/str"]
 	path = contrib/str
-	url = https://github.com/pg83/str.git
+	url = https://github.com/ClickHouse/pg83str.git
