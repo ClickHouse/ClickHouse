@@ -77,6 +77,9 @@ private:
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
     bool allow_reading_shard_from_several_replicas = false;
 
+    /// Returns the query of the shard with the filters, and the tables to send with it.
+    std::pair<ASTPtr, Tables> addFiltersToQuery(const ClusterProxy::SelectStreamFactory::Shard & shard, bool clone_query);
+
     /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
     Pipes addPipes(
         const ClusterProxy::SelectStreamFactory::Shards & used_shards,
@@ -176,12 +179,10 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
-    /// When the filter goes to the shards of a Distributed table: the context whose `distributed_product_mode`
-    /// decides about a non-GLOBAL IN over another Distributed table in it, and on which that table's name is
-    /// resolved. Null leaves such an IN as the text of its subquery.
-    const ContextPtr & distributed_product_mode_context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr,
+    /// Instead of the subquery of a local `IN`, write a table with its result, and add the table to `external_tables`.
+    bool send_sets = false);
 
 /// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
 /// remote query - all of them where it does not run.

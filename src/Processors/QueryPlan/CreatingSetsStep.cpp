@@ -347,6 +347,9 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
 
         plan->optimize(optimization_settings);
         plans.emplace_back(std::move(plan));
+        /// Otherwise the table may get only a part of the rows.
+        if (optimization_settings.network_transfer_limits.overflow_mode != OverflowMode::BREAK)
+            future_set->markBuildPlanned();
     }
 
     return plans;

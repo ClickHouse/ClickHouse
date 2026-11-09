@@ -1,0 +1,26 @@
+<clickhouse>
+    <remote_servers>
+        <shards>
+            <shard>
+                <replica>
+                    <host>shard1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>shard2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </shards>
+        <first>
+            <shard>
+                <replica>
+                    <host>shard1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </first>
+    </remote_servers>
+</clickhouse>

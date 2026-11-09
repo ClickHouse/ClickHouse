@@ -33,7 +33,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
-#include <Storages/StorageDistributed.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
@@ -72,9 +71,8 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_filter_pushdown;
-    extern const SettingsDistributedProductMode distributed_product_mode;
-    extern const SettingsBool prefer_global_in_and_join;
 }
 
 namespace ErrorCodes
@@ -84,7 +82,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int ALL_REPLICAS_ARE_STALE;
     extern const int NOT_IMPLEMENTED;
-    extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
 }
 
 namespace FailPoints
@@ -244,96 +241,58 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery &>();
 }
 
-/// A table named somewhere under a pushed-down IN, with the Distributed storage it resolves to on this server.
-struct DistributedTableReference
+static FutureSetPtr tryGetSet(const ActionsDAG::Node & node)
 {
-    ASTTableIdentifier * identifier;
-    std::shared_ptr<const StorageDistributed> storage;
-};
-
-/// The tables anywhere under `root` - table expressions, `IN table`, nested subqueries - that resolve here to a
-/// Distributed table over two shards or more, which is what `buildQueryTreeForShard` counts as distributed too.
-static std::vector<DistributedTableReference> findShardedDistributedTables(const ASTPtr & root, const ContextPtr & context)
-{
-    std::vector<DistributedTableReference> found;
-
-    std::stack<IAST *> to_visit;
-    to_visit.push(root.get());
-    while (!to_visit.empty())
-    {
-        auto * ast = to_visit.top();
-        to_visit.pop();
-
-        for (const auto & child : ast->children)
-            to_visit.push(child.get());
-
-        auto * identifier = ast->as<ASTTableIdentifier>();
-        if (!identifier)
-            continue;
-
-        auto table_id = context->tryResolveStorageID(*identifier);
-        if (!table_id)
-            continue;
-
-        auto storage = std::dynamic_pointer_cast<const StorageDistributed>(DatabaseCatalog::instance().tryGetTable(table_id, context));
-        if (storage && storage->getShardCount() >= 2)
-            found.push_back({identifier, std::move(storage)});
-    }
-
-    return found;
+    const auto * column_set = node.column ? typeid_cast<const ColumnSet *>(&node.column->getDataColumn()) : nullptr;
+    return column_set ? column_set->getData() : nullptr;
 }
 
-/** `distributed_product_mode` for a non-GLOBAL IN that filter push-down writes into the query sent to other servers.
-  *
-  * Such an IN travels as the text of its subquery, and the receiving server runs that text again over its own
-  * tables. Where the text names a Distributed table, the pushed-down copy is the double-distributed subquery the
-  * setting exists to decide about - the very one `DistributedProductModeRewriteInJoinVisitor` decides about when
-  * the IN is written over the Distributed table directly rather than over a subquery or a view of it. So the answer
-  * has to be the same: `local` names each shard's own table instead, `global` (and `prefer_global_in_and_join`)
-  * makes the IN GLOBAL, so that the set the initiator builds anyway is shipped in place of the text, `allow` sends
-  * the text as it is, and `deny` refuses. Left alone, the text names the initiator's Distributed table on every
-  * shard, whatever the setting says: a shard that has a local table of that name reads its own part of the data
-  * and silently loses the rows whose match lives elsewhere, one that has the Distributed table fans out once more.
-  *
-  * `function_name` and `subquery_ast` are rewritten in place; the AST the set keeps is never modified.
-  */
-static void applyDistributedProductModeToPushedDownIn(String & function_name, ASTPtr & subquery_ast, const ContextPtr & context)
+/// Whether the shard gets the results of the subqueries of the `IN`s instead of their texts, if `distributed_product_mode` asks for
+/// that: `DistributedProductModeRewriteInJoinVisitor` has not seen an `IN` that was pushed down into a subquery or a view.
+/// Either of all `IN`s of the condition or of none: a mix of both can be more wrong than the texts.
+static bool areSetsSent(
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const ActionsDAG & pushed_down_filters,
+    const Tables & external_tables,
+    const ContextPtr & context)
 {
-    if (findShardedDistributedTables(subquery_ast, context).empty())
-        return;
-
     const auto & settings = context->getSettingsRef();
-    auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    /// `EXPLAIN` does not run the subqueries. Replicas of a shard would apply a custom key to the sent tables too.
+    if (!areInAndJoinMadeGlobal(settings) || shard.query->as<ASTExplainQuery>() || context->canUseParallelReplicasCustomKey())
+        return false;
 
-    if (distributed_product_mode == DistributedProductMode::LOCAL)
-    {
-        subquery_ast = subquery_ast->clone();
-        for (const auto & [identifier, storage] : findShardedDistributedTables(subquery_ast, context))
-        {
-            /// A Distributed table over a table function has no table of its own on the shards to name.
-            if (storage->getRemoteTableName().empty())
-                continue;
+    /// The text of the pushed down subquery decides whether the replicas of a shard read in parallel, without it each of them may
+    /// read all rows.
+    if (context->canUseTaskBasedParallelReplicas() && settings[Setting::parallel_replicas_filter_pushdown]
+        && !settings[Setting::parallel_replicas_allow_in_with_subquery])
+        return false;
 
-            /// Named as `DistributedProductModeRewriteInJoinVisitor` names it: without a database on a cluster whose
-            /// shards have default databases of their own, so that each shard reads the table from its own.
-            String database;
-            if (!storage->getCluster()->maybeCrossReplication())
-                database = context->resolveStorageID(StorageID{storage->getRemoteDatabaseName(), storage->getRemoteTableName()}).getDatabaseName();
-            identifier->resetTable(database, storage->getRemoteTableName());
-        }
-    }
-    else if (distributed_product_mode == DistributedProductMode::GLOBAL || settings[Setting::prefer_global_in_and_join])
+    bool has_set_to_send = false;
+    for (const auto & node : pushed_down_filters.getNodes())
     {
-        function_name = getGlobalInFunctionNameForLocalInFunctionName(function_name);
+        const auto name = node.type == ActionsDAG::ActionType::FUNCTION ? node.function_base->getName() : "";
+        /// An `IgnoreSet` call has no set operand.
+        if (!isNameOfInFunction(name) || name.ends_with("IgnoreSet"))
+            continue;
+
+        const auto set = tryGetSet(*node.children.at(1));
+        if (typeid_cast<const FutureSetFromTuple *>(set.get()))
+            continue;
+
+        const auto * set_from_subquery = typeid_cast<const FutureSetFromSubquery *>(set.get());
+        if (!set_from_subquery || isNameOfGlobalInFunction(name) || !set_from_subquery->canFillTableForLocalIn(context))
+            return false;
+
+        /// A temporary table is sent already.
+        const auto source_ast = set_from_subquery->getSourceAST();
+        const auto * table_identifier = source_ast ? source_ast->as<ASTTableIdentifier>() : nullptr;
+        if (table_identifier && external_tables.contains(table_identifier->name()))
+            return false;
+
+        has_set_to_send = true;
     }
-    else if (distributed_product_mode == DistributedProductMode::DENY)
-    {
-        throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
-            "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
-            "You may rewrite query to use local tables "
-            "in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.");
-    }
-    /// `allow`: the text goes as it is.
+
+    return has_set_to_send;
 }
 
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
@@ -344,8 +303,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
-    const ContextPtr & distributed_product_mode_context,
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts)
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts,
+    bool send_sets)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -541,23 +500,18 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (is_function_and && arguments.size() == 1)
             arguments.push_back(make_intrusive<ASTLiteral>(Field(1)));
 
-        /// A non-GLOBAL IN over a subquery is written with the subquery's text (taken above from its set), which the
-        /// remote server runs again. Where that subquery reads a Distributed table, `distributed_product_mode` decides
-        /// what is sent instead, as it does for an IN written over the Distributed table directly.
-        if (distributed_product_mode_context && isNameOfLocalInFunction(func_name))
+        if (send_sets && isNameOfLocalInFunction(func_name))
         {
-            const auto * second_arg = node->children.at(1);
-            const auto & data_column = second_arg->column->getDataColumnPtr();
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
+            const auto set = tryGetSet(*node->children.at(1));
+            if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
             {
-                auto future_set = col_set->getData();
-                if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
-                    set_from_subquery && set_from_subquery->getSourceAST())
-                    applyDistributedProductModeToPushedDownIn(func_name, arguments[1], distributed_product_mode_context);
+                const auto [name, table] = set_from_subquery->getTableForLocalIn(context);
+                external_tables->emplace(name, table);
+                arguments[1] = make_intrusive<ASTIdentifier>(name);
             }
         }
 
-        /// Support for GLOBAL IN, written as one or made one by `distributed_product_mode` just above.
+        /// Support for GLOBAL IN.
         if (external_tables && isNameOfGlobalInFunction(func_name))
         {
             const auto * second_arg = node->children.at(1);
@@ -580,49 +534,31 @@ ASTPtr tryBuildAdditionalFilterAST(
 
                     auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
 
-                    /// Support running optimization multiple times: a set that reads one of this query's external
-                    /// tables (`x GLOBAL IN _data_N`, as a shard receives it) forwards that table under its own name.
+                    /// Support running optimization multiple times
                     auto source_ast = set_from_subquery->getSourceAST();
-                    const auto * source_table = source_ast->as<ASTTableIdentifier>();
-                    if (source_table && external_tables->contains(source_table->name()))
-                        temporary_table_name = source_table->name();
+                    if (auto * table_identifier = source_ast->as<ASTTableIdentifier>())
+                        temporary_table_name = table_identifier->name();
 
-                    auto external_table_it = external_tables->find(temporary_table_name);
-                    if (external_table_it == external_tables->end())
+                    auto & external_table = (*external_tables)[temporary_table_name];
+                    if (!external_table)
                     {
                         /// Here we create a new temporary table and attach it to the FutureSetFromSubquery.
                         /// At the moment FutureSet is created, temporary table will be filled.
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        NamesAndTypesList columns;
-                        if (source_table)
-                        {
-                            /// `x GLOBAL IN table`: the set is filled from the ordinary columns of the table, which is
-                            /// what `CollectSets` reads from it, so those are the columns to ship. A name that does
-                            /// not resolve here cannot say what to ship - leave the conjunct to the initiator.
-                            auto table_id = context->tryResolveStorageID(*source_table);
-                            auto storage = table_id ? DatabaseCatalog::instance().tryGetTable(table_id, context) : nullptr;
-                            if (!storage)
-                                continue;
-                            const auto storage_metadata = storage->getInMemoryMetadataPtr(context, false);
-                            columns = storage_metadata->getColumns().getOrdinary();
-                        }
-                        else
-                        {
-                            auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                                source_ast, context, SelectQueryOptions().positionalArgumentsAlreadyResolved());
-                            /// The subquery may produce columns with duplicate names
-                            /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
-                            /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
-                            /// the names here. This mirrors `buildQueryTreeForShard.cpp` which performs
-                            /// the same step. Column matching when the temporary table is populated and
-                            /// when it is later used by the remote shard's `IN` operator is by position,
-                            /// so renaming the columns is safe.
-                            Block header_with_unique_names = *header;
-                            makeUniqueColumnNamesInBlock(header_with_unique_names);
-                            columns = header_with_unique_names.getNamesAndTypesList();
-                        }
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                            source_ast, context, SelectQueryOptions().positionalArgumentsAlreadyResolved());
+                        /// The subquery may produce columns with duplicate names
+                        /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
+                        /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
+                        /// the names here. This mirrors `buildQueryTreeForShard.cpp` which performs
+                        /// the same step. Column matching when the temporary table is populated and
+                        /// when it is later used by the remote shard's `IN` operator is by position,
+                        /// so renaming the columns is safe.
+                        Block header_with_unique_names = *header;
+                        makeUniqueColumnNamesInBlock(header_with_unique_names);
+                        NamesAndTypesList columns = header_with_unique_names.getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
@@ -631,10 +567,9 @@ ASTPtr tryBuildAdditionalFilterAST(
                             nullptr /*query*/,
                             true /*create_for_global_subquery*/);
 
-                        auto external_table = external_storage_holder.getTable();
+                        external_table = external_storage_holder.getTable();
                         set_from_subquery->setExternalTable(external_table);
 
-                        external_tables->emplace(temporary_table_name, external_table);
                         context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
 
@@ -644,7 +579,7 @@ ASTPtr tryBuildAdditionalFilterAST(
             }
         }
 
-        auto function = makeASTFunction(func_name, std::move(arguments));
+        auto function = makeASTFunction(node->function_base->getName(), std::move(arguments));
         res = std::move(function);
     }
 
@@ -653,7 +588,7 @@ ASTPtr tryBuildAdditionalFilterAST(
 
 /// Splices `pushed_down_filters` into `query_ast` and says whether it did. `context` is the one the rewrite
 /// mutates (external tables for GLOBAL IN); `rewrite_context` is the one whose settings decide whether the
-/// rewrite happens at all and what `distributed_product_mode` makes of a non-GLOBAL IN in it.
+/// rewrite happens at all.
 static bool addFilters(
     Tables * external_tables,
     ContextMutablePtr & context,
@@ -662,7 +597,8 @@ static bool addFilters(
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     const ActionsDAG & pushed_down_filters,
-    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr,
+    bool send_sets = false)
 {
     if (!query_tree || !planner_context)
         return false;
@@ -687,7 +623,8 @@ static bool addFilters(
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, rewrite_context, dropped_conjuncts);
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts,
+        send_sets);
     if (!predicate)
         return false;
 
@@ -849,12 +786,7 @@ void ReadFromRemote::addLazyPipe(
 
     /// The temporary table of a GLOBAL IN must be attached to its set before the set is built, which happens
     /// before the lambda runs. So splice the filter now, as addPipe does; the local fallback keeps shard.query.
-    ASTPtr remote_query = shard.query;
-    if (filter_actions_dag)
-    {
-        remote_query = shard.query->clone();
-        addFilters(&external_tables, context, context, remote_query, shard.query_tree, shard.planner_context, *filter_actions_dag);
-    }
+    const auto [remote_query, tables] = addFiltersToQuery(shard, /*clone_query=*/ true);
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
@@ -862,7 +794,7 @@ void ReadFromRemote::addLazyPipe(
             query = shard.query, remote_query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
-            my_scalars = scalars, my_external_tables = external_tables,
+            my_scalars = scalars, my_external_tables = tables,
             my_stage = stage, my_storage = storage, my_shard_scope_identity = shard_scope_identity,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             parallel_marshalling_threads]() mutable
@@ -983,6 +915,21 @@ void ReadFromRemote::addLazyPipe(
     addConvertingActions(pipes.back(), *out_header, context);
 }
 
+std::pair<ASTPtr, Tables> ReadFromRemote::addFiltersToQuery(const ClusterProxy::SelectStreamFactory::Shard & shard, bool clone_query)
+{
+    if (!filter_actions_dag)
+        return {shard.query, external_tables};
+
+    /// `EXPLAIN PIPELINE` takes `shard.query` and `external_tables` after this, and must not send the sets.
+    const bool send_sets = areSetsSent(shard, *filter_actions_dag, external_tables, context);
+    const auto query = clone_query || send_sets ? shard.query->clone() : shard.query;
+    auto tables_with_sets = send_sets ? external_tables : Tables{};
+    auto & tables = send_sets ? tables_with_sets : external_tables;
+    addFilters(&tables, context, context, query, shard.query_tree, shard.planner_context, *filter_actions_dag,
+        /*dropped_conjuncts=*/ nullptr, send_sets);
+    return {query, tables};
+}
+
 void ReadFromRemote::addPipe(
     Pipes & pipes,
     const ClusterProxy::SelectStreamFactory::Shard & shard,
@@ -1078,10 +1025,9 @@ void ReadFromRemote::addPipe(
     }
     else
     {
-        if (filter_actions_dag)
-            addFilters(&external_tables, context, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+        const auto [query, tables] = addFiltersToQuery(shard, /*clone_query=*/ false);
 
-        const String query_string = formattedAST(shard.query);
+        const String query_string = formattedAST(query);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -1091,7 +1037,7 @@ void ReadFromRemote::addPipe(
             context,
             throttler,
             scalars,
-            external_tables,
+            tables,
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);

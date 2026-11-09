@@ -33,7 +33,11 @@ public:
 
     /// Whether the set fill also feeds an external temporary table (`GLOBAL IN`), attached either at
     /// creation or at pipeline build time (recorded as `external_table_expected` in the latter case).
-    bool usesExternalTable() const { return set_and_key->external_table != nullptr || set_and_key->external_table_expected; }
+    /// The table for a local `IN` does not count: without duplicates, there is only less to send.
+    bool usesExternalTable() const
+    {
+        return (set_and_key->external_table && !set_and_key->table_for_local_in) || set_and_key->external_table_expected;
+    }
 
     /// Deduplicate each input stream independently before the single set-filling transform. Correct for
     /// any input (the set deduplicates anyway); enabled when the input streams carry disjoint sets of the

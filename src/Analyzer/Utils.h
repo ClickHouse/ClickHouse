@@ -138,6 +138,9 @@ TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tr
 /// Returns true if the join is GLOBAL, explicitly or through `distributed_product_mode` / `prefer_global_in_and_join`
 bool isGlobalJoin(const JoinNode & join_node, const Settings & settings);
 
+/// Whether the settings prefer a `GLOBAL` `IN` or `JOIN` to a local one.
+bool areInAndJoinMadeGlobal(const Settings & settings);
+
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
   */
