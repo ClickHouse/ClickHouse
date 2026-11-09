@@ -17,7 +17,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
+
+/// Format version 2 appended the "author" field. Entries of both versions are readable.
+/// Version 2 is written only when the author is set (see the `persist_mutation_author`
+/// setting): entries without an author stay byte-for-byte identical to version 1, so
+/// they remain readable by servers that do not know about the "author" field.
+static constexpr UInt64 MUTATION_ENTRY_FORMAT_VERSION_LATEST = 2;
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
 {
@@ -48,20 +55,21 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
                     file_name_);
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, const String & author_,
+                                               UInt64 tmp_number, const TransactionID & tid_, const WriteSettings & settings)
     : create_time(time(nullptr))
     , commands(std::make_shared<MutationCommands>(std::move(commands_)))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
+    , author(author_)
     , is_temp(true)
     , tid(tid_)
 {
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: 1\n"
+        *out << "format version: " << (author.empty() ? 1 : 2) << "\n"
             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
@@ -76,6 +84,10 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
             TransactionID::write(tid, *out);
             *out << "\n";
         }
+
+        if (!author.empty())
+            *out << "author: " << escape << author << "\n";
+
         out->finalize();
         out->sync();
     }
@@ -127,7 +139,10 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
 
-    *buf >> "format version: 1\n";
+    UInt64 format_version = 0;
+    *buf >> "format version: " >> format_version >> "\n";
+    if (format_version < 1 || format_version > MUTATION_ENTRY_FORMAT_VERSION_LATEST)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown mutation entry format version: {}", format_version);
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
@@ -139,20 +154,31 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     commands->readText(*buf, false);
     *buf >> "\n";
 
-    if (buf->eof())
+    if (checkString("tid: ", *buf))
+    {
+        tid = TransactionID::read(*buf);
+        *buf >> "\n";
+    }
+    else
     {
         tid = Tx::NonTransactionalTID;
         csn = Tx::NonTransactionalCSN;
     }
-    else
-    {
-        *buf >> "tid: ";
-        tid = TransactionID::read(*buf);
-        *buf >> "\n";
 
-        if (!buf->eof())
+    while (!buf->eof())
+    {
+        if (checkString("author: ", *buf))
         {
-            *buf >> "csn: " >> csn >> "\n";
+            readEscapedStringUntilEOL(author, *buf);
+            *buf >> "\n";
+        }
+        else if (checkString("csn: ", *buf))
+        {
+            *buf >> csn >> "\n";
+        }
+        else
+        {
+            break;
         }
     }
 
@@ -165,6 +191,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) 
     , disk(std::move(other.disk))
     , path_prefix(std::move(other.path_prefix))
     , file_name(std::exchange(other.file_name, {}))
+    , author(std::move(other.author))
     , is_temp(std::exchange(other.is_temp, false))
     , is_registered(std::exchange(other.is_registered, false))
     , is_done(other.is_done)

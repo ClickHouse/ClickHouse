@@ -9,9 +9,20 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FORMAT_VERSION;
+}
+
+/// Format version 2 appended the "author" field. Entries of both versions are readable.
+/// Version 2 is written only when the author is set (see the `persist_mutation_author`
+/// setting): entries without an author stay byte-for-byte identical to version 1, so
+/// they remain readable by servers that do not know about the "author" field.
+static constexpr UInt64 REPLICATED_MUTATION_ENTRY_FORMAT_VERSION_LATEST = 2;
+
 void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 {
-    out << "format version: 1\n"
+    out << "format version: " << (author.empty() ? 1 : 2) << "\n"
         << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << "\n"
         << "block numbers count: " << block_numbers.size() << "\n";
@@ -30,11 +41,16 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     out << "alter version: ";
     out << alter_version;
 
+    if (!author.empty())
+        out << "\nauthor: " << escape << author;
 }
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
 {
-    in >> "format version: 1\n";
+    UInt64 format_version = 0;
+    in >> "format version: " >> format_version >> "\n";
+    if (format_version < 1 || format_version > REPLICATED_MUTATION_ENTRY_FORMAT_VERSION_LATEST)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown replicated mutation entry format version: {}", format_version);
 
     LocalDateTime create_time_dt;
     in >> "create time: " >> create_time_dt >> "\n";
@@ -58,6 +74,9 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
     commands.readText(in, false);
     if (checkString("\nalter version: ", in))
         in >> alter_version;
+
+    if (format_version >= 2 && checkString("\nauthor: ", in))
+        readEscapedStringUntilEOL(author, in);
 }
 
 String ReplicatedMergeTreeMutationEntry::toString() const
