@@ -142,6 +142,20 @@ void validateSQLClusterDefinition(const ASTSQLClusterDefinition & definition)
     }
 }
 
+/// `Clusters::getCluster` expands `{macros}` in the lookup argument. SQL-managed
+/// names are stored as literals (metadata path, `create_query`, in-memory key), so a
+/// name that contains `{` cannot be created, altered, or dropped: lookup would search
+/// for the expansion and miss the stored key, or collide with a different cluster.
+void validateSQLClusterName(const String & cluster_name)
+{
+    if (cluster_name.contains('{'))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "SQL cluster name `{}` must not contain macros. Use a literal name; "
+            "`cluster()` still expands macros when looking a cluster up",
+            cluster_name);
+}
+
 /// `MapConfiguration::enumerate` returns keys in lexicographic order, so mixed `shard`/`node`
 /// prefixes and unpadded numbers (`1`, `10`, `2`) would not match the SQL definition order.
 /// `Cluster` assigns shard and replica numbers from that enumeration.
@@ -455,6 +469,8 @@ void SQLClusterFactory::reloadFromStorage()
 
 void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
 {
+    validateSQLClusterName(query.cluster_name);
+
     std::lock_guard lock(mutex);
     loadIfNotImpl(lock);
 
@@ -492,6 +508,8 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
 
 void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
 {
+    validateSQLClusterName(query.cluster_name);
+
     std::lock_guard lock(mutex);
     loadIfNotImpl(lock);
 
@@ -528,6 +546,8 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
 
 void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
 {
+    validateSQLClusterName(query.cluster_name);
+
     std::lock_guard lock(mutex);
     loadIfNotImpl(lock);
 

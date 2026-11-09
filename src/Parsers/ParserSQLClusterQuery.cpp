@@ -310,7 +310,7 @@ CREATE CLUSTER [IF NOT EXISTS] name [ON CLUSTER cluster] (
 
 `CREATE CLUSTER` defines a new cluster topology and materializes it in server memory. The full statement is persisted as metadata and reloaded on server startup.
 
-Cluster names must not contain dots.
+Cluster names must not contain dots or `{macros}`. Macros are expanded only when looking a cluster up (for example `cluster('{replica}', ...)`), not when creating, altering, or dropping a SQL-managed cluster.
 
 ### Cluster properties {#cluster-properties}
 
