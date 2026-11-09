@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <mutex>
 #include <base/bit_cast.h>
 
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -28,11 +30,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -41,6 +38,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace Setting
+{
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
 }
 
 namespace
@@ -695,6 +699,9 @@ namespace
             if (isStringOrFixedString(type))
                 return;
 
+            if (type->lowCardinality())
+                return;
+
             if (type->haveMaximumSizeOfValue())
             {
                 auto data_type_size = type->getMaximumSizeOfValueInMemory();
@@ -863,12 +870,18 @@ namespace
         static constexpr auto name = "transform";
         static FunctionOverloadResolverPtr create(ContextPtr context)
         {
+            const auto & settings = context->getSettingsRef();
+            const bool use_low_cardinality_optimisation
+                = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+                && !settings[Setting::optimize_if_transform_strings_to_enum];
             return std::make_unique<FunctionTransformOverloadResolver>(
-                context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros]);
+                settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros], use_low_cardinality_optimisation);
         }
 
-        explicit FunctionTransformOverloadResolver(bool cast_fixed_string_to_string_strip_trailing_zeros_)
+        explicit FunctionTransformOverloadResolver(
+            bool cast_fixed_string_to_string_strip_trailing_zeros_, bool use_low_cardinality_optimisation_ = false)
             : cast_fixed_string_to_string_strip_trailing_zeros(cast_fixed_string_to_string_strip_trailing_zeros_)
+            , use_low_cardinality_optimisation(use_low_cardinality_optimisation_)
         {
         }
 
@@ -887,15 +900,17 @@ namespace
             return "(Any, Array(Any), Array(Any), [Any]) -> Any";
         }
 
-        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            DataTypes data_types(arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-                data_types[i] = arguments[i].type;
-            return getReturnTypeImpl(data_types);
+            ColumnsWithTypeAndName columns;
+            columns.reserve(arguments.size());
+            for (const auto & type : arguments)
+                columns.emplace_back(nullptr, type, String{});
+            return getReturnTypeImpl(columns);
         }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        /// The `LowCardinality` result for a constant string default depends on the constness of the arguments.
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             const auto args_size = arguments.size();
             if (args_size != 3 && args_size != 4)
@@ -906,9 +921,10 @@ namespace
                     getName(),
                     args_size);
 
-            const DataTypePtr & type_x = arguments[0];
+            const DataTypePtr & type_x = arguments[0].type;
+            const bool is_x_constant = arguments[0].column && isColumnConst(*arguments[0].column);
 
-            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
 
             if (!type_arr_from)
                 throw Exception(
@@ -916,7 +932,7 @@ namespace
                     "Second argument of function {}, must be array of source values to transform from",
                     getName());
 
-            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].type.get());
 
             if (!type_arr_to)
                 throw Exception(
@@ -925,6 +941,30 @@ namespace
                     getName());
 
             const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
+
+            auto wrap_in_low_cardinality = [&](DataTypePtr ret)
+            {
+                if (isString(ret))
+                    return std::make_shared<DataTypeLowCardinality>(ret)->getPtr();
+                if (isString(removeNullable(ret)))
+                {
+                    /// Require at least one non-NULL string among the constant mapped values and the
+                    /// default: a typed all-NULL case like
+                    /// `transform(x, [1], [CAST(NULL AS Nullable(String))], CAST(NULL AS Nullable(String)))`
+                    /// must keep plain `Nullable(String)` - there is no dictionary-compression benefit
+                    /// when no actual string value exists.
+                    bool has_string_value = !arguments[3].column->isNullAt(0);
+                    if (!has_string_value && arguments[2].column && isColumnConst(*arguments[2].column))
+                    {
+                        const auto & array_to_values = (*arguments[2].column)[0].safeGet<Array>();
+                        has_string_value = std::any_of(
+                            array_to_values.begin(), array_to_values.end(), [](const Field & value) { return !value.isNull(); });
+                    }
+                    if (has_string_value)
+                        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()))->getPtr();
+                }
+                return ret;
+            };
 
             if (args_size == 3)
             {
@@ -945,11 +985,16 @@ namespace
                         "transform(T, Array(T), Array(U), U) -> U; "
                         "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                         getName());
+                /// No `LowCardinality` here: without a default, unmatched non-constant values pass through
+                /// unchanged (potentially high cardinality), and with a constant input the whole expression
+                /// is constant and gets folded, where `LowCardinality` gives no benefit while breaking
+                /// functions that expect their constant string arguments as `Const(String)`
+                /// (e.g. `arrayReduce`, `joinGet`, `tupleElement`).
                 FunctionTransform::checkAllowedType(ret);
                 return ret;
             }
 
-            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
+            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3].type});
             if (!ret)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -957,6 +1002,13 @@ namespace
                     "transform(T, Array(T), Array(U), U) -> U; "
                     "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                     getName());
+            /// If the input is constant too, the whole expression is constant and gets folded into a single
+            /// `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and
+            /// functions that opt out of the default LowCardinality implementation (e.g. `arrayReduce`,
+            /// `joinGet`, `tupleElement`) expect their constant string arguments as `Const(String)`,
+            /// so keep plain `String` then.
+            if (use_low_cardinality_optimisation && !is_x_constant && arguments[3].column && isColumnConst(*arguments[3].column))
+                ret = wrap_in_low_cardinality(ret);
             FunctionTransform::checkAllowedType(ret);
             return ret;
         }
@@ -999,6 +1051,7 @@ namespace
 
     private:
         const bool cast_fixed_string_to_string_strip_trailing_zeros;
+        const bool use_low_cardinality_optimisation;
     };
 
 }

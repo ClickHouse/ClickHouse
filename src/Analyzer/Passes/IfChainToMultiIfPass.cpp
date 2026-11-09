@@ -126,12 +126,23 @@ public:
             return;
 
         /// The resolver is built from the settings of the scope being rewritten: a subquery can override them.
+        ///
+        /// Build the synthesized `multiIf` without the `optimize_if_transform_const_strings_to_lowcardinality`
+        /// optimization so its result type matches the `if` chain it replaces. The outer `if` of a chain has
+        /// a nested `if` (not a constant) as its else-branch, so - because `FunctionIf` strips
+        /// `LowCardinality` from its arguments before inferring the return type - it always resolves to a
+        /// plain (non-`LowCardinality`) `String`. If the `multiIf` were built with the optimization it would
+        /// instead see all the constant string leaves and resolve to `LowCardinality(String)`; the type would
+        /// then differ from the original `if`, the type-equality guard below would reject the rewrite,
+        /// and enabling the setting would silently disable `optimize_if_chain_to_multiif` for exactly the
+        /// constant-string chains this optimization targets.
         const auto & settings = getSettings();
         auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
             settings[Setting::allow_execute_multiif_columnar],
             settings[Setting::use_variant_as_common_type],
             settings[Setting::allow_lossy_numeric_supertype],
-            settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros]);
+            settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros],
+            /*optimize_if_transform_const_strings_to_lowcardinality=*/false);
 
         auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
         multi_if_function->getArguments().getNodes() = std::move(multi_if_arguments);
@@ -167,5 +178,4 @@ void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr co
     IfChainToMultiIfPassVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }
-
 }

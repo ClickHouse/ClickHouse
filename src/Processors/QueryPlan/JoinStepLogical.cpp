@@ -902,7 +902,7 @@ static void predicateOperandsToCommonType(
     bool cast_to_subtype = false;
     try
     {
-        common_type = getLeastSupertype(DataTypes{left_type, right_type});
+        common_type = JoinCommon::compareBoolKeysAsUInt8(getLeastSupertype(DataTypes{left_type, right_type}), left_type, right_type);
     }
     catch (Exception & ex)
     {
@@ -911,7 +911,7 @@ static void predicateOperandsToCommonType(
             if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
             {
                 /// A converted key must report a NULL at the top level; see `removeNullableInsideTuple`.
-                subtype = JoinCommon::removeNullableInsideTuple(subtype);
+                subtype = JoinCommon::removeNullableInsideTuple(JoinCommon::compareBoolKeysAsUInt8(subtype, left_type, right_type));
 
                 /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
                 /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
@@ -942,7 +942,8 @@ static void predicateOperandsToCommonType(
         if (cast_to_subtype)
             return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
-        if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
+        /// By name: a cast into Bool equals one into UInt8, but it maps 2 to true.
+        if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->getName() == common_type->getName())
             return mapped_it->second;
         /// The comparison of `FixedString` with `String` is zero-padded (see `FunctionComparison`): `toFixedString('a', 2) = 'a'`.
         /// The join keys follow it whatever `cast_fixed_string_to_string_strip_trailing_zeros` is, so the conversion of
@@ -1053,7 +1054,7 @@ static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinAction
                 = dag.addColumn(value_type->createColumnConstWithDefaultValue(1), value_type, "__null_safe_key_default_" + value_type->getName());
             const auto & not_null = dag.addFunction(FunctionFactory::instance().get("assumeNotNull", nullptr), {nodes[1]}, {});
             return &dag.addFunction(
-                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false),
+                createInternalFunctionIfOverloadResolver(/*use_variant_as_common_type=*/ false, /*allow_lossy_numeric_supertype=*/ false, /*use_low_cardinality_optimisation=*/ false),
                 {nodes[0], &default_value, &not_null},
                 {});
         });
