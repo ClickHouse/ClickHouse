@@ -764,6 +764,26 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
 
+    const auto & parts = global_ctx->future_part->parts;
+    const bool share_nested_offsets = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+
+    /// The TTL infos of the source parts, keyed by the current column names.
+    std::vector<IMergeTreeDataPart::TTLInfos> source_ttl_infos;
+    source_ttl_infos.reserve(parts.size());
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        source_ttl_infos.push_back(parts[i]->ttl_infos);
+        source_ttl_infos.back().applyColumnRenames(*global_ctx->alter_conversions[i]);
+    }
+
+    /// Whether the merge reads the column with the current name `column` from the data of the `i`-th part.
+    auto stores_column = [&](size_t i, const String & column)
+    {
+        const auto & conversions = *global_ctx->alter_conversions[i];
+        const String name_in_part = conversions.isColumnRenamed(column) ? conversions.getColumnOldName(column) : column;
+        return parts[i]->getColumns().contains(name_in_part) && !conversions.isColumnDropped(name_in_part, share_nested_offsets);
+    };
+
     /// The TTL bound of a column is unknown for a part that stores it without TTL info,
     /// so the merged part must not take the bound of the other parts for that column.
     NameSet columns_without_ttl_info;
@@ -771,25 +791,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         for (const auto & [column, _] : global_ctx->metadata_snapshot->getColumnTTLs())
         {
-            if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
-                { return !part->isEmpty() && !part->ttl_infos.columns_ttl.contains(column) && part->getColumns().contains(column); }))
-                columns_without_ttl_info.insert(column);
+            for (size_t i = 0; i < parts.size(); ++i)
+            {
+                if (!parts[i]->isEmpty() && !source_ttl_infos[i].columns_ttl.contains(column) && stores_column(i, column))
+                {
+                    columns_without_ttl_info.insert(column);
+                    break;
+                }
+            }
         }
     }
 
-    for (const auto & part : global_ctx->future_part->parts)
+    for (size_t i = 0; i < parts.size(); ++i)
     {
-        if (columns_without_ttl_info.empty())
-        {
-            global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
-        }
-        else
-        {
-            auto part_ttl_infos = part->ttl_infos;
-            for (const auto & column : columns_without_ttl_info)
-                part_ttl_infos.columns_ttl.erase(column);
-            global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
-        }
+        const auto & part = parts[i];
+        auto & part_ttl_infos = source_ttl_infos[i];
+        for (const auto & column : columns_without_ttl_info)
+            part_ttl_infos.columns_ttl.erase(column);
+        global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
 
         if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
         {
@@ -797,6 +816,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             ctx->need_remove_expired_values = true;
             ctx->force_ttl = true;
         }
+    }
+
+    if (!columns_without_ttl_info.empty())
+    {
+        ctx->need_remove_expired_values = true;
+        ctx->force_ttl = true;
     }
 
     /// A part with rows but without a calculated rows TTL adds nothing to the aggregated bound,

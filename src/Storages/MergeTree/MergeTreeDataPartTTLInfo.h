@@ -12,6 +12,7 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+class AlterConversions;
 struct TTLDescription;
 using TTLDescriptions = std::vector<TTLDescription>;
 
@@ -60,6 +61,11 @@ struct MergeTreeDataPartTTLInfos
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);
+
+    /// Re-keys `columns_ttl` after the renames of `alter_conversions` were applied to the part: an entry follows
+    /// its column to the new name, and the entry under a name another column was renamed to is removed.
+    /// Returns whether anything changed.
+    bool applyColumnRenames(const AlterConversions & alter_conversions);
 
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;
