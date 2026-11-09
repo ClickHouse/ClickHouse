@@ -275,6 +275,13 @@ MergeTreeDataPartInfoForReaderPtr MergeTreeReadPoolStatelessParts::buildReaderIn
     if (!data_part_storage || !mark_type)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot determine part storage type and mark type from disk");
 
+    /// The marks on disk tell the actual type of the part; a wrong `Wide` / `Compact` tag would drive the part
+    /// through the wrong granularity loading path and fail much later with an obscure error.
+    if (mark_type->part_type != part.type.getValue())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Part {} with path {} is described as `{}`, but it is a `{}` part on disk",
+                        part_name, part_root, part.type.toString(), MergeTreeDataPartType(mark_type->part_type).toString());
+
     auto metadata_read_settings = getContext()->getReadSettings().adjustBufferSize(4096);
 
     /// Part's physical columns; columns absent from the part fill from defaults. Fresh list (readText appends).
@@ -283,6 +290,15 @@ MergeTreeDataPartInfoForReaderPtr MergeTreeReadPoolStatelessParts::buildReaderIn
         serialization_columns.readText(*columns_buf);
     else
         serialization_columns = all_columns;
+
+    /// The lightweight delete mask is stored in the part as the `_row_exists` column, so whether it exists is a fact
+    /// of the part. Trusting a wrong flag would return rows hidden as deleted, or fail to read a missing column.
+    const bool part_has_row_exists = serialization_columns.contains(RowExistsColumn::name);
+    if (part_has_row_exists != part.has_lightweight_delete)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Part {} with path {} is described with `has_lightweight_delete = {}`, but it {} the `{}` column on disk",
+                        part_name, part_root, UInt64(part.has_lightweight_delete),
+                        part_has_row_exists ? "has" : "does not have", RowExistsColumn::name);
 
     SerializationInfoByName serialization_infos({});
     if (data_part_storage->existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
@@ -364,6 +380,13 @@ MergeTreeDataPartInfoForReaderPtr MergeTreeReadPoolStatelessParts::buildReaderIn
         case MergeTreeDataPartType::Unknown:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data parts of type `{}` are not allowed", part.type.toString());
     }
+
+    /// `marks_count` is the number of marks in the part including the final one (`marks` in `system.parts`),
+    /// and the ranges were checked against it when the arguments were parsed.
+    if (index_granularity->getMarksCount() != part.marks_count)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Part {} with path {} is described with `marks_count = {}`, but it has {} marks on disk",
+                        part_name, part_root, part.marks_count, index_granularity->getMarksCount());
 
     MergeTreeDataPartChecksums checksums;
     auto buf = data_part_storage->readFile("checksums.txt", metadata_read_settings, {});

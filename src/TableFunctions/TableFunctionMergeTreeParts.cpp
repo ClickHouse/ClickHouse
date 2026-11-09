@@ -638,6 +638,9 @@ parts(
 | `ranges`                 | Mark ranges to read, as an array of half-open `(begin, end)` tuples. The ranges must be non-empty, sorted, non-overlapping, and end at or before `marks_count`. |
 | `has_lightweight_delete` | Whether the part has a materialized lightweight delete mask.         |
 
+The part type, `marks_count` and `has_lightweight_delete` are checked against the part on the disk, and
+a part whose description does not match is rejected with a `BAD_ARGUMENTS` error.
+
 `table_settings` carries the settings of the table the parts belong to that cannot be inferred from the
 parts themselves:
 
