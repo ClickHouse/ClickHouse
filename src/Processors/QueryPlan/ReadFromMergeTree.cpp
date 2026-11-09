@@ -4522,6 +4522,7 @@ void ReadFromMergeTree::applyPrewhereQueryConditionCache()
 {
     /// A TopK PREWHERE key also hashes the WHERE condition, which is dropped from the lookup below.
     if (!analyzed_result_ptr || !indexes || !query_info.prewhere_info || !allow_query_condition_cache || top_k_filter_info
+        || !context->getSettingsRef()[Setting::use_query_condition_cache]
         || (is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
         || storage_snapshot->metadata->hasUniqueKey()
         || filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
