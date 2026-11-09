@@ -53,6 +53,14 @@ IDisk::IDisk(const String & name_)
 
 IDisk::~IDisk() = default;
 
+ReservationPtr IDisk::reserveAndGetUnreservedSpace(
+    UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space)
+{
+    ReservationPtr reservation = constraints ? reserve(bytes, *constraints) : reserve(bytes);
+    unreserved_space = reservation ? reservation->getUnreservedSpace() : getUnreservedSpace();
+    return reservation;
+}
+
 bool IDisk::isDirectoryEmpty(const String & path) const
 {
     return !iterateDirectory(path)->isValid();
