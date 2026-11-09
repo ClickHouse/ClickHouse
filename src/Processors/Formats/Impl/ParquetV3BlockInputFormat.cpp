@@ -6,6 +6,8 @@
 
 #if USE_PARQUET
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
@@ -274,12 +276,17 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
     }
 }
 
+static std::optional<ParquetMetadataCacheKey> makeMetadataCacheKey(const RelativePathWithMetadata & object)
+{
+    if (!object.metadata.has_value())
+        return std::nullopt;
+    return ParquetMetadataCache::createKey(object.getPath(), object.metadata->getContentCacheToken().value_or(object.metadata->etag));
+}
+
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
-    if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(
-            object_with_metadata->getPath(),
-            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
+    if (metadata_cache && object_with_metadata.has_value())
+        return makeMetadataCacheKey(*object_with_metadata);
     return std::nullopt;
 }
 
@@ -370,7 +377,7 @@ std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
     if (!cell)
         return std::nullopt;
 
-    std::vector<std::pair<size_t, ParquetKeptStatistics::RangesPtr>> columns;
+    VectorWithMemoryTracking<std::pair<size_t, ParquetKeptStatistics::RangesPtr>> columns;
     columns.reserve(column_keys.size());
     for (const auto & [idx, key] : column_keys)
         /// A column without kept ranges is unknown, like a column without statistics.
@@ -458,13 +465,13 @@ Chunk ParquetV3BlockInputFormat::read()
     return std::move(res.chunk);
 }
 
-std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
+std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
     if (!reader || min_max_from_statistics)
         return std::nullopt;
     /// A row group skipped by a statistics-only threshold was never checked against the filter, so it may match.
     const bool top_k_statistics_only = format_filter_info->top_k_filter && !format_filter_info->top_k_filter->filter_rows;
-    std::vector<size_t> matched;
+    VectorWithMemoryTracking<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
     {
         if (!row_group.need_to_process)
@@ -486,9 +493,9 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
     return std::make_pair(std::move(matched), reader->reader.file_metadata().row_groups.size());
 }
 
-std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
+VectorWithMemoryTracking<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
 {
-    std::vector<std::pair<size_t, Field>> res;
+    VectorWithMemoryTracking<std::pair<size_t, Field>> res;
     if (!reader)
         return res;
     for (const auto & row_group : reader->reader.row_groups)
@@ -514,7 +521,7 @@ Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet file bucket has both row group ids and a byte range");
         return Parquet::RowGroupByteRange{buckets_to_read->byte_range->first, buckets_to_read->byte_range->second};
     }
-    return std::unordered_set<UInt64>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
+    return UnorderedSetWithMemoryTracking<UInt64>(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
@@ -625,7 +632,7 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_ver
 {
     size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
-    row_group_ids = std::vector<size_t>{};
+    row_group_ids = RowGroupIndices{};
     row_group_ids.resize(size_chunks);
     size_t bucket = 0;
     for (size_t i = 0; i < size_chunks; ++i)
@@ -660,7 +667,7 @@ String ParquetFileBucketInfo::getIdentifier() const
     return result;
 }
 
-ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
+ParquetFileBucketInfo::ParquetFileBucketInfo(const RowGroupIndices & row_group_ids_)
     : row_group_ids(row_group_ids_)
 {
 }
@@ -670,7 +677,7 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(UInt64 offset, UInt64 length)
 {
 }
 
-std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const
 {
     if (byte_range)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot filter a byte range bucket of a Parquet file by row groups");
@@ -678,8 +685,8 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
         return nullptr;
     if (row_group_ids.empty())
         return std::make_shared<ParquetFileBucketInfo>(matching_row_groups);
-    std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
-    std::vector<size_t> filtered;
+    UnorderedSetWithMemoryTracking<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
+    VectorWithMemoryTracking<size_t> filtered;
     for (size_t rg : row_group_ids)
         if (matching_set.contains(rg))
             filtered.push_back(rg);
@@ -688,23 +695,41 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
 }
 
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
+void registerParquetFileBucketInfo(UnorderedMapWithMemoryTracking<String, FileBucketInfoPtr> & instances);
+void registerParquetFileBucketInfo(UnorderedMapWithMemoryTracking<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(
+    size_t bucket_size,
+    ReadBuffer & buf,
+    const RelativePathWithMetadata & object,
+    const FormatSettings & format_settings_,
+    const ContextPtr & context)
 {
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
-    std::vector<size_t> bucket_sizes;
+    auto read_footer = [&] { return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size); };
+
+    ParquetMetadataCachePtr metadata_cache;
+    if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        metadata_cache = context->tryGetParquetMetadataCache();
+    std::optional<ParquetMetadataCacheKey> cache_key;
+    if (metadata_cache && object.metadata && object.metadata->getContentCacheToken())
+        cache_key = makeMetadataCacheKey(object);
+
+    std::shared_ptr<const Parquet::FileFooter> footer;
+    if (cache_key)
+        footer = metadata_cache->getOrSetMetadata(*cache_key, read_footer).first->footer;
+    else
+        footer = read_footer();
+    VectorWithMemoryTracking<size_t> bucket_sizes;
     for (const auto & row_group : footer->metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
 
-    std::vector<std::vector<size_t>> buckets;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> buckets;
     size_t current_weight = 0;
     for (size_t i = 0; i < bucket_sizes.size(); ++i)
     {
@@ -724,7 +749,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
         }
     }
 
-    std::vector<FileBucketInfoPtr> result;
+    VectorWithMemoryTracking<FileBucketInfoPtr> result;
     for (const auto & bucket : buckets)
     {
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
@@ -732,15 +757,15 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets_)
+VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const VectorWithMemoryTracking<UInt64> & split_offsets_)
 {
-    std::vector<UInt64> split_offsets = split_offsets_;
+    VectorWithMemoryTracking<UInt64> split_offsets = split_offsets_;
     std::sort(split_offsets.begin(), split_offsets.end());
     split_offsets.erase(std::unique(split_offsets.begin(), split_offsets.end()), split_offsets.end());
     if (file_size == 0 || split_offsets.empty() || split_offsets.back() >= file_size)
         return {};
 
-    std::vector<FileBucketInfoPtr> result;
+    VectorWithMemoryTracking<FileBucketInfoPtr> result;
     UInt64 bucket_begin = 0;
     for (size_t i = 1; i < split_offsets.size(); ++i)
     {
