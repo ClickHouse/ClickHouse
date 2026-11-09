@@ -37,6 +37,10 @@ SELECT '-- control: a join on String keys is converted (result, plan has a set)'
 SELECT count() FROM s ANY INNER JOIN s2 ON y = z SETTINGS query_plan_convert_join_to_in = 1;
 SELECT countIf(explain LIKE '%CreatingSet%') > 0 FROM (EXPLAIN SELECT count() FROM s ANY INNER JOIN s2 ON y = z SETTINGS query_plan_convert_join_to_in = 1);
 
+SELECT '-- LEFT ANY JOIN with a GROUP BY on the key is not converted to INNER ALL: `x` matches two groups';
+SELECT count() FROM fs LEFT ANY JOIN (SELECT y, count() AS n FROM s GROUP BY y) AS g ON x = y WHERE g.n > 0;
+SELECT count() FROM fs LEFT ANY JOIN (SELECT y, count() AS n FROM s GROUP BY y) AS g ON x = y WHERE g.n > 0 SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
+
 DROP TABLE fs;
 DROP TABLE s;
 DROP TABLE s2;

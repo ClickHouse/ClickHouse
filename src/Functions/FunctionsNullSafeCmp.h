@@ -305,6 +305,10 @@ public:
         if (common_type)
         {
             // To address: Nullable vs Nullable
+            // A `FixedString` vs `String` pair is compared zero-padded by `=`, while the cast to the common type `String`
+            // drops the trailing zero bytes of the `FixedString` operand only, so compare the nested values as `=` does.
+            if (common_type->isNullable() && isStringOrFixedString(left_nested_type) && isStringOrFixedString(right_nested_type))
+                return executeNullableWithoutSupertype(arguments, input_rows_count);
             if (common_type->isNullable())
             {
                 ColumnPtr c0_converted = castColumn(arguments[0], common_type);

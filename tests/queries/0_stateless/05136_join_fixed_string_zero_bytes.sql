@@ -62,6 +62,11 @@ SELECT hex(x), hex(fs.x), hex(s2.x) FROM fs FULL JOIN (SELECT y AS x, j FROM s) 
 SELECT hex(x), hex(fs.x), hex(s2.x) FROM fs FULL JOIN (SELECT y AS x, j FROM s) AS s2 USING (x) ORDER BY ALL SETTINGS join_algorithm = 'hash', join_use_nulls = 1;
 SELECT hex(x), hex(s2.x), hex(fs.x) FROM (SELECT y AS x, j FROM s) AS s2 FULL JOIN fs USING (x) ORDER BY ALL SETTINGS join_algorithm = 'hash';
 
+SELECT '-- isNotDistinctFrom on Nullable keys agrees with = on values and matches NULL with NULL';
+SELECT isNotDistinctFrom(toNullable(toFixedString('a', 3)), 'a\0\0'), isNotDistinctFrom(toFixedString('a', 3), toNullable('a\0\0')), isNotDistinctFrom(toNullable(toFixedString('a', 3)), toNullable('ab'));
+SELECT countIf(isNotDistinctFrom(fsn.x, sn.y)) FROM (SELECT toNullable(x) AS x FROM fs UNION ALL SELECT NULL) AS fsn, (SELECT toNullable(y) AS y FROM s UNION ALL SELECT NULL) AS sn;
+SELECT count() FROM (SELECT toNullable(x) AS x FROM fs UNION ALL SELECT NULL) AS fsn JOIN (SELECT toNullable(y) AS y FROM s UNION ALL SELECT NULL) AS sn ON isNotDistinctFrom(fsn.x, sn.y) SETTINGS join_algorithm = 'hash';
+
 DROP TABLE fs;
 DROP TABLE s;
 DROP TABLE fs5;

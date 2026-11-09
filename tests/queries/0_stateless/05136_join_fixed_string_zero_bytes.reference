@@ -81,3 +81,7 @@ anti	1
 616263		616263
 61626364	61626364	
 616264	616264	
+-- isNotDistinctFrom on Nullable keys agrees with = on values and matches NULL with NULL
+1	1	0
+9
+9
