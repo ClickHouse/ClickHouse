@@ -99,6 +99,11 @@ public:
 
     bool isAggregateFunctionName(const String & name) const;
 
+    /// The value of `cast_fixed_string_to_string_strip_trailing_zeros` that an aggregate function created now captures:
+    /// `get` passes the creators the settings of the query context of the current thread, not of the scope
+    /// (for example, a subquery with its own `SETTINGS`) in which the aggregate is used.
+    static bool getCastFixedStringToStringStripTrailingZeros();
+
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:

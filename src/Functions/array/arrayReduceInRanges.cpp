@@ -1,5 +1,3 @@
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Common/SipHash.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -24,11 +22,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
-}
 
 namespace ErrorCodes
 {
@@ -390,13 +383,14 @@ public:
     static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionArrayReduceInRangesOverloadResolver>(context_); }
     explicit FunctionArrayReduceInRangesOverloadResolver(ContextPtr context_)
         : WithContext(context_)
-        , cast_fixed_string_to_string_strip_trailing_zeros(context_->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
+        , cast_fixed_string_to_string_strip_trailing_zeros(AggregateFunctionFactory::getCastFixedStringToStringStripTrailingZeros())
     {
     }
 
     /// The adaptors for `Dynamic` and `Variant` arguments hash the resolver rather than the built function, see
     /// `IFunctionOverloadResolver::updateHash`. The aggregate built from it captures the conversion mode of
-    /// `FixedString` to `String` of the query, see `IAggregateFunction::updateHash`.
+    /// `FixedString` to `String`, see `IAggregateFunction::updateHash`. Hash the mode the aggregate is created with,
+    /// which is not the one of the scope of this function if a subquery overrides the setting.
     void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     String getName() const override { return name; }
