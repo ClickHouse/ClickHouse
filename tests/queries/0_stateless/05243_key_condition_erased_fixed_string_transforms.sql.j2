@@ -1,0 +1,85 @@
+-- Padded comparison semantics must survive both ways of transforming constants into key values.
+-- `toString` isolates monotonic transforms for inequalities; `reverse` isolates deterministic
+-- transforms for equality. The byte strings differ only in padding, so losing a match is visible.
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the marks
+    selected by index analysis. -#}
+{% macro check(table, predicate) -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT sum(marks) FROM (EXPLAIN ESTIMATE SELECT 1 FROM {{ table }} WHERE {{ predicate }}))
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE erased_fixed_monotonic (s String) ENGINE = MergeTree ORDER BY toString(s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE erased_fixed_deterministic (s String) ENGINE = MergeTree ORDER BY reverse(s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO erased_fixed_monotonic VALUES ('V0'), ('V0\0'), ('V0\0\0'), ('V0X'), ('X');
+INSERT INTO erased_fixed_deterministic SELECT * FROM erased_fixed_monotonic;
+
+-- A `FixedString` constant, plain, inside `Variant`, or inside a full or shared `Dynamic`, matches
+-- 'V0', 'V0\0' and 'V0\0\0' up to padding, and neither transform builds a key condition for it.
+-- An active `String` compares bytewise, so both transforms still provide pruning.
+SET analyze_index_with_multiple_key_columns_per_condition = 0;
+{{ check('erased_fixed_monotonic', "s <= toFixedString('V0', 2)") }}
+{{ check('erased_fixed_deterministic', "s = toFixedString('V0', 2)") }}
+{{ check('erased_fixed_deterministic', "s != toFixedString('V0', 2)") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= toFixedString('V0', 2) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = toFixedString('V0', 2) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))") }}
+{{ check('erased_fixed_deterministic', "s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))") }}
+{{ check('erased_fixed_deterministic', "s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST(toFixedString('V0', 2) AS Dynamic)") }}
+{{ check('erased_fixed_deterministic', "s = CAST(toFixedString('V0', 2) AS Dynamic)") }}
+{{ check('erased_fixed_deterministic', "s != CAST(toFixedString('V0', 2) AS Dynamic)") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= CAST(toFixedString('V0', 2) AS Dynamic) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = CAST(toFixedString('V0', 2) AS Dynamic) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))") }}
+{{ check('erased_fixed_deterministic', "s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))") }}
+{{ check('erased_fixed_deterministic', "s != CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST('V0' AS Dynamic)") }}
+{{ check('erased_fixed_deterministic', "s = CAST('V0' AS Variant(String, UInt64))") }}
+
+-- The same with the multi-atom analysis.
+SET analyze_index_with_multiple_key_columns_per_condition = 1;
+{{ check('erased_fixed_monotonic', "s <= toFixedString('V0', 2)") }}
+{{ check('erased_fixed_deterministic', "s = toFixedString('V0', 2)") }}
+{{ check('erased_fixed_deterministic', "s != toFixedString('V0', 2)") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= toFixedString('V0', 2) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = toFixedString('V0', 2) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))") }}
+{{ check('erased_fixed_deterministic', "s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))") }}
+{{ check('erased_fixed_deterministic', "s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST(toFixedString('V0', 2) AS Dynamic)") }}
+{{ check('erased_fixed_deterministic', "s = CAST(toFixedString('V0', 2) AS Dynamic)") }}
+{{ check('erased_fixed_deterministic', "s != CAST(toFixedString('V0', 2) AS Dynamic)") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= CAST(toFixedString('V0', 2) AS Dynamic) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = CAST(toFixedString('V0', 2) AS Dynamic) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))") }}
+{{ check('erased_fixed_deterministic', "s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))") }}
+{{ check('erased_fixed_deterministic', "s != CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))") }}
+SELECT count() FROM erased_fixed_monotonic WHERE s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM erased_fixed_deterministic WHERE s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0)) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+{{ check('erased_fixed_monotonic', "s <= CAST('V0' AS Dynamic)") }}
+{{ check('erased_fixed_deterministic', "s = CAST('V0' AS Variant(String, UInt64))") }}
+
+-- A wide `FixedString` input has only one key value for the constant's padded equivalence class.
+CREATE TABLE erased_fixed_wide (s FixedString(8)) ENGINE = MergeTree ORDER BY reverse(s)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO erased_fixed_wide SELECT * FROM erased_fixed_monotonic;
+{{ check('erased_fixed_wide', "s = CAST(toFixedString('V0', 3) AS Dynamic)") }}
+
+-- A numeric input parses unpadded text rather than comparing padded byte strings.
+CREATE TABLE erased_fixed_numeric (n UInt64) ENGINE = MergeTree ORDER BY n + 1
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO erased_fixed_numeric VALUES (1), (12), (123), (1234), (12345);
+{{ check('erased_fixed_numeric', "n = toFixedString('123', 3)") }}

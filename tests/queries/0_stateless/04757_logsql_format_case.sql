@@ -17,7 +17,7 @@ INSERT INTO logs_04757 VALUES
     ('2024-01-01 10:00:00', 'request finished', 'warn', 'Web', 200),
     ('2024-01-01 10:01:00', 'привет мир', 'Ошибка', 'api', 512);
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04757';
 SET dialect = 'logsql';
 

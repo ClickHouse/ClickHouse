@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <ctime>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Compression/CompressedReadBufferBase.h>
@@ -27,6 +28,9 @@ private:
 
     /// Current position in file_in
     size_t file_pos;
+
+    /// The bound passed to `file_in`: its input may end there, before the end of the file.
+    std::optional<size_t> read_until_position;
 
     /// A piece of data from the cache, or a piece of read data that we put into the cache.
     UncompressedCache::MappedPtr owned_cell;
@@ -64,12 +68,14 @@ public:
     {
         initInput();
         file_in->setReadUntilPosition(position);
+        read_until_position = position;
     }
 
     void setReadUntilEnd() override
     {
         initInput();
         file_in->setReadUntilEnd();
+        read_until_position.reset();
     }
 
     void setRequestMap(ByteRangeSet ranges) override

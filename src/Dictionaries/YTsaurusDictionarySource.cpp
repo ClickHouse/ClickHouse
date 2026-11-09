@@ -11,6 +11,7 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Core/Settings.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/Throttler.h>
 
 #include <boost/algorithm/string/split.hpp>
 
@@ -30,25 +31,27 @@ namespace ErrorCodes
     #endif
 }
 
+
 namespace YTsaurusSetting
 {
     extern const YTsaurusSettingsBool encode_utf8;
     extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
+    extern const YTsaurusSettingsUInt64 lookup_throttler_max_requests_per_second;
+    extern const YTsaurusSettingsUInt64 lookup_max_rows_per_query;
 }
 
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ytsaurus_dictionary_source;
+    extern const SettingsBool enable_ytsaurus_dictionary_source;
 }
-
 
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory);
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
     #if USE_YTSAURUS
     auto create_dictionary_source = [](
-        const String& /*name*/,
+        const String & name,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
@@ -57,9 +60,9 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
         const std::string & /* default_database */,
         bool created_from_ddl) -> DictionarySourcePtr
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_ytsaurus_dictionary_source])
+        if (!context->getSettingsRef()[Setting::enable_ytsaurus_dictionary_source])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Dictionary source YTsaurus is experimental. "
-                "Set `allow_experimental_ytsaurus_dictionary_source` setting to enable it");
+                "Set `enable_ytsaurus_dictionary_source` setting to enable it");
 
         const auto config_prefix = root_config_prefix + ".ytsaurus";
         std::shared_ptr<YTsaurusStorageConfiguration> configuration = nullptr;
@@ -88,9 +91,10 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
             configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
             if (config.has(config_prefix + ".ytsaurus_columns_description"))
                 configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
+            configuration->validate();
         }
 
-        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block);
+        return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block, name);
     };
 
     #else
@@ -109,7 +113,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("ytsaurus", create_dictionary_source, Documentation{
+    factory.registerSource("ytsaurus", create_dictionary_source, SecretArgumentsSpec{.secret_keys = {"oauth_token"}}, Documentation{
         .description = R"DOCS_MD(
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -122,7 +126,7 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 <Info>
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
 Enable usage of the YTsaurus dictionary source
-using setting [`allow_experimental_ytsaurus_dictionary_source`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_dictionary_source).
+using setting [`enable_ytsaurus_dictionary_source`](/reference/settings/session-settings/enable#enable_ytsaurus_dictionary_source).
 </Info>
 
 Example of settings:
@@ -163,6 +167,8 @@ Setting fields:
 | `http_proxy_urls` | URL to the YTsaurus http proxy. |
 | `cypress_path` | Cypress path to the table source. |
 | `oauth_token` | OAuth token. |
+| `lookup_throttler_max_requests_per_second` | Maximum number of YTsaurus lookup requests per second when fetching keys for selective dictionary loads (`CACHE`, `COMPLEX_KEY_CACHE`, etc.). `0` disables throttling. The default is `200000`. |
+| `lookup_max_rows_per_query` | Maximum number of rows per single YTsaurus lookup request. Selective loads are split into chunks of this size. `0`, the default, means unlimited: a selective load is sent as a single request. |
 )DOCS_MD"
 #if !USE_YTSAURUS
             "\n\nCurrently unavailable, because this ClickHouse build does not include YTsaurus support."
@@ -176,11 +182,22 @@ Setting fields:
 static const UInt64 max_block_size = 8192;
 
 
+static ThrottlerPtr makeLookupThrottler(const YTsaurusSettings & settings)
+{
+    auto max_lookups_per_sec = settings[YTsaurusSetting::lookup_throttler_max_requests_per_second].value;
+    if (!max_lookups_per_sec)
+        return nullptr;
+    /// The `YTsaurusLookupThrottled` event is incremented by `YTsaurusClient::lookupRows` based on the return value of
+    /// `Throttler::throttle`, so that it counts only requests that were actually blocked, not every request passing through.
+    return std::make_shared<Throttler>(max_lookups_per_sec);
+}
+
 YTsarususDictionarySource::YTsarususDictionarySource(
     ContextPtr context_,
     const DictionaryStructure & dict_struct_,
     std::shared_ptr<YTsaurusStorageConfiguration> configuration_,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    const String & name_)
     : context(context_)
     , dict_struct{dict_struct_}
     , configuration{configuration_}
@@ -192,11 +209,13 @@ YTsarususDictionarySource::YTsarususDictionarySource(
             .encode_utf8 = configuration->settings[YTsaurusSetting::encode_utf8],
             .enable_heavy_proxy_redirection = configuration->settings[YTsaurusSetting::enable_heavy_proxy_redirection],
         }))
+    , lookup_throttler(makeLookupThrottler(configuration->settings))
+    , name(name_)
 {
 }
 
 YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySource & other)
-    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block}
+    : YTsarususDictionarySource{other.context, other.dict_struct, other.configuration, *other.sample_block, other.name}
 {
 }
 
@@ -208,9 +227,12 @@ BlockIO YTsarususDictionarySource::loadAll()
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
           client
         , configuration->cypress_path
-        , { .settings = configuration->settings,
-            .select_rows_columns = configuration->ytsaurus_columns_description,
-            .check_types_allow_nullable = true,
+        , {
+              .settings = configuration->settings
+            , .select_rows_columns = configuration->ytsaurus_columns_description
+            , .check_types_allow_nullable = true
+            , .lookup_throttler = lookup_throttler
+
         }
         , sample_block
         , max_block_size
@@ -227,13 +249,18 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
 
-    auto block = blockForIds(dict_struct, ids);
-
     BlockIO io;
+    /// The whole set of the requested ids is passed as a single block; it is the source that splits it into
+    /// `lookup_max_rows_per_query` sized requests, so a small chunk size does not multiply the memory usage here.
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
         client
         , configuration->cypress_path
-        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+        , {
+              .settings = configuration->settings
+            , .lookup_input_block = blockForIds(dict_struct, ids)
+            , .check_types_allow_nullable = true
+            , .lookup_throttler = lookup_throttler
+            }
         , sample_block
         , max_block_size
         // Parallel reads supported only for static tables
@@ -253,13 +280,19 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
     if (key_columns.size() != dict_struct.key->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
-    auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-
+    /// `blockForKeys` scans the whole key columns on every call, so it is called only once for all requested rows;
+    /// the resulting block is split into `lookup_max_rows_per_query` sized requests by the source itself, which keeps
+    /// both the total work and the memory usage linear in the number of requested rows regardless of the chunk size.
     BlockIO io;
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
           client
         , configuration->cypress_path
-        , {.settings = configuration->settings, .lookup_input_block = std::move(block), .check_types_allow_nullable = true}
+        , {
+              .settings = configuration->settings
+            , .lookup_input_block = blockForKeys(dict_struct, key_columns, requested_rows)
+            , .check_types_allow_nullable = true
+            , .lookup_throttler = lookup_throttler
+        }
          , sample_block
          , max_block_size
          // Parallel reads supported only for static tables

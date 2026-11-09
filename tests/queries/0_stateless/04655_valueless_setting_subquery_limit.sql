@@ -6,7 +6,6 @@
 --
 -- The old analyzer applies `limit`/`offset` from a subquery's `SETTINGS` differently, so pin the
 -- analyzer whose peel path this test covers.
-SET enable_analyzer = 1;
 
 SELECT '-- The shorthand is rejected for the `limit` setting of a top-level query';
 SELECT 1 SETTINGS limit; -- { error TYPE_MISMATCH }

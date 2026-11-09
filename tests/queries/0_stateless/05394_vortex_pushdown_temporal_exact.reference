@@ -1,0 +1,12 @@
+-- d < toDateTime('2020-01-01 12:00:00', 'UTC')
+1
+1
+-- d NOT IN (SELECT toDateTime('2020-01-01 12:00:00', 'UTC'))
+1
+1
+-- dt = toFloat64(1577836800)
+1
+1
+-- dt IN (SELECT toFloat64(1577836800))
+0
+0
