@@ -171,7 +171,13 @@ RUN mkdir -p \
     && ldd /usr/bin/clickhouse | awk '$1 ~ /^\// { print $1 }' | xargs -r -I{} cp -L --parents {} /output/ \
     && cp /etc/ssl/certs/ca-certificates.crt /output/etc/ssl/certs/ \
     && cp -r /etc/clickhouse-server/. /output/etc/clickhouse-server/ \
-    && if [ -d /etc/clickhouse-client ]; then cp -r /etc/clickhouse-client/. /output/etc/clickhouse-client/; fi
+    && if [ -d /etc/clickhouse-client ]; then cp -r /etc/clickhouse-client/. /output/etc/clickhouse-client/; fi \
+    # The standard Protobuf schemas (`google/protobuf/wrappers.proto`, ...), which `google_protos_path` in
+    # the server configuration points to.
+    && if [ -d /usr/share/clickhouse/protos ]; then \
+        mkdir -p /output/usr/share/clickhouse \
+        && cp -r /usr/share/clickhouse/protos /output/usr/share/clickhouse/ ; \
+    fi
 
 COPY docker_related_config.xml /output/etc/clickhouse-server/config.d/
 

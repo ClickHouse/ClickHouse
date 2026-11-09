@@ -202,7 +202,7 @@ The default image (the tags without a suffix) is built `FROM scratch`. It contai
 
 The logic of the entrypoint (preparing the directories, creating the user from `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`, creating `CLICKHOUSE_DB`, running the scripts from `/docker-entrypoint-initdb.d`) is built into the binary as `clickhouse docker-init`, and is configured with the same environment variables. The differences from the `-ubuntu` image:
 
--	The `*.sql` and `*.sql.gz` init scripts work as usual. A `*.sh` script needs a shell: an executable script is run directly, and a non-executable one is run by `sh` (instead of being sourced). If there is no shell, the container stops with an error, rather than starting without the initialization.
+-	The `*.sql` and `*.sql.gz` init scripts work as usual. A `*.sh` script needs a shell: an executable script is run directly, and a non-executable one is run by `sh -e` (instead of being sourced), so it stops at the first failed command, like with `set -e` in `entrypoint.sh`. If there is no shell, the container stops with an error, rather than starting without the initialization.
 -	`docker run clickhouse/clickhouse-server <command>` and `docker exec` can run only the ClickHouse tools, such as `clickhouse-client` or `clickhouse-local`.
 
 When you need a shell, for example for troubleshooting, mount one into the container. It has to be statically linked, such as `busybox` from the `busybox-static` package of Debian and Ubuntu:

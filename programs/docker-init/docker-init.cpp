@@ -271,6 +271,17 @@ std::string getOverriddenConfigValue(const std::vector<std::string> & server_arg
     return config->getString(key, "");
 }
 
+/// The names of the child elements of a configuration key overridden by the server arguments after `--`
+/// (e.g. `bootstrap` for `--protocols.bootstrap.host=0.0.0.0`), parsed the same way the server parses them.
+std::vector<std::string> getOverriddenConfigChildren(const std::vector<std::string> & server_args, const std::string & key)
+{
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> config = new Poco::Util::LayeredConfiguration;
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, 0);
+    Poco::Util::AbstractConfiguration::Keys children;
+    config->keys(key, children);
+    return children;
+}
+
 /// Extract a single value from a ClickHouse config key via `clickhouse extract-from-config`.
 /// Returns an empty string if the key is absent (--try flag suppresses errors).
 std::string extractConfigValue(const std::string & config_file, const std::string & key, bool use_users = false)
@@ -664,9 +675,9 @@ bool runInitScripts(const std::vector<std::string> & client_base)
             if (executable)
                 args = {path.string()};
             else
-                args = {"sh", path.string()};
+                args = {"sh", "-e", path.string()}; /// Fail on the first failed command, as `set -e` in entrypoint.sh.
 
-            std::cerr << "docker-init: running " << path << (executable ? "" : " with sh") << "\n";
+            std::cerr << "docker-init: running " << path << (executable ? "" : " with sh -e") << "\n";
             const int code = runCommand(args);
             if (code != 0)
             {
@@ -743,6 +754,9 @@ bool initClickHouseDB(
     /// connections until the initialization (e.g. setting the password) is done, even with `-- --listen_host=0.0.0.0`.
     server_args.emplace_back("--listen_host=127.0.0.1");
     server_args.emplace_back("--interserver_listen_host=127.0.0.1");
+    /// A protocol with its own `host` does not use `listen_host`, e.g. `-- --protocols.bootstrap.host=0.0.0.0`.
+    for (const auto & protocol : getOverriddenConfigChildren(extra_server_args, "protocols"))
+        server_args.push_back("--protocols." + protocol + ".host=127.0.0.1");
 
     if (g_shutdown_requested)
         return true;

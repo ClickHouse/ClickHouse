@@ -1,6 +1,6 @@
 #!/bin/bash
 # Verify that the temporary server of the initialization accepts only local connections, even when the server
-# arguments override `listen_host`: an init script may be what sets the password, as here with
+# arguments override `listen_host` or add a protocol with its own `host`: an init script may be what sets the password, as here with
 # `CLICKHOUSE_SKIP_USER_SETUP=1`, and until it is done the server must not be reachable from the network.
 set -eo pipefail
 
@@ -15,13 +15,20 @@ cid="$(
     -v "$dir/initdb.sql":/docker-entrypoint-initdb.d/initdb.sql:ro \
     --name "$(cname)" \
     "$image" \
-    -- --listen_host=0.0.0.0
+    -- --listen_host=0.0.0.0 \
+    --protocols.bootstrap.type=tcp --protocols.bootstrap.host=0.0.0.0 --protocols.bootstrap.port=19002
 )"
 trap '[ $? -eq 0 ] || dumpServerLogs "$cid"; docker rm -vf "$cid" > /dev/null' EXIT
 
-remoteQuery() {
+remoteQueryOnPort() {
+  local port="$1"
+  shift
   docker run --rm --link "$cid":clickhouse "$image" \
-    clickhouse-client --host clickhouse --connect_timeout 2 --query "$*"
+    clickhouse-client --host clickhouse --port "$port" --connect_timeout 2 --query "$*"
+}
+
+remoteQuery() {
+  remoteQueryOnPort 9000 "$@"
 }
 
 # Wait until the init script runs: its slow query keeps the temporary server up.
@@ -37,6 +44,10 @@ if remoteQuery 'SELECT 1' > /dev/null 2>&1; then
   echo "the temporary server accepts remote connections during the initialization" >&2
   exit 1
 fi
+if remoteQueryOnPort 19002 'SELECT 1' > /dev/null 2>&1; then
+  echo "the temporary server accepts remote connections on a custom protocol during the initialization" >&2
+  exit 1
+fi
 if [ "$(docker inspect -f '{{.State.Running}}' "$cid")" != true ]; then
   echo "the container stopped during the initialization" >&2
   exit 1
@@ -48,3 +59,4 @@ fi
   --tries 20 \
   --sleep "$CLICKHOUSE_TEST_SLEEP" \
   remoteQuery SELECT 1
+remoteQueryOnPort 19002 SELECT 1
