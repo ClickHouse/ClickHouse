@@ -55,7 +55,7 @@ CREATE TABLE sparse (k UInt64, ts UInt64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, index_granularity = 8192;
 INSERT INTO sparse SELECT (number % 2) * 1000000 + intDiv(number, 16), if(number % 3 = 0, number, 0) FROM numbers(160000);
 OPTIMIZE TABLE sparse FINAL;
-SELECT 'check', 'serialization of ts', serialization_kind FROM system.parts_columns WHERE table = 'sparse' AND column = 'ts' AND active;
+SELECT 'check', 'serialization of ts', serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 'sparse' AND column = 'ts' AND active;
 ${queries}
 " | awk -F'\t' '
     # A shape prints its result with the adaptive aggregator off, then on, and the cumulative combined-row counter.

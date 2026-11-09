@@ -95,7 +95,7 @@ add_shape "constant-key blocks without count" "SELECT _part_index AS p, argMin(n
 # `max(ts)` comes first, so the ordering column is its single argument, which keeps the `Sparse` column of the
 # part. `x` depends on `ts` only, so the rows that tie on `ts` give the same results.
 queries+="
-SELECT 'check', 'serialization of ts', serialization_kind FROM system.parts_columns WHERE table = 'sparse' AND column = 'ts' AND active;"
+SELECT 'check', 'serialization of ts', serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 'sparse' AND column = 'ts' AND active;"
 add_shape "Sparse ordering column" "SELECT k, max(ts), argMax(x, ts), count() FROM sparse GROUP BY k
     SETTINGS adaptive_aggregator_combine_arg_min_max = __VALUE__, ${CONCURRENT_READS}"
 
