@@ -4433,3 +4433,12 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     opacity: 1 !important;
     transform: translate(1px, -1px);
 }
+
+/* Match the type scale and colour used by the Integrations dropdown. */
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item > span,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item > div > span:first-child {
+    color: #9f9f9f !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    line-height: 20px !important;
+}
