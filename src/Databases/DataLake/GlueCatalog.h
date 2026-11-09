@@ -103,17 +103,6 @@ public:
     /// Selects the `schemas` entry referenced by `current-schema-id`, or the top-level v1 `schema` when there is no `schemas`.
     static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
 
-    struct EarlyAccessLocation
-    {
-        String storage_endpoint;
-        String bucket_name;
-        String path;  /// Path within bucket, without the trailing slash
-    };
-
-    /// Splits `location` of any S3 scheme (`s3://`, `s3a://`, ...) into bucket and path, and builds the URL for the
-    /// object storage client: `location` itself, or `storage_endpoint` with the bucket like `DatabaseDataLake::getStorageEndpointForTable`.
-    static EarlyAccessLocation resolveEarlyAccessLocation(const String & location, const String & storage_endpoint, DB::S3UriStyle uri_style);
-
 private:
     /// Updates `metadata_location` and columns while preserving the rest of the Glue table `existing`.
     /// Columns are rebuilt from `new_schema` if given, otherwise from the current schema of `new_metadata`.
@@ -151,13 +140,9 @@ private:
         DB::ObjectStoragePtr object_storage;
         String bucket_name;
         String table_path;  /// Path within bucket
-        String key_prefix;
     };
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
-
-    Poco::JSON::Object::Ptr loadMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const;
-    DB::NamesAndTypesList loadCurrentSchema(const String & metadata_uri, const TableMetadata & table_metadata) const;
 };
 
 }

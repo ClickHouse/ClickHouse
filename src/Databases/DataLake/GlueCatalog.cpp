@@ -80,7 +80,6 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
     extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
-    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace DB::ServerSetting
@@ -443,9 +442,8 @@ bool GlueCatalog::tryGetTableMetadata(
                 if (auto properties = result.getDataLakeSpecificProperties();
                     properties && !properties->iceberg_metadata_file_location.empty())
                 {
-                    /// Use `metadata.json` because Glue types are lossy and nested names may be unescaped.
-                    const auto & metadata_uri = properties->iceberg_metadata_file_location;
-                    result.setSchema(loadCurrentSchema(metadata_uri, result));
+                    /// Glue types are lossy and nested names are unescaped, so the table storage infers the schema from `metadata.json`.
+                    result.setSchema({});
                     return true;
                 }
             }
@@ -550,48 +548,16 @@ bool GlueCatalog::empty() const
     return true;
 }
 
-GlueCatalog::EarlyAccessLocation GlueCatalog::resolveEarlyAccessLocation(const String & location, const String & storage_endpoint, DB::S3UriStyle uri_style)
-{
-    EarlyAccessLocation result;
-
-    String table_path = location;
-    if (auto scheme_end = table_path.find("://"); scheme_end != String::npos)
-        table_path = table_path.substr(scheme_end + 3);
-    else if (table_path.starts_with("s3:/"))
-        table_path = table_path.substr(4);
-
-    if (auto pos = table_path.find('/'); pos != std::string::npos)
-    {
-        result.bucket_name = table_path.substr(0, pos);
-        table_path = table_path.substr(pos + 1);
-    }
-
-    if (table_path.ends_with('/'))
-        table_path.pop_back();
-    result.path = table_path;
-
-    result.storage_endpoint = location;
-    if (!storage_endpoint.empty())
-    {
-        TableMetadata bucket_location = TableMetadata().withLocation();
-        bucket_location.setLocation("s3://" + result.bucket_name);
-        result.storage_endpoint = bucket_location.getLocationWithEndpoint(storage_endpoint, uri_style);
-    }
-
-    return result;
-}
-
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
 {
-    auto location = resolveEarlyAccessLocation(s3_location, settings.storage_endpoint, settings.storage_uri_style);
-
     DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
     DB::ASTs args = storage->engine->arguments->children;
 
+    String storage_endpoint = !settings.storage_endpoint.empty() ? settings.storage_endpoint : s3_location;
     if (args.empty())
-        args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(location.storage_endpoint));
+        args.emplace_back(DB::make_intrusive<DB::ASTLiteral>(storage_endpoint));
     else
-        args[0] = DB::make_intrusive<DB::ASTLiteral>(location.storage_endpoint);
+        args[0] = DB::make_intrusive<DB::ASTLiteral>(storage_endpoint);
 
     if (args.size() == 1)
     {
@@ -609,48 +575,34 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-    DB::ContextPtr init_context = getContext();
-    if (settings.storage_uri_style != DB::S3UriStyle::AUTO)
+    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
+
+    auto object_storage = configuration->createObjectStorage(getContext(), true, {});
+
+    /// Parse S3 path to extract bucket and table path
+    String table_path = s3_location;
+    if (table_path.starts_with("s3://"))
+        table_path = table_path.substr(5);
+    else if (table_path.starts_with("s3:/"))
+        table_path = table_path.substr(4);
+
+    std::size_t pos = table_path.find('/');
+    String bucket_name;
+    if (pos != std::string::npos)
     {
-        auto context_copy = DB::Context::createCopy(getContext());
-        DB::Settings init_settings = context_copy->getSettingsCopy();
-        init_settings[DB::Setting::s3_uri_style] = settings.storage_uri_style;
-        context_copy->setSettings(init_settings);
-        init_context = context_copy;
+        bucket_name = table_path.substr(0, pos);
+        table_path = table_path.substr(pos + 1);
     }
 
-    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, init_context, false);
+    if (table_path.ends_with('/'))
+        table_path = table_path.substr(0, table_path.size() - 1);
 
-    auto object_storage = configuration->createObjectStorage(init_context, true, {});
-
-    String key_prefix = settings.storage_endpoint.empty() ? "" : configuration->getRawPath().path;
-    return {object_storage, location.bucket_name, location.path, key_prefix};
-}
-
-Poco::JSON::Object::Ptr GlueCatalog::loadMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const
-{
-    auto [object_storage, bucket_name, metadata_path, key_prefix] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
-    auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
-    return DB::Iceberg::getMetadataJSONObject(
-        key_prefix + metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
-}
-
-DB::NamesAndTypesList GlueCatalog::loadCurrentSchema(const String & metadata_uri, const TableMetadata & table_metadata) const
-{
-    auto metadata_object = loadMetadataObject(metadata_uri, table_metadata);
-    auto schema = getCurrentSchema(metadata_object);
-    if (!schema || !schema->has(DB::Iceberg::f_fields))
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", metadata_uri);
-
-    /// The catalog context is global, so `allow_geo_types_in_iceberg` is checked with the query settings by `IcebergMetadata`, not here.
-    DB::Iceberg::IcebergSchemaProcessor processor(/* allow_geo_parser_ = */ true);
-    processor.addIcebergTableSchema(schema);
-    return *processor.getClickHouseTableSchemaById(schema->getValue<Int32>(DB::Iceberg::f_schema_id));
+    return {object_storage, bucket_name, table_path};
 }
 
 String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const
 {
-    auto [object_storage, bucket_name, table_path, key_prefix] = createObjectStorageForEarlyTableAccess(table_location, table_metadata);
+    auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, table_metadata);
 
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
@@ -663,14 +615,11 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, key_prefix + table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 
-        if (!metadata_path.starts_with(key_prefix))
-            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Resolved metadata path '{}' is outside of the key prefix '{}' of table location '{}'", metadata_path, key_prefix, table_location);
-        return "s3://" + bucket_name + "/" + metadata_path.substr(key_prefix.size());
+        return "s3://" + bucket_name + "/" + metadata_path;
     }
     catch (const DB::Exception & e)
     {

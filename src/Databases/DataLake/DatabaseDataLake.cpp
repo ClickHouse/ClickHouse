@@ -269,7 +269,6 @@ void DatabaseDataLake::initialize() const
 
     auto catalog_parameters = DataLake::CatalogSettings{
         .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
-        .storage_uri_style = settings[DatabaseDataLakeSetting::storage_uri_style].value,
         .aws_access_key_id = settings[DatabaseDataLakeSetting::aws_access_key_id].value,
         .aws_secret_access_key = settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
         .region = settings[DatabaseDataLakeSetting::region].value,
@@ -1738,7 +1737,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr /* context_ */,
+    ContextPtr context_,
     bool throw_on_error) const
 {
     const auto settings_version = database_settings.get();
@@ -1778,7 +1777,18 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     create_table_query->setTable(name);
     create_table_query->setDatabase(getDatabaseName());
 
-    for (const auto & column_type_and_name : table_metadata.getSchema())
+    auto columns = table_metadata.getSchema();
+    if (columns.empty() && table_metadata.isDefaultReadableTable())
+    {
+        /// The catalog left the schema to the table storage, which reads it from the table metadata.
+        if (auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false))
+        {
+            auto metadata = table->getInMemoryMetadataPtr(context_, false);
+            columns = metadata->getColumns().getOrdinary();
+        }
+    }
+
+    for (const auto & column_type_and_name : columns)
     {
         LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();

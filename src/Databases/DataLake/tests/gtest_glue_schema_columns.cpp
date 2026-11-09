@@ -157,41 +157,4 @@ TEST(GlueSchemaColumns, NestedTypesParseableByGlueFallback)
     EXPECT_EQ(parsed->getName(), "Tuple(a Map(String, Nullable(Decimal(9, 2))), b Array(Nullable(Int64)))");
 }
 
-TEST(GlueSchemaColumns, EarlyAccessLocation)
-{
-    for (const auto * scheme : {"s3://", "s3a://"})
-    {
-        const String location = String(scheme) + "warehouse/t/metadata/v1.metadata.json";
-
-        auto with_endpoint = GlueCatalog::resolveEarlyAccessLocation(location, "http://minio1:9001", DB::S3UriStyle::AUTO);
-        EXPECT_EQ(with_endpoint.bucket_name, "warehouse");
-        EXPECT_EQ(with_endpoint.path, "t/metadata/v1.metadata.json");
-        EXPECT_EQ(with_endpoint.storage_endpoint, "http://minio1:9001/warehouse/");
-
-        auto without_endpoint = GlueCatalog::resolveEarlyAccessLocation(location, "", DB::S3UriStyle::AUTO);
-        EXPECT_EQ(without_endpoint.bucket_name, "warehouse");
-        EXPECT_EQ(without_endpoint.path, "t/metadata/v1.metadata.json");
-        EXPECT_EQ(without_endpoint.storage_endpoint, location);
-    }
-
-    auto table_location = GlueCatalog::resolveEarlyAccessLocation("s3a://warehouse/t/", "http://minio1:9001/warehouse", DB::S3UriStyle::AUTO);
-    EXPECT_EQ(table_location.bucket_name, "warehouse");
-    EXPECT_EQ(table_location.path, "t");
-    EXPECT_EQ(table_location.storage_endpoint, "http://minio1:9001/warehouse/");
-}
-
-/// The early metadata read must address the bucket like the table storage does, see `DatabaseDataLake::getStorageEndpointForTable`.
-TEST(GlueSchemaColumns, EarlyAccessLocationUriStyle)
-{
-    const String location = "s3://warehouse/t/metadata/v1.metadata.json";
-
-    auto virtual_hosted = GlueCatalog::resolveEarlyAccessLocation(location, "https://s3.mycompany.com", DB::S3UriStyle::VIRTUAL_HOSTED);
-    EXPECT_EQ(virtual_hosted.storage_endpoint, "https://warehouse.s3.mycompany.com/");
-    EXPECT_EQ(virtual_hosted.bucket_name, "warehouse");
-    EXPECT_EQ(virtual_hosted.path, "t/metadata/v1.metadata.json");
-
-    auto path_style = GlueCatalog::resolveEarlyAccessLocation(location, "https://s3.mycompany.com", DB::S3UriStyle::PATH);
-    EXPECT_EQ(path_style.storage_endpoint, "https://s3.mycompany.com/warehouse/");
-}
-
 #endif

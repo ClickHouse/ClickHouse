@@ -661,16 +661,13 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     /// `s3_read_buffer_throw_expired_token` (which is gated by `if (impl)` in `nextImpl` and
     /// therefore only fires on multi-fill streaming reads), this failpoint fires inside
     /// `sendRequest` itself, so it covers both `nextImpl`-driven reads and the
-    /// `readBigAt` path of Parquet reads; only reads with a refresh callback consume it.
-    if (credentials_refresh_callback)
+    /// `readBigAt` range-read path used by Parquet column-chunk reads.
+    fiu_do_on(FailPoints::s3_send_request_throw_expired_token,
     {
-        fiu_do_on(FailPoints::s3_send_request_throw_expired_token,
-        {
-            throw S3Exception(
-                Aws::S3::S3Errors::UNKNOWN,
-                "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired.");
-        });
-    }
+        throw S3Exception(
+            Aws::S3::S3Errors::UNKNOWN,
+            "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired.");
+    });
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 

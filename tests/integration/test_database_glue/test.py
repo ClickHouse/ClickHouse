@@ -2466,7 +2466,7 @@ def test_geo_types_opt_in_per_query(started_cluster):
         NestedField(field_id=1, name="id", field_type=StringType(), required=False),
         NestedField(field_id=2, name="geom", field_type=BinaryType(), required=False),
     )
-    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
 
     # pyiceberg cannot create `geometry` columns, so patch the type in the current metadata file.
     s3_client = boto3.client(
