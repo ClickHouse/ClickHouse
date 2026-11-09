@@ -1,5 +1,6 @@
 #include <Common/SQLClusters/SQLClusterFactory.h>
 
+#include <Common/Config/ConfigHelper.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -250,6 +251,39 @@ void setConfigValue(Poco::Util::AbstractConfiguration & config, const String & k
         config.setInt64(key, applyVisitor(FieldVisitorConvertToNumber<Int64>(), value));
 }
 
+/// Fill an omitted `port` of one replica (or of an inline `SHARD`) with the listener port of this server.
+/// `Cluster::Address` resolves a missing `port` from `tcp_port` or `tcp_port_secure` of the server that
+/// materializes the definition. Stored definitions are shared between servers (Keeper metadata storage),
+/// so resolving at load time would send identical metadata to different destinations on servers with
+/// different listener ports, and fail to load on a server without `tcp_port_secure`.
+void resolveOmittedPort(
+    Properties & properties,
+    const Poco::Util::AbstractConfiguration & server_config,
+    const String & cluster_name,
+    const String & location)
+{
+    if (properties.tryGet("port"))
+        return;
+
+    /// Interpret `secure` exactly like `Cluster::Address` does.
+    Poco::AutoPtr<OrderedMapConfiguration> replica_config = new OrderedMapConfiguration();
+    if (const auto * secure = properties.tryGet("secure"))
+        setConfigValue(*replica_config, "secure", *secure);
+    const bool is_secure = ConfigHelper::getBool(*replica_config, "secure", false, /* empty_as */ true);
+
+    const char * port_key = is_secure ? "tcp_port_secure" : "tcp_port";
+    const Int64 port = server_config.getInt64(port_key, 0);
+    if (port < 1 || port > 65535)
+        throw Exception(
+            ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "Port is not specified for {} of SQL cluster `{}`, and this server has no `{}` to use as the default",
+            location,
+            cluster_name,
+            port_key);
+
+    properties.emplace_back("port", Field(static_cast<UInt64>(port)));
+}
+
 void applyReplicaProperties(Poco::Util::AbstractConfiguration & config, const String & prefix, const Properties & properties)
 {
     for (const auto & change : properties)
@@ -277,6 +311,33 @@ void applyClusterProperties(Poco::Util::AbstractConfiguration & config, const St
             setConfigValue(config, prefix + "." + change.name, change.value);
         else if (change.name != "user" && change.name != "password")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cluster property `{}`", change.name);
+    }
+}
+
+/// Make a definition self-contained before it is persisted: every replica gets an explicit `port`.
+void resolveOmittedPorts(ASTSQLClusterDefinition & definition, const Poco::Util::AbstractConfiguration & server_config, const String & cluster_name)
+{
+    size_t shard_num = 0;
+    for (auto & shard_ast : definition.shards)
+    {
+        ++shard_num;
+        auto & shard = shard_ast->as<ASTSQLClusterShard &>();
+        if (shard.replicas.empty())
+        {
+            resolveOmittedPort(shard.properties, server_config, cluster_name, fmt::format("shard {}", shard_num));
+            continue;
+        }
+
+        size_t replica_num = 0;
+        for (auto & replica_ast : shard.replicas)
+        {
+            ++replica_num;
+            resolveOmittedPort(
+                replica_ast->as<ASTSQLClusterReplica &>().properties,
+                server_config,
+                cluster_name,
+                fmt::format("shard {} replica {}", shard_num, replica_num));
+        }
     }
 }
 
@@ -533,12 +594,16 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
 
     validateSQLClusterDefinition(query.definition->as<const ASTSQLClusterDefinition &>());
 
+    auto resolved_ast = query.clone();
+    auto & resolved_query = resolved_ast->as<ASTCreateSQLClusterQuery &>();
+    resolveOmittedPorts(resolved_query.definition->as<ASTSQLClusterDefinition &>(), context->getConfigRef(), query.cluster_name);
+
     /// Build the in-memory cluster first, then persist, as named collections and handlers do.
     /// A definition that `materializeCluster` rejects (missing `host`, invalid `weight`, ...)
     /// must not leave a file or Keeper znode that then fails `CREATE CLUSTER` with
     /// `CLUSTER_ALREADY_EXISTS` and blocks other servers at `loadIfNot`.
-    auto create_statement = query.formatWithSecretsOneLine();
-    auto cluster = materializeCluster(query, context, create_statement);
+    auto create_statement = resolved_query.formatWithSecretsOneLine();
+    auto cluster = materializeCluster(resolved_query, context, create_statement);
     context->installSQLCluster(
         query.cluster_name,
         cluster,
@@ -578,6 +643,7 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
     create_query.definition = query.definition->clone();
 
     validateSQLClusterDefinition(create_query.definition->as<const ASTSQLClusterDefinition &>());
+    resolveOmittedPorts(create_query.definition->as<ASTSQLClusterDefinition &>(), context->getConfigRef(), query.cluster_name);
 
     auto create_statement = create_query.formatWithSecretsOneLine();
     auto cluster = materializeCluster(create_query, context, create_statement);

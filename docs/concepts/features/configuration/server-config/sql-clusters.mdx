@@ -49,6 +49,8 @@ Cluster-level properties in the server configuration (`secret`, `allow_distribut
 
 Supported replica properties: `host`, `port`, `user`, `password`, `secure`, `compression`, `priority`, `bind_host`, `default_database`.
 
+If `port` is omitted, the server that runs `CREATE CLUSTER` or `ALTER CLUSTER` fills it in with its own `tcp_port` (or `tcp_port_secure` when `secure = 1`) and stores the definition with the explicit port. Every server sharing the metadata therefore connects to the same port, and the statement fails if the server has no such listener.
+
 Supported shard properties: `weight`, `internal_replication`.
 
 ### `user` and `password` inheritance {#user-and-password-inheritance}
