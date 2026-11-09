@@ -7,6 +7,8 @@
 #include <Common/checkStackSize.h>
 #include <Common/DateLUT.h>
 
+#include <cctz/time_zone.h>
+
 #include <algorithm>
 #include <bit>
 
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 }
@@ -358,6 +361,44 @@ private:
     std::unique_ptr<InputByteStream> blob_stream;
 };
 
+/// The UTC offset of a time zone as the reference implementation sees it: before the first transition
+/// it uses the oldest standard time, not the local mean time of tzdata (Asia/Shanghai +08:00, not +08:05:43).
+class TimezoneOffset
+{
+public:
+    explicit TimezoneOffset(const DateLUTImpl & lut_)
+        : lut(lut_)
+    {
+        cctz::time_zone tz;
+        if (!cctz::load_time_zone(std::string(lut.getTimeZone()), &tz))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot load time zone {}", lut.getTimeZone());
+        cctz::time_zone::civil_transition transition;
+        if (!tz.next_transition(cctz::time_point<cctz::seconds>::min(), &transition))
+            return;
+        const auto first = tz.lookup(transition.to).trans;
+        for (auto time = first;;)
+        {
+            const auto lookup = tz.lookup(time);
+            if (!lookup.is_dst)
+            {
+                first_transition = first.time_since_epoch().count();
+                ancient_offset = lookup.offset;
+                return;
+            }
+            if (!tz.next_transition(time, &transition))
+                return;
+            time = tz.lookup(transition.to).trans;
+        }
+    }
+
+    Int64 operator()(Int64 t) const { return t < first_transition ? ancient_offset : lut.timezoneOffset(t); }
+
+private:
+    const DateLUTImpl & lut;
+    Int64 first_transition = std::numeric_limits<Int64>::min();
+    Int64 ancient_offset = 0;
+};
+
 class TimestampColumnReader final : public ColumnReader
 {
 public:
@@ -366,6 +407,8 @@ public:
         , writer_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getWriterTimezone())
         , reader_timezone(is_instant ? DateLUT::instance("UTC") : stripe.getReaderTimezone())
         , same_timezone(&writer_timezone == &reader_timezone || writer_timezone.getTimeZone() == reader_timezone.getTimeZone())
+        , writer_offset_of(writer_timezone)
+        , reader_offset_of(reader_timezone)
     {
         /// The base of the seconds is 2015-01-01 00:00:00 in the time zone of the writer.
         static constexpr Int64 UTC_2015_01_01 = 1420070400;
@@ -421,15 +464,15 @@ public:
             if (!same_timezone)
             {
                 /// Keep the same wall clock time when the writer and the reader time zones differ.
-                Int64 writer_offset = writer_timezone.timezoneOffset(writer_time);
-                Int64 reader_offset = reader_timezone.timezoneOffset(writer_time);
+                Int64 writer_offset = writer_offset_of(writer_time);
+                Int64 reader_offset = reader_offset_of(writer_time);
                 if (writer_offset != reader_offset)
                 {
                     /// If the adjustment crosses a DST boundary, the offset has to be reevaluated.
                     Int64 adjusted_time = 0;
                     if (common::addOverflow(writer_time, writer_offset - reader_offset, adjusted_time))
                         throwInvalidTimestamp(seconds[i], encoded_nanos);
-                    Int64 adjusted_reader_offset = reader_timezone.timezoneOffset(adjusted_time);
+                    Int64 adjusted_reader_offset = reader_offset_of(adjusted_time);
                     if (common::addOverflow(writer_time, writer_offset - adjusted_reader_offset, writer_time))
                         throwInvalidTimestamp(seconds[i], encoded_nanos);
                 }
@@ -457,6 +500,8 @@ private:
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
     const bool same_timezone;
+    const TimezoneOffset writer_offset_of;
+    const TimezoneOffset reader_offset_of;
     Int64 epoch_offset = 0;
     std::unique_ptr<IntRleDecoder> seconds_rle;
     std::unique_ptr<IntRleDecoder> nanos_rle;
