@@ -451,7 +451,7 @@ def _all_failures(
     if not distinct:
         return []
 
-    # A `dolor.py` or BuzzHouse oracle failure has no stack, so it names no report.
+    # A failure without a stack, such as one of `dolor.py`, keeps the run red anyway.
     server_err_log = workspace_path / "server.err.log"
     processes = [
         (

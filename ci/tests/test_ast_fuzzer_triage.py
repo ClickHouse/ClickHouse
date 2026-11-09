@@ -47,7 +47,10 @@ def _logical_error(func):
         "2026.11.09 10:00:00.000001 [ 1068 ] {q} <Fatal> : Stack trace (when copying this "
         "message, always include the lines below):\n"
         f"0. src/{func}.cpp:10: DB::{func}() @ 0x0000000000000001\n"
-        f"1. src/{func}.cpp:20: DB::{func}Caller() @ 0x0000000000000002\n\n" + _BANNER
+        f"1. src/{func}.cpp:20: DB::{func}Caller() @ 0x0000000000000002\n\n" + _BANNER + (
+        "2026.11.09 10:00:00.000001 [ 1 ] {} <Fatal> BaseDaemon: (version 26.11.1.1) (from thread 1068) "
+        "(query_id: q) (query: SELECT 1) Received signal Aborted (6)\n"
+    )
     )
 
 
@@ -113,6 +116,26 @@ def test_logical_error_next_to_known_sanitizer_report_blocks_pass(tmp_path, monk
     # that the parser does not name next to the ASan report.
     failures = _triaged_failures(
         tmp_path, monkeypatch, _asan("ClientKnown", 11), _logical_error("ServerNew")
+    )
+
+    assert failures[0][0].startswith("AddressSanitizer")
+    assert "logged 2 reports, 1 named" in failures[-1][1]
+    assert not _known_issue_passes(failures)
+
+
+_ORACLE = (
+    "2026.11.09 10:00:00.000000 [ 2000 ] {q2} <Fatal> executeQuery: AST Fuzzer oracle "
+    "mismatch detected!\n"
+    "Fuzzed query: SELECT g FROM t GROUP BY g\n"
+    "TLP Aggregate oracle mismatch!\n"
+)
+
+
+def test_oracle_mismatch_next_to_known_sanitizer_report_blocks_pass(tmp_path, monkeypatch):
+    # An oracle mismatch throws without aborting, so it logs a `<Fatal>` record but no crash
+    # report, and the parser names the ASan report.
+    failures = _triaged_failures(
+        tmp_path, monkeypatch, _asan("ClientKnown", 11), _ORACLE
     )
 
     assert failures[0][0].startswith("AddressSanitizer")

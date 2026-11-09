@@ -2,6 +2,7 @@ import gzip
 import itertools
 import re
 import string
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,6 +33,14 @@ class FuzzerLogParser:
     SANITIZER_OOM_RE = re.compile(
         r"out-of-memory|out of memory|failed to allocate|allocation-size-too-big"
     )
+    # A `<Fatal>` record of a server log: its thread and query ids, its logger and its message.
+    FATAL_RECORD_RE = re.compile(r"\[ *(\d+) *\] \{([^}]*)\} <Fatal> ([^:]*): ?(.*)")
+    # The thread and the query a crash report is about (`SignalListener::onFault`).
+    FAULTING_QUERY_RE = re.compile(
+        r"\(from thread (\d+)\) (?:\(no query\)|\(query_id: ([^)]*)\))"
+    )
+    # How the watchdog logs the end of the server it runs: a consequence of a crash or a kill.
+    WATCHDOG_RECORD_START = "Child process "
     # A server log line quotes the query it is about after one of these markers, so a
     # failure pattern matching after such a marker matched the query text, not a
     # failure: a test comment or a fuzzed query may contain any text, e.g. the literal
@@ -846,31 +855,73 @@ class FuzzerLogParser:
         return "\n".join(lines) if lines else None
 
     @staticmethod
+    def _open_log(path):
+        return (gzip.open if str(path).endswith(".gz") else open)(
+            path, "rt", encoding="utf-8", errors="replace"
+        )
+
+    @staticmethod
+    def count_fatal_failures(log) -> int:
+        """The failures that the `<Fatal>` records of one server log hold: one per crash report,
+        and one per run of other records of a thread and query, such as an oracle mismatch. The
+        records of the thread that writes a crash report belong to it, and so do those of the
+        query and thread it is about, such as the message of the logical exception that aborted."""
+        records = []
+        report_threads = set()
+        faulting_queries = set()
+        crashes = 0
+        # Only the `<Fatal>` lines are read: the log itself can be gigabytes.
+        fatal_lines = subprocess.run(
+            ["rg", "--text", "--search-zip", "--fixed-strings", "<Fatal>", str(log)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+        if fatal_lines.returncode > 1:
+            raise RuntimeError(f"Cannot read {log}: {fatal_lines.stderr}")
+        for line in fatal_lines.stdout.splitlines():
+            m = FuzzerLogParser.FATAL_RECORD_RE.search(line)
+            if not m:
+                continue
+            thread, query, logger, message = m.groups()
+            if FuzzerLogParser.CRASH_REPORT_START in message:
+                crashes += 1
+                report_threads.add(thread)
+            elif fault := FuzzerLogParser.FAULTING_QUERY_RE.search(message):
+                faulting_queries.add((fault.group(1), fault.group(2) or ""))
+            elif not (
+                logger == "Application"
+                and message.startswith(FuzzerLogParser.WATCHDOG_RECORD_START)
+            ):
+                records.append((thread, query))
+        standalone = 0
+        previous = None
+        for record in records:
+            if record[0] not in report_threads and record not in faulting_queries:
+                standalone += record != previous
+            previous = record
+        return crashes + standalone
+
+    @staticmethod
     def count_failure_reports(err_logs, stderr_log) -> int:
-        """A lower bound on the failure reports of one process over all its restarts, from its
-        `err_logs` and `stderr_log`. A sanitizer report never comes with a crash header: the
-        sanitizer resets the signal handlers before it aborts (`sanitizerDeathCallback`), so the
-        two count different failures."""
-
-        def count(paths, predicate):
-            total = 0
-            for path in paths:
-                if path and Path(path).is_file():
-                    with (gzip.open if str(path).endswith(".gz") else open)(
-                        path, "rt", encoding="utf-8", errors="replace"
-                    ) as f:
-                        total += sum(1 for line in f if predicate(line))
-            return total
-
-        crashes = count(
-            err_logs, lambda line: FuzzerLogParser.CRASH_REPORT_START in line
-        )
-        sanitizer_reports = count(
-            [stderr_log],
-            lambda line: FuzzerLogParser.SANITIZER_REPORT_START_RE.search(line)
-            and not FuzzerLogParser.SANITIZER_OOM_RE.search(line),
-        )
-        return crashes + sanitizer_reports
+        """The failures that the logs of one process hold over all its restarts: those of the
+        `<Fatal>` records in each of its `err_logs`, and one per sanitizer report in `stderr_log`.
+        A sanitizer report never comes with a crash report: the sanitizer resets the signal
+        handlers before it aborts (`sanitizerDeathCallback`), so the two count different failures."""
+        total = 0
+        for path in err_logs:
+            if path and Path(path).is_file():
+                total += FuzzerLogParser.count_fatal_failures(path)
+        if stderr_log and Path(stderr_log).is_file():
+            with FuzzerLogParser._open_log(stderr_log) as f:
+                total += sum(
+                    1
+                    for line in f
+                    if FuzzerLogParser.SANITIZER_REPORT_START_RE.search(line)
+                    and not FuzzerLogParser.SANITIZER_OOM_RE.search(line)
+                )
+        return total
 
     @staticmethod
     def incomplete_inventory(processes):
@@ -894,9 +945,11 @@ class FuzzerLogParser:
 
     @staticmethod
     def named_reports(infos) -> int:
-        """How many distinct reports the failures with these `info`s name: only a report has a
-        stack, not a failure an oracle or a harness names."""
-        return len({s for info in infos if (s := FuzzerLogParser.qualified_stack(info))})
+        """How many distinct failure records the failures with these `info`s name, one per stack.
+        A failure without a stack, such as an oracle mismatch, may name one too: it is counted, as
+        it has no stable signature, so it keeps the run red anyway."""
+        stacks = [FuzzerLogParser.qualified_stack(info) for info in infos]
+        return len({s for s in stacks if s}) + sum(1 for s in stacks if not s)
 
     @staticmethod
     def qualified_stack(info):

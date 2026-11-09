@@ -167,7 +167,10 @@ def _logical_error_log(func):
         "2026.09.04 00:44:57.000001 [ 1068 ] {q} <Fatal> : Stack trace (when copying this "
         "message, always include the lines below):\n"
         f"0. src/{func}.cpp:10: DB::{func}() @ 0x0000000000000001\n"
-        f"1. src/{func}.cpp:20: DB::{func}Caller() @ 0x0000000000000002\n\n" + _CRASH_BANNER
+        f"1. src/{func}.cpp:20: DB::{func}Caller() @ 0x0000000000000002\n\n" + _CRASH_BANNER + (
+        "2026.09.04 00:44:57.972627 [ 1 ] {} <Fatal> BaseDaemon: (version 26.11.1.1) (from thread 1068) "
+        "(query_id: q) (query: SELECT 1) Received signal Aborted (6)\n"
+    )
     )
 
 
@@ -230,3 +233,42 @@ def test_one_report_per_replica_is_complete(tmp_path):
 
     assert len(results) == 2
     assert _inventory(omitted) == []
+
+
+def test_oracle_mismatch_next_to_sanitizer_report_blocks_known_issue_pass(tmp_path):
+    # An oracle mismatch throws without aborting: a `<Fatal>` record without a crash report.
+    pairs = [_pair(tmp_path, "main", _ORACLE_MISMATCH_LOG, _ASAN_STDERR)]
+    omitted = []
+    results = select_replica_failures(pairs, omitted)
+
+    assert [n for n, _, _ in results][0].startswith("AddressSanitizer")
+    assert "main logged 2 reports, 1 named" in _inventory(omitted)[0][1]
+
+
+def test_oracle_mismatch_alone_adds_no_inventory_failure(tmp_path):
+    # A failure without a stack keeps the run red anyway, so it counts as named.
+    omitted = []
+    select_replica_failures([_pair(tmp_path, "main", _ORACLE_MISMATCH_LOG)], omitted)
+
+    assert _inventory(omitted) == []
+
+
+def _fatal_failures(tmp_path, text):
+    log = tmp_path / "server.err.log"
+    log.write_text(text, encoding="utf-8")
+    return FuzzerLogParser.count_fatal_failures(log)
+
+
+def test_count_fatal_failures(tmp_path):
+    watchdog = (
+        "2026.09.04 00:45:00.000000 [ 7 ] {} <Fatal> Application: Child process was "
+        "terminated by signal 6.\n"
+    )
+    # The message of the logical exception and its crash report are one failure.
+    assert _fatal_failures(tmp_path, _logical_error_log("A") + watchdog) == 1
+    # An earlier query of the thread that aborted logged an oracle mismatch: two failures.
+    other_query = _ORACLE_MISMATCH_LOG.replace("{q}", "{q2}")
+    assert _fatal_failures(tmp_path, other_query + _logical_error_log("A")) == 2
+    # Two oracle mismatches of different queries of one thread.
+    assert _fatal_failures(tmp_path, _ORACLE_MISMATCH_LOG + other_query) == 2
+    assert _fatal_failures(tmp_path, watchdog) == 0
