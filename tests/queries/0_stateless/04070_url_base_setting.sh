@@ -62,7 +62,7 @@ run_and_check "SELECT * FROM url('/other/file.csv', CSV, 'c String') SETTINGS ur
 run_and_check "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'http://base.invalid', $FAST" 'http://base.invalid/data.csv'
 
 # Query-only relative reference: ?x=1 with base http://base.invalid/dir/file.csv → http://base.invalid/dir/file.csv?x=1
-run_and_check "SELECT * FROM url('?x=1', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv', $FAST" 'http://base.invalid/dir/file.csv?[HIDDEN]'
+run_and_check "SELECT * FROM url('?x=1', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv', $FAST" 'http://base.invalid/dir/file.csv?x=[HIDDEN]'
 
 # Fragment-only relative reference: #frag with base http://base.invalid/dir/file.csv.
 # The HTTP buffer strips the fragment before logging the URL, so we look for the URL without the fragment.
@@ -70,10 +70,10 @@ run_and_check "SELECT * FROM url('#frag', CSV, 'c String') SETTINGS url_base = '
 
 # Fragment-only reference with base that has a query string: query must be preserved.
 # The fragment is stripped before logging, so we expect the URL with query but without fragment.
-run_and_check "SELECT * FROM url('#frag', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc', $FAST" 'http://base.invalid/dir/file.csv?[HIDDEN]'
+run_and_check "SELECT * FROM url('#frag', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc', $FAST" 'http://base.invalid/dir/file.csv?token=[HIDDEN]'
 
 # Path-relative URL with embedded absolute URL in query parameter (should not be treated as absolute)
-run_and_check "SELECT * FROM url('data.csv?next=http://other.invalid/a', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/dir/data.csv?[HIDDEN]'
+run_and_check "SELECT * FROM url('data.csv?next=http://other.invalid/a', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/dir/data.csv?next=[HIDDEN]'
 
 # Path-relative URL with dot-segment (../) — normalized per RFC 3986
 run_and_check "SELECT * FROM url('../a.csv', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/a.csv'
@@ -85,7 +85,7 @@ run_and_check "SELECT * FROM url('./a.csv', CSV, 'c String') SETTINGS url_base =
 run_and_check "SELECT * FROM url('../../a.csv', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/a/b/c/', $FAST" 'http://base.invalid/a/a.csv'
 
 # Dot-segment with query parameter in the relative URL
-run_and_check "SELECT * FROM url('../a.csv?foo=bar', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/a.csv?[HIDDEN]'
+run_and_check "SELECT * FROM url('../a.csv?foo=bar', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/', $FAST" 'http://base.invalid/a.csv?foo=[HIDDEN]'
 
 # URL engine: path-relative URL with url_base should resolve correctly
 $CLICKHOUSE_CLIENT --send_logs_level=debug -n -q "
@@ -96,7 +96,7 @@ SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_url;
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url" 2>/dev/null
 
 # Empty relative reference: should return base without fragment
-run_and_check "SELECT * FROM url('', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc#frag', $FAST" 'http://base.invalid/dir/file.csv?[HIDDEN]'
+run_and_check "SELECT * FROM url('', CSV, 'c String') SETTINGS url_base = 'http://base.invalid/dir/file.csv?token=abc#frag', $FAST" 'http://base.invalid/dir/file.csv?token=[HIDDEN]'
 
 # URL engine: resolved URL must be materialized into engine args so the table survives
 # DETACH/ATTACH (and server restart) after url_base is unset or changed.

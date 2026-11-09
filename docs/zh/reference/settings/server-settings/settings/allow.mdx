@@ -12,9 +12,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
 <SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
@@ -27,6 +25,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这等同于对所有 `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` 功能施加 `readonly` 约束。
 
+作用于用户、角色或 settings profile 的语句，如果将此类设置设为与执行该语句的会话中当前生效值不同的值，则会被拒绝；即使语句本身未指定任何设置，只要它会改变某个用户的此类设置，同样会被拒绝，例如：授予或撤销带有此类设置的角色、分配 settings profile、删除角色或 profile，或因省略而删除某项覆盖设置。对于通过 SQL 定义的用户，如果其自身设置或其角色的设置中包含此类值，则无法登录。由服务器通过配置文件生效的设置，以及在配置文件中定义的用户，始终不会被拒绝。`compatibility` 设置会让已禁用层级的设置保持其默认值，而不会应用先前版本的默认值。
+
 <Note>
   值为 &#96;0&#96;&#96; 表示可以修改所有设置。
 </Note>
@@ -35,15 +35,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   `2` 之前表示“仅 production 设置”。现在它也允许 Beta 设置，因此，若某个配置将 `2` 固定为仅允许 production 设置，则必须使用 `3`。
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />用于启用/禁用 IMPERSONATE 功能 (EXECUTE AS target&#95;user) 。该设置已弃用。
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 禁止创建未设置密码的用户，除非明确指定 &#39;IDENTIFIED WITH no&#95;password&#39;。
 
@@ -53,9 +49,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 设置是否允许使用不安全的 no&#95;password 密码类型。
 
@@ -65,9 +59,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 设置是否允许使用明文密码类型 (不安全) 。
 
@@ -77,9 +69,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />允许使用 jemalloc 内存分配。
 

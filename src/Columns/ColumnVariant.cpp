@@ -75,7 +75,8 @@ void ColumnVariant::constructOffsetsFromDiscriminators()
     /// If we have only NULLs, offsets column will not contain any real offsets.
     if (hasOnlyNulls())
     {
-        offsets_data.resize(discriminators_concrete->size());
+        /// Offsets of NULL rows are never read for their value, but compression reads the whole buffer.
+        offsets_data.resize_fill(discriminators_concrete->size(), 0);
     }
     /// If we have only one non empty variant and no NULLs,
     /// offsets column will contain just sequential offsets 0, 1, 2, ...

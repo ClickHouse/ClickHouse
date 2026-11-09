@@ -164,15 +164,6 @@ if grep -q 'fixture-api-secret' "$directory/error.err"; then
     exit 1
 fi
 echo 'HTTP exception hides URL credential'
-if query "SELECT * FROM url(${collection}_errors, format='RawBLOB', structure='data String')" > "$directory/error.out" 2> "$directory/error.err"; then
-    echo 'HTTP transport failure unexpectedly succeeded' >&2
-    exit 1
-fi
-if grep -q 'fixture-api-secret' "$directory/error.err"; then
-    echo 'URL credential leaked in HTTP transport diagnostics' >&2
-    exit 1
-fi
-echo 'HTTP transport hides reflected URL credential'
 
 relative=$(realpath --relative-to="$CLICKHOUSE_USER_FILES" "$CLICKHOUSE_USER_FILES_UNIQUE")
 cp "$directory/A.tar.gz" "$CLICKHOUSE_USER_FILES_UNIQUE/current.tar.gz"

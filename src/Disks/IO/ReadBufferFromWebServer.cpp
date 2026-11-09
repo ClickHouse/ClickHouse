@@ -65,7 +65,7 @@ String ReadBufferFromWebServer::getFileName() const
 {
     auto result = current_url.empty() ? urls.front() : current_url;
     maskURIUserinfo(result);
-    maskURIQuery(result);
+    maskURIQueryValues(result);
     return result;
 }
 

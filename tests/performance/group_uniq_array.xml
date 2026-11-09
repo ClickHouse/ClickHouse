@@ -10,5 +10,6 @@
     <query>SELECT groupUniqArrayIf(toUInt8(number % 200), number % 3 = 0) FROM numbers(5000000) GROUP BY number FORMAT Null</query>
     <query>SELECT groupUniqArrayMerge(initializeAggregation('groupUniqArrayState', toInt8(number % 100))) FROM numbers(20000000) FORMAT Null</query>
     <query>SELECT groupUniqArray(toFloat64(number % 64)) FROM numbers(50000000) FORMAT Null</query>
-    <query>SELECT groupUniqArray(toString(number % 4096)) FROM numbers(5000000) FORMAT Null</query>
+    <!-- Keys must not arrive in a short cycle: the speed would then depend on the build's code placement. -->
+    <query>SELECT groupUniqArray(toString(intHash64(number) % 4096)) FROM numbers(5000000) FORMAT Null</query>
 </test>

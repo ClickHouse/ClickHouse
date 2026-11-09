@@ -11,9 +11,7 @@ doc_type: 'reference'
 ArrowFlight テーブルエンジンを使用すると、ClickHouse は [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) プロトコル経由でリモートのデータセットの読み取りと書き込みを行えます。
 このインテグレーションにより、ClickHouse は外部の Flight 対応サーバーと、列指向の Arrow フォーマットで高性能にやり取りできます。
 
-<div id="creating-a-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
@@ -31,9 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 カラム一覧は省略可能です — 省略した場合、スキーマは `GetSchema` を介してリモート Arrow Flight サーバー から推論されます。
 
-<div id="named-collections">
-  ## 名前付きコレクション
-</div>
+## 名前付きコレクション {#named-collections}
 
 このエンジンは、接続パラメータを保存するための[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)に対応しています。
 
@@ -56,15 +52,12 @@ CREATE TABLE remote_flight_data
 | `ssl_ca`                   | いいえ      | `""`    | TLS 検証用の CA証明書ファイルのパス。   |
 | `ssl_override_hostname`    | いいえ      | `""`    | TLS 検証時に確認するホスト名を上書きします。 |
 
-<div id="settings">
-  ## 設定
-</div>
+## 設定 {#settings}
 
 * `arrow_flight_request_descriptor_type` — データセット名を Flight server にどの形式で送信するかを制御します。設定可能な値: `path` (デフォルト。PATH ディスクリプタとして送信) または `command` (`SELECT * FROM <dataset>` を含む CMD ディスクリプタとして送信) 。SQL コマンドを受け取る Flight server (例: Dremio) の場合は、`command` を使用してください。
+* `arrow_flight_request_timeout_sec` — 1 回の Arrow Flight リクエストに対するタイムアウト (秒) です。デフォルトは `300` です。このタイムアウトはリクエスト全体に適用されます。つまり `SELECT` の場合は、最初のレコードバッチを受け取るまでの待機時間だけでなく、結果ストリーム全体が対象になります。`0` を指定するとタイムアウトは無効になります。この場合、Flight server がリクエストを受け付けたまま応答しないと、接続が閉じられるまでクエリはブロックされたままになります。
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 リモートの Arrow Flight サーバーからのデータの読み取り:
 
@@ -93,18 +86,14 @@ SELECT * FROM remote_flight_data ORDER BY id;
 INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 ```
 
-<div id="notes">
-  ## 注記
-</div>
+## 注記 {#notes}
 
 * `CREATE TABLE` ステートメントでカラムを指定する場合は、Flight server が返すスキーマと一致している必要があります。
 * カラムを省略した場合、スキーマはリモートサーバーから自動的に推論されます。
 * 読み取り (`SELECT`) と書き込み (`INSERT`) の両方をサポートしています。
 * `arrow_flight_request_descriptor_type` 設定では、データセット名を PATH ディスクリプタとして送信するか、`SELECT *` クエリをラップした CMD ディスクリプタとして送信するかを制御します。
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [arrowFlight テーブル関数](/ja/reference/functions/table-functions/arrowflight)
 * [Arrow Flight インターフェイス](/ja/concepts/features/interfaces/arrowflight)

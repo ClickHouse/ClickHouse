@@ -44,6 +44,10 @@ public:
 
     void setCodec(CompressionCodecPtr codec_);
 
+    /// Blocks that the codec does not compress well are written with codec `NONE`,
+    /// so reading them does not pay for decompression. Must not be used with an encrypting codec.
+    void storeIncompressibleBlocksUncompressed();
+
     /// Returns the buffer that compressed data is written into.
     WriteBuffer * getNestedBuffer() const { return &out; }
 
@@ -58,6 +62,8 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
+    /// Codec `NONE` if `storeIncompressibleBlocksUncompressed` was called.
+    CompressionCodecPtr uncompressed_codec;
 
     PODArray<char> compressed_buffer;
 };
