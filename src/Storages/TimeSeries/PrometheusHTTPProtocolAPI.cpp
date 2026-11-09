@@ -454,6 +454,9 @@ Strings PrometheusHTTPProtocolAPI::executeAnnotationProbe(const ASTPtr & probe)
         Block block;
         while (executor.pull(block))
         {
+            /// pull() can return an empty block without columns, as writeQueryResponse() also expects.
+            if (!block.rows())
+                continue;
             const auto & column = block.getByName("name").column;
             for (size_t i = 0; i != column->size(); ++i)
                 names.emplace_back(column->getDataAt(i));
