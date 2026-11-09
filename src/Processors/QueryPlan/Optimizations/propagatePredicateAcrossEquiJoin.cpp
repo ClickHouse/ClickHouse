@@ -16,8 +16,8 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Copies filter conjuncts across equi-join keys. A copy on a primary key column prunes granules;
-/// on any other column it still shrinks the target's join input. Limited to `Expression`/`Filter`
-/// chains, see `isTransparentForPropagation`
+/// on any other column it still shrinks the target's join input. The two run at different stages,
+/// see `PredicatePropagationStage`. Limited to `Expression`/`Filter` chains, see `isTransparentForPropagation`
 
 /// Defined in partialJoinFilterPushDown.cpp
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
@@ -26,6 +26,7 @@ namespace
 {
 
 using SubstitutionMap = std::unordered_map<std::string, ColumnWithTypeAndName>;
+using AddedFilters = std::unordered_set<const QueryPlan::Node *>;
 
 /// Equi-key pairs, left first. Differing types are skipped: the JOIN casts them itself
 std::vector<std::pair<JoinActionRef, JoinActionRef>> getEquiJoinKeyPairs(const JoinOperator & join_operator)
@@ -72,15 +73,15 @@ const QueryPlan::Node * walkDown(const QueryPlan::Node * node, Predicate && pred
     return nullptr;
 }
 
-std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string name, bool stop_at_filter);
+std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string name, const QueryPlan::Node * stop_at);
 
-const FilterStep * findFilterBelow(const QueryPlan::Node * node)
+/// The first filter below `node` that this pass did not add: a copy from the earlier stage would hide the source's own filter
+const QueryPlan::Node * findSourceFilter(const QueryPlan::Node * node, const AddedFilters & added_filters)
 {
-    const auto * found = walkDown(node, [](const auto * n)
+    return walkDown(node, [&](const auto * n)
     {
-        return typeid_cast<const FilterStep *>(n->step.get()) != nullptr;
+        return typeid_cast<const FilterStep *>(n->step.get()) != nullptr && !added_filters.contains(n);
     });
-    return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
 /// The `MergeTree` read below the target's `Expression`/`Filter` chain, `nullptr` when the chain ends
@@ -123,15 +124,16 @@ bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
     return true;
 }
 
-/// Every substituted key has to resolve to a column the target reads, and a copy that cannot prune
-/// the primary key is only worth it when the atom itself is cheap
+/// Every substituted key has to resolve to a column the target reads. `Pruning` takes the atoms whose keys are
+/// all prunable, `Shrinking` the cheap atoms among the others
 bool atomWorthCopying(
     const QueryPlan::Node * target_root,
     const NameSet & prunable_columns,
     const ActionsDAG::Node * atom,
-    const SubstitutionMap & substitution)
+    const SubstitutionMap & substitution,
+    PredicatePropagationStage stage)
 {
-    const bool cheap = atomIsCheapEnoughForAnyTarget(atom);
+    bool prunes = true;
     for (const auto * child : atom->children)
     {
         if (child->type != ActionsDAG::ActionType::INPUT)
@@ -139,28 +141,32 @@ bool atomWorthCopying(
         const auto it = substitution.find(child->result_name);
         if (it == substitution.end())
             return false;
-        const auto target_column = resolveDown(target_root, it->second.name, /*stop_at_filter=*/false);
+        const auto target_column = resolveDown(target_root, it->second.name, /*stop_at=*/nullptr);
         if (!target_column)
             return false;
-        if (!cheap && !prunable_columns.contains(*target_column))
-            return false;
+        prunes = prunes && prunable_columns.contains(*target_column);
     }
-    return true;
+    if (stage == PredicatePropagationStage::Pruning)
+        return prunes;
+    return !prunes && atomIsCheapEnoughForAnyTarget(atom);
 }
 
-/// result_names of atoms the target filter already has, for dedup
+/// result_names of atoms the target's filters already have, for dedup
 std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * target_root)
 {
     std::unordered_set<std::string> result;
-    const auto * target_filter = findFilterBelow(target_root);
-    if (!target_filter)
-        return result;
-    const auto & dag = target_filter->getExpression();
-    const auto * filter_root = dag.tryFindInOutputs(target_filter->getFilterColumnName());
-    if (!filter_root)
-        return result;
-    for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
-        result.insert(atom->result_name);
+    walkDown(target_root, [&](const auto * n)
+    {
+        const auto * filter = typeid_cast<const FilterStep *>(n->step.get());
+        if (!filter)
+            return false;
+        if (const auto * filter_root = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName()))
+        {
+            for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
+                result.insert(atom->result_name);
+        }
+        return false;
+    });
     return result;
 }
 
@@ -220,13 +226,13 @@ std::optional<std::string> resolveInsideDAG(const ActionsDAG & dag, const std::s
     return node->result_name;
 }
 
-/// Undo renames, `__tableX.orderkey` -> `orderkey`. The source stops at its filter, the target goes to the read
-std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string name, bool stop_at_filter)
+/// Undo renames, `__tableX.orderkey` -> `orderkey`. The source stops at its filter `stop_at`, the target goes to the read
+std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string name, const QueryPlan::Node * stop_at)
 {
     while (node)
     {
         const auto * filter = typeid_cast<const FilterStep *>(node->step.get());
-        if (filter && stop_at_filter)
+        if (filter && node == stop_at)
             return resolveInsideDAG(filter->getExpression(), name);
         if (!isTransparentForPropagation(node->step.get()) || node->children.size() != 1)
             return name;
@@ -247,14 +253,17 @@ size_t tryPropagateToSide(
     QueryPlan::Node * join_node,
     size_t target_idx,
     QueryPlan::Node * source_root,
-    const FilterStep * source_filter,
+    const QueryPlan::Node * source_filter_node,
     const SubstitutionMap & substitution,
+    PredicatePropagationStage stage,
     bool index_analysis_enabled,
+    AddedFilters & added_filters,
     QueryPlan::Nodes & nodes)
 {
     auto * target_root = join_node->children[target_idx];
-    if (!source_filter)
+    if (!source_filter_node)
         return 0;
+    const auto & source_filter = typeid_cast<const FilterStep &>(*source_filter_node->step);
     const auto * target_read = findTargetMergeTreeRead(target_root);
     if (!target_read)
         return 0;
@@ -269,12 +278,12 @@ size_t tryPropagateToSide(
     SubstitutionMap filter_level_sub;
     for (const auto & [join_name, target_col] : substitution)
     {
-        if (auto filter_name = resolveDown(source_root, join_name, /*stop_at_filter=*/true))
+        if (auto filter_name = resolveDown(source_root, join_name, source_filter_node))
             filter_level_sub[*filter_name] = target_col;
     }
 
-    const auto & src_dag = source_filter->getExpression();
-    const auto * filter_root = src_dag.tryFindInOutputs(source_filter->getFilterColumnName());
+    const auto & src_dag = source_filter.getExpression();
+    const auto * filter_root = src_dag.tryFindInOutputs(source_filter.getFilterColumnName());
     if (!filter_root)
         return 0;
 
@@ -282,7 +291,7 @@ size_t tryPropagateToSide(
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
         if (atomSafelySubstitutable(atom, filter_level_sub)
-            && atomWorthCopying(target_root, prunable_columns, atom, filter_level_sub))
+            && atomWorthCopying(target_root, prunable_columns, atom, filter_level_sub, stage))
             propagatable.push_back(atom);
     }
     if (propagatable.empty())
@@ -317,13 +326,19 @@ size_t tryPropagateToSide(
 
     addFilterOnTop(*join_node, target_idx, nodes, std::move(*propagated_dag));
     join_node->children[target_idx]->step->setStepDescription("Propagated equi-join filter");
+    added_filters.insert(join_node->children[target_idx]);
     return 1;
 }
 
 }
 
 size_t tryPropagatePredicateAcrossEquiJoin(
-    QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, bool index_analysis_enabled, const Optimization::ExtraSettings &)
+    QueryPlan::Node * parent_node,
+    QueryPlan::Nodes & nodes,
+    PredicatePropagationStage stage,
+    bool index_analysis_enabled,
+    AddedFilters & added_filters,
+    const Optimization::ExtraSettings &)
 {
     auto * join = typeid_cast<JoinStepLogical *>(parent_node->step.get());
     if (!join || parent_node->children.size() != 2)
@@ -368,14 +383,16 @@ size_t tryPropagatePredicateAcrossEquiJoin(
     /// Snapshot the sources before the first copy mutates the tree
     QueryPlan::Node * left_root = parent_node->children[0];
     QueryPlan::Node * right_root = parent_node->children[1];
-    const FilterStep * left_filter  = findFilterBelow(left_root);
-    const FilterStep * right_filter = findFilterBelow(right_root);
+    const auto * left_filter  = findSourceFilter(left_root, added_filters);
+    const auto * right_filter = findSourceFilter(right_root, added_filters);
 
     size_t propagated = 0;
     if (can_l_to_r)
-        propagated += tryPropagateToSide(parent_node, 1, left_root, left_filter, l_to_r, index_analysis_enabled, nodes);
+        propagated += tryPropagateToSide(
+            parent_node, 1, left_root, left_filter, l_to_r, stage, index_analysis_enabled, added_filters, nodes);
     if (can_r_to_l)
-        propagated += tryPropagateToSide(parent_node, 0, right_root, right_filter, r_to_l, index_analysis_enabled, nodes);
+        propagated += tryPropagateToSide(
+            parent_node, 0, right_root, right_filter, r_to_l, stage, index_analysis_enabled, added_filters, nodes);
     return propagated;
 }
 
