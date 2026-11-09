@@ -47,6 +47,7 @@ static const auto bucketsRangeNonZeroSetting = CHSetting(
     false);
 
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
+    {"adaptive_codec_selection_period", bucketsRangeNonZeroSetting},
     {"adaptive_write_buffer_initial_size", bytesRangeNonZeroSetting},
     {"add_implicit_sign_column_constraint_for_collapsing_engine", trueOrFalseSetting},
     {"add_minmax_index_for_block_number_column", trueOrFalseSetting},
@@ -1187,8 +1188,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                         res += ", max_file_segment_size = "
                             + std::to_string(rg.thresholdGenerator<uint64_t>(
                                 0.2, 0.2, UINT64_C(1024), UINT64_C(1024) * UINT64_C(1024) * UINT64_C(128)));
-                    if (rg.nextSmallNumber() < 4)
-                        res += ", enable_filesystem_query_cache_limit = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
                     if (rg.nextSmallNumber() < 4)
                         res += ", load_metadata_asynchronously = " + std::to_string(static_cast<uint32_t>(rg.nextBool()));
                     if (rg.nextSmallNumber() < 4)

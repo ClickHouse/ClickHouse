@@ -138,6 +138,10 @@ DataTypePtr arrayElementHint(const DataTypePtr & hint);
 /// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
 DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive);
 
+/// The requested type hint for the element at `pos` of a Tuple, named or not, or null when the hint is not a Tuple
+/// or has no such element. Used for the fields of a struct with `ArrowType::positional_fields`.
+DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos);
+
 /// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.
 DataTypePtr mapEntriesHint(const DataTypePtr & hint);
 
@@ -378,6 +382,11 @@ private:
     /// The dotted name of a struct child for the requested-type lookups (`resolveTargetHint`): the child's
     /// normalized name appended to its parent's path.
     String childPath(const String & path, const String & child_name) const;
+    /// The requested type hint and the path of the `i`-th field of a struct: by name, or by position (the path
+    /// then uses the 1-based element number, as for an unnamed `Tuple`) when the struct has `positional_fields`.
+    /// Positional paths keep equally named fields apart in the dictionary uses, which are keyed by path.
+    DataTypePtr structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const;
+    String structFieldPath(const String & path, const ArrowType & type, size_t i) const;
 
     const ArrowSchema & schema;
     const FormatSettings & settings;
