@@ -82,8 +82,12 @@ void Aggregator::accountStagedBatch(
 {
     auto & misses = adaptive.misses;
     const size_t total = misses.size();
+    /// A constant-key block whose miss combined into an earlier record leaves an empty batch marked constant.
     if (!total)
+    {
+        misses.clear();
         return;
+    }
     const auto * hashes = misses.getHashes().data();
 
     /// The rows behind the records go to the count bins of the top-K pruning: a count record carries
@@ -92,7 +96,15 @@ void Aggregator::accountStagedBatch(
         for (size_t i = 0; i < total; ++i)
             adaptive.count_bins.add(hashes[i], is_simple_count ? misses.getMultiplicities()[i] : 1);
 
-    adaptive.total_staged_records += total;
+    /// The records of the batch that replace records of earlier batches (see
+    /// `AdaptiveMissBatch::addReplaced`) take the place of those, so the counts below are net of them. Each
+    /// replacing record is in the batch, so the record counts stay positive, and every replaced record was
+    /// counted in this frozen phase.
+    const size_t replaced = misses.replacedRecords();
+    const AdaptiveStagedBytes replaced_bytes = misses.replacedBytes();
+    chassert(replaced <= total && replaced_bytes.key_bytes <= staged.key_bytes);
+    const size_t records = total - replaced;
+    adaptive.total_staged_records += records;
 
     /// The thaw evidence of the thread (see `adaptiveStagingRepeats`). A batch updates:
     ///
@@ -124,8 +136,10 @@ void Aggregator::accountStagedBatch(
     {
         chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
         auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
-        frozen.staged_records += total;
+        frozen.staged_records += records;
         frozen.staged_bytes += staged.record_bytes + total * adaptive_thaw_record_cost;
+        chassert(frozen.staged_bytes >= replaced_bytes.record_bytes + replaced * adaptive_thaw_record_cost);
+        frozen.staged_bytes -= replaced_bytes.record_bytes + replaced * adaptive_thaw_record_cost;
         for (size_t i = 0; i < total; ++i)
         {
             const auto hash = hashes[i];
@@ -146,8 +160,8 @@ void Aggregator::accountStagedBatch(
 
     misses.clear();
 
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecords, total);
-    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, staged.key_bytes);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecords, records);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, staged.key_bytes - replaced_bytes.key_bytes);
 }
 
 AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers) const
@@ -174,7 +188,7 @@ bool Aggregator::advanceAdaptiveProducer(
     /// Over the external-aggregation threshold a producer writes its staged records to disk, whatever its phase: one
     /// back on the baseline path keeps the records it staged while frozen, which flushing its own table cannot free.
     if (over_external_threshold && adaptiveStagingWorthSpilling(adaptive))
-        spillAdaptivePartitions(*adaptive.session, *adaptive.partitions);
+        spillAdaptiveStagedRecords(adaptive);
 
     /// A frozen producer whose staged stream repeats its misses thaws for good, and the baseline's checks apply.
     if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive))
@@ -391,7 +405,7 @@ size_t Aggregator::spillAdaptiveProducer(
         std::optional<MemoryTrackerSwitcher> aggregator_scope;
         if (aggregator_tracker)
             aggregator_scope.emplace(aggregator_tracker);
-        spillAdaptivePartitions(*adaptive.session, *adaptive.partitions);
+        spillAdaptiveStagedRecords(adaptive);
         released = staged_bytes;
     }
     if (released >= at_least_bytes)
@@ -439,6 +453,12 @@ void AdaptiveAggregationSession::endHandedOverSpills()
 {
     std::lock_guard lock(producer_buffers_mutex);
     spillable_handed_over_bytes.store(0, std::memory_order_relaxed);
+}
+
+void Aggregator::spillAdaptiveStagedRecords(AdaptiveAggregationProducer & adaptive) const
+{
+    spillAdaptivePartitions(*adaptive.session, *adaptive.partitions);
+    adaptive.tails.reset();
 }
 
 void Aggregator::spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions) const

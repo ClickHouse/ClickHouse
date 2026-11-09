@@ -1126,6 +1126,7 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationProbeBypasses, "How many threads stopped probing their frozen local table in the adaptive aggregation because almost no row hit it.", ValueType::Number) \
     M(AdaptiveAggregationStagedRecords, "How many delayed records the adaptive aggregation staged into its partition buffers.", ValueType::Number) \
     M(AdaptiveAggregationStagedBytes, "How many key bytes the adaptive aggregation staged into its partition buffers.", ValueType::Bytes) \
+    M(AdaptiveAggregationCombinedRows, "How many missed rows a thread of the adaptive aggregation combined into a record it had already staged for their key, instead of staging records of their own.", ValueType::Number) \
     M(AdaptiveAggregationDrainedRecords, "How many staged records the adaptive aggregation drained into the merge's tables.", ValueType::Number) \
     M(AdaptiveAggregationSpills, "How many times a thread of the adaptive aggregation wrote its staged records to disk, because the query crossed the external aggregation threshold or the memory scheduler asked for a spill.", ValueType::Number) \
     M(AdaptiveAggregationSpilledRecords, "How many staged records the adaptive aggregation wrote to disk under memory pressure.", ValueType::Number) \

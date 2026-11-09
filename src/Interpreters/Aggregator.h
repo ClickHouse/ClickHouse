@@ -1030,12 +1030,13 @@ private:
         bool all_keys_are_const,
         MemoryTracker * local_memory_tracker) const;
 
-    /// Collects the misses of a block of an aggregation by a lone `count` into the producer's batch: a row whose key the
-    /// local table holds adds one to the key's inline count, and the other rows become count records, each with the
-    /// multiplicity of the rows it combines. A run of one key goes into one record, and while a trial shows that it
-    /// pays, so do the later rows of the key found through a per-partition cache. A batch whose kept key bytes reach
-    /// their bound is staged by `stage_misses` in the middle of the block (see `adaptive_miss_batch_max_key_bytes`); the
-    /// rest of the misses and the probe results are left to the caller. Returns the number of local hits.
+    /// Collects the misses of a block of an aggregation by a lone `count` into the producer's batch: a row
+    /// whose key the local table holds adds one to the key's inline count, and the other rows become count
+    /// records, each with the multiplicity of the rows it combines. A miss of the key of its partition's tail
+    /// adds to the tail's count (see `AdaptivePartitionTails`). A batch whose kept key bytes reach their
+    /// bound is staged by `stage_misses` in the middle of the block (see
+    /// `adaptive_miss_batch_max_key_bytes`); the rest of the misses and the probe results are left to the
+    /// caller. Returns the number of local hits.
     template <typename RecordKey, typename LocalMethod, typename State, typename StageMisses>
     size_t collectCountMisses(
         LocalMethod & local_method,
@@ -1047,12 +1048,14 @@ private:
         bool bypass_local_probe,
         const StageMisses & stage_misses) const;
 
-    /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat` selects. Each
-    /// record carries a key and either a multiplicity (an aggregation by a lone `count`), no payload (no aggregates), or
-    /// the row's aggregate arguments laid out by `adaptive_argument_layout`, read from the argument columns of the
-    /// block's `aggregate_instructions`. Variable-size records also carry a hash and lengths; fixed-size records
-    /// recover the hash from the key when drained. Returns what it staged for the accounting of the batch (see
-    /// `accountStagedBatch`).
+    /// Appends the producer's batch of misses to its partitions in the format `visitStagedRecordFormat`
+    /// selects. Each record carries a key and either a multiplicity (an aggregation by a lone `count`), no
+    /// payload (no aggregates), or the row's aggregate arguments laid out by `adaptive_argument_layout`, read
+    /// from the argument columns of the block's `aggregate_instructions`, with the multiplicity of the
+    /// combined rows when the layout has one (see `AdaptiveRowSelection`). Variable-size records also carry a
+    /// hash and lengths; fixed-size records recover the hash from the key when drained. The tails of the
+    /// producer's partitions learn where the records went (see `AdaptivePartitionTails`). Returns what it
+    /// staged for the accounting of the batch (see `accountStagedBatch`).
     template <typename RecordKey, typename State>
     AdaptiveStagedBytes appendDelayedRecords(
         const AggregateFunctionInstruction * aggregate_instructions,
@@ -1178,11 +1181,15 @@ private:
     void addMergeCountedTablesToBounds(
         ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
 
-    /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to `shared`, to the
-    /// session's spill streams, a block per partition, and frees them; a producer then keeps appending into new chunks.
-    /// Called over the external-aggregation threshold and on request of the memory scheduler (see
-    /// `spillAdaptiveProducer` and `spillHandedOverStagedRecords`).
+    /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to
+    /// `shared`, to the session's spill streams, a block per partition, and frees them; a producer then keeps
+    /// appending into new chunks. Called over the external-aggregation threshold and on request of the memory
+    /// scheduler (see `spillAdaptiveStagedRecords` and `spillHandedOverStagedRecords`).
     void spillAdaptivePartitions(AdaptiveAggregationSession & shared, PartitionedRecordBuffer & partitions) const;
+
+    /// Writes the staged records of a running producer to disk (see `spillAdaptivePartitions`) and drops the
+    /// tails of its partitions, which point into those records (see `AdaptivePartitionTails`).
+    void spillAdaptiveStagedRecords(AdaptiveAggregationProducer & adaptive) const;
 
     /// Writes the producer's learning or frozen table to disk as a part of the ordinary external aggregation, then lets
     /// the producer learn its keys again in an empty single-level table. Called for a table over the
