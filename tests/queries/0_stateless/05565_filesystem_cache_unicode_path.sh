@@ -56,7 +56,7 @@ run_local "
     CREATE DATABASE db ENGINE = Atomic;
     CREATE TABLE db.test (a UInt64, b String) ENGINE = MergeTree ORDER BY a SETTINGS storage_policy = 'cached';
     INSERT INTO db.test SELECT number, toString(number) FROM numbers(1000);
-    SYSTEM DROP FILESYSTEM CACHE;
+    SYSTEM DROP FILESYSTEM CACHE 'blob_cache';
     SELECT sum(a), count() FROM db.test;
     SELECT count() > 0, sum(downloaded_size) > 0, countIf(cache_path LIKE '%/кэш_キャッシュ/%') = count() FROM system.filesystem_cache;
     -- Do not load the table in the next run: loading its parts reads through the cache.
@@ -67,7 +67,7 @@ run_local "
 # After a restart the metadata is loaded from the same directory and eviction removes the files.
 run_local "
     SELECT count() > 0 FROM system.filesystem_cache;
-    SYSTEM DROP FILESYSTEM CACHE;
+    SYSTEM DROP FILESYSTEM CACHE 'blob_cache';
     SELECT count() FROM system.filesystem_cache;
 "
 count_cache_files
