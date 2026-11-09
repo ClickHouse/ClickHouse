@@ -231,6 +231,7 @@ void TablesLoader::removeUnresolvableDependencies()
 
         /// Only a database with its own tables has loaded ones, and it answers from memory. Any other database resolves
         /// a name on access, and checking it reaches the data (a path, a remote server), which can be unavailable.
+        /// Dependencies parsed from metadata are database-qualified names without a UUID, so a lookup by name is enough.
         auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name);
         const auto * database_with_own_tables = dynamic_cast<const DatabaseWithOwnTablesBase *>(database.get());
 
