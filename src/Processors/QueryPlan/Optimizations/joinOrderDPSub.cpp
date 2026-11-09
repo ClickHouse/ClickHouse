@@ -253,13 +253,16 @@ private:
         }
         return classes;
     }
-    /// The exchange the step above the graph needs over a plan of all relations: none when the plan is partitioned by a
-    /// column it would like, else a shuffle of the rows it sends, at most one per group and node after an aggregation.
+    /// The exchange the step above the graph needs over a plan of all relations: none when the plan is where the step
+    /// would like it, else a gather to one node, or a shuffle by a key, of the rows it sends: one per node after an
+    /// aggregation without keys, at most one per group and node after one with keys.
     double aboveExchangeCost(Int8 state, double rows, double bytes) const
     {
+        const auto join_cost = distributedJoinCost();
+        if (query_graph.single_node_above)
+            return state == single_node_state ? 0 : join_cost.toSingleNode(state, std::min(rows, join_cost.nodes), bytes);
         if (!dpsub_data.above_classes || (isClassState(state) && ((dpsub_data.above_classes >> state) & 1)))
             return 0;
-        const auto join_cost = distributedJoinCost();
         double sent_rows = rows;
         if (query_graph.partition_above_aggregates && dpsub_data.above_groups > 0)
             sent_rows = std::min(rows, static_cast<double>(dpsub_data.above_groups) * join_cost.nodes);
@@ -1551,6 +1554,35 @@ DPJoinEntryPtr DPSubJoinOrderOptimizer::makeJoinEntry(const DPTable & dptable, T
 template <typename Entry>
 void DPSubJoinOrderOptimizer::addLeafStates(UInt32 relation_mask, Entry & leaf) const
 {
+    const size_t relation = std::countr_zero(relation_mask);
+    const auto leaf_state = relation < query_graph.relation_leaf_states.size() ? query_graph.relation_leaf_states[relation]
+                                                                               : QueryGraph::LeafState::Read;
+    if (leaf_state != QueryGraph::LeafState::Read)
+    {
+        /// The plan of a subquery is costed by Cascades the same way in every join order, so only moving its result is
+        /// costed here; it is never read again on every node.
+        const double rows = leaf.estimated_rows ? static_cast<double>(*leaf.estimated_rows)
+            : (leaf.max_rows ? static_cast<double>(*leaf.max_rows) : 1.0);
+        const double bytes = rowBytes(relation_mask);
+        const auto join_cost = distributedJoinCost();
+        typename Entry::Plan plan = leaf;
+        leaf.cost = 0;
+        if (leaf_state == QueryGraph::LeafState::SingleNode)
+        {
+            leaf.partition_class = single_node_state;
+            plan.partition_class = -1;
+            plan.cost = join_cost.toPartitioned(single_node_state, -1, rows, bytes);
+        }
+        else
+        {
+            leaf.partition_class = -1;
+            plan.partition_class = single_node_state;
+            plan.cost = leaf_state == QueryGraph::LeafState::Either ? 0 : join_cost.toSingleNode(-1, rows, bytes);
+        }
+        leaf.ordered.push_back(plan);
+        return;
+    }
+
     /// Cascades costs a read by its bytes: 1/N of them per node for a partitioned read, all of them for the others.
     const double rows = leaf.estimated_rows ? static_cast<double>(*leaf.estimated_rows)
         : (leaf.max_rows ? static_cast<double>(*leaf.max_rows) : 1.0);

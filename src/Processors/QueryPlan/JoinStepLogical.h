@@ -272,6 +272,8 @@ public:
         Names keys;
         /// The step above aggregates its input before it exchanges it, so it moves at most one row per group and node.
         bool aggregation = false;
+        /// The step above needs all rows on one node: an aggregation without keys.
+        bool single_node = false;
     };
     const PartitionKeysAbove & getPartitionKeysAbove() const { return partition_keys_above; }
     void setPartitionKeysAbove(PartitionKeysAbove keys) { partition_keys_above = std::move(keys); }

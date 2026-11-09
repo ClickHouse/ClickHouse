@@ -251,6 +251,17 @@ struct QueryGraph
     std::vector<JoinActionRef> partition_columns_above;
     /// The step above aggregates before it exchanges its input.
     bool partition_above_aggregates = false;
+    /// The step above needs all rows on one node.
+    bool single_node_above = false;
+    /// Where the rows of a relation are when its plan ends, per relation.
+    enum class LeafState : uint8_t
+    {
+        Read,         /// A table read: partitioned, on one node or on every node, each with the cost of its read.
+        SingleNode,   /// A result that ends on one node, like a `UNION ALL` or an aggregation without keys.
+        Either,       /// An aggregation with keys, which Cascades may leave partitioned or gather.
+        Partitioned,  /// Any other result: partitioned, on one node after a gather.
+    };
+    std::vector<LeafState> relation_leaf_states;
     /// The bytes a broadcast may replicate to every node, see `distributed_plan_max_bytes_to_broadcast`; 0 for no limit.
     UInt64 max_bytes_to_broadcast = 0;
 
