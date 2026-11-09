@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ci.jobs.ci_utils import SANITIZERS
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
@@ -302,15 +302,24 @@ def select_replica_failures(
 
     `omitted`, when given, receives every distinct generic `<Fatal>` finding that is
     not returned, so a caller that may pass the run on the returned ones (the AI
-    triage) still accounts for them.
+    triage) still accounts for them. The parser names one report per pair, so when a
+    replica logged more reports than were named, `omitted` also receives a failure no
+    issue covers, which keeps the run red.
     """
     specific_results: List[Tuple[str, str, List[str]]] = []
     seen_specific = set()
     generic_fatal_results: List[Tuple[str, str, List[str]]] = []
     seen_generic = set()
     fallback_result = None
+    # Per replica: its server logs, its stderr log and the distinct failures named in them.
+    replica_logs: Dict[str, Tuple[List[Path], Path]] = {}
+    named_by_replica: Dict[str, set] = {}
 
     for replica_name, server_log_file, stderr_log in replica_log_pairs:
+        replica_logs.setdefault(replica_name, ([], stderr_log))[0].append(
+            server_log_file
+        )
+        named_by_replica.setdefault(replica_name, set())
         log_parser = FuzzerLogParser(
             server_log=server_log_file,
             stderr_log=str(stderr_log) if stderr_log.exists() else "",
@@ -325,6 +334,8 @@ def select_replica_failures(
             # The name keeps only the STID's frames, so two bugs can share one: the
             # qualified stack tells them apart, and the AI triage must see both.
             key = (name, FuzzerLogParser.qualified_stack(description))
+            if name != FuzzerLogParser.UNKNOWN_ERROR:
+                named_by_replica[replica_name].add(key)
             if name == FuzzerLogParser.UNKNOWN_ERROR:
                 if fallback_result is None:
                     fallback_result = (name, description, files)
@@ -351,6 +362,21 @@ def select_replica_failures(
     )
     if omitted is not None:
         omitted.extend(r for r in generic_fatal_results if r not in selected)
+        unnamed = []
+        for replica_name, (server_logs, stderr_log) in replica_logs.items():
+            count = FuzzerLogParser.count_failure_reports(server_logs, stderr_log)
+            named = len(named_by_replica[replica_name])
+            if count > named:
+                unnamed.append(f"{replica_name} logged {count} reports, {named} named")
+        if unnamed:
+            omitted.append(
+                (
+                    "Incomplete failure inventory",
+                    "Not every failure report of the run was named, so no known issue "
+                    "can pass it: " + "; ".join(unnamed) + ". Check the server logs.",
+                    [],
+                )
+            )
     return selected
 
 
@@ -443,8 +469,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     server_died = False
     crash_named = False
     failed_results = []
-    # Generic `<Fatal>` reports of other replicas that the report leaves out
-    omitted_fatals = []
+    # Failures of the server logs that the report leaves out: generic `<Fatal>` reports
+    # of other replicas and reports the parser did not name
+    omitted_failures = []
     for test_result in test_results:
         if test_result.name == "Server died":
             server_died = True
@@ -486,7 +513,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            results = select_replica_failures(replica_log_pairs, omitted_fatals)
+            results = select_replica_failures(replica_log_pairs, omitted_failures)
             if results:
                 # The crash named in the server logs is the cause, so drop the rows
                 # about its consequences to report it once.
@@ -608,7 +635,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             # The issue of a reported failure must not pass the run over a fatal report
             # the report leaves out, so the triage sees those too.
             failures=[(fr.name, fr.info or "") for fr in failed_results]
-            + [(name, description) for name, description, _ in omitted_fatals],
+            + [(name, description) for name, description, _ in omitted_failures],
             evidence_paths=evidence,
             repro_hint=repro_hint,
             # The Upgrade check job has a 2h timeout and its run phases are

@@ -224,11 +224,16 @@ def _copy_node_cores_to_workspace(workspace_path: Path) -> list[Path]:
     return copied
 
 
-def _parse_logs(server_log: Path, stderr_log: Path | None, fuzzer_out: Path):
+def _parse_logs(
+    server_log: Path,
+    stderr_log: Path | None,
+    fuzzer_out: Path,
+    parser_class: type[FuzzerLogParser] = FuzzerLogParser,
+):
     """The log parser's verdict on one process's logs, or None when it names nothing."""
     if not server_log.is_file():
         return None
-    name, description, files = FuzzerLogParser(
+    name, description, files = parser_class(
         server_log=str(server_log),
         stderr_log=str(stderr_log) if stderr_log and stderr_log.is_file() else "",
         fuzzer_log=str(fuzzer_out),
@@ -272,25 +277,40 @@ def _log_with_rotations(log: Path, combined: Path) -> Path:
     return _concatenate([*rotated, log], combined) if rotated else log
 
 
+class _RotatedLogParser(FuzzerLogParser):
+    """A parser for the logs of a server restarted by Dolor, which did not necessarily fail: a
+    memory limit exception there was recovered from, so it names no failure."""
+
+    ERROR_PATTERNS = [
+        p for p in FuzzerLogParser.ERROR_PATTERNS if p[1] != "is_memory_limit_exceeded"
+    ]
+
+
+def _has_fatal_record(log: Path) -> bool:
+    pattern = re.compile(FuzzerLogParser.GENERIC_FATAL_PATTERN)
+    with open(log, "r", encoding="utf-8", errors="replace") as f:
+        return any(pattern.search(line) for line in f)
+
+
 def _rotated_node_failure(workspace_path: Path, fuzzer_out: Path):
     """A failure in the rotated server logs, which belong to the servers before the last restart:
     the analysis parses the current logs only. Without `stderr.log`, which every server appends to,
     so that the parser names a failure of those servers, not the sanitizer report of the last one.
     Nor the `<Fatal>` the watchdog logs for every restart `--kill-server-prob` makes.
+    Those servers may have been restarted healthy, so only logs with a `<Fatal>` record fail the run.
     The main log comes first: the parser looks up the query there."""
     for name in ("server.log", "server.err.log"):
         log = workspace_path / name
         rotated = _rotated_logs(log)
-        if rotated and (
-            failure := _parse_logs(
-                _concatenate(
-                    rotated,
-                    workspace_path / f"{log.stem}.rotated.log",
-                    skip=EXPECTED_KILL_FATAL.encode(),
-                ),
-                None,
-                fuzzer_out,
-            )
+        if not rotated:
+            continue
+        combined = _concatenate(
+            rotated,
+            workspace_path / f"{log.stem}.rotated.log",
+            skip=EXPECTED_KILL_FATAL.encode(),
+        )
+        if _has_fatal_record(combined) and (
+            failure := _parse_logs(combined, None, fuzzer_out, _RotatedLogParser)
         ):
             return failure
     return None
@@ -321,40 +341,10 @@ def _keeper_failures(workspace_path: Path, fuzzer_out: Path) -> dict[int, Result
     return failures
 
 
-# The first line of the report of a fatal signal (`SignalHandlers.cpp`): one per crash.
-CRASH_REPORT_START = "########################################"
-SANITIZER_REPORT_START_RE = re.compile(
-    r"^(==\d+==)?(ERROR|WARNING): [a-zA-Z]+Sanitizer:|[a-zA-Z]+Sanitizer: CHECK failed:|: runtime error: "
-)
-# A sanitizer OOM, which the log analysis passes the run for.
-SANITIZER_OOM_RE = re.compile(
-    r"out-of-memory|out of memory|failed to allocate|allocation-size-too-big"
-)
-
-
-def _count_lines(paths: list[Path], predicate) -> int:
-    total = 0
-    for path in paths:
-        if path.is_file():
-            with (gzip.open if path.suffix == ".gz" else open)(
-                path, "rt", encoding="utf-8", errors="replace"
-            ) as f:
-                total += sum(1 for line in f if predicate(line))
-    return total
-
-
 def _report_count(err_log: Path, stderr_log: Path) -> int:
-    """A lower bound on the failure reports of one process over all its restarts. A crash header
-    and a sanitizer report can belong to the same abort, so it is the larger of the two counts."""
-    crashes = _count_lines(
-        [*_rotated_logs(err_log), err_log], lambda line: CRASH_REPORT_START in line
+    return FuzzerLogParser.count_failure_reports(
+        [*_rotated_logs(err_log), err_log], stderr_log
     )
-    sanitizer_reports = _count_lines(
-        [stderr_log],
-        lambda line: SANITIZER_REPORT_START_RE.search(line)
-        and not SANITIZER_OOM_RE.search(line),
-    )
-    return max(crashes, sanitizer_reports)
 
 
 def _dolor_failure_records(dolor_log: Path) -> list[str]:

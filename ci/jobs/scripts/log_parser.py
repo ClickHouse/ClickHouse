@@ -1,7 +1,9 @@
+import gzip
 import itertools
 import re
 import string
 import sys
+from pathlib import Path
 
 sys.path.append(".")
 from ci.praktika.utils import Shell
@@ -20,6 +22,15 @@ class FuzzerLogParser:
         ", Stack trace (when copying this message, always include the lines below):"
     )
     MAX_INLINE_REPRODUCE_COMMANDS = 20
+    # The first line of the report of a fatal signal (`SignalHandlers.cpp`): one per crash.
+    CRASH_REPORT_START = "########################################"
+    SANITIZER_REPORT_START_RE = re.compile(
+        r"^(==\d+==)?(ERROR|WARNING): [a-zA-Z]+Sanitizer:|[a-zA-Z]+Sanitizer: CHECK failed:|: runtime error: "
+    )
+    # A sanitizer OOM, which the log analysis passes the run for.
+    SANITIZER_OOM_RE = re.compile(
+        r"out-of-memory|out of memory|failed to allocate|allocation-size-too-big"
+    )
     # A server log line quotes the query it is about after one of these markers, so a
     # failure pattern matching after such a marker matched the query text, not a
     # failure: a test comment or a fuzzed query may contain any text, e.g. the literal
@@ -832,6 +843,32 @@ class FuzzerLogParser:
 
         lines = [line.strip().replace("\n", "") for line in lines]
         return "\n".join(lines) if lines else None
+
+    @staticmethod
+    def count_failure_reports(err_logs, stderr_log) -> int:
+        """A lower bound on the failure reports of one process over all its restarts, from its
+        `err_logs` and `stderr_log`. A crash header and a sanitizer report can belong to the same
+        abort, so it is the larger of the two counts."""
+
+        def count(paths, predicate):
+            total = 0
+            for path in paths:
+                if path and Path(path).is_file():
+                    with (gzip.open if str(path).endswith(".gz") else open)(
+                        path, "rt", encoding="utf-8", errors="replace"
+                    ) as f:
+                        total += sum(1 for line in f if predicate(line))
+            return total
+
+        crashes = count(
+            err_logs, lambda line: FuzzerLogParser.CRASH_REPORT_START in line
+        )
+        sanitizer_reports = count(
+            [stderr_log],
+            lambda line: FuzzerLogParser.SANITIZER_REPORT_START_RE.search(line)
+            and not FuzzerLogParser.SANITIZER_OOM_RE.search(line),
+        )
+        return max(crashes, sanitizer_reports)
 
     @staticmethod
     def qualified_stack(info):

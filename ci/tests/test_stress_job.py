@@ -150,3 +150,61 @@ def test_unknown_error_when_nothing_classified(tmp_path):
 
     assert len(results) == 1
     assert results[0][0] == FuzzerLogParser.UNKNOWN_ERROR
+
+
+_CRASH_BANNER = (
+    "2026.09.04 00:44:57.972626 [ 1 ] {} <Fatal> BaseDaemon: "
+    "########################################\n"
+)
+
+
+def _inventory(results_omitted):
+    return [r for r in results_omitted if r[0] == "Incomplete failure inventory"]
+
+
+def test_second_report_in_one_stderr_blocks_known_issue_pass(tmp_path):
+    # Two independent ASan reports in one stderr (a restart appends to it): the parser names
+    # the first only, so an issue of that one must not pass the run over the second.
+    pairs = [
+        _pair(
+            tmp_path,
+            "main",
+            _CRASH_BANNER * 2,
+            _asan_stderr("unsigned long") + _ASAN_STDERR,
+        )
+    ]
+    omitted = []
+    results = select_replica_failures(pairs, omitted)
+
+    assert len(results) == 1
+    assert "main logged 2 reports, 1 named" in _inventory(omitted)[0][1]
+
+
+def test_crash_in_rotated_log_unnamed_blocks_known_issue_pass(tmp_path):
+    # Each server log is paired with the same stderr, whose ASan report wins every time, so the
+    # crash of the rotated log is not named.
+    stderr = tmp_path / "stderr.log"
+    stderr.write_text(_ASAN_STDERR, encoding="utf-8")
+    current = tmp_path / "clickhouse-server.err.log"
+    rotated = tmp_path / "clickhouse-server.err.log.0"
+    current.write_text(_CRASH_BANNER, encoding="utf-8")
+    rotated.write_text(_CRASH_BANNER, encoding="utf-8")
+    omitted = []
+    select_replica_failures(
+        [("main", current, stderr), ("main", rotated, stderr)], omitted
+    )
+
+    assert "main logged 2 reports, 1 named" in _inventory(omitted)[0][1]
+
+
+def test_one_report_per_replica_is_complete(tmp_path):
+    # The same report on two replicas is reported once, but each replica named its own.
+    pairs = [
+        _pair(tmp_path, "main", _CRASH_BANNER, _ASAN_STDERR),
+        _pair(tmp_path, "sc1", _CRASH_BANNER, _ASAN_STDERR),
+    ]
+    omitted = []
+    results = select_replica_failures(pairs, omitted)
+
+    assert len(results) == 1
+    assert _inventory(omitted) == []
