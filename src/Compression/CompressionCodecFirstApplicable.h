@@ -50,7 +50,11 @@ public:
     ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    UInt32 compress(const char * source, UInt32 source_size, char * dest) const override { return selected->compress(source, source_size, dest); }
+    UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const override
+    {
+        return selected->compress(source, source_size, dest, state);
+    }
+    CompressionStatePtr createCompressionState() const override { return selected->createCompressionState(); }
     std::optional<UInt32> tryGetCompressedSize(const char * source, UInt32 source_size) const override
     {
         return selected->tryGetCompressedSize(source, source_size);
