@@ -4887,9 +4887,13 @@ void Reader::initColumnsCache()
     /// and the same column can be read as different types. The owning table (the nil UUID for a
     /// table function) is a part of the identity too: the same file read by a table and by a table
     /// function gives different entries, so an entry never takes the access rules of another path
-    /// in `system.columns_cache`.
+    /// in `system.columns_cache`. An Iceberg name mapping decides which tuple element a column of a
+    /// file without field ids is read into, so its hash is a part of the identity too.
     columns_cache_identities.assign(extended_sample_block.columns(), 0);
     bool any_column = false;
+    const IcebergNameMapping * name_mapping = format_filter_info && format_filter_info->column_mapper
+        ? format_filter_info->column_mapper->getIcebergNameMapping().get()
+        : nullptr;
     for (size_t idx = 0; idx < extended_sample_block.columns(); ++idx)
     {
         const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
@@ -4901,6 +4905,8 @@ void Reader::initColumnsCache()
 
         SipHash hash;
         hash.update(cache_options.file_identity);
+        if (name_mapping)
+            hash.update(name_mapping->hash);
         hash.update(info.input_type->getName());
         hash.update(info.output_type->getName());
         hash.update(info.nullable_group);

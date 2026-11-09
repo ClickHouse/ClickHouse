@@ -274,6 +274,16 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
         && object_info.data_lake_metadata->excluded_rows->size() > 0;
 }
 
+/// The name mapping belongs to the table state the query reads, not to the schema a file was written with.
+static void setNameMappingOfQuery(ColumnMapper & mapper, const FormatFilterInfo & query_filter_info)
+{
+    const auto & query_mapper = query_filter_info.current_schema_column_mapper
+        ? query_filter_info.current_schema_column_mapper
+        : query_filter_info.column_mapper;
+    if (query_mapper)
+        mapper.setIcebergNameMapping(query_mapper->getIcebergNameMapping());
+}
+
 static bool readsIdentityPartitionColumn(
     const ActionsDAG & dag, const std::vector<std::pair<String, Field>> & identity_partition_columns)
 {
@@ -1776,6 +1786,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
                 {
+                    setNameMappingOfQuery(*mapper, *format_filter_info);
                     /// `schema_changed` is true for real schema evolution (a schema-id
                     /// mismatch: renamed / type-changed columns) AND for current-schema
                     /// files that merely carry equality deletes. Strip the reader-side
@@ -1820,7 +1831,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// Parquet data files still have to be resolved by field id.
             ColumnMapperPtr column_mapper = format_filter_info->column_mapper;
             if (!column_mapper)
+            {
                 column_mapper = configuration->getColumnMapperForObject(object_info);
+                if (column_mapper)
+                    setNameMappingOfQuery(*column_mapper, *format_filter_info);
+            }
 
             if (!format_supports_prewhere)
             {

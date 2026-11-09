@@ -31,6 +31,7 @@ DEFINE_ICEBERG_FIELD(int)
 DEFINE_ICEBERG_FIELD(manifest_path);
 DEFINE_ICEBERG_FIELD(map);
 DEFINE_ICEBERG_FIELD(name);
+DEFINE_ICEBERG_FIELD(names);
 DEFINE_ICEBERG_FIELD(required);
 DEFINE_ICEBERG_FIELD(schema);
 DEFINE_ICEBERG_FIELD(schemas);
@@ -172,6 +173,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(engine_name, engine-name);
 DEFINE_ICEBERG_FIELD_ALIAS(engine_version, engine-version);
 DEFINE_ICEBERG_FIELD_ALIAS(iceberg_version, iceberg-version);
 DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
+DEFINE_ICEBERG_FIELD_ALIAS(name_mapping_default, schema.name-mapping.default);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);

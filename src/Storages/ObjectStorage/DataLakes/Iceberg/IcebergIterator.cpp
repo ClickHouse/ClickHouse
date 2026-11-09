@@ -147,6 +147,7 @@ IcebergIterator::IcebergIterator(
             data_snapshot->schema_id_on_snapshot_commit,
             data_snapshot->partition_specs,
             manifest_filter_dag.get(),
+            data_snapshot->name_mapping.get(),
             local_context);
 
     ManifestFileCacheKeys delete_manifest_keys;
@@ -297,7 +298,8 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
         manifest_list_entry.first_row_id,
         local_context,
         manifest_filter_dag,
-        table_state_snapshot->schema_id);
+        table_state_snapshot->schema_id,
+        data_snapshot ? data_snapshot->name_mapping : nullptr);
 }
 
 Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()

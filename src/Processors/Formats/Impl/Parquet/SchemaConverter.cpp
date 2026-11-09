@@ -24,6 +24,7 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
+#include <algorithm>
 #include <array>
 #include <fmt/ranges.h>
 
@@ -75,6 +76,11 @@ void SchemaConverter::prepareForReading()
 {
     chassert(sample_block);
     checkHasColumns();
+
+    /// Like Iceberg readers, use the name mapping only for a file in which no element has a field id.
+    if (column_mapper && column_mapper->getIcebergNameMapping()
+        && std::none_of(file_metadata.schema.begin() + 1, file_metadata.schema.end(), [](const auto & e) { return e.__isset.field_id; }))
+        assignFieldIdsFromNameMapping(*column_mapper->getIcebergNameMapping());
 
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
@@ -158,14 +164,14 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     if (!column_mapper)
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
-    if (!element.__isset.field_id)
+    const std::optional<Int64> field_id = getFieldId(element);
+    if (!field_id)
     {
-        /// Does iceberg require that parquet files have field ids?
-        /// Our iceberg writer currently doesn't write them.
-        //throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Missing field_id for column {}", element.name);
+        /// In a file read through a name mapping, a field that the mapping does not name is not in the table.
+        out_not_in_schema = !name_mapped_field_ids.empty();
         return element.name;
     }
-    auto it = map.find(element.field_id);
+    auto it = map.find(*field_id);
     if (it == map.end())
     {
         /// Reserved field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are not part of
@@ -173,7 +179,7 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
         /// into data files. Those are requested by their physical name, so they are matched by name.
         static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
-        if (element.field_id > iceberg_max_user_field_id)
+        if (*field_id > iceberg_max_user_field_id)
             return element.name;
 
         /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
@@ -181,13 +187,13 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
         /// id means the file does not belong to this table, or its schema was resolved to a wrong
         /// one, which is reported rather than silently ignored.
         const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
-        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
+        if (*field_id < 1 || !last_assigned_field_id.has_value() || *field_id > *last_assigned_field_id)
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
                 "assigned that field id: the highest field id it ever assigned is {}",
                 element.name,
-                element.field_id,
+                *field_id,
                 last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
 
         out_not_in_schema = true;
@@ -208,6 +214,18 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     return it->second;
 }
 
+void SchemaConverter::setListElementColumnMapperPath(TraversalNode & subnode) const
+{
+    if (!column_mapper || schema_idx >= file_metadata.schema.size())
+        return;
+    if (const std::optional<Int64> field_id = getFieldId(file_metadata.schema.at(schema_idx)))
+    {
+        const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
+        if (auto it = field_id_map.find(*field_id); it != field_id_map.end())
+            subnode.column_mapper_path = std::string(it->second);
+    }
+}
+
 static bool isPrimitiveNode(const parq::SchemaElement & elem)
 {
     /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
@@ -216,6 +234,93 @@ static bool isPrimitiveNode(const parq::SchemaElement & elem)
     /// for primitive columns. E.g.
     /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
     return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
+static void checkSchemaDepth(size_t depth, size_t max_parser_depth)
+{
+    if (max_parser_depth != 0 && depth > max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+            max_parser_depth);
+}
+
+/// Assigns the ids of the subtree at `schema[idx]` like Iceberg's `ApplyNameMapping`, looking the element up in `scope`
+/// as `lookup_name` (its own name if not set). Returns the index after the subtree.
+static size_t assignNameMappedFieldIds(
+    const std::vector<parq::SchemaElement> & schema,
+    size_t idx,
+    std::optional<std::string_view> lookup_name,
+    const IcebergNameMapping * scope,
+    size_t depth,
+    size_t max_parser_depth,
+    std::vector<std::optional<Int64>> & out)
+{
+    checkStackSize();
+    checkSchemaDepth(depth, max_parser_depth);
+    if (idx >= schema.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
+
+    const parq::SchemaElement & element = schema[idx];
+    const IcebergNameMapping * child_scope = nullptr;
+    if (scope)
+    {
+        if (auto it = scope->fields.find(String(lookup_name.value_or(element.name))); it != scope->fields.end())
+        {
+            out[idx] = it->second.field_id;
+            child_scope = it->second.nested.get();
+        }
+    }
+
+    size_t next = idx + 1;
+    if (isPrimitiveNode(element))
+        return next;
+    if (element.num_children < 0 || size_t(element.num_children) > schema.size() - next)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Parquet schema element {} declares {} children, but only {} schema elements remain in the file",
+            element.name,
+            element.num_children,
+            schema.size() - next);
+
+    const bool is_list = element.converted_type == parq::ConvertedType::LIST || element.logicalType.__isset.LIST;
+    const bool is_map = element.converted_type == parq::ConvertedType::MAP || element.converted_type == parq::ConvertedType::MAP_KEY_VALUE
+        || element.logicalType.__isset.MAP;
+    if (is_list && element.num_children == 1 && schema[next].repetition_type == parq::FieldRepetitionType::REPEATED)
+    {
+        const parq::SchemaElement & repeated = schema[next];
+        if (repeated.num_children == 1 && !repeated.logicalType.__isset.FILE)
+            return assignNameMappedFieldIds(schema, next + 1, "element", child_scope, depth + 2, max_parser_depth, out);
+        return assignNameMappedFieldIds(schema, next, "element", child_scope, depth + 1, max_parser_depth, out);
+    }
+    if (is_map && element.num_children == 1 && schema[next].repetition_type == parq::FieldRepetitionType::REPEATED
+        && schema[next].num_children == 2)
+    {
+        next = assignNameMappedFieldIds(schema, next + 1, "key", child_scope, depth + 2, max_parser_depth, out);
+        return assignNameMappedFieldIds(schema, next, "value", child_scope, depth + 2, max_parser_depth, out);
+    }
+    for (size_t i = 0; i < size_t(element.num_children); ++i)
+        next = assignNameMappedFieldIds(schema, next, std::nullopt, child_scope, depth + 1, max_parser_depth, out);
+    return next;
+}
+
+void SchemaConverter::assignFieldIdsFromNameMapping(const IcebergNameMapping & mapping)
+{
+    const auto & schema = file_metadata.schema;
+    name_mapped_field_ids.assign(schema.size(), std::nullopt);
+    size_t idx = 1;
+    for (size_t i = 0; i < size_t(schema.at(0).num_children); ++i)
+        idx = assignNameMappedFieldIds(schema, idx, std::nullopt, &mapping, /*depth=*/ 1, options.format.max_parser_depth, name_mapped_field_ids);
+}
+
+std::optional<Int64> SchemaConverter::getFieldId(const parq::SchemaElement & element) const
+{
+    if (element.__isset.field_id)
+        return element.field_id;
+    if (name_mapped_field_ids.empty())
+        return std::nullopt;
+    return name_mapped_field_ids.at(static_cast<size_t>(&element - file_metadata.schema.data()));
 }
 
 /// Checks that the children of a group annotated with the `FILE` logical type are the fields
@@ -296,12 +401,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     checkStackSize();
     ++recursion_depth;
     SCOPE_EXIT({ --recursion_depth; });
-    if (options.format.max_parser_depth != 0 && recursion_depth > options.format.max_parser_depth)
-        throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION,
-            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
-            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
-            options.format.max_parser_depth);
+    checkSchemaDepth(recursion_depth, options.format.max_parser_depth);
 
     if (node.type_hint)
         chassert(node.requested);
@@ -317,7 +417,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     if (node.schema_context == SchemaContext::None || node.schema_context == SchemaContext::MapKey)
     {
         bool not_in_schema = false;
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.getColumnMapperPath(), not_in_schema));
 
         /// A column that is not in the data lake schema is never requested, and its physical name
         /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
@@ -553,9 +653,10 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     /// Iceberg stores only `time` as Parquet TIME, so a column of a file without field ids needs no lookup.
     bool time_as_stored_integer = false;
     if (column_mapper && primitive_type_hint && WhichDataType(primitive_type_hint).isInt64())
-        time_as_stored_integer = node.element->__isset.field_id
-            ? column_mapper->isIcebergTimeFieldId(node.element->field_id)
-            : column_mapper->hasIcebergTimeFieldIds();
+    {
+        const std::optional<Int64> field_id = getFieldId(*node.element);
+        time_as_stored_integer = field_id ? column_mapper->isIcebergTimeFieldId(*field_id) : column_mapper->hasIcebergTimeFieldIds();
+    }
 
     DataTypePtr inferred_type;
     DataTypePtr decoded_type;
@@ -766,6 +867,8 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
 
     TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
+    if (!has_inner_group)
+        setListElementColumnMapperPath(subnode);
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -786,17 +889,7 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
-
-    if (column_mapper && schema_idx < file_metadata.schema.size())
-    {
-        const auto & elem_schema = file_metadata.schema.at(schema_idx);
-        if (elem_schema.__isset.field_id)
-        {
-            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
-            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
-                subnode.name = std::string(it->second);
-        }
-    }
+    setListElementColumnMapperPath(subnode);
 
     processSubtree(subnode);
 
@@ -1105,7 +1198,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     {
         bool not_in_schema = false;
         const String & element_name = element_names_in_file.emplace_back(
-            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
+            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.getColumnMapperPath(), not_in_schema));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {

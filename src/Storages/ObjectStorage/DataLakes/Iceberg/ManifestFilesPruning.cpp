@@ -130,6 +130,7 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const DB::KeyDescription * partition_key_,
+    const DB::IcebergNameMapping * name_mapping,
     DB::ContextPtr context,
     bool require_ready_sets)
     : schema_processor(schema_processor_)
@@ -175,6 +176,11 @@ ManifestFilesPruner::ManifestFilesPruner(
             require_ready_sets);
     }
 
+    std::unordered_set<Int64> unbound_in_file_schema;
+    if (name_mapping)
+        collectUnboundFieldIds(
+            schema_processor.getIcebergTableSchemaById(initial_schema_id)->getArray(f_fields), name_mapping, unbound_in_file_schema);
+
     for (Int32 used_column_id : used_columns_in_filter)
     {
         std::optional<NameAndTypePair> name_and_type;
@@ -190,6 +196,11 @@ ManifestFilesPruner::ManifestFilesPruner(
 
             min_max_column_types.emplace(used_column_id, name_and_type->type);
             name_and_type->name = DB::backQuote(DB::toString(used_column_id));
+
+            /// The manifest metadata of a data file without field ids may describe a column the mapping does not bind to this id.
+            if (name_mapping
+                && (name_mapping->unbound_field_ids.contains(used_column_id) || unbound_in_file_schema.contains(used_column_id)))
+                columns_with_unreliable_statistics.insert(used_column_id);
         }
 
         ExpressionActionsPtr expression
@@ -437,7 +448,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 {
     const auto & partition_value = entry->normalized_partition_key_value;
 
-    if (partition_key_condition.has_value())
+    bool partition_values_reliable = true;
+    if (!columns_with_unreliable_statistics.empty() && entry->common_partition_specification)
+    {
+        for (const auto & partition_field : *entry->common_partition_specification)
+            if (columns_with_unreliable_statistics.contains(partition_field.source_id))
+                partition_values_reliable = false;
+    }
+
+    if (partition_key_condition.has_value() && partition_values_reliable)
     {
         /// The stripped key drops a set's NULL elements, so a tuple holding NULL (+inf) needs the Nullable key.
         bool holds_null = false;
@@ -475,6 +494,9 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     for (const auto & [column_id, key_condition] : min_max_key_conditions)
     {
+        if (columns_with_unreliable_statistics.contains(column_id))
+            continue;
+
         DataTypePtr column_type;
         bool has_no_nulls = true;
 

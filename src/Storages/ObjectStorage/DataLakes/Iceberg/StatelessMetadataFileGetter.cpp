@@ -224,7 +224,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         cache_key.first_row_id,
         local_context,
         nullptr,
-        table_snapshot_schema_id);
+        table_snapshot_schema_id,
+        nullptr);
 
     while (iterator->next())
     {

@@ -367,6 +367,7 @@ static void writeDataFiles(
                 const auto & metadata_object = initial_plan.initial_metadata_object;
                 if (metadata_object->has(Iceberg::f_last_column_id) && !metadata_object->isNull(Iceberg::f_last_column_id))
                     column_mapper->setLastAssignedFieldId(metadata_object->getValue<Int64>(Iceberg::f_last_column_id));
+                column_mapper->setIcebergNameMapping(Iceberg::getNameMapping(metadata_object));
                 break;
             }
         }
