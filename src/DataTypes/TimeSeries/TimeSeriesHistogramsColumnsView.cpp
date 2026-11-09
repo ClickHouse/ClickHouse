@@ -38,14 +38,11 @@ namespace
         return assert_cast<Ref>(column);
     }
 
-    /// The timestamps column as `Ref`; throws ILLEGAL_COLUMN unless it has a timestamp type of a TimeSeries table.
-    template <typename Ref>
-    Ref checkedTimestamps(Ref column)
+    void checkTimestamps(const IColumn & column)
     {
         /// `ColumnDateTime` is `ColumnUInt32`, so the second check covers `DateTime` and `UInt32`.
         if (!typeid_cast<const ColumnDateTime64 *>(&column) && !typeid_cast<const ColumnUInt32 *>(&column))
             throwUnexpectedColumn(TimeSeriesColumnNames::Timestamp, "DateTime64, DateTime or UInt32", column);
-        return column;
     }
 
     /// The sources of the columns a view is built over: the payload elements, the timestamps and the offsets of the outer arrays.
@@ -259,9 +256,10 @@ template <bool is_const>
 template <typename Source>
 TimeSeriesHistogramsColumnsViewImpl<is_const>::TimeSeriesHistogramsColumnsViewImpl(typename Base::FromSource from_source, const Source & source)
     : Base(from_source, source)
-    , timestamps(checkedTimestamps<Ref<IColumn>>(source.timestamps()))
+    , timestamps(source.timestamps())
     , outer_offsets(source.outerOffsets())
 {
+    checkTimestamps(timestamps);
 }
 
 template <bool is_const>
