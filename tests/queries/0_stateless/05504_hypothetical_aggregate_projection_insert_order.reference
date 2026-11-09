@@ -1,0 +1,8 @@
+Baseline (after PK + partition + existing indexes):
+marks: 100
+With p (aggregate projection, hypothetical):
+marks: 8
+marks_span: 8 to 39
+verdict: too close to call
+Wide, 500 rows, 500 marks
+100 marks
