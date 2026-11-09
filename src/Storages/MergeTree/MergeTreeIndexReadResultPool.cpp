@@ -94,7 +94,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = input.ranges;
-    [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
+    size_t total_granules = ranges.getNumberOfMarks();
 
     /// index analysis lists only the indexes that it applies itself
     auto add_used_index = [&](const String & index_name)
@@ -114,6 +114,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     if (rpn_template_for_part)
         partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
+    /// in a disjunction the indexes exclude granules together in the merge below
+    Names indexes_without_own_drops;
+
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -130,7 +133,6 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             continue;
         }
 
-        bool index_applied = false;
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
@@ -144,12 +146,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             vector_similarity_index_cache.get(),
             use_for_disjunctions,
             partial_eval_results,
-            log,
-            &index_applied);
+            log);
 
-        if (index_applied)
-            add_used_index(index_and_condition.index->index.name);
         ranges = std::move(filtered_ranges);
+        if (ranges.getNumberOfMarks() < total_granules)
+            add_used_index(index_and_condition.index->index.name);
+        else if (rpn_template_for_part)
+            indexes_without_own_drops.push_back(index_and_condition.index->index.name);
 
         for (auto & [name, granule] : filtered_hints.index_granules)
             index_granules[name] = std::move(granule);
@@ -164,6 +167,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                             *part_info, ranges, *rpn_template_for_part,
                             partial_eval_results, reader_settings, log);
+
+        if (ranges.getNumberOfMarks() < total_granules)
+            for (const auto & index_name : indexes_without_own_drops)
+                add_used_index(index_name);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
                         ranges.getNumberOfMarks(), total_granules, part_info->getPartName());
@@ -220,7 +227,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 if (!condition || condition->alwaysUnknownOrTrue())
                     continue;
 
-                bool index_applied = false;
+                const size_t marks_before = ranges.getNumberOfMarks();
                 auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     index_helper,
                     condition,
@@ -234,11 +241,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     vector_similarity_index_cache.get(),
                     /*use_skip_indexes_for_disjunctions=*/false,
                     no_disjunctions,
-                    log,
-                    &index_applied);
-                if (index_applied)
-                    add_used_index(index_helper->index.name);
+                    log);
                 ranges = std::move(filtered_ranges);
+                if (ranges.getNumberOfMarks() < marks_before)
+                    add_used_index(index_helper->index.name);
             }
 
             const size_t granules_after = ranges.getNumberOfMarks();

@@ -146,8 +146,7 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         bool use_skip_indexes_for_disjunctions,
         PartialDisjunctionResult & partial_disjunction_result,
-        LoggerPtr log,
-        bool * index_applied = nullptr); /// set when the index is evaluated on the part
+        LoggerPtr log);
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
         const MergeTreeDataPartInfoForReaderPtr & part_info,

@@ -29,7 +29,7 @@ SETTINGS index_granularity = 8, index_granularity_bytes = 0, min_bytes_for_wide_
 -- two parts, four granules of eight rows each
 INSERT INTO t_skip_index_accounting SELECT number, number, number, number FROM numbers(64);
 
--- the query condition cache drops seven granules before the primary key on the second run
+-- the query condition cache drops seven granules before the primary key on the second run, so the index excludes nothing
 SELECT count() FROM t_skip_index_accounting WHERE a = 5 SETTINGS use_query_condition_cache = 1, log_comment = 'skip_index_accounting_1';
 SELECT count() FROM t_skip_index_accounting WHERE a = 5 SETTINGS use_query_condition_cache = 1, log_comment = 'skip_index_accounting_2';
 -- per-part statistics do not change the totals

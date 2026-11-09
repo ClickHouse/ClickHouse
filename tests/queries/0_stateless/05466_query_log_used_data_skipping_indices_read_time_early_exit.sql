@@ -39,11 +39,12 @@ INSERT INTO t_skip_index_early_exit_dim VALUES (5);
 -- idx_a excludes every granule, so idx_b is not evaluated
 SELECT k FROM t_skip_index_early_exit WHERE a = 500 AND b = 500 SETTINGS use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_early_exit_1';
 SELECT k FROM t_skip_index_early_exit WHERE a = 500 AND b = 500 SETTINGS use_skip_indexes_on_data_read = 0, log_comment = 'skip_index_early_exit_2';
--- idx_a keeps a granule, so both indexes are evaluated
+-- idx_a keeps a granule, idx_b keeps it too and excludes nothing
 SELECT k FROM t_skip_index_early_exit WHERE a = 5 AND b = 5 SETTINGS use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_early_exit_3';
 -- idx_a excludes every granule, so the join runtime filter does not evaluate idx_b; PREWHERE keeps idx_a at read time
 SELECT count() FROM (SELECT b FROM t_skip_index_early_exit PREWHERE a = 500) AS t INNER JOIN t_skip_index_early_exit_dim AS d ON t.b = d.b
 SETTINGS use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_early_exit_4';
+-- idx_a keeps a granule, the join runtime filter evaluates idx_b on it and excludes nothing
 SELECT count() FROM (SELECT b FROM t_skip_index_early_exit PREWHERE a = 5) AS t INNER JOIN t_skip_index_early_exit_dim AS d ON t.b = d.b
 SETTINGS use_skip_indexes_on_data_read = 1, log_comment = 'skip_index_early_exit_5';
 
