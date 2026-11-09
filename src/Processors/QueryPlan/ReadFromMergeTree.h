@@ -420,6 +420,8 @@ public:
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    /// Narrows the memoized analysis by the query condition cache verdict for the current PREWHERE.
+    void applyPrewhereQueryConditionCache();
     bool isQueryWithSampling() const;
 
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
@@ -867,11 +869,6 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
-    /// The last PREWHERE whose query condition cache verdict `analyzed_result_ptr` carries, so that restoring
-    /// the same PREWHERE (e.g. after a temporary clear) does not probe and count the cache again.
-    PrewhereInfoPtr query_condition_cache_probed_prewhere;
-    /// The analysis memoized when `setTopKColumn` stamped the read: its verdict was looked up without the TopK salt.
-    AnalysisResultPtr query_condition_cache_analysis_before_top_k;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
 

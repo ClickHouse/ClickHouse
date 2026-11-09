@@ -3695,8 +3695,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         reader_settings.use_query_condition_cache = false;
 
     /// A masking policy rewrites, for this user only, the values the cached verdicts were computed on.
-    const bool table_has_masking_policy = data.hasEnabledMaskingPolicies(context_);
-    if (table_has_masking_policy)
+    if (data.hasEnabledMaskingPolicies(context_))
         reader_settings.use_query_condition_cache = false;
 
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
@@ -3736,8 +3735,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && !table_has_masking_policy
-            && allow_query_condition_cache_)
+        if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 res_parts,
                 query_info_,
@@ -3745,7 +3743,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 top_k_filter_info,
                 allow_top_k_prewhere_query_condition_cache_,
                 result.sampling.use_sampling,
-                /*consult_where=*/true,
                 mutations_snapshot,
                 *indexes,
                 context_,
@@ -4165,9 +4162,6 @@ bool ReadFromMergeTree::readsInOrder() const
 
 void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    /// Until a PREWHERE is probed here, `analyzed_result_ptr` carries the verdict of the one the read was analyzed with.
-    if (analyzed_result_ptr && !query_condition_cache_probed_prewhere)
-        query_condition_cache_probed_prewhere = query_info.prewhere_info;
     query_info.prewhere_info = prewhere_info_value;
 
     /// when PREWHERE is deferred after FINAL, a later rewrite must apply to the filter that actually runs
@@ -4197,52 +4191,53 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         prewhere_info_value));
 
     updateSortDescription();
+}
 
-    /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking policy rewrites
-    /// for this user, or a non-deterministic virtual column's value. Only a PREWHERE not probed before is probed, and a TopK read
-    /// only while its dynamic filter is pending or its analysis predates the stamp: installing a pending filter yields the
-    /// PREWHERE the pending probe already used.
-    if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
-        && query_info.prewhere_info && query_info.prewhere_info != query_condition_cache_probed_prewhere
-        && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
-        && (!top_k_filter_info || top_k_filter_info->dynamic_filter_pending
-            || analyzed_result_ptr == query_condition_cache_analysis_before_top_k)
-        && !storage_snapshot->metadata->hasUniqueKey()
-        && !data.hasEnabledMaskingPolicies(context)
-        && !filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info)
-        && MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
-            query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
+void ReadFromMergeTree::applyPrewhereQueryConditionCache()
+{
+    /// A TopK PREWHERE key also hashes the WHERE condition, which is dropped from the lookup below.
+    if (!analyzed_result_ptr || !indexes || !query_info.prewhere_info || !allow_query_condition_cache || top_k_filter_info
+        || (is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
+        || storage_snapshot->metadata->hasUniqueKey()
+        || filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
+        return;
+
+    /// The analysis has already looked up the WHERE condition.
+    SelectQueryInfo prewhere_query_info = query_info;
+    prewhere_query_info.filter_actions_dag = nullptr;
+
+    auto updated = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
+    MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+        updated->parts_with_ranges,
+        prewhere_query_info,
+        vector_search_parameters,
+        top_k_filter_info,
+        allow_top_k_prewhere_query_condition_cache,
+        updated->sampling.use_sampling,
+        mutations_snapshot,
+        *indexes,
+        context,
+        log);
+
+    UInt64 ranges = 0;
+    UInt64 marks = 0;
+    UInt64 rows = 0;
+    for (const auto & part : updated->parts_with_ranges)
     {
-        query_condition_cache_probed_prewhere = query_info.prewhere_info;
-        query_condition_cache_analysis_before_top_k = nullptr;
-
-        RangesInDataParts narrowed = analyzed_result_ptr->parts_with_ranges;
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
-            narrowed, query_info, vector_search_parameters, top_k_filter_info, allow_top_k_prewhere_query_condition_cache,
-            analyzed_result_ptr->sampling.use_sampling, /*consult_where=*/false, mutations_snapshot, *indexes, context, log);
-
-        UInt64 marks = 0;
-        UInt64 ranges = 0;
-        UInt64 rows = 0;
-        for (const auto & part : narrowed)
-        {
-            ranges += part.ranges.size();
-            marks += part.getMarksCount();
-            rows += part.getRowsCount();
-        }
-
-        if (marks < analyzed_result_ptr->selected_marks)
-        {
-            auto updated = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
-            updated->parts_with_ranges = std::move(narrowed);
-            updated->selected_parts = updated->parts_with_ranges.size();
-            updated->selected_ranges = ranges;
-            updated->selected_marks = marks;
-            updated->selected_rows = rows;
-            updated->has_exact_ranges = updated->selected_parts == 0 || analyzed_result_ptr->has_exact_ranges;
-            analyzed_result_ptr = std::move(updated);
-        }
+        ranges += part.ranges.size();
+        marks += part.getMarksCount();
+        rows += part.getRowsCount();
     }
+
+    if (marks == analyzed_result_ptr->selected_marks)
+        return;
+
+    updated->selected_parts = updated->parts_with_ranges.size();
+    updated->selected_ranges = ranges;
+    updated->selected_marks = marks;
+    updated->selected_rows = rows;
+    updated->has_exact_ranges = updated->selected_parts == 0 || analyzed_result_ptr->has_exact_ranges;
+    analyzed_result_ptr = std::move(updated);
 }
 
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
@@ -6532,7 +6527,6 @@ void ReadFromMergeTree::createReadTasksForTextIndex(IndexReadTasks text_index_re
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
-    query_condition_cache_analysis_before_top_k = analyzed_result_ptr;
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
     /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the
