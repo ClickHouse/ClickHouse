@@ -801,6 +801,10 @@ class Runner:
                     print(
                         "NOTE: docker daemon went away after the job completed - keep its result"
                     )
+                    result.set_label(
+                        "docker_daemon_death",
+                        hint=f"Docker daemon went away after the job completed, exit code [{exit_code}]",
+                    ).dump()
                     exit_code = 0
         finally:
             # Idempotent: a no-op if stop() already ran above; guarantees the
