@@ -6,6 +6,8 @@
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_algorithm = 'dpsub';
 SET query_plan_join_order_use_interesting_orders = 1;
+-- `query_plan_join_order_use_interesting_orders` requires transitive predicates; the test runner randomizes them.
+SET enable_join_transitive_predicates = 1;
 SET optimize_read_in_order = 1;
 SET max_rows_in_set_to_optimize_join = 0;
 SET query_plan_join_swap_table = 'auto';
