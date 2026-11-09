@@ -1,5 +1,5 @@
 ---
-slug: /use-cases/observability/clickstack/anomaly-detection
+slug: /clickstack/observability/features/anomaly-detection
 title: 'Anomaly detection alerts with ClickStack'
 sidebarTitle: 'Anomaly detection'
 description: 'Alert when a metric moves outside its expected range, without choosing a fixed threshold, using anomaly detection in ClickStack.'
@@ -10,9 +10,9 @@ keywords: ['ClickStack', 'observability', 'alerts', 'anomaly detection', 'z-scor
 import { Image } from "/snippets/components/Image.jsx";
 
 <Info>
-**Beta: Managed ClickStack only**
+**Beta: ClickHouse Observability only**
 
-Anomaly detection alerts are in beta and available in Managed ClickStack. They aren't available in ClickStack Open Source. Behavior and defaults may change while the feature is in beta.
+Anomaly detection alerts are in beta and available in ClickHouse Observability. They aren't available in ClickStack Open Source. Behavior and defaults may change while the feature is in beta.
 </Info>
 
 Anomaly detection alerts notify you when a value moves outside its expected range, instead of when it crosses a fixed number. ClickStack learns the expected range from the recent history of the series, so you don't need to know in advance what "too many errors" or "too slow" means for each service.
@@ -23,23 +23,23 @@ Use anomaly detection when:
 - Normal values drift over the day, so any fixed threshold is either noisy at peak or blind off-peak.
 - You care about sudden changes, such as error spikes, latency jumps, or traffic that drops to zero, more than about absolute levels.
 
-Use a [static threshold alert](/clickstack/features/alerts) when there is a hard limit you always want enforced, such as "p99 latency above 2 seconds" or "any payment failure".
+Use a [static threshold alert](/clickstack/observability/features/alerts) when there is a hard limit you always want enforced, such as "p99 latency above 2 seconds" or "any payment failure".
 
 ## Supported alerts {#supported-alerts}
 
 Anomaly detection is a detection mode on an existing alert, not a separate alert type. It's available on:
 
-- [Search alerts](/clickstack/features/alerts#search-alerts), which score the count of matching events.
-- [Dashboard chart alerts](/clickstack/features/alerts#dashboard-alerts) on charts built with the chart builder.
+- [Search alerts](/clickstack/observability/features/alerts#search-alerts), which score the count of matching events.
+- [Dashboard chart alerts](/clickstack/observability/features/alerts#dashboard-alerts) on charts built with the chart builder.
 
-Anomaly detection isn't available for [SQL-based chart alerts](/clickstack/features/alerts#sql-based-alerts). If you switch a chart with an anomaly alert to SQL mode, ClickStack converts the alert to a static threshold alert. Switch the chart back to the builder to keep anomaly detection.
+Anomaly detection isn't available for [SQL-based chart alerts](/clickstack/observability/features/alerts#sql-based-alerts). If you switch a chart with an anomaly alert to SQL mode, ClickStack converts the alert to a static threshold alert. Switch the chart back to the builder to keep anomaly detection.
 
 ## Creating an anomaly alert {#creating-an-anomaly-alert}
 
 <Steps>
 <Step title="Open the alert editor" id="open-alert-editor">
 
-Open the alert editor for a saved search or a dashboard chart, as described in [Alerts](/clickstack/features/alerts#types-of-alerts).
+Open the alert editor for a saved search or a dashboard chart, as described in [Alerts](/clickstack/observability/features/alerts#types-of-alerts).
 
 </Step>
 <Step title="Select anomaly detection" id="select-anomaly-detection">
@@ -87,7 +87,7 @@ Adjust the z-score, direction, and baseline until the backtest matches what you 
 </Step>
 <Step title="Choose a notification channel and save" id="save-anomaly-alert">
 
-Choose a webhook or other channel, as with any alert. See [Adding a webhook](/clickstack/features/alerts#add-webhook). Save the alert to start evaluating it.
+Choose a webhook or other channel, as with any alert. See [Adding a webhook](/clickstack/observability/features/alerts#add-webhook). Save the alert to start evaluating it.
 
 </Step>
 </Steps>
@@ -169,7 +169,7 @@ If an alert stays in the alerting state for 20 or more consecutive windows, the 
 
 ## Backtesting with MCP {#backtesting-with-mcp}
 
-With the [ClickStack MCP server](/clickstack/mcp), an AI assistant can backtest anomaly settings before you save them. The `clickstack_backtest_anomaly_alert` tool replays a configuration against up to 24 hours of history and reports, per series, the notifications it would have sent, along with data-quality warnings. The tool is read-only.
+With the [ClickStack MCP server](/clickstack/observability/mcp), an AI assistant can backtest anomaly settings before you save them. The `clickstack_backtest_anomaly_alert` tool replays a configuration against up to 24 hours of history and reports, per series, the notifications it would have sent, along with data-quality warnings. The tool is read-only.
 
 ## Tuning tips {#tuning-tips}
 

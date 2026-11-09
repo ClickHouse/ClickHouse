@@ -56926,5 +56926,13 @@
   {
     "source": "/clickstack/getting-started/index",
     "destination": "/clickstack/getting-started/oss"
+  },
+  {
+    "source": "/clickstack/features/anomaly-detection",
+    "destination": "/clickstack/observability/features/anomaly-detection"
+  },
+  {
+    "source": "/use-cases/observability/clickstack/anomaly-detection",
+    "destination": "/clickstack/observability/features/anomaly-detection"
   }
 ]
