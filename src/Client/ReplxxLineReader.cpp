@@ -816,7 +816,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 #if USE_CLIENT_AI
     rx.bind_key('?', [this](char32_t code)
     {
-        if (enable_ai_chat && !ai_mode && rx.get_state().text()[0] == '\0')
+        if (enable_ai_chat && !ai_mode && !reading_continuation_line && rx.get_state().text()[0] == '\0')
         {
             ai_mode = true;
             rx.set_prompt(aiModePrompt());
@@ -830,7 +830,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// backspace with text present deletes a character as usual.
     rx.bind_key(Replxx::KEY::BACKSPACE, [this](char32_t code)
     {
-        if (ai_mode && rx.get_state().text()[0] == '\0')
+        if (ai_mode && !reading_continuation_line && rx.get_state().text()[0] == '\0')
         {
             ai_mode = false;
             rx.set_prompt(sql_prompt);
@@ -1006,8 +1006,9 @@ void ReplxxLineReader::restoreHistoryPrefix()
     /// Before a history move, put the current AI-mode line back into its stored `? `-prefixed
     /// form, so replxx saves the scratch of the current entry with the prefix and a later revisit
     /// still recognizes it as an AI entry (replxx saves the edit buffer as the entry's scratch on
-    /// move). No-op in SQL mode or when the prefix is already present.
-    if (!ai_mode)
+    /// move). No-op in SQL mode or when the prefix is already present, and on a continuation line,
+    /// where `syncModeFromHistory` does not take it off again.
+    if (!ai_mode || reading_continuation_line)
         return;
     const replxx::Replxx::State state = rx.get_state();
     const std::string text = state.text();
@@ -1024,6 +1025,11 @@ void ReplxxLineReader::syncModeFromHistory()
     /// binding of `?`). The same holds for a caller that does not enable the AI chat.
 #if USE_CLIENT_AI
     if (!enable_ai_chat)
+        return;
+
+    /// A continuation line belongs to an input whose mode its first line has decided (see
+    /// `reading_continuation_line`), so a recalled entry is inserted as it is stored there.
+    if (reading_continuation_line)
         return;
 
     const replxx::Replxx::State state = rx.get_state();

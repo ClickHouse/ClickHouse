@@ -1,5 +1,6 @@
 #include <Client/LineReader.h>
 #include <Common/StringUtils.h>
+#include <base/scope_guard.h>
 
 #include <iostream>
 #include <string_view>
@@ -281,8 +282,14 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
     bool is_ai_chat = false;
     first_line_prompt = first_prompt;
 
-    while (auto status = readOneLine(need_next_line ? second_prompt : first_prompt))
+    SCOPE_EXIT({ reading_continuation_line = false; });
+    while (true)
     {
+        reading_continuation_line = !line.empty();
+        const auto status = readOneLine(need_next_line ? second_prompt : first_prompt);
+        if (!status)
+            break;
+
         if (status == RESET_LINE)
         {
             line.clear();

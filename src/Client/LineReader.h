@@ -127,6 +127,13 @@ protected:
     /// called with the continuation prompt, and an implementation can need the normal one.
     String first_line_prompt;
 
+    /// Whether `readLine` is reading a continuation line of an input it has already started. The
+    /// input is SQL or a question for the AI agent as decided by its first line, and the caller
+    /// dispatches it by `inAIMode` after it is read, so an implementation must not switch the mode
+    /// while this is set: a SQL input would otherwise be sent to the AI agent, or a question run
+    /// as SQL.
+    bool reading_continuation_line = false;
+
     virtual InputStatus readOneLine(const String & prompt);
     virtual void addToHistory(const String &) {}
 
