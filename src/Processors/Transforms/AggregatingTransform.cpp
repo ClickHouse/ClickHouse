@@ -1266,8 +1266,8 @@ private:
     size_t output_streams;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-    /// The session of an adaptive aggregation whose tables take the adaptive merge (see
-    /// `AdaptiveAggregationSession::mergesAdaptively`).
+    /// The session of an adaptive aggregation whose tables take the adaptive bucket merge (see
+    /// `AdaptiveAggregationSession::mergesByBuckets`).
     AdaptiveAggregationSessionPtr adaptive_session;
     /// When the states of one group merge together on the pool (see `Aggregator::mergeSourceStates`), in the merge by
     /// partitions and in the adaptive merge. The sources complete it with their progress.
@@ -2010,7 +2010,7 @@ void AggregatingTransform::initGenerate()
             many_data->variants.size(),
             /*external_merge=*/aggregator_has_temporary_data(),
             /*collects_statistics=*/updater != nullptr);
-    const bool adaptive_merge = adaptive_context && adaptive_context->session->mergesAdaptively();
+    const bool bucket_merge = adaptive_context && adaptive_context->session->mergesByBuckets();
 
     if (!aggregator_has_temporary_data())
     {
@@ -2027,7 +2027,7 @@ void AggregatingTransform::initGenerate()
                 max_threads,
                 output_streams,
                 updater,
-                adaptive_merge ? adaptive_context->session : nullptr,
+                bucket_merge ? adaptive_context->session : nullptr,
                 params->aggregator.parallelMergeThreshold(session)));
         }
         else

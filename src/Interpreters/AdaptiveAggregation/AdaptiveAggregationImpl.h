@@ -159,10 +159,13 @@ struct AdaptiveAggregationSession
     /// Whether some producer froze. Read after the finish barrier.
     bool engaged() const { return frozen_producers > 0; }
 
-    /// Whether the tables take the adaptive merge: when some producer froze, or when the merge prunes by the top-K,
-    /// which only the adaptive merge does (see `Aggregator::prepareAdaptiveTopKPruning`). Before the preparation
-    /// `top_k_pruning` is set for every top-K query, so the answer is only valid after it.
-    bool mergesAdaptively() const
+    /// Whether the tables take the adaptive bucket merge (see `Aggregator::mergeAndConvertAdaptiveBucket`):
+    /// when some producer froze, because only that merge drains the staged records, or when the merge prunes
+    /// by the top-K, which only that merge does (see `Aggregator::prepareAdaptiveTopKPruning`). Otherwise the
+    /// tables take the ordinary merge, which merges single-level tables by partitions through their cell
+    /// indexes when every table has one. Before the preparation `top_k_pruning` is set for every top-K
+    /// query, so the answer is only valid after it.
+    bool mergesByBuckets() const
     {
         chassert(top_k_pruning_prepared);
         return engaged() || top_k_pruning;

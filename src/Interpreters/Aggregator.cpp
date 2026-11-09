@@ -5759,9 +5759,10 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     /// If at least one of the options is two-level, then convert all the options into two-level ones, if there are not such.
     /// Note - perhaps it would be more optimal not to convert single-level versions before the merge, but merge them separately, at the end.
-    /// The adaptive merge reads every source by bucket: a two-level table through its buckets, a single-level one through
-    /// its cell index. So it converts the single-level tables without an index, also when no table is two-level.
-    const bool adaptive_merge = adaptive_session && adaptive_session->mergesAdaptively();
+    /// The adaptive bucket merge reads every source by bucket: a two-level table through its buckets, a
+    /// single-level one through its cell index. So it converts the single-level tables without an index, also
+    /// when no table is two-level.
+    const bool bucket_merge = adaptive_session && adaptive_session->mergesByBuckets();
 
     bool has_at_least_one_two_level = false;
     for (const auto & variant : non_empty_data)
@@ -5773,11 +5774,11 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         }
     }
 
-    if (has_at_least_one_two_level || adaptive_merge)
+    if (has_at_least_one_two_level || bucket_merge)
     {
         std::vector<AggregatedDataVariants *> variants_to_convert;
         for (auto & variant : non_empty_data)
-            if (!variant->isTwoLevel() && !(adaptive_merge && variant->cell_index))
+            if (!variant->isTwoLevel() && !(bucket_merge && variant->hasCellIndex()))
                 variants_to_convert.push_back(variant.get());
 
         /// Convert in parallel. Initializing a two-level variant allocates and zeroes 256 bucket
@@ -5835,15 +5836,15 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     /// destination goes in front of the tables and takes over their arenas, as the largest table does otherwise. It reads
     /// the cells of a bucket from a two-level table's bucket, or from the cell index of a single-level one, which its
     /// producer built (see `finishAdaptiveProducer`).
-    if (adaptive_merge)
+    if (bucket_merge)
         non_empty_data.insert(non_empty_data.begin(), createAdaptiveMergeDestination());
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 
     for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
     {
-        const bool indexed_source_of_destination
-            = adaptive_merge && non_empty_data[i]->cell_index && convertToTwoLevelTypeIfPossible(non_empty_data[i]->type) == first->type;
+        const bool indexed_source_of_destination = bucket_merge && non_empty_data[i]->hasCellIndex()
+            && convertToTwoLevelTypeIfPossible(non_empty_data[i]->type) == first->type;
         if (first->type != non_empty_data[i]->type && !indexed_source_of_destination)
             throw Exception(ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS, "Cannot merge different aggregated data variants.");
 
