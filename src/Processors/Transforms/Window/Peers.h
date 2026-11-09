@@ -11,6 +11,7 @@ struct PeersBounds
 {
     RowPoint start;
     RowPoint end;
+    int64_t group_index = 0;
     bool start_visible = false;
     bool end_visible = false;
 };
@@ -24,7 +25,6 @@ public:
 
     const RowPoint & current() const;
     const PeersBounds & bounds() const;
-    int64_t currentGroupIndex(const SlidingBlocks & blocks) const;
 
 private:
     RowPoint current_row;
