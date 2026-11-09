@@ -250,6 +250,45 @@ void checkColumnDeclarationIsSupportedByAlter(const ASTColumnDeclaration & ast_c
 
 }
 
+bool AlterCommand::isAlterCommand(const ASTAlterCommand & command)
+{
+    switch (command.type)
+    {
+        case ASTAlterCommand::ADD_COLUMN:
+        case ASTAlterCommand::DROP_COLUMN:
+        case ASTAlterCommand::MODIFY_COLUMN:
+        case ASTAlterCommand::COMMENT_COLUMN:
+        case ASTAlterCommand::MODIFY_COMMENT:
+        case ASTAlterCommand::MODIFY_DATABASE_COMMENT:
+        case ASTAlterCommand::MODIFY_ORDER_BY:
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+        case ASTAlterCommand::REMOVE_SAMPLE_BY:
+        case ASTAlterCommand::ADD_INDEX:
+        case ASTAlterCommand::ADD_STATISTICS:
+        case ASTAlterCommand::MODIFY_STATISTICS:
+        case ASTAlterCommand::ADD_CONSTRAINT:
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
+        case ASTAlterCommand::ADD_PROJECTION:
+        case ASTAlterCommand::MODIFY_PROJECTION:
+        case ASTAlterCommand::DROP_CONSTRAINT:
+        case ASTAlterCommand::DROP_INDEX:
+        case ASTAlterCommand::DROP_STATISTICS:
+        case ASTAlterCommand::DROP_PROJECTION:
+        case ASTAlterCommand::MODIFY_TTL:
+        case ASTAlterCommand::REMOVE_TTL:
+        case ASTAlterCommand::MODIFY_SETTING:
+        case ASTAlterCommand::MODIFY_DATABASE_SETTING:
+        case ASTAlterCommand::RESET_SETTING:
+        case ASTAlterCommand::MODIFY_QUERY:
+        case ASTAlterCommand::MODIFY_REFRESH:
+        case ASTAlterCommand::RENAME_COLUMN:
+        case ASTAlterCommand::MODIFY_SQL_SECURITY:
+            return true;
+        default:
+            return false;
+    }
+}
+
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -739,6 +778,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         return command;
     }
 
+    chassert(!isAlterCommand(*command_ast));
     return {};
 }
 

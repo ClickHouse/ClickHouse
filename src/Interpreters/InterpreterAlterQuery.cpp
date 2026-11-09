@@ -201,9 +201,13 @@ void pullUpTupleElementDefaultsInAlterQuery(
         auto has_nested = [&](const String & name) { return has_nested_in(result.column_names, name); };
 
         /// `AlterCommands::prepare` ignores a conditional command (`IF EXISTS`, `IF NOT EXISTS`) by checking
-        /// whether its column exists in the table before the query, not after the preceding commands.
+        /// whether its column exists in the table before its segment, not after the preceding commands.
         /// `AlterCommand::apply` then checks once more against the columns so far, as done below.
-        const NameSet initial_column_names = result.column_names;
+        /// The query is executed as segments of consecutive commands of the same kind (see
+        /// `parseAlterCommandSegments` and `runCommandSegments`), and each segment of `AlterCommands`
+        /// is prepared with the metadata committed by the preceding segments.
+        NameSet initial_column_names;
+        bool starts_alter_segment = true;
         auto existed_initially = [&](const String & name)
         {
             return initial_column_names.contains(name) || (share_nested_offsets && has_nested_in(initial_column_names, name));
@@ -212,6 +216,19 @@ void pullUpTupleElementDefaultsInAlterQuery(
         for (size_t i = 0; i < commands.size(); ++i)
         {
             const auto & command = commands[i]->as<const ASTAlterCommand &>();
+            if (!AlterCommand::isAlterCommand(command))
+            {
+                /// A mutation, partition or execute command does not change the columns, but it ends the segment.
+                starts_alter_segment = true;
+                continue;
+            }
+
+            if (starts_alter_segment)
+            {
+                initial_column_names = result.column_names;
+                starts_alter_segment = false;
+            }
+
             if (command.type == ASTAlterCommand::ADD_COLUMN)
             {
                 /// The same columns as `columnsAddedByAlter`: a `Nested` column is added as its flattened
@@ -337,6 +354,8 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         }
         else if (auto alter_command = AlterCommand::parse(command_ast))
         {
+            /// `pullUpTupleElementDefaultsInAlterQuery` relies on this to find the segments.
+            chassert(AlterCommand::isAlterCommand(*command_ast));
             auto reset_command = alter_command->extractSettingsResets();
             auto & alter_commands = segments_holder.take<AlterCommands>();
             /// The reset goes first, as it does inside one command, where the resets are applied
