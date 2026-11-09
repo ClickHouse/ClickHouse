@@ -2166,7 +2166,9 @@ void AggregatingTransform::consume(Chunk chunk)
         }
         else
         {
-            dictionary_sharding_enabled |= previous_single_dictionary != nullptr;
+            /// Same restriction as on a dictionary switch: the shards are invisible to `spill`.
+            if (!spilling_under_memory_pressure)
+                dictionary_sharding_enabled |= previous_single_dictionary != nullptr;
             previous_single_dictionary = nullptr;
             if (!retireCurrentDictionary())
             {

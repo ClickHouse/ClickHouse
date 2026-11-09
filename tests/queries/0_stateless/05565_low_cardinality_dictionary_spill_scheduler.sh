@@ -72,7 +72,7 @@ run_aggregation()
             optimize_read_in_order = 1,
             query_plan_remove_redundant_sorting = 0,
             optimize_aggregation_in_order = 0,
-            enable_adaptive_aggregator = 0,
+            enable_adaptive_aggregator = 0, use_columns_cache = 0, enable_parallel_replicas = 0,
             collect_hash_table_stats_during_aggregation = 0,
             max_rows_to_group_by = 0,
             enable_adaptive_memory_spill_scheduler = ${scheduler},
@@ -100,3 +100,91 @@ run_aggregation 0 1073741824
 
 echo "with the spill scheduler"
 run_aggregation 1 0
+
+# An ineligible block between two dictionaries also enables dictionary shards:
+# the producer sees dictionary A, then a `Compact` part (not eligible), then dictionary C.
+# With the scheduler, C must stay in the producer-local table: the second
+# `low_cardinality_single_dictionary` aggregation method is the dictionary-shard state.
+${CLICKHOUSE_CLIENT} -q "
+    SET max_threads = 1, max_insert_threads = 1;
+
+    DROP TABLE IF EXISTS ${TABLE_NAME};
+    CREATE TABLE ${TABLE_NAME}
+    (
+        id UInt64,
+        key LowCardinality(String),
+        value UInt64
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS
+        index_granularity = 1,
+        index_granularity_bytes = '10Mi',
+        min_rows_for_wide_part = 0,
+        min_bytes_for_wide_part = 0,
+        min_level_for_wide_part = 0;
+
+    SYSTEM STOP MERGES ${TABLE_NAME};
+
+    INSERT INTO ${TABLE_NAME} VALUES (0, 'shared', 10);
+    INSERT INTO ${TABLE_NAME} VALUES (2, 'shared', 30);
+
+    ALTER TABLE ${TABLE_NAME} MODIFY SETTING min_rows_for_wide_part = 2;
+    INSERT INTO ${TABLE_NAME} VALUES (1, 'other', 20);
+    ALTER TABLE ${TABLE_NAME} MODIFY SETTING min_rows_for_wide_part = 0;
+
+    SELECT throwIf(
+        count() != 3 OR countIf(part_type = 'Wide') != 2 OR countIf(part_type = 'Compact') != 1,
+        'Expected two one-row Wide parts and one one-row Compact part')
+    FROM system.parts
+    WHERE database = currentDatabase() AND table = '${TABLE_NAME}' AND active
+    FORMAT Null;
+"
+
+run_ineligible_transition()
+{
+    local scheduler="$1"
+    local max_bytes_before_external_group_by="$2"
+
+    ${CLICKHOUSE_CLIENT_TRACE} -q "
+        SELECT key, count(), sum(value)
+        FROM
+        (
+            SELECT key, value
+            FROM ${TABLE_NAME}
+            ORDER BY id
+        )
+        GROUP BY key
+        ORDER BY key
+        SETTINGS
+            max_threads = 1,
+            max_block_size = 1,
+            preferred_block_size_bytes = 0,
+            optimize_read_in_order = 1,
+            query_plan_remove_redundant_sorting = 0,
+            optimize_aggregation_in_order = 0,
+            enable_adaptive_aggregator = 0, use_columns_cache = 0, enable_parallel_replicas = 0,
+            collect_hash_table_stats_during_aggregation = 0,
+            max_rows_to_group_by = 0,
+            enable_adaptive_memory_spill_scheduler = ${scheduler},
+            max_bytes_before_external_group_by = ${max_bytes_before_external_group_by},
+            max_bytes_ratio_before_external_group_by = 0,
+            group_by_two_level_threshold = 0,
+            group_by_two_level_threshold_bytes = 0;
+    " 2>"${TRACE_FILE}" || {
+        query_status=$?
+        cat "${TRACE_FILE}" >&2
+        return "$query_status"
+    }
+
+    awk '
+        /Aggregator: Aggregation method: low_cardinality_single_dictionary/ { print "index aggregation" }
+        /Aggregator: Aggregation method normalized to:/ { print "value aggregation" }
+    ' "${TRACE_FILE}"
+}
+
+echo "ineligible transition without the spill scheduler"
+run_ineligible_transition 0 0
+
+echo "ineligible transition with the spill scheduler"
+run_ineligible_transition 1 0
