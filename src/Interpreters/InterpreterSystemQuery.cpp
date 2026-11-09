@@ -591,10 +591,12 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearIndexUncompressedCache();
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            /// The privilege is global, also for `FOR TABLE`.
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             if (table_id.empty())
+            {
+                /// Clearing the whole cache evicts the entries of every table, so it requires the privilege on all tables.
+                getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
                 system_context->clearVectorSimilarityIndexCache();
+            }
             else
                 clearVectorSimilarityIndexCacheForTable(query);
             break;
@@ -2885,6 +2887,9 @@ void InterpreterSystemQuery::clearTimeSeriesCaches()
 
 void InterpreterSystemQuery::clearVectorSimilarityIndexCacheForTable(const ASTSystemQuery & query)
 {
+    /// Check the access before looking up the table, so that a user without the privilege can't learn whether the table exists.
+    getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, table_id);
+
     auto table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load);
     if (!merge_tree)
@@ -3026,8 +3031,13 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
+        }
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
             break;

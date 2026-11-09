@@ -1338,6 +1338,8 @@ SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR T
 
 With `FOR TABLE`, only the cache entries of the given `MergeTree` table are removed, and with `INDEX`, only those of the given vector similarity index of the table. The cache entries of the other tables and indexes stay cached.
 
+With `FOR TABLE`, the statement requires the `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE` privilege on the table. Without it, the statement clears the entries of all tables, so it requires the privilege on all tables (`ON *.*`).
+
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
 Clears the cache of HTTP connection pools used for outgoing connections.

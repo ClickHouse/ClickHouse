@@ -6,13 +6,15 @@
 --     looks it up again)
 
 -- Tests `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE <table> [INDEX <index>]`: it evicts the cache entries of that
--- table (or of that index of the table), and keeps the entries of other tables and indexes.
+-- table (or of that index of the table), and keeps the entries of other tables and indexes. It requires the privilege on
+-- that table only.
 
 DROP TABLE IF EXISTS tab1;
 DROP TABLE IF EXISTS tab2;
 DROP TABLE IF EXISTS tab_outdated;
 DROP TABLE IF EXISTS tab_minmax;
 DROP TABLE IF EXISTS tab_memory;
+DROP USER IF EXISTS user_05508;
 
 SELECT '-- Formatting';
 
@@ -190,6 +192,24 @@ SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_minmax INDEX idx_minmax;
 CREATE TABLE tab_memory (id Int32) ENGINE = Memory;
 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab_memory; -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Access';
+
+-- With `FOR TABLE`, the statement requires the privilege on that table, so the privilege can be granted on a table.
+CREATE USER user_05508;
+GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON tab1 TO user_05508;
+EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1;
+EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab1 INDEX idx1;
+EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE tab2; -- { serverError ACCESS_DENIED }
+
+-- The access is checked before the table is looked up, so that the user can't learn whether a table exists.
+EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE FOR TABLE does_not_exist; -- { serverError ACCESS_DENIED }
+
+-- Without a table, the statement clears the entries of all tables, so it requires the privilege on all tables.
+EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE; -- { serverError ACCESS_DENIED }
+GRANT SYSTEM DROP VECTOR SIMILARITY INDEX CACHE ON *.* TO user_05508;
+EXECUTE AS user_05508 SYSTEM DROP VECTOR SIMILARITY INDEX CACHE;
+
+DROP USER user_05508;
 DROP TABLE tab1;
 DROP TABLE tab2;
 DROP TABLE tab_outdated;
