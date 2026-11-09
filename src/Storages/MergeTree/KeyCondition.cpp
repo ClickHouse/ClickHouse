@@ -3361,6 +3361,13 @@ static bool keyTransformSeparatesEqualSetElements(const IColumn & set_column, co
 
     if (which_input_type.isFloat())
     {
+        /// A `LowCardinality` column keeps a single dictionary entry for both spellings, so the two probes
+        /// cannot be built in the transform's own input type: they collapse into one, and the transform
+        /// would look like it maps them alike. The sorting key of a stored row can still have been computed
+        /// from either spelling, so such a domain is declined instead.
+        if (dag.input_type->lowCardinality())
+            return true;
+
         /// Both spellings go through in one column, in the transform's own input type, so neither the
         /// conversion nor the transform can treat them differently for any other reason.
         auto probe_column = dag.input_type->createColumn();
