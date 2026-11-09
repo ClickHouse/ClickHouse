@@ -418,6 +418,29 @@ function check_server_start()
     [ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 }
 
+function check_async_load_databases()
+{
+    # async_load_databases opens the listener before tables finish loading, deferring load
+    # failures to the background loader. Wait for it to drain, then fail on FAILED/CANCELED jobs.
+    local deadline=$((SECONDS + 300))
+    while [ "$SECONDS" -lt "$deadline" ] \
+        && [ "$(clickhouse-client --handshake_timeout_ms=30000 --receive_timeout 30 --query "SELECT count() FROM system.asynchronous_loader WHERE status = 'PENDING'" 2>/dev/null)" != "0" ]; do
+        sleep 5
+    done
+
+    # An empty result means no failures only if the query succeeded, so its error must reach the artifact.
+    clickhouse-client --handshake_timeout_ms=30000 --receive_timeout 30 --ast_fuzzer_runs=0 --query \
+        "SELECT status, job, splitByChar('\n', coalesce(exception, ''))[1] FROM system.asynchronous_loader WHERE status IN ('FAILED', 'CANCELED', 'PENDING') ORDER BY status FORMAT TSVRaw" \
+        > /test_output/async_loader_failures.txt 2>&1 || echo "verdict query exit code: $?" >> /test_output/async_loader_failures.txt
+
+    if [ -s /test_output/async_loader_failures.txt ]; then
+        echo -e "Async database load failed or unknown after restart (see async_loader_failures.txt)$FAIL$(head_escaped /test_output/async_loader_failures.txt)" >> /test_output/test_results.tsv
+    else
+        rm -f /test_output/async_loader_failures.txt
+        echo -e "No async database load failures after restart$OK" >> /test_output/test_results.tsv
+    fi
+}
+
 function check_logs_for_critical_errors()
 {
     # ignore:
