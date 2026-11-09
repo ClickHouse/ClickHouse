@@ -60,12 +60,12 @@ void Peers::enterPartition(RowNumber partition_start)
 void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
     if (!peers_bounds.end_visible)
-        advancePeerGroupEnd(blocks, partition, peerGroupAt(blocks, peers_bounds.start.location), peers_bounds);
+        advancePeerGroupEnd(blocks, partition, peerGroupAt(blocks, current_row.location), peers_bounds);
 
     if (current_row.row_index_in_partition >= peers_bounds.end.row_index_in_partition)
     {
         peers_bounds.start = peers_bounds.end;
-        advancePeerGroupEnd(blocks, partition, peerGroupAt(blocks, peers_bounds.start.location), peers_bounds);
+        advancePeerGroupEnd(blocks, partition, peerGroupAt(blocks, current_row.location), peers_bounds);
     }
 }
 

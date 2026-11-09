@@ -207,7 +207,7 @@ Int64 Frame::firstRowToRead() const
 {
     const WindowFrame & window_frame = params.window_description.frame;
 
-    if (window_frame.begin_type == WindowFrame::BoundaryType::Offset)
+    if (window_frame.begin_type != WindowFrame::BoundaryType::Unbounded)
         return frame_bounds.start.row_index_in_partition;
 
     if (window_frame.end_type != WindowFrame::BoundaryType::Unbounded)
