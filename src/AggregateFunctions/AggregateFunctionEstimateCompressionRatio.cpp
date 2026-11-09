@@ -480,7 +480,11 @@ private:
     IColumn & pendingOf(Data & data_ref) const
     {
         if (!data_ref.pending)
+        {
             data_ref.pending = source_type->createColumn();
+            /// Otherwise the first row allocates 4 KiB, which a group of a few rows does not need.
+            data_ref.pending->reserve(1);
+        }
         return *data_ref.pending;
     }
 
@@ -534,7 +538,7 @@ private:
         auto & part = *data_ref.part;
         for (auto & [_, stream] : part.streams)
             if (stream->offset() >= min_compress_block_size)
-                stream->next();
+                stream->endBlock();
         part.serialization->serializeBinaryBulkWithMultipleStreams(*converted, 0, converted->size(), part.settings, part.state);
 
         data_ref.source_bytes += rows_bytes;
@@ -547,7 +551,7 @@ private:
     /// The rows serialized in their own type, as the function measures them without a target type.
     UInt64 sourceBytes(const IColumn & rows) const
     {
-        NullWriteBuffer out;
+        NullWriteBufferWithMemory out(16384);
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&out](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &out; };
         ISerialization::SerializeBinaryBulkStatePtr state;
@@ -579,7 +583,9 @@ private:
                     return;
                 auto it = stream_layouts.find(name);
                 auto layout = it != stream_layouts.end() ? it->second : resolveStream(path);
-                part->streams.emplace(std::move(name), std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size));
+                part->streams.emplace(
+                    std::move(name),
+                    std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE));
             },
             ISerialization::SubstreamData(part->serialization).withType(target_type).withColumn(first_granule.getPtr()));
 
