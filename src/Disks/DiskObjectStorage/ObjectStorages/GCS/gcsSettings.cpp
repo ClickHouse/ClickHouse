@@ -733,6 +733,24 @@ private:
     std::unique_ptr<HTTPConnectionPools::ExternalConnection> connection;
 };
 
+/// The probe the transport's session pool consults before reusing an idle keep-alive session: a
+/// session whose socket is not known to be idle (the peer closed it, or sent an unsolicited response)
+/// is dropped instead of being handed to the next request.
+::ClickHouse::PocoRestSessionStaleCheckOption::Type makeGCSSessionStaleCheck()
+{
+    return [](Poco::Net::HTTPClientSession & session) -> bool
+    {
+        try
+        {
+            return getSocketState(session.socket()) != SocketState::Idle;
+        }
+        catch (const Poco::Exception &)
+        {
+            return true;
+        }
+    };
+}
+
 }
 
 std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & settings, const ContextPtr & context)
@@ -787,14 +805,17 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     /// options below. So these options carry everything that has to apply to those requests as well:
     /// the TLS context, the connect timeout, the stall timeouts (rather than the transport's default of
     /// 120 seconds, so a stalled token endpoint cannot hold a query far beyond `request_timeout_ms`),
-    /// and the accounting in the connection group, so token exchanges are subject to the same
-    /// connection limits and socket buffer sizes as the storage requests.
+    /// the accounting in the connection group, so token exchanges are subject to the same connection
+    /// limits and socket buffer sizes as the storage requests, and the staleness check of pooled sessions.
     gc::Options token_request_options;
     token_request_options.set<::ClickHouse::PocoRestSslContextProviderOption>(ssl_context_provider);
     token_request_options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
     token_request_options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
     token_request_options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
     token_request_options.set<::ClickHouse::PocoRestSessionAccountingOption>(session_accounting);
+    /// The token requests share the transport's session pool, so their sessions need the same staleness
+    /// check before reuse as the storage requests' ones.
+    token_request_options.set<::ClickHouse::PocoRestSessionStaleCheckOption>(makeGCSSessionStaleCheck());
     /// The key file is read once: the `token_uri` checks below and the credentials have to see the same
     /// contents, even if the file is rewritten in between.
     String service_account_key;
@@ -975,18 +996,7 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
             setIOSchedulingSessionHooks(session, request);
         });
 
-    options.set<::ClickHouse::PocoRestSessionStaleCheckOption>(
-        [](Poco::Net::HTTPClientSession & session) -> bool
-        {
-            try
-            {
-                return getSocketState(session.socket()) != SocketState::Idle;
-            }
-            catch (const Poco::Exception &)
-            {
-                return true;
-            }
-        });
+    options.set<::ClickHouse::PocoRestSessionStaleCheckOption>(makeGCSSessionStaleCheck());
 
     /// A disk carries its own resolver (the disk section can override the server-wide proxy); the
     /// SQL surface does not, and resolves the server-wide configuration here, which is what an S3
