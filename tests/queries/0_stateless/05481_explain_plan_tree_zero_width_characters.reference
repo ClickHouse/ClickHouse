@@ -1,0 +1,64 @@
+-- the table name and the hash key keep their zero-width code points
+Output: क्ष MOD 10, count()
+
+     ┌─ F2 · main ────────────────────┐
+     │                                │
+     │  ┌───────────────────────────┐ │
+     │  │ GatherSend (final_result) │ │
+     │  └─────────────▲─────────────┘ │
+     │                │               │
+     │ ┌──────────────┴─────────────┐ │
+     │ │ GatherReceive (exchange_1) │ │
+     │ └──────────────▲─────────────┘ │
+     └────────────────┼───────────────┘
+                      │ exchange_1 · gather
+                      │ streaming · 3 → 1
+     ┌─ F1 · stage_1 ─┼────────────────┐
+     │                │                │
+     │   ┌────────────┴────────────┐   │
+     │   │ GatherSend (exchange_1) │   │
+     │   └────────────▲────────────┘   │
+     │                │                │
+     │  ┌─────────────┴─────────────┐  │
+     │  │ MergingAggregated (merge) │  │
+     │  ├───────────────────────────┤  │
+     │  │ Keys: क्ष MOD 10           │  │
+     │  │ Aggregates: count()       │  │
+     │  └─────────────▲─────────────┘  │
+     │                │                │
+     │ ┌──────────────┴──────────────┐ │
+     │ │ ShuffleReceive (exchange_0) │ │
+     │ └──────────────▲──────────────┘ │
+     └────────────────┼────────────────┘
+                      │ exchange_0 · hash(क्ष MOD 10)
+                      │ streaming · 3 → 3
+┌─ F0 · stage_0 ──────┼────────────────────┐
+│                     │                    │
+│       ┌─────────────┴────────────┐       │
+│       │ ShuffleSend (exchange_0) │       │
+│       └─────────────▲────────────┘       │
+│                     │                    │
+│         ┌───────────┴───────────┐        │
+│         │ Aggregating (partial) │        │
+│         ├───────────────────────┤        │
+│         │ Keys: क्ष MOD 10       │        │
+│         │ Aggregates: count()   │        │
+│         │ Skip merging: 0       │        │
+│         └───────────▲───────────┘        │
+│                     │                    │
+│ ┌───────────────────┴──────────────────┐ │
+│ │ ReadFromMergeTree (db_XXXXXXXX.café) │ │
+│ ├──────────────────────────────────────┤ │
+│ │ Read type: Default                   │ │
+│ │ Parts: 1 | Granules: 13              │ │
+│ │ Output: क्ष                           │ │
+│ └──────────────────────────────────────┘ │
+└──────────────────────────────────────────┘
+
+Exchanges:
+  exchange_0: hash(क्ष MOD 10), streaming, F0 -> F1, buckets 3 -> 3
+  exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
+Levels: [F0] -> [F1] -> [F2]
+table name with the combining accent: 1
+table name without it: 0
+hash key with the virama: 2

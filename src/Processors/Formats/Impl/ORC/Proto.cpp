@@ -102,7 +102,7 @@ void WireReader::skip(WireType wire_type)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported protobuf wire type {} in ORC metadata", static_cast<int>(wire_type));
 }
 
-bool WireReader::readRepeatedVarint(WireType wire_type, std::vector<UInt64> & out)
+bool WireReader::readRepeatedVarint(WireType wire_type, VectorWithMemoryTracking<UInt64> & out)
 {
     if (wire_type == LENGTH_DELIMITED)
     {
@@ -152,7 +152,7 @@ void WireWriter::writeBytes(UInt32 field, std::string_view value)
     out.append(value);
 }
 
-void WireWriter::writePackedVarint(UInt32 field, const std::vector<UInt64> & values)
+void WireWriter::writePackedVarint(UInt32 field, const VectorWithMemoryTracking<UInt64> & values)
 {
     if (values.empty())
         return;
@@ -162,7 +162,7 @@ void WireWriter::writePackedVarint(UInt32 field, const std::vector<UInt64> & val
     writeBytes(field, packed);
 }
 
-void WireWriter::writePackedFixed64(UInt32 field, const std::vector<UInt64> & values)
+void WireWriter::writePackedFixed64(UInt32 field, const VectorWithMemoryTracking<UInt64> & values)
 {
     if (values.empty())
         return;
@@ -230,6 +230,12 @@ std::string_view readBytesField(WireReader & r, WireType t)
 {
     expectWireType(t, WireReader::LENGTH_DELIMITED);
     return r.readBytes();
+}
+
+void checkCount(size_t count, size_t max_count, std::string_view what)
+{
+    if (count >= max_count)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many {} in ORC metadata, at most {} expected", what, max_count);
 }
 
 template <typename F>
@@ -358,8 +364,8 @@ TimestampStatistics parseTimestampStatistics(std::string_view data)
             case 2: res.maximum = readSignedVarintField(r, type); return true;
             case 3: res.minimum_utc = readSignedVarintField(r, type); return true;
             case 4: res.maximum_utc = readSignedVarintField(r, type); return true;
-            case 5: res.minimum_nanos = static_cast<Int32>(readVarintField(r, type)); return true;
-            case 6: res.maximum_nanos = static_cast<Int32>(readVarintField(r, type)); return true;
+            case 5: res.minimum_nanos = readVarintField(r, type); return true;
+            case 6: res.maximum_nanos = readVarintField(r, type); return true;
             default: return false;
         }
     });
@@ -564,8 +570,8 @@ std::string serializeTimestampStatistics(const TimestampStatistics & s)
     if (s.minimum_utc) w.writeSignedVarint(3, *s.minimum_utc);
     if (s.maximum_utc) w.writeSignedVarint(4, *s.maximum_utc);
     /// `int32` fields: negative values are sign-extended to 64 bits.
-    if (s.minimum_nanos) w.writeVarint(5, static_cast<UInt64>(static_cast<Int64>(*s.minimum_nanos)));
-    if (s.maximum_nanos) w.writeVarint(6, static_cast<UInt64>(static_cast<Int64>(*s.maximum_nanos)));
+    if (s.minimum_nanos) w.writeVarint(5, *s.minimum_nanos);
+    if (s.maximum_nanos) w.writeVarint(6, *s.maximum_nanos);
     return out;
 }
 
@@ -710,14 +716,16 @@ std::string ColumnStatistics::serialize() const
     return out;
 }
 
-void RowIndex::parse(std::string_view data)
+void RowIndex::parse(std::string_view data, size_t max_entries)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         if (field != 1)
             return false;
+        std::string_view entry_data = readBytesField(r, type);
+        checkCount(entry.size(), max_entries, "row index entries");
         auto & e = entry.emplace_back();
-        parseMessage(readBytesField(r, type), [&](WireReader & rr, UInt32 f, WireType t)
+        parseMessage(entry_data, [&](WireReader & rr, UInt32 f, WireType t)
         {
             switch (f)
             {
@@ -746,12 +754,13 @@ std::string RowIndex::serialize() const
     return out;
 }
 
-void BloomFilterIndex::parse(std::string_view data)
+void BloomFilterIndex::parse(std::string_view data, size_t max_entries)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         if (field != 1)
             return false;
+        checkCount(bloom_filter.size(), max_entries, "bloom filters");
         BloomFilter bf;
         parseMessage(readBytesField(r, type), [&](WireReader & rr, UInt32 f, WireType t)
         {
@@ -786,14 +795,20 @@ void BloomFilterIndex::parse(std::string_view data)
     });
 }
 
-void StripeFooter::parse(std::string_view data)
+void StripeFooter::parse(std::string_view data, size_t max_columns)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         switch (field)
         {
             case 1: streams.push_back(parseStream(readBytesField(r, type))); return true;
-            case 2: columns.push_back(parseColumnEncoding(readBytesField(r, type))); return true;
+            case 2:
+            {
+                std::string_view encoding_data = readBytesField(r, type);
+                checkCount(columns.size(), max_columns, "column encodings");
+                columns.push_back(parseColumnEncoding(encoding_data));
+                return true;
+            }
             case 3: writer_timezone = std::string(readBytesField(r, type)); return true;
             case 4: readBytesField(r, type); ++encryption_variants; return true;
             default: return false;
@@ -829,18 +844,22 @@ std::string StripeFooter::serialize() const
     return out;
 }
 
-void Metadata::parse(std::string_view data)
+void Metadata::parse(std::string_view data, size_t max_stripes, size_t max_columns)
 {
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         if (field != 1)
             return false;
+        std::string_view stripe_data = readBytesField(r, type);
+        checkCount(stripe_stats.size(), max_stripes, "stripe statistics");
         StripeStatistics stats;
-        parseMessage(readBytesField(r, type), [&](WireReader & rr, UInt32 f, WireType t)
+        parseMessage(stripe_data, [&](WireReader & rr, UInt32 f, WireType t)
         {
             if (f != 1)
                 return false;
-            stats.col_stats.emplace_back().parse(readBytesField(rr, t));
+            std::string_view column_data = readBytesField(rr, t);
+            checkCount(stats.col_stats.size(), max_columns, "column statistics");
+            stats.col_stats.emplace_back().parse(column_data);
             return true;
         });
         stripe_stats.push_back(std::move(stats));
@@ -865,6 +884,8 @@ std::string Metadata::serialize() const
 
 void Footer::parse(std::string_view data)
 {
+    /// The statistics are parsed after the types, to limit their number by the number of columns.
+    VectorWithMemoryTracking<std::string_view> statistics_data;
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         switch (field)
@@ -875,7 +896,7 @@ void Footer::parse(std::string_view data)
             case 4: types.push_back(parseType(readBytesField(r, type))); return true;
             case 5: metadata.push_back(parseUserMetadataItem(readBytesField(r, type))); return true;
             case 6: number_of_rows = readVarintField(r, type); return true;
-            case 7: statistics.emplace_back().parse(readBytesField(r, type)); return true;
+            case 7: statistics_data.push_back(readBytesField(r, type)); return true;
             case 8: row_index_stride = readUInt32Field(r, type); return true;
             case 9: writer = readUInt32Field(r, type); return true;
             case 10: readBytesField(r, type); has_encryption = true; return true;
@@ -883,6 +904,12 @@ void Footer::parse(std::string_view data)
             default: return false;
         }
     });
+    if (statistics_data.size() > types.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many column statistics in ORC footer: {}, the file has {} columns",
+            statistics_data.size(), types.size());
+    statistics.resize(statistics_data.size());
+    for (size_t i = 0; i < statistics_data.size(); ++i)
+        statistics[i].parse(statistics_data[i]);
 }
 
 std::string Footer::serialize() const

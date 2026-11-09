@@ -507,6 +507,7 @@
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
     M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
     M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
+    M(DistrCacheTemporaryDataConnectionsBypassingPool, "Distributed Cache client metric. Number of connections opened by temporary data bypassing the connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
     M(DistrCacheWriteBuffers, "Number of distributed cache write buffers") \
@@ -516,6 +517,10 @@
     M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
     M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
     M(DistrCacheServerRegistryConnections, "Number of active connections to ClickHouse server from Distributed Cache (not marked as cancelled because of limit)") \
+    M(DistrCacheServerCommittedTemporaryFiles, "Number of committed temporary files owned by this distributed cache server process") \
+    M(DistrCacheServerCommittedTemporaryFilesBytes, "Total size in bytes of committed temporary files owned by this distributed cache server process") \
+    M(DistrCacheTemporaryDataServers, "Number of servers with committed temporary data") \
+    M(DistrCacheTemporaryDataActiveIds, "Number of active committed temporary-data IDs") \
     \
     M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
     M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
