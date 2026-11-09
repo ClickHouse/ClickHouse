@@ -240,16 +240,16 @@ private:
         client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];
         client_configuration.metadata_service = settings.auth_settings[S3AuthSetting::metadata_service];
         client_configuration.request_token_path = settings.auth_settings[S3AuthSetting::request_token_path];
-        /// Propagate the explicit Google ADC triple so a user-supplied `gcp_oauth` is accepted by the restriction.
+        /// Propagate the explicit Google ADC triple or service account key so a user-supplied `gcp_oauth` is accepted by the restriction.
         client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
         client_configuration.google_service_account_key = settings.auth_settings[S3AuthSetting::google_service_account_key];
 
-        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple is only
-        /// ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so when the
-        /// `gcp_oauth` is not query-supplied, the triple here is server config too and must be dropped with it.
-        /// Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple would be treated as explicit and mint a
+        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple or service
+        /// account key is only ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so
+        /// when the `gcp_oauth` is not query-supplied, the credential here is server config too and must be dropped
+        /// with it. Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple or a key would be treated as explicit and mint a
         /// server bearer token to the user-chosen endpoint. A query-supplied `gcp_oauth` is left in place (and
         /// reaches the central `getCredentialsProvider` rejection when it has no ADC triple).
         if (boost::iequals(client_configuration.http_client, "gcp_oauth")

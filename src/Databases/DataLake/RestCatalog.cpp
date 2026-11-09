@@ -1086,7 +1086,7 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
 {
     /// Google Cloud OAuth2 for BigLake.
     /// Uses GCP metadata service or Application Default Credentials to get access token.
-    /// Only use Google OAuth if explicitly configured (google_project_id, google_adc_client_id or google_service_account_key).
+    /// Only use Google OAuth if explicitly configured (`google_project_id`, `google_adc_client_id` or `google_service_account_key`).
     /// https://developers.google.com/identity/protocols/oauth2
     if (usesGoogleOAuth())
     {
