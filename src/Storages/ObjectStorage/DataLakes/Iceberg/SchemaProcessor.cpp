@@ -752,6 +752,8 @@ void collectInitialDefaults(
         collectInitialDefaults(type_object->get(f_key), map_type.getKeyType(), Nested::concatenateName(path, "key"), result);
         collectInitialDefaults(type_object->get(f_value), map_type.getValueType(), Nested::concatenateName(path, "value"), result);
     }
+}
+
 /// `type_name` is canonical. The geo types are `geometry`, `geometry(<crs>)`, `geography`, `geography(<crs>)`
 /// and `geography(<crs>,<algorithm>)`, with a non-empty `<crs>`.
 std::optional<String> findGeoTypeViolation(const String & type_name)
