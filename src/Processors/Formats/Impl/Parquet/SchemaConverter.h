@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -26,14 +29,14 @@ struct SchemaConverter
     const ReadOptions & options;
     const Block * sample_block;
     const ColumnMapper * column_mapper = nullptr;
-    std::vector<String> external_columns;
+    VectorWithMemoryTracking<String> external_columns;
 
-    std::vector<PrimitiveColumnInfo> primitive_columns;
-    std::vector<OutputColumnInfo> output_columns;
+    VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
+    VectorWithMemoryTracking<OutputColumnInfo> output_columns;
 
     size_t schema_idx = 1;
     size_t primitive_column_idx = 0;
-    std::vector<LevelInfo> levels;
+    VectorWithMemoryTracking<LevelInfo> levels;
     /// Actual recursion depth of processSubtree. Tracked unconditionally because the def-level
     /// counter only advances for OPTIONAL/REPEATED nodes, so REQUIRED-group nesting would bypass it.
     size_t recursion_depth = 0;
@@ -44,7 +47,7 @@ struct SchemaConverter
     size_t nullable_tuple_group_depth = 0;
 
     /// The key is the parquet column name, without ColumnMapper.
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    UnorderedMapWithMemoryTracking<String, GeoColumnMetadata> geo_columns;
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
@@ -52,7 +55,7 @@ struct SchemaConverter
     /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
     /// parse according to its own settings.
     SchemaConverter(const FileFooter &, const ReadOptions &, const Block *,
-                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
+                    std::optional<UnorderedMapWithMemoryTracking<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
 
     void prepareForReading();
     NamesAndTypesList inferSchema();
@@ -174,8 +177,8 @@ private:
 
     /// The field ids of the top-level fields of the file, and of the fields of each of its structs by the path of the
     /// struct; nullopt if one of them has no field id.
-    std::optional<std::unordered_set<Int64>> top_level_field_ids;
-    std::unordered_map<String, std::optional<std::unordered_set<Int64>>> struct_field_ids;
+    std::optional<UnorderedSetWithMemoryTracking<Int64>> top_level_field_ids;
+    UnorderedMapWithMemoryTracking<String, std::optional<UnorderedSetWithMemoryTracking<Int64>>> struct_field_ids;
 };
 
 }
