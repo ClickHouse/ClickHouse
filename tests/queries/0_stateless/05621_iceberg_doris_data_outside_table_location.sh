@@ -19,7 +19,7 @@ cd "$CUR_DIR/data_iceberg/doris" || exit 1
 # with the partition values (identity `id`, `hour(ts)`) given explicitly.
 # The scheme of the data files (`s3://`) differs from the scheme of the table location (`s3a://`), and currently
 # the path is mangled into `arehouse/data/multi_partition2/...`, so the query fails with FILE_DOESNT_EXIST
-# (bug path-resolver).
+# (https://github.com/ClickHouse/ClickHouse/issues/129990).
 echo "multi_partition2"
 $CLICKHOUSE_LOCAL -q "
     SELECT id, toTimeZone(ts, 'Asia/Shanghai'), val FROM icebergLocal('warehouse/wh/test_db/multi_partition2') ORDER BY val;

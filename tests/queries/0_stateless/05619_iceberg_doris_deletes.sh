@@ -5,7 +5,7 @@
 # The expected results are taken from `regression-test/data/external_table_p0/iceberg/test_iceberg_equality_delete.out`,
 # `test_iceberg_position_delete.out` and `test_iceberg_read_with_posdelete.out`.
 # Position deletes against ORC data files currently fail with "Position deletes are only supported
-# for data files of Parquet format in Iceberg" (bug orc-avro-position-deletes): the `_orc` tables and
+# for data files of Parquet format in Iceberg" (https://github.com/ClickHouse/ClickHouse/issues/130001): the `_orc` tables and
 # `iceberg_position_gen_data` (ORC) must give the same results as the Parquet tables.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

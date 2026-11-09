@@ -21,8 +21,9 @@ cd "$CUR_DIR/data_iceberg/doris" || exit 1
 # `rename_col8`, `rename_col9`, `rename_col10` are moved to the front, `col_add` and `col_add2` are added,
 # and five more rows are inserted with the new schema.
 # The arrays and maps of the rows with id 5 and 15 are NULL, which is read as empty arrays and maps.
-# Currently any query to these tables fails with "Bad get: has Decimal64, requested Decimal128" in `EvolutionFunctionStruct`
-# because of the widened decimal inside an array (https://github.com/ClickHouse/ClickHouse/issues/130024).
+# The widened decimal inside an array used to make the tables unreadable (https://github.com/ClickHouse/ClickHouse/issues/130024).
+# Currently a subcolumn of the evolved struct (`rename_col7.add`, `rename_col7.x`) fails with NOT_FOUND_COLUMN_IN_BLOCK
+# (https://github.com/ClickHouse/ClickHouse/issues/128304), while the whole struct is read correctly.
 for table in complex_orc_v1_schema_change complex_orc_v2_schema_change complex_parquet_v1_schema_change complex_parquet_v2_schema_change
 do
     echo "$table"

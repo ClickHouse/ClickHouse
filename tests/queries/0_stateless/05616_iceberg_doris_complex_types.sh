@@ -20,9 +20,7 @@ cd "$CUR_DIR/data_iceberg/doris" || exit 1
 #     col5  map<int,map<int,map<int,map<int,map<float,map<double,struct<x:int,y:array<double>>>>>>>>,
 #     col6  struct<xx:array<int>,yy:array<map<double,float>>,zz:struct<xxx:struct<xxxx:struct<xxxxx:decimal(13,2)>>>>
 # The map key of `col3` is a list. In the Parquet files it is a LIST group inside the key of a MAP group,
-# which is currently inferred as `Tuple(list Array(Tuple(element ...)))` instead of `Array(Nullable(Float32))`,
-# so reading the Parquet tables fails with "Requested type of column col3.key doesn't match parquet schema"
-# (bug parquet-list-map-key).
+# which must be read as `Array(Nullable(Float32))` (https://github.com/ClickHouse/ClickHouse/issues/130000).
 for table in complex_orc_v1 complex_orc_v2 complex_parquet_v1 complex_parquet_v2
 do
     echo "$table"
