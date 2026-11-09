@@ -43,16 +43,48 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --parallel_replicas_for_clust
 
 rm -rf "${ICEBERG_PATH}"
 
-# Paimon matches top-level columns by field id: the first file of `paimon_row_rename` was written before
-# `s` was renamed to `r`, so it is read under its own names. Per-run copy: the flaky check runs this test
-# concurrently with itself.
-PAIMON_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}"
+# Paimon matches top-level columns by field id: the first data file is written under schema 0, before `s` was
+# renamed to `r`, so it is read under its own names.
+PAIMON_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}/paimon_row_rename"
 rm -rf "${PAIMON_PATH}"
-mkdir -p "${PAIMON_PATH}"
-cp -r "${CUR_DIR}/data_minio/paimon_row_rename/" "${PAIMON_PATH}/"
+mkdir -p "${PAIMON_PATH}"/{schema,snapshot,manifest,bucket-0}
+
+for schema in '0 s' '1 r'; do
+    read -r id name <<< "${schema}"
+    echo '{"version":3,"id":'"${id}"',"highestFieldId":3,"partitionKeys":[],"primaryKeys":[],"options":{},"timeMillis":0,"fields":[{"id":0,"name":"id","type":"BIGINT"},{"id":1,"name":"'"${name}"'","type":{"type":"ROW","fields":[{"id":2,"name":"a","type":"BIGINT"},{"id":3,"name":"b","type":"BIGINT"}]}}]}' > "${PAIMON_PATH}/schema/schema-${id}"
+done
+echo -n '1' > "${PAIMON_PATH}/snapshot/LATEST"
+echo '{"id":1,"schemaId":1,"baseManifestList":"manifest-list-1","deltaManifestList":"manifest-list-1","commitUser":"test","commitIdentifier":0,"commitKind":"APPEND","timeMillis":0}' > "${PAIMON_PATH}/snapshot/snapshot-1"
+
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${PAIMON_PATH}/bucket-0/data-0.parquet', 'Parquet', 'id Nullable(Int64), s Tuple(a Nullable(Int64), b Nullable(Int64))')
+        VALUES (1, (10, 100)), (2, (20, NULL));
+    INSERT INTO FUNCTION file('${PAIMON_PATH}/bucket-0/data-1.parquet', 'Parquet', 'id Nullable(Int64), r Tuple(a Nullable(Int64), b Nullable(Int64))')
+        VALUES (3, (30, 300));
+"
+
+SIZE_0=$(wc -c < "${PAIMON_PATH}/bucket-0/data-0.parquet")
+SIZE_1=$(wc -c < "${PAIMON_PATH}/bucket-0/data-1.parquet")
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION file('${PAIMON_PATH}/manifest/manifest-list-1', 'Avro',
+        '_FILE_NAME String, _FILE_SIZE Int64, _NUM_ADDED_FILES Int64, _NUM_DELETED_FILES Int64,
+         _PARTITION_STATS Tuple(_MAX_VALUES String, _MIN_VALUES String, _NULL_COUNTS Array(Int64)), _SCHEMA_ID Int64')
+        VALUES ('manifest-1', 1, 2, 0, ('', '', []), 1);
+    INSERT INTO FUNCTION file('${PAIMON_PATH}/manifest/manifest-1', 'Avro',
+        '_KIND Int32, _PARTITION String, _BUCKET Int32, _TOTAL_BUCKETS Int32,
+         _FILE Tuple(_FILE_NAME String, _FILE_SIZE Int64, _ROW_COUNT Int64, _MIN_KEY String, _MAX_KEY String,
+             _KEY_STATS Tuple(_MAX_VALUES String, _MIN_VALUES String, _NULL_COUNTS Array(Int64)),
+             _VALUE_STATS Tuple(_MAX_VALUES String, _MIN_VALUES String, _NULL_COUNTS Array(Int64)),
+             _MIN_SEQUENCE_NUMBER Int64, _MAX_SEQUENCE_NUMBER Int64, _SCHEMA_ID Int64, _LEVEL Int32,
+             _EXTRA_FILES Array(String), _CREATION_TIME Nullable(DateTime64(6)), _DELETE_ROW_COUNT Nullable(Int64),
+             _EMBEDDED_FILE_INDEX Nullable(String), _FILE_SOURCE Nullable(Int8), _VALUE_STATS_COLS Array(Int64))')
+        VALUES
+            (0, unhex('00000000'), 0, 1, ('data-0.parquet', ${SIZE_0}, 2, '', '', ('', '', []), ('', '', []), 0, 0, 0, 0, [], NULL, NULL, NULL, NULL, [])),
+            (0, unhex('00000000'), 0, 1, ('data-1.parquet', ${SIZE_1}, 1, '', '', ('', '', []), ('', '', []), 0, 0, 1, 0, [], NULL, NULL, NULL, NULL, []));
+"
 
 ${CLICKHOUSE_CLIENT} --enable_paimon_storage_engine=1 --query "
-    CREATE TABLE t_paimon ENGINE = PaimonLocal('${PAIMON_PATH}/paimon_row_rename');
+    CREATE TABLE t_paimon ENGINE = PaimonLocal('${PAIMON_PATH}');
     SELECT id, r.a, r.b FROM t_paimon ORDER BY id;
     CREATE ROW POLICY policy_05616_paimon ON t_paimon USING r.a >= 20 TO ALL;
     SELECT id, r.b FROM t_paimon ORDER BY id;
