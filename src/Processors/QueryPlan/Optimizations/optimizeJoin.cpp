@@ -1830,15 +1830,21 @@ std::vector<std::vector<JoinActionRef>> sortedEquivalenceClasses(
     const EquivalenceClasses<JoinActionRef> & classes, const std::unordered_map<const ActionsDAG::Node *, size_t> & input_node_map)
 {
     std::unordered_set<const void *> seen;
-    std::vector<std::vector<JoinActionRef>> result;
+    /// By the position of the first member: a column is a member of one class only.
+    std::map<size_t, std::vector<JoinActionRef>> by_first_member;
     for (const auto & [member, members] : classes.getMemberToClassMap())
     {
         if (!seen.insert(members.get()).second)
             continue;
-        auto & sorted = result.emplace_back(members->begin(), members->end());
+        std::vector<JoinActionRef> sorted(members->begin(), members->end());
         std::ranges::sort(sorted, {}, [&](const JoinActionRef & ref) { return input_node_map.at(ref.getNode()); });
+        const size_t first_position = input_node_map.at(sorted.front().getNode());
+        by_first_member.emplace(first_position, std::move(sorted));
     }
-    std::ranges::sort(result, {}, [&](const auto & members) { return input_node_map.at(members.front().getNode()); });
+    std::vector<std::vector<JoinActionRef>> result;
+    result.reserve(by_first_member.size());
+    for (auto & [_, members] : by_first_member)
+        result.push_back(std::move(members));
     return result;
 }
 

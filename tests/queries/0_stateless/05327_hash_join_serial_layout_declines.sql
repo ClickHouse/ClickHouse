@@ -50,10 +50,10 @@ SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 201, log_comm
 SELECT count() FROM l ANY LEFT JOIN r ON l.a = r.a
 SETTINGS hash_join_layout = 'auto', parallel_hash_join_threshold = 200, log_comment = '05327_any_estimate_equal' FORMAT Null;
 
--- Without the join order optimization the join has no estimate, so on one thread it builds the parallel
+-- A filtered array join leaves the right side without an estimate, so on one thread the join builds the parallel
 -- layout with one slot. The control has the estimate.
-SELECT count() FROM l JOIN r ON l.a = r.a
-SETTINGS max_threads = 1, hash_join_layout = 'auto', parallel_hash_join_threshold = 201, query_plan_optimize_join_order_limit = 0, log_comment = '05327_one_thread' FORMAT Null;
+SELECT count() FROM l JOIN (SELECT e AS a FROM r ARRAY JOIN [a] AS e WHERE e % 3 != 7) AS rf ON l.a = rf.a
+SETTINGS max_threads = 1, hash_join_layout = 'auto', parallel_hash_join_threshold = 201, log_comment = '05327_one_thread' FORMAT Null;
 SELECT count() FROM l JOIN r ON l.a = r.a
 SETTINGS max_threads = 1, hash_join_layout = 'auto', parallel_hash_join_threshold = 201, log_comment = '05327_one_thread_control' FORMAT Null;
 
