@@ -13,16 +13,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-HTTP_PORT=$(python3 -c "
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-")
+PORT_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.port"
+rm -f "$PORT_FILE"
 
-python3 - "$HTTP_PORT" <<'EOF' &
-import sys, threading
+python3 - "$PORT_FILE" <<'EOF' &
+import os, sys, threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 configs = {
@@ -58,7 +53,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Handler).serve_forever()
+server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+with open(sys.argv[1] + '.tmp', 'w') as f:
+    f.write(str(server.server_address[1]))
+os.replace(sys.argv[1] + '.tmp', sys.argv[1])
+server.serve_forever()
 EOF
 HTTP_PID=$!
 
@@ -67,9 +66,15 @@ cleanup() {
     for n in 1 2 3 4; do
         ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_${n}" 2>/dev/null
     done
+    rm -f "$PORT_FILE"
 }
 trap cleanup EXIT
 
+for _ in {1..100}; do
+    [ -s "$PORT_FILE" ] && break
+    sleep 0.1
+done
+HTTP_PORT=$(cat "$PORT_FILE")
 for _ in {1..100}; do
     if [ "$(${CLICKHOUSE_CURL} -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${HTTP_PORT}/ready")" = "200" ]; then
         break

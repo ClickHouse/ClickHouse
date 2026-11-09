@@ -345,6 +345,18 @@ RestCatalog::Config RestCatalog::loadConfig(const CatalogState & catalog_state, 
     auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
     parseCatalogConfigurationSettings(overrides_object, result, result.override_snapshot_loading_mode);
 
+    auto warn_if_unknown = [&](std::string_view section, const std::string & mode)
+    {
+        if (!mode.empty() && mode != "all" && mode != "refs")
+            LOG_WARNING(
+                log,
+                "Unknown `snapshot-loading-mode` '{}' in the `{}` of the catalog configuration, it is treated as `all`",
+                mode,
+                section);
+    };
+    warn_if_unknown("defaults", result.default_snapshot_loading_mode);
+    warn_if_unknown("overrides", result.override_snapshot_loading_mode);
+
     LOG_DEBUG(log, "Parsed catalog configuration settings: {}", result.toString());
     return result;
 }

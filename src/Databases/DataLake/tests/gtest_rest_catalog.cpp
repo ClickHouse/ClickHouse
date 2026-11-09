@@ -106,9 +106,10 @@ enum class CatalogShape
     /// an empty namespace.
     TableListingServerErrorWithNamespaceBody,
     /// `/v1/config` advertises `snapshot-loading-mode` (case-insensitive): `REFS` in `defaults` (Databricks Unity Catalog
-    /// advertises `refs` there), or `all` in `overrides`.
+    /// advertises `refs` there), `all` in `overrides`, or an unknown value, `bogus`, in `overrides`.
     SnapshotLoadingModeRefsDefault,
     SnapshotLoadingModeAllOverride,
+    SnapshotLoadingModeUnknownOverride,
 };
 
 bool advertisesDoomedNamespace(CatalogShape shape)
@@ -216,6 +217,8 @@ public:
                 writeJSON(response, R"({"defaults":{"snapshot-loading-mode":"REFS"},"overrides":{}})");
             else if (shape == CatalogShape::SnapshotLoadingModeAllOverride)
                 writeJSON(response, R"({"defaults":{},"overrides":{"snapshot-loading-mode":"all"}})");
+            else if (shape == CatalogShape::SnapshotLoadingModeUnknownOverride)
+                writeJSON(response, R"({"defaults":{},"overrides":{"snapshot-loading-mode":"bogus"}})");
             else
                 writeJSON(response, R"({"defaults":{},"overrides":{}})");
             return;
@@ -906,6 +909,9 @@ TEST(RestCatalog, LoadTableFollowsSnapshotLoadingModeOfCatalogConfig)
         CatalogShape::SnapshotLoadingModeRefsDefault, DB::DatabaseDataLakeSnapshotLoadingMode::ALL));
     EXPECT_FALSE(loadTableRequestsReferencedSnapshots(
         CatalogShape::SnapshotLoadingModeAllOverride, DB::DatabaseDataLakeSnapshotLoadingMode::REFS));
+    /// An unknown value is treated as `all`.
+    EXPECT_FALSE(loadTableRequestsReferencedSnapshots(
+        CatalogShape::SnapshotLoadingModeUnknownOverride, DB::DatabaseDataLakeSnapshotLoadingMode::REFS));
 }
 
 /// The schemas of a table returned by the catalog are checked like those of a metadata file.
