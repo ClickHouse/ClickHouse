@@ -384,7 +384,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
     auto actual_file_names = getActualFileNamesOnDisk(file_names);
     for (const auto & name : actual_file_names)
     {
-        auto path = relative_path / name;
+        auto path = relative_path / pathFromString(name);
         size_t file_size = disk->getFileSize(pathToGenericString(path));
 
         auto & file_desc = description.files[name];
@@ -502,7 +502,10 @@ void DataPartStorageOnDiskBase::backup(
 
     auto backup_file = [&](const String & filepath)
     {
-        auto filepath_on_disk = part_path_on_disk / filepath;
+        /// `filepath` is UTF-8, so it enters `fs::path` through `pathFromString`, and the path stays an `fs::path`
+        /// until the `IDisk` boundaries: assigning a `String` to it would use the narrow (active code page)
+        /// conversion on Windows.
+        fs::path filepath_on_disk = part_path_on_disk / pathFromString(filepath);
         auto filepath_in_backup = joinBackupPath(part_path_in_backup, filepath);
 
         if (is_projection_part && allow_backup_broken_projection && !disk->existsFile(pathToGenericString(filepath_on_disk)))
@@ -510,9 +513,9 @@ void DataPartStorageOnDiskBase::backup(
 
         if (make_temporary_hard_links)
         {
-            String hardlink_filepath = pathToGenericString(temp_part_dir / filepath);
-            disk->createHardLink(pathToGenericString(filepath_on_disk), hardlink_filepath);
-            filepath_on_disk = hardlink_filepath;
+            fs::path hardlink_filepath = temp_part_dir / pathFromString(filepath);
+            disk->createHardLink(pathToGenericString(filepath_on_disk), pathToGenericString(hardlink_filepath));
+            filepath_on_disk = std::move(hardlink_filepath);
         }
 
         std::optional<UInt64> file_size;
