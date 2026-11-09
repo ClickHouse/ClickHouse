@@ -99,7 +99,7 @@ public:
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
-    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
@@ -131,7 +131,6 @@ public:
             state.covered_end = end;
             data.push_back(sum);
         }
-        return state.covered_start;
     }
 
 private:
@@ -153,7 +152,7 @@ public:
         return WindowFunctionRequirements{.frame = true};
     }
 
-    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (Int64 i = 0; i < bounds.rows; ++i)
@@ -175,7 +174,6 @@ public:
             }
             data.push_back(max);
         }
-        return bounds.frame_start.back();
     }
 
 private:
@@ -205,7 +203,7 @@ public:
     void createState(char * place) const override { new (place) DecayedSumState(); }
     void resetPartition(char * place) const override { new (place) DecayedSumState(); }
 
-    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
@@ -237,7 +235,6 @@ public:
             state.covered_end = end;
             data.push_back(count);
         }
-        return state.covered_start;
     }
 
 private:
@@ -264,7 +261,7 @@ public:
     void createState(char * place) const override { new (place) DecayedAvgState(); }
     void resetPartition(char * place) const override { new (place) DecayedAvgState(); }
 
-    Int64 evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         DecayedAvgState & state = *reinterpret_cast<DecayedAvgState *>(place);
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
@@ -314,7 +311,6 @@ public:
             state.covered_end = end;
             data.push_back(avg);
         }
-        return state.covered_start;
     }
 
 private:

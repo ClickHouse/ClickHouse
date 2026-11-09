@@ -23,12 +23,11 @@ public:
     void pop();
     void startPartition(Int64 closed_partition_length);
 
-    const WindowArguments & view(size_t function);
+    WindowArguments view(size_t function) const;
 
 private:
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> argument_positions;
     VectorWithMemoryTracking<DevectorWithMemoryTracking<WindowArguments::Block>> function_blocks;
-    VectorWithMemoryTracking<WindowArguments> views;
     Int64 partition_begin_position = 0;
     Int64 end_position = 0;
 };
