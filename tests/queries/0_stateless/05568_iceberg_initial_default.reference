@@ -88,6 +88,10 @@ readd, current schema	1	(9)	9
 readd, current schema	1	(9)	9
 t.j = 9	(9)
 t.j = 9	(9)
+readd nested	((10,9))
+readd nested	(10,9)
+readd nested	(10,9)
+readd nested	10	9
 dotted	7	(11)
 ORC
 schema ids	[0]
@@ -106,6 +110,10 @@ readd, current schema	1	(9)	9
 readd, current schema	1	(9)	9
 t.j = 9	(9)
 t.j = 9	(9)
+readd nested	((10,9))
+readd nested	(10,9)
+readd nested	(10,9)
+readd nested	10	9
 dotted	7	(11)
 Avro
 schema ids	[0]

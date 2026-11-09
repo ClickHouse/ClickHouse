@@ -57,6 +57,10 @@ if mode == "readd":
     fields.append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9, "write-default": 9})
     struct = next(f for f in fields if f["name"] == "t")["type"]
     struct["fields"] = [{"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9, "write-default": 9}]
+elif mode == "readd_nested":
+    struct = next(f for f in fields if f["name"] == "t")["type"]["fields"][0]["type"]
+    struct["fields"] = [f for f in struct["fields"] if f["name"] != "j"]
+    struct["fields"].append({"id": new_id(), "name": "j", "required": False, "type": "int", "initial-default": 9, "write-default": 9})
 elif mode == "bad_long":
     fields.append({"id": new_id(), "name": "d", "required": False, "type": "long", "initial-default": "abc"})
 elif mode == "bad_timestamp":
@@ -293,6 +297,23 @@ for format in Parquet ORC Avro; do
         ${LOCAL} -q "
             ${nested_filter}, input_format_orc_filter_push_down = 1;
             ${nested_filter}, input_format_orc_filter_push_down = 0;
+        "
+    fi
+
+    # A projected struct is read by field id too: the re-added `t.s.j` is not the dropped one.
+    if [ "${format}" != Avro ]; then
+        table="${format}_readd_nested"
+        ${LOCAL} --allow_insert_into_iceberg=1 -q "
+            CREATE TABLE t (t Tuple(s Tuple(x Nullable(Int32), j Nullable(Int32)))) ENGINE = IcebergLocal('${table}/', '${format}');
+            INSERT INTO t VALUES (((10, 100)));
+        "
+        add_fields "${table}" readd_nested
+        bind_to_current_schema "${table}"
+        ${LOCAL} -q "
+            SELECT 'readd nested', t FROM icebergLocal('${table}/');
+            SELECT 'readd nested', tupleElement(t, 's') FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 1;
+            SELECT 'readd nested', tupleElement(t, 's') FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 0;
+            SELECT 'readd nested', t.s.x, t.s.j FROM icebergLocal('${table}/') SETTINGS optimize_functions_to_subcolumns = 1;
         "
     fi
 

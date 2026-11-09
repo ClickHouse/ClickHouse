@@ -3107,6 +3107,36 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     }
 }
 
+/// The type of the struct whose requested subcolumns have the given paths below it and types, to read it under the data
+/// lake schema: every element is a tuple element of the requested ones, an element requested as a whole has its type.
+static DataTypePtr makeTupleTypeHintFromSubcolumns(const VectorWithMemoryTracking<std::pair<String, DataTypePtr>> & subcolumns)
+{
+    Names names;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> whole_types;
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::pair<String, DataTypePtr>>> nested_subcolumns;
+    for (const auto & [path, type] : subcolumns)
+    {
+        auto [name, rest] = Nested::splitName(path);
+        if (!whole_types.contains(name) && !nested_subcolumns.contains(name))
+            names.push_back(name);
+        if (rest.empty())
+            whole_types[name] = type;
+        else
+            nested_subcolumns[name].emplace_back(rest, type);
+    }
+
+    DataTypes types;
+    types.reserve(names.size());
+    for (const auto & name : names)
+    {
+        if (auto it = whole_types.find(name); it != whole_types.end())
+            types.push_back(it->second);
+        else
+            types.push_back(makeTupleTypeHintFromSubcolumns(nested_subcolumns.at(name)));
+    }
+    return std::make_shared<DataTypeTuple>(types, names);
+}
+
 void ORCColumnToCHColumn::orcColumnsToCHChunk(
     Chunk & res,
     NameToColumnPtr & name_to_column_ptr,
@@ -3160,8 +3190,22 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
                     auto nested_table_type = Nested::collect(nested_columns).front().type;
 
                     const auto & orc_column_with_type = orc_nested_column_it->second;
+                    /// Under the data lake schema the fields of a struct are matched by field id and get their defaults, which
+                    /// needs the type of the struct itself, not of a requested element of it.
+                    if (column_mapper && orc_column_with_type.second->getKind() == ORC::STRUCT)
+                    {
+                        VectorWithMemoryTracking<std::pair<String, DataTypePtr>> subcolumns;
+                        for (const auto & name_and_type : nested_columns)
+                            subcolumns.emplace_back(name_and_type.name.substr(nested_table_name.size() + 1), name_and_type.type);
+                        nested_table_type = makeTupleTypeHintFromSubcolumns(subcolumns);
+                    }
                     ColumnsWithTypeAndName cols = {readColumnFromORCColumn(
-                        orc_column_with_type.first, orc_column_with_type.second, nested_table_name, false, nested_table_type)};
+                        orc_column_with_type.first,
+                        orc_column_with_type.second,
+                        nested_table_name,
+                        false,
+                        nested_table_type,
+                        column_mapper ? nested_table_name : String{})};
                     BlockPtr block_ptr = std::make_shared<Block>(cols);
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
                     nested_tables[resolved_nested_table_name] = {block_ptr, column_extractor};
