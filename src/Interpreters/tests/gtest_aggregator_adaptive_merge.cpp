@@ -144,7 +144,8 @@ Aggregator::Params makeAdaptiveParams(const Names & keys, const AggregateDescrip
         /*serialize_string_with_zero_byte_=*/false, /*enable_parallel_single_level_merge_=*/false,
         /*enable_packed_string_keys_=*/true, /*enable_adaptive_aggregator_=*/true,
         /*adaptive_aggregator_freeze_threshold_=*/1, /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
-        /*adaptive_aggregator_disable_thaw_=*/false, /*use_aggregation_memory_tracker_=*/true);
+        /*adaptive_aggregator_disable_thaw_=*/false, /*adaptive_aggregator_combine_arg_min_max_=*/false,
+        /*use_aggregation_memory_tracker_=*/true);
 }
 
 }

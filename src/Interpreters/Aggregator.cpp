@@ -424,6 +424,7 @@ Aggregator::Params::Params(
     UInt64 adaptive_aggregator_freeze_threshold_,
     UInt64 adaptive_aggregator_freeze_threshold_bytes_,
     bool adaptive_aggregator_disable_thaw_,
+    bool adaptive_aggregator_combine_arg_min_max_,
     bool use_aggregation_memory_tracker_)
     : keys(keys_)
     , keys_size(keys.size())
@@ -452,6 +453,7 @@ Aggregator::Params::Params(
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
     , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
     , adaptive_aggregator_disable_thaw(adaptive_aggregator_disable_thaw_)
+    , adaptive_aggregator_combine_arg_min_max(adaptive_aggregator_combine_arg_min_max_)
     , use_aggregation_memory_tracker(use_aggregation_memory_tracker_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)

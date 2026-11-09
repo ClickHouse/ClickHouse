@@ -184,6 +184,7 @@ namespace Setting
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const SettingsBool adaptive_aggregator_disable_thaw;
+    extern const SettingsBool adaptive_aggregator_combine_arg_min_max;
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsBool optimize_uniq_to_count;
     extern const SettingsUInt64 parallel_replicas_count;
@@ -2967,6 +2968,7 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
         settings[Setting::adaptive_aggregator_disable_thaw],
+        settings[Setting::adaptive_aggregator_combine_arg_min_max],
         settings[Setting::use_aggregation_memory_tracker]};
 }
 

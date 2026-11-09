@@ -170,6 +170,9 @@ public:
         UInt64 adaptive_aggregator_freeze_threshold = 0;
         UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
         bool adaptive_aggregator_disable_thaw = false;
+        /// Whether a frozen producer combines the misses of a key into one record, of their best row, when
+        /// every aggregate selects one row by the same ordering column (see `AdaptiveRowSelection`).
+        bool adaptive_aggregator_combine_arg_min_max = false;
 
         bool use_aggregation_memory_tracker = true;
 
@@ -382,6 +385,7 @@ public:
             UInt64 adaptive_aggregator_freeze_threshold_,
             UInt64 adaptive_aggregator_freeze_threshold_bytes_,
             bool adaptive_aggregator_disable_thaw_,
+            bool adaptive_aggregator_combine_arg_min_max_,
             bool use_aggregation_memory_tracker_);
 
         /// Only parameters that matter during merge.
