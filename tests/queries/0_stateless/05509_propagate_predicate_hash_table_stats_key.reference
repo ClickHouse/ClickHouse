@@ -1,0 +1,3 @@
+filtered build	1000
+wider filter	prop_stats_d prop_stats_s
+without the copy	prop_stats_d prop_stats_s
