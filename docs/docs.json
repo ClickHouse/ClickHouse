@@ -128,7 +128,7 @@
               {
                 "item": "ClickStack",
                 "pages": [
-                  "clickstack/observability/index"
+                  "clickstack"
                 ]
               },
               {
