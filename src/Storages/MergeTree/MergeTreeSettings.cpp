@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeSettingsDisks.h>
 
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
@@ -9,21 +10,14 @@
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
-#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/FieldFromAST.h>
-#include <Parsers/isDiskFunction.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
-#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Interpreters/Context.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <cmath>
 #include <boost/program_options.hpp>
@@ -2707,11 +2701,21 @@ Requires `enable_block_number_column` and `enable_block_offset_column` to be ena
     DECLARE(Bool, enable_adaptive_codec_selection, false, R"(
 When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
 The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type, each on its own and, when the default codec is a general-purpose compression such as `LZ4` or `ZSTD`, followed by it.
-The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
+The smallest output wins and incompressible blocks are stored raw. The choice is made on one block in every `adaptive_codec_selection_period` blocks and reused for the blocks in between.
 A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
 Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/functions/table-functions) table function.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting."}) \
+    DECLARE(NonZeroUInt64, adaptive_codec_selection_period, 8, R"(
+Pricing a block means compressing it with every candidate codec and keeping the smallest output. With `enable_adaptive_codec_selection`, a column stream is split into windows of this many blocks. One block per window is the sample, it is priced and the other blocks reuse its winner.
+A block reusing the winner is re-priced when the winner writes more per source byte than the runner-up did on the priced block. When nothing shrank the priced block there is no winner, so the next block is priced.
+A priced block is never larger than the default codec would make it, a block reusing the winner may be.
+`1` prices every block. Compact parts always price every block.
+The profile events `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` and `AdaptiveCodecBlocksReused` count the blocks of each kind per merge or mutation in `system.part_log`.
+`AdaptiveCodecBytesDefault` and `AdaptiveCodecBytesWritten` sum the default codec's size and the written size of the sample blocks, so their ratio is the saving of adaptive selection, exact with period `1`.
+Streams whose only candidates are the default codec and `NONE` are not counted.
+)", EXPERIMENTAL, \
+        {"26.11", 8, 8, "New setting"}) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
@@ -3018,24 +3022,6 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 #undef IMPL_SUBSCRIPT_OP_
 };
 
-static void validateTableDisk(const DiskPtr & disk)
-{
-    if (!disk)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
-
-    const auto description = disk->getDataSourceDescription();
-    if (description.type != DataSourceType::ObjectStorage)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
-
-    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
-    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
-    const auto metadata_storage = disk->getMetadataStorage();
-    if (metadata_storage->areBlobPathsRandom())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
-            description.toString());
-}
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
@@ -3045,41 +3031,11 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
     {
         try
         {
-            bool found_disk_setting = false;
-            bool found_storage_policy_setting = false;
-            bool table_disk = false;
-            DiskPtr disk;
-
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
 
-            for (const auto & [name, value, _] : changes)
-            {
-                if (name == "disk")
-                {
-                    disk = context->getDisk(value.safeGet<String>());
-
-                    if (has("storage_policy"))
-                        resetToDefault("storage_policy");
-
-                    found_disk_setting = true;
-                }
-                else if (name == "storage_policy")
-                    found_storage_policy_setting = true;
-                else if (name == "table_disk")
-                    table_disk = value.safeGet<bool>();
-
-                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
-                }
-
-            }
-
-            if (table_disk)
-                validateTableDisk(disk);
+            if (checkMergeTreeDiskSettings(changes, context, is_loading_from_existing_metadata) && has("storage_policy"))
+                resetToDefault("storage_policy");
 
             applyChanges(changes);
         }
@@ -3417,33 +3373,6 @@ void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr con
     impl->applyChange(resolved_change);
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
-{
-    for (auto & change : changes)
-        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
-}
-
-void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
-{
-    if (change.name != "disk")
-        return;
-
-    CustomType custom;
-    ASTPtr value_as_custom_ast = nullptr;
-    if (change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
-    {
-        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
-        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
-        change.value = disk_name;
-    }
-    else if (!is_loading_from_existing_metadata)
-    {
-        DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
-    }
-}
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
