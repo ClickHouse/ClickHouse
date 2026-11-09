@@ -3,8 +3,8 @@
 # Ctrl-R opens an interactive history search: words match in any order and case (also non-ASCII),
 # Esc leaves the line unchanged, pasted text is used as the search query, control characters
 # from the history are not sent to the terminal, an unmatched query is kept as typed, the query
-# can be edited in the middle, a match beyond the screen width is scrolled into view, and Esc keeps
-# the cursor position in the line.
+# can be edited in the middle, a match beyond the screen width is scrolled into view, Esc keeps
+# the cursor position in the line, and a query typed together with Ctrl-R stays visible.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -144,6 +144,16 @@ expect -re {1/[0-9]+}
 expect -re { \.\.y+ }
 expect "_one'"
 send -- "\033"
+expect ":) "
+
+# A query typed together with Ctrl-R in one write is shown above the search.
+send -- "SELECT 'coalesced' || '_shown'\022"
+expect -re {coalesced.*_shown.*[0-9]+/[0-9]+}
+send -- "\033"
+expect ":) "
+send -- "\r"
+expect "coalesced_shown"
+expect "1 row in set"
 expect ":) "
 
 # Enter without a match keeps the multi-line query as it was, with its line break after the comment.
