@@ -19,15 +19,11 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
 
 启用 SAML 集成后，客户还可以指定分配给新用户的默认角色，并调整会话超时设置。
 
-<div id="before-you-begin">
-  ## 开始之前
-</div>
+## 开始之前 {#before-you-begin}
 
 你需要在 IdP 中拥有管理员权限，能够在你的域名 DNS 设置中添加 TXT 记录，并在 ClickHouse Cloud 组织中拥有 **Admin** 角色。我们建议除了配置 SAML 连接外，再设置一个**指向你组织的直接链接**，以简化登录流程。不同的 IdP 处理方式各不相同。请继续阅读，了解如何为你的 IdP 完成此操作。
 
-<div id="how-it-works">
-  ## 工作原理
-</div>
+## 工作原理 {#how-it-works}
 
 配置好 SAML 单点登录后，用户会通过服务提供商发起的登录流程进行登录：
 
@@ -38,11 +34,11 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
 
 本指南的其余部分将介绍一次性配置。
 
-<div id="how-to-configure-your-idp">
-  ## 如何配置您的 IdP
-</div>
+## 如何配置您的 IdP {#how-to-configure-your-idp}
 
-<Steps>
+如果已启用 SAML，且您需要管理员访问权限，请参阅[配置您的管理员用户](#configure-your-admin-user)或[故障排查](#troubleshooting)。
+
+<Steps titleSize="h3">
   <Step title="访问组织设置" id="access-organization-settings">
     点击左下角的组织名称，然后选择“组织详情”。
   </Step>
@@ -124,15 +120,13 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   </Step>
 </Steps>
 
-<div id="configure-idp">
-  ### 配置您的身份提供商
-</div>
+### 配置您的身份提供商 {#configure-idp}
 
 <Tabs>
   <Tab title="Okta" id="okta">
     你需要在 Okta 中为每个 ClickHouse 组织配置两个 App Integration：一个 SAML 应用，以及一个用于承载直达链接的书签应用。
 
-    #### 创建一个用于管理访问权限的组
+#### 创建一个用于管理访问权限的组 {#okta-create-group}
 
     1. 以 **Administrator** 身份登录你的 Okta 实例。
     2. 在左侧选择 **Groups**。
@@ -142,7 +136,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     6. 点击你创建的组名称。
     7. 点击 **Assign people**，为你希望有权访问此 ClickHouse 组织的用户分配该组。
 
-    #### 创建一个书签应用，让用户能够无缝登录
+#### 创建一个书签应用，让用户能够无缝登录 {#okta-bookmark-app}
 
     1. 在左侧选择 **Applications**，然后选择 **Applications** 子标题。
     2. 点击 **Browse App Catalog**。
@@ -152,7 +146,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     6. 输入 URL：`https://console.clickhouse.cloud/?connection={organizationid}`
     7. 前往 **Assignments** 选项卡，并添加你在上面创建的组。
 
-    #### 创建一个 SAML 应用以启用连接
+#### 创建一个 SAML 应用以启用连接 {#okta-saml-app}
 
     1. 在左侧选择 **Applications**，然后选择 **Applications** 子标题。
 
@@ -193,7 +187,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   <Tab title="谷歌" id="google">
     如果使用多组织 SSO，你需要在 Google 中为每个 organization 配置一个 SAML 应用，并向用户提供可收藏为书签的直达链接 (`https://console.clickhouse.cloud/?connection={organizationId}`) 。
 
-    #### 创建 Google Web 应用
+#### 创建 Google Web 应用 {#google-web-app}
 
     1. 前往 Google 管理控制台 (admin.google.com) 。
 
@@ -237,7 +231,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   <Tab title="Azure（微软）" id="azure">
     Azure (Microsoft) SAML 也可能称为 Azure Active Directory (AD) 或 Microsoft Entra。
 
-    #### 创建 Azure Enterprise 应用程序
+#### 创建 Azure Enterprise 应用程序 {#azure-enterprise-app}
 
     您需要为每个组织设置一个应用程序集成，并为每个组织使用单独的登录 URL。
 
@@ -283,7 +277,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   </Tab>
 
   <Tab title="Duo" id="duo">
-    #### 为 Duo 创建通用 SAML 服务提供商
+#### 为 Duo 创建通用 SAML 服务提供商 {#duo-saml-provider}
 
     1. 按照 [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic) 中的说明进行操作。
 
@@ -305,11 +299,20 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## 故障排查
-</div>
+## 故障排查 {#troubleshooting}
 
 <AccordionGroup>
+  <Accordion title="通过 SAML 登录后缺少 Admin 权限">
+    **原因：**你的新 SAML 账号会获得所配置的默认 SAML 角色。如果该角色不是 **Admin**，即使你的原始账号拥有 **Admin** 角色，新账号也不会具备 Admin 权限。ClickHouse Cloud 不会自动关联 SAML 账号与非 SAML 账号。
+
+    **解决方法：**先通过 SAML 登录一次，使新用户出现在 ClickHouse Cloud 中。然后退出登录，使用原始管理员账号登录，为该 SAML 用户分配 **Admin** 角色：
+
+    * 对于电子邮件和密码账号，请使用[电子邮件登录链接](https://console.clickhouse.cloud/?with=email)绕过自动 SAML 重定向。`?with=email` 中的 `email` 是字面值，而不是你电子邮件地址的占位符。
+    * 对于 Google 或 Microsoft 账号，请选择 **Continue with Google** 或 **Continue with Microsoft**。
+
+    在删除原始管理员账号之前，请先退出登录并再次通过 SAML 登录，确认 Admin 权限已生效。完整步骤请参阅[配置管理员用户](#configure-your-admin-user)。
+  </Accordion>
+
   <Accordion title="系统可能存在配置错误，或服务发生中断">
     **原因：**使用了不受支持的由身份提供商发起的登录方式。
 
@@ -341,9 +344,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   </Accordion>
 </AccordionGroup>
 
-<div id="faq">
-  ## 常见问题
-</div>
+## 常见问题 {#faq}
 
 <AccordionGroup>
   <Accordion title="ClickHouse Cloud 是否支持由身份提供商发起的登录？">
@@ -365,9 +366,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
   </Accordion>
 </AccordionGroup>
 
-<div id="next-steps">
-  ## 后续步骤
-</div>
+## 后续步骤 {#next-steps}
 
 * [Manage cloud users](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — 管理权限并将访问限制为仅允许 SAML 连接。
 * SCIM provisioning — 通过 [Okta](/zh/products/cloud/guides/security/cloud-access-management/scim-setup) 或 [Microsoft Entra ID](/zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra) 自动执行用户和组预配。

@@ -13,6 +13,47 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_DATE;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
+
+namespace
+{
+
+/// `MAX_DATE32_TIMESTAMP` from Functions/DateTimeTransforms.h, which DataTypes cannot include.
+constexpr Int64 max_date32_timestamp = 253402300799LL;
+
+/// Reads a JSON integer the way `toDate32` converts one: a day number up to `DATE_LUT_MAX_EXTEND_DAY_NUM`,
+/// a Unix timestamp above it.
+template <typename ReturnType>
+ReturnType deserializeJSONNumberAsDate32(IColumn & column, ReadBuffer & istr, const DateLUTImpl & time_zone, const FormatSettings & settings)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    Int64 value = 0;
+    if constexpr (throw_exception)
+        readIntTextImpl<Int64, void, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(value, istr);
+    else if (!readIntTextImpl<Int64, bool, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(value, istr))
+        return ReturnType(false);
+
+    if (value < DATE_LUT_MIN_EXTEND_DAY_NUM || value > max_date32_timestamp)
+    {
+        if (settings.throwOnDateTimeOverflow())
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", value);
+            else
+                return ReturnType(false);
+        }
+        value = std::clamp<Int64>(value, DATE_LUT_MIN_EXTEND_DAY_NUM, max_date32_timestamp);
+    }
+
+    if (value > DATE_LUT_MAX_EXTEND_DAY_NUM)
+        value = time_zone.toDayNum(value).toUnderType();
+
+    assert_cast<ColumnInt32 &>(column).getData().push_back(static_cast<Int32>(value));
+    return ReturnType(true);
+}
+
 }
 
 UInt128 SerializationDate32::getHash(const DateLUTImpl & time_zone_)
@@ -108,7 +149,11 @@ void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 {
     if (!checkChar('"', istr))
     {
-        SerializationNumber<Int32>::deserializeTextJSON(column, istr, format_settings);
+        /// `null`, `true` and `false` keep going through `SerializationNumber`.
+        if (!istr.eof() && (isNumericASCII(*istr.position()) || *istr.position() == '-'))
+            deserializeJSONNumberAsDate32<void>(column, istr, time_zone, format_settings);
+        else
+            SerializationNumber<Int32>::deserializeTextJSON(column, istr, format_settings);
         return;
     }
     ExtendedDayNum x;
@@ -120,7 +165,11 @@ void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & format_settings) const
 {
     if (!checkChar('"', istr))
+    {
+        if (!istr.eof() && (isNumericASCII(*istr.position()) || *istr.position() == '-'))
+            return deserializeJSONNumberAsDate32<bool>(column, istr, time_zone, format_settings);
         return SerializationNumber<Int32>::tryDeserializeTextJSON(column, istr, format_settings);
+    }
 
     ExtendedDayNum x;
     if (!tryReadDateText(x, istr, time_zone, nullptr, !format_settings.throwOnDateTimeOverflow()) || !checkChar('"', istr))

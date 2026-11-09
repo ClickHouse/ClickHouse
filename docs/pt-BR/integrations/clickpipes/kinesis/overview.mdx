@@ -34,17 +34,17 @@ Você já se familiarizou com a [introdução ao ClickPipes](/pt-BR/integrations
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Selecionar tipo de origem de dados" size="lg" border />
 
-4. Preencha o formulário informando um nome para o ClickPipe, uma descrição (opcional), sua função do IAM ou credenciais e outros detalhes da conexão.
+4. Preencha o formulário informando um nome para o ClickPipe, uma descrição (opcional), sua IAM role ou credenciais e outros detalhes da conexão.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Preencher detalhes da conexão" size="lg" border />
 
-5. Selecione o stream do Kinesis, o **Data format** e o offset inicial. Para `Protobuf`, envie um arquivo `.proto` ou um `FileDescriptorSet` serializado (máximo de 768 KiB). Não é necessário schema registry.
+5. Selecione o stream do Kinesis, o **Data format** e o offset inicial. Os ClickPipes do Kinesis oferecem suporte a JSON, Avro e Protobuf. Para `Protobuf`, envie um arquivo `.proto` ou um `FileDescriptorSet` serializado (máximo de 768 KiB), ou configure um AWS Glue Schema Registry. Para Avro, configure um AWS Glue Schema Registry. Não combine um schema Protobuf enviado com um schema registry.
 
    A UI exibe dados de exemplo do stream selecionado. A opção **Use Kinesis Enhanced Fan-Out** está ativada por padrão. Consulte a [documentação do Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) para mais detalhes.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Definir formato de dados e tópico" size="lg" border />
 
-6. Na próxima etapa, você pode escolher se deseja fazer a ingestão de dados em uma nova tabela do ClickHouse ou reutilizar uma já existente. Siga as instruções na tela para modificar o nome da tabela, o esquema e as configurações. Você pode ver uma prévia em tempo real das alterações na tabela de exemplo na parte superior.
+6. Na próxima etapa, você pode escolher se deseja fazer a ingestão de dados em uma nova tabela do ClickHouse ou reutilizar uma já existente. Siga as instruções na tela para modificar o nome da tabela, o schema e as configurações. Você pode ver uma prévia em tempo real das alterações na tabela de exemplo na parte superior.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Definir tabela, esquema e configurações" size="lg" border />
 
@@ -88,7 +88,14 @@ Além disso, há controles para remover o ClickPipe e exibir um resumo do trabal
 Os formatos suportados são:
 
 * [JSON](/pt-BR/reference/formats/JSON/JSON)
+* [Avro](/pt-BR/reference/formats/Avro/AvroConfluent) (com AWS Glue Schema Registry)
 * [Protobuf](/pt-BR/reference/formats/Protobuf/Protobuf)
+
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+Os ClickPipes do Kinesis podem resolver schemas Avro e Protobuf a partir do AWS Glue Schema Registry. Selecione **AWS Glue** no fluxo de criação do ClickPipe e, em seguida, informe a region AWS e o nome do registry. Opcionalmente, forneça um IAM role para acessar o registry; caso contrário, o ClickPipes usará a identidade IAM da fonte de dados Kinesis. Essa identidade precisa ter a permissão `glue:GetSchemaVersion`.
+
+Você também pode configurar esses mesmos campos via [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) ou [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform). O [guia de schema registry](/pt-BR/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry) traz a política IAM necessária e os detalhes de configuração.
 
 <div id="compression">
   ## Compressão

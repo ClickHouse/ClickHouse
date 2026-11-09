@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # It is totally ok if sometimes some of the query processing threads did not process any data, as all the data processed by the other threads.
 # Check that at least once all 6 threads converted their aggregation data into two-level hash table.
 
-while true
+while clickhouse_test_time_left
 do
     # The adaptive aggregator converts its tables on its own schedule instead of at the
     # two-level threshold, so the expected per-thread conversion log lines are a baseline
