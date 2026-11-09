@@ -474,7 +474,7 @@ struct RuntimeFilterIndexAnalysisDescriptor
 inline constexpr std::string_view runtime_filter_global_row_index_key_name = "_part_starting_offset + _part_offset";
 
 /// Name of the `_part_offset + _part_starting_offset` node of the pruning predicate of a global row index descriptor.
-/// The reader recognizes the key by this name, so a table with a column of this name is not pruned this way.
+/// The reader recognizes the key by this name, in a predicate on the global row index only.
 inline constexpr std::string_view runtime_filter_global_row_index_node_name = "plus(_part_offset, _part_starting_offset)";
 
 /// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.

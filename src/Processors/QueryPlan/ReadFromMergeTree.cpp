@@ -3164,9 +3164,7 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
 static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & metadata)
 {
     const auto & columns = metadata.getColumns();
-    /// A column with the name of the pruning predicate's node would be taken for that node by the primary key and skip indexes.
-    return !columns.has("_part_offset") && !columns.has("_part_starting_offset")
-        && !columns.has(String(runtime_filter_global_row_index_node_name));
+    return !columns.has("_part_offset") && !columns.has("_part_starting_offset");
 }
 
 void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(
@@ -5965,21 +5963,37 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
     }
 
-    /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
+    /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter. The global row index descriptors get a predicate
+    /// of their own (see `MergeTreeSkipIndexReader::read`).
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
+    MergeTreeSkipIndexReader::DynamicPredicateBuilder global_row_index_predicate_builder;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
     if (runtime_filter_lookup && !runtime_filters_for_data_read.empty())
     {
-        dynamic_predicate_builder =
-            [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read, ctx = context]
-            (ActionsDAG & dag) -> const ActionsDAG::Node *
-            {
-                return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
-            };
+        std::vector<RuntimeFilterIndexAnalysisDescriptor> key_descriptors;
+        std::vector<RuntimeFilterIndexAnalysisDescriptor> global_row_index_descriptors;
+        for (const auto & descr : runtime_filters_for_data_read)
+            (descr.is_global_row_index ? global_row_index_descriptors : key_descriptors).push_back(descr);
+
+        if (!key_descriptors.empty())
+            dynamic_predicate_builder =
+                [lookup = runtime_filter_lookup, descriptors = key_descriptors, ctx = context]
+                (ActionsDAG & dag) -> const ActionsDAG::Node *
+                {
+                    return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
+                };
+
+        if (!global_row_index_descriptors.empty())
+            global_row_index_predicate_builder =
+                [lookup = runtime_filter_lookup, descriptors = std::move(global_row_index_descriptors), ctx = context]
+                (ActionsDAG & dag) -> const ActionsDAG::Node *
+                {
+                    return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
+                };
 
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
-            [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read, bloom_filter_in_cap]
+            [lookup = runtime_filter_lookup, descriptors = std::move(key_descriptors), bloom_filter_in_cap]
             (const IMergeTreeIndex & index) -> bool
             {
                 if (index.index.type != "bloom_filter")
@@ -6068,8 +6082,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             getLogger("MergeTreeSkipIndexReader"));
     }
 
-    if (skip_index_reader && runtime_prune_global_row_index)
-        skip_index_reader->setGlobalRowIndexPruning();
+    if (skip_index_reader && runtime_prune_global_row_index && global_row_index_predicate_builder)
+        skip_index_reader->setGlobalRowIndexPruning(std::move(global_row_index_predicate_builder));
 
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);

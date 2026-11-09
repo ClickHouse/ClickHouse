@@ -95,8 +95,29 @@ WHERE a._part_starting_offset + a._part_offset = b.g
 ORDER BY a.id
 SETTINGS log_comment = '05493_global_row_index_shadowed';
 
--- A column named like the node of the pruning predicate, which `CREATE TABLE ... AS SELECT` creates without an alias,
--- would be taken for the global row index by the primary key and skip indexes, so the join is not pruned by it.
+-- With parallel replicas, only the result is checked: the counters would depend on the coordinator's assignment.
+-- Once with the initiator reading its own share, once with only the followers reading.
+SELECT a.id
+FROM t_rf_global_row_index AS a,
+    (SELECT _part_starting_offset + _part_offset AS g FROM t_rf_global_row_index WHERE id IN (5, 1700)) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+ORDER BY a.id
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 1;
+
+SELECT a.id
+FROM t_rf_global_row_index AS a,
+    (SELECT _part_starting_offset + _part_offset AS g FROM t_rf_global_row_index WHERE id IN (5, 1700)) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+ORDER BY a.id
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 0;
+
+-- A column named like the global row index expression, which `CREATE TABLE ... AS SELECT` creates without an alias, or
+-- like that expression cast to the join key type, is not taken for the global row index: the primary key and skip
+-- indexes do not see the global row index predicate. The join is still pruned by the global row index.
 DROP TABLE IF EXISTS t_rf_global_row_index_name_pk;
 DROP TABLE IF EXISTS t_rf_global_row_index_name_skip;
 CREATE TABLE t_rf_global_row_index_name_pk (id UInt64, `plus(_part_offset, _part_starting_offset)` UInt64)
@@ -109,6 +130,20 @@ CREATE TABLE t_rf_global_row_index_name_skip
 )
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
 INSERT INTO t_rf_global_row_index_name_pk SELECT number, number + 10000 FROM numbers(1600);
+DROP TABLE IF EXISTS t_rf_global_row_index_cast_name_pk;
+DROP TABLE IF EXISTS t_rf_global_row_index_cast_name_skip;
+CREATE TABLE t_rf_global_row_index_cast_name_pk (id UInt64, `_CAST(plus(_part_offset, _part_starting_offset), 'Int128')` Int128)
+ENGINE = MergeTree ORDER BY `_CAST(plus(_part_offset, _part_starting_offset), 'Int128')`
+SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
+CREATE TABLE t_rf_global_row_index_cast_name_skip
+(
+    id UInt64,
+    `_CAST(plus(_part_offset, _part_starting_offset), 'Int128')` Int128,
+    INDEX idx (id, `_CAST(plus(_part_offset, _part_starting_offset), 'Int128')`) TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
+INSERT INTO t_rf_global_row_index_cast_name_pk SELECT number, number + 10000 FROM numbers(1600);
+INSERT INTO t_rf_global_row_index_cast_name_skip SELECT number, number + 10000 FROM numbers(1600);
 INSERT INTO t_rf_global_row_index_name_skip SELECT number, number + 10000 FROM numbers(1600);
 
 SELECT a.id FROM t_rf_global_row_index_name_pk AS a, (SELECT toUInt64(5) AS g) AS b
@@ -122,6 +157,18 @@ SETTINGS join_runtime_filter_exact_values_limit = 0, log_comment = '05493_global
 SELECT a.id FROM t_rf_global_row_index_name_skip AS a, (SELECT toUInt64(5) AS g) AS b
 WHERE a._part_starting_offset + a._part_offset = b.g
 SETTINGS log_comment = '05493_global_row_index_name_collision_skip';
+
+SELECT a.id FROM t_rf_global_row_index_cast_name_pk AS a, (SELECT toInt128(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS log_comment = '05493_global_row_index_cast_name_collision_pk';
+
+SELECT a.id FROM t_rf_global_row_index_cast_name_pk AS a, (SELECT toInt128(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS join_runtime_filter_exact_values_limit = 0, log_comment = '05493_global_row_index_cast_name_collision_pk_range';
+
+SELECT a.id FROM t_rf_global_row_index_cast_name_skip AS a, (SELECT toInt128(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS log_comment = '05493_global_row_index_cast_name_collision_skip';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -139,7 +186,8 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment IN ('05493_global_row_index', '05493_global_row_index_swapped', '05493_global_row_index_and_offset',
         '05493_part_and_offset', '05493_global_row_index_shadowed', '05493_global_row_index_name_collision_pk',
-        '05493_global_row_index_name_collision_pk_range', '05493_global_row_index_name_collision_skip')
+        '05493_global_row_index_name_collision_pk_range', '05493_global_row_index_name_collision_skip',
+        '05493_global_row_index_cast_name_collision_pk', '05493_global_row_index_cast_name_collision_skip')
 GROUP BY log_comment
 ORDER BY log_comment;
 
@@ -159,3 +207,5 @@ DROP TABLE t_rf_global_row_index;
 DROP TABLE t_rf_global_row_index_shadowed;
 DROP TABLE t_rf_global_row_index_name_pk;
 DROP TABLE t_rf_global_row_index_name_skip;
+DROP TABLE t_rf_global_row_index_cast_name_pk;
+DROP TABLE t_rf_global_row_index_cast_name_skip;
