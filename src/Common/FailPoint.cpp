@@ -63,6 +63,7 @@ static struct InitFiu
     REGULAR(stripe_log_sink_write_fallpoint) \
     REGULAR(file_checker_update_and_save_fail_reading_sizes) \
     REGULAR(file_checker_update_and_save_fail_persisting) \
+    REGULAR(file_checker_repair_memory_limit_exceeded) \
     ONCE(rocksdb_rename_throw_filesystem_error) \
     REGULAR(rocksdb_rename_fail_reopen) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
