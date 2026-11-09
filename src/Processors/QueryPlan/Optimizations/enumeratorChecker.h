@@ -279,6 +279,7 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     const double right_bytes = optimizer.rowBytes(right_mask);
     constexpr Int8 replicated = Optimizer::replicated_state;
     constexpr Int8 single_node = Optimizer::single_node_state;
+    const Int8 all_keys_state = std::popcount(key_classes) > 1 ? optimizer.compositeState(key_classes) : -1;
     const bool all_relations = result_subset == (static_cast<UInt>(1) << num_relations) - 1;
     const double all_relations_bytes = all_relations ? optimizer.rowBytes(static_cast<UInt32>(result_subset)) : 0;
 
@@ -376,14 +377,17 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
                         key);
             }
 
-            /// Shuffle: both sides partitioned by a key.
-            for (UInt64 classes = key_classes; classes; classes &= classes - 1)
+            /// Shuffle: both sides partitioned by one key, or by all keys together as Cascades also does.
+            auto offer_shuffle = [&](Int8 key)
             {
-                const auto key = static_cast<Int8>(std::countr_zero(classes));
                 offer(join_cost.toPartitioned(left_state, key, left_rows, left_bytes) + join_cost.toPartitioned(right_state, key, right_rows, right_bytes)
                         + join_cost.joinWork(probe_rows, build_rows, build_bytes, joined_rows, nodes, nodes),
                     key);
-            }
+            };
+            for (UInt64 classes = key_classes; classes; classes &= classes - 1)
+                offer_shuffle(static_cast<Int8>(std::countr_zero(classes)));
+            if (all_keys_state >= 0)
+                offer_shuffle(all_keys_state);
 
             /// Local: both sides on one node.
             offer(join_cost.toSingleNode(left_state, left_rows, left_bytes) + join_cost.toSingleNode(right_state, right_rows, right_bytes)

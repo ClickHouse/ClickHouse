@@ -207,13 +207,36 @@ private:
     bool useDistribution() const { return dpsub_data.distribution; }
     /// The single-type equivalence classes with columns on both sides: the keys both sides may be partitioned by.
     UInt64 partitionKeyClasses(UInt32 left_mask, UInt32 right_mask) const;
-    /// The states of a plan's rows over the nodes besides its partitioning (`DPPlan::partition_class`): -1 is partitioned
-    /// in any way, a class index is partitioned by that class.
+    /// The states of a plan's rows over the nodes (`DPPlan::partition_class`): -1 is partitioned in any way, a class index
+    /// below `composite_state_base` is partitioned by that class, and a value from it on by several classes together, see
+    /// `compositeState`.
     static constexpr Int8 replicated_state = -2;  /// A full copy on every node.
     static constexpr Int8 single_node_state = -3; /// All rows on one node.
+    static constexpr Int8 composite_state_base = std::numeric_limits<UInt64>::digits;
+    static bool isClassState(Int8 state) { return state >= 0 && state < composite_state_base; }
+    /// The state of a partitioning by all the classes together, as a shuffle by all keys of a join makes it; registered on
+    /// first use. -1 when the states are used up.
+    Int8 compositeState(UInt64 classes)
+    {
+        auto & states = dpsub_data.composite_states;
+        if (auto it = std::ranges::find(states, classes); it != states.end())
+            return static_cast<Int8>(composite_state_base + (it - states.begin()));
+        if (composite_state_base + states.size() > static_cast<size_t>(std::numeric_limits<Int8>::max()))
+            return -1;
+        states.push_back(classes);
+        return static_cast<Int8>(composite_state_base + states.size() - 1);
+    }
     /// Whether a later join may still use a result partitioned by the equivalence class.
     bool isInterestingPartition(Int32 partition_class, UInt32 relations) const
     {
+        if (partition_class >= composite_state_base)
+        {
+            /// A join by all of these keys can follow only while each of them still has a column outside.
+            for (UInt64 classes = dpsub_data.composite_states[partition_class - composite_state_base]; classes; classes &= classes - 1)
+                if (!(dpsub_data.class_relations[std::countr_zero(classes)] & ~relations))
+                    return false;
+            return true;
+        }
         const UInt32 class_relations = dpsub_data.class_relations[partition_class];
         const bool used_above = ((dpsub_data.above_classes >> partition_class) & 1) && (class_relations & relations);
         return ((class_relations & ~relations) || used_above) && dpsub_data.class_single_type[partition_class];
@@ -234,7 +257,7 @@ private:
     /// column it would like, else a shuffle of the rows it sends, at most one per group and node after an aggregation.
     double aboveExchangeCost(Int8 state, double rows, double bytes) const
     {
-        if (!dpsub_data.above_classes || (state >= 0 && ((dpsub_data.above_classes >> state) & 1)))
+        if (!dpsub_data.above_classes || (isClassState(state) && ((dpsub_data.above_classes >> state) & 1)))
             return 0;
         const auto join_cost = distributedJoinCost();
         double sent_rows = rows;
@@ -420,6 +443,8 @@ private:
         /// above has at least that many groups.
         UInt64 above_classes = 0;
         UInt64 above_groups = 0;
+        /// The class sets of the composite states, see `compositeState`.
+        std::vector<UInt64> composite_states;
         std::vector<char> class_single_type;   /// per class: one type up to `Nullable` and `LowCardinality`
         std::vector<std::vector<Int32>> rel_prefix_classes; /// per relation: the classes it can be read in order of, in order
         std::vector<Int32> edge_class;          /// per edge: the class of an equality of two columns, or -1
@@ -613,6 +638,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
     /// The columns the step above the graph would like its input partitioned by: their class, or a class of their own,
     /// which no join compares, so that a plan can be partitioned by them.
+    dpsub_data.composite_states.clear();
     dpsub_data.above_classes = 0;
     dpsub_data.above_groups = 0;
     if (query_graph.distribution_node_count > 1)
@@ -1590,7 +1616,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         bool sharded{false};   /// a merge join sharded by primary key ranges
         Int8 merge_class{-1};  /// equivalence class of the merge key
         Int8 order_class{-1};  /// equivalence class the result is sorted by, if a later join may use it
-        Int8 partition_class{-1}; /// equivalence class the result is partitioned by over the nodes, if a later join may use it
+        Int8 partition_class{-1}; /// how the result is spread over the nodes, see `DPSubJoinOrderOptimizer::replicated_state`
         Int8 left_plan{-1};    /// plan of `left` in its `ordered`, -1 for its cheapest plan
         Int8 right_plan{-1};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
