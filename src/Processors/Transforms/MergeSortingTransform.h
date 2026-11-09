@@ -9,6 +9,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -35,7 +36,7 @@ struct SortingQueryResultPreviews
     /// The transforms of one sorting, registered at construction (pipeline building is
     /// single-threaded). The emitter of a round reads the accumulated chunks of every participant
     /// under `control.participantMutex` to merge them into one top-N preview.
-    std::vector<MergeSortingTransform *> participants;
+    VectorWithMemoryTracking<MergeSortingTransform *> participants;
 
     SortingQueryResultPreviews(const QueryResultPreviewsSettings & settings_, size_t num_participants)
         : control(settings_, num_participants)
