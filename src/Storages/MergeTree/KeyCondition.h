@@ -555,6 +555,11 @@ public:
         bool date_time_overflow_behavior_ignore_);
 
 private:
+    /// Checks the range atom `element` against `key_column_range`, the range of the key column at `key_position` in
+    /// `key_types`. Returns `(intersects, !contains)`, or nothing when the atom's chain can't be applied to the range.
+    std::optional<BoolMask> checkRangeAtomInKeyRange(
+        const RPNElement & element, const Range & key_column_range, const DataTypes & key_types, size_t key_position) const;
+
     /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
     /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
     /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.

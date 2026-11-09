@@ -8031,6 +8031,77 @@ bool KeyCondition::fieldHasNullInside(const Field & field)
     }
 }
 
+std::optional<BoolMask> KeyCondition::checkRangeAtomInKeyRange(
+    const RPNElement & element, const Range & key_column_range, const DataTypes & key_types, size_t key_position) const
+{
+    /// Avoid copying Range when there is no monotonic function chain (the common case).
+    const Range * key_range_ptr = &key_column_range;
+    std::optional<Range> key_range_storage;
+
+    /// A NULL nested in a `Tuple` key value is stored above every value of its element, while
+    /// `Field` order puts it below them, so the upper bound comes out in `Field` order below
+    /// rows the key stores under it: `(2, 3)` is above `(2, NULL)`. The upper bound is widened to
+    /// `+inf`, which claims nothing about the column. A lower bound holding such a NULL only
+    /// comes out lower and needs no widening.
+    const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
+    if (unlikely(upper_bound_widened))
+    {
+        key_range_storage = *key_range_ptr;
+        key_range_storage->right = POSITIVE_INFINITY;
+        key_range_storage->right_included = true;
+        key_range_ptr = &*key_range_storage;
+    }
+
+    /// The case when the column is wrapped in a chain of possibly monotonic functions.
+    if (!element.monotonic_functions_chain.empty())
+    {
+        std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+            *key_range_ptr,
+            element.monotonic_functions_chain,
+            element.first_function_number,
+            key_types[key_position],
+            single_point
+        );
+
+        if (!new_range)
+            return {};
+        key_range_storage = *new_range;
+        key_range_ptr = &*key_range_storage;
+    }
+
+    const Range & key_range = *key_range_ptr;
+
+    bool intersects = element.range.intersectsRange(key_range);
+    bool contains = element.range.containsRange(key_range);
+
+    /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+    /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+    /// analysis may incorrectly include NaN values.
+    /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+    ///   so no comparison condition can be true.
+    /// - If only right bound is NaN: the range extends into NaN territory,
+    ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+    /// - A NaN or a NULL nested in a Tuple bound - the bound of a whole-tuple key comparison - is
+    ///   invisible to `Field::isNaN` and `Field::isNull`, and key order does not reproduce the
+    ///   row-level comparison for it either, so the containment claim is dropped.
+    ///   `intersects` is left alone: keeping the granule is the safe direction.
+    if (unlikely(key_range.left.isNaN()))
+    {
+        intersects = false;
+        contains = false;
+    }
+    else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
+    {
+        contains = false;
+    }
+    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
+    {
+        contains = false;
+    }
+
+    return BoolMask(intersects, !contains);
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -8076,75 +8147,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 return false;
             }
 
-            /// Avoid copying Range when there is no monotonic function chain (the common case).
-            const Range * key_range_ptr = &hyperrectangle[key_column];
-            std::optional<Range> key_range_storage;
-
-            /// A NULL nested in a `Tuple` key value is stored above every value of its element, while
-            /// `Field` order puts it below them, so the upper bound comes out in `Field` order below
-            /// rows the key stores under it: `(2, 3)` is above `(2, NULL)`. The upper bound is widened to
-            /// `+inf`, which claims nothing about the column. A lower bound holding such a NULL only
-            /// comes out lower and needs no widening.
-            const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
-            if (unlikely(upper_bound_widened))
+            const auto mask = checkRangeAtomInKeyRange(element, hyperrectangle[key_column], data_types, key_column);
+            if (!mask)
             {
-                key_range_storage = *key_range_ptr;
-                key_range_storage->right = POSITIVE_INFINITY;
-                key_range_storage->right_included = true;
-                key_range_ptr = &*key_range_storage;
+                rpn_stack.emplace_back(true, true);
+                return false;
             }
-
-            /// The case when the column is wrapped in a chain of possibly monotonic functions.
-            if (!element.monotonic_functions_chain.empty())
-            {
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range_ptr,
-                    element.monotonic_functions_chain,
-                    element.first_function_number,
-                    data_types[key_column],
-                    single_point
-                );
-
-                if (!new_range)
-                {
-                    rpn_stack.emplace_back(true, true);
-                    return false;
-                }
-                key_range_storage = *new_range;
-                key_range_ptr = &*key_range_storage;
-            }
-
-            const Range & key_range = *key_range_ptr;
-
-            bool intersects = element.range.intersectsRange(key_range);
-            bool contains = element.range.containsRange(key_range);
-
-            /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-            /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-            /// analysis may incorrectly include NaN values.
-            /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-            ///   so no comparison condition can be true.
-            /// - If only right bound is NaN: the range extends into NaN territory,
-            ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-            /// - A NaN or a NULL nested in a Tuple bound - the bound of a whole-tuple key comparison - is
-            ///   invisible to `Field::isNaN` and `Field::isNull`, and key order does not reproduce the
-            ///   row-level comparison for it either, so the containment claim is dropped.
-            ///   `intersects` is left alone: keeping the granule is the safe direction.
-            if (unlikely(key_range.left.isNaN()))
-            {
-                intersects = false;
-                contains = false;
-            }
-            else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
-            {
-                contains = false;
-            }
-            else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
-            {
-                contains = false;
-            }
-
-            rpn_stack.emplace_back(intersects, !contains);
+            rpn_stack.emplace_back(*mask);
 
             // we don't create bloom_filter_data if monotonic_functions_chain is present
             if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
@@ -8573,61 +8582,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                /// The upper bound is widened when it holds a nested NULL, as in the overload above.
-                Range sparse_key_range = sparse_hyperrectangle[sparse_pos];
-                const bool upper_bound_widened = fieldHasNullInside(sparse_key_range.right);
-                if (unlikely(upper_bound_widened))
-                {
-                    sparse_key_range.right = POSITIVE_INFINITY;
-                    sparse_key_range.right_included = true;
-                }
-
-                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
-                /// the helper returns the range unchanged.
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    std::move(sparse_key_range),
-                    element.monotonic_functions_chain,
-                    element.first_function_number,
-                    sparse_data_types[sparse_pos],
-                    single_point);
-
-                if (!new_range)
-                {
-                    /// Cannot determine monotonicity on this range – unknown.
-                    rpn_stack.emplace_back(true, true);
-                }
-                else
-                {
-                    const Range & key_range = *new_range;
-
-                    bool intersects = element.range.intersectsRange(key_range);
-                    bool contains = element.range.containsRange(key_range);
-
-                    /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
-                    /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
-                    /// analysis may incorrectly include NaN values.
-                    /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
-                    ///   so no comparison condition can be true.
-                    /// - If only right bound is NaN: the range extends into NaN territory,
-                    ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                    /// - A NaN or a NULL nested in a Tuple bound is invisible to `Field::isNaN` and
-                    ///   `Field::isNull`, so only the containment claim is dropped.
-                    if (unlikely(key_range.left.isNaN()))
-                    {
-                        intersects = false;
-                        contains = false;
-                    }
-                    else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
-                    {
-                        contains = false;
-                    }
-                    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
-                    {
-                        contains = false;
-                    }
-
-                    rpn_stack.emplace_back(intersects, !contains);
-                }
+                /// A chain that can't be applied to the range leaves the atom unknown.
+                rpn_stack.push_back(checkRangeAtomInKeyRange(element, sparse_hyperrectangle[sparse_pos], sparse_data_types, sparse_pos)
+                                        .value_or(BoolMask(true, true)));
             }
 
             /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
