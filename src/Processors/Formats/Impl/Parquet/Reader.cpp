@@ -30,6 +30,7 @@
 #include <Common/findExtreme.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/extractStringValueFilters.h>
@@ -83,6 +84,7 @@ namespace ProfileEvents
     extern const Event ParquetPagesDecompressedToSkipRows;
     extern const Event ColumnsCacheHits;
     extern const Event ColumnsCacheMisses;
+    extern const Event ParquetTopKRowGroupsBoundedByDictionary;
 }
 
 namespace DB::Parquet
@@ -209,6 +211,10 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
+    /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
+    if (uncompressed_size == 0)
+        return;
+
     ProfileEvents::increment(ProfileEvents::ParquetDecompressedBytes, uncompressed_size);
     CompressionMethod method = CompressionMethod::None;
     switch (codec)
@@ -658,7 +664,11 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
 bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
 {
     const auto & top_k = format_filter_info->top_k_filter;
-    if (!top_k || !row_group.top_k_sort_column_range.has_value())
+    if (!top_k)
+        return false;
+    if (row_group.top_k_no_value_passes)
+        return true;
+    if (!row_group.top_k_sort_column_range.has_value())
         return false;
     const auto & tracker = *top_k->threshold_tracker;
     if (!tracker.isSet())
@@ -679,6 +689,66 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     if (boundary.isNull())
         return false;
     return !tracker.isValueInsideThreshold(boundary);
+}
+
+bool Reader::topKRowGroupMayBeBoundedByDictionary(size_t row_group_idx, const std::optional<Range> & statistics_range) const
+{
+    /// A range exists only for a chunk without nulls (see `getTopKSortColumnRange`), which the dictionary does not hold.
+    if (!top_k_dictionary_bound || !statistics_range.has_value())
+        return false;
+    const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
+    const Field & bound = ascending ? statistics_range->left : statistics_range->right;
+    if (bound.getType() != Field::Types::String || !bound.safeGet<String>().empty())
+        return false;
+    return columnChunkCanUseDictionaryFilter(getColumnChunk(row_group_idx, primitive_columns[*top_k_primitive_idx].column_idx));
+}
+
+static constexpr size_t max_top_k_dictionary_bound_size = 256;
+
+void Reader::refineTopKRangeFromDictionary(RowGroup & row_group) const
+{
+    if (!top_k_dictionary_bound || !format_filter_info->top_k_filter->threshold_tracker->isSet())
+        return;
+    const ColumnChunk & column = row_group.columns.at(*top_k_primitive_idx);
+    const Dictionary & dictionary = column.dictionary;
+    if (!column.top_k_bound_from_dictionary || !dictionary.isInitialized() || dictionary.mode != Dictionary::Mode::StringPlain)
+        return;
+
+    /// The filter rejects the empty string, so the other values bound the rows that can reach the sort.
+    std::optional<std::string_view> min_value;
+    std::string_view max_value;
+    for (size_t i = 0; i < dictionary.count; ++i)
+    {
+        size_t start = (i == 0 ? 0 : size_t(dictionary.offsets[i - 1])) + 4;
+        size_t end = dictionary.offsets[i];
+        if (start == end)
+            continue;
+        std::string_view value(dictionary.data.data() + start, end - start);
+        if (!min_value)
+        {
+            min_value = value;
+            max_value = value;
+        }
+        else if (value < *min_value)
+            min_value = value;
+        else if (value > max_value)
+            max_value = value;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ParquetTopKRowGroupsBoundedByDictionary);
+    if (!min_value)
+    {
+        row_group.top_k_no_value_passes = true;
+        return;
+    }
+
+    /// Cutting long values only widens the range. A cut maximum of only 0xFF bytes has no successor, so the statistic stays.
+    String max_bound(max_value.substr(0, max_top_k_dictionary_bound_size));
+    if (max_value.size() > max_top_k_dictionary_bound_size)
+        max_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(max_bound);
+    Field right = max_bound.empty() ? row_group.top_k_sort_column_range->right : Field(std::move(max_bound));
+    row_group.top_k_sort_column_range = Range(
+        Field(String(min_value->substr(0, max_top_k_dictionary_bound_size))), true, std::move(right), true);
 }
 
 std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const
@@ -1271,6 +1341,25 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
 
                 if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
                     top_k_best_value_column_pos = sample_block->findPositionByName(format_filter_info->top_k_filter->column_name);
+
+                /// The dictionary values are compared bytewise, so the column must be read as `String` without conversion.
+                if (top_k_primitive_idx.has_value())
+                {
+                    const PrimitiveColumnInfo & pc = primitive_columns[*top_k_primitive_idx];
+                    if (isString(pc.decoded_type) && isString(removeNullable(removeLowCardinality(output_info.output_type)))
+                        && pc.max_array_def == 0 && pc.decoder.string_converter && pc.decoder.string_converter->isTrivial()
+                        /// Elsewhere the dictionary page is read with the data pages, held from the bound until the row group is read.
+                        && (prefetcher.isLocalFile() || prefetcher.isEntireFileInMemory()))
+                    {
+                        const String & column_name = format_filter_info->top_k_filter->column_name;
+                        const auto & prewhere = format_filter_info->prewhere_info;
+                        /// The filter pushed down to the source is applied to every row it returns, like PREWHERE.
+                        const auto & filter_dag = format_filter_info->filter_actions_dag;
+                        top_k_dictionary_bound = (prewhere && prewhere->need_filter
+                                && filterRejectsEmptyString(prewhere->prewhere_actions, prewhere->prewhere_column_name, column_name))
+                            || (filter_dag && filterRejectsEmptyString(*filter_dag, column_name));
+                    }
+                }
             }
         }
     }
@@ -1423,6 +1512,10 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             const Field & b = ascending ? range->left : range->right;
             can_skip = accurateLess(a, b) || accurateLess(b, a);
         }
+
+        /// The dictionary bound needs the threshold set when the row group starts, so the row groups are started gradually.
+        for (size_t i = 0; !can_skip && i < candidates.size(); ++i)
+            can_skip = topKRowGroupMayBeBoundedByDictionary(candidates[i].row_group_idx, candidates[i].top_k_sort_column_range);
 
         if (can_skip)
         {
@@ -1700,6 +1793,10 @@ void Reader::initializePrefetches()
                 if (primitive_columns[column_idx].use_bloom_filter)
                     column.use_dictionary_filter = columnChunkCanUseDictionaryFilter(*column.meta);
 
+                if (top_k_dictionary_bound && column_idx == *top_k_primitive_idx && !column.served_from_cache
+                    && topKRowGroupMayBeBoundedByDictionary(row_group.row_group_idx, row_group.top_k_sort_column_range))
+                    column.top_k_bound_from_dictionary = true;
+
                 /// For a column with the dictionary filter, the bloom filter is checked first and may
                 /// rule the row group out (or make the dictionary filter of this column unnecessary)
                 /// before the dictionary page is requested. So don't let the prefetcher piggy-back the
@@ -1711,6 +1808,8 @@ void Reader::initializePrefetches()
                 if (!column.served_from_cache || column.use_dictionary_filter)
                     column.dictionary_page_prefetch = prefetcher.registerRange(
                         start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
+                if (column.top_k_bound_from_dictionary)
+                    column.top_k_dictionary_page_prefetch = prefetcher.registerRange(start, dict_page_length, /*likely_to_be_used=*/ false);
             }
 
             /// Bloom filter.
@@ -2123,7 +2222,24 @@ void Reader::preparePrewhere()
         return;
     if (pc.first_step_to_calculate == steps.size() && !pc.output_nullable && !pc.group_nullable && pc.levels.back().rep == 0
         && isLazyReplicationUseful(pc.decoded_type->createColumn()))
+    {
         pc.decode_dictionary_as_replicated = true;
+        for (const auto & node : steps.back().actions.getActionsDAG().getNodes())
+        {
+            /// A function whose result is already known is not executed.
+            if (node.type != ActionsDAG::ActionType::FUNCTION || node.column)
+                continue;
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node.children.size());
+            for (const auto * child : node.children)
+                arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
+            if (!node.function_base || node.function_base->canThrow(arguments))
+            {
+                pc.last_step_can_throw = true;
+                break;
+            }
+        }
+    }
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -2186,12 +2302,14 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
 
 bool Reader::decodeDictionaryPage(
     ColumnChunk & column, const PrimitiveColumnInfo & column_info,
-    const PruningMemoryReservation & reservation, size_t * held_reserved_bytes)
+    const PruningMemoryReservation & reservation, size_t * held_reserved_bytes, bool for_top_k_bound)
 {
     if (held_reserved_bytes)
         *held_reserved_bytes = 0;
 
-    auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
+    const bool build_string_value_filter_mask = !for_top_k_bound;
+    auto data = prefetcher.getRangeData(
+        for_top_k_bound && column.top_k_dictionary_page_prefetch ? column.top_k_dictionary_page_prefetch : column.dictionary_page_prefetch);
     const char * data_ptr = data.data();
     const char * data_end = data.data() + data.size();
     auto [header, page_data] = decodeAndCheckPageHeader(data_ptr, data_end);
@@ -2251,7 +2369,7 @@ bool Reader::decodeDictionaryPage(
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
             size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type,
-            column_info.string_value_filter != nullptr && column_info.string_value_filter->isEnabled());
+            build_string_value_filter_mask && column_info.string_value_filter != nullptr && column_info.string_value_filter->isEnabled());
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
@@ -2264,7 +2382,7 @@ bool Reader::decodeDictionaryPage(
 
     try
     {
-        decodeDictionaryPageImpl(header, page_data, column, column_info);
+        decodeDictionaryPageImpl(header, page_data, column, column_info, build_string_value_filter_mask);
     }
     catch (...)
     {
@@ -2312,7 +2430,9 @@ bool Reader::decodeDictionaryPage(
     return true;
 }
 
-void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+void Reader::decodeDictionaryPageImpl(
+    const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info,
+    bool build_string_value_filter_mask)
 {
     chassert(header.type == parq::PageType::DICTIONARY_PAGE);
 
@@ -2349,7 +2469,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     /// most rows, and the mask is consulted only for the rows that passed them. Their number is not known
     /// when the dictionary is decoded (it is shared by all row subgroups), so do not credit the mask with
     /// the rows of the column chunk at all, only with one row per entry.
-    if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
+    if (build_string_value_filter_mask && column_info.string_value_filter && column_info.string_value_filter->isEnabled())
     {
         Int64 non_null_values = 0;
         if (column_info.first_step_to_calculate == 1)
@@ -3213,14 +3333,24 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
 
     int64_t prev_offset = meta.data_page_offset;
     int64_t prev_row_index = -1;
+    bool has_page_without_rows = false;
     for (const auto & loc : locations)
     {
-        if (loc.offset < prev_offset || loc.first_row_index <= prev_row_index ||
+        if (loc.offset < prev_offset || loc.first_row_index < prev_row_index ||
             loc.compressed_page_size <= 0 || loc.compressed_page_size > end_offset - loc.offset ||
             loc.first_row_index >= num_rows)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid offset index: {}, prev offset: {}, prev row: {}, end offset: {}, num rows: {}", thriftToString(loc), prev_offset, prev_row_index, end_offset, num_rows);
+        has_page_without_rows |= loc.first_row_index == prev_row_index;
         prev_offset = loc.offset + loc.compressed_page_size;
         prev_row_index = loc.first_row_index;
+    }
+
+    /// Arrow C++ gives a page with no rows (repeated columns) the next page's first_row_index. Such a
+    /// page can't be checked against the index without reading it, so neither index is used here.
+    if (has_page_without_rows)
+    {
+        column.offset_index.page_locations.clear();
+        column.use_column_index = false;
     }
 }
 
@@ -3500,10 +3630,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             {
                 readRowsInPage(end_row_idx, subchunk, column, column_info);
 
+                /// Without the offset index, a page's row count doesn't prove that the next page starts a
+                /// row (arrow-go continues a row in a page with num_rows 0), so that page is checked.
                 auto & page = column.page;
+                const bool page_ends_row = page.end_row_idx.has_value() &&
+                    (column_info.levels.back().rep == 0 || !column.data_pages.empty());
                 if (page.next_row_idx == end_row_idx &&
                     (page.value_idx < page.num_values ||
-                     page.end_row_idx.has_value() ||
+                     page_ends_row ||
                      column.next_page_offset >= column.data_pages_bytes))
                     break;
 
@@ -3559,10 +3693,15 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (subchunk.dictionary_values)
     {
-        /// Drop the values no read row references: the step must not evaluate them.
-        ColumnIndex indexes(std::move(subchunk.column));
-        ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
-        subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
+        if (column_info.last_step_can_throw)
+        {
+            /// Drop the values no read row references: the step must not evaluate them.
+            ColumnIndex indexes(std::move(subchunk.column));
+            ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
+            subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
+        }
+        else
+            subchunk.column = ColumnReplicated::create(subchunk.dictionary_values->assumeMutable(), std::move(subchunk.column));
         subchunk.dictionary_values = nullptr;
         ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
@@ -3645,7 +3784,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
 
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
-        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, *row_idx, column, column_info))
+        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page doesn't contain requested row");
         found_page = true;
     }
@@ -3667,7 +3806,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
         chassert(column.next_page_offset <= all_pages.size());
         const char * ptr = all_pages.data() + column.next_page_offset;
         const char * end = all_pages.data() + all_pages.size();
-        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx.value_or(page.next_row_idx), column, column_info);
+        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
         column.next_page_offset = ptr - all_pages.data();
         if (!row_idx.has_value())
             return;
@@ -3716,7 +3855,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     return {header, page_data};
 }
 
-bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, std::optional<size_t> target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     PageState & page = column.page;
     /// We reuse PageState instance across pages to reuse memory in buffers like decompressed_buf.
@@ -3736,6 +3875,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     std::tie(header, page.data) = decodeAndCheckPageHeader(data_ptr, data_end);
 
     /// Check if all rows of the page are filtered out, if we have enough information.
+    /// Only when seeking to a row: when advancing to the next page, it's initialized even if it has no rows.
 
     /// These signed i32 row counts are consumed below to compute `page.end_row_idx` (and the
     /// row-skip shortcut returns before the later num_values check). A negative value would
@@ -3763,7 +3903,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
         page.end_row_idx = next_row_idx + *num_rows_in_page;
 
-        if (*page.end_row_idx <= target_row_idx)
+        if (target_row_idx.has_value() && *page.end_row_idx <= *target_row_idx)
         {
             page.next_row_idx = *page.end_row_idx;
             return false;
@@ -4232,7 +4372,11 @@ static void processRepDefLevelsForSingleArray(
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
 {
     PageState & page = column.page;
-    chassert(page.initialized && page.value_idx < page.num_values);
+    chassert(page.initialized);
+    /// Some writers emit data pages with no values (Arrow C++ in repeated columns).
+    if (page.num_values == 0)
+        return;
+    chassert(page.value_idx < page.num_values);
 
     /// Note: end_row_idx == page.next_row_idx doesn't necessarily mean we're done. E.g. suppose the
     /// row end_row_idx-1 contains an array that starts in page 0 and ends inside page 1.
