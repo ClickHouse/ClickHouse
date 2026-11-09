@@ -34,7 +34,11 @@ regions.
 
 ## Managed Postgres {#managed-postgres}
 
-ClickHouse Managed Postgres public internet and cross-region data egress are billed at the rates described on this page.
+ClickHouse Managed Postgres data transfer is metered and billed at the rates described on this page. Traffic to any destination reachable only by a public IP address is metered as public-internet egress, even when the destination network is itself hosted on the same cloud provider — for example, a peer network that reaches the cloud provider via BYOIP. If you have such BYOIP peers, contact [support](https://clickhouse.com/support/program).
+
+[ClickPipes](/products/managed-postgres/clickpipes) compute is free when used to replicate data from Managed Postgres to ClickHouse Cloud. The underlying egress from Managed Postgres to ClickPipes is billed at the rates on this page — same-region replication incurs no network charge; cross-region or public-internet replication is billed at the applicable tier.
+
+To reduce data transfer costs, co-locate your application and Managed Postgres in the same region of the same cloud provider whenever possible.
 
 **Best Practices to minimize Data Transfer Costs**
 
