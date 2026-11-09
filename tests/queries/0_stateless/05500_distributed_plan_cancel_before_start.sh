@@ -47,25 +47,26 @@ CLIENT_PID=$!
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FP PAUSE"
 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' ASYNC" > /dev/null
 
-# The worker knows the tasks by `<unique id>::<task>`, the unique id of the distributed query.
+# The worker knows the tasks by `<unique id>::<task>`, the unique id of the distributed query (URL-encoded in a request line).
 wait_for "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$QUERY_ID'
     AND message LIKE 'Starting distributed query, unique id: %'"
 UNIQUE_ID=$($CLICKHOUSE_CLIENT --query "SELECT extract(any(message), 'unique id: (\\\\S+)') FROM system.text_log
     WHERE event_date >= yesterday() AND query_id = '$QUERY_ID' AND message LIKE 'Starting distributed query, unique id: %'")
 TASK_LINES="SELECT countIf(message LIKE 'Queueing task %') AS queued, countIf(message LIKE 'Remembering cancelled unknown task %') AS remembered,
-    countIf(message LIKE 'Ignoring the start of task %') AS ignored
-    FROM system.text_log WHERE event_date >= yesterday() AND position(message, '$UNIQUE_ID::') > 0"
+    countIf(message LIKE 'Request URI: %operation=start%') AS starts, countIf(message LIKE 'Ignoring the start of task %') AS ignored
+    FROM system.text_log WHERE event_date >= yesterday() AND position(message, '$UNIQUE_ID') > 0"
 
-# Every queued task is cancelled while unknown to the worker: two starts are held there, the rest were not sent.
+# Every queued task is cancelled while unknown to the worker: up to two starts are held there, the rest were not sent.
 wait_for "SELECT queued > 0 AND remembered = queued FROM ($TASK_LINES)"
 
-# The two held starts reach `startTask` now; the senders skip the other tasks as the query is cancelled.
+# The held starts reach `startTask` now; the senders skip the other tasks as the query is cancelled.
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
 wait $CLIENT_PID
-wait_for "SELECT ignored = 2 FROM ($TASK_LINES)"
+wait_for "SELECT starts > 0 AND ignored = starts FROM ($TASK_LINES)"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT --query "SELECT 'every queued task remembered', remembered = queued, 'late starts ignored', ignored FROM ($TASK_LINES)"
+$CLICKHOUSE_CLIENT --query "SELECT 'every queued task remembered', remembered = queued, 'every start that arrived ignored', starts > 0 AND ignored = starts
+    FROM ($TASK_LINES)"
 RECENT="event_date >= yesterday() AND event_time >= now() - INTERVAL 300 SECOND"
 $CLICKHOUSE_CLIENT --query "SELECT 'initial query logged', count() > 0 FROM system.query_log
     WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$QUERY_ID'"

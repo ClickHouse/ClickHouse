@@ -168,13 +168,16 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
 
-    auto in = BuilderRWBufferFromHTTP(uri)
-        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+    auto builder = BuilderRWBufferFromHTTP(uri);
+    builder.withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
-        .withDelayInit(false)
-        .create(creds);
+        .withDelayInit(false);
+    /// A cleanup poll belongs to the teardown of a query that can already be killed.
+    if (for_cleanup)
+        builder.withoutQueryCancellationCheck();
+    auto in = builder.create(creds);
 
     DistributedQueryTaskStatus result;
     result.read(*in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
@@ -213,12 +216,14 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
 
+    /// Sent although the query can already be killed: the worker must still stop the task.
     auto in = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
         .withDelayInit(false)
+        .withoutQueryCancellationCheck()
         .create(creds);
 
     std::string s;
@@ -256,6 +261,7 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
         .withTimeouts(timeouts)
         .withSettings(read_settings)
         .withDelayInit(false)
+        .withoutQueryCancellationCheck()
         .create(creds);
 
     std::string s;
