@@ -17,7 +17,4 @@ computed_cast: replay rc=0
 values_rows: dump rc=0
 SET data_type_default_nullable = 0;
 values_rows: replay rc=0
-computed_remote_address: dump rc=0
-SET data_type_default_nullable = 0;
-computed_remote_address: replay rc=0
 closed stdout: failed

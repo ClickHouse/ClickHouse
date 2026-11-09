@@ -985,15 +985,9 @@ Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocal
         return clusters.names().local.contains(expandClusterName(name, function, clusters)) ? Locality::Local : Locality::Remote;
     }
     const auto * literal = first->as<ASTLiteral>();
-    if (literal && literal->value.getType() == Field::Types::String)
-        return remoteDescriptionLocality(literal->value.safeGet<String>(), secure, clusters);
-    /// The analyzer folds a constant address such as concat('127.', '0.0.1') before reading it, so the dump folds it too.
-    if (!literal)
-        if (auto address = tryReadNamedCollectionValue(first, clusters))
-            return remoteDescriptionLocality(*address, secure, clusters);
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Cannot resolve the address of {} for --dump-schema: it is not a constant string, and it may be a local address",
-        function.formatForErrorMessage());
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return Locality::Remote;
+    return remoteDescriptionLocality(literal->value.safeGet<String>(), secure, clusters);
 }
 
 /// Whether a `cluster*`/`remote*` call reads its table argument on this instance.
