@@ -340,16 +340,11 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     /// string table, converts to two-level instead when it froze, and then the merge preparation converts the tables of
     /// the producers that never froze.
     if (local_variants.canIndexCells())
-    {
-        local_variants.indexCells(shared.layout);
-        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationIndexedTables);
-    }
+        local_variants.indexCells(shared.layout.numPartitions(), [&](UInt64 hash) { return shared.layout.partitionOf(hash); });
     else if (froze && local_variants.isConvertibleToTwoLevel())
-    {
         local_variants.convertToTwoLevel();
-    }
 
-    const bool unindexed = !local_variants.empty() && !local_variants.isTwoLevel() && !local_variants.cell_index;
+    const bool unindexed = !local_variants.empty() && !local_variants.isTwoLevel() && !local_variants.hasCellIndex();
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;

@@ -30,6 +30,7 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregation.h>
+#include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Interpreters/AggregationMethod.h>
@@ -1245,11 +1246,17 @@ private:
     UInt64 adaptiveRankCount(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const;
 
     /// Adds the groups that the tables of the producers that never froze hold in bucket `bucket` (see
-    /// `AdaptiveTopKPruning::isMergeCounted`) to the bucket's `bounds`. It stays out of line: inlined into the bucket
-    /// merge, its loops change the register allocation of the merge's hot loops.
+    /// `AdaptiveTopKPruning::isMergeCounted`) to the bucket's `bounds`, finding the bucket's partitions in
+    /// their cell indexes by `layout`. It stays out of line: inlined into the bucket merge, its loops change
+    /// the register allocation of the merge's hot loops.
     template <typename Method>
     void addMergeCountedTablesToBounds(
-        ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
+        ManyAggregatedDataVariants & data,
+        const AdaptivePartitionLayout & layout,
+        Int32 bucket,
+        const AdaptiveTopKPruning & pruning,
+        std::span<UInt64> bounds,
+        Arena * arena) const;
 
     /// Writes the staged records of `partitions`, a producer's or a finished producer's handed over to `shared`, to the
     /// session's spill streams, a block per partition, and frees them; a producer then keeps appending into new chunks.

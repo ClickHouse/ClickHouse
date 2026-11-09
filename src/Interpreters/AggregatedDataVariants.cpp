@@ -320,50 +320,6 @@ void AggregatedDataVariants::convertToTwoLevel()
     }
 }
 
-namespace
-{
-
-/// Indexes the cells of `table` by `partition_of` of their hashes with a counting sort: the cells of a
-/// partition take a contiguous range of positions, in the order of the table. Each hash is computed once: a
-/// table that does not save the hashes computes one for every call of `getHash`, which reads the bytes of a
-/// long string key. The table of a `Nullable` key keeps the null key outside its cells, though `size` counts
-/// it, so the index takes the cells that the table iterates; the merges take the null key from the table.
-template <typename Table, typename PartitionOf>
-void indexTableCells(Table & table, size_t num_partitions, PartitionOf && partition_of, AggregatedDataVariants::CellIndex & index)
-{
-    PaddedPODArray<void *> table_cells(table.size());
-    PaddedPODArray<UInt64> table_hashes(table.size());
-    PaddedPODArray<UInt64> next;
-    next.resize_fill(num_partitions, 0);
-    size_t num_cells = 0;
-    for (auto it = table.begin(); it != table.end(); ++it, ++num_cells)
-    {
-        table_cells[num_cells] = &*it;
-        table_hashes[num_cells] = it.getHash();
-        ++next[partition_of(table_hashes[num_cells])];
-    }
-
-    index.offsets.resize(num_partitions + 1);
-    UInt64 position = 0;
-    for (size_t partition = 0; partition < num_partitions; ++partition)
-    {
-        index.offsets[partition] = position;
-        position += std::exchange(next[partition], position);
-    }
-    index.offsets[num_partitions] = position;
-
-    index.cells.resize(num_cells);
-    index.hashes.resize(num_cells);
-    for (size_t cell = 0; cell < num_cells; ++cell)
-    {
-        const UInt64 i = next[partition_of(table_hashes[cell])]++;
-        index.cells[i] = table_cells[cell];
-        index.hashes[i] = table_hashes[cell];
-    }
-}
-
-}
-
 bool AggregatedDataVariants::canIndexCells() const
 {
     switch (type)
@@ -380,48 +336,15 @@ bool AggregatedDataVariants::canIndexCells() const
     }
 }
 
-void AggregatedDataVariants::indexCells(const AdaptivePartitionLayout & layout)
+void AggregatedDataVariants::setCellIndex(CellIndex && index)
 {
-    const size_t num_partitions = layout.numPartitions();
+    ProfileEvents::increment(ProfileEvents::AggregationIndexedTables);
+    cell_index = std::move(index);
+}
 
-    auto index_table = [&]<typename TwoLevelTable>(std::type_identity<TwoLevelTable>, auto & table)
-    {
-        using Table = std::decay_t<decltype(table)>;
-        static_assert(TwoLevelTable::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
-        if constexpr (IterableCells<Table>)
-        {
-            /// The merges read the cells of a bucket of either kind of table as the cells of the two-level
-            /// table.
-            static_assert(std::is_same_v<typename Table::cell_type, typename TwoLevelTable::cell_type>);
-            const auto partition_of = [&](size_t hash)
-            {
-                const size_t partition = layout.partitionOf(hash);
-                chassert(layout.bucketOf(partition) == TwoLevelTable::getBucketFromHash(hash));
-                return partition;
-            };
-            CellIndex index(layout);
-            indexTableCells(table, num_partitions, partition_of, index);
-            cell_index = std::move(index);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot index the cells of aggregated data variant {}", getMethodName());
-        }
-    };
-
-    switch (type)
-    {
-    #define M(NAME) \
-        case Type::NAME: \
-            index_table(std::type_identity<decltype(NAME ## _two_level)::element_type::Data>{}, (NAME)->data); \
-            break;
-
-        APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
-
-    #undef M
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot index the cells of aggregated data variant {}", getMethodName());
-    }
+void AggregatedDataVariants::throwCannotIndexCells() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot index the cells of aggregated data variant {}", getMethodName());
 }
 
 bool AggregatedDataVariants::isLowCardinality() const

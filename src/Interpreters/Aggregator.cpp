@@ -3642,7 +3642,7 @@ bool Aggregator::canMergeSingleLevelInPartitions(const AggregatedDataVariants & 
 
 bool Aggregator::mergesByCellIndex(const ManyAggregatedDataVariants & tables)
 {
-    return std::ranges::all_of(tables, [](const auto & variants) { return variants->cell_index.has_value(); });
+    return std::ranges::all_of(tables, [](const auto & variants) { return variants->hasCellIndex(); });
 }
 
 Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionsAndConvertToChunk(
@@ -3852,14 +3852,10 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
                         merge_null_slot(getDataVariant<Method>(*source).data);
 
                 /// The tables of one aggregation are indexed with the same partitions, those of the merge.
-                using Cell = typename Table::cell_type;
-                for (const auto * source : sources)
+                for (auto * source : sources)
                 {
-                    chassert(source->cell_index->numPartitions() == num_partitions);
-                    source->cell_index->forEachCell<Cell>(
-                        partition_index,
-                        partition_index + 1,
-                        [&](Cell & cell, UInt64 hash) { merge_cell(Cell::getKey(cell.getValue()), cell.getMapped(), hash); });
+                    chassert(source->numCellIndexPartitions() == num_partitions);
+                    source->forEachIndexedCell<Method>(partition_index, partition_index + 1, merge_cell);
                 }
 
                 if (!collects_source_slots)
@@ -5537,7 +5533,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     bool no_more_keys = false;
 
     /// The merge inserts into the first table, which may move its cells, so its cell index goes.
-    res->cell_index.reset();
+    res->dropCellIndex();
 
     /// Enabled for all key types: unlike `executeImplBatch`, the merge path prefetches by the hash
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and

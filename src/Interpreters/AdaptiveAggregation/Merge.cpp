@@ -37,7 +37,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int FAULT_INJECTED;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
@@ -371,58 +370,26 @@ namespace
             callback(Table::cell_type::getKey(it->getValue()), it.getHash());
     }
 
-    /// A source of the adaptive merge is two-level, or single-level with an index of its cells (see
-    /// `DB::AggregatedDataVariants::indexCells`), whose partitions are those of the session's layout. These read the
-    /// cells of a source either way.
+    /// A source of the adaptive bucket merge is two-level, or single-level with an index of its cells (see
+    /// `DB::AggregatedDataVariants::indexCells`), whose partitions are those of the session's layout, which
+    /// maps a bucket to its partitions. These count and visit the cells of a source's bucket either way.
     template <typename Method>
-    size_t sourceBucketSize(DB::AggregatedDataVariants & source, size_t bucket)
+    size_t sourceBucketSize(DB::AggregatedDataVariants & source, const DB::AdaptivePartitionLayout & layout, size_t bucket)
     {
         if (source.isTwoLevel())
             return DB::getDataVariant<Method>(source).data.impls[bucket].size();
-        return source.cell_index->bucketSize(bucket);
+        return source.indexedCellCount(layout.firstPartition(bucket), layout.firstPartition(bucket + 1));
     }
 
-    /// Visits the cells of the partitions from `first_partition` to `end_partition` of an indexed source like
-    /// `forEachMappedCellWithHash`, or like `forEachKeyCellWithHash` for a set method, whose cells have no mapped value.
+    /// Visits the cells of `bucket` of a source of a map method like `forEachMappedCellWithHash`.
     template <typename Method, typename Callback>
-    void forEachIndexedCell(
-        const DB::AggregatedDataVariants::CellIndex & index, size_t first_partition, size_t end_partition, Callback && callback)
-    {
-        /// A two-level bucket is a table of the cell type of the single-level table, which the index points into.
-        using BucketTable = std::decay_t<decltype(std::declval<typename Method::Data &>().impls[0])>;
-        if constexpr (DB::IterableCells<BucketTable>)
-        {
-            using Cell = typename BucketTable::cell_type;
-            index.forEachCell<Cell>(first_partition, end_partition, [&](Cell & cell, UInt64 hash)
-            {
-                if constexpr (DB::MapAggregationMethod<Method>)
-                    callback(Cell::getKey(cell.getValue()), cell.getMapped(), hash);
-                else
-                    callback(Cell::getKey(cell.getValue()), hash);
-            });
-        }
-        else
-        {
-            /// The string table cannot be indexed, so it converts to two-level for the merge.
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "A source of the adaptive merge is neither two-level nor indexed");
-        }
-    }
-
-    /// Visits the cells of `bucket` of a source like `forEachIndexedCell`.
-    template <typename Method, typename Callback>
-    void forEachCellOfSourceBucket(DB::AggregatedDataVariants & source, size_t bucket, Callback && callback)
+    void forEachCellOfSourceBucket(
+        DB::AggregatedDataVariants & source, const DB::AdaptivePartitionLayout & layout, size_t bucket, Callback && callback)
     {
         if (source.isTwoLevel())
-        {
-            auto & table = DB::getDataVariant<Method>(source).data.impls[bucket];
-            if constexpr (DB::MapAggregationMethod<Method>)
-                forEachMappedCellWithHash(table, callback);
-            else
-                forEachKeyCellWithHash(table, callback);
-            return;
-        }
-        const auto & index = *source.cell_index;
-        forEachIndexedCell<Method>(index, index.layout.firstPartition(bucket), index.layout.firstPartition(bucket + 1), callback);
+            forEachMappedCellWithHash(DB::getDataVariant<Method>(source).data.impls[bucket], callback);
+        else
+            source.forEachIndexedCell<Method>(layout.firstPartition(bucket), layout.firstPartition(bucket + 1), callback);
     }
 
     /// The source cells of the merge units of one bucket (see `DB::Aggregator::mergeAndConvertAdaptiveBucketImpl`), a unit
@@ -452,7 +419,7 @@ namespace
             {
                 if (!data[i]->isTwoLevel())
                 {
-                    chassert(data[i]->cell_index->numPartitions() == layout.numPartitions());
+                    chassert(data[i]->numCellIndexPartitions() == layout.numPartitions());
                     continue;
                 }
                 auto & table = DB::getDataVariant<Method>(*data[i]).data.impls[bucket];
@@ -478,18 +445,16 @@ namespace
             {
                 if (data[i]->isTwoLevel())
                     continue;
-                if constexpr (DB::MapAggregationMethod<Method>)
-                    forEachIndexedCell<Method>(
-                        *data[i]->cell_index,
-                        unit_first_partition,
-                        unit_end_partition,
-                        [&](const auto & key, DB::AggregateDataPtr & mapped, size_t hash) { callback(key, &mapped, hash); });
-                else
-                    forEachIndexedCell<Method>(
-                        *data[i]->cell_index,
-                        unit_first_partition,
-                        unit_end_partition,
-                        [&](const auto & key, size_t hash) { callback(key, nullptr, hash); });
+                data[i]->forEachIndexedCell<Method>(
+                    unit_first_partition,
+                    unit_end_partition,
+                    [&](const auto & key, auto && mapped, size_t hash)
+                    {
+                        if constexpr (DB::MapAggregationMethod<Method>)
+                            callback(key, &mapped, hash);
+                        else
+                            callback(key, nullptr, hash);
+                    });
             }
             for (const auto & cell : routed[unit])
                 callback(cell.key, cell.mapped, cell.hash);
@@ -502,7 +467,7 @@ namespace
             size_t cells = routed[unit].size();
             for (size_t i = 1; i < data.size(); ++i)
                 if (!data[i]->isTwoLevel())
-                    cells += data[i]->cell_index->rangeSize(unit_first_partition, unit_first_partition + partitions_per_unit);
+                    cells += data[i]->indexedCellCount(unit_first_partition, unit_first_partition + partitions_per_unit);
             return cells;
         }
 
@@ -1041,7 +1006,12 @@ size_t Aggregator::collectAdaptiveTableStatistics(
 
 template <typename Method>
 void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
-    ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const
+    ManyAggregatedDataVariants & data,
+    const AdaptivePartitionLayout & layout,
+    Int32 bucket,
+    const AdaptiveTopKPruning & pruning,
+    std::span<UInt64> bounds,
+    Arena * arena) const
 {
     if constexpr (MapAggregationMethod<Method>)
     {
@@ -1054,6 +1024,7 @@ void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
                 scratch = ColumnUInt64::create();
             forEachCellOfSourceBucket<Method>(
                 *data[i],
+                layout,
                 bucket,
                 [&](const auto &, AggregateDataPtr & mapped, size_t hash)
                 { AdaptiveTopKPruning::addToBounds(bounds, hash, adaptiveRankCount(mapped, scratch.get(), arena)); });
@@ -1129,7 +1100,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
 
     size_t source_cells = 0;
     for (size_t i = 1; i < data.size(); ++i)
-        source_cells += sourceBucketSize<Method>(*data[i], bucket);
+        source_cells += sourceBucketSize<Method>(*data[i], layout, bucket);
 
     /// A unit is a run of partitions; the bucket splits into as many as give each unit about
     /// `adaptive_merge_unit_records` records and source cells, at most one per partition.
@@ -1145,7 +1116,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     if (pruning)
     {
         bin_bounds = pruning->boundsForBucket(bucket);
-        addMergeCountedTablesToBounds<Method>(data, bucket, *pruning, bin_bounds, arena);
+        addMergeCountedTablesToBounds<Method>(data, layout, bucket, *pruning, bin_bounds, arena);
     }
     AdaptiveTopKPruning::AliveBins alive{};
     size_t pruned_records = 0;

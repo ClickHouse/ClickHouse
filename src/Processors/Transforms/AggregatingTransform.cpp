@@ -1008,7 +1008,7 @@ private:
         PartitionMergePlan plan;
         if (Aggregator::mergesByCellIndex(*data))
         {
-            plan.partitions = data->at(0)->cell_index->numPartitions();
+            plan.partitions = data->at(0)->numCellIndexPartitions();
             plan.workers = std::min(singleLevelMergeWorkerCount(source_cells, source_memory), plan.partitions);
             if (plan.workers <= 1)
                 return {};
