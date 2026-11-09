@@ -120,6 +120,22 @@ SELECT name, sum(rows) FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_date32_projection' AND active GROUP BY name;
 DROP TABLE t_date32_projection;
 
+SELECT '-- Projection sorting key with a folded constant, reload after the ALTER';
+DROP TABLE IF EXISTS t_folded_constant_projection;
+CREATE TABLE t_folded_constant_projection (y UInt64, PROJECTION p (SELECT y ORDER BY toStartOfMonth(toDate32('2020-01-15')) + y))
+ENGINE = MergeTree ORDER BY y SETTINGS index_granularity = 1;
+ALTER TABLE t_folded_constant_projection COMMENT COLUMN y 'c' SETTINGS enable_extended_results_for_datetime_functions = 1;
+INSERT INTO t_folded_constant_projection VALUES (1), (2), (3);
+SELECT sorting_key FROM system.projections WHERE database = currentDatabase() AND table = 't_folded_constant_projection';
+DETACH TABLE t_folded_constant_projection;
+ATTACH TABLE t_folded_constant_projection;
+SELECT sorting_key FROM system.projections WHERE database = currentDatabase() AND table = 't_folded_constant_projection';
+SELECT y FROM mergeTreeProjection(currentDatabase(), t_folded_constant_projection, p)
+ORDER BY toStartOfMonth(toDate32('2020-01-15')) + y LIMIT 1 SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1;
+SELECT name, sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_folded_constant_projection' AND active GROUP BY name;
+DROP TABLE t_folded_constant_projection;
+
 SELECT '-- ReplicatedMergeTree projection, INSERT after a comment-only ALTER';
 DROP TABLE IF EXISTS t_cast_projection_replicated;
 CREATE TABLE t_cast_projection_replicated (x Nullable(UInt64), y UInt64, PROJECTION p (SELECT x, y ORDER BY CAST(x, 'UInt32')))

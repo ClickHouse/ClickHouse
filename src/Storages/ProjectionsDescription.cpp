@@ -637,8 +637,12 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         /// so the last resolved projection column has aliases fully expanded.
         if (projection_order_by)
         {
+            /// Constants folded by this analysis are written as the expressions they were folded from,
+            /// so that the key context below folds them, as a reload does.
+            ConvertToASTOptions order_by_ast_options = ast_options;
+            order_by_ast_options.use_source_expression_for_constants = true;
             auto & projection_nodes = query_node.getProjection().getNodes();
-            projection_order_by = projection_nodes.back()->toAST(ast_options);
+            projection_order_by = projection_nodes.back()->toAST(order_by_ast_options);
             projection_order_by->setAlias({});
         }
 
