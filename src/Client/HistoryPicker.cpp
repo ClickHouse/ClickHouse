@@ -11,8 +11,6 @@
 #include <string_view>
 #include <unordered_set>
 
-#include <sys/ttydefaults.h>
-
 namespace DB
 {
 
@@ -20,6 +18,11 @@ namespace
 {
 
 constexpr std::string_view PASTE_END = "\x1b[201~";
+
+/// The code of Ctrl+`c`, like `CTRL` of `sys/ttydefaults.h`, which is not available on every platform.
+constexpr char controlKeyCode(char c) { return c & 0x1f; }
+/// Backspace, like `CERASE`.
+constexpr char DELETE_KEY_CODE = 0x7f;
 
 /// The colors of the `dark256` theme of skim (`src/theme.rs`), the default of the Rust picker this replaced.
 constexpr std::string_view COLOR_PROMPT = "\x1b[38;5;110m";
@@ -50,7 +53,7 @@ std::string toDisplay(std::string_view text)
         {
             res[i] = ' ';
         }
-        else if (isControlASCII(res[i]) || res[i] == '\x7f') /// DEL
+        else if (isControlASCII(res[i]) || res[i] == DELETE_KEY_CODE)
         {
             res[i] = '?';
         }
@@ -494,22 +497,22 @@ private:
             {
                 case '\r':
                     return matches.empty() ? query : history[entries[matches[selected]].index];
-                case CTRL('C'):
-                case CTRL('G'):
+                case controlKeyCode('C'):
+                case controlKeyCode('G'):
                     return {};
-                case CTRL('D'):
+                case controlKeyCode('D'):
                     if (query.empty())
                         return {};
                     query.erase(cursor, nextCodePoint(query, cursor) - cursor);
                     break;
-                case CERASE:
-                case CTRL('H'):
+                case DELETE_KEY_CODE:
+                case controlKeyCode('H'):
                     eraseBeforeCursor(previousCodePoint(query, cursor));
                     break;
-                case CTRL('U'):
+                case controlKeyCode('U'):
                     eraseBeforeCursor(0);
                     break;
-                case CTRL('W'):
+                case controlKeyCode('W'):
                 {
                     size_t from = cursor;
                     while (from > 0 && isWhitespaceASCII(query[from - 1]))
@@ -519,27 +522,27 @@ private:
                     eraseBeforeCursor(from);
                     break;
                 }
-                case CTRL('A'):
+                case controlKeyCode('A'):
                     cursor = 0;
                     break;
-                case CTRL('E'):
+                case controlKeyCode('E'):
                     cursor = query.size();
                     break;
-                case CTRL('B'):
+                case controlKeyCode('B'):
                     cursor = previousCodePoint(query, cursor);
                     break;
-                case CTRL('F'):
+                case controlKeyCode('F'):
                     cursor = nextCodePoint(query, cursor);
                     break;
-                case CTRL('P'):
-                case CTRL('K'):
+                case controlKeyCode('P'):
+                case controlKeyCode('K'):
                     moveSelection(1);
                     break;
-                case CTRL('N'):
-                case CTRL('J'): /// Enter is '\r' in raw mode.
+                case controlKeyCode('N'):
+                case controlKeyCode('J'): /// Enter is '\r' in raw mode.
                     moveSelection(-1);
                     break;
-                case CTRL('['): /// ESC
+                case controlKeyCode('['): /// ESC
                     switch (readEscape())
                     {
                         case Escape::Abort:
