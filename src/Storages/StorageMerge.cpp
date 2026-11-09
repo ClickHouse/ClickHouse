@@ -3072,14 +3072,18 @@ std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes(const 
 {
     try
     {
+        auto access = query_context->getAccess();
         ColumnSizeByName column_sizes;
         auto first_table_without_sizes = traverseVisibleTablesUntil(query_context, [&](const auto & table)
         {
             auto sizes = table->tryGetColumnSizes(query_context);
             if (!sizes)
                 return true;
+            auto id = table->getStorageID();
+            bool show_all_columns = access->isGranted(AccessType::SHOW_COLUMNS, id.database_name, id.table_name);
             for (const auto & [name, size] : *sizes)
-                column_sizes[name].add(size);
+                if (show_all_columns || access->isGranted(AccessType::SHOW_COLUMNS, id.database_name, id.table_name, name))
+                    column_sizes[name].add(size);
             return false;
         });
         if (first_table_without_sizes)

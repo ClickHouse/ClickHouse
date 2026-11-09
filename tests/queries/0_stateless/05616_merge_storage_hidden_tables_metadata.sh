@@ -28,6 +28,8 @@ CREATE TABLE a_m ENGINE = Alias(currentDatabase(), m);
 CREATE TABLE mm (id UInt32, s String) ENGINE = Merge(currentDatabase(), '^m\$');
 CREATE TABLE a_hidden ENGINE = Alias(currentDatabase(), t_hidden);
 CREATE TABLE m_alias (id UInt32, s String) ENGINE = Merge(currentDatabase(), '^(t_visible|a_hidden)\$');
+CREATE TABLE a_show ENGINE = Alias(currentDatabase(), t_show);
+CREATE TABLE m_ashow (id UInt32, s String) ENGINE = Merge(currentDatabase(), '^(t_visible|a_show)\$');
 CREATE USER ${user} IDENTIFIED WITH plaintext_password BY '${user}';
 GRANT SELECT ON t_visible TO ${user};
 GRANT SELECT ON m TO ${user};
@@ -40,6 +42,8 @@ GRANT SHOW TABLES ON t_show TO ${user};
 GRANT SELECT(id) ON t_col TO ${user};
 GRANT SELECT ON a_hidden TO ${user};
 GRANT SELECT ON m_alias TO ${user};
+GRANT SELECT ON a_show TO ${user};
+GRANT SELECT ON m_ashow TO ${user};
 CREATE USER ${user2} IDENTIFIED WITH plaintext_password BY '${user2}';
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${user2};
 REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_hidden FROM ${user2};
@@ -85,11 +89,16 @@ SELECT 'u2 m', count() FROM m SETTINGS ${trivial};
 SELECT 'u2 m', total_rows FROM system.tables WHERE database = currentDatabase() AND name = 'm';
 "
 
-# A visible Alias child does not report the sizes of its hidden target.
-${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}" --multiline -q "
-SELECT 'm_alias', name, data_compressed_bytes, data_uncompressed_bytes FROM system.columns
-WHERE database = currentDatabase() AND table = 'm_alias' ORDER BY name;
-"
+# Column sizes of a Merge table are the sums of the column sizes the user sees on its children.
+for table_children in "m_show:'t_visible','t_show'" "m_col:'t_visible','t_col'" "m_alias:'t_visible','a_hidden'" "m_ashow:'t_visible','a_show'"
+do
+    table=${table_children%%:*}
+    ${CLICKHOUSE_CLIENT} --user "${user}" --password "${user}" -q "
+    SELECT '${table}', c.name, c.data_compressed_bytes = v.compressed, c.data_uncompressed_bytes = v.uncompressed
+    FROM system.columns AS c INNER JOIN (SELECT name, sum(data_compressed_bytes) AS compressed, sum(data_uncompressed_bytes) AS uncompressed
+        FROM system.columns WHERE database = currentDatabase() AND table IN (${table_children#*:}) GROUP BY name) AS v USING (name)
+    WHERE c.database = currentDatabase() AND c.table = '${table}' ORDER BY c.name"
+done
 
 ${CLICKHOUSE_CLIENT} --multiline -q "
 SELECT 'admin m', count() FROM m SETTINGS ${trivial};
