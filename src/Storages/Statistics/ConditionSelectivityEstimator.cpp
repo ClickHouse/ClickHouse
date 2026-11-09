@@ -5,6 +5,7 @@
 #include <stack>
 #include <cmath>
 
+#include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -406,6 +407,13 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             return false;
         }
 
+        /// NULL stays undecided: `ALWAYS_FALSE` would become `ALWAYS_TRUE` under `NOT`.
+        if (auto folded = ActionsDAG::tryFoldPredicateThroughMaterialize(func.getDAGNode()); folded && !folded->isNullAt(0))
+        {
+            out.function = folded->getBool(0) ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
+        }
+
         if (num_args == 1)
         {
             /// `isNull(col)` / `isNotNull(col)` — populate the corresponding null-check set.
@@ -706,6 +714,11 @@ void ConditionSelectivityEstimatorBuilder::addPart(UInt64 rows)
     parts_columns.emplace_back(rows, 0);
 }
 
+void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
+{
+    estimator->total_rows += rows;
+}
+
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
     if (column_stats == nullptr)
@@ -727,6 +740,11 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     column_estimator.stats->merge(column_stats);
     if (!parts_columns.empty())
         ++parts_columns.back().second;
+}
+
+void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality)
+{
+    estimator->column_estimators.at(column_name).stats->setCardinality(cardinality);
 }
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const

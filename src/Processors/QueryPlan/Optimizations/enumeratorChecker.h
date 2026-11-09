@@ -1,10 +1,15 @@
 #pragma once
 
-#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+#include <array>
+#include <bit>
 #include <functional>
+#include <limits>
+#include <vector>
 
 namespace DB
 {
@@ -45,7 +50,6 @@ class EnumeratorCheckerWithCosts
 public:
     EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_)
         : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_) {}
-    double computeJoinCost(UInt lhs, UInt rhs, const JoinKeyEstimate & keys, JoinKind join_kind, JoinStrictness strictness) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
@@ -54,38 +58,50 @@ public:
 
     size_t numRelations() const { return num_relations; }
 private:
+    using Plan = typename DPTable::DPEntry::Plan;
+
+    /// The search value of the rows of a subset, which stands in for an unknown estimate, as `searchRows` counts it.
+    double searchRows(UInt relations) const;
+
+    /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
+    void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
+        const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges);
+
+    struct MergeInputCandidate
+    {
+        Int8 plan = -1;
+        MergeJoinInput input;
+    };
+    struct MergeInputCandidates
+    {
+        std::array<MergeInputCandidate, 2> items;
+        size_t size = 0;
+        const MergeInputCandidate * begin() const { return items.data(); }
+        const MergeInputCandidate * end() const { return items.data() + size; }
+    };
+    /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
+    /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
+    MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
+    /// The cheapest plan of the subset for -1, else its plan in `ordered`.
+    const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
+
     DPTable dp_table;
     Optimizer & optimizer;
     const size_t num_relations;
 };
 
 template <class TDPTable, class TOptimizer>
-double
-EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const UInt lhs,
-                                                                  const UInt rhs,
-                                                                  const JoinKeyEstimate & keys,
-                                                                  JoinKind join_kind,
-                                                                  JoinStrictness strictness) const
+double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::searchRows(const UInt relations) const
 {
-    /// The search value of an entry as `searchRows` counts it, with the same rule for each join below.
-    std::function<double(UInt)> search_rows = [&](UInt relations) -> double
-    {
-        const auto & entry = dp_table[relations];
-        if (entry.estimated_rows)
-            return static_cast<double>(*entry.estimated_rows);
-        if (entry.left != 0 || entry.right != 0)
-            return joinSearchRows(entry.sel, search_rows(entry.left), search_rows(entry.right), entry.kind, entry.strictness);
-        if (entry.max_rows)
-            return static_cast<double>(*entry.max_rows);
-        return 1;
-    };
-    const auto & left_entry = dp_table[lhs];
-    const auto & right_entry = dp_table[rhs];
-    const double joined_rows = joinedRowsSearchValue(
-        keys, left_entry.estimated_rows, right_entry.estimated_rows, search_rows(lhs), search_rows(rhs), join_kind, strictness);
-    return left_entry.cost + right_entry.cost + joined_rows;
+    const auto & entry = dp_table[relations];
+    if (entry.estimated_rows)
+        return static_cast<double>(*entry.estimated_rows);
+    if (entry.left != 0 || entry.right != 0)
+        return joinSearchRows(entry.sel, searchRows(entry.left), searchRows(entry.right), entry.kind, entry.strictness);
+    if (entry.max_rows)
+        return static_cast<double>(*entry.max_rows);
+    return 1;
 }
-
 
 template <class TDPTable, class TOptimizer>
 void
@@ -140,15 +156,20 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         kind = JoinKind::Cross;
 
     auto keys = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
-    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys, kind, strictness);
+    const auto & left_entry = dp_table[lhs_subset];
+    const auto & right_entry = dp_table[rhs_subset];
+    const double left_search_rows = searchRows(lhs_subset);
+    const double right_search_rows = searchRows(rhs_subset);
+    const double joined_rows = joinedRowsSearchValue(
+        keys, left_entry.estimated_rows, right_entry.estimated_rows, left_search_rows, right_search_rows, kind, strictness);
+    const double rows_cost = left_entry.rows_cost + right_entry.rows_cost + joined_rows;
+    /// The hash work counts an input without an estimate by its search value, as the rows do.
+    const double plan_cost = left_entry.cost + right_entry.cost + joined_rows
+        + optimizer.hashJoinWork(left_mask, left_search_rows, right_mask, right_search_rows);
 
     if (recorded_splits)
     {
-        RecordedJoinSplits::Split split{
-            .left = lhs_subset,
-            .right = rhs_subset,
-            .edges = {},
-            .local_cost = plan_cost - dp_table[lhs_subset].cost - dp_table[rhs_subset].cost};
+        RecordedJoinSplits::Split split{.left = lhs_subset, .right = rhs_subset, .edges = {}, .local_cost = joined_rows};
         for (const auto * recorded_edge : edge)
             split.edges.push_back(recorded_edge - optimizer.query_graph.edges.data());
         recorded_splits->splits.push_back(std::move(split));
@@ -171,10 +192,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
                 .left = left_mask,
                 .right = right_mask,
                 .cost = plan_cost,
+                .rows_cost = rows_cost,
                 .sel = keys.selectivity,
-                .estimated_rows = optimizer.estimateCardinality(
-                    dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, keys, kind, strictness),
-                .rows_rest_on_assumption = joinRowsRestOnAssumption(keys, dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows),
+                .estimated_rows = optimizer.estimateCardinality(left_entry.estimated_rows, right_entry.estimated_rows, keys, kind, strictness),
+                .rows_rest_on_assumption = joinRowsRestOnAssumption(keys, left_entry.estimated_rows, right_entry.estimated_rows),
                 .kind = kind,
                 .strictness = strictness,
                 .edges = {edge.begin(), edge.end()}};
@@ -187,6 +208,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.left = lhs_subset;
         entry.right = rhs_subset;
         entry.cost = plan_cost;
+        entry.rows_cost = rows_cost;
         entry.sel = keys.selectivity;
         entry.kind = kind;
         entry.strictness = strictness;
@@ -194,6 +216,118 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.rows_rest_on_assumption = joinRowsRestOnAssumption(keys, dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows);
         entry.max_rows = estimateJoinRowsUpperBound(dp_table[lhs_subset].max_rows, dp_table[rhs_subset].max_rows, kind, strictness);
         entry.edges.assign(edge.begin(), edge.end());
+        entry.method = JoinMethod::Hash;
+        entry.sharded = false;
+        entry.merge_class = -1;
+        entry.order_class = -1;
+        entry.left_plan = -1;
+        entry.right_plan = -1;
+    }
+
+    if (optimizer.useInterestingOrders())
+        acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, keys, edge);
+}
+
+template <class TDPTable, class TOptimizer>
+typename EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::MergeInputCandidates
+EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UInt subset, const Int32 key) const
+{
+    const auto & entry = dp_table[subset];
+    MergeInputCandidates candidates;
+    auto add = [&](const Plan & plan, Int8 plan_index, bool sorted, bool shardable)
+    {
+        if (plan.estimated_rows)
+            candidates.items[candidates.size++] = {plan_index, {plan.cost, *plan.estimated_rows, sorted, shardable}};
+    };
+
+    if (std::popcount(subset) == 1)
+    {
+        const auto relation = static_cast<UInt32>(subset);
+        add(entry, -1, optimizer.isReadInOrder(relation, key), optimizer.isShardableLeaf(relation, key));
+        return candidates;
+    }
+    add(entry, -1, entry.order_class == key, entry.order_class == key && entry.sharded);
+    /// `ordered` has at most one plan per class.
+    for (size_t i = 0; i < entry.ordered.size(); ++i)
+    {
+        if (entry.ordered[i].order_class == key)
+        {
+            add(entry.ordered[i], static_cast<Int8>(i), true, entry.ordered[i].sharded);
+            break;
+        }
+    }
+    return candidates;
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
+    const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
+    const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges)
+{
+    const auto left_mask = static_cast<UInt32>(lhs_subset);
+    const auto right_mask = static_cast<UInt32>(rhs_subset);
+    for (UInt64 key_classes = optimizer.mergeKeyClasses(edges, left_mask, right_mask, kind, strictness); key_classes; key_classes &= key_classes - 1)
+    {
+        const auto key = static_cast<Int32>(std::countr_zero(key_classes));
+        const MergeInputCandidate * left = nullptr;
+        const MergeInputCandidate * right = nullptr;
+        double cost = std::numeric_limits<double>::infinity();
+        const auto left_candidates = mergeInputCandidates(lhs_subset, key);
+        const auto right_candidates = mergeInputCandidates(rhs_subset, key);
+        for (const auto & left_candidate : left_candidates)
+        {
+            for (const auto & right_candidate : right_candidates)
+            {
+                const double candidate_cost = optimizer.mergeJoinCost(
+                    left_candidate.input, left_mask, right_candidate.input, right_mask, key, keys);
+                if (candidate_cost < cost)
+                {
+                    cost = candidate_cost;
+                    left = &left_candidate;
+                    right = &right_candidate;
+                }
+            }
+        }
+        if (!left)
+            continue;
+
+        /// Decide where the plan goes before building it, a plan that is not kept costs no allocation.
+        auto & entry = dp_table[result_subset];
+        const bool keeps_order = optimizer.isInterestingOrder(key, static_cast<UInt32>(result_subset));
+        auto ordered_it = keeps_order ? std::ranges::find(entry.ordered, key, &Plan::order_class) : entry.ordered.end();
+        const bool new_ordered = keeps_order && ordered_it == entry.ordered.end();
+        const bool better_ordered = keeps_order && !new_ordered && cost < ordered_it->cost;
+        const bool better_cheapest = cost < entry.cost;
+        if (!new_ordered && !better_ordered && !better_cheapest)
+            continue;
+
+        Plan plan;
+        plan.left = lhs_subset;
+        plan.right = rhs_subset;
+        plan.left_plan = left->plan;
+        plan.right_plan = right->plan;
+        plan.cost = cost;
+        plan.rows_cost = planAt(lhs_subset, left->plan).rows_cost + planAt(rhs_subset, right->plan).rows_cost
+            + estimateJoinedRows(keys, static_cast<double>(left->input.rows), static_cast<double>(right->input.rows));
+        plan.sel = keys.selectivity;
+        plan.kind = kind;
+        plan.strictness = strictness;
+        plan.estimated_rows = optimizer.estimateCardinality(left->input.rows, right->input.rows, keys, kind, strictness);
+        plan.rows_rest_on_assumption = joinRowsRestOnAssumption(keys, left->input.rows, right->input.rows);
+        plan.max_rows = estimateJoinRowsUpperBound(
+            planAt(lhs_subset, left->plan).max_rows, planAt(rhs_subset, right->plan).max_rows, kind, strictness);
+        plan.edges.assign(edges.begin(), edges.end());
+        plan.method = JoinMethod::Merge;
+        plan.sharded = optimizer.isShardedMerge(left->input, left_mask, right->input, right_mask);
+        plan.merge_class = static_cast<Int8>(key);
+        plan.order_class = keeps_order ? static_cast<Int8>(key) : -1;
+
+        if (new_ordered)
+            entry.ordered.push_back(plan);
+        else if (better_ordered)
+            *ordered_it = plan;
+        if (better_cheapest)
+            static_cast<Plan &>(entry) = std::move(plan);
     }
 }
 }

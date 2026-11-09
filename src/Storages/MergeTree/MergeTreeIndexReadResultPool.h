@@ -34,6 +34,7 @@ struct LateRuntimeFilterPruning
         size_t part_starting_offset_in_query_,
         StorageMetadataPtr metadata_snapshot_,
         NameSet all_updated_columns_,
+        NameSet value_updated_columns_,
         size_t num_marks,
         size_t num_pending_);
 
@@ -46,6 +47,7 @@ struct LateRuntimeFilterPruning
     const size_t part_starting_offset_in_query;
     const StorageMetadataPtr metadata_snapshot;
     const NameSet all_updated_columns;
+    const NameSet value_updated_columns;
 
     std::unique_ptr<std::atomic<bool>[]> dropped;
     /// The number of filters that were not ready at the last pruning.
@@ -112,7 +114,8 @@ public:
         const MergeTreeDataPartInfoForReaderPtr & part_info,
         const SkipIndexReadInput & input,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns);
 
     /// Whether `read` prunes by JOIN runtime filters. It prunes with the filters that are ready, fail-open;
     /// `pruneByLateRuntimeFilters` prunes the result again with the filters that became ready later.
@@ -146,6 +149,7 @@ private:
         size_t part_starting_offset_in_query,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns,
         size_t & num_pending) const;
 
     DynamicPredicateBuilder dynamic_predicate_builder;
@@ -325,7 +329,8 @@ public:
         const SkipIndexReadInput & input,
         const RangesInDataParts & projection_parts,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns);
 
     /// Prunes a result of `getOrBuildIndexReadResult` again with the JOIN runtime filters that became ready later.
     void pruneByLateRuntimeFilters(const MergeTreeIndexReadResult & result) const;

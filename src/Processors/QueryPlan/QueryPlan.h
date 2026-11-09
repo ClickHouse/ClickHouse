@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/CostEstimationInfo.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <functional>
 #include <list>
@@ -27,6 +28,7 @@ namespace DB
 {
 
 class AnalyzeStepsStats;
+struct ExplainFormatSettings;
 
 struct PrettyNames;
 struct PrettyNamesPerPlan;
@@ -82,6 +84,9 @@ struct ExplainPlanOptions
     /// followed by the exchanges between the fragments.
     /// Not sent to remote shards by `toSettingsChanges`, because it cannot be combined with `distributed`.
     bool fragments = false;
+    /// Draw a plan executed by stateless workers as boxes: one box per step, a frame per query fragment, and the
+    /// exchanges as edges between the fragments. Not sent to remote shards by `toSettingsChanges`, like `fragments`.
+    bool tree = false;
     /// Add input headers to step.
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.
@@ -142,6 +147,9 @@ public:
     void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
+    static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
+    static void deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
     void ensureSerialized(size_t max_supported_version) const;
@@ -248,7 +256,7 @@ public:
         std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
-    using Nodes = std::list<Node>;
+    using Nodes = ListWithMemoryTracking<Node>;
 
     /// Extract subplan from plan from the root node.
     /// The root node and all the children will be removed from the nodes.
@@ -351,6 +359,15 @@ struct QueryPlanAndSets
 };
 
 std::string debugExplainStep(IQueryPlanStep & step);
+
+/// The lines `EXPLAIN PLAN` prints under the line of a step, as chosen by `options`: the header, the input headers, the
+/// sorting, the actions, the indexes, the projections, the distributed plan and, with `steps_to_stats`, the measured
+/// statistics. Every line starts with `settings.detail_prefix` and ends with a newline.
+void explainStepDetails(
+    IQueryPlanStep & step,
+    ExplainFormatSettings & settings,
+    const ExplainPlanOptions & options,
+    const AnalyzeStepsStats * steps_to_stats = nullptr);
 std::string debugExplainPlan(const QueryPlan & plan);
 
 /// First step of the subtree which cannot be serialized for remote execution, or nullptr if all can.

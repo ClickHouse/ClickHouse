@@ -199,10 +199,9 @@ struct DecorrelationContext
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
-    /// The decorrelated plan joins the distinct correlation keys of the outer stream (see
-    /// buildCorrelatedDomainPlan), so its keys are a subset of the outer keys. Substitution of the
-    /// correlated columns leaves the subquery's own keys instead.
-    bool domain_joined = false;
+    /// Whether the correlated columns of the decorrelated plan may come from the distinct outer values, where `NULL`
+    /// is a value. Otherwise they are equal inner columns, which the retained `equals` filter never lets be `NULL`.
+    bool uses_correlated_domain = false;
 };
 
 /// How to convert an equivalent column to exactly the correlated column type.
@@ -418,7 +417,7 @@ bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
 /// `distinct_overflow_mode` can never truncate the domain, and no external `DISTINCT`.
 QueryPlan buildCorrelatedDomainPlan(DecorrelationContext & context)
 {
-    context.domain_joined = true;
+    context.uses_correlated_domain = true;
     context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
     context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
@@ -1584,9 +1583,9 @@ QueryPlan buildLogicalJoinForLateral(
         /// Remove algorithms that are not compatible with in-memory buffering
         /// of correlated subquery input: the input stream must be fully evaluated
         /// before the lateral subquery side is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH; });
         if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+            join_algorithms = {JoinAlgorithm::HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
@@ -1607,7 +1606,7 @@ QueryPlan buildLogicalJoin(
     QueryPlan decorrelated_plan,
     const CorrelatedSubquery & correlated_subquery,
     bool uses_in_memory_buffer,
-    bool domain_joined
+    bool uses_correlated_domain
 )
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
@@ -1670,7 +1669,11 @@ QueryPlan buildLogicalJoin(
         std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
-        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        /// A `NULL` domain value has its own evaluation of the subquery, which must match the outer rows with `NULL`.
+        auto key_operator = uses_correlated_domain && isNullableOrLowCardinalityNullable(eq_arguments.front().getType())
+            ? JoinConditionOperator::NullSafeEquals
+            : JoinConditionOperator::Equals;
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(key_operator));
         predicates.push_back(std::move(eq_node));
     }
 
@@ -1691,7 +1694,7 @@ QueryPlan buildLogicalJoin(
     makeInternalDecorrelationJoinUnbounded(*result_join);
     /// Joined with the outer stream's distinct keys, the decorrelated side only has keys the outer
     /// stream has.
-    if (domain_joined)
+    if (uses_correlated_domain)
         result_join->setProbeKeysWithinPreservedSide();
 
     /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
@@ -1702,12 +1705,12 @@ QueryPlan buildLogicalJoin(
         /// of correlated subquery input.
         /// We must be sure that the input stream is fully evaluated
         /// before the correlated subquery is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH; });
         /// This JOIN is an internal decorrelation detail, so the user-facing `join_algorithm` list must not
         /// decide whether it can run at all: with `auto` or a merge-only list nothing would survive the filter
         /// and `chooseJoinAlgorithm` would throw `NOT_IMPLEMENTED`. Force the compatible algorithms instead.
         if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+            join_algorithms = {JoinAlgorithm::HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
@@ -1720,7 +1723,7 @@ QueryPlan buildLogicalJoin(
         /// that can execute the join the decorrelation just built.
         auto & join_settings = result_join->getJoinSettings();
         if (!JoinCommon::canBeExecutedByEnabledAlgorithm(join_settings, join_kind_to_use, JoinStrictness::Any))
-            join_settings.join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+            join_settings.join_algorithms = {JoinAlgorithm::HASH};
     }
 
     QueryPlan result_plan;
@@ -1867,7 +1870,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(decorrelated_plan),
                 correlated_subquery,
                 context.uses_in_memory_buffer,
-                context.domain_joined);
+                context.uses_correlated_domain);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -1918,7 +1921,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(decorrelated_plan),
                 correlated_subquery,
                 context.uses_in_memory_buffer,
-                context.domain_joined);
+                context.uses_correlated_domain);
             break;
         }
         case CorrelatedSubqueryKind::LATERAL_JOIN:

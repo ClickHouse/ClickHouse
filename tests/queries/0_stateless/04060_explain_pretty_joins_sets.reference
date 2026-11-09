@@ -3,7 +3,7 @@ Output: a, b, x, y
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Cost: estimated no stats
 │  Selectivity: estimated (NDV) 0.01
 │  Output rows: estimated 100.00
@@ -25,7 +25,7 @@ Output: a, b, x, y
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Cost: estimated no stats
 │  Selectivity: estimated (NDV) 0.01
 │  Output rows: estimated 100.00

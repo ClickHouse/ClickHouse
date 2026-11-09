@@ -50,7 +50,7 @@ Output: a, b, c, x, y
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~1000] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Cost: estimated no stats
 │  Selectivity: estimated (NDV) 0.001
 │  Output rows: estimated 1.00 thousand

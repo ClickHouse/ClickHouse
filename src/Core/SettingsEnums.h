@@ -136,6 +136,7 @@ DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
+DECLARE_SETTING_ENUM(HashJoinLayout)
 
 /// How the distinct value combinations of several key columns follow from the NDVs of the columns, see
 /// `query_plan_join_multi_key_model` and `query_plan_group_multi_key_model`.
