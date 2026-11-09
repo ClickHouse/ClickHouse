@@ -1,14 +1,16 @@
 <!--
     Squashing blocks with a `JSON` column with 256 dynamic paths (8 per row, `Int64` or `String` values, so every path
     is a `Dynamic` with two variants). `INSERT INTO ... ENGINE = Null` squashes 65536 rows from a `Memory` table into one
-    block: 512 blocks of 128 rows, or 8 blocks of 8192 rows. Before the rows are inserted,
-    `ColumnObject::prepareForSquashing` reserves the memory of every dynamic path for all rows of the result, including
-    the rows of the first block, which is the destination. The discriminators and offsets of a dynamic path are reserved
-    exactly, so a smaller reservation makes every dynamic path grow, that is reallocate and copy, during the squashing.
+    block: 512 blocks of 128 rows, or 8 blocks of 8192 rows.
+
+    The squashing puts a lot of pressure on memory allocation: every dynamic path is a separate column, which is
+    preallocated for all rows of the result (`prepareForSquashing`) and then filled from every source block. The test
+    guards against inefficiencies in this logic, such as reservations that are too small or unnecessary allocations.
 
     `burst` is the number of consecutive rows with the same 8 paths:
         - `burst = 1` (dense): every block has every path;
-        - `burst = 512` (sparse, time-clustered events): a block of 128 rows has 8 of the 256 paths of the result.
+        - `burst = 512` (sparse, time-clustered events): a block of 128 rows has 8 of the 256 paths of the result,
+          a block of 8192 rows has 128.
 -->
 <test>
     <substitutions>

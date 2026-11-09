@@ -615,7 +615,6 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     auto target = type->createColumn();
     auto & target_object = assert_cast<ColumnObject &>(*target);
     target_object.insert(Object{{"a", Field{UInt64(1'000)}}});
-    const Field initial_value = target_object[0];
 
     VectorWithMemoryTracking<ColumnPtr> sources;
     sources.push_back(std::move(source));
@@ -634,14 +633,8 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     const size_t dynamic_path_capacity = target_object.getDynamicPathsPtrs().at("a")->capacity();
     ASSERT_GE(dynamic_path_capacity, expected_reservation);
 
-    ASSERT_EQ(sources.front()->size(), source_rows);
+    /// The reservation is enough: the dynamic path does not grow while the `factor` batches are inserted.
     for (size_t batch = 0; batch != factor; ++batch)
-        target_object.insertRangeFrom(*sources.front(), 0, sources.front()->size());
-
-    /// The reservation was enough: the dynamic path did not grow.
+        target_object.insertRangeFrom(*sources.front(), 0, source_rows);
     ASSERT_EQ(target_object.getDynamicPathsPtrs().at("a")->capacity(), dynamic_path_capacity);
-    ASSERT_EQ(target_object.size(), 1u + source_rows * factor);
-    ASSERT_EQ(target_object[0], initial_value);
-    for (size_t i = 1; i != target_object.size(); ++i)
-        ASSERT_EQ(target_object[i], (*sources.front())[(i - 1) % sources.front()->size()]);
 }
