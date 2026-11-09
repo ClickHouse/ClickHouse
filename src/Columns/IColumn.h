@@ -874,18 +874,7 @@ public:
                 subcolumn = std::move(replacement);
             }
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
             chassert(std::as_const(subcolumn)->use_count() == 1);
-            /// Verify sub-columns are also use_count=1. Use the recursive callback that takes
-            /// `const IColumn &` directly: passing a `WrappedPtr` to a callback for columns that
-            /// store children as `ColumnPtr` (e.g. `ColumnFunction::captured_columns`) would
-            /// construct a temporary `WrappedPtr` that itself holds a reference, making the
-            /// `use_count() == 1` check over-count by one.
-            std::as_const(subcolumn)->forEachSubcolumnRecursively([](const IColumn & sub)
-            {
-                chassert(sub.use_count() == 1);
-            });
-#endif
         });
     }
 
@@ -898,6 +887,20 @@ public:
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2 for an exclusively owned source.
         mutateSubcolumnsDeeply(*res);
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Verify that all sub-columns, at every depth, are exclusively owned. This is done once for
+        /// the whole tree here rather than at every level of `mutateSubcolumnsDeeply`: a check of the
+        /// whole subtree at every level costs O(depth * size) and makes deeply nested columns
+        /// (e.g. nested `Dynamic`) extremely slow in debug and sanitizer builds.
+        /// Use the recursive callback that takes `const IColumn &` directly: passing a `WrappedPtr`
+        /// to a callback for columns that store children as `ColumnPtr` (e.g.
+        /// `ColumnFunction::captured_columns`) would construct a temporary `WrappedPtr` that itself
+        /// holds a reference, making the `use_count() == 1` check over-count by one.
+        std::as_const(*res).forEachSubcolumnRecursively([](const IColumn & sub)
+        {
+            chassert(sub.use_count() == 1);
+        });
+#endif
         /// Only now the source can be released: until this point an exception has to leave it valid.
         /// Keeping it alive does not affect the sub-column counters, so it does not hide sharing.
         ptr.reset(); /// Reset use_count to 1.
