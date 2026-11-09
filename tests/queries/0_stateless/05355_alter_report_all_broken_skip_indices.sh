@@ -89,6 +89,7 @@ check_index_validation_error()
     local expected_code_name="$3"
     local first_index="$4"
     local second_index="$5"
+    local expected_message="${6:-}"
     local error
 
     if error=$($CLICKHOUSE_CLIENT --query "$query" 2>&1); then
@@ -100,7 +101,26 @@ check_index_validation_error()
     [[ "$error" == *"$expected_code_name"* ]]
     [[ "$error" == *"$first_index"* ]]
     [[ "$error" == *"$second_index"* ]]
+    if [[ -n "$expected_message" ]]; then
+        [[ "$error" == *"$expected_message"* ]]
+    fi
 }
+
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE TABLE alter_mixed_invalid_indices
+    (
+        x String,
+        INDEX idx_length length(x) TYPE minmax,
+        INDEX idx_token x TYPE tokenbf_v1(256, 2, 0)
+    ) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 0;
+"
+check_index_validation_error \
+    'ALTER TABLE alter_mixed_invalid_indices MODIFY COLUMN x UInt64' \
+    'Code: 43.' 'ILLEGAL_TYPE_OF_ARGUMENT' 'idx_length' 'idx_token' \
+    'Cannot apply ALTER because it breaks skip indices:'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE alter_mixed_invalid_indices'
+echo 'Both mixed-stage invalid indices reported'
 
 $CLICKHOUSE_CLIENT --multiquery --query "
     CREATE TABLE alter_invalid_text_indices
