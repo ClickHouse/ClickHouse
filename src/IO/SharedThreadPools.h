@@ -73,6 +73,7 @@ private:
     M(DropDistributedCache, "DropDistributedCacheThreadPool", DropDistributedCache) \
     M(FormatParsing, "FormatParsingThreadPool", FormatParsing) \
     M(IcebergManifestDecode, "IcebergManifestDecodeThreadPool", IcebergManifestDecode) \
+    M(ParquetEncoder, "ParquetEncoderThreadPool", ParquetEncoder) \
     M(AIRequest, "AIRequestThreadPool", AIRequest)
 
 #define DECLARE_STATIC_THREAD_POOL_GETTER(SUFFIX, NAME, METRIC) StaticThreadPool & get##SUFFIX##ThreadPool();
