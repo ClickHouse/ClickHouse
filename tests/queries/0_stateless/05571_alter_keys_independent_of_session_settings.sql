@@ -101,8 +101,9 @@ DROP TABLE IF EXISTS t_cast_aggregate_projection;
 CREATE TABLE t_cast_aggregate_projection (x Nullable(UInt64), PROJECTION p (SELECT CAST(x, 'UInt32') AS k, count() GROUP BY k))
 ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_cast_aggregate_projection COMMENT COLUMN x 'c' SETTINGS cast_keep_nullable = 1;
-INSERT INTO t_cast_aggregate_projection VALUES (1), (2), (2);
-SELECT CAST(x, 'UInt32') AS k, count() FROM t_cast_aggregate_projection GROUP BY k ORDER BY k;
+-- The INSERT and the SELECT pin the default: a projection is still calculated and read with the session's cast_keep_nullable (#116824).
+INSERT INTO t_cast_aggregate_projection SETTINGS cast_keep_nullable = 0 VALUES (1), (2), (2);
+SELECT CAST(x, 'UInt32') AS k, count() FROM t_cast_aggregate_projection GROUP BY k ORDER BY k SETTINGS cast_keep_nullable = 0;
 SELECT name, sum(rows) FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_cast_aggregate_projection' AND active GROUP BY name;
 DROP TABLE t_cast_aggregate_projection;
