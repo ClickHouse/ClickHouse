@@ -403,6 +403,22 @@ void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const
     }
 }
 
+/// Drops the metadata and the storage snapshots the query has cached, so that the next reads see
+/// the metadata committed as of now.
+void dropQueryMetadataCache(const ContextPtr & context)
+{
+    auto metadata_cache = context->getQueryMetadataCache();
+    if (!metadata_cache)
+        return;
+
+    {
+        auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
+        cache->clear();
+    }
+    auto [cache, cache_lock] = metadata_cache->getStorageSnapshotCache();
+    cache->clear();
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
@@ -423,11 +439,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
             /// then all repopulate from the metadata committed as of holding the lock.
-            if (auto metadata_cache = context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
+            dropQueryMetadataCache(context);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
             alter_commands->validate(table, context);
 
@@ -439,6 +451,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             table->checkAlterIsPossible(*alter_commands, context);
             context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
+            /// The caches hold the metadata from before this ALTER, the following segments must see its result.
+            dropQueryMetadataCache(context);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
