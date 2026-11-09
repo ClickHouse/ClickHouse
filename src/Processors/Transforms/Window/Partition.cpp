@@ -10,7 +10,11 @@ Partition::Partition()
 
 void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
-    partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .rows_count = 1, .start_visible = true, .end_visible = false};
+    partition_bounds.start = first_row;
+    partition_bounds.end = blocks.next(first_row);
+    partition_bounds.rows_count = 1;
+    partition_bounds.start_visible = true;
+    partition_bounds.end_visible = false;
     advance(blocks);
 }
 
