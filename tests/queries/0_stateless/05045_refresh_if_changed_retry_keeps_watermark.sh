@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database
+# Tags: no-ordinary-database, no-replicated-database, no-fasttest
+# no-fasttest: the test waits for a 10-second retry backoff and then for several scheduled refreshes.
 # Refreshable MVs with non-replicated inner tables are refused on a Replicated database.
 # `REFRESH ... IF CHANGED`: a refresh that succeeded only on a retry must still leave a usable
 # watermark. The view definition hash must not depend on per-attempt diagnostics (`log_comment`
