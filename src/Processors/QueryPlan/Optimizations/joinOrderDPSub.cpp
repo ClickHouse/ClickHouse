@@ -207,58 +207,90 @@ private:
     bool useDistribution() const { return dpsub_data.distribution; }
     /// The single-type equivalence classes with columns on both sides: the keys both sides may be partitioned by.
     UInt64 partitionKeyClasses(UInt32 left_mask, UInt32 right_mask) const;
+    /// The states of a plan's rows over the nodes besides its partitioning (`DPPlan::partition_class`): -1 is partitioned
+    /// in any way, a class index is partitioned by that class.
+    static constexpr Int8 replicated_state = -2;  /// A full copy on every node.
+    static constexpr Int8 single_node_state = -3; /// All rows on one node.
     /// Whether a later join may still use a result partitioned by the equivalence class.
     bool isInterestingPartition(Int32 partition_class, UInt32 relations) const
     {
         return (dpsub_data.class_relations[partition_class] & ~relations) && dpsub_data.class_single_type[partition_class];
     }
+    /// Whether a set keeps its cheapest plan in a state besides its cheapest plan overall.
+    bool isInterestingState(Int8 state, UInt32 relations) const
+    {
+        if (state >= 0)
+            return isInterestingPartition(state, relations);
+        const UInt32 all_relations = (static_cast<UInt32>(1) << query_graph.relation_stats.size()) - 1;
+        return state == single_node_state || (state == replicated_state && relations != all_relations);
+    }
 
-    /// The costs of a hash join of two sides on the nodes, in the units of the Cascades cost model (`CostConfig`): the
-    /// work per node, the bytes an exchange moves per node, and a fixed cost per exchange.
+    /// The costs of the hash joins of two sides on the nodes, in the units of the Cascades cost model (`CostConfig`): the
+    /// work per node, the bytes an exchange moves per node, and a fixed cost per exchange. Each side is first moved to the
+    /// state a join needs with the exchanges Cascades uses for it.
     struct DistributedJoinCost
     {
         const CostConfig & config;
         double nodes = 1;
-        double left_bytes = 1;
-        double right_bytes = 1;
 
-        /// A shuffle moves 1/N of the rows per node, a broadcast sends all of them to every node.
-        double exchange(double rows, double bytes, bool broadcast) const
+        static constexpr double impossible = std::numeric_limits<double>::infinity();
+        double fixedCost() const { return config.exchange_fixed_overhead * config.sequential_weight; }
+        double network(double rows, double bytes) const { return rows * bytes * config.network_weight; }
+        /// A gather or a scatter sends every row through one node.
+        double funnel(double rows) const { return config.funnel_sequential_cost_per_row * rows * config.sequential_weight; }
+
+        /// To partitioned by the class, or in any way for -1: a shuffle moves 1/N of the rows per node, a scatter from one
+        /// node sends them all. Copies cannot be split without multiplying the rows.
+        double toPartitioned(Int8 state, Int8 key, double rows, double bytes) const
         {
-            const double network = rows * bytes / (broadcast ? 1.0 : nodes);
-            return network * config.network_weight + config.exchange_fixed_overhead * config.sequential_weight;
+            if (state == replicated_state)
+                return impossible;
+            if (state == single_node_state)
+                return network(rows, bytes) + fixedCost() + funnel(rows);
+            if (key < 0 || state == key)
+                return 0;
+            return network(rows, bytes) / nodes + fixedCost();
         }
-        double buildWork(double rows, double bytes) const { return (config.hash_table_build_factor + bytes) * rows; }
-        /// Every node builds the hash table of the whole broadcast side.
-        double broadcastRight(double left_rows, double right_rows, double joined_rows) const
+        /// To a copy on every node: a broadcast from one node, after a gather when the rows are on several nodes.
+        double toReplicated(Int8 state, double rows, double bytes) const
         {
-            return exchange(right_rows, right_bytes, true)
-                + config.work_weight * ((left_rows + joined_rows) / nodes + buildWork(right_rows, right_bytes));
+            if (state == replicated_state)
+                return 0;
+            const double broadcast = network(rows, bytes) + fixedCost();
+            return state == single_node_state ? broadcast : broadcast + toSingleNode(state, rows, bytes);
         }
-        double broadcastLeft(double left_rows, double right_rows, double joined_rows) const
+        /// To one node: a gather.
+        double toSingleNode(Int8 state, double rows, double bytes) const
         {
-            return exchange(left_rows, left_bytes, true)
-                + config.work_weight * ((right_rows + joined_rows) / nodes + buildWork(left_rows, left_bytes));
+            if (state == single_node_state)
+                return 0;
+            if (state == replicated_state)
+                return impossible;
+            return network(rows, bytes) + fixedCost() + funnel(rows);
         }
-        /// Both sides partitioned by the same key, the smaller one builds the hash table.
-        double partitioned(double left_rows, bool shuffle_left, double right_rows, bool shuffle_right, double joined_rows) const
+        /// The work of a hash join: probing and the output divided by the parallelism of the probe side, and the hash
+        /// table by that of the build side.
+        double joinWork(double probe_rows, double build_rows, double build_bytes, double joined_rows, double probe_parallelism,
+            double build_parallelism) const
         {
-            double cost = 0;
-            if (shuffle_left)
-                cost += exchange(left_rows, left_bytes, false);
-            if (shuffle_right)
-                cost += exchange(right_rows, right_bytes, false);
-            const bool build_right = right_rows <= left_rows;
-            const double probe_rows = build_right ? left_rows : right_rows;
-            const double build_rows = build_right ? right_rows : left_rows;
-            const double build_bytes = build_right ? right_bytes : left_bytes;
-            return cost + config.work_weight * ((probe_rows + joined_rows) / nodes + buildWork(build_rows, build_bytes) / nodes);
+            const double build = (config.hash_table_build_factor + build_bytes) * build_rows;
+            return config.work_weight * ((probe_rows + joined_rows) / probe_parallelism + build / build_parallelism);
         }
     };
-    DistributedJoinCost distributedJoinCost(UInt32 left_mask, UInt32 right_mask) const
+    DistributedJoinCost distributedJoinCost() const
     {
-        return {cost_config, static_cast<double>(query_graph.distribution_node_count), rowBytes(left_mask), rowBytes(right_mask)};
+        return {cost_config, static_cast<double>(query_graph.distribution_node_count)};
     }
+    /// Whether a plan may be used as a copy on every node: the input of a broadcast or of a replicated join. Cascades checks
+    /// the size of such an input whatever made it a copy, also when its own inputs were copies already.
+    bool canReplicate(UInt32 relations, bool imprecise_rows, std::optional<UInt64> max_rows, double rows) const
+    {
+        return canBroadcast(relations, imprecise_rows, max_rows, rows);
+    }
+    /// Adds the plans of a single relation besides its partitioned read: a read on one node, and a read of the whole table
+    /// on every node when its bytes fit `QueryGraph::max_bytes_to_broadcast`.
+    template <typename Entry>
+    void addLeafStates(UInt32 relation_mask, Entry & leaf) const;
     /// The bytes of a row of the join of the relations: of their columns that are still needed above it.
     double rowBytes(UInt32 relations) const;
     /// The bytes of all input columns of the relations. Cascades may keep columns in a join result that no later join
@@ -1420,6 +1452,30 @@ DPJoinEntryPtr DPSubJoinOrderOptimizer::makeJoinEntry(const DPTable & dptable, T
     return join_entry;
 }
 
+template <typename Entry>
+void DPSubJoinOrderOptimizer::addLeafStates(UInt32 relation_mask, Entry & leaf) const
+{
+    /// Cascades costs a read by its bytes: 1/N of them per node for a partitioned read, all of them for the others.
+    const double rows = leaf.estimated_rows ? static_cast<double>(*leaf.estimated_rows)
+        : (leaf.max_rows ? static_cast<double>(*leaf.max_rows) : 1.0);
+    const double read_bytes = rows * allColumnBytes(relation_mask);
+    const double read = cost_config.work_weight * read_bytes;
+    leaf.cost = read / static_cast<double>(query_graph.distribution_node_count);
+    leaf.partition_class = -1;
+
+    typename Entry::Plan plan = leaf;
+    plan.cost = read;
+    plan.partition_class = single_node_state;
+    leaf.ordered.push_back(plan);
+    /// Every node reads the whole table, so the bytes it reads have to fit the budget too.
+    const bool scan_fits = query_graph.max_bytes_to_broadcast == 0 || read_bytes <= static_cast<double>(query_graph.max_bytes_to_broadcast);
+    if (scan_fits && canBroadcast(relation_mask, leaf.imprecise_rows, leaf.max_rows, rows))
+    {
+        plan.partition_class = replicated_state;
+        leaf.ordered.push_back(plan);
+    }
+}
+
 std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 {
     /// DPsub uses the generic memo only for composite-expression statistics. Clear any
@@ -1511,6 +1567,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         const auto & leaf_stats = query_graph.relation_stats[i];
         leaf.imprecise_rows = !leaf_stats.estimated_rows || leaf_stats.imprecise_estimate || leaf_stats.estimate_from_defaults;
         leaf.column_stats = query_graph.relation_stats[i].column_stats;
+        if (useDistribution())
+            addLeafStates(static_cast<UInt32>(1) << i, leaf);
     }
     Enumerator enumerator(n, log);
     enumerator.enumerate(checker, query_graph);

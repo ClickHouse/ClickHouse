@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <vector>
@@ -82,11 +83,11 @@ private:
     /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
     /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
     MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
-    /// Offers the local, shuffle and broadcast hash joins of the plans of the two sides, see `DistributedJoinCost`. Returns
-    /// the cost of the cheapest one.
+    /// Offers the broadcast, shuffle, local and replicated hash joins of the plans of the two sides, see
+    /// `DistributedJoinCost`. Returns the cost of the cheapest one.
     double acceptDistributedJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
         const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges);
-    /// Keeps the plan as the cheapest plan of the subset, and as its plan partitioned by the class, if it is cheaper.
+    /// Keeps the plan as the cheapest plan of the subset, and as its plan in its distribution state, if it is cheaper.
     void offerPlan(UInt subset, const Plan & plan);
 
     /// The cheapest plan of the subset for -1, else its plan in `ordered`.
@@ -246,7 +247,7 @@ template <class TDPTable, class TOptimizer>
 void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::offerPlan(const UInt subset, const Plan & plan)
 {
     auto & entry = dp_table[subset];
-    if (plan.partition_class >= 0 && optimizer.isInterestingPartition(plan.partition_class, static_cast<UInt32>(subset)))
+    if (optimizer.isInterestingState(plan.partition_class, static_cast<UInt32>(subset)))
     {
         auto it = std::ranges::find(entry.ordered, plan.partition_class, &Plan::partition_class);
         if (it == entry.ordered.end())
@@ -258,7 +259,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::offerPlan(const UInt subs
     if (!has_plan || plan.cost < entry.cost)
     {
         static_cast<Plan &>(entry) = plan;
-        /// The partitioning of the cheapest plan matters only while a later join may use it.
+        /// The partitioning of the cheapest plan by a class matters only while a later join may use it.
         if (entry.partition_class >= 0 && !optimizer.isInterestingPartition(entry.partition_class, static_cast<UInt32>(subset)))
             entry.partition_class = -1;
     }
@@ -272,9 +273,14 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     const auto left_mask = static_cast<UInt32>(lhs_subset);
     const auto right_mask = static_cast<UInt32>(rhs_subset);
     const UInt64 key_classes = optimizer.partitionKeyClasses(left_mask, right_mask);
-    const auto join_cost = optimizer.distributedJoinCost(left_mask, right_mask);
+    const auto join_cost = optimizer.distributedJoinCost();
+    const double nodes = join_cost.nodes;
+    const double left_bytes = optimizer.rowBytes(left_mask);
+    const double right_bytes = optimizer.rowBytes(right_mask);
+    constexpr Int8 replicated = Optimizer::replicated_state;
+    constexpr Int8 single_node = Optimizer::single_node_state;
 
-    /// The plans of a side: its cheapest plan and its plans partitioned by a class.
+    /// The plans of a side: its cheapest plan and its plans in the other states.
     auto side_plans = [&](UInt subset)
     {
         std::vector<Int8> plans{-1};
@@ -290,10 +296,12 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
     {
         const Plan & left = planAt(lhs_subset, left_index);
         const double left_rows = left.estimated_rows ? static_cast<double>(*left.estimated_rows) : searchRows(lhs_subset);
+        const Int8 left_state = left.partition_class;
         for (const Int8 right_index : right_plans)
         {
             const Plan & right = planAt(rhs_subset, right_index);
             const double right_rows = right.estimated_rows ? static_cast<double>(*right.estimated_rows) : searchRows(rhs_subset);
+            const Int8 right_state = right.partition_class;
             const double joined_rows = joinedRowsSearchValue(
                 keys, left.estimated_rows, right.estimated_rows, left_rows, right_rows, kind, strictness);
             const double inputs_cost = left.cost + right.cost;
@@ -314,31 +322,55 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
             plan.edges.assign(edges.begin(), edges.end());
             plan.method = JoinMethod::Hash;
 
-            auto offer = [&](double cost, Int8 partition_class)
+            auto offer = [&](double cost, Int8 state)
             {
+                if (!std::isfinite(cost))
+                    return;
                 plan.cost = inputs_cost + cost;
-                plan.partition_class = partition_class;
+                plan.partition_class = state;
                 best_cost = std::min(best_cost, plan.cost);
                 offerPlan(result_subset, plan);
             };
 
-            /// A broadcast of one side keeps the partitioning of the other.
-            /// A join without keys has no other way to run, so its right side is broadcast whatever its size.
-            const bool broadcast_right = optimizer.canBroadcast(right_mask, right.imprecise_rows, right.max_rows, right_rows);
-            const bool broadcast_left = optimizer.canBroadcast(left_mask, left.imprecise_rows, left.max_rows, left_rows);
-            if (broadcast_right || (key_classes == 0 && !broadcast_left))
-                offer(join_cost.broadcastRight(left_rows, right_rows, joined_rows), left.partition_class);
-            if (broadcast_left)
-                offer(join_cost.broadcastLeft(left_rows, right_rows, joined_rows), right.partition_class);
+            /// The smaller side builds the hash table where both sides are split the same way.
+            const bool build_right = right_rows <= left_rows;
+            const double probe_rows = build_right ? left_rows : right_rows;
+            const double build_rows = build_right ? right_rows : left_rows;
+            const double build_bytes = build_right ? right_bytes : left_bytes;
 
-            /// Both sides partitioned by a key: the sides that are not partitioned by it yet are shuffled.
+            const bool replicate_left = optimizer.canReplicate(left_mask, left.imprecise_rows, left.max_rows, left_rows);
+            const bool replicate_right = optimizer.canReplicate(right_mask, right.imprecise_rows, right.max_rows, right_rows);
+
+            /// Broadcast: one side copied to every node, the other one partitioned; its partitioning is kept, a side on
+            /// one node is scattered first.
+            if (replicate_right)
+                offer(join_cost.toPartitioned(left_state, -1, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                        + join_cost.joinWork(left_rows, right_rows, right_bytes, joined_rows, nodes, 1),
+                    left_state == single_node ? -1 : left_state);
+            if (replicate_left)
+                offer(join_cost.toPartitioned(right_state, -1, right_rows, right_bytes) + join_cost.toReplicated(left_state, left_rows, left_bytes)
+                        + join_cost.joinWork(right_rows, left_rows, left_bytes, joined_rows, nodes, 1),
+                    right_state == single_node ? -1 : right_state);
+
+            /// Shuffle: both sides partitioned by a key.
             for (UInt64 classes = key_classes; classes; classes &= classes - 1)
             {
                 const auto key = static_cast<Int8>(std::countr_zero(classes));
-                const bool shuffle_left = left.partition_class != key;
-                const bool shuffle_right = right.partition_class != key;
-                offer(join_cost.partitioned(left_rows, shuffle_left, right_rows, shuffle_right, joined_rows), key);
+                offer(join_cost.toPartitioned(left_state, key, left_rows, left_bytes) + join_cost.toPartitioned(right_state, key, right_rows, right_bytes)
+                        + join_cost.joinWork(probe_rows, build_rows, build_bytes, joined_rows, nodes, nodes),
+                    key);
             }
+
+            /// Local: both sides on one node.
+            offer(join_cost.toSingleNode(left_state, left_rows, left_bytes) + join_cost.toSingleNode(right_state, right_rows, right_bytes)
+                    + join_cost.joinWork(probe_rows, build_rows, build_bytes, joined_rows, 1, 1),
+                single_node);
+
+            /// Replicated: every node joins its copies of both sides, so its result is a copy too.
+            if (replicate_left && replicate_right)
+                offer(join_cost.toReplicated(left_state, left_rows, left_bytes) + join_cost.toReplicated(right_state, right_rows, right_bytes)
+                        + join_cost.joinWork(probe_rows, build_rows, build_bytes, joined_rows, 1, 1),
+                    replicated);
         }
     }
     return best_cost;
