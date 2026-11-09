@@ -66,6 +66,10 @@ struct MergeTreeReaderParquet::State
     /// the columns as in the file, for rows [chunk_start, chunk_start + COLUMNS_CACHE_CHUNK_ROWS).
     Columns chunk_columns;
     size_t chunk_start = 0;
+    /// Whether the row group `row_group` is read in the requested rows instead of whole chunks, because a whole chunk
+    /// would take too much memory, see `Parquet::Reader::columnsCacheChunkTooLarge`. Once set, it stays for the row
+    /// group: the decoders only move forward, so a chunk cannot be decoded whole after some of its rows were.
+    bool partial_chunks = false;
 
     /// A row group not read to the end has written only some chunks of its columns to the columns cache, which
     /// cannot serve any read without the rest (see `Parquet::Reader::initColumnsCache`), so they are taken back out
@@ -457,6 +461,7 @@ void MergeTreeReaderParquet::finishRowGroup(size_t row_group)
         return;
 
     state->chunk_columns.clear();
+    state->partial_chunks = false;
 
     /// The row group can be left before it is read to the end, e.g. by a forward seek to the next mark range.
     /// Its columns are not written in full then, and the chunks written so far are of no use.
@@ -507,12 +512,21 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
     if (columns_in_file.empty())
         return;
 
-    const auto & row_group_state = state->reader.row_groups.at(row_group);
+    auto & row_group_state = state->reader.row_groups.at(row_group);
     const bool uses_columns_cache = !row_group_state.cached_columns.empty() || !row_group_state.columns_cache_writes.empty();
     if (!uses_columns_cache)
     {
         appendRows(decodeRows(row_group, start_row, num_rows), 0, num_rows, res_columns);
         return;
+    }
+
+    /// Unless a whole chunk would take a large part of the memory the query may use, while fewer rows are requested:
+    /// then only the requested rows are decoded, still never crossing a chunk, and the row group is not written to
+    /// the cache, which takes only whole chunks. The same as `Parquet::Reader::intersectColumnIndexResultsAndInitSubgroups`.
+    if (!state->partial_chunks && state->reader.columnsCacheChunkTooLarge(row_group_state, num_rows))
+    {
+        state->partial_chunks = true;
+        state->reader.withdrawColumnsCacheWrites(row_group_state);
     }
 
     /// The columns cache holds a row group in chunks of `COLUMNS_CACHE_CHUNK_ROWS` rows: a column is formed from
@@ -524,16 +538,25 @@ void MergeTreeReaderParquet::readRowsFromRowGroup(size_t row_group, size_t start
     {
         const size_t chunk_start = start_row / chunk_rows_max * chunk_rows_max;
         const size_t chunk_rows = std::min(chunk_rows_max, rows_in_row_group - chunk_start);
-        if (state->chunk_columns.empty() || state->chunk_start != chunk_start)
-        {
-            /// Release the previous chunk before decoding the next one.
-            state->chunk_columns.clear();
-            state->chunk_columns = decodeRows(row_group, chunk_start, chunk_rows);
-            state->chunk_start = chunk_start;
-        }
-
         const size_t rows = std::min(num_rows, chunk_start + chunk_rows - start_row);
-        appendRows(state->chunk_columns, start_row - chunk_start, rows, res_columns);
+        const bool chunk_decoded = !state->chunk_columns.empty() && state->chunk_start == chunk_start;
+        if (state->partial_chunks && !chunk_decoded)
+        {
+            /// A chunk decoded whole before the decision is still used for its remaining rows.
+            state->chunk_columns.clear();
+            appendRows(decodeRows(row_group, start_row, rows), 0, rows, res_columns);
+        }
+        else
+        {
+            if (!chunk_decoded)
+            {
+                /// Release the previous chunk before decoding the next one.
+                state->chunk_columns.clear();
+                state->chunk_columns = decodeRows(row_group, chunk_start, chunk_rows);
+                state->chunk_start = chunk_start;
+            }
+            appendRows(state->chunk_columns, start_row - chunk_start, rows, res_columns);
+        }
         start_row += rows;
         num_rows -= rows;
     }
