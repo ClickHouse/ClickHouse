@@ -261,6 +261,17 @@ private:
     }
     /// The bytes of a row of the join of the relations.
     double rowBytes(UInt32 relations) const;
+    /// Whether a broadcast of a plan fits `QueryGraph::max_bytes_to_broadcast`, as Cascades decides it: by its estimated
+    /// rows when they are precise, else by its bound of rows.
+    bool canBroadcast(UInt32 relations, bool imprecise_rows, std::optional<UInt64> max_rows, double rows) const
+    {
+        if (query_graph.max_bytes_to_broadcast == 0)
+            return true;
+        if (imprecise_rows && !max_rows)
+            return false;
+        const double counted_rows = imprecise_rows ? static_cast<double>(*max_rows) : rows;
+        return counted_rows * rowBytes(relations) <= static_cast<double>(query_graph.max_bytes_to_broadcast);
+    }
     CostConfig cost_config;
 
     bool useConflictDetector() const
@@ -1427,6 +1438,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         std::optional<UInt64> max_rows = {};
         /// The rows rest on an assumption, see `joinRowsRestOnAssumption`.
         bool rows_rest_on_assumption = false;
+        /// The rows of the plan or of one of its inputs rest on an assumption or on an imprecise estimate.
+        bool imprecise_rows = false;
         double cost{.0};
         /// What `EXPLAIN` reports: the output rows of its joins, as `EXPLAIN ANALYZE` measures them. `cost` adds the work
         /// of the join methods when merge joins compete.
@@ -1482,6 +1495,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         auto & leaf = checker.getDPTable()[static_cast<Bitvector>(1) << i];
         leaf.estimated_rows = query_graph.relation_stats[i].estimated_rows;
         leaf.max_rows = query_graph.relation_stats[i].max_rows;
+        const auto & leaf_stats = query_graph.relation_stats[i];
+        leaf.imprecise_rows = !leaf_stats.estimated_rows || leaf_stats.imprecise_estimate || leaf_stats.estimate_from_defaults;
         leaf.column_stats = query_graph.relation_stats[i].column_stats;
     }
     Enumerator enumerator(n, log);

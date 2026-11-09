@@ -309,6 +309,7 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
             plan.strictness = strictness;
             plan.estimated_rows = optimizer.estimateCardinality(left.estimated_rows, right.estimated_rows, keys, kind, strictness);
             plan.rows_rest_on_assumption = joinRowsRestOnAssumption(keys, left.estimated_rows, right.estimated_rows);
+            plan.imprecise_rows = left.imprecise_rows || right.imprecise_rows || plan.rows_rest_on_assumption || !plan.estimated_rows;
             plan.max_rows = estimateJoinRowsUpperBound(left.max_rows, right.max_rows, kind, strictness);
             plan.edges.assign(edges.begin(), edges.end());
             plan.method = JoinMethod::Hash;
@@ -322,8 +323,13 @@ double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
             };
 
             /// A broadcast of one side keeps the partitioning of the other.
-            offer(join_cost.broadcastRight(left_rows, right_rows, joined_rows), left.partition_class);
-            offer(join_cost.broadcastLeft(left_rows, right_rows, joined_rows), right.partition_class);
+            /// A join without keys has no other way to run, so its right side is broadcast whatever its size.
+            const bool broadcast_right = optimizer.canBroadcast(right_mask, right.imprecise_rows, right.max_rows, right_rows);
+            const bool broadcast_left = optimizer.canBroadcast(left_mask, left.imprecise_rows, left.max_rows, left_rows);
+            if (broadcast_right || (key_classes == 0 && !broadcast_left))
+                offer(join_cost.broadcastRight(left_rows, right_rows, joined_rows), left.partition_class);
+            if (broadcast_left)
+                offer(join_cost.broadcastLeft(left_rows, right_rows, joined_rows), right.partition_class);
 
             /// Both sides partitioned by a key: the sides that are not partitioned by it yet are shuffled.
             for (UInt64 classes = key_classes; classes; classes &= classes - 1)

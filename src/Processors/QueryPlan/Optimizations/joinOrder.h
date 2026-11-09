@@ -236,6 +236,8 @@ struct QueryGraph
     size_t distribution_node_count = 0;
     /// Per relation: the bytes of its rows, which an exchange of its data moves.
     std::vector<double> relation_row_bytes;
+    /// The bytes a broadcast may replicate to every node, see `distributed_plan_max_bytes_to_broadcast`; 0 for no limit.
+    UInt64 max_bytes_to_broadcast = 0;
 
     /// How a relation can be read in order: the longest sequence of its `candidates`, and how many of its leading columns
     /// are the leading primary key columns themselves, which a sharded merge splits by (`optimizeJoinByShards`).

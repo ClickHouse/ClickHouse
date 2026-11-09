@@ -1915,6 +1915,25 @@ static std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
     return result;
 }
 
+/// The bytes of a row of a join input as Cascades sizes a read: the columns it reads, with the widths that the storage
+/// of the table gives them. Without these widths a string column gets the default width of its type.
+static double estimateInputRowBytes(const QueryPlan::Node & input, const RelationStats & stats)
+{
+    const QueryPlan::Node * node = &input;
+    while (!typeid_cast<const ReadFromMergeTree *>(node->step.get()) && node->children.size() == 1
+        && (typeid_cast<const FilterStep *>(node->step.get()) || typeid_cast<const ExpressionStep *>(node->step.get())))
+        node = node->children.front();
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+    if (!read_step)
+        return estimateRowWidth(*input.step->getOutputHeader(), stats.column_stats);
+    /// The steps above the read rename its columns, so the read's own header matches the storage widths.
+    auto column_stats = stats.column_stats;
+    for (const auto & [column_name, width] : estimateReadColumnWidths(*read_step))
+        if (column_stats[column_name].avg_bytes == 0)
+            column_stats[column_name].avg_bytes = width;
+    return estimateRowWidth(*read_step->getOutputHeader(), column_stats);
+}
+
 bool JoinOrderPlanBuilder::selectSetSplits(
     QueryPlanOptimizationSettings::JoinEnumeration mode, size_t max_join_expressions, size_t orders, size_t splits_per_set,
     size_t max_set_joins, String & reason)
@@ -2585,11 +2604,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             if (node_count > 1)
             {
                 query_graph.distribution_node_count = node_count;
+                query_graph.max_bytes_to_broadcast = optimization_settings.distributed_plan_max_bytes_to_broadcast;
                 for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
                 {
                     const auto & stats = query_graph.relation_stats[i];
-                    query_graph.relation_row_bytes.push_back(stats.avg_row_bytes.value_or(
-                        estimateRowWidth(*query_graph_builder.inputs[i]->step->getOutputHeader(), stats.column_stats)));
+                    query_graph.relation_row_bytes.push_back(estimateInputRowBytes(*query_graph_builder.inputs[i], stats));
                 }
             }
         }
