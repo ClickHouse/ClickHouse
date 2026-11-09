@@ -3077,7 +3077,30 @@ void registerInputFormatORC(FormatFactory & factory)
                 buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
         });
     factory.markFormatSupportsSubsetOfColumns("ORC");
+}
 
+void registerORCSchemaReader(FormatFactory & factory);
+void registerORCSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader(
+        "ORC",
+        [](ReadBuffer & buf, const FormatSettings & settings)
+        {
+            return std::make_shared<NativeORCSchemaReader>(buf, settings);
+        }
+        );
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
+    {
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+            "dictionary_as_low_cardinality={};skip_columns_with_unsupported_types={};max_parser_depth={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.schema_inference_allow_nullable_tuple_type,
+            settings.orc.dictionary_as_low_cardinality,
+            settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
+            settings.max_parser_depth);
+    });
 }
 
 }
