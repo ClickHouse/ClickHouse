@@ -196,7 +196,14 @@ bool CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_h
     if (shutdown_finished_cv.wait_for(lock, max_wait, can_create))
         return true;
 
-    if (!same_definition && !names_pending_shutdown.contains(name))
+    /// The last external reference to the disk may have disappeared during the wait, and the disk moved from
+    /// `lingering_disks` to `names_pending_shutdown`. Nothing uses it anymore, so its shutdown is waited for
+    /// however long it takes, like the shutdowns already pending when this method was entered.
+    shutdown_finished_cv.wait(lock, [&]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !names_pending_shutdown.contains(name); });
+    if (!lingering_disks.contains(name))
+        return true;
+
+    if (!same_definition)
         LOG_WARNING(log, "Custom disk {} released earlier, with another definition, is still referenced after {} seconds",
             backQuote(name), max_wait_for_referenced_disk.count());
     return false;
