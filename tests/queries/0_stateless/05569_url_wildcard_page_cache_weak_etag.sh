@@ -116,7 +116,7 @@ ${CLICKHOUSE_LOCAL} --path "${work_dir}/db" --config-file "${work_dir}/config.ya
         SETTINGS ${settings}, log_comment = 'weak_2';
     SYSTEM FLUSH LOGS query_log;
     SELECT log_comment, ProfileEvents['PageCacheHits'] > 0 FROM system.query_log
-        WHERE type = 'QueryFinish' AND log_comment IN ('strong_1', 'strong_2', 'weak_1', 'weak_2')
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('strong_1', 'strong_2', 'weak_1', 'weak_2')
         ORDER BY log_comment;"
 
 rm -rf "${work_dir}"
