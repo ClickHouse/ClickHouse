@@ -2864,6 +2864,11 @@ html:not(.dark) img[src*="machine-learning"] {
     background-color: #d1d5db !important;
 }
 
+/* Opt-out for transparent diagrams that ship their own light-mode variant */
+html:not(.dark) img.ch-transparent[src] {
+    background-color: transparent !important;
+}
+
 /* ============================================
    Callout Styling
    ============================================ */
