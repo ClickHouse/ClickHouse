@@ -785,7 +785,7 @@ public:
     [[nodiscard]] bool transformsMultipleNestedFunctions() const override { return true; }
 
     /// The elements of the tuples are passed to the nested functions row by row, so the tuples are converted around.
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     void convertVariantArgumentsAroundMultipleNestedFunctions(
         DataTypes & arguments, const VectorWithMemoryTracking<DataTypes> & converted_nested_arguments_list) const override

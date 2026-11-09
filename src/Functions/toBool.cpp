@@ -35,7 +35,7 @@ namespace
         /// default implementation for `LowCardinality` cast only the dictionary entries referenced
         /// by the rows, so the dictionary is still converted once instead of row by row, while
         /// invalid non-`NULL` values keep throwing.
-        bool canBeExecutedOnDefaultArguments() const override { return false; }
+        [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return false; }
         [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
         [[nodiscard]] String getSignatureString() const override

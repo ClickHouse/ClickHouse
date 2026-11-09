@@ -93,7 +93,7 @@ public:
     static std::pair<String, ASTPtr> getCodecNameAndArguments(const ASTPtr & element);
 
     /// The properties of the codec family `family_name`, matched case-insensitively. Throws if it is unknown.
-    const CompressionCodecFamilyProperties & getFamilyProperties(const String & family_name) const;
+    [[nodiscard]] const CompressionCodecFamilyProperties & getFamilyProperties(const String & family_name) const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
     ASTPtr validateCodecAndGetPreprocessedAST( /// NOLINT(modernize-use-nodiscard): often called only for its side effect

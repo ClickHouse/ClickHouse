@@ -434,7 +434,7 @@ public:
         return it->second;
     }
 
-    const VectorWithMemoryTracking<bool> & getSelectedColumns() const override { return selected_columns; }
+    [[nodiscard]] const VectorWithMemoryTracking<bool> & getSelectedColumns() const override { return selected_columns; }
     [[nodiscard]] const DateLUTImpl & getWriterTimezone() const override { return writer_timezone; }
     [[nodiscard]] const DateLUTImpl & getReaderTimezone() const override { return reader_timezone; }
     [[nodiscard]] UInt64 getNumberOfRows() const override { return reader.getStripe(stripe_index).number_of_rows; }

@@ -918,7 +918,7 @@ private:
 
     [[nodiscard]] bool useDefaultImplementationForConstants() const final { return true; }
 
-    bool canBeExecutedOnDefaultArguments() const override { return impl.canBeExecutedOnDefaultArguments(); }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return impl.canBeExecutedOnDefaultArguments(); }
 
     [[nodiscard]] bool isDeterministic() const override { return false; }
 

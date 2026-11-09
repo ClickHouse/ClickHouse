@@ -214,7 +214,7 @@ private:
     /// Prepares the chosen `final_solution` for `parseRow`.
     void setFinalSolution(const Solution & solution);
     // readNextFields iterates over the list of matchers and try to parse all the possible fields.
-    VectorWithMemoryTracking<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
+    [[nodiscard]] VectorWithMemoryTracking<Fields> readNextFields(bool one_string, unsigned index, size_t offset) const;
 };
 
 class FreeformRowInputFormat final : public IRowInputFormat

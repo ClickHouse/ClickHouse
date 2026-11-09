@@ -1400,7 +1400,7 @@ public:
 
     /// Returns `LowCardinality(String)` or `LowCardinality(Nullable(String))` when both branches are constant strings
     /// (see `optimize_if_transform_const_strings_to_lowcardinality`), otherwise nullptr.
-    DataTypePtr tryGetLowCardinalityReturnType(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] DataTypePtr tryGetLowCardinalityReturnType(const ColumnsWithTypeAndName & arguments) const
     {
         if (!use_low_cardinality_optimisation)
             return nullptr;

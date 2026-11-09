@@ -140,8 +140,8 @@ class SearchArgument
 public:
     SearchArgument(ExpressionTreePtr root_, VectorWithMemoryTracking<PredicateLeaf> leaves_);
 
-    const VectorWithMemoryTracking<PredicateLeaf> & getLeaves() const { return leaves; }
-    TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const;
+    [[nodiscard]] const VectorWithMemoryTracking<PredicateLeaf> & getLeaves() const { return leaves; }
+    [[nodiscard]] TruthValue evaluate(const VectorWithMemoryTracking<TruthValue> & leaf_values) const;
 
 private:
     ExpressionTreePtr root;

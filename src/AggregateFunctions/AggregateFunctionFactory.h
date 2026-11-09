@@ -108,7 +108,7 @@ private:
     /// also inside an argument of a combinator like -ForEach (`Array(Variant(...))`). Returns an empty vector if nothing is converted.
     /// If `including_nested` is true, the arguments that are converted by the nested function of a combinator
     /// with `VariantArgumentsOfNestedFunction::Forwarded` are included as well.
-    DataTypes getVariantArgumentsConversion(
+    [[nodiscard]] DataTypes getVariantArgumentsConversion(
         const String & name, NullsAction action, const DataTypes & argument_types, bool including_nested) const;
 
     AggregateFunctionPtr getImpl(

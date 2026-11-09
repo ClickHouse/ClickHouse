@@ -69,7 +69,7 @@ struct FileBucketInfo
     virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     [[nodiscard]] virtual String getIdentifier() const = 0;
     [[nodiscard]] virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
+    [[nodiscard]] virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };

@@ -68,7 +68,7 @@ public:
     [[nodiscard]] const Proto::StripeInformation & getStripe(size_t index) const { return footer.stripes.at(index); }
     static UInt64 getStripeLength(const Proto::StripeInformation & stripe) { return stripe.index_length + stripe.data_length + stripe.footer_length; }
     /// The number of rows in the stripes before the stripe `index`.
-    UInt64 getStripeFirstRow(size_t index) const { return stripe_first_rows.at(index); }
+    [[nodiscard]] UInt64 getStripeFirstRow(size_t index) const { return stripe_first_rows.at(index); }
 
     [[nodiscard]] const Proto::Footer & getFooter() const { return footer; }
     [[nodiscard]] const Proto::PostScript & getPostScript() const { return postscript; }
@@ -79,7 +79,7 @@ public:
     [[nodiscard]] UInt64 getCompressionBlockSize() const { return postscript.compression_block_size; }
 
     /// The statistics of the whole file, one per column.
-    const VectorWithMemoryTracking<Proto::ColumnStatistics> & getStatistics() const { return footer.statistics; }
+    [[nodiscard]] const VectorWithMemoryTracking<Proto::ColumnStatistics> & getStatistics() const { return footer.statistics; }
     /// The statistics of the stripes, read on the first call. Can be empty.
     const Proto::Metadata & getMetadata();
 
@@ -120,7 +120,7 @@ private:
     };
 
     /// Returns the ranges of the streams of the selected columns in the stripe, and the stripe footer.
-    VectorWithMemoryTracking<std::pair<UInt64, UInt64>> getStripeRanges(size_t stripe_index, const Proto::StripeFooter & stripe_footer, const VectorWithMemoryTracking<bool> & selected) const;
+    [[nodiscard]] VectorWithMemoryTracking<std::pair<UInt64, UInt64>> getStripeRanges(size_t stripe_index, const Proto::StripeFooter & stripe_footer, const VectorWithMemoryTracking<bool> & selected) const;
 
     std::unique_ptr<InputStream> stream;
     ReaderOptions options;
@@ -151,7 +151,7 @@ public:
     [[nodiscard]] const Type & getSelectedType() const { return *selected_type; }
 
     /// The row number in the file of the first row of the batch filled by the last successful `next`.
-    UInt64 getRowNumber() const { return batch_first_row; }
+    [[nodiscard]] UInt64 getRowNumber() const { return batch_first_row; }
 
 private:
     class StripeStreamsImpl;
@@ -163,7 +163,7 @@ private:
     void seekToRowGroup(size_t row_group);
     [[nodiscard]] UInt64 advanceToNextRowGroup(UInt64 current_row) const;
     [[nodiscard]] UInt64 computeBatchSize(UInt64 requested, UInt64 current_row) const;
-    bool evaluateStatistics(const VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const;
+    [[nodiscard]] bool evaluateStatistics(const VectorWithMemoryTracking<Proto::ColumnStatistics> & stats) const;
     [[nodiscard]] const DateLUTImpl & getWriterTimezone(const Proto::StripeFooter & stripe_footer) const;
 
     Reader & reader;

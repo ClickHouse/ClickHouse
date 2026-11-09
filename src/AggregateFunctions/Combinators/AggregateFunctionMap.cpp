@@ -634,12 +634,12 @@ public:
     [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
     /// The values of the maps are passed to the nested function one by one, so the maps are converted around.
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     /// The legacy form `sumMap(keys, values1, values2, ...)` (or a tuple of these arrays) passes every value array
     /// to `sumMappedArrays`, while `transformArguments` returns only the type of the first values.
     /// So every value array is probed and converted independently.
-    DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const override
     {
         if (const auto * value_arrays = getLegacyValueArrays(arguments))
         {

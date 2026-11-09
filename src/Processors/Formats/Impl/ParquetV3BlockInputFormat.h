@@ -28,7 +28,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
+    [[nodiscard]] std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 

@@ -62,7 +62,7 @@ public:
     }
 
     /// Fresh state for one stream, nullptr when this codec is stateless.
-    virtual CompressionStatePtr createCompressionState() const { return nullptr; }
+    [[nodiscard]] virtual CompressionStatePtr createCompressionState() const { return nullptr; }
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
@@ -128,7 +128,7 @@ public:
     /// If the codec is selected by the data type, which was not known when it was created (`FirstApplicable` made
     /// without a data type, or a chain of codecs with it). Such a codec is created again from `getFullCodecDescription`
     /// once the data type is known.
-    virtual bool dependsOnDataType() const { return false; }
+    [[nodiscard]] virtual bool dependsOnDataType() const { return false; }
 
     // Returns a string with a high level codec description.
     [[nodiscard]] virtual String getDescription() const = 0;

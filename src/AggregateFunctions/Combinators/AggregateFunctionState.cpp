@@ -16,7 +16,7 @@ class AggregateFunctionCombinatorState final : public IAggregateFunctionCombinat
 public:
     [[nodiscard]] String getName() const override { return "State"; }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
     [[nodiscard]] bool returnsNestedState() const override { return true; }
 
     [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override

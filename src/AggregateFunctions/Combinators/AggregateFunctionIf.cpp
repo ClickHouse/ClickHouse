@@ -22,7 +22,7 @@ class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
 public:
     [[nodiscard]] String getName() const override { return "If"; }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::Forwarded; }
 
     [[nodiscard]] DataTypes transformArguments(const DataTypes & arguments) const override
     {

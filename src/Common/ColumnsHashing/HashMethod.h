@@ -961,7 +961,7 @@ struct HashMethodHashed
     }
 
 private:
-    ALWAYS_INLINE bool isPrepared(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE bool isPrepared(size_t row) const
     {
         if constexpr (prepare_keys)
             return row - prepared.begin < prepared.size;

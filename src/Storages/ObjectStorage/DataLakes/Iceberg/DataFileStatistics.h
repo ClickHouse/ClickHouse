@@ -42,7 +42,7 @@ public:
     [[nodiscard]] std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
     [[nodiscard]] const std::vector<Int64> & getFieldIds() const { return field_ids; }
-    const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
+    [[nodiscard]] const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 

@@ -343,14 +343,14 @@ public:
         [[nodiscard]] int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const;
 
         /// If `materialize_shared_data_value` is false, `column` is not set for a path in shared data; use `getCurrentSharedDataValue`.
-        PathInfo getCurrentPathInfo(bool materialize_shared_data_value = true) const;
+        [[nodiscard]] PathInfo getCurrentPathInfo(bool materialize_shared_data_value = true) const;
 
         /// Path string of the current entry.
         [[nodiscard]] std::string_view getCurrentPath() const;
 
         /// Raw serialized value of the current path when it is stored in shared data.
         /// Only valid when current_path_type == PathType::SHARED_DATA.
-        std::string_view getCurrentSharedDataValue() const;
+        [[nodiscard]] std::string_view getCurrentSharedDataValue() const;
 
         /// Serialize the current path's value into `buf`.
         ///

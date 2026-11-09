@@ -24,7 +24,7 @@ public:
     [[nodiscard]] bool transformsArgumentTypes() const override { return true; }
 
     /// The rows of the arrays are passed to the nested function one by one, so the arrays are converted around.
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     void convertVariantArgumentsAround(
         DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override

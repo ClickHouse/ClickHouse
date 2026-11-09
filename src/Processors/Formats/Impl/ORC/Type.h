@@ -58,7 +58,7 @@ public:
     [[nodiscard]] bool hasAttributeKey(const std::string & key) const { return attributes.contains(key); }
     [[nodiscard]] const std::string & getAttributeValue(const std::string & key) const { return attributes.at(key); }
     void setAttribute(const std::string & key, const std::string & value) { attributes[key] = value; }
-    const MapWithMemoryTracking<std::string, std::string> & getAttributes() const { return attributes; }
+    [[nodiscard]] const MapWithMemoryTracking<std::string, std::string> & getAttributes() const { return attributes; }
 
     /// The type name in the same format as in the reference implementation (Hive type names).
     [[nodiscard]] std::string toString() const;

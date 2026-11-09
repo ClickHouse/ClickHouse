@@ -22,7 +22,7 @@ public:
     [[nodiscard]] virtual const Proto::ColumnEncoding & getEncoding(UInt64 column_id) const = 0;
     /// Returns nullptr if the stripe does not have this stream.
     [[nodiscard]] virtual std::unique_ptr<InputByteStream> getStream(UInt64 column_id, Proto::StreamKind kind) const = 0;
-    virtual const VectorWithMemoryTracking<bool> & getSelectedColumns() const = 0;
+    [[nodiscard]] virtual const VectorWithMemoryTracking<bool> & getSelectedColumns() const = 0;
     /// The time zones for TIMESTAMP (not TIMESTAMP_INSTANT) columns.
     [[nodiscard]] virtual const DateLUTImpl & getWriterTimezone() const = 0;
     [[nodiscard]] virtual const DateLUTImpl & getReaderTimezone() const = 0;

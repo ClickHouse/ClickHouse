@@ -90,19 +90,19 @@ public:
     /** The positions of the `Variant` arguments that the combinator itself does not support (ex: the key of -ArgMin).
       *  They are converted by `AggregateFunctionVariantAdapter`, see `VariantArgumentsConversion`.
       */
-    virtual VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & /*arguments*/) const { return {}; }
+    [[nodiscard]] virtual VectorWithMemoryTracking<size_t> getVariantArgumentsToConvert(const DataTypes & /*arguments*/) const { return {}; }
 
     /** How the `Variant` arguments that are passed as is to the nested function are converted
       *  if the nested function does not support them, see `VariantArgumentsOfNestedFunction`.
       */
-    virtual VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const { return VariantArgumentsOfNestedFunction::ConvertedByNested; }
+    [[nodiscard]] virtual VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const { return VariantArgumentsOfNestedFunction::ConvertedByNested; }
 
     /** The arguments of the nested function, for which the conversion of the `Variant` arguments is decided
       *  if `getVariantArgumentsOfNestedFunction` returns `ConvertedAround`. By default, `transformArguments`.
       *  It differs if the combinator passes more arguments to the nested function than `transformArguments` returns
       *  (ex: the value arrays of the legacy form of -Map, `sumMap(keys, values1, values2)`).
       */
-    virtual DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const { return transformArguments(arguments); }
+    [[nodiscard]] virtual DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const { return transformArguments(arguments); }
 
     /** Converts the arguments of the combined function (ex: `Array(Variant(UInt8, UInt16))` for -ForEach),
       *  so that `transformArgumentsForVariantConversion` returns `converted_nested_arguments` (ex: `Nullable(UInt16)`)

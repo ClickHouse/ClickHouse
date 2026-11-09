@@ -63,8 +63,8 @@ public:
     /// even if the whole tuple was requested, because the names of the fields may be different.
     void setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_);
 
-    const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
-    const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
+    [[nodiscard]] const ColumnNameToFieldId & getStorageColumnEncoding() const { return storage_encoding; }
+    [[nodiscard]] const FieldIdToColumnName & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
 
     /// Paths whose Iceberg logical type is `string` (not `binary`); both read as DataTypeString,
     /// so a writer preserving that distinction (ORC/Avro string vs binary) consults this.
@@ -109,7 +109,7 @@ public:
     [[nodiscard]] std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
-    std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
+    [[nodiscard]] std::pair<ColumnNameMap, ColumnNameMap> makeMapping(const FieldIdToColumnName & format_encoding) const;
 
 private:
     ColumnNameToFieldId storage_encoding;

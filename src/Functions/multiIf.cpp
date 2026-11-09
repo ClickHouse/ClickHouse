@@ -101,7 +101,7 @@ public:
     }
     [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
     [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
@@ -142,7 +142,7 @@ public:
     /// type-function always uses the strict mode), so when that setting is enabled, compute the common
     /// type explicitly, mirroring the legacy implementation. It also cannot express the `LowCardinality`
     /// result for constant string branches, which depends on the constness of the arguments.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
     {
         /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
         auto for_conditions = [&args](auto && f)

@@ -24,7 +24,7 @@ public:
     /// Due to aggregate_functions_null_for_empty
     [[nodiscard]] bool supportsNesting() const override { return true; }
 
-    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+    [[nodiscard]] VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
 
     [[nodiscard]] String getName() const override
     {

@@ -54,7 +54,7 @@ public:
     {
         return selected->compress(source, source_size, dest, state);
     }
-    CompressionStatePtr createCompressionState() const override { return selected->createCompressionState(); }
+    [[nodiscard]] CompressionStatePtr createCompressionState() const override { return selected->createCompressionState(); }
     std::optional<UInt32> tryGetCompressedSize(const char * source, UInt32 source_size) const override
     {
         return selected->tryGetCompressedSize(source, source_size);
@@ -70,7 +70,7 @@ public:
     [[nodiscard]] bool isLossyCompression() const override { return selected->isLossyCompression(); }
     [[nodiscard]] bool requiresColumnTypeToCompress() const override { return selected->requiresColumnTypeToCompress(); }
     [[nodiscard]] bool isNone() const override { return selected->isNone(); }
-    bool dependsOnDataType() const override { return true; }
+    [[nodiscard]] bool dependsOnDataType() const override { return true; }
 
     [[nodiscard]] String getDescription() const override
     {

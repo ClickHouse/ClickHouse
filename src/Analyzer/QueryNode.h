@@ -303,7 +303,7 @@ public:
     }
 
     /// Returns true if query node has `SHUFFLE`, false otherwise
-    bool isShuffle() const
+    [[nodiscard]] bool isShuffle() const
     {
         return is_shuffle;
     }
