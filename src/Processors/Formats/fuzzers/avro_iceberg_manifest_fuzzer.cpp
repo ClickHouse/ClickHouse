@@ -138,7 +138,7 @@ size_t touchDatum(const avro::GenericDatum & root)
                 touched += datum->value<std::string>().size();
                 break;
             case avro::AVRO_BYTES:
-                touched += datum->value<std::vector<uint8_t>>().size();
+                touched += datum->value<std::vector<uint8_t>>().size(); // STYLE_CHECK_ALLOW_STD_CONTAINERS
                 break;
             case avro::AVRO_FIXED:
                 touched += datum->value<avro::GenericFixed>().value().size();
