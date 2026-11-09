@@ -91,6 +91,7 @@ def test_obsolete_setting_in_session_options_is_reported():
         ).strip()
         == "1"
     )
+    # `contains_in_log` passes the substring to `bash` in double quotes, so it must not contain backticks.
     assert node.contains_in_log(
-        "Obsolete setting `multiple_joins_rewriter_version` is changed"
+        "multiple_joins_rewriter_version.* is changed (to '2')"
     )
