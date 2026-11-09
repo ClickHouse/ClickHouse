@@ -41,6 +41,15 @@ SELECT estimateCompressionRatio('UInt32')(s) FROM src; -- { serverError CANNOT_P
 SELECT estimateCompressionRatio('Enum8(\'only\' = 1)')(toUInt8(2)); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT estimateCompressionRatio('DateTime')('01/02/2020') > 0 SETTINGS cast_string_to_date_time_mode = 'best_effort';
 SELECT estimateCompressionRatio('DateTime')('01/02/2020') SETTINGS cast_string_to_date_time_mode = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+SELECT estimateCompressionRatio('DateTime(\'UTC\')')(toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number))
+FROM numbers(20) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- The compressed size (the second number of the state) is that of the values `accurateCast` gives.
+WITH '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]((?:[89A-F][0-9A-F])*[0-7][0-9A-F])$' AS second_number
+SELECT
+    extract(hex(estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(x)), second_number)
+    = extract(hex(estimateCompressionRatioState('LZ4', 'DateTime(\'UTC\')')(accurateCast(x, 'DateTime(\'UTC\')'))), second_number)
+FROM (SELECT toDateTime64('1960-01-01 00:00:00', 3, 'UTC') + toIntervalSecond(number) AS x FROM numbers(20))
+SETTINGS date_time_overflow_behavior = 'ignore';
 -- Suspicious and experimental types need their settings, as in `CAST`.
 SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) FROM src; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY }
 SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) > 0 FROM src SETTINGS allow_suspicious_low_cardinality_types = 1;

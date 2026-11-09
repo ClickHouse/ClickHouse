@@ -14,6 +14,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,12 +22,14 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IAST.h>
@@ -44,6 +47,23 @@
 namespace DB
 {
 struct Settings;
+
+namespace Setting
+{
+extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+}
+
+/// Defined with the conversion functions, declared here as in `CastOverloadResolver.cpp`.
+struct FunctionConvertSettings;
+using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings>;
+FunctionConvertSettingsPtr createFunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+FunctionBasePtr createFunctionBaseCast(
+    const FunctionConvertSettingsPtr & settings,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type);
 
 namespace ErrorCodes
 {
@@ -374,15 +394,21 @@ public:
             codec_description = CompressionCodecFactory::instance().getDefaultCodec()->getFullCodecDescription();
         }
 
-        /// Prepared once here, so that a conversion the types do not allow is reported here and not at the first granule. With the
-        /// settings of the query, as `accurateCast` (enum values, date and time parsing); the cast copies them.
+        /// Built as `accurateCast` builds it, with the settings of the query (enum values, date and time parsing and overflow;
+        /// the cast copies them), and prepared here, so that a conversion the types do not allow is reported here and not at the
+        /// first granule. `createInternalCast` would saturate dates and times that overflow whatever the settings say.
         if (!source_type->equals(*target_type))
         {
             ContextPtr query_context;
             if (CurrentThread::isInitialized())
                 query_context = CurrentThread::get().tryGetQueryContext();
-            cast = createInternalCast(
-                {source_type->createColumn(), source_type, ""}, target_type, CastType::accurate, {}, query_context);
+            const auto overflow_behavior = query_context
+                ? query_context->getSettingsRef()[Setting::date_time_overflow_behavior].value
+                : FormatSettings::DateTimeOverflowBehavior::Ignore;
+            ColumnsWithTypeAndName cast_arguments{{source_type->createColumn(), source_type, ""}, {nullptr, std::make_shared<DataTypeString>(), ""}};
+            cast = createFunctionBaseCast(
+                createFunctionConvertSettings(query_context, overflow_behavior), "accurateCast", cast_arguments, target_type, {},
+                CastType::accurate);
             cast->prepare({});
         }
 
