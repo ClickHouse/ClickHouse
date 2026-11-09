@@ -172,7 +172,7 @@ private:
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
-    const bool enable_join_robin_hood_hash_tables = false;
+    const bool enable_join_robin_hood_hash_tables = true;
     const bool join_runtime_filter_from_fixed_hash_table = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.

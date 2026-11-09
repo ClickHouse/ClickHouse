@@ -10721,10 +10721,10 @@ Enable converting the hash table to a flat array for joins when the key is a sin
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
         {"26.9", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}) \
-    DECLARE(Bool, enable_join_robin_hood_hash_tables, false, R"(
-Allow the hash tables of the `parallel_hash` join to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table, but the lookups of the join are usually slower.
+    DECLARE(Bool, enable_join_robin_hood_hash_tables, true, R"(
+Allow the hash tables of a hash join that splits its hash table into parts (see `hash_join_layout`) to switch to the Robin Hood mode when they become large, as the hash tables of aggregation do. A right table with more than about 8 million keys then takes up to two times less memory for its hash table. Disabling it can make the lookups of such a join faster, depending on the keys, but the hash table then takes more memory.
 )", 0, \
-        {"26.11", true, false, "New setting. In 26.10 the hash tables of the `parallel_hash` join used the Robin Hood mode, which saves memory but makes most large joins slower."}, \
+        {"26.11", true, true, "New setting to turn off the Robin Hood mode of the hash tables of a hash join, which uses more memory but can make the lookups faster."}, \
         {"26.10", false, true, "The hash tables of the `parallel_hash` join switch to the Robin Hood mode when they become large."}) \
     DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
 )", 0, \
