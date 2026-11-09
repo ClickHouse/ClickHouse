@@ -11,3 +11,5 @@ client filter: rc=0 tables=2
 client select: rc=0 tables=2
 client page: rc=0 tables=2
 client additional_table_filters: rc=0 tables=2
+client profile_filter: rc=0 tables=2
+client profile_overflow: failed, TOO_MANY_ROWS_OR_BYTES

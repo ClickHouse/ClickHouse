@@ -55,3 +55,18 @@ dump_client filter --filter "$FILTER"
 dump_client select --select 1
 dump_client page --limit 10 --page 2
 dump_client additional_table_filters --additional_table_filters "$CLIENT_TABLE_FILTERS"
+
+# The settings of a server user profile apply to the dump's queries as well, though the client never sees them.
+USER="u_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${USER}_f, ${USER}_o"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${USER}_f SETTINGS filter = 'position(toString(tuple(*)), \\'must_be_exported\\') = 0'"
+$CLICKHOUSE_CLIENT -q "CREATE USER ${USER}_o SETTINGS result_overflow_mode = 'break', max_result_rows = 1, max_block_size = 1"
+$CLICKHOUSE_CLIENT -q "GRANT ALL ON *.* TO ${USER}_f, ${USER}_o"
+dump_client profile_filter --user "${USER}_f"
+# A partial catalog read fails the dump instead of leaving objects out.
+if $CLICKHOUSE_CLIENT --user "${USER}_o" --dump-schema "${CLICKHOUSE_DATABASE}" > "$work/overflow.sql" 2> "$work/overflow.err"; then
+    echo "client profile_overflow: succeeded, tables=$(grep -c '^CREATE TABLE' "$work/overflow.sql")"
+else
+    echo "client profile_overflow: failed, $(grep -o -m1 'TOO_MANY_ROWS_OR_BYTES' "$work/overflow.err")"
+fi
+$CLICKHOUSE_CLIENT -q "DROP USER ${USER}_f, ${USER}_o"
