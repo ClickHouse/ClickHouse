@@ -6,6 +6,8 @@
 -- after the url stays hidden, as it does for `BACKUP ... TO`.
 CREATE DATABASE db_05497_hdr ENGINE = Backup('src', S3('http://localhost:11111/test/05497', 'SEKRIT_HDR',
     headers('a' = 'zz'))); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+CREATE DATABASE db_05497_hdr_uc ENGINE = Backup('src', S3('http://localhost:11111/test/05497', 'SEKRIT_HDR_UC',
+    HEADERS('a' = 'zz'))); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 CREATE DATABASE db_05497_hdr_ec ENGINE = Backup('src', S3('http://localhost:11111/test/05497', 'SEKRIT_HDR_EC',
     headers('a' = 'zz'), extra_credentials(role_arn = 'r'))); -- { serverError BAD_ARGUMENTS }
 

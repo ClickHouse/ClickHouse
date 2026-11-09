@@ -651,7 +651,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     for (size_t i = 0; i < nested_args.size(); ++i)
     {
         const auto f = nested_args.at(i)->getFunction();
-        if (f && f->name() == "headers")
+        if (f && boost::iequals(f->name(), "headers"))
             has_headers = true;
         if (f && (f->name() == "extra_credentials"
                   || (f->name() == "equals" && f->hasArguments() && f->arguments->size() == 2)))
