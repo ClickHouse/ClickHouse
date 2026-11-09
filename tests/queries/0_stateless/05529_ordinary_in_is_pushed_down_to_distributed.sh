@@ -86,7 +86,9 @@ Distributed, set may be cut|id in (select id from some_dist) settings max_rows_i
 Distributed, set is cut, not on the shards|id in (select id from some_dist) settings max_rows_in_set = 2, set_overflow_mode = 'break'|(select id from events_dist settings max_rows_in_set = 0, set_overflow_mode = 'throw' union all select id from some)
 Distributed, set may be cut on the shards|id in (select id from some_dist)|(select id, g from events_dist settings max_rows_in_set = 100, set_overflow_mode = 'break')
 Distributed, table may be cut|id in (select id from some_dist) settings max_rows_to_transfer = 100, transfer_overflow_mode = 'break'
-Distributed, table may not be cut, the set is built|id in (select id from some_dist) settings max_rows_to_transfer = 2, transfer_overflow_mode = 'break'|(select id from events_dist union all select id from some)
+Distributed, table may not be cut, the set is built|id in (select id from some_dist) settings max_rows_to_transfer = 4, max_bytes_to_transfer = 32, transfer_overflow_mode = 'break'|(select id from events_dist union all select id from some)
+Distributed, the set is built, with too many rows|id in (select id from some_dist) settings max_rows_to_transfer = 3|(select id from events_dist union all select id from some)
+Distributed, the set is built, with too many bytes|id in (select id from some_dist) settings max_bytes_to_transfer = 31|(select id from events_dist union all select id from some)
 Distributed, reading may be cut|id in (select id from some_dist) settings max_rows_to_read = 1000000, read_overflow_mode = 'break'
 Distributed, reading may be cut on the shards|id in (select id from some_dist) settings max_rows_to_read_leaf = 1000000, read_overflow_mode_leaf = 'break'
 Distributed, time may be cut|id in (select id from some_dist) settings max_execution_time = 1000, timeout_overflow_mode = 'break'
@@ -164,6 +166,7 @@ settings distributed_index_analysis = 1, distributed_index_analysis_for_non_shar
 for mode in deny global
 do
     $CLIENT --distributed_product_mode $mode --log_comment "05529_$CLICKHOUSE_DATABASE|5|sent with an explain, $mode" --network_compression_method none -q "
+        set max_threads = 1; -- the number of threads depends on the load, and is printed
         explain pipeline distributed = 1 select count() from (select distinct id from events_dist) where id > 1;
         explain plan indexes = 1, distributed = 1 select count() from (select id from events_dist) where id in (select id from some_dist);
         explain pipeline distributed = 1 select count() from (select id from events_dist union all select id from some) where id in (select number from numbers(100000));" | md5sum

@@ -411,7 +411,14 @@ bool FutureSetFromSubquery::canFillTableForLocalIn(const ContextPtr & context) c
     if (set_and_key->external_table_expected)
         return false;
 
-    return set.isCreated() ? set.hasExplicitSetElements() : is_build_planned;
+    if (!set.isCreated())
+        return is_build_planned;
+
+    /// A build without a table does not check these limits.
+    const UInt64 max_rows = settings[Setting::max_rows_to_transfer];
+    const UInt64 max_bytes = settings[Setting::max_bytes_to_transfer];
+    return set.hasExplicitSetElements() && (!max_rows || set.getTotalRowCount() <= max_rows)
+        && (!max_bytes || set.getSetElementsBytes() <= max_bytes);
 }
 
 std::pair<String, StoragePtr> FutureSetFromSubquery::getTableForLocalIn(const ContextPtr & context)
