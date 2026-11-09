@@ -174,7 +174,7 @@ public:
     ObjectStoragePtr cloneImpl() const override;
 
     /// A path `<scheme>://<bucket>/<key>` addresses `<key>` in `<bucket>` only when this is enabled;
-    /// otherwise every path is a key in `uri.bucket`. Only data-lake tables enable it.
+    /// otherwise every path is a key in `uri.bucket`.
     void allowFullyQualifiedPaths() { allow_fully_qualified_paths = true; }
 
 private:
