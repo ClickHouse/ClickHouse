@@ -1655,7 +1655,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
         if (swappable)
         {
             static const Strings keyless_engines
-                = {"Memory", "Log", "TinyLog", "StripeLog", "Null", "Set", "File", "S3", "AzureBlobStorage"};
+                = {"Memory", "Log", "TinyLog", "StripeLog", "Null", "Set", "File", "S3", "AzureBlobStorage", "S3Queue", "AzureQueue"};
             static const Strings keyed_engines = {"Join", "KeeperMap", "EmbeddedRocksDB"};
             const String new_engine = !key_candidates.empty() && fuzz_rand() % 2 == 0 ? pickRandomly(fuzz_rand, keyed_engines)
                                                                                       : pickRandomly(fuzz_rand, keyless_engines);
@@ -1676,6 +1676,12 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
             auto arguments = make_intrusive<ASTExpressionList>();
             ASTPtr primary_key;
             SettingsChanges changes;
+            /// The CI Azurite, with its well-known development account
+            static const String azurite_connection_string
+                = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+                  "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+                  "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;";
+            static const String azurite_container = "clickhouse-tests";
             static const Strings compression_methods = {"none", "gzip", "zstd", "lz4", "bz2", "xz", "brotli", "snappy"};
             const String format = insertFormats()[fuzz_rand() % insertFormats().size()];
             /// A pool of object names shared between tables, so tables sometimes read each other's data
@@ -1710,16 +1716,62 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
             }
             else if (new_engine == "AzureBlobStorage")
             {
-                /// The CI Azurite, with its well-known development account
-                arguments->children.push_back(make_intrusive<ASTLiteral>(
-                    "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
-                    "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
-                    "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"));
-                arguments->children.push_back(make_intrusive<ASTLiteral>("clickhouse-tests"));
+                arguments->children.push_back(make_intrusive<ASTLiteral>(azurite_connection_string));
+                arguments->children.push_back(make_intrusive<ASTLiteral>(azurite_container));
                 arguments->children.push_back(make_intrusive<ASTLiteral>(object_name("fuzz_azure_engine_")));
                 arguments->children.push_back(make_intrusive<ASTLiteral>(format));
                 if (fuzz_rand() % 2 == 0)
                     arguments->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, compression_methods)));
+            }
+            else if (new_engine == "S3Queue" || new_engine == "AzureQueue")
+            {
+                /// Read the objects that the `S3` and `AzureBlobStorage` tables of the fuzzer write
+                const bool on_s3 = new_engine == "S3Queue";
+                const String objects = (on_s3 ? "fuzz_s3_engine_*." : "fuzz_azure_engine_*.") + Poco::toLower(format);
+                if (on_s3)
+                {
+                    arguments->children.push_back(make_intrusive<ASTIdentifier>("s3_conn"));
+                    arguments->children.push_back(
+                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("filename"), make_intrusive<ASTLiteral>(objects)));
+                    arguments->children.push_back(
+                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format)));
+                }
+                else
+                {
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(azurite_connection_string));
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(azurite_container));
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(objects));
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(format));
+                }
+                /// `exclusive` tracks the processed files in the memory of the server instead of Keeper
+                static const Strings modes = {"unordered", "ordered", "exclusive"};
+                changes.emplace_back("mode", pickRandomly(fuzz_rand, modes));
+                static const Strings actions = {"keep", "delete", "move", "tag"};
+                const String action = pickRandomly(fuzz_rand, actions);
+                changes.emplace_back("after_processing", action);
+                const String moved = "fuzz_queue_moved" + std::to_string(fuzz_rand() % 4) + "/";
+                if (action == "move" && fuzz_rand() % 3 != 0)
+                {
+                    /// Another destination: the same object storage, under another prefix of the bucket or container
+                    if (on_s3)
+                    {
+                        changes.emplace_back("after_processing_move_uri", "http://localhost:11111/test/" + moved);
+                        changes.emplace_back("after_processing_move_access_key_id", "test");
+                        changes.emplace_back("after_processing_move_secret_access_key", "testtest");
+                    }
+                    else
+                    {
+                        changes.emplace_back("after_processing_move_connection_string", azurite_connection_string);
+                        changes.emplace_back("after_processing_move_container", azurite_container);
+                    }
+                }
+                else if (action == "move")
+                    changes.emplace_back("after_processing_move_prefix", moved);
+                else if (action == "tag")
+                {
+                    changes.emplace_back("after_processing_tag_key", "fuzz");
+                    changes.emplace_back("after_processing_tag_value", std::to_string(fuzz_rand() % 2));
+                }
             }
             else if (new_engine == "Join")
             {
@@ -2781,98 +2833,127 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
            "SZ3",
            "Quantized"};
 
-    const String chosen = pickRandomly(fuzz_rand, pool);
-    if (chosen == "ZSTD" && fuzz_rand() % 2 == 0)
+    /// `Quantized` is declarative: it changes the serialization, so `FirstApplicable` rejects it.
+    static const Strings pool_without_declarative = [&]
     {
-        auto level = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 22 + 1));
-        if (fuzz_rand() % 2 == 0)
+        Strings res = pool;
+        std::erase(res, "Quantized");
+        return res;
+    }();
+
+    auto make_codec = [&](bool allow_declarative) -> ASTPtr
+    {
+        const String chosen = pickRandomly(fuzz_rand, allow_declarative ? pool : pool_without_declarative);
+        if (chosen == "ZSTD" && fuzz_rand() % 2 == 0)
         {
-            /// Optional second argument: zstd window log; 0 means the library default.
-            /// Interacts with the `zstd_window_log_max` setting on the read side.
-            const UInt64 window_log = (fuzz_rand() % 2 == 0) ? 0 : (fuzz_rand() % 22 + 10);
-            codec_fn.arguments->children.push_back(makeASTFunction("ZSTD", level, make_intrusive<ASTLiteral>(window_log)));
+            auto level = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 22 + 1));
+            if (fuzz_rand() % 2 == 0)
+            {
+                /// Optional second argument: zstd window log; 0 means the library default.
+                /// Interacts with the `zstd_window_log_max` setting on the read side.
+                const UInt64 window_log = (fuzz_rand() % 2 == 0) ? 0 : (fuzz_rand() % 22 + 10);
+                return makeASTFunction("ZSTD", level, make_intrusive<ASTLiteral>(window_log));
+            }
+            else
+                return makeASTFunction("ZSTD", level);
+        }
+        else if (chosen == "LZ4HC" && fuzz_rand() % 2 == 0)
+            return makeASTFunction("LZ4HC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1)));
+        else if (chosen == "ZXC" && fuzz_rand() % 2 == 0)
+            /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
+            return makeASTFunction("ZXC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 7 + 1)));
+        else if (chosen == "PCO" && fuzz_rand() % 2 == 0)
+            /// Optional compression level, 0 to 12; default is 8.
+            return makeASTFunction("PCO", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 13)));
+        else if (chosen == "GDeflate" && fuzz_rand() % 2 == 0)
+            /// Optional compression level, 1 (fastest) to 12 (densest); default is 6.
+            return makeASTFunction("GDeflate", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1)));
+        else if ((chosen == "Delta" || chosen == "DoubleDelta" || chosen == "Gorilla") && fuzz_rand() % 2 == 0)
+        {
+            /// Optional data byte-size argument, shared by the three delta-style codecs.
+            static const UInt64 delta_sizes[] = {1, 2, 4, 8};
+            return makeASTFunction(chosen, make_intrusive<ASTLiteral>(delta_sizes[fuzz_rand() % 4]));
+        }
+        else if (chosen == "FPC" && fuzz_rand() % 2 == 0)
+            return makeASTFunction(
+                "FPC",
+                make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 28 + 1)),
+                make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2 == 0 ? 4 : 8)));
+        else if (chosen == "T64" && fuzz_rand() % 2 == 0)
+            return makeASTFunction("T64", make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "bit" : "byte")));
+        else if (chosen == "ALP" && fuzz_rand() % 2 == 0)
+        {
+            /// Optional encoding variant; must be a bare identifier, not a literal.
+            static const char * alp_variants[] = {"AUTO", "STD", "RD"};
+            return makeASTFunction("ALP", make_intrusive<ASTIdentifier>(String(alp_variants[fuzz_rand() % std::size(alp_variants)])));
+        }
+        else if (chosen == "SZ3" && fuzz_rand() % 2 == 0)
+        {
+            /// Lossy float-only codec: SZ3('<algorithm>', '<error_bound_mode>', <error_value>).
+            /// All three arguments are required together; the value must be finite and positive.
+            static const char * sz3_algorithms[] = {"ALGO_LORENZO_REG", "ALGO_INTERP_LORENZO", "ALGO_INTERP"};
+            static const char * sz3_error_modes[] = {"ABS", "REL", "PSNR", "ABS_AND_REL"};
+            static const Float64 sz3_error_values[] = {0.0001, 0.001, 0.01, 0.1, 1.0};
+            return makeASTFunction(
+                "SZ3",
+                make_intrusive<ASTLiteral>(String(sz3_algorithms[fuzz_rand() % std::size(sz3_algorithms)])),
+                make_intrusive<ASTLiteral>(String(sz3_error_modes[fuzz_rand() % std::size(sz3_error_modes)])),
+                make_intrusive<ASTLiteral>(sz3_error_values[fuzz_rand() % std::size(sz3_error_values)]));
+        }
+        else if (chosen == "Quantized")
+        {
+            /// Vector-quantization codec for Array(Float32/Float64/BFloat16) columns; arguments are mandatory.
+            /// Quantized(method, dimensions[, ...]); use a multiple of 8 for dimensions so every method accepts it.
+            static const char * quant_methods[] = {"turboquant", "rabitq", "int8", "prefix", "product"};
+            const String method = quant_methods[fuzz_rand() % std::size(quant_methods)];
+            const UInt64 dimensions = (fuzz_rand() % 64 + 1) * 8;
+            if (method == "prefix")
+                /// Quantized('prefix', dimensions, leading_dimensions in [1, dimensions], 'int8'|'bf16').
+                return makeASTFunction(
+                    "Quantized",
+                    make_intrusive<ASTLiteral>(String("prefix")),
+                    make_intrusive<ASTLiteral>(dimensions),
+                    make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % dimensions + 1)),
+                    make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "int8" : "bf16")));
+            else if (method == "product")
+            {
+                /// Quantized('product', dimensions, nbits in [1, 16], m > 0 dividing dimensions).
+                /// Keep nbits <= 8 so the codebook stays within MAX_FIXEDSTRING_SIZE.
+                static const UInt64 subspaces[] = {1, 2, 4, 8};
+                return makeASTFunction(
+                    "Quantized",
+                    make_intrusive<ASTLiteral>(String("product")),
+                    make_intrusive<ASTLiteral>(dimensions),
+                    make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1)),
+                    make_intrusive<ASTLiteral>(subspaces[fuzz_rand() % std::size(subspaces)]));
+            }
+            else
+                return makeASTFunction("Quantized", make_intrusive<ASTLiteral>(method), make_intrusive<ASTLiteral>(dimensions));
         }
         else
-            codec_fn.arguments->children.push_back(makeASTFunction("ZSTD", level));
-    }
-    else if (chosen == "LZ4HC" && fuzz_rand() % 2 == 0)
-        codec_fn.arguments->children.push_back(makeASTFunction("LZ4HC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))));
-    else if (chosen == "ZXC" && fuzz_rand() % 2 == 0)
-        /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
-        codec_fn.arguments->children.push_back(makeASTFunction("ZXC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 7 + 1))));
-    else if (chosen == "PCO" && fuzz_rand() % 2 == 0)
-        /// Optional compression level, 0 to 12; default is 8.
-        codec_fn.arguments->children.push_back(makeASTFunction("PCO", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 13))));
-    else if (chosen == "GDeflate" && fuzz_rand() % 2 == 0)
-        /// Optional compression level, 1 (fastest) to 12 (densest); default is 6.
-        codec_fn.arguments->children.push_back(makeASTFunction("GDeflate", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))));
-    else if ((chosen == "Delta" || chosen == "DoubleDelta" || chosen == "Gorilla") && fuzz_rand() % 2 == 0)
+            return makeASTFunction(chosen);
+    };
+
+    if (fuzz_rand() % 4 != 0)
     {
-        /// Optional data byte-size argument, shared by the three delta-style codecs.
-        static const UInt64 delta_sizes[] = {1, 2, 4, 8};
-        codec_fn.arguments->children.push_back(makeASTFunction(chosen, make_intrusive<ASTLiteral>(delta_sizes[fuzz_rand() % 4])));
+        codec_fn.arguments->children.push_back(make_codec(true));
+        return;
     }
-    else if (chosen == "FPC" && fuzz_rand() % 2 == 0)
-        codec_fn.arguments->children.push_back(makeASTFunction(
-            "FPC",
-            make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 28 + 1)),
-            make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2 == 0 ? 4 : 8))));
-    else if (chosen == "T64" && fuzz_rand() % 2 == 0)
-        codec_fn.arguments->children.push_back(
-            makeASTFunction("T64", make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "bit" : "byte"))));
-    else if (chosen == "ALP" && fuzz_rand() % 2 == 0)
+
+    /// `FirstApplicable` uses the first alternative that applies to the column type, and an alternative can be
+    /// a `Multiple` chain. Without a general codec at the end, no alternative may apply, which is an error.
+    auto first_applicable = makeASTFunction("FirstApplicable");
+    const size_t alternatives = fuzz_rand() % 3 + 1;
+    for (size_t i = 0; i < alternatives; ++i)
     {
-        /// Optional encoding variant; must be a bare identifier, not a literal.
-        static const char * alp_variants[] = {"AUTO", "STD", "RD"};
-        codec_fn.arguments->children.push_back(
-            makeASTFunction("ALP", make_intrusive<ASTIdentifier>(String(alp_variants[fuzz_rand() % std::size(alp_variants)]))));
-    }
-    else if (chosen == "SZ3" && fuzz_rand() % 2 == 0)
-    {
-        /// Lossy float-only codec: SZ3('<algorithm>', '<error_bound_mode>', <error_value>).
-        /// All three arguments are required together; the value must be finite and positive.
-        static const char * sz3_algorithms[] = {"ALGO_LORENZO_REG", "ALGO_INTERP_LORENZO", "ALGO_INTERP"};
-        static const char * sz3_error_modes[] = {"ABS", "REL", "PSNR", "ABS_AND_REL"};
-        static const Float64 sz3_error_values[] = {0.0001, 0.001, 0.01, 0.1, 1.0};
-        codec_fn.arguments->children.push_back(makeASTFunction(
-            "SZ3",
-            make_intrusive<ASTLiteral>(String(sz3_algorithms[fuzz_rand() % std::size(sz3_algorithms)])),
-            make_intrusive<ASTLiteral>(String(sz3_error_modes[fuzz_rand() % std::size(sz3_error_modes)])),
-            make_intrusive<ASTLiteral>(sz3_error_values[fuzz_rand() % std::size(sz3_error_values)])));
-    }
-    else if (chosen == "Quantized")
-    {
-        /// Vector-quantization codec for Array(Float32/Float64/BFloat16) columns; arguments are mandatory.
-        /// Quantized(method, dimensions[, ...]); use a multiple of 8 for dimensions so every method accepts it.
-        static const char * quant_methods[] = {"turboquant", "rabitq", "int8", "prefix", "product"};
-        const String method = quant_methods[fuzz_rand() % std::size(quant_methods)];
-        const UInt64 dimensions = (fuzz_rand() % 64 + 1) * 8;
-        if (method == "prefix")
-            /// Quantized('prefix', dimensions, leading_dimensions in [1, dimensions], 'int8'|'bf16').
-            codec_fn.arguments->children.push_back(makeASTFunction(
-                "Quantized",
-                make_intrusive<ASTLiteral>(String("prefix")),
-                make_intrusive<ASTLiteral>(dimensions),
-                make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % dimensions + 1)),
-                make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "int8" : "bf16"))));
-        else if (method == "product")
-        {
-            /// Quantized('product', dimensions, nbits in [1, 16], m > 0 dividing dimensions).
-            /// Keep nbits <= 8 so the codebook stays within MAX_FIXEDSTRING_SIZE.
-            static const UInt64 subspaces[] = {1, 2, 4, 8};
-            codec_fn.arguments->children.push_back(makeASTFunction(
-                "Quantized",
-                make_intrusive<ASTLiteral>(String("product")),
-                make_intrusive<ASTLiteral>(dimensions),
-                make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1)),
-                make_intrusive<ASTLiteral>(subspaces[fuzz_rand() % std::size(subspaces)])));
-        }
+        if (fuzz_rand() % 4 == 0)
+            first_applicable->arguments->children.push_back(makeASTFunction("Multiple", make_codec(false), make_codec(false)));
         else
-            codec_fn.arguments->children.push_back(
-                makeASTFunction("Quantized", make_intrusive<ASTLiteral>(method), make_intrusive<ASTLiteral>(dimensions)));
+            first_applicable->arguments->children.push_back(make_codec(false));
     }
-    else
-        codec_fn.arguments->children.push_back(makeASTFunction(chosen));
+    if (fuzz_rand() % 5 != 0)
+        first_applicable->arguments->children.push_back(makeASTFunction(fuzz_rand() % 2 == 0 ? "ZSTD" : "LZ4"));
+    codec_fn.arguments->children.push_back(first_applicable);
 }
 
 void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
@@ -7734,6 +7815,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 fuzzOrderByList(select->orderBy().get(), select->select()->children.size());
             }
         }
+        /// `SHUFFLE` in place of `ORDER BY` returns the rows in random order, so not in the oracle mode.
+        if (select->shuffle)
+        {
+            if (fuzz_rand() % 50 == 0)
+                select->shuffle = false;
+        }
+        else if (!oracle_mode && !select->orderBy() && fuzz_rand() % 100 == 0)
+            select->shuffle = true;
         if (select->limitLength())
         {
             if (fuzz_rand() % 50 == 0)

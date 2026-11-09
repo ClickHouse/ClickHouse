@@ -47,6 +47,7 @@ static const auto bucketsRangeNonZeroSetting = CHSetting(
     false);
 
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
+    {"adaptive_codec_selection_period", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 64)); }, {}, false)},
     {"adaptive_write_buffer_initial_size", bytesRangeNonZeroSetting},
     {"add_implicit_sign_column_constraint_for_collapsing_engine", trueOrFalseSetting},
     {"add_minmax_index_for_block_number_column", trueOrFalseSetting},
@@ -146,6 +147,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"'v1'", "'v2'", "'v3'"},
          false)},
     /// Picks a codec per block on merge, so the data read back must stay the same
+    {"empty_parts_lifetime", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 60)); }, {}, false)},
     {"enable_adaptive_codec_selection", trueOrFalseSetting},
     {"enable_block_number_column", trueOrFalseSetting},
     {"enable_block_offset_column", trueOrFalseSetting},
@@ -187,6 +189,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"force_read_through_cache_for_merges", trueOrFalseSetting},
     {"fsync_after_insert", trueOrFalseSetting},
     {"fsync_part_directory", trueOrFalseSetting},
+    {"group_fsync_before_insert_finish", CHSetting([](RandomGenerator & rg, FuzzConfig &) { static const DB::Strings choices = {"'auto'", "0", "1"}; return rg.pickRandomly(choices); }, {}, false)},
     {"inactive_parts_to_delay_insert", highRangeSetting},
     {"inactive_parts_to_throw_insert", highRangeSetting},
     {"index_granularity", highRangeNonZeroSetting},
@@ -1217,6 +1220,11 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     const auto & blockCompressSetting = CHSetting(
         [](RandomGenerator & rg, FuzzConfig &)
         {
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// Without a type, the alternatives that need one are skipped
+                return "'" + formatFirstApplicable(rg) + "'";
+            }
             const String & codec = rg.pickRandomly(blockCodecs);
             String res = codec;
             if (codec == "LZ4HC" && rg.nextBool())
@@ -1407,8 +1415,11 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 },
                 {"'keep'", "'delete'", "'move'", "'tag'"},
                 false)},
+           {"after_processing_move_prefix", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return fmt::format("'moved{}/'", rg.randomInt<uint32_t>(0, 3)); }, {}, false)},
            {"after_processing_move_preserve_path", trueOrFalseSetting},
            {"after_processing_retries", highRangeSetting},
+           {"after_processing_tag_key", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return String(rg.nextBool() ? "'processed'" : "'fuzz'"); }, {}, false)},
+           {"after_processing_tag_value", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return String(rg.nextBool() ? "'1'" : "'fuzz'"); }, {}, false)},
            {"bucketing_mode",
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
@@ -1455,6 +1466,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
            {"polling_backoff_ms", CHSetting(highRange, {}, false)},
            {"polling_max_timeout_ms", CHSetting(highRange, {}, false)},
            {"polling_min_timeout_ms", CHSetting(highRange, {}, false)},
+           {"processing_state_cache_ttl_seconds", CHSetting(highRange, {}, false)},
            {"processing_threads_num", threadSetting},
            {"tracked_file_ttl_sec", highRangeSetting},
            {"tracked_files_limit", CHSetting(rowsRange, {}, false)},

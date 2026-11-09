@@ -1199,6 +1199,7 @@ message SelectStatementCore {
     optional LimitByStatement limit_by = 11;
     optional LimitStatement limit = 12;
     optional OffsetStatement offset = 13;
+    optional bool shuffle = 14;
 }
 
 message SetQuery {

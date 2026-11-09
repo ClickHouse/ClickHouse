@@ -2931,6 +2931,10 @@ CONV_FN(SelectStatementCore, ssc)
         ret += " ";
         OrderByStatementToString(ret, ssc.orderby());
     }
+    else if (ssc.shuffle())
+    {
+        ret += " SHUFFLE";
+    }
     if (ssc.has_limit_by())
     {
         ret += " ";

@@ -1677,6 +1677,48 @@ void StatementGenerator::generateEngineDetails(
                 sv_max->set_property("cleanup_interval_max_ms");
                 sv_max->set_value(std::to_string(max_ms));
             }
+            if (rg.nextSmallNumber() < 5)
+            {
+                /// `move` and `tag` need their companion settings, so set them together after the random ones to win
+                const auto add_setting = [&](const String & name, const String & value)
+                {
+                    SetValue * next = svs->add_other_values();
+                    next->set_property(name);
+                    next->set_value(value);
+                };
+                const String moved = fmt::format("moved{}/", rg.randomInt<uint32_t>(0, 3));
+
+                if (rg.nextBool())
+                {
+                    add_setting("after_processing", "'move'");
+                    if (b.isS3QueueEngine() && fc.minio_server.has_value() && rg.nextBool())
+                    {
+                        /// Another destination: the same bucket, given as a URI with its credentials
+                        const ServerCredentials & sc = fc.minio_server.value();
+                        add_setting(
+                            "after_processing_move_uri", fmt::format("'http://{}:{}/{}/{}'", sc.server_hostname, sc.port, sc.database, moved));
+                        add_setting("after_processing_move_access_key_id", "'" + escapeSQLString(sc.user) + "'");
+                        add_setting("after_processing_move_secret_access_key", "'" + escapeSQLString(sc.secret) + "'");
+                    }
+                    else if (b.isAzureQueueEngine() && fc.azurite_server.has_value() && rg.nextBool())
+                    {
+                        /// The connection string of Azurite is in `database` of its credentials
+                        const ServerCredentials & sc = fc.azurite_server.value();
+                        add_setting("after_processing_move_connection_string", "'" + escapeSQLString(sc.database) + "'");
+                        add_setting("after_processing_move_container", "'" + escapeSQLString(sc.container) + "'");
+                    }
+                    else
+                    {
+                        add_setting("after_processing_move_prefix", "'" + moved + "'");
+                    }
+                }
+                else
+                {
+                    add_setting("after_processing", "'tag'");
+                    add_setting("after_processing_tag_key", rg.nextBool() ? "'processed'" : "'fuzz'");
+                    add_setting("after_processing_tag_value", fmt::format("'{}'", rg.randomInt<uint32_t>(0, 9)));
+                }
+            }
         }
         if (b.isDistributedEngine() && rg.nextSmallNumber() < 3)
         {

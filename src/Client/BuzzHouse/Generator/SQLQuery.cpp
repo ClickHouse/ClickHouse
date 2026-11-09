@@ -2730,6 +2730,11 @@ void StatementGenerator::generateSelect(
                 generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
                 this->depth--;
             }
+            else if ((allowed_clauses & allow_orderby) && this->allow_not_deterministic && rg.nextMediumNumber() < 6)
+            {
+                /// The rows in random order, so never in an oracle query
+                ssc->set_shuffle(true);
+            }
             const bool order_safe = ssc->has_orderby() || this->levels[this->current_level].global_aggregate || this->allow_not_deterministic;
             if ((allowed_clauses & allow_limitby) && order_safe && rg.nextMediumNumber() < 23)
             {

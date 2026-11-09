@@ -218,8 +218,44 @@ static DB::Strings pickCodecSubset(RandomGenerator & rg, const DB::Strings & poo
     return choices;
 }
 
+/// `FirstApplicable(a, b, ...)` uses the first alternative that applies to the data type, so its alternatives come from
+/// every codec, not only the ones of the type. An alternative can be a `Multiple(...)` chain. Without a general codec at
+/// the end no alternative may apply, which is an error, also when the type is unknown, as for a default codec.
+String formatFirstApplicable(RandomGenerator & rg)
+{
+    String res = "FirstApplicable(";
+    const uint32_t alternatives = rg.randomInt<uint32_t>(1, 3);
+
+    for (uint32_t i = 0; i < alternatives; i++)
+    {
+        if (i != 0)
+        {
+            res += ", ";
+        }
+        if (rg.nextSmallNumber() < 3)
+        {
+            res += "Multiple(" + formatCodecChoices(rg, pickCodecSubset(rg, codecs)) + ")";
+        }
+        else
+        {
+            res += formatCodecChoices(rg, {rg.pickRandomly(codecs)});
+        }
+    }
+    if (rg.nextSmallNumber() < 10)
+    {
+        res += ", ";
+        res += formatCodecChoices(rg, {rg.nextBool() ? "ZSTD" : "LZ4"});
+    }
+    res += ")";
+    return res;
+}
+
 String generateNextCodecString(RandomGenerator & rg)
 {
+    if (rg.nextSmallNumber() < 3)
+    {
+        return formatFirstApplicable(rg);
+    }
     return formatCodecChoices(rg, pickCodecSubset(rg, codecs));
 }
 
@@ -311,6 +347,10 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
             /// Other types just support general-purpose codecs
             break;
     }
+    if (rg.nextSmallNumber() < 3)
+    {
+        return formatFirstApplicable(rg);
+    }
     return formatCodecChoices(rg, pickCodecSubset(rg, pool));
 }
 
@@ -379,6 +419,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"allow_window_partitions_independently", trueOrFalseSetting},
        {"analyze_index_with_multiple_key_columns_per_condition", trueOrFalseSetting},
        {"apply_string_filters_during_scan", trueOrFalseSetting},
+       {"automatic_parallel_replicas_max_duplicated_read_ratio", probRangeSetting},
        {"automatic_parallel_replicas_remember_boundary", trueOrFalseSetting},
        {"cascades_aggregation_pushdown", trueOrFalseSetting},
        {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
@@ -498,6 +539,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_group_by_constant_keys", trueOrFalseSetting},
        {"optimize_group_by_function_keys", trueOrFalseSetting},
        {"optimize_if_chain_to_multiif", trueOrFalseSetting},
+       {"optimize_if_transform_const_strings_to_lowcardinality", trueOrFalseSetting},
        {"optimize_if_transform_strings_to_enum", trueOrFalseSetting},
        {"optimize_injective_functions_in_group_by", trueOrFalseSetting},
        {"optimize_injective_functions_in_limit_by", trueOrFalseSetting},
@@ -511,6 +553,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_multiif_to_if", trueOrFalseSetting},
        {"optimize_normalize_count_variants", trueOrFalseSetting},
        {"optimize_prewhere_after_pushdown", trueOrFalseSetting},
+       {"optimize_projection_skip_index_ratio", probRangeSetting},
        {"optimize_qbit_distance_function_reads", trueOrFalseSetting},
        {"optimize_read_in_order", trueOrFalseSetting},
        {"optimize_read_in_reverse_order_final", trueOrFalseSetting},
@@ -645,6 +688,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_split_filter", trueOrFalseSetting},
        {"query_plan_top_k_through_array_join", trueOrFalseSetting},
        {"query_plan_top_k_through_join", trueOrFalseSetting},
+       {"query_plan_use_shuffle_for_order_by_rand", trueOrFalseSetting},
        {"read_in_order_use_buffering", trueOrFalseSetting},
        {"read_in_order_use_virtual_row", trueOrFalseSetting},
        {"read_in_order_use_virtual_row_per_block", trueOrFalseSetting},
@@ -687,6 +731,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_iceberg_manifest_list_partition_pruning", trueOrFalseSetting},
        {"use_iceberg_manifest_statistics", trueOrFalseSetting},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
+       {"use_iceberg_table_statistics_ndv", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries_max_values",
         CHSetting(
@@ -843,6 +888,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    {"cluster_table_function_split_by_split_offsets", trueOrFalseSetting},
     {"cluster_table_function_split_granularity",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1182,6 +1228,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"iceberg_expire_default_min_snapshots_to_keep",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
+    {"iceberg_insert_single_manifest_for_all_partitions", trueOrFalseSettingNoOracle},
     {"iceberg_list_only_v_prefixed_metadata_files", trueOrFalseSettingNoOracle},
     {"iceberg_manifest_min_count_to_compact",
      CHSetting(
@@ -1612,6 +1659,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"min_count_to_compile_sort_description", CHSetting(zeroToThree, {"0", "1", "2", "3"}, false)},
     {"min_filtered_ratio_for_lazy_final", probRangeSetting},
     {"min_hit_rate_to_use_consecutive_keys_optimization", probRangeSetting},
+    {"min_marks_per_part_to_load_statistics", CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 128)); }, {"0", "64", "1000000"}, false)},
     {"min_rows_ratio_for_hash_join_row_store",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 100.0)); },
@@ -1680,6 +1728,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          false)},
     {"output_format_arrow_fixed_string_as_fixed_byte_array", trueOrFalseSettingNoOracle},
     {"output_format_arrow_low_cardinality_as_dictionary", trueOrFalseSettingNoOracle},
+    {"output_format_arrow_max_record_batch_size_bytes", CHSetting(bytesRangeNonZero, {}, false)},
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_arrow_unsupported_types",
      CHSetting(
@@ -1821,6 +1870,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"output_format_vortex_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},
     {"page_cache_inject_eviction", trueOrFalseSettingNoOracle},
     {"parallel_distributed_insert_select", CHSetting(zeroOneTwo, {}, false)},
@@ -2141,6 +2191,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"transform_null_in", trueOrFalseSettingNoOracle},
     {"traverse_shadow_remote_data_paths", trueOrFalseSettingNoOracle},
     {"type_json_allow_duplicated_key_with_literal_and_nested_object", trueOrFalseSettingNoOracle},
+    {"type_json_skip_duplicate_key_detection", trueOrFalseSettingNoOracle},
     {"type_json_skip_duplicated_paths", trueOrFalseSettingNoOracle},
     {"type_json_skip_invalid_typed_paths", trueOrFalseSettingNoOracle},
     {"type_json_skip_null_typed_paths", trueOrFalseSettingNoOracle},
@@ -2184,6 +2235,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_hedged_requests", trueOrFalseSetting},
     {"use_hive_partitioning", trueOrFalseSettingNoOracle},
     {"use_iceberg_metadata_files_cache", trueOrFalseSetting},
+    {"use_page_cache_lookahead_for_text_index", trueOrFalseSettingNoOracle},
     {"use_paimon_metadata_files_cache", trueOrFalseSetting},
     {"use_legacy_to_time", trueOrFalseSettingNoOracle},
     {"use_page_cache_for_disks_without_file_cache", trueOrFalseSetting},
