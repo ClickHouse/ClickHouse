@@ -20,4 +20,10 @@ SELECT foo FROM t_05516
 WHERE foo IN (SELECT foo FROM s3(s3_conn, filename = '05516_lookup.csv', format = 'CSV', structure = 'foo String'))
 ORDER BY foo;
 
+-- The key must also not resolve to a `WITH` alias of the same name, which took the
+-- alias-to-constant-then-folded route on master.
+WITH 'x' AS format
+SELECT foo FROM s3(s3_conn, filename = '05516_lookup.csv', format = 'CSV', structure = 'foo String')
+ORDER BY foo;
+
 DROP TABLE t_05516;
