@@ -259,8 +259,13 @@ private:
     {
         return {cost_config, static_cast<double>(query_graph.distribution_node_count), rowBytes(left_mask), rowBytes(right_mask)};
     }
-    /// The bytes of a row of the join of the relations.
+    /// The bytes of a row of the join of the relations: of their columns that are still needed above it. A single
+    /// relation has the widths of its storage, a join result the widths of the column types, as Cascades sizes them: the
+    /// columns are renamed above a read, so Cascades no longer finds their storage widths in a join result.
     double rowBytes(UInt32 relations) const;
+    /// The bytes of all input columns of the relations. Cascades may keep columns in a join result that no later join
+    /// needs, so the size check of a broadcast counts them all: a broadcast that it declines is not costed.
+    double allColumnBytes(UInt32 relations) const;
     /// Whether a broadcast of a plan fits `QueryGraph::max_bytes_to_broadcast`, as Cascades decides it: by its estimated
     /// rows when they are precise, else by its bound of rows.
     bool canBroadcast(UInt32 relations, bool imprecise_rows, std::optional<UInt64> max_rows, double rows) const
@@ -270,7 +275,7 @@ private:
         if (imprecise_rows && !max_rows)
             return false;
         const double counted_rows = imprecise_rows ? static_cast<double>(*max_rows) : rows;
-        return counted_rows * rowBytes(relations) <= static_cast<double>(query_graph.max_bytes_to_broadcast);
+        return counted_rows * allColumnBytes(relations) <= static_cast<double>(query_graph.max_bytes_to_broadcast);
     }
     CostConfig cost_config;
 
@@ -549,7 +554,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
     const size_t num_classes = dpsub_data.class_members.size();
     dpsub_data.distribution = query_graph.distribution_node_count > 1 && num_classes <= std::numeric_limits<UInt64>::digits
-        && query_graph.relation_row_bytes.size() == num_relations;
+        && !query_graph.distribution_columns.empty();
     dpsub_data.interesting_orders = !dpsub_data.distribution && query_graph.use_interesting_orders
         && num_classes <= std::numeric_limits<UInt64>::digits;
     dpsub_data.class_single_type.assign(num_classes, 0);
@@ -923,11 +928,21 @@ UInt64 DPSubJoinOrderOptimizer::partitionKeyClasses(UInt32 left_mask, UInt32 rig
     return classes;
 }
 
+double DPSubJoinOrderOptimizer::allColumnBytes(UInt32 relations) const
+{
+    double bytes = 0;
+    for (const auto & column : query_graph.distribution_columns)
+        if ((relations >> column.relation) & 1)
+            bytes += std::popcount(relations) == 1 ? column.bytes : column.type_bytes;
+    return std::max(bytes, 1.0);
+}
+
 double DPSubJoinOrderOptimizer::rowBytes(UInt32 relations) const
 {
     double bytes = 0;
-    for (; relations; relations &= relations - 1)
-        bytes += query_graph.relation_row_bytes[std::countr_zero(relations)];
+    for (const auto & column : query_graph.distribution_columns)
+        if (((relations >> column.relation) & 1) && (column.output || (column.compared_with & ~static_cast<UInt64>(relations))))
+            bytes += std::popcount(relations) == 1 ? column.bytes : column.type_bytes;
     return std::max(bytes, 1.0);
 }
 

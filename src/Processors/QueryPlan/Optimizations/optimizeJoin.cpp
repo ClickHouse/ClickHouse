@@ -1915,23 +1915,118 @@ static std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
     return result;
 }
 
-/// The bytes of a row of a join input as Cascades sizes a read: the columns it reads, with the widths that the storage
-/// of the table gives them. Without these widths a string column gets the default width of its type.
-static double estimateInputRowBytes(const QueryPlan::Node & input, const RelationStats & stats)
+/// The bytes of the output columns of a join input, as Cascades sizes a read: the widths the storage of the table gives
+/// them. The steps above the read rename its columns, so a name is followed down to the read through `ALIAS` nodes.
+/// Without these widths a string column gets the default width of its type.
+static std::unordered_map<String, double> estimateInputColumnBytes(const QueryPlan::Node & input)
 {
-    const QueryPlan::Node * node = &input;
-    while (!typeid_cast<const ReadFromMergeTree *>(node->step.get()) && node->children.size() == 1
-        && (typeid_cast<const FilterStep *>(node->step.get()) || typeid_cast<const ExpressionStep *>(node->step.get())))
-        node = node->children.front();
-    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(node->step.get());
-    if (!read_step)
-        return estimateRowWidth(*input.step->getOutputHeader(), stats.column_stats);
-    /// The steps above the read rename its columns, so the read's own header matches the storage widths.
-    auto column_stats = stats.column_stats;
-    for (const auto & [column_name, width] : estimateReadColumnWidths(*read_step))
-        if (column_stats[column_name].avg_bytes == 0)
-            column_stats[column_name].avg_bytes = width;
-    return estimateRowWidth(*read_step->getOutputHeader(), column_stats);
+    const QueryPlan::Node * read_node = &input;
+    while (!typeid_cast<const ReadFromMergeTree *>(read_node->step.get()) && read_node->children.size() == 1
+        && (typeid_cast<const FilterStep *>(read_node->step.get()) || typeid_cast<const ExpressionStep *>(read_node->step.get())))
+        read_node = read_node->children.front();
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(read_node->step.get());
+    const auto storage_widths = read_step ? estimateReadColumnWidths(*read_step) : std::unordered_map<String, Float64>{};
+
+    auto read_column_name = [&](String name) -> std::optional<String>
+    {
+        for (const QueryPlan::Node * node = &input; node != read_node; node = node->children.front())
+        {
+            const ActionsDAG * dag = nullptr;
+            if (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
+                dag = &expression->getExpression();
+            else if (const auto * filter = typeid_cast<const FilterStep *>(node->step.get()))
+                dag = &filter->getExpression();
+            const auto * output = dag ? dag->tryFindInOutputs(name) : nullptr;
+            while (output && output->type == ActionsDAG::ActionType::ALIAS)
+                output = output->children.front();
+            if (!output || output->type != ActionsDAG::ActionType::INPUT)
+                return std::nullopt;
+            name = output->result_name;
+        }
+        return name;
+    };
+
+    std::unordered_map<String, double> widths;
+    for (const auto & column : *input.step->getOutputHeader())
+    {
+        double width = estimateColumnWidthFromType(*column.type);
+        if (auto name = read_column_name(column.name))
+            if (auto it = storage_widths.find(*name); it != storage_widths.end())
+                width = it->second;
+        widths[column.name] = width;
+    }
+    return widths;
+}
+
+/// The input columns of the graph for `QueryGraph::distribution_columns`.
+static std::vector<QueryGraph::DistributionColumn> distributionColumns(
+    const QueryGraph & query_graph, const ActionsDAG & global_actions_dag, const JoinExpressionActions & global_expression_actions,
+    const std::vector<QueryPlan::Node *> & inputs)
+{
+    auto inputs_of = [](const ActionsDAG::Node * node)
+    {
+        std::vector<const ActionsDAG::Node *> result;
+        std::unordered_set<const ActionsDAG::Node *> visited;
+        std::vector<const ActionsDAG::Node *> stack{node};
+        while (!stack.empty())
+        {
+            const auto * current = stack.back();
+            stack.pop_back();
+            if (!visited.insert(current).second)
+                continue;
+            if (current->type == ActionsDAG::ActionType::INPUT)
+                result.push_back(current);
+            for (const auto * child : current->children)
+                stack.push_back(child);
+        }
+        return result;
+    };
+
+    std::vector<std::unordered_map<String, double>> input_widths;
+    for (const auto * input : inputs)
+        input_widths.push_back(estimateInputColumnBytes(*input));
+
+    std::vector<QueryGraph::DistributionColumn> columns;
+    std::unordered_map<const ActionsDAG::Node *, size_t> column_index;
+    for (const auto * input : global_actions_dag.getInputs())
+    {
+        auto relation = JoinActionRef(input, global_expression_actions).getSourceRelations().getSingleBit();
+        if (!relation || *relation >= inputs.size())
+            continue;
+        const auto & widths = input_widths[*relation];
+        auto it = widths.find(input->result_name);
+        column_index[input] = columns.size();
+        const double type_bytes = estimateColumnWidthFromType(*input->result_type);
+        columns.push_back({.relation = *relation, .bytes = it != widths.end() ? it->second : type_bytes, .type_bytes = type_bytes});
+    }
+    auto mark = [&](const ActionsDAG::Node * input, UInt64 relations, bool output)
+    {
+        auto it = column_index.find(input);
+        if (it == column_index.end())
+            return;
+        columns[it->second].output |= output;
+        columns[it->second].compared_with |= relations;
+    };
+
+    for (const auto * output : global_actions_dag.getOutputs())
+        for (const auto * input : inputs_of(output))
+            mark(input, 0, true);
+    for (const auto & edge : query_graph.edges)
+    {
+        if (!edge)
+            continue;
+        const UInt64 relations = toRelationMask(edge.getSourceRelations());
+        for (const auto * input : inputs_of(edge.getNode()))
+            mark(input, relations, false);
+    }
+    std::unordered_map<const void *, UInt64> class_relations;
+    for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
+        if (class_ptr)
+            class_relations[class_ptr.get()] |= toRelationMask(member.getSourceRelations());
+    for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
+        if (class_ptr)
+            mark(member.getNode(), class_relations[class_ptr.get()], false);
+    return columns;
 }
 
 bool JoinOrderPlanBuilder::selectSetSplits(
@@ -2605,11 +2700,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             {
                 query_graph.distribution_node_count = node_count;
                 query_graph.max_bytes_to_broadcast = optimization_settings.distributed_plan_max_bytes_to_broadcast;
-                for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
-                {
-                    const auto & stats = query_graph.relation_stats[i];
-                    query_graph.relation_row_bytes.push_back(estimateInputRowBytes(*query_graph_builder.inputs[i], stats));
-                }
+                query_graph.distribution_columns = distributionColumns(
+                    query_graph, *global_actions_dag, global_expression_actions, query_graph_builder.inputs);
             }
         }
     }

@@ -234,8 +234,19 @@ struct QueryGraph
     /// With `query_plan_join_order_distribution`: the nodes the query runs on, 0 when DPsub ignores how the data is
     /// spread over them. DPsub then costs joins as local, shuffle or broadcast joins, see `CostConfig`.
     size_t distribution_node_count = 0;
-    /// Per relation: the bytes of its rows, which an exchange of its data moves.
-    std::vector<double> relation_row_bytes;
+    /// The input columns of the graph, for the bytes an exchange of a set of relations moves: the columns of its relations
+    /// that the graph outputs or that a join with a relation outside it compares.
+    struct DistributionColumn
+    {
+        size_t relation = 0;
+        double bytes = 0;
+        /// The default width of its type, which Cascades gives the column in a join result.
+        double type_bytes = 0;
+        bool output = false;
+        /// The relations of the predicates and equivalence classes that use the column.
+        UInt64 compared_with = 0;
+    };
+    std::vector<DistributionColumn> distribution_columns;
     /// The bytes a broadcast may replicate to every node, see `distributed_plan_max_bytes_to_broadcast`; 0 for no limit.
     UInt64 max_bytes_to_broadcast = 0;
 
