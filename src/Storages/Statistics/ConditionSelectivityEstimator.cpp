@@ -488,9 +488,28 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             if (metadata)
             {
-                if (auto type = tryGetColumnType(metadata, column_name))
+                auto type = tryGetColumnType(metadata, column_name);
+                if (type)
                     column_type = removeLowCardinalityAndNullable(type);
-                else
+
+                /// The values of a `Dynamic` column have several types, and so may the literals compared with it, so the
+                /// ranges of two atoms on it may not compare: an equality is estimated alone, any other atom like one on an expression.
+                if (column_type && isDynamic(column_type))
+                {
+                    if (!set_for_ranges && (func_name == "equals" || func_name == "notEquals"))
+                    {
+                        Selectivity selectivity{getEqualFactor(const_type), 0};
+                        if (auto it = column_estimators.find(column_name);
+                            it != column_estimators.end() && isCompatibleStatistics(metadata, it->second.stats, column_name))
+                            selectivity = it->second.estimateRanges(PlainRanges(Range(const_value)));
+                        out.selectivity = func_name == "equals" ? selectivity : selectivity.applyNot();
+                        out.finalized = true;
+                        return false;
+                    }
+                    type = nullptr;
+                }
+
+                if (!type)
                 {
                     /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
                     /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.

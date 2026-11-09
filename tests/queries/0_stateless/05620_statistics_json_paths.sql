@@ -76,6 +76,15 @@ SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN kee
 ALTER TABLE tm MATERIALIZE STATISTICS k SETTINGS mutations_sync = 2;
 SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tm AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.p = 'x') WHERE explain LIKE '%Join:%';
 
+-- Literals of two types on one `Dynamic` path.
+CREATE TABLE td (k UInt64, j JSON STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO td SELECT number, concat('{"d":"2024-01-', leftPad(toString(number % 28 + 1), 2, '0'), ' 10:00:00.000"}') FROM numbers(1000) SETTINGS materialize_statistics_on_insert = 1;
+SELECT dynamicType(j.d) FROM td LIMIT 1;
+SELECT sum(k) FROM td WHERE j.d >= toDateTime64('2024-01-01 00:00:00', 3) AND j.d < '2024-01-15 00:00:00' SETTINGS optimize_move_to_prewhere = 1, min_marks_per_part_to_load_statistics = 0;
+SELECT count() FROM td AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.d >= toDateTime64('2024-01-01 00:00:00', 3) AND a.j.d < '2024-01-15 00:00:00' SETTINGS min_marks_per_part_to_load_statistics = 0;
+SELECT count() FROM td AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.d = toDateTime64('2024-01-15 10:00:00', 3) OR a.j.d = '2024-01-16 10:00:00' SETTINGS min_marks_per_part_to_load_statistics = 0;
+DROP TABLE td;
+
 DROP TABLE ts;
 DROP TABLE tm;
 DROP TABLE u;
