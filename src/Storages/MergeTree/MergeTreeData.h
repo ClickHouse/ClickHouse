@@ -1234,6 +1234,11 @@ public:
     /// The same for the `WITH SETTINGS` clauses of the projection declarations in `projections` (a list of them, or null).
     static void checkParquetPartsAllowedInProjections(const IAST * projections, const ContextPtr & query_context);
 
+    /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
+    /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
+    /// which checks the user's access to their functions and rejects functions that are not executed in the background.
+    static void checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context);
+
     /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
     /// Only for a definition written now: an existing table with such a column must still load and replicate.
     static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
