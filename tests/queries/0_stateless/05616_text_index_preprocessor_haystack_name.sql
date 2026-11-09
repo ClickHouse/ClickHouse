@@ -1,3 +1,4 @@
+-- Random settings limits: optimize_empty_string_comparisons=(1, None)
 -- The text index preprocessor applies to a function evaluated row by row when its haystack is the index expression,
 -- also when the expression has a constant lambda or a comparison with an empty string.
 
