@@ -10,7 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 conn="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
-container="05237hidden${CLICKHOUSE_DATABASE}"
+# Azure container names allow only lowercase letters, digits and hyphens.
+db_suffix="${CLICKHOUSE_DATABASE//_/-}"
+container="05237hidden-${db_suffix,,}"
 
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION azureBlobStorage('$conn', '$container', 't/dt=2026-01-01/a.parquet', 'Parquet', 'auto', 'id Int64') SELECT toInt64(1) AS id;
@@ -18,7 +20,7 @@ INSERT INTO FUNCTION azureBlobStorage('$conn', '$container', 't/_temporary/0/_te
 INSERT INTO FUNCTION azureBlobStorage('$conn', '$container', 't/.spark-staging-y/dt=2026-01-01/c.parquet', 'Parquet', 'auto', 'id Int64') SELECT toInt64(3) AS id;
 
 CREATE TABLE 05237_hidden (id Int64, dt String)
-ENGINE = AzureBlobStorage('$conn', '$container', 't', format = 'Parquet', partition_strategy = 'hive')
+ENGINE = AzureBlobStorage('$conn', '$container', 't', 'Parquet', partition_strategy = 'hive')
 PARTITION BY dt;
 
 SELECT 'hive count:', count() FROM 05237_hidden;
