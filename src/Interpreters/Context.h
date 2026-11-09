@@ -603,9 +603,25 @@ public:
             return has_conflicting_identities;
         }
 
+        /// Records that a query tree analyzed while building the plan, but not visible in the
+        /// caller's query tree (the body of a view expanded at plan time), is not eligible for the
+        /// cache - e.g. it folds a non-deterministic function such as `now`.
+        void markIneligible()
+        {
+            std::lock_guard lock(mutex);
+            has_ineligible_query_tree = true;
+        }
+
+        bool hasIneligibleQueryTree() const
+        {
+            std::lock_guard lock(mutex);
+            return has_ineligible_query_tree;
+        }
+
         mutable std::mutex mutex;
         std::map<std::pair<String, String>, StorageIdentity> identities TSA_GUARDED_BY(mutex);
         bool has_conflicting_identities TSA_GUARDED_BY(mutex) = false;
+        bool has_ineligible_query_tree TSA_GUARDED_BY(mutex) = false;
     };
     using PlanCacheStorageIdentitiesPtr = std::shared_ptr<PlanCacheStorageIdentities>;
 

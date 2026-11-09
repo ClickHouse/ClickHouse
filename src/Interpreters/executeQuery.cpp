@@ -1704,8 +1704,19 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
 
     auto & logical_plan = analyzer_interpreter->getQueryPlan();
 
-    /// The planner may exempt the query from quotas and limits (a single read of `system.one` or a
-    /// quota table, see `PlannerJoinTree`) by updating the interpreter's options. The interpreters
+    /// The bodies of views expanded while building the plan are analyzed by their own interpreters,
+    /// so the check above did not see them; `StorageView::readImpl` checks them and records the
+    /// result. Such a plan is just as ineligible as the caller's query tree would be.
+    if (planning_identities->hasIneligibleQueryTree())
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: the body of an expanded view uses non-deterministic functions, scalar subqueries "
+            "(see query_plan_cache_allow_scalar_subqueries), table functions or temporary tables");
+        return nullptr;
+    }
+
+    /// The planner may exempt the query from quotas and limits (a single read of a quota table or
+    /// `system.one`, see `PlannerJoinTree`) by updating the interpreter's options. The interpreters
     /// that execute the plan on a miss and on a hit must apply the same exemptions.
     const bool planner_ignore_quota = analyzer_interpreter->ignoreQuota();
     const bool planner_ignore_limits = analyzer_interpreter->ignoreLimits();
