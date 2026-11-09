@@ -1466,7 +1466,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
           * cut a multi-byte character apart. A class of code points of a regular expression does
           * neither.
           */
-        static constexpr std::string_view whitespace = "[\\x00\\t\\n\\x0B\\f\\r \\x{00A0}\\x{1680}\\x{2000}-\\x{200A}]+";
+        static constexpr std::string_view whitespace = R"([\x00\t\n\x0B\f\r \x{00A0}\x{1680}\x{2000}-\x{200A}]+)";
         String pattern;
         if (name != "$rtrim")
             pattern = "^" + String(whitespace);
