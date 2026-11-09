@@ -218,7 +218,12 @@ TEST(AllocationInterceptors, SizedDeleteCreditsWhatNewCharged)
         EXPECT_EQ(CurrentThread::get().memory_tracker.get(), before) << context;
     };
 
+#if USE_JEMALLOC
     for (bool sized : {true, false})
+#else
+    /// Without jemalloc, unsized delete credits `malloc_usable_size`, which includes padding that is not charged.
+    for (bool sized : {true})
+#endif
     {
         check(100, {}, sized);
         check(100000, {}, sized);
