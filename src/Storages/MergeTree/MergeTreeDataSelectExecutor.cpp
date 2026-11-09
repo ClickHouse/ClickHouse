@@ -1572,7 +1572,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     partial_eval_results.resize(
                         ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
-                /// in a disjunction the indexes exclude granules together in the merge below
+                /// in a disjunction the indexes that wrote a false partial result exclude granules together in the merge below
                 std::vector<size_t> indexes_without_own_drops;
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
@@ -1603,6 +1603,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     if (!is_index_supported_on_data_read(index_and_condition.index))
                     {
+                        const size_t partial_true_before = rpn_template_for_part ? partial_eval_results.count() : 0;
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition_template->generateForPart(ranges.data_part),
@@ -1620,7 +1621,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                         if (ranges.getMarksCount() < total_granules)
                             skip_index_used[index_idx] = true;
-                        else if (rpn_template_for_part)
+                        else if (rpn_template_for_part && partial_eval_results.count() < partial_true_before)
                             indexes_without_own_drops.push_back(index_idx);
                     }
 
