@@ -135,20 +135,28 @@ TEST(MergedDataReplicated, InsertRowsWrapsDestinationPreservingOptimization)
 
     auto key_src = ColumnInt64::create();
     key_src->insertValue(2);
+    key_src->insertValue(3);
+    /// Both rows share one value, so the merged block keeps sharing it.
     auto val_nested = ColumnInt64::create();
     val_nested->insertValue(200);
-    ColumnPtr val_replicated = ColumnReplicated::create(ColumnPtr(std::move(val_nested)));
+    auto val_indexes = ColumnUInt8::create();
+    val_indexes->insertValue(0);
+    val_indexes->insertValue(0);
+    ColumnPtr val_replicated = ColumnReplicated::create(MutableColumnPtr(std::move(val_nested)), MutableColumnPtr(std::move(val_indexes)));
 
     ColumnRawPtrs raw_columns = {key_src.get(), val_replicated.get()};
-    merged_data.insertRows(raw_columns, 0, 1, 1);
+    merged_data.insertRows(raw_columns, 0, 2, 1);
 
     Chunk result = merged_data.pull();
-    ASSERT_EQ(result.getNumRows(), 1);
+    ASSERT_EQ(result.getNumRows(), 2);
     /// After the mismatch is detected, the destination column should be `ColumnReplicated`
-    /// (not a regular `ColumnInt64`). This confirms we preserved the optimization rather
-    /// than materializing the source.
-    ASSERT_TRUE(result.getColumns()[1]->isReplicated());
-    ASSERT_EQ(result.getColumns()[1]->getInt(0), 200);
+    /// (not a regular `ColumnInt64`) that stores the shared value once. This confirms we
+    /// preserved the optimization rather than materializing the source.
+    const auto * result_val = typeid_cast<const ColumnReplicated *>(result.getColumns()[1].get());
+    ASSERT_TRUE(result_val);
+    ASSERT_EQ(result_val->getNestedColumn()->size(), 1);
+    ASSERT_EQ(result_val->getInt(0), 200);
+    ASSERT_EQ(result_val->getInt(1), 200);
 }
 
 TEST(MergedDataReplicated, InsertChunkReplicatedSourceRegularDestination)
@@ -170,23 +178,30 @@ TEST(MergedDataReplicated, InsertChunkReplicatedSourceRegularDestination)
     MergedData merged_data(false, 1000, 0, {});
     merged_data.initialize(header, inputs);
 
-    /// Construct a chunk with `ColumnReplicated` value column.
+    /// Construct a chunk with `ColumnReplicated` value column, whose rows share one value.
     auto key_col = ColumnInt64::create();
     key_col->insertValue(3);
+    key_col->insertValue(4);
     auto val_nested = ColumnInt64::create();
     val_nested->insertValue(300);
-    ColumnPtr val_replicated = ColumnReplicated::create(ColumnPtr(std::move(val_nested)));
+    auto val_indexes = ColumnUInt8::create();
+    val_indexes->insertValue(0);
+    val_indexes->insertValue(0);
+    ColumnPtr val_replicated = ColumnReplicated::create(MutableColumnPtr(std::move(val_nested)), MutableColumnPtr(std::move(val_indexes)));
 
-    Chunk chunk(Columns{std::move(key_col), std::move(val_replicated)}, 1);
-    ASSERT_NO_THROW(merged_data.insertChunk(std::move(chunk), 1));
+    Chunk chunk(Columns{std::move(key_col), std::move(val_replicated)}, 2);
+    ASSERT_NO_THROW(merged_data.insertChunk(std::move(chunk), 2));
 
     Chunk result = merged_data.pull();
-    ASSERT_EQ(result.getNumRows(), 1);
+    ASSERT_EQ(result.getNumRows(), 2);
     /// With the fix, `insertChunk`'s simple branch just moves the `ColumnReplicated`
     /// chunk column into the destination. The destination becomes `ColumnReplicated`
     /// — the lazy replication optimization is preserved all the way through.
-    ASSERT_TRUE(result.getColumns()[1]->isReplicated());
-    ASSERT_EQ(result.getColumns()[1]->getInt(0), 300);
+    const auto * result_val = typeid_cast<const ColumnReplicated *>(result.getColumns()[1].get());
+    ASSERT_TRUE(result_val);
+    ASSERT_EQ(result_val->getNestedColumn()->size(), 1);
+    ASSERT_EQ(result_val->getInt(0), 300);
+    ASSERT_EQ(result_val->getInt(1), 300);
 }
 
 /// Regression test for the second code path reported by the automated PR review:
@@ -220,23 +235,29 @@ TEST(MergedDataReplicated, InsertChunkReplicatedDynamicSourceRegularDestination)
     MergedData merged_data(false, 1000, 0, 254);
     merged_data.initialize(header, inputs);
 
-    /// Construct a chunk where the Dynamic column is wrapped in `ColumnReplicated`.
+    /// Construct a chunk where the Dynamic column is wrapped in `ColumnReplicated` and its rows share one value.
     /// This simulates a late-arriving merge input from a JOIN with `enable_lazy_columns_replication = 1`.
     auto key_col = ColumnInt64::create();
     key_col->insertValue(3);
+    key_col->insertValue(4);
     auto val_dynamic = ColumnDynamic::create(254);
     val_dynamic->insert(Field(300));
-    ColumnPtr val_replicated = ColumnReplicated::create(ColumnPtr(std::move(val_dynamic)));
+    auto val_indexes = ColumnUInt8::create();
+    val_indexes->insertValue(0);
+    val_indexes->insertValue(0);
+    ColumnPtr val_replicated = ColumnReplicated::create(MutableColumnPtr(std::move(val_dynamic)), MutableColumnPtr(std::move(val_indexes)));
 
-    Chunk chunk(Columns{std::move(key_col), std::move(val_replicated)}, 1);
+    Chunk chunk(Columns{std::move(key_col), std::move(val_replicated)}, 2);
 
-    ASSERT_NO_THROW(merged_data.insertChunk(std::move(chunk), 1));
+    ASSERT_NO_THROW(merged_data.insertChunk(std::move(chunk), 2));
 
     Chunk result = merged_data.pull();
-    ASSERT_EQ(result.getNumRows(), 1);
+    ASSERT_EQ(result.getNumRows(), 2);
     /// The destination should be wrapped as `ColumnReplicated(ColumnDynamic)`,
     /// preserving the optimization.
-    ASSERT_TRUE(result.getColumns()[1]->isReplicated());
+    const auto * result_val = typeid_cast<const ColumnReplicated *>(result.getColumns()[1].get());
+    ASSERT_TRUE(result_val);
+    ASSERT_EQ(result_val->getNestedColumn()->size(), 1);
 }
 
 /// Fast path for the common case (e.g. a plain sort with no JOIN): when the merge cannot
@@ -320,12 +341,55 @@ TEST(MergedDataReplicated, RestoringFlagReenablesWrapping)
     ColumnPtr val_replicated = ColumnReplicated::create(ColumnPtr(std::move(val_nested)));
 
     ColumnRawPtrs raw_columns = {key_src.get(), val_replicated.get()};
+    /// Inserting the same source row twice makes the merged block share its value.
+    ASSERT_NO_THROW(merged_data.insertRow(raw_columns, 0, 1));
     ASSERT_NO_THROW(merged_data.insertRow(raw_columns, 0, 1));
 
     Chunk result = merged_data.pull();
-    ASSERT_EQ(result.getNumRows(), 1);
-    ASSERT_TRUE(result.getColumns()[1]->isReplicated());
-    ASSERT_EQ(result.getColumns()[1]->getInt(0), 200);
+    ASSERT_EQ(result.getNumRows(), 2);
+    const auto * result_val = typeid_cast<const ColumnReplicated *>(result.getColumns()[1].get());
+    ASSERT_TRUE(result_val);
+    ASSERT_EQ(result_val->getNestedColumn()->size(), 1);
+    ASSERT_EQ(result_val->getInt(0), 200);
+    ASSERT_EQ(result_val->getInt(1), 200);
+}
+
+/// A merged block where no value is shared between rows is passed on as a plain column.
+TEST(MergedDataReplicated, PullReturnsPlainColumnWithoutSharedRows)
+{
+    Block header;
+    header.insert(ColumnWithTypeAndName(ColumnInt64::create(), std::make_shared<DataTypeInt64>(), "key"));
+    header.insert(ColumnWithTypeAndName(ColumnInt64::create(), std::make_shared<DataTypeInt64>(), "value"));
+
+    IMergingAlgorithm::Inputs inputs(1);
+    {
+        auto key_col = ColumnInt64::create();
+        auto val_col = ColumnInt64::create();
+        key_col->insertValue(1);
+        val_col->insertValue(100);
+        inputs[0].chunk.setColumns(Columns{std::move(key_col), std::move(val_col)}, 1);
+    }
+
+    MergedData merged_data(false, 1000, 0, {});
+    merged_data.initialize(header, inputs);
+
+    auto key_src = ColumnInt64::create();
+    key_src->insertValue(2);
+    key_src->insertValue(3);
+    auto val_nested = ColumnInt64::create();
+    val_nested->insertValue(200);
+    val_nested->insertValue(300);
+    ColumnPtr val_replicated = ColumnReplicated::create(ColumnPtr(std::move(val_nested)));
+
+    ColumnRawPtrs raw_columns = {key_src.get(), val_replicated.get()};
+    ASSERT_NO_THROW(merged_data.insertRow(raw_columns, 1, 1));
+    ASSERT_NO_THROW(merged_data.insertRow(raw_columns, 0, 1));
+
+    Chunk result = merged_data.pull();
+    ASSERT_EQ(result.getNumRows(), 2);
+    ASSERT_FALSE(result.getColumns()[1]->isReplicated());
+    ASSERT_EQ(result.getColumns()[1]->getInt(0), 300);
+    ASSERT_EQ(result.getColumns()[1]->getInt(1), 200);
 }
 
 /// End-to-end test that drives the ACTUAL `MergingSortedAlgorithm` transition this optimization
