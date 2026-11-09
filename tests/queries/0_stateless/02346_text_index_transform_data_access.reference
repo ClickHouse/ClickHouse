@@ -1,0 +1,6 @@
+1. A set from a table.
+2. A subquery.
+3. A dictionary lookup.
+4. The same via ALTER ADD INDEX.
+5. A literal set is still accepted.
+1
