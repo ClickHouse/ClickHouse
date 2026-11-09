@@ -1708,9 +1708,15 @@ private:
         /// the callers cannot consume.
         if (isNothing(impl->getResultType()))
         {
+            /// A `Nothing` side is masked when all its gathered elements are NULL. With no elements, this holds
+            /// even if the `Nullable` column has no null map.
             auto masked = [&](size_t arg, const NullMap * null_map)
             {
-                return isNothing(removeLowCardinality(gathered.element_args[arg].type)) && null_map
+                if (!isNothing(removeLowCardinality(gathered.element_args[arg].type)))
+                    return false;
+                if (gathered.num_elements == 0)
+                    return true;
+                return null_map
                     && std::all_of(null_map->begin(), null_map->begin() + gathered.num_elements,
                                    [](UInt8 byte) { return byte != 0; });
             };
