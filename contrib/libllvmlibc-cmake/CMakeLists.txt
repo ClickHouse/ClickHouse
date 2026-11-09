@@ -8,6 +8,7 @@ endif()
 # Memory functions: mem_functions.cpp provides the weak memcmp/memcpy/memmove/
 # memset/bcmp; the strong memmem lives in memmem.cpp (added below).
 set(SRCS
+    "${CMAKE_CURRENT_SOURCE_DIR}/big_int_checks.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/string/mem_functions.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
