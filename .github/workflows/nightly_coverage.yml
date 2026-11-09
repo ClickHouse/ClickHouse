@@ -80,7 +80,8 @@ jobs:
 
   dockers_build_amd:
     runs-on: [self-hosted, amd-tiny]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYW1kKQ==') }}
     name: "Dockers Build (amd)"
     outputs:
@@ -116,7 +117,8 @@ jobs:
 
   dockers_build_arm:
     runs-on: [self-hosted, arm-tiny]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'RG9ja2VycyBCdWlsZCAoYXJtKQ==') }}
     name: "Dockers Build (arm)"
     outputs:
@@ -152,7 +154,10 @@ jobs:
 
   build_amd_llvm_coverage_per_test:
     runs-on: [self-hosted, amd-medium-cpu]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0KQ==') }}
     name: "Build (amd_llvm_coverage_per_test)"
     outputs:
@@ -188,7 +193,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDEvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 1/8)"
     outputs:
@@ -224,7 +233,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDIvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 2/8)"
     outputs:
@@ -260,7 +273,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDMvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 3/8)"
     outputs:
@@ -296,7 +313,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_4_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDQvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 4/8)"
     outputs:
@@ -332,7 +353,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_5_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDUvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 5/8)"
     outputs:
@@ -368,7 +393,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDYvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 6/8)"
     outputs:
@@ -404,7 +433,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDcvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 7/8)"
     outputs:
@@ -440,7 +473,11 @@ jobs:
 
   stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8:
     runs-on: [self-hosted, amd-small]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbGx2bV9jb3ZlcmFnZV9wZXJfdGVzdCwgcGVyX3Rlc3RfY292ZXJhZ2UsIDgvOCk=') }}
     name: "Stateless tests (amd_llvm_coverage_per_test, per_test_coverage, 8/8)"
     outputs:
@@ -476,7 +513,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgMS84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 1/8)"
     outputs:
@@ -512,7 +553,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgMi84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 2/8)"
     outputs:
@@ -548,7 +593,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgMy84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 3/8)"
     outputs:
@@ -584,7 +633,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_4_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgNC84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 4/8)"
     outputs:
@@ -620,7 +673,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_5_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgNS84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 5/8)"
     outputs:
@@ -656,7 +713,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgNi84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 6/8)"
     outputs:
@@ -692,7 +753,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgNy84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 7/8)"
     outputs:
@@ -728,7 +793,11 @@ jobs:
 
   integration_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9sbHZtX2NvdmVyYWdlX3Blcl90ZXN0LCBwZXJfdGVzdF9jb3ZlcmFnZSwgOC84KQ==') }}
     name: "Integration tests (amd_llvm_coverage_per_test, per_test_coverage, 8/8)"
     outputs:
@@ -764,7 +833,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_1_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMS8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 1/16)"
     timeout-minutes: 725
@@ -801,7 +874,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_2_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMi8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 2/16)"
     timeout-minutes: 725
@@ -838,7 +915,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_3_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMy8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 3/16)"
     timeout-minutes: 725
@@ -875,7 +956,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_4_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNC8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 4/16)"
     timeout-minutes: 725
@@ -912,7 +997,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_5_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNS8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 5/16)"
     timeout-minutes: 725
@@ -949,7 +1038,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_6_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNi8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 6/16)"
     timeout-minutes: 725
@@ -986,7 +1079,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_7_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNy8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 7/16)"
     timeout-minutes: 725
@@ -1023,7 +1120,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_8_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgOC8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 8/16)"
     timeout-minutes: 725
@@ -1060,7 +1161,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_9_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgOS8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 9/16)"
     timeout-minutes: 725
@@ -1097,7 +1202,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_10_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTAvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 10/16)"
     timeout-minutes: 725
@@ -1134,7 +1243,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_11_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTEvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 11/16)"
     timeout-minutes: 725
@@ -1171,7 +1284,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_12_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTIvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 12/16)"
     timeout-minutes: 725
@@ -1208,7 +1325,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_13_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTMvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 13/16)"
     timeout-minutes: 725
@@ -1245,7 +1366,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_14_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTQvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 14/16)"
     timeout-minutes: 725
@@ -1282,7 +1407,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_15_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTUvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 15/16)"
     timeout-minutes: 725
@@ -1319,7 +1448,11 @@ jobs:
 
   performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_16_16:
     runs-on: [self-hosted, amd-medium]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTYvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 16/16)"
     timeout-minutes: 725
@@ -1356,7 +1489,43 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
-    needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_4_8, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_5_8, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8, integration_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_10_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_11_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_12_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_13_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_14_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_15_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_16_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_1_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_2_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_3_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_4_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_5_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_6_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_7_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_8_16, performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_9_16, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_4_8, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_5_8, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8, stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8]
+    needs:
+    - build_amd_llvm_coverage_per_test
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_4_8
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_5_8
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8
+    - integration_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_10_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_11_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_12_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_13_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_14_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_15_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_16_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_1_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_2_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_3_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_4_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_5_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_6_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_7_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_8_16
+    - performance_comparison_amd_llvm_coverage_per_test_per_query_coverage_9_16
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_1_8
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_2_8
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_3_8
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_4_8
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_5_8
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_6_8
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_7_8
+    - stateless_tests_amd_llvm_coverage_per_test_per_test_coverage_8_8
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
