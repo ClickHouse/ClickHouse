@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeSettingsDisks.h>
 
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
@@ -9,21 +10,14 @@
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsChangesHistory.h>
-#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/FieldFromAST.h>
-#include <Parsers/isDiskFunction.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
-#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Interpreters/Context.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <cmath>
 #include <boost/program_options.hpp>
@@ -812,9 +806,26 @@ Default: 300 (force fetch after 5 minutes).
 )", 0, \
         {"26.4", 300, 300, "New setting"}) \
     DECLARE(Bool, fsync_after_insert, false, R"(
-Do fsync for every inserted part. Significantly decreases performance of
-inserts, not recommended to use with wide parts.
+Do fsync for every inserted part, so the data is durable when the `INSERT` query
+is acknowledged. Decreases performance of inserts, especially with wide parts.
+See also `group_fsync_before_insert_finish`.
 )", 0) \
+    DECLARE(BoolAuto, group_fsync_before_insert_finish, Field("auto"), R"(
+Takes effect with `fsync_after_insert`, if the table is stored on local disks.
+An `INSERT` writing many parts does not wait for the fsync after every part: the parts
+are committed right after they are written, and the files of all the parts are fsynced
+together before the `INSERT` finishes (the parts committed more than 30 seconds ago are
+fsynced earlier). In the meantime, the OS writes the data back in the background.
+The parts can become visible to queries before they are durable, but the `INSERT`
+is acknowledged only after that.
+
+If disabled, every part is fsynced right after it is written, before it is committed.
+
+The default value `auto` enables it only for non-replicated tables. For replicated tables,
+another replica can deduplicate an `INSERT` against a part that is committed but not yet
+fsynced on this replica, and acknowledge it before the data is durable.
+)", 0, \
+        {"26.11", false, "auto", "New setting"}) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \
@@ -3034,24 +3045,6 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 #undef IMPL_SUBSCRIPT_OP_
 };
 
-static void validateTableDisk(const DiskPtr & disk)
-{
-    if (!disk)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
-
-    const auto description = disk->getDataSourceDescription();
-    if (description.type != DataSourceType::ObjectStorage)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
-
-    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
-    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
-    const auto metadata_storage = disk->getMetadataStorage();
-    if (metadata_storage->areBlobPathsRandom())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
-            description.toString());
-}
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
@@ -3061,41 +3054,11 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
     {
         try
         {
-            bool found_disk_setting = false;
-            bool found_storage_policy_setting = false;
-            bool table_disk = false;
-            DiskPtr disk;
-
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
 
-            for (const auto & [name, value, _] : changes)
-            {
-                if (name == "disk")
-                {
-                    disk = context->getDisk(value.safeGet<String>());
-
-                    if (has("storage_policy"))
-                        resetToDefault("storage_policy");
-
-                    found_disk_setting = true;
-                }
-                else if (name == "storage_policy")
-                    found_storage_policy_setting = true;
-                else if (name == "table_disk")
-                    table_disk = value.safeGet<bool>();
-
-                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
-                {
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
-                }
-
-            }
-
-            if (table_disk)
-                validateTableDisk(disk);
+            if (checkMergeTreeDiskSettings(changes, context, is_loading_from_existing_metadata) && has("storage_policy"))
+                resetToDefault("storage_policy");
 
             applyChanges(changes);
         }
@@ -3433,33 +3396,6 @@ void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr con
     impl->applyChange(resolved_change);
 }
 
-void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
-{
-    for (auto & change : changes)
-        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
-}
-
-void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
-{
-    if (change.name != "disk")
-        return;
-
-    CustomType custom;
-    ASTPtr value_as_custom_ast = nullptr;
-    if (change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
-    {
-        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
-        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
-        change.value = disk_name;
-    }
-    else if (!is_loading_from_existing_metadata)
-    {
-        DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
-    }
-}
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
