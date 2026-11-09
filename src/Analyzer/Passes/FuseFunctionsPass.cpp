@@ -1,11 +1,11 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
-#include <Common/FieldVisitorConvertToNumber.h>
-
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+
+#include <Functions/FunctionFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -13,7 +13,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableNode.h>
@@ -53,7 +52,7 @@ bool sourceHasAggregateProjections(const QueryTreeNodePtr & source, const Contex
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
         return false;
 
-    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr(context, false);
+    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr();
     for (const auto & projection : metadata->projections)
     {
         if (projection.type == ProjectionDescription::Type::Aggregate)
@@ -145,6 +144,16 @@ private:
     std::unordered_set<String> names_to_collect;
 };
 
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
+{
+    auto function_node = std::make_shared<FunctionNode>(name);
+
+    auto function = FunctionFactory::instance().get(name, context);
+    function_node->getArguments().getNodes() = std::move(arguments);
+    function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
+    return function_node;
+}
+
 FunctionNodePtr createResolvedAggregateFunction(
     const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {})
 {
@@ -164,6 +173,11 @@ FunctionNodePtr createResolvedAggregateFunction(
     function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
+}
+
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
+{
+    return createResolvedFunction(context, "tupleElement", {argument, std::make_shared<ConstantNode>(index)});
 }
 
 QueryTreeNodePtr createArrayElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
@@ -189,12 +203,12 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     if (function_name == "sum")
     {
-        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
         node = createTupleElementFunction(context, sum_count_node, 1);
     }
     else if (function_name == "count")
     {
-        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
+        assert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
         node = createTupleElementFunction(context, sum_count_node, 2);
     }
     else if (function_name == "avg")
@@ -211,25 +225,6 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     }
 
     node->setAlias(original_column_name);
-}
-
-/// Copies a replacement built by `replaceWithSumCount`, keeping `sum_count_node` shared.
-QueryTreeNodePtr copySumCountReplacement(const QueryTreeNodePtr & node, const QueryTreeNodePtr & sum_count_node)
-{
-    if (node == sum_count_node)
-        return sum_count_node;
-
-    const auto * function_node = node->as<FunctionNode>();
-    if (!function_node)
-        return node->clone();
-
-    auto copy = std::make_shared<FunctionNode>(function_node->getFunctionName());
-    auto & copy_arguments = copy->getArguments().getNodes();
-    for (const auto & argument : function_node->getArguments().getNodes())
-        copy_arguments.push_back(copySumCountReplacement(argument, sum_count_node));
-    copy->resolveAsFunction(function_node->getFunctionOrThrow());
-    copy->setAlias(node->getAlias());
-    return copy;
 }
 
 void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
@@ -266,29 +261,10 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
             continue;
 
         auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
-
-        /// Alias-less, unparenthesized nodes of one function over a column format the same, so their replacements are equal.
-        const bool argument_is_column = argument.first.node->getNodeType() == QueryTreeNodeType::COLUMN;
-        std::unordered_map<String, QueryTreeNodePtr> replacement_by_function;
         for (auto * node : nodes)
         {
-            chassert(node);
-            if (!argument_is_column || (*node)->hasAlias() || (*node)->isParenthesized())
-            {
-                replaceWithSumCount(*node, sum_count_node, context);
-                continue;
-            }
-
-            auto & replacement = replacement_by_function[(*node)->as<const FunctionNode &>().getFunctionName()];
-            if (replacement)
-            {
-                *node = copySumCountReplacement(replacement, sum_count_node);
-            }
-            else
-            {
-                replaceWithSumCount(*node, sum_count_node, context);
-                replacement = *node;
-            }
+            assert(node);
+            replaceWithSumCount(*node, sum_count_node, context);
         }
     }
 }
@@ -325,10 +301,13 @@ QuantileLevelMapping collectUniqueQuantileLevels(const std::vector<QueryTreeNode
         if (!constant_node)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' should have constant parameter", function_name);
 
-        /// The level is converted exactly as the aggregate function itself converts it (see
-        /// `QuantileLevels`), so a level written as an integer literal, `quantile(1)(x)`, is
-        /// accepted here too. Resolution of the original function has already validated it.
-        levels_per_node.push_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), constant_node->getValue()));
+        const auto & value = constant_node->getValue();
+        if (value.getType() != Field::Types::Float64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' should have parameter of type Float64, got '{}'",
+                function_name, value.getTypeName());
+
+        levels_per_node.push_back(value.safeGet<Float64>());
     }
 
     /// Build the unique, sorted list of levels.

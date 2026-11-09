@@ -1,9 +1,0 @@
-reader before merge:
-Active	3
-reader after merge:
-Active	1
-Deleting	3
-reader rows:
-aaa
-bbb
-ccc

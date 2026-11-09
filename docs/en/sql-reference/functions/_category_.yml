@@ -1,0 +1,7 @@
+position: 4
+label: 'Functions'
+collapsible: true
+collapsed: true
+link:
+  type: doc
+  id: en/sql-reference/functions/index
