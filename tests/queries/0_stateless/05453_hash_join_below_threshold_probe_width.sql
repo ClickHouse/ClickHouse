@@ -11,7 +11,6 @@ SET enable_join_runtime_filters = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET join_algorithm = 'direct,hash';
 SET hash_join_layout = 'auto';
-SET join_probe_resize_to_max_threads = 1;
 SET parallel_hash_join_threshold = 100000;
 SET collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
 SET max_threads = 4;
@@ -52,20 +51,6 @@ SELECT 'explicit serial layout',
     sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
 FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS hash_join_layout = 'serial');
 
--- The setting restores the previous width and keeps the serial layout.
-SELECT 'resize disabled',
-    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
-    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS join_probe_resize_to_max_threads = 0);
-
-SELECT trim(explain)
-FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000, join_probe_resize_to_max_threads = 0)
-WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'spilling resize disabled',
-    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
-    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000, join_probe_resize_to_max_threads = 0);
-
 -- The issue: a remote right side has no estimate, so the first run is parallel and its cached size makes the next run serial.
 SELECT count() FROM numbers(1000000) AS l JOIN (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_probe_width_dim)) AS r ON toString(l.number) = r.v FORMAT Null;
 SELECT 'serial layout from cached stats',
@@ -88,7 +73,5 @@ SELECT count(), sum(cityHash64(r.k, r.v, l.number)) FROM numbers(500, 1000) AS l
 -- Results do not change.
 SELECT count(), sum(cityHash64(l.number, r.v)) FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k;
 SELECT count(), sum(cityHash64(l.number, r.v)) FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS parallel_hash_join_threshold = 0;
-
-SELECT getSetting('join_probe_resize_to_max_threads') SETTINGS compatibility = '26.10';
 
 DROP TABLE t_probe_width_dim;
