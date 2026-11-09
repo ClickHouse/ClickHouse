@@ -178,6 +178,14 @@ public:
 
     String getName() const override { return nested_func->getName() + "OrderBy"; }
 
+    AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    /// Types of the sort keys: the trailing arguments, one per element of the sort description.
+    DataTypes getSortKeyTypes() const
+    {
+        return DataTypes(this->argument_types.end() - sort_description.size(), this->argument_types.end());
+    }
+
     bool allocatesMemoryInArena() const override { return true; }
 
     /// The combined state lives in one buffer: our accumulator first, nested state right after.

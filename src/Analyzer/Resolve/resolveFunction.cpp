@@ -29,6 +29,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionOrderBy.h>
 
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -109,6 +110,21 @@ namespace Setting
 
 namespace
 {
+
+/// Collects the types of the sort keys of every `OrderBy` combinator in the chain of combinators
+/// of an aggregate function, e.g. both of the sugared `f(x ORDER BY k)` and of the direct `fOrderBy('0 ASC')(x, k)`.
+void collectOrderByCombinatorSortKeyTypes(const AggregateFunctionPtr & aggregate_function, DataTypes & result)
+{
+    for (auto function = aggregate_function; function; function = function->getNestedFunction())
+    {
+        if (const auto * order_by_function = typeid_cast<const AggregateFunctionOrderBy *>(function.get()))
+        {
+            auto sort_key_types = order_by_function->getSortKeyTypes();
+            result.insert(result.end(), sort_key_types.begin(), sort_key_types.end());
+        }
+    }
+}
+
 void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 {
     if (node.getNullsAction() != NullsAction::EMPTY)
@@ -1396,6 +1412,16 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
   * they must be resolved.
   * 9. If function is suitable for constant folding, try to perform constant folding for function node.
   */
+/// Applies the same validation to the sort keys of the `OrderBy` aggregate function combinator as to the keys of the regular ORDER BY,
+/// regardless of whether the combinator is spelled as `f(x ORDER BY k)` or called directly as `fOrderBy('0 ASC')(x, k)`.
+void QueryAnalyzer::validateOrderByCombinatorSortKeyTypes(const AggregateFunctionPtr & aggregate_function, const IdentifierResolveScope & scope) const
+{
+    DataTypes sort_key_types;
+    collectOrderByCombinatorSortKeyTypes(aggregate_function, sort_key_types);
+    for (const auto & sort_key_type : sort_key_types)
+        validateSortingKeyType(sort_key_type, scope);
+}
+
 ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_niladic_functions)
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
@@ -3019,8 +3045,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 sort_expression = sort_column_list_node->getNodes().front();
             }
 
-            validateSortingKeyType(sort_expression->getResultType(), scope);
-
             if (sort_expression_projection_names.size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Expected a single expression in ORDER BY inside the arguments of aggregate function {}, got {}. In scope {}",
@@ -3355,6 +3379,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 properties,
                 AggregateFunctionStateVariant::Window);
 
+        validateOrderByCombinatorSortKeyTypes(aggregate_function, scope);
+
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
         bool window_node_is_identifier = function_node.getWindowNode()->getNodeType() == QueryTreeNodeType::IDENTIFIER;
@@ -3478,6 +3504,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         AggregateFunctionProperties properties;
         auto aggregate_function
             = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
+
+        validateOrderByCombinatorSortKeyTypes(aggregate_function, scope);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
