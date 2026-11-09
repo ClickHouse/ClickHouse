@@ -1053,6 +1053,18 @@ getWriteBatch(const std::vector<OpMessageSection> & sections, const char * field
 
     while (bson_iter_next(&element))
     {
+        /// The command body may be sent before the connection is authenticated, and every element
+        /// is a separate allocation outside of any query, so the bound is checked before an excess
+        /// element is materialized rather than after all of them are.
+        if (batch.size() == MAX_WRITE_BATCH_SIZE)
+            throw Exception(
+                ErrorCodes::LIMIT_EXCEEDED,
+                "The '{}' of a '{}' command has more than {} elements, while at most {} are allowed",
+                field_name,
+                command,
+                MAX_WRITE_BATCH_SIZE,
+                MAX_WRITE_BATCH_SIZE);
+
         if (!BSON_ITER_HOLDS_DOCUMENT(&element))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Every element of the '{}' array of a '{}' command must be a document", field_name, command);
