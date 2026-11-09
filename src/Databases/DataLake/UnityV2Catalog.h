@@ -30,7 +30,7 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_ = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     ~UnityV2Catalog() override;
 

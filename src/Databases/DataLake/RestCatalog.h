@@ -37,7 +37,7 @@ public:
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
         DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_ = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     ~RestCatalog() override = default;
 
@@ -158,7 +158,7 @@ protected:
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
         DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_ = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
@@ -300,7 +300,7 @@ public:
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
         DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_ = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -352,7 +352,7 @@ public:
         const std::string & google_adc_quota_project_id_,
         DB::ContextPtr context_,
         bool allow_server_credentials_in_user_queries_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_ = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -421,7 +421,7 @@ public:
         bool oauth_server_use_request_body_,
         bool flat_namespaces_,
         DB::ContextPtr context_,
-        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_ = DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
+        DB::DatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {

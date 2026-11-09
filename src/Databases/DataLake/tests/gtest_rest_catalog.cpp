@@ -608,7 +608,8 @@ bool restCatalogEmpty(CatalogShape shape, bool flat_namespaces = false)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         flat_namespaces,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     return catalog.empty();
 }
@@ -628,7 +629,8 @@ DataLake::ICatalog::Namespaces restCatalogNamespaces(CatalogShape shape, bool fl
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         flat_namespaces,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     return catalog.getNamespaces();
 }
@@ -648,7 +650,8 @@ bool deltaSharingCatalogEmpty(CatalogShape shape)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     return catalog.empty();
 }
@@ -696,7 +699,8 @@ TEST(RestCatalog, RejectedClientCredentialsReportTheOAuthError)
             /* oauth_server_uri */"",
             /* oauth_server_use_request_body */true,
             /* flat_namespaces */false,
-            context);
+            context,
+            DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         FAIL() << "expected the rejected client credentials to fail the catalog construction";
     }
     catch (const DB::Exception & e)
@@ -753,7 +757,8 @@ TEST(RestCatalog, OneLakeFlatNamespacesSettingSkipsSubNamespaceListing)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */true,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     EXPECT_FALSE(catalog.empty());
     EXPECT_EQ(catalog.getNamespaces(), ICatalog::Namespaces{"namespace"});
@@ -774,7 +779,8 @@ TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     auto existing = TableMetadata().withLocation();
     EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
@@ -811,7 +817,8 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     TableMetadata metadata;
     try
@@ -1149,7 +1156,8 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("catalog_credential", "id:secret");
@@ -1171,7 +1179,8 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-1");
 
@@ -1213,7 +1222,8 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("auth_header", "Authorization: Bearer token-2");
@@ -1246,7 +1256,8 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     const auto snapshot_before = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
@@ -1307,7 +1318,8 @@ TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
                 /* oauth_server_uri */ "",
                 /* oauth_server_use_request_body */ false,
                 /* flat_namespaces */ false,
-                context);
+                context,
+                DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
 }
@@ -1348,7 +1360,8 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     const auto requests_after_construction = server.tokenRequests();
     EXPECT_GE(requests_after_construction, 1u);
@@ -1390,7 +1403,8 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
             /* oauth_server_uri */server.getUrl() + "/token",
             /* oauth_server_use_request_body */true,
             /* flat_namespaces */false,
-            context);
+            context,
+            DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         /// ADD_FAILURE (rather than FAIL) does not return from the test, so the
         /// profile event check below is reached on every path; FAIL would make
         /// `failures_before` a dead store on the no-throw path for clang-tidy.
@@ -1425,7 +1439,8 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("onelake_refresh_token", "another-good-refresh");
@@ -1479,7 +1494,8 @@ TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
     EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
@@ -1511,7 +1527,8 @@ TEST(RestCatalog, HorizonCatalogRequiresCredentialOrAuthHeader)
                 /* oauth_server_uri */"",
                 /* oauth_server_use_request_body */true,
                 /* flat_namespaces */false,
-                context);
+                context,
+                DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
 }
@@ -1531,7 +1548,8 @@ TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */true,
         /* flat_namespaces */false,
-        context);
+        context,
+        DB::DatabaseDataLakeSnapshotLoadingMode::AUTO);
 
     DB::SettingsChanges changes;
     changes.emplace_back("catalog_credential", "pat-two");
