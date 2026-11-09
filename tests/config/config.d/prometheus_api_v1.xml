@@ -1,6 +1,6 @@
 <clickhouse>
-    <!-- The Prometheus HTTP API on the HTTP port under `/prometheus/api/v1`, for the stateless tests. The handler has no table,
-         so every request names one in the `database` and `table` query parameters. -->
+    <!-- The Prometheus HTTP API under `/prometheus/api/v1`, used by tests of the query endpoints.
+         No table is configured, so each request names it with the `database` and `table` parameters. -->
     <http_handlers>
         <rule_prometheus_api_v1>
             <url_prefix>/prometheus/api/v1</url_prefix>
