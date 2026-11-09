@@ -23,6 +23,8 @@
 #include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
 #include <Common/Arena.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <base/unaligned.h>
@@ -368,7 +370,7 @@ struct StatisticsGeometry
     std::array<double, 4> min {inf, inf, inf, inf};
     std::array<double, 4> max {-inf, -inf, -inf, -inf};
     /// WKB geometry type codes of the top-level values, e.g. 1 for `POINT`, 3002 for `LINESTRING ZM`.
-    std::set<Int32> geometry_types;
+    SetWithMemoryTracking<Int32> geometry_types;
     bool is_valid = true;
 
     void add(ByteArray x)
@@ -420,7 +422,7 @@ struct StatisticsGeometry
 
         parq::GeospatialStatistics res;
         /// An empty list means that the types are unknown, this is the case only if all values are NULL.
-        res.__set_geospatial_types(std::vector<Int32>(geometry_types.begin(), geometry_types.end()));
+        res.__set_geospatial_types(std::vector<Int32>(geometry_types.begin(), geometry_types.end())); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::GeospatialStatistics` setters take std::vector
 
         const bool write_x = hasBound(0);
         const bool write_y = hasBound(1);
@@ -861,7 +863,7 @@ struct ConverterJSON
     /// Created once: for `Object` it is not a cheap accessor, and `valueSize` is called per value.
     SerializationPtr serialization;
     PODArray<ByteArray> buf;
-    std::vector<String> stash;
+    VectorWithMemoryTracking<String> stash;
     const FormatSettings & format_settings;
 
     explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
@@ -1682,7 +1684,7 @@ void writeColumnImpl(
     }
 
     /// Encodings of the written data pages, for `ColumnMetaData.encodings`.
-    std::vector<parq::Encoding::type> data_page_encodings;
+    VectorWithMemoryTracking<parq::Encoding::type> data_page_encodings;
 
     /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
     /// so let's be nice to them and avoid that. This matches arrow's logic.
@@ -1707,9 +1709,9 @@ void writeColumnImpl(
         if constexpr (std::is_same_v<ParquetDType, ByteArrayType>)
             s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
         if (s.max_rep > 0)
-            s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+            s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1)); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::SizeStatistics` setters take std::vector
         if (s.max_def > 0)
-            s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+            s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1)); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::SizeStatistics` setters take std::vector
     };
     reset_size_statistics();
 
@@ -1764,7 +1766,7 @@ void writeColumnImpl(
         PODArray<char> data;
         size_t first_row_index = 0;
     };
-    std::vector<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
+    VectorWithMemoryTracking<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
 
     /// Reused across pages to reduce number of allocations and improve locality.
     PODArray<char> encoded;
@@ -2677,7 +2679,7 @@ void writeFileFooter(FileWriteState & file,
     /// Documentation about geoparquet metadata: https://geoparquet.org/releases/v1.0.0-beta.1/
     if (options.write_geometadata)
     {
-        std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
+        VectorWithMemoryTracking<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
         for (const auto & [column_name, type] : header.getNamesAndTypesList())
         {
             if (type->getCustomName() &&

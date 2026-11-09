@@ -7,6 +7,7 @@
 
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
 namespace DB
@@ -24,7 +25,7 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const Parquet::
 /*
  * Try to hash elements in a ClickHouse column; Will return std::nullopt in case one of them can't be hashed
  * */
-std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const Parquet::parq::SchemaElement & schema_element);
+std::optional<VectorWithMemoryTracking<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const Parquet::parq::SchemaElement & schema_element);
 
 }
 

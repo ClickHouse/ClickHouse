@@ -167,6 +167,7 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
+add_headers_and_sources(clickhouse_compression Compression/Adaptive)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 if (TARGET ch_contrib::sz3)
@@ -592,6 +593,10 @@ set_property(SOURCE
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
+elseif (USE_AVRO)
+    # The Avro input format reads Iceberg variants with the Parquet variant decoder.
+    list (APPEND dbms_sources Processors/Formats/Impl/Parquet/VariantEncoding.cpp)
+    list (APPEND dbms_headers Processors/Formats/Impl/Parquet/VariantEncoding.h)
 endif()
 
 # Unconditional: when USE_VORTEX is off, the sources compile to the registration stubs.
