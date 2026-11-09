@@ -317,6 +317,15 @@ TEST(AvroGenericReader, ResolvingDefaultStringIsBoundedByItsSize)
     EXPECT_NO_THROW(readAllDatumsResolving(makeFileOfEmptyRecords(10), reader_type));
 }
 
+TEST(AvroGenericReader, ResolvingDefaultFixedIsBoundedByItsSize)
+{
+    /// 1000 empty records, each given a default `fixed` of 4 KiB, take 3 bytes and would create 4 MiB of bytes.
+    const std::string reader_type = readerArrayOfRecordWithDefault(
+        R"({"type":"fixed","name":"fx","size":4096})", '"' + std::string(4096, 'a') + '"');
+    EXPECT_THROW(readEmptyRecordsResolving(1000, reader_type), avro::Exception);
+    EXPECT_NO_THROW(readEmptyRecordsResolving(10, reader_type));
+}
+
 TEST(AvroGenericReader, ResolvingDefaultArrayOfArraysIsBoundedByTheDatumsItCreates)
 {
     /// A default array that holds an array of 300 nulls creates 300 datums for every one of the 1000 empty records.
@@ -368,18 +377,14 @@ TEST(AvroGenericReader, JsonArrayOfArraysOfNullsIsBoundedByTheInput)
     EXPECT_NO_THROW(readJson(R"({"type":"array","items":{"type":"array","items":"null"}})", json + "]"));
 }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
 /// The limit of the memory of the thread is enforced by the tracking `operator new`, which ASan, MSan and TSan replace with
-/// their own, so the tests that need it are skipped under them.
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-#    define SKIP_WITHOUT_TRACKING_OPERATOR_NEW() GTEST_SKIP() << "The memory limit needs the tracking `operator new`"
-#else
-#    define SKIP_WITHOUT_TRACKING_OPERATOR_NEW() static_cast<void>(0)
-#endif
-
+/// their own, so the tests that need it are not built under them.
 namespace DB::ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
+#endif
 
 namespace
 {
@@ -393,6 +398,7 @@ std::string recordOfNulls(const std::string & name, size_t fields_count, bool wi
     return R"({"type":"record","name":")" + name + R"(","fields":[)" + fields + "]}";
 }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
 /// What reading ended with.
 enum class ReadOutcome
 {
@@ -400,6 +406,7 @@ enum class ReadOutcome
     AvroException,
     MemoryLimitExceeded,
 };
+#endif
 
 /// A binary-encoded value that is read without a data file, so that the schema, the decoder and the datum
 /// are built before the read is limited. Reads with the schema `schema`, or resolves `writer_schema` to `schema`.
@@ -422,6 +429,7 @@ public:
 
     void read() { avro::GenericReader::read(*decoder, datum); }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
     /// Reads while the thread may hold at most `limit` bytes of what the read allocates, and records the most that it held.
     /// The datum of a union branch is a single large allocation, so a read that constructs the branch before it is charged to
     /// the budget ends with `MemoryLimitExceeded`, and one that charges it first ends with `AvroException` having not made it.
@@ -449,8 +457,10 @@ public:
 
     /// The most that the thread held above its memory at the start of the last `readWithMemoryLimit`.
     Int64 peakMemory() const { return peak_memory; }
+#endif
 
 private:
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
     /// Limits the memory of the thread until it is destroyed, in the way `gtest_reverse_index_exception_safety` does.
     class MemoryLimit
     {
@@ -487,6 +497,7 @@ private:
         Int64 saved_thread_hard_limit;
         UInt64 saved_min_alloc_to_throw;
     };
+#endif
 
     void init(const avro::ValidSchema & datum_schema)
     {
@@ -501,9 +512,12 @@ private:
     avro::DecoderPtr decoder;
     std::unique_ptr<avro::InputStream> in;
     avro::GenericDatum datum;
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
     Int64 peak_memory = 0;
+#endif
 };
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
 /// 1.5 MiB, below the datums of a branch of 70000 datums (more than 2 MiB), and above what a read that rejects such a branch
 /// allocates, which is the exception and not the branch, so that constructing the branch exhausts it.
 constexpr Int64 memory_limit_below_a_wide_branch = Int64(3) << 19;
@@ -511,6 +525,7 @@ constexpr Int64 memory_limit_below_a_wide_branch = Int64(3) << 19;
 /// Datums in a branch that does not fit the budget, and in one that does.
 constexpr size_t branch_over_the_budget = 70000;
 constexpr size_t branch_in_the_budget = 40000;
+#endif
 
 std::string wideUnion(size_t fields_count)
 {
@@ -519,16 +534,24 @@ std::string wideUnion(size_t fields_count)
 
 }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
+
+TEST(AvroGenericReader, FixedDeclaringMoreBytesThanDataBacksIsRejectedBeforeItIsAllocated)
+{
+    /// The schema declares a `fixed` of 100 MiB, and the input has none of its bytes. Neither constructing the datum nor reading
+    /// may allocate the declared size, which exceeds the limit, so the read ends with `avro::Exception`.
+    PreparedRead read(makeRecordSchema(R"({"type":"fixed","name":"fx","size":104857600})"), {});
+    EXPECT_EQ(read.readWithMemoryLimit(memory_limit_below_a_wide_branch), ReadOutcome::AvroException);
+}
+
 TEST(AvroGenericReader, UnionBranchOverTheBudgetInRecordFieldIsRejectedBeforeItIsConstructed)
 {
-    SKIP_WITHOUT_TRACKING_OPERATOR_NEW();
     PreparedRead read(makeRecordSchema(wideUnion(branch_over_the_budget)), {0x02});
     EXPECT_EQ(read.readWithMemoryLimit(memory_limit_below_a_wide_branch), ReadOutcome::AvroException);
 }
 
 TEST(AvroGenericReader, UnionBranchOverTheBudgetAsArrayItemIsRejectedBeforeItIsConstructed)
 {
-    SKIP_WITHOUT_TRACKING_OPERATOR_NEW();
     /// One item, which selects the second branch of its union.
     PreparedRead read(makeRecordSchema(R"({"type":"array","items":)" + wideUnion(branch_over_the_budget) + "}"), {0x02, 0x02, 0x00});
     EXPECT_EQ(read.readWithMemoryLimit(memory_limit_below_a_wide_branch), ReadOutcome::AvroException);
@@ -536,7 +559,6 @@ TEST(AvroGenericReader, UnionBranchOverTheBudgetAsArrayItemIsRejectedBeforeItIsC
 
 TEST(AvroGenericReader, UnionBranchOverTheBudgetAsMapValueIsRejectedBeforeItIsConstructed)
 {
-    SKIP_WITHOUT_TRACKING_OPERATOR_NEW();
     /// One entry with the key "k", whose value selects the second branch of its union.
     PreparedRead read(makeRecordSchema(R"({"type":"map","values":)" + wideUnion(branch_over_the_budget) + "}"), {0x02, 0x02, 'k', 0x02, 0x00});
     EXPECT_EQ(read.readWithMemoryLimit(memory_limit_below_a_wide_branch), ReadOutcome::AvroException);
@@ -544,14 +566,12 @@ TEST(AvroGenericReader, UnionBranchOverTheBudgetAsMapValueIsRejectedBeforeItIsCo
 
 TEST(AvroGenericReader, UnionBranchOverTheBudgetAtTheRootIsRejectedBeforeItIsConstructed)
 {
-    SKIP_WITHOUT_TRACKING_OPERATOR_NEW();
     PreparedRead read(wideUnion(branch_over_the_budget), {0x02});
     EXPECT_EQ(read.readWithMemoryLimit(memory_limit_below_a_wide_branch), ReadOutcome::AvroException);
 }
 
 TEST(AvroGenericReader, ResolvedUnionBranchOverTheBudgetIsRejectedBeforeItIsConstructed)
 {
-    SKIP_WITHOUT_TRACKING_OPERATOR_NEW();
     /// The writer's empty record resolves to the second branch of the reader's union without any input,
     /// and every field of the branch is given a default.
     const std::string writer_type = R"({"type":"array","items":{"type":"record","name":"wide","fields":[]}})";
@@ -562,7 +582,6 @@ TEST(AvroGenericReader, ResolvedUnionBranchOverTheBudgetIsRejectedBeforeItIsCons
 
 TEST(AvroGenericReader, ResolvedUnionBranchThatDoesNotFitTheRemainingBudgetIsRejectedBeforeItIsConstructed)
 {
-    SKIP_WITHOUT_TRACKING_OPERATOR_NEW();
     /// Two fields take no input, and each resolves the empty record of the writer to the second branch of its union. The
     /// branches have 12000 and 54000 datums: each fits the budget of 65536 alone, and the second does not fit what the
     /// first leaves. Only the second branch is much larger than what reading the first holds, so a read that constructs
@@ -588,7 +607,6 @@ TEST(AvroGenericReader, ResolvedUnionBranchThatDoesNotFitTheRemainingBudgetIsRej
 
 TEST(AvroGenericReader, UnionBranchInTheBudgetIsRead)
 {
-    SKIP_WITHOUT_TRACKING_OPERATOR_NEW();
     /// A wide branch that fits the budget is not rejected, and does hold the memory that the rejected ones would.
     PreparedRead read(makeRecordSchema(wideUnion(branch_in_the_budget)), {0x02});
     EXPECT_EQ(read.readWithMemoryLimit(Int64(4) << 20), ReadOutcome::Read);
@@ -596,6 +614,8 @@ TEST(AvroGenericReader, UnionBranchInTheBudgetIsRead)
     PreparedRead over_the_limit(makeRecordSchema(wideUnion(branch_in_the_budget)), {0x02});
     EXPECT_EQ(over_the_limit.readWithMemoryLimit(Int64(1) << 20), ReadOutcome::MemoryLimitExceeded);
 }
+
+#endif
 
 TEST(AvroGenericReader, SmallUnionBranchesBackedByTheInputAreNotLimited)
 {
