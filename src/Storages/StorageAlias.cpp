@@ -375,7 +375,14 @@ void StorageAlias::alter(
     }
 
     auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
+
+    /// The commands were prepared before this lock, and `ADD ENUM VALUES` stores a type merged from the column's
+    /// type at that time, so prepare them again against the target's current metadata.
+    AlterCommands commands = params;
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ true);
+    commands.prepare(*target_metadata);
+    target_storage->checkAlterIsPossible(commands, local_context);
+    target_storage->alter(commands, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(
