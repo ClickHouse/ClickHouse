@@ -7,10 +7,27 @@ options {
 // Top-level statements
 
 queryStmt
-    : query (INTO OUTFILE stringLiteral)? (FORMAT identifierOrNull)? (SEMICOLON)?  # QueryStmtQuery
-    | insertStmt                                                                   # QueryStmtInsert
-    | deleteStmt                                                                   # QueryStmtDelete
-    | updateStmt                                                                   # QueryStmtUpdate
+    : query queryOutputTail SEMICOLON?        # QueryStmtQuery
+    | createTokenStmt SEMICOLON?              # QueryStmtCreateToken
+    | queryWithoutOutput SEMICOLON?           # QueryStmtQueryWithoutOutput
+    | insertStmt                              # QueryStmtInsert
+    | deleteStmt                              # QueryStmtDelete
+    | updateStmt                              # QueryStmtUpdate
+    ;
+
+// The tail of a query with output. ParserQueryWithOutput reads it in this order:
+// INTO OUTFILE with its options, then FORMAT and SETTINGS in any order.
+// ClickHouse accepts FORMAT and SETTINGS once each. The grammar accepts them any number of times.
+// APPEND, STDOUT, COMPRESSION and LEVEL are keywords that stay valid as identifiers.
+// A quoted `APPEND` is an identifier, so it never matches the keyword.
+queryOutputTail
+    : (INTO OUTFILE stringLiteral
+        APPEND?
+        TRUNCATE?
+        (AND STDOUT)?
+        (COMPRESSION stringLiteral (LEVEL numberLiteral)?)?
+      )?
+      (FORMAT identifierOrNull | settingsClause)*
     ;
 
 query
@@ -25,12 +42,22 @@ query
     | killStmt      // DDL
     | optimizeStmt  // DDL
     | renameStmt    // DDL
+    | exchangeStmt  // DDL
     | selectUnionStmt
     | setStmt
     | showStmt
     | systemStmt
     | truncateStmt  // DDL
     | useStmt
+    ;
+
+// Statements that do not take the output clauses (INTO OUTFILE, FORMAT) of a query with output.
+queryWithoutOutput
+    : alterHandlerStmt    // DDL
+    | createHandlerStmt   // DDL
+    | dropHandlerStmt     // DDL
+    | grantStmt           // DCL
+    | revokeStmt          // DCL
     ;
 
 // ALTER statement
@@ -98,29 +125,29 @@ createStmt
     : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier clusterClause? engineExpr?                                                                                       # CreateDatabaseStmt
     | (ATTACH | CREATE (OR REPLACE)? | REPLACE) DICTIONARY (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? dictionarySchemaClause dictionaryEngineClause                                          # CreateDictionaryStmt
     | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
-    | (ATTACH | CREATE (OR REPLACE)? | REPLACE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
+    | (ATTACH | CREATE (OR REPLACE)? | REPLACE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? engineClause? tableCommentClause? subqueryClause? tableCommentClause?  # CreateTableStmt
     | (ATTACH | CREATE) (OR REPLACE)? VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? subqueryClause                                              # CreateViewStmt
     ;
 
 dictionarySchemaClause: LPAREN dictionaryAttrDfnt (COMMA dictionaryAttrDfnt)* RPAREN;
+// The attributes and the clauses are accepted in any order. ClickHouse accepts each of them at most once.
+// The grammar does not check that, because the check needs a semantic predicate in the target language.
 dictionaryAttrDfnt
-locals [std::set<std::string> attrs]:
-    identifier columnTypeExpr
-    ( {!$attrs.count("default")}?      DEFAULT literal       {$attrs.insert("default");}
-    | {!$attrs.count("expression")}?   EXPRESSION columnExpr {$attrs.insert("expression");}
-    | {!$attrs.count("hierarchical")}? HIERARCHICAL          {$attrs.insert("hierarchical");}
-    | {!$attrs.count("injective")}?    INJECTIVE             {$attrs.insert("injective");}
-    | {!$attrs.count("is_object_id")}? IS_OBJECT_ID          {$attrs.insert("is_object_id");}
+    : identifier columnTypeExpr
+    ( DEFAULT literal
+    | EXPRESSION columnExpr
+    | HIERARCHICAL
+    | INJECTIVE
+    | IS_OBJECT_ID
     )*
     ;
 dictionaryEngineClause
-locals [std::set<std::string> clauses]:
-    dictionaryPrimaryKeyClause?
-    ( {!$clauses.count("source")}? sourceClause {$clauses.insert("source");}
-    | {!$clauses.count("lifetime")}? lifetimeClause {$clauses.insert("lifetime");}
-    | {!$clauses.count("layout")}? layoutClause {$clauses.insert("layout");}
-    | {!$clauses.count("range")}? rangeClause {$clauses.insert("range");}
-    | {!$clauses.count("settings")}? dictionarySettingsClause {$clauses.insert("settings");}
+    : dictionaryPrimaryKeyClause?
+    ( sourceClause
+    | lifetimeClause
+    | layoutClause
+    | rangeClause
+    | dictionarySettingsClause
     )*
     ;
 dictionaryPrimaryKeyClause: PRIMARY KEY columnExprList;
@@ -136,6 +163,7 @@ dictionarySettingsClause: SETTINGS LPAREN settingExprList RPAREN;
 
 clusterClause: ON CLUSTER (identifier | stringLiteral);
 uuidClause: UUID stringLiteral;
+tableCommentClause: COMMENT stringLiteral;
 destinationClause: TO tableIdentifier;
 subqueryClause: AS selectUnionStmt;
 tableSchemaClause
@@ -143,15 +171,15 @@ tableSchemaClause
     | AS tableIdentifier                                        # SchemaAsTableClause
     | AS tableFunctionExpr                                      # SchemaAsFunctionClause
     ;
+// The clauses are accepted in any order. ClickHouse accepts each of them at most once.
 engineClause
-locals [std::set<std::string> clauses]:
-    engineExpr
-    ( {!$clauses.count("orderByClause")}?     orderByClause     {$clauses.insert("orderByClause");}
-    | {!$clauses.count("partitionByClause")}? partitionByClause {$clauses.insert("partitionByClause");}
-    | {!$clauses.count("primaryKeyClause")}?  primaryKeyClause  {$clauses.insert("primaryKeyClause");}
-    | {!$clauses.count("sampleByClause")}?    sampleByClause    {$clauses.insert("sampleByClause");}
-    | {!$clauses.count("ttlClause")}?         ttlClause         {$clauses.insert("ttlClause");}
-    | {!$clauses.count("settingsClause")}?    settingsClause    {$clauses.insert("settingsClause");}
+    : engineExpr
+    ( orderByClause
+    | partitionByClause
+    | primaryKeyClause
+    | sampleByClause
+    | ttlClause
+    | settingsClause
     )*
     ;
 partitionByClause: PARTITION BY columnExpr;
@@ -162,23 +190,43 @@ ttlClause: TTL ttlExpr (COMMA ttlExpr)*;
 engineExpr: ENGINE EQ_SINGLE? identifierOrNull (LPAREN columnExprList? RPAREN)?;
 tableElementExpr
     : tableColumnDfnt                                                              # TableElementExprColumn
-    | CONSTRAINT identifier CHECK columnExpr                                       # TableElementExprConstraint
+    | CONSTRAINT identifier (CHECK | ASSUME) columnExpr                            # TableElementExprConstraint
     | INDEX tableIndexDfnt                                                         # TableElementExprIndex
     | PROJECTION tableProjectionDfnt                                               # TableElementExprProjection
     ;
+// The column modifiers are accepted in any order. ClickHouse accepts each of them at most once.
 tableColumnDfnt
-    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT stringLiteral)? codecExpr? (TTL columnExpr)?
-    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT stringLiteral)? codecExpr? (TTL columnExpr)?
+    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? tableColumnModifierExpr*
+    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr tableColumnModifierExpr*
     ;
-tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
+tableColumnPropertyExpr
+    : (DEFAULT | MATERIALIZED | ALIAS) columnExpr
+    | EPHEMERAL columnExpr?
+    ;
+tableColumnModifierExpr: columnCommentExpr | codecExpr | columnStatisticsExpr | columnTtlExpr | columnSettingsExpr;
+columnCommentExpr: COMMENT stringLiteral;
+columnStatisticsExpr: STATISTICS LPAREN columnExprList RPAREN;
+columnTtlExpr: TTL columnExpr;
+columnSettingsExpr: SETTINGS LPAREN settingExprList RPAREN;
 tableIndexDfnt: nestedIdentifier columnExpr TYPE columnTypeExpr GRANULARITY DECIMAL_LITERAL;
-tableProjectionDfnt: nestedIdentifier projectionSelectStmt;
+tableProjectionDfnt
+    : nestedIdentifier projectionSelectStmt projectionSettingsExpr?                 # TableProjectionDfntQuery
+    | nestedIdentifier INDEX columnExpr TYPE columnTypeExpr projectionSettingsExpr? # TableProjectionDfntIndex
+    ;
+projectionSettingsExpr: WITH SETTINGS LPAREN settingExprList RPAREN;
 codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
 codecArgExpr: identifier (LPAREN columnExprList? RPAREN)?;
+// Parsed by ParserTTLElement. DELETE is the default action, so `expr WHERE cond` means `expr DELETE WHERE cond`.
 ttlExpr
-    : columnExpr (DELETE whereClause? | TO DISK stringLiteral | TO VOLUME stringLiteral)?
-    | columnExpr groupByClause SET ttlSetExpr (COMMA ttlSetExpr)*;
-ttlSetExpr: columnExpr EQ_SINGLE columnExpr;
+    : columnExpr (
+        DELETE? whereClause
+        | DELETE
+        | RECOMPRESS codecExpr
+        | TO DISK (IF EXISTS)? stringLiteral
+        | TO VOLUME (IF EXISTS)? stringLiteral
+        | GROUP BY columnExprList (SET assignmentExprList)?
+    )?
+    ;
 
 // DESCRIBE statement
 
@@ -187,8 +235,58 @@ describeStmt: (DESCRIBE | DESC) TABLE? tableExpr;
 // DROP statement
 
 dropStmt
-    : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier clusterClause?                                  # DropDatabaseStmt
-    | (DETACH | DROP) (DICTIONARY | TEMPORARY? TABLE | VIEW) (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY)?  # DropTableStmt
+    : (DETACH | DROP) DATABASE (IF EXISTS)? databaseIdentifier clusterClause? SYNC?                                 # DropDatabaseStmt
+    | (DETACH | DROP) (DICTIONARY | TEMPORARY? TABLE | VIEW) (IF EXISTS)? tableIdentifier clusterClause? (NO DELAY | SYNC)?  # DropTableStmt
+    ;
+
+// CREATE TOKEN is a query with output, so it reads the output clauses (INTO OUTFILE, FORMAT, SETTINGS) itself.
+// VALID and GRANTS are accepted in any order. ClickHouse accepts each of them at most once.
+createTokenStmt: CREATE TOKEN (tokenValidClause | tokenGrantsClause)* queryOutputTail;
+tokenValidClause
+    : VALID UNTIL stringLiteral
+    | VALID FOR columnExpr
+    ;
+tokenGrantsClause: GRANTS LPAREN tokenGrantElement (COMMA tokenGrantElement)* RPAREN;
+tokenGrantElement
+    : privilegeList ON grantScope
+    | sourcePrivilegeList ON sourceScope
+    ;
+
+// HTTP handlers. The clauses are in the order of ParserCreateHandlerQuery and ParserDropHandlerQuery.
+// URL is required for CREATE and optional for ALTER.
+// The AS query is parsed by ParserQuery, so the output clauses belong to that query, not to the handler.
+createHandlerStmt
+    : CREATE HANDLER (IF NOT EXISTS)? identifier clusterClause?
+      handlerProtocolClause? handlerUrlClause handlerMethodsClause? handlerTypeClause? handlerAsClause?
+    ;
+alterHandlerStmt
+    : ALTER HANDLER identifier clusterClause?
+      handlerProtocolClause? handlerUrlClause? handlerMethodsClause? handlerTypeClause? handlerAsClause?
+    ;
+dropHandlerStmt: DROP HANDLER (IF EXISTS)? identifier clusterClause?;
+handlerProtocolClause: PROTOCOL identifier;  // PROTOCOL ANY resets the protocol, and ANY is a keyword here
+handlerUrlClause: URL (PREFIX | REGEXP)? stringLiteral;
+handlerMethodsClause: METHODS LPAREN handlerMethod (COMMA handlerMethod)* RPAREN;
+handlerMethod: GET | POST | PUT | DELETE;
+handlerTypeClause: TYPE identifier;
+handlerAsClause: AS handlerInnerQuery;
+// One pair of parentheses is a fallback. Parentheses of a SELECT stay in selectUnionStmt.
+handlerInnerQuery
+    : handlerInnerQueryBody
+    | LPAREN handlerInnerQueryBody RPAREN
+    ;
+handlerInnerQueryBody
+    : query queryOutputTail
+    | createTokenStmt
+    | queryWithoutOutput
+    | embeddedInsertStmt
+    ;
+// The inline data of an INSERT is not part of a handler: the data comes from the HTTP body.
+embeddedInsertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) columnsClause? embeddedDataClause;
+embeddedDataClause
+    : FORMAT identifier
+    | VALUES
+    | selectUnionStmt (FORMAT identifier)?
     ;
 
 // EXISTS statement
@@ -203,6 +301,253 @@ existsStmt
 explainStmt
     : EXPLAIN (AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE)? settingExprList? selectUnionStmt
     ;
+
+// GRANT and REVOKE statements
+
+grantStmt
+    : GRANT clusterClause? privilegeList ON grantScope TO granteeList grantOptionList        # GrantPrivilegeStmt
+    | GRANT clusterClause? sourcePrivilegeList ON sourceScope TO granteeList grantOptionList # GrantSourcePrivilegeStmt
+    | GRANT clusterClause? roleList TO granteeList grantAdminOptionList                      # GrantRoleStmt
+    ;
+
+revokeStmt
+    : REVOKE clusterClause? privilegeList ON grantScope FROM granteeList           # RevokePrivilegeStmt
+    | REVOKE clusterClause? sourcePrivilegeList ON sourceScope FROM granteeList    # RevokeSourcePrivilegeStmt
+    | REVOKE clusterClause? (ADMIN OPTION FOR)? roleList FROM granteeList          # RevokeRoleStmt
+    ;
+
+// List of privileges
+privilegeList: privilege (COMMA privilege)*;
+
+// Single privilege with optional column list
+privilege: privilegeName (LPAREN columnList RPAREN)?;
+
+// Privilege names. This is the list of access types in src/Access/Common/AccessType.h
+// that the grammar knows. It is not complete, and it does not list every alias.
+// See https://clickhouse.com/docs/sql-reference/statements/grant#privileges
+privilegeName
+    : SELECT
+    | INSERT
+    | ALTER alterPrivilege?
+    | CREATE createPrivilege?
+    | DROP dropPrivilege?
+    | TRUNCATE
+    | OPTIMIZE
+    | SHOW showPrivilege?
+    | KILL QUERY
+    | ACCESS MANAGEMENT
+    | SYSTEM systemPrivilege?
+    | INTROSPECTION
+    | SOURCES
+    | DICTGET
+    | ALL PRIVILEGES?
+    | NONE
+    | NAMED COLLECTION ADMIN?
+    | TABLE ENGINE
+    | UNDROP TABLE
+    | MOVE PARTITION BETWEEN SHARDS
+    | SET DEFINER
+    // Deprecated source-as-privilege forms; modern syntax is `READ|WRITE ON <source>`
+    | S3
+    | AZURE
+    | HDFS
+    | MONGO
+    | MYSQL
+    | ODBC
+    | JDBC
+    | POSTGRES
+    | REDIS
+    | SQLITE
+    | REMOTE
+    | URL
+    | KAFKA
+    ;
+
+// ALTER sub-privileges
+alterPrivilege
+    : TABLE
+    | VIEW
+    | DATABASE
+    | COLUMN
+    | INDEX
+    | CONSTRAINT
+    | TTL
+    | SETTINGS
+    | MOVE PARTITION
+    | FETCH PARTITION
+    | FREEZE PARTITION
+    | UPDATE
+    | DELETE
+    | ADD COLUMN
+    | DROP COLUMN
+    | MODIFY COLUMN
+    | COMMENT COLUMN
+    | CLEAR COLUMN
+    | RENAME COLUMN
+    | MATERIALIZE COLUMN
+    | ADD INDEX
+    | DROP INDEX
+    | MATERIALIZE INDEX
+    | CLEAR INDEX
+    | ADD CONSTRAINT
+    | DROP CONSTRAINT
+    | MODIFY TTL
+    | MATERIALIZE TTL
+    | MODIFY SETTING
+    | MODIFY COMMENT
+    | USER
+    | ROLE
+    | ROW POLICY
+    | QUOTA
+    | SETTINGS PROFILE
+    | HANDLER
+    ;
+
+// CREATE sub-privileges
+createPrivilege
+    : TABLE
+    | VIEW
+    | DATABASE
+    | DICTIONARY
+    | FUNCTION
+    | TEMPORARY TABLE
+    | ARBITRARY TEMPORARY TABLE
+    | USER
+    | ROLE
+    | ROW POLICY
+    | QUOTA
+    | SETTINGS PROFILE
+    | NAMED COLLECTION
+    | TOKEN
+    | HANDLER
+    ;
+
+// DROP sub-privileges
+dropPrivilege
+    : TABLE
+    | VIEW
+    | DATABASE
+    | DICTIONARY
+    | FUNCTION
+    | USER
+    | ROLE
+    | ROW POLICY
+    | QUOTA
+    | SETTINGS PROFILE
+    | NAMED COLLECTION
+    | HANDLER
+    ;
+
+// SHOW sub-privileges
+showPrivilege
+    : DATABASES
+    | TABLES
+    | COLUMNS
+    | DICTIONARIES
+    | USERS
+    | ROLES
+    | ROW POLICIES
+    | QUOTAS
+    | SETTINGS PROFILES
+    | ACCESS
+    | NAMED COLLECTIONS
+    | HANDLERS
+    | HANDLER
+    ;
+
+// SYSTEM sub-privileges
+systemPrivilege
+    : SHUTDOWN
+    | DROP CACHE
+    | DROP DNS CACHE
+    | DROP MARK CACHE
+    | DROP UNCOMPRESSED CACHE
+    | DROP MMAP CACHE
+    | DROP COMPILED EXPRESSION CACHE
+    | RELOAD
+    | RELOAD CONFIG
+    | RELOAD DICTIONARY
+    | RELOAD EMBEDDED DICTIONARIES
+    | RELOAD FUNCTION
+    | RELOAD FUNCTIONS
+    | RESTART REPLICA
+    | RESTORE REPLICA
+    | SYNC REPLICA
+    | SYNC DATABASE REPLICA
+    | FLUSH
+    | FLUSH DISTRIBUTED
+    | FLUSH LOGS
+    | FLUSH ASYNC INSERT QUEUE
+    | MERGES
+    | TTL MERGES
+    | FETCHES
+    | MOVES
+    | DISTRIBUTED SENDS
+    | REPLICATED SENDS
+    | REPLICATION QUEUES
+    | STOP MERGES
+    | STOP TTL MERGES
+    | STOP FETCHES
+    | STOP MOVES
+    | STOP DISTRIBUTED SENDS
+    | STOP REPLICATED SENDS
+    | STOP REPLICATION QUEUES
+    | START MERGES
+    | START TTL MERGES
+    | START FETCHES
+    | START MOVES
+    | START DISTRIBUTED SENDS
+    | START REPLICATED SENDS
+    | START REPLICATION QUEUES
+    ;
+
+// Column list for column-level privileges
+columnList: identifier (COMMA identifier)*;
+
+// Scope: db.table, db.*, *.*, table, *
+grantScope
+    : identifier DOT identifier    // db.table
+    | identifier DOT ASTERISK      // db.*
+    | ASTERISK DOT ASTERISK        // *.*
+    | identifier                   // table only
+    | ASTERISK                     // *
+    ;
+
+// Source-level privileges (table functions and external storages):
+//   GRANT READ ON S3 TO user                          -- all S3 paths
+//   GRANT READ ON S3('s3://bucket/prefix/*') TO user  -- restricted to a regular expression
+//   GRANT WRITE ON * TO user                          -- every source
+sourcePrivilegeList: sourcePrivilege (COMMA sourcePrivilege)*;
+sourcePrivilege: READ | WRITE;
+sourceScope
+    : sourceName (LPAREN stringLiteral RPAREN)?
+    | ASTERISK
+    ;
+// A source is one of the names in AccessTypeObjects::Source: FILE, URL, REMOTE, MONGO, REDIS, MYSQL,
+// POSTGRES, SQLITE, ODBC, JDBC, HDFS, S3, HIVE, AZURE, KAFKA, NATS, RABBITMQ, YTSAURUS, ARROW_FLIGHT,
+// BIGQUERY, ELASTICSEARCH, DISK, or the alias of a table engine such as MongoDB.
+// The grammar accepts any identifier here, because most of these names are not lexer keywords.
+sourceName: identifier;
+
+// List of grantees (users or roles)
+granteeList: grantee (COMMA grantee)*;
+
+// Single grantee
+grantee
+    : identifier
+    | CURRENT_USER
+    ;
+
+// Role list for role grants
+roleList: identifier (COMMA identifier)*;
+
+// GRANT options: WITH GRANT OPTION, then WITH REPLACE OPTION
+grantOptionList: (WITH GRANT OPTION)? (WITH REPLACE OPTION)?;
+
+// ADMIN options for role grants: WITH ADMIN OPTION, then WITH REPLACE OPTION
+grantAdminOptionList: (WITH ADMIN OPTION)? (WITH REPLACE OPTION)?;
+
+// INSERT statement
 
 // INSERT statement
 
@@ -259,6 +604,15 @@ renameEntityClause
     | DICTIONARY dictionaryIdentifier TO dictionaryIdentifier (COMMA dictionaryIdentifier TO dictionaryIdentifier)*
     ;
 
+// EXCHANGE statement
+
+exchangeStmt
+    : EXCHANGE (TABLES | DICTIONARIES)
+      tableIdentifier AND tableIdentifier
+      (COMMA tableIdentifier AND tableIdentifier)*
+      clusterClause?
+    ;
+
 // PROJECTION SELECT statement
 
 projectionSelectStmt:
@@ -273,7 +627,9 @@ projectionSelectStmt:
 // SELECT statement
 
 selectUnionStmt: selectStmtWithParens (UNION (ALL | DISTINCT) selectStmtWithParens)*;
-selectStmtWithParens: selectStmt | LPAREN selectUnionStmt RPAREN;
+selectStmtWithParens: selectStmt | LPAREN selectUnionStmt RPAREN | LPAREN explainSelectSubquery RPAREN;
+// ParserSubquery accepts a parenthesized EXPLAIN only when the explained query is a SELECT.
+explainSelectSubquery: EXPLAIN (AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE)? settingExprList? selectUnionStmt;
 selectStmt:
     withClause?
     SELECT DISTINCT? topClause? columnExprList
@@ -481,11 +837,12 @@ columnExpr
     | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
     | columnExpr AND columnExpr                                                           # ColumnExprAnd
     | columnExpr OR columnExpr                                                            # ColumnExprOr
-    | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
+    | <assoc=right> columnExpr QUESTIONMARK columnExpr COLON columnExpr                          # ColumnExprTernaryOp
     | columnExpr (alias | AS identifier)                                                  # ColumnExprAlias
 
     | (tableIdentifier DOT)? ASTERISK                                                     # ColumnExprAsterisk  // single-column only
     | LPAREN selectUnionStmt RPAREN                                                       # ColumnExprSubquery  // single-column only
+    | LPAREN explainSelectSubquery RPAREN                                                 # ColumnExprExplainSubquery  // single-column only
     | LPAREN columnExpr RPAREN                                                            # ColumnExprParens    // single-column only
     | LPAREN columnExprList? RPAREN                                                       # ColumnExprTuple
     | LBRACKET columnExprList? RBRACKET                                                   # ColumnExprArray
@@ -509,10 +866,11 @@ columnExceptExpr
 // Tables
 
 tableExpr
-    : tableIdentifier                    # TableExprIdentifier
-    | tableFunctionExpr                  # TableExprFunction
-    | LPAREN selectUnionStmt RPAREN      # TableExprSubquery
-    | tableExpr (alias | AS identifier)  # TableExprAlias
+    : tableIdentifier                      # TableExprIdentifier
+    | tableFunctionExpr                    # TableExprFunction
+    | LPAREN selectUnionStmt RPAREN        # TableExprSubquery
+    | LPAREN explainSelectSubquery RPAREN  # TableExprExplainSubquery
+    | tableExpr (alias | AS identifier)    # TableExprAlias
     ;
 tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
@@ -562,6 +920,11 @@ keyword
     | ROWS | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTING | SETTINGS | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | STEP | TABLE
     | TABLES | TEMPORARY | TEST | THEN | TIES | TIMEOUT | TIMESTAMP | TO | TOP | TOTALS | TRAILING | TREE | TRIM | TRUNCATE | TTL | TYPE
     | UNBOUNDED | UNION | UPDATE | USE | USER | USERS | USING | UUID | VALUES | VIEW | VOLUME | WEEK | WHEN | WHERE | WINDOW | WITH | YEAR
+    | ARBITRARY | CACHE | COLLECTION | COLLECTIONS | COMPILED | CONFIG | DNS | EMBEDDED | FETCH | MARK | MMAP | UNCOMPRESSED
+    | ADMIN | APPEND | ASSUME | AZURE | COMPRESSION | DEFINER | DICTGET | EPHEMERAL | EXCHANGE | GET | GRANT | HANDLER | HANDLERS | HDFS
+    | INTROSPECTION | JDBC | KAFKA | LEVEL | MANAGEMENT | METHODS | MONGO | MOVES | MYSQL | NAMED | NONE | ODBC | OPTION | POST | POSTGRES | PREFIX
+    | PROTOCOL | PUT | QUERY | QUEUE | QUEUES | READ | RECOMPRESS | REDIS | REGEXP | REMOTE | REPLICATION | RESET | RESTART | RESTORE | REVOKE | S3
+    | SHARDS | SHUTDOWN | SOURCES | SQLITE | STATISTICS | STDOUT | TOKEN | UNDROP | UNTIL | URL | VALID | WRITE
     ;
 keywordForAlias
     : AFTER | ALIAS | ALTER | AST | ASYNC | ATTACH | BOTH | CASE | CAST | CHECK | CLEAR | CLUSTER | CODEC
@@ -574,6 +937,12 @@ keywordForAlias
     | SELECT | SENDS | SET | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY
     | TEST | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TTL | TYPE | UNBOUNDED | UPDATE
     | USE | UUID | VALUES | VIEW | VOLUME
+    | ARBITRARY | CACHE | COLLECTION | COLLECTIONS | COMPILED | CONFIG | DNS | EMBEDDED | FETCH | MARK | MMAP | UNCOMPRESSED
+    | ADMIN | APPEND | ASSUME | AZURE | COMPRESSION | DEFINER | DICTGET | EPHEMERAL | EXCHANGE | GET | GRANT | HANDLER | HANDLERS | HDFS
+    | INTROSPECTION | JDBC | KAFKA | LEVEL | MANAGEMENT | METHODS | MONGO | MOVES | MYSQL | NAMED | NONE | ODBC | OPTION | POST | POSTGRES | PREFIX
+    | PROTOCOL | PUT | QUERY | QUEUE | QUEUES | READ | REDIS | REGEXP | REMOTE | REPLICATION | RESET | RESTART | RESTORE | REVOKE | S3 | SHARDS
+    | SHUTDOWN | SOURCES | SQLITE | STATISTICS | STDOUT | TOKEN | UNDROP | UNTIL | URL | VALID | WRITE
+    | GRANTS | RECOMPRESS
     ;
 alias: IDENTIFIER | keywordForAlias;  // |interval| can't be an alias, otherwise 'INTERVAL 1 SOMETHING' becomes ambiguous.
 identifier: IDENTIFIER | interval | keyword;

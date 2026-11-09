@@ -8,9 +8,16 @@ Grammar is located inside `ClickHouseLexer.g4` and `ClickHouseParser.g4` files.
 
 To generate source code you need to install locally the `antlr4` binary:
 ```
-cd src/Parsers/New
+cd utils/antlr
 antlr4 -no-listener -visitor -package DB -Dlanguage=Cpp ClickHouseLexer.g4  # if you have changes in a lexer part of grammar
 antlr4 -no-listener -visitor -package DB -Dlanguage=Cpp ClickHouseParser.g4
 ```
 
 Commit only git-tracked generated files - not all of the generated content is required.
+
+## Notes on the grammar
+
+The grammar has no actions and no semantic predicates, so it works with every ANTLR target.
+Where ClickHouse accepts a clause at most once, for example in `CREATE DICTIONARY`, `ENGINE`, column modifiers, `CREATE TOKEN`, the grammar accepts the clause any number of times, in any order.
+
+The grammar covers only a part of the ClickHouse syntax. When you add a rule, check it against `src/Parsers`.
