@@ -2332,7 +2332,7 @@ Chunk StorageFileSource::generate()
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
-                    std::vector<size_t> matching_row_groups;
+                    RowGroupIndices matching_row_groups;
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
@@ -2652,7 +2652,7 @@ void StorageFileSource::finishReadingSplitFileBucket()
     /// not assigned to any bucket was skipped by the query condition cache entry for the same condition.
     bool can_write = !isCancelled() && format_filter_info && format_filter_info->condition_hash && current_file_version_settled
         && query_condition_cache_table_id != UUIDHelpers::Nil;
-    std::optional<std::pair<std::vector<size_t>, size_t>> buckets_opt;
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> buckets_opt;
     if (can_write)
     {
         /// Re-stat, to not write an entry derived from bytes the version token no longer describes.
@@ -3163,8 +3163,8 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
                 *format_filter_info->condition_hash,
                 /*increment_profile_events=*/ false);
 
-            std::vector<size_t> matching_row_groups;
-            std::vector<FileBucketInfoPtr> buckets;
+            RowGroupIndices matching_row_groups;
+            VectorWithMemoryTracking<FileBucketInfoPtr> buckets;
             if (matching_marks)
             {
                 for (size_t i = 0; i < matching_marks->size(); ++i)

@@ -184,6 +184,7 @@ struct PaimonManifestEntry
         std::optional<String> embedded_file_index;
         std::optional<FileSource> file_source;
         std::optional<Array> value_stats_cols;
+        std::optional<String> external_path;
 
         DataFileMeta(
             const Iceberg::AvroForIcebergDeserializer & avro_deserializer,
@@ -253,6 +254,10 @@ struct PaimonManifestEntry
             }
             getNullableValueFromRowByName(
                 value_stats_cols, avro_deserializer, row_num, Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_VALUE_STATS_COLS}));
+            /// Absent in the manifests of older writers.
+            if (const auto external_path_column = Paimon::concatPath({root_path, Paimon::COLUMN_PAIMON_MANIFEST_EXTERNAL_PATH});
+                avro_deserializer.hasPath(external_path_column))
+                getNullableValueFromRowByName(external_path, avro_deserializer, row_num, external_path_column);
         }
 
     };
