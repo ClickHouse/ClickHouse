@@ -84,3 +84,6 @@ DROP TABLE insert_expected_engine_mv;
 DROP TABLE insert_expected_engine_wide;
 DROP TABLE insert_expected_engine_log;
 DROP TABLE insert_expected_engine;
+
+-- An unset expectation stays unchanged under an older compatibility, so it is never sent to another server.
+SELECT name, changed FROM system.settings WHERE name IN ('insert_expected_column_types', 'insert_expected_table_engine') ORDER BY name SETTINGS compatibility = '26.10';

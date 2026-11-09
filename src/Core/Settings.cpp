@@ -7492,7 +7492,7 @@ Remote write over a `Distributed` table sets it to the type of the samples colum
 INSERT INTO t SETTINGS insert_expected_column_types = {'samples': 'Array(Tuple(DateTime64(3), Float64))'} VALUES (...)
 ```
 )", IMPORTANT, \
-        {"26.11", "", "", "New setting: when not empty, an INSERT is refused unless the target table declares exactly these column types."}) \
+        {"26.11", Map{}, Map{}, "New setting: when not empty, an INSERT is refused unless the target table declares exactly these column types."}) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
 Enable collecting hash table statistics to optimize memory allocation

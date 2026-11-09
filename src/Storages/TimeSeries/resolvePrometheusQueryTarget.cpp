@@ -198,7 +198,7 @@ namespace
         /// requires READ ON REMOTE above, so the probe reports nothing the caller's own cluster() could not.
         auto probe_context = Context::createCopy(context->getGlobalContext());
         probe_context->makeQueryContext();
-        /// The caller's user and active roles, so the probe forwards the same roles the read and the write do.
+        /// The caller's user and active roles, so a read probe forwards the same roles the read does.
         if (const auto user_id = context->getUserID())
         {
             probe_context->setUser(*user_id, context->getExternalRoles());
@@ -219,9 +219,9 @@ namespace
         probe_context->setSetting("skip_unavailable_shards_mode", String("unavailable"));
         /// The type must come back as the column declares it.
         probe_context->setSetting("print_pretty_type_names", false);
-        /// Forward roles only as the caller's own read would.
+        /// A write probe forwards no roles: the shard insert sends none either, so the shard uses the user's default roles.
         probe_context->setSetting("push_external_roles_in_interserver_queries",
-            context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries].value);
+            !for_write && context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries].value);
         /// Like the fan-out, send no initiator-only setting, so a replica resolves the table in its own default database.
         {
             Settings probe_settings = probe_context->getSettingsRef();
