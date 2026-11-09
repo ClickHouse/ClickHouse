@@ -2,6 +2,7 @@
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Compression/CompressionCodecQuantized.h>
+#include <Core/NamesAndTypes.h>
 
 namespace DB
 {
@@ -32,8 +33,6 @@ public:
 
     /// Configured from the codec, not from the type, so the identity carries the parameters.
     String getCustomSerializationIdentity() const override;
-
-    bool isProductQuantization() const { return is_product_quantization; }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -83,5 +82,8 @@ private:
     /// `pq` only: train a codebook from up to `count` vectors starting at `offset` (the part's first block).
     std::vector<float> trainCodebook(const IColumn & column, size_t offset, size_t count) const;
 };
+
+/// Throws ILLEGAL_COLUMN if a column, or a type nested in it, has the serialization of a `Quantized` codec.
+void checkNoQuantizedCodec(const NamesAndTypesList & columns, const String & engine_name);
 
 }
