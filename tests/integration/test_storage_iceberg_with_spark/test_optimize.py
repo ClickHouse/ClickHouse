@@ -460,3 +460,42 @@ def test_optimize_refuses_partition_tuple_of_another_arity(started_cluster_icebe
 
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
     assert instance.exec_in_container(list_files) == files_before
+
+
+def test_optimize_keeps_field_ids_of_reordered_columns(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_reordered_columns_" + get_uuid_str()
+
+    # After `ALTER COLUMN region FIRST` the field ids are not 1..N in column order, and the partition spec refers to `region` by its id.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
+        TBLPROPERTIES ('format-version' = '2', 'write.delete.mode' = 'merge-on-read')
+        """
+    )
+    spark.sql(f"ALTER TABLE {TABLE_NAME} ALTER COLUMN region FIRST")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES ('a', 1), ('a', 2), ('b', 3)")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction": 1})
+    write_settings = {"allow_insert_into_iceberg": 1, "mutations_sync": 1}
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('c', 4)", settings=write_settings)
+    instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 3", settings=write_settings)
+
+    assert instance.query(f"SELECT region, id FROM {TABLE_NAME} ORDER BY id") == "a\t1\nc\t4\n"
+    data_file_partitions = instance.query(
+        f"""
+        SELECT partition FROM system.iceberg_files
+        WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'DATA' ORDER BY partition FORMAT TSVRaw
+        """
+    )
+    assert data_file_partitions == "{'a'}\n{'b'}\n{'c'}\n", data_file_partitions

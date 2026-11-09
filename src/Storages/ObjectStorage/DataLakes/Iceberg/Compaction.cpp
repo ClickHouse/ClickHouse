@@ -1098,8 +1098,9 @@ static bool writeMetadataFiles(
 
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
-    /// The rewritten manifests and the manifest list use the source table's partition specs, so the new metadata must define them.
-    for (const auto * key : {Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id})
+    /// The rewritten data files, manifests and manifest list use the source table's field ids and partition specs, so the new metadata must define them.
+    for (const auto * key : {Iceberg::f_schemas, Iceberg::f_current_schema_id, Iceberg::f_last_column_id,
+                             Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id})
         if (plan.initial_metadata_object->has(key))
             metadata_object->set(key, plan.initial_metadata_object->get(key));
 
