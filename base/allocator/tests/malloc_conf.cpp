@@ -489,7 +489,7 @@ TEST(Configuration, Numbers)
     CHECK_EQ(options.dirty_decay_ms, ssize_t(-1));
     CHECK_EQ(options.muzzy_decay_ms, ssize_t(18446744072000));
     parseEnv("dirty_decay_ms:-2");
-    /// The value from the compiled-in conf, which is empty on s390x and FreeBSD ppc64le (then the default 10000).
+    /// The value from the compiled-in conf, which is empty on FreeBSD ppc64le (then the default 10000).
     CHECK_EQ(options.dirty_decay_ms, ssize_t(std::strstr(config::malloc_conf_default, "dirty_decay_ms:5000") ? 5000 : 10000));
     CHECK_STREQ(messages, "<jemalloc>: Out-of-range conf value: dirty_decay_ms:-2\n");
     parseEnv("tcache_max:1000000000");

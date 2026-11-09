@@ -871,7 +871,7 @@ struct Oracle
                         opFillFresh();
                     break;
                 case 12:
-                    /// Only sampled allocations are promoted (`profiling` is off with an empty compiled-in conf, e.g. s390x).
+                    /// Only sampled allocations are promoted (`profiling` is off with an empty compiled-in conf, e.g. FreeBSD ppc64le).
                     if (options.profiling)
                         opPromote();
                     break;

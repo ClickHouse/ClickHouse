@@ -7,7 +7,7 @@
 ///
 /// Platform differences (selected with `if constexpr` on `config::*`, or `#ifdef` where a system API does not exist):
 /// - Linux: `MAP_NORESERVE` when the kernel overcommits (`/proc/sys/vm/overcommit_memory` is 0 or 1), VMA naming with
-///   `prctl(PR_SET_VMA)` (except s390x), forced purge with `MADV_DONTNEED` (after a boot-time probe that it zeroes),
+///   `prctl(PR_SET_VMA)`, forced purge with `MADV_DONTNEED` (after a boot-time probe that it zeroes),
 ///   THP mode from sysfs, `MADV_HUGEPAGE`/`MADV_NOHUGEPAGE`, `MADV_DONTDUMP`/`MADV_DODUMP`.
 /// - FreeBSD: overcommit via `sysctl vm.overcommit`, `pages::map` uses `MAP_FIXED | MAP_EXCL` or `MAP_ALIGNED`,
 ///   forced purge by overlaying a fresh mapping (`MAP_FIXED`), `MADV_NOCORE`/`MADV_CORE`, no THP.

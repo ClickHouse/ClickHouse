@@ -178,7 +178,7 @@ inline constexpr bool madvise_dontdump = os_linux;
 inline constexpr bool madvise_nocore = os_freebsd;
 
 /// JEMALLOC_PAGEID: name anonymous mappings with prctl(PR_SET_VMA).
-inline constexpr bool page_id = os_linux && arch != Arch::S390X;
+inline constexpr bool page_id = os_linux;
 
 /// JEMALLOC_PROC_SYS_VM_OVERCOMMIT_MEMORY / JEMALLOC_SYSCTL_VM_OVERCOMMIT.
 inline constexpr bool proc_system_vm_overcommit_memory = os_linux;
@@ -227,14 +227,14 @@ inline constexpr bool zero_realloc_default_free = os_linux;
 inline constexpr bool use_syscall = !os_darwin;
 
 /// JEMALLOC_HAVE_SECURE_GETENV / JEMALLOC_HAVE_ISSETUGID.
-inline constexpr bool have_secure_getenv = os_linux && arch == Arch::S390X;
+inline constexpr bool have_secure_getenv = false;
 inline constexpr bool have_issetugid = os_freebsd || os_darwin;
 
 /// JEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE.
 inline constexpr bool strerror_r_returns_char = os_linux && !musl;
 
 /// JEMALLOC_ENABLE_CXX: only affects the `experimental_infallible_new` option.
-inline constexpr bool enable_cxx = (os_linux && arch == Arch::S390X) || (os_freebsd && arch == Arch::PPC64LE);
+inline constexpr bool enable_cxx = os_freebsd && arch == Arch::PPC64LE;
 
 /// JEMALLOC_HAVE_MALLOC_SIZE: export `je_malloc_size`.
 inline constexpr bool have_malloc_size = os_darwin;
@@ -242,10 +242,10 @@ inline constexpr bool have_malloc_size = os_darwin;
 /// HAVE_CPU_SPINWAIT.
 inline constexpr bool have_cpu_spin_wait = arch == Arch::X86_64;
 
-/// JEMALLOC_CONFIG_MALLOC_CONF. s390x and FreeBSD ppc64le hard-code an empty string in the jemalloc configuration.
+/// JEMALLOC_CONFIG_MALLOC_CONF. FreeBSD ppc64le hard-codes an empty string in the jemalloc configuration.
 #if defined(ALLOCATOR_MALLOC_CONF)
 inline constexpr const char * malloc_conf_default
-    = ((os_linux && arch == Arch::S390X) || (os_freebsd && arch == Arch::PPC64LE)) ? "" : ALLOCATOR_MALLOC_CONF;
+    = (os_freebsd && arch == Arch::PPC64LE) ? "" : ALLOCATOR_MALLOC_CONF;
 #else
 inline constexpr const char * malloc_conf_default = "";
 #endif

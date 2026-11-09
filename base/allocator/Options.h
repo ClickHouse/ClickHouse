@@ -226,7 +226,7 @@ struct Options
     /// jemalloc: opt_disable_large_size_classes
     bool disable_large_size_classes = true;
     /// Never settable in ClickHouse's configuration (`config_utrace`, `config_abort_on_out_of_memory`, `config_enable_cxx` are
-    /// false; s390x and FreeBSD ppc64le have `JEMALLOC_ENABLE_CXX`, but only `experimental_infallible_new` depends on it).
+    /// false; FreeBSD ppc64le has `JEMALLOC_ENABLE_CXX`, but only `experimental_infallible_new` depends on it).
     /// jemalloc: opt_utrace, opt_xmalloc, opt_experimental_infallible_new
     bool utrace = false;
     bool abort_on_out_of_memory = false;
