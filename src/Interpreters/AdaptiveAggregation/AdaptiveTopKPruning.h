@@ -113,8 +113,14 @@ public:
     /// the session's lock, so the scans of the finishing producers run in parallel.
     static ProducerBins finalizeProducerCounts(AdaptiveTopKCountBins && counts);
 
-    /// Hands a producer's finished bins over, under the session's `producer_buffers_mutex`.
-    void addProducerBins(ProducerBins && bins) { producer_bins.push_back(std::move(bins)); }
+    /// Hands a producer's finished bins over, under the session's `producer_buffers_mutex`, and adds its
+    /// largest bin of each bucket to the bucket's bound.
+    void addProducerBins(ProducerBins && bins)
+    {
+        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
+            count_bound_per_bucket[bucket] += bins.max_bin_per_bucket[bucket];
+        producer_bins.push_back(std::move(bins.counts));
+    }
 
     /// Hands over the table of a producer that never froze, under the session's `producer_buffers_mutex`. The
     /// merge adds its groups to the bounds (see `addToBounds`). `max_count_per_bucket`, unless null, holds
@@ -127,7 +133,7 @@ public:
         merge_counted_tables.push_back(&table);
         if (max_count_per_bucket)
             for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
-                merge_counted_bucket_maxima[bucket] += (*bucket_maxima)[bucket];
+                count_bound_per_bucket[bucket] += (*max_count_per_bucket)[bucket];
     }
 
     /// Whether `table` is the table of a producer that never froze, whose groups the merge adds to the bounds.
@@ -175,10 +181,16 @@ public:
 private:
     const size_t limit;
 
-    std::vector<ProducerBins> producer_bins;
+    /// The finished bins of the producers that froze, which the bounds of the bins sum (see
+    /// `boundsForBucket`).
+    std::vector<AdaptiveTopKCountBins> producer_bins;
     std::vector<const AggregatedDataVariants *> merge_counted_tables;
-    /// The sums of the largest counts of a group of each bucket that the tables the merge counts brought.
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> merge_counted_bucket_maxima{};
+    /// The sum of every producer's largest bin in each bucket and of the bucket's largest count in every table
+    /// that the merge counts and that brought it, which orders the buckets for the merge. It bounds the count
+    /// of every group of the bucket when every such table brought its largest counts: a bucket's largest bin
+    /// is at most the sum of the producers' largest bins in it, and a group of the bucket counts at most the
+    /// sum of the largest counts of the bucket in those tables.
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> count_bound_per_bucket{};
     std::array<UInt8, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_order{};
 
     /// The `limit` best exact counts converted so far, and the smallest of them once there are `limit`.

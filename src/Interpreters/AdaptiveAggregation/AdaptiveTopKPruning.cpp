@@ -20,26 +20,16 @@ AdaptiveTopKPruning::ProducerBins AdaptiveTopKPruning::finalizeProducerCounts(Ad
 
 void AdaptiveTopKPruning::orderBuckets()
 {
-    if (producer_bins.size() + merge_counted_tables.size() != expected_producers)
-        return false;
-
-    /// A bucket's largest bin is at most the sum of the producers' largest bins in it, and a group of the bucket counts
-    /// at most the sum of the largest counts of the bucket in the tables that the merge counts, which orders the buckets.
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> priorities = merge_counted_bucket_maxima;
-    for (const auto & producer : producer_bins)
-        for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
-            priorities[bucket] += producer.bucket_maxima[bucket];
     std::iota(bucket_order.begin(), bucket_order.end(), 0);
-    std::ranges::stable_sort(bucket_order, [&](UInt8 lhs, UInt8 rhs) { return priorities[lhs] > priorities[rhs]; });
-    return true;
+    std::ranges::stable_sort(bucket_order, [&](UInt8 lhs, UInt8 rhs) { return count_bound_per_bucket[lhs] > count_bound_per_bucket[rhs]; });
 }
 
 AdaptiveTopKPruning::BucketBounds AdaptiveTopKPruning::boundsForBucket(size_t bucket) const
 {
     BucketBounds bounds{};
-    for (const auto & producer : producer_bins)
+    for (const auto & counts : producer_bins)
     {
-        const UInt16 * bins = producer.counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
+        const UInt16 * bins = counts.bins.get() + bucket * adaptive_count_bins_per_bucket;
         for (size_t bin = 0; bin < adaptive_count_bins_per_bucket; ++bin)
         {
             if (bins[bin] == std::numeric_limits<UInt16>::max())
