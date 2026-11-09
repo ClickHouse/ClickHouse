@@ -15,11 +15,13 @@
 #include <Common/memory.h>
 #include <base/getPageSize.h>
 #include <base/scope_guard.h>
+#include <fmt/format.h>
 #include <cerrno>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <optional>
+#include <string>
 
 namespace DB::ErrorCodes
 {
@@ -184,34 +186,47 @@ TEST(AllocationInterceptors, SizedDeleteCreditsWhatNewCharged)
     const size_t page_size = getPageSize();
 #endif
 
-    auto check = [](size_t size, std::optional<size_t> alignment)
+    auto check = [](size_t size, std::optional<size_t> alignment, bool sized)
     {
+        const std::string context = fmt::format("size {}, alignment {}, sized {}", size, alignment.value_or(0), sized);
+
         CurrentThread::flushUntrackedMemory();
         const Int64 before = CurrentThread::get().memory_tracker.get();
 
-        if (alignment)
-        {
-            void * ptr = ::operator new(size, std::align_val_t{*alignment});
-            useMisterPointer(ptr);
+        void * ptr = alignment ? ::operator new(size, std::align_val_t{*alignment}) : ::operator new(size);
+        useMisterPointer(ptr);
+
+#if USE_JEMALLOC
+        /// The size class of the allocation itself must be the one that is charged, and that sized delete
+        /// credits and passes to `je_sdallocx`; otherwise the counters balance but `je_sdallocx` frees
+        /// with a wrong size class.
+        const size_t charged = alignment ? Memory::getActualAllocationSize(size, std::align_val_t{*alignment})
+                                         : Memory::getActualAllocationSize(size);
+        EXPECT_EQ(je_sallocx(ptr, 0), charged) << context;
+#endif
+
+        if (alignment && sized)
             ::operator delete(ptr, size, std::align_val_t{*alignment});
-        }
-        else
-        {
-            void * ptr = ::operator new(size);
-            useMisterPointer(ptr);
+        else if (alignment)
+            ::operator delete(ptr, std::align_val_t{*alignment});
+        else if (sized)
             ::operator delete(ptr, size);
-        }
+        else
+            ::operator delete(ptr);
 
         CurrentThread::flushUntrackedMemory();
-        EXPECT_EQ(CurrentThread::get().memory_tracker.get(), before) << "size " << size << ", alignment " << alignment.value_or(0);
+        EXPECT_EQ(CurrentThread::get().memory_tracker.get(), before) << context;
     };
 
-    check(100, {});
-    check(100000, {});
-    check(100, 64);
-    /// With `size` rounded up to `alignment` before allocating, these got a larger size class than charged.
-    check(1, 8 * page_size);
-    check(4 * page_size + 1, 2 * page_size);
+    for (bool sized : {true, false})
+    {
+        check(100, {}, sized);
+        check(100000, {}, sized);
+        check(100, 64, sized);
+        /// With `size` rounded up to `alignment` before allocating, these got a larger size class than charged.
+        check(1, 8 * page_size, sized);
+        check(4 * page_size + 1, 2 * page_size, sized);
+    }
 }
 
 namespace
