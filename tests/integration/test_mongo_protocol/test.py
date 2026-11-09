@@ -3339,3 +3339,60 @@ def test_wire_results_keep_wide_integers_field_paths_and_fresh_metadata(started_
     assert node.query("SELECT x FROM db.query_cache_types", password="123") == "1\n"
     node.query("DROP TABLE db.query_cache_types", password="123")
     node.query("DROP USER mongo_query_cache", password="123")
+
+
+def test_wire_strings_batches_and_query_construction_settings(started_cluster):
+    """A string starting with a zero byte comes back as the same string rather than as a wide
+    integer, next to a genuine one; a body array holding more documents than a write batch is
+    rejected; and the query construction settings of a profile, such as `select`, do not rewrite
+    the statements generated for a command."""
+    from bson.decimal128 import Decimal128
+
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    database = make_client()["db"]
+
+    node.query("DROP TABLE IF EXISTS db.zero_byte_strings", password="123")
+    node.query(
+        "CREATE TABLE db.zero_byte_strings (id Int32, s String, ss Array(String), x UInt128) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.zero_byte_strings SELECT 1, char(0) || '18446744073709551617', [char(0) || '5'], toUInt128('18446744073709551617')",
+        password="123",
+    )
+    [document] = list(database["zero_byte_strings"].find({}, {"_id": 0}))
+    assert document["s"] == "\x0018446744073709551617", document
+    assert document["ss"] == ["\x005"], document
+    assert document["x"] == Decimal128("18446744073709551617"), document
+    assert database["zero_byte_strings"].distinct("s") == ["\x0018446744073709551617"]
+    assert database["zero_byte_strings"].distinct("x") == [Decimal128("18446744073709551617")]
+    node.query("DROP TABLE db.zero_byte_strings", password="123")
+
+    sock = connect_raw()
+    try:
+        authenticate_raw(sock)
+        sock.sendall(encode_op_msg({"insert": "body_array_batch", "documents": [{}] * 100001, "$db": "db"}))
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 0 and "more than 100000 elements" in reply["errmsg"], reply
+    finally:
+        sock.close()
+    assert node.query("EXISTS TABLE db.body_array_batch", password="123") == "0\n"
+
+    node.query("DROP USER IF EXISTS mongo_construction", password="123")
+    node.query(
+        "CREATE USER mongo_construction IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS select = '0', limit = 1, order = 'x DESC'",
+        password="123",
+    )
+    node.query("GRANT SELECT, INSERT, ALTER DELETE, SHOW ON db.* TO mongo_construction", password="123")
+    node.query("DROP TABLE IF EXISTS db.construction_settings", password="123")
+    node.query("CREATE TABLE db.construction_settings (x Int64) ENGINE = MergeTree ORDER BY tuple()", password="123")
+    node.query("INSERT INTO db.construction_settings VALUES (1), (2), (3)", password="123")
+    collection = make_client(user="mongo_construction", password="mongo_pass", database="db")["db"]["construction_settings"]
+    assert collection.count_documents({}) == 3
+    assert sorted(document["x"] for document in collection.find({}, {"_id": 0})) == [1, 2, 3]
+    assert collection.delete_many({"x": {"$gte": 2}}).deleted_count == 2
+    assert node.query("SELECT x FROM db.construction_settings", password="123") == "1\n"
+    node.query("DROP TABLE db.construction_settings", password="123")
+    node.query("DROP USER mongo_construction", password="123")
