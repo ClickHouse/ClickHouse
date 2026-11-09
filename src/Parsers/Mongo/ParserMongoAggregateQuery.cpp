@@ -1258,46 +1258,52 @@ void translateUnionWith(SelectChain & chain, const rapidjson::Value & stage, con
             "its fields as they are, or both end with stages that name every field they produce, such as '$group' or a "
             "'$project' of computed fields, with the same names on both sides");
 
-    /** The types of the fields are only known when the query is analyzed, so the query checks that no
-      * field is a boolean on one side and a number on the other (see `makeTypeCategory`). The types
-      * of our fields come from a scalar subquery that reads none of our documents, which yields one
-      * row thanks to the aggregation: `(SELECT [<category of toTypeName(any(<field>))>, ...] FROM
-      * (<ours>) WHERE 0)`. Both are constants, so the check is done when the query is analyzed.
-      */
-    auto our_categories = makeASTFunction("array");
-    auto their_categories = makeASTFunction("array");
-    for (const auto & name : ours.names)
-    {
-        our_categories->arguments->children.push_back(
-            makeTypeCategory(makeASTFunction("toTypeName", makeASTFunction("any", make_intrusive<ASTIdentifier>(name)))));
-        their_categories->arguments->children.push_back(makeTypeCategory(makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(name))));
-    }
-    SelectChain probe(makeSubquery(chain.build()));
-    probe.select_list = make_intrusive<ASTExpressionList>();
-    probe.select_list->children.push_back(std::move(our_categories));
-    probe.where = makeLiteral(Field(UInt64(0)));
-    auto check = makeASTFunction(
-        "equals",
-        makeASTFunction(
-            "throwIf",
-            makePairsBooleanWithNumber(makeSubquery(probe.build()), std::move(their_categories)),
-            makeLiteral(Field(String("'$unionWith' requires that no field is a boolean in one of the pipelines and a number in the other, "
-                                     "because the union would convert the booleans into numbers")))),
-        makeLiteral(Field(UInt64(0))));
-
-    if (!other.onlyFiltered())
-        other.wrap();
-    other.where = other.where ? makeASTFunction("and", other.where, std::move(check)) : std::move(check);
-
     if (theirs.names != ours.names)
     {
         auto select_list = make_intrusive<ASTExpressionList>();
         for (const auto & name : ours.names)
             select_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        if (!other.onlyFiltered())
+            other.wrap();
         other.select_list = std::move(select_list);
     }
+    auto other_select = other.build();
 
-    chain.unionWith(other.build());
+    /** The types of the fields are only known when the query is analyzed, so the query checks that no
+      * field is a boolean on one side and a number on the other (see `makeTypeCategory`). The types
+      * of their fields come from a scalar subquery that reads none of their documents, which yields
+      * one row thanks to the aggregation: `(SELECT [<category of toTypeName(any(<field>))>, ...] FROM
+      * (<theirs>) WHERE 0)`, and the check is made in our pipeline, where the types of our fields are
+      * constants. Both are constants, so the check is done when the query is analyzed. The probe
+      * copies the other pipeline, not ours: ours holds every stage and union before this one, and a
+      * copy of it in every union would double the query with each consecutive `$unionWith`.
+      */
+    auto our_categories = makeASTFunction("array");
+    auto their_categories = makeASTFunction("array");
+    for (const auto & name : ours.names)
+    {
+        our_categories->arguments->children.push_back(makeTypeCategory(makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(name))));
+        their_categories->arguments->children.push_back(
+            makeTypeCategory(makeASTFunction("toTypeName", makeASTFunction("any", make_intrusive<ASTIdentifier>(name)))));
+    }
+    SelectChain probe(makeSubquery(other_select->clone()));
+    probe.select_list = make_intrusive<ASTExpressionList>();
+    probe.select_list->children.push_back(std::move(their_categories));
+    probe.where = makeLiteral(Field(UInt64(0)));
+    auto check = makeASTFunction(
+        "equals",
+        makeASTFunction(
+            "throwIf",
+            makePairsBooleanWithNumber(std::move(our_categories), makeSubquery(probe.build())),
+            makeLiteral(Field(String("'$unionWith' requires that no field is a boolean in one of the pipelines and a number in the other, "
+                                     "because the union would convert the booleans into numbers")))),
+        makeLiteral(Field(UInt64(0))));
+
+    if (!chain.onlyFiltered())
+        chain.wrap();
+    chain.where = chain.where ? makeASTFunction("and", chain.where, std::move(check)) : std::move(check);
+
+    chain.unionWith(std::move(other_select));
 }
 
 SelectChain translatePipeline(
