@@ -4442,6 +4442,6 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     font-weight: 500 !important;
     line-height: 20px !important;
 }
-[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > span {
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span {
     color: #ffffff !important;
 }
