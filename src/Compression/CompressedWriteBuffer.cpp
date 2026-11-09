@@ -50,7 +50,7 @@ void CompressedWriteBuffer::nextImpl()
         compressed_ptr = compressed_buffer.data();
     }
 
-    UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
+    UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr, codec_state.get());
 
     /// The block is stored as is if compression saves less than 1/8 of its size.
     if (uncompressed_codec && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
@@ -86,6 +86,7 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size);
     if (!codec)
         codec = CompressionCodecFactory::instance().getDefaultCodec();
+    codec_state = codec->createCompressionState();
 }
 
 void CompressedWriteBuffer::cancelImpl() noexcept
@@ -109,5 +110,6 @@ void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
 
     chassert(codec_);
     codec = std::move(codec_);
+    codec_state = codec->createCompressionState();
 }
 }
