@@ -16,8 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the one of the feature off: the counts as a multiset, which ties cannot reorder, and every returned row against the
 # row of its key in the full aggregation, which catches a group whose other aggregates missed records or source cells.
 # The last column says whether units were merged count first. An ascending order and a throw-mode group limit, which
-# turn the top-K pruning off, still count first; the group limit is checked against the groups the counting found, so
-# the last query, whose limit is below them, fails although every unit keeps only its best groups.
+# the count bins do not prune, still count first; the group limit is checked against the groups the counting
+# found, so the last query, whose limit is below them, fails although every unit keeps only its best groups.
 # `optimize_injective_functions_in_group_by = 0` keeps `toString(k)` a string key. Each cell runs in its own
 # clickhouse-local process, so the counters in `system.events` belong to it alone.
 
