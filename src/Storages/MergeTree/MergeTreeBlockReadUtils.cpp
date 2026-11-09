@@ -150,6 +150,18 @@ bool injectRequiredColumnsRecursively(
         /// count from.
         if (alter_conversions && alter_conversions->getColumnsUpdatedInPatches().contains(column_in_storage->getNameInStorage()))
             add_column(column_name);
+
+        /// A sort-key column the part does not store keeps the value its `DEFAULT` gave before patches, as the rows
+        /// of the part are sorted by it (see `IMergeTreeReader::getDefaultsDependingOn`). When a patch overwrites
+        /// a column its expression reads, the `DEFAULT` columns reading it are evaluated again, and they must read
+        /// that kept value, not one evaluated anew from the patched column. Read it, so that it is filled once,
+        /// before the patches, exactly as if it was requested, whatever other columns are selected.
+        else if (alter_conversions && alter_conversions->hasPatches())
+        {
+            const auto & sorting_key_columns = storage_snapshot->metadata->getColumnsRequiredForSortingKey();
+            if (std::ranges::find(sorting_key_columns, column_in_storage->getNameInStorage()) != sorting_key_columns.end())
+                add_column(column_name);
+        }
     }
 
     /// Column doesn't have default value and don't exist in part
