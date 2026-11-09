@@ -1105,17 +1105,21 @@ def test_insert_refuses_undeclared_scheme(
 
 
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_writes_continue_uuid_metadata_naming(started_cluster_iceberg_with_spark, storage_type):
+@pytest.mark.parametrize("use_version_hint", [False, True])
+def test_writes_continue_uuid_metadata_naming(started_cluster_iceberg_with_spark, storage_type, use_version_hint):
     """A table whose metadata files are named `<N>-<uuid>.metadata.json`, as pyiceberg and catalog-based Spark
     write them, keeps that scheme after ClickHouse commits to it, so later writes and maintenance still find its
-    current metadata file."""
+    current metadata file, and its `version-hint.text` keeps naming that file."""
     env = make_env(started_cluster_iceberg_with_spark, storage_type, "test_uuid_naming_continued")
-    env.populate(2)
+    env.populate(2, use_version_hint=use_version_hint)
     newest = env.newest_metadata_version()
-    assert not env.exists("metadata", "version-hint.text"), "a hint would declare the scheme"
+    assert env.exists("metadata", "version-hint.text") == use_version_hint
     for version in range(1, newest + 1):
-        env.copy_metadata_file(f"v{version}.metadata.json", f"{version:05d}-{uuid.uuid4()}.metadata.json")
+        name = f"{version:05d}-{uuid.uuid4()}.metadata.json"
+        env.copy_metadata_file(f"v{version}.metadata.json", name)
         env.remove_metadata_file(f"v{version}.metadata.json")
+    if use_version_hint:
+        env.write_version_hint(name)
 
     for value in (3, 4):
         env.instance.query(f"INSERT INTO {env.table_name} VALUES ({value});", settings=ICEBERG_SETTINGS)
@@ -1127,6 +1131,8 @@ def test_writes_continue_uuid_metadata_naming(started_cluster_iceberg_with_spark
     names = sorted(p.rsplit("/", 1)[-1] for p in env.list_files() if p.endswith(".metadata.json"))
     assert all(re.fullmatch(r"\d{5}-[0-9a-f-]{36}\.metadata\.json", n) for n in names), names
     assert len(env.metadata_files_with_version(newest + 3)) == 1, names
+    if use_version_hint:
+        assert env.read_version_hint() == env.metadata_files_with_version(newest + 3)[0]
 
     env.add_orphan("data", "orphan-uuid-naming.parquet")
     time.sleep(2)

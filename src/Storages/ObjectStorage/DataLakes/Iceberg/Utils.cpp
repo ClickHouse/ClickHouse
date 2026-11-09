@@ -517,9 +517,10 @@ bool tryWriteVersionHintFile(
         /// lastly, let's update it
         try
         {
-            /// Write just the version number for Spark/spec compatibility.
+            /// Spark reads a bare number as `v<N>.metadata.json`, so a file named otherwise is written in full.
+            const String metadata_file_name = std::filesystem::path(storage_metadata_path).filename();
             Iceberg::writeMessageToFile(
-                std::to_string(metadata_file_info.version),
+                isVersionNumberedCommitScheme(metadata_file_name) ? std::to_string(metadata_file_info.version) : metadata_file_name,
                 storage_version_hint_path,
                 object_storage,
                 context,

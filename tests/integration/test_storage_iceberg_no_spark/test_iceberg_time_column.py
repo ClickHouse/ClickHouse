@@ -4,7 +4,6 @@ spec writer (TIME(MICROS)) must be decoded to it as well: otherwise `WHERE t = <
 against bounds in another unit and the shown value depends on the partition spec."""
 
 import datetime
-import re
 import uuid
 
 import pyarrow as pa
@@ -361,14 +360,6 @@ def test_iceberg_time_column_equality_delete_and_compaction(started_cluster_iceb
         """
     )
     tables.instance.query(f"ALTER TABLE {table_name} DELETE WHERE id = 0", settings=write_settings)
-
-    # The delete is committed as `v<N>.metadata.json` next to pyiceberg's `<N>-<uuid>.metadata.json`
-    # files, and `OPTIMIZE` refuses a table with both schemes.
-    minio = tables.cluster.minio_client
-    bucket = tables.cluster.minio_bucket
-    for item in minio.list_objects(bucket, f"{key_prefix}/metadata/"):
-        if re.fullmatch(r"\d+-[0-9a-f-]+\.metadata\.json", item.object_name.rsplit("/", 1)[1]):
-            minio.remove_object(bucket, item.object_name)
     tables.instance.query(f"OPTIMIZE TABLE {table_name}", settings=write_settings)
 
     # The rows below are read from the files written by `OPTIMIZE`, not from pyiceberg's.
