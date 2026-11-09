@@ -1,0 +1,51 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_yaml_cpp",
+    srcs = [
+        "src/binary.cpp",
+        "src/emitterutils.cpp",
+        "src/null.cpp",
+        "src/scantoken.cpp",
+        "src/convert.cpp",
+        "src/exceptions.cpp",
+        "src/ostream_wrapper.cpp",
+        "src/simplekey.cpp",
+        "src/depthguard.cpp",
+        "src/exp.cpp",
+        "src/parse.cpp",
+        "src/singledocparser.cpp",
+        "src/directives.cpp",
+        "src/memory.cpp",
+        "src/parser.cpp",
+        "src/stream.cpp",
+        "src/emit.cpp",
+        "src/nodebuilder.cpp",
+        "src/regex_yaml.cpp",
+        "src/tag.cpp",
+        "src/emitfromevents.cpp",
+        "src/node.cpp",
+        "src/scanner.cpp",
+        "src/emitter.cpp",
+        "src/node_data.cpp",
+        "src/scanscalar.cpp",
+        "src/emitterstate.cpp",
+        "src/nodeevents.cpp",
+        "src/scantag.cpp",
+    ] + glob(["src/*.h"]),
+    hdrs = glob(["include/**/*.h"]),
+    includes = [
+        "include",
+    ],
+    local_includes = [
+        "include/yaml-cpp",
+    ],
+    source_header_directories = source_header_directories(["include"]),
+)

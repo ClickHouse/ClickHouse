@@ -1,0 +1,44 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "api",
+    hdrs = ["api.h"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":api"],
+)
+
+cc_library(
+    name = "owner",
+    srcs = [
+        "alone.cpp",
+        "impl.cpp",
+        "reader.cpp",
+    ],
+    additional_compiler_inputs = ["impl.cpp"],
+    implementation_deps = [":api"],
+)
+
+cc_library(
+    name = "missing_direct",
+    srcs = [
+        "alone.cpp",
+        "impl.cpp",
+        "reader.cpp",
+    ],
+    additional_compiler_inputs = ["impl.cpp"],
+    implementation_deps = [":bridge"],
+    tags = ["manual"],
+)
+
+cc_library(
+    name = "foreign_private",
+    srcs = ["foreign.cpp"],
+    additional_compiler_inputs = ["impl.cpp"],
+    implementation_deps = [":owner"],
+    tags = ["manual"],
+)

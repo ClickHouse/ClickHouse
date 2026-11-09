@@ -1,0 +1,49 @@
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "aws_checksums",
+    srcs = glob(["source/*.c"]) + select({
+        "@platforms//cpu:x86_64": ["source/intel/asm/crc32c_sse42_asm.c"],
+        "@platforms//cpu:aarch64": ["source/arm/crc64_arm.c"],
+    }) + ["source/external/xxhash.h"] + glob(["include/**/private/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/**/private/**/*.h"],
+    ),
+    copts = AWS_CRT_COPTS,
+    includes = ["include"],
+    language = "C",
+    local_defines = AWS_CRT_DEFINES,
+    deps = ["@clickhouse_aws_c_common//:aws_c_common"],
+)
+
+ch_cc_library(
+    name = "aws_checksums__compile_2",
+    srcs = ["source/arm/crc32c_arm.c"] + glob(["include/aws/checksums/private/crc32*.h"]),
+    arches = [
+        "aarch64",
+    ],
+    copts = AWS_CRT_COPTS + [
+        "-march=armv8-a+crc",
+    ],
+    implementation_deps = [
+        ":aws_checksums",
+        "@clickhouse_aws_c_common//:aws_c_common",
+    ],
+    language = "C",
+    local_defines = [
+        "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
+        "AWS_ENABLE_EPOLL",
+        "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
+        "ENABLE_OPENSSL_ENCRYPTION",
+        "INTEL_NO_ITTNOTIFY_API",
+    ] + CXX_RUNTIME_DEFINES,
+    target_compatible_with = ["@platforms//cpu:aarch64"],
+)

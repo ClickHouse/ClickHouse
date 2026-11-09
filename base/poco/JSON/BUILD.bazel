@@ -1,0 +1,47 @@
+load("@clickhouse//base:poco/poco_cc_library.bzl", "poco_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+poco_cc_library(
+    name = "_poco_json",
+    srcs = glob(["src/*.cpp"]) + ["include/Poco/JSON/PrintHandler.h"],
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = ["include/Poco/JSON/PrintHandler.h"],
+    ),
+    copts = [
+        "-Wno-deprecated-dynamic-exception-spec",
+        "-Wno-sign-compare",
+        "-Wno-suggest-destructor-override",
+        "-Wno-suggest-override",
+        "-Wno-unused-parameter",
+        "-Wno-zero-as-null-pointer-constant",
+        "-Wno-implicit-int-conversion",
+    ],
+    implementation_deps = [":_poco_json_pdjson"],
+    includes = ["include"],
+    local_defines = [
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+    ] + CXX_RUNTIME_DEFINES,
+    deps = ["//base/poco/Foundation:_poco_foundation"],
+)
+
+poco_cc_library(
+    name = "_poco_json_pdjson",
+    srcs = ["src/pdjson.c"],
+    hdrs = ["src/pdjson.h"],
+    copts = [
+        "-Wno-cast-qual",
+        "-Wno-declaration-after-statement",
+        "-Wno-extra-semi-stmt",
+        "-Wno-implicit-fallthrough",
+        "-Wno-shorten-64-to-32",
+        "-Wno-unreachable-code-return",
+        "-Wno-implicit-int-conversion",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+    deps = [],
+)

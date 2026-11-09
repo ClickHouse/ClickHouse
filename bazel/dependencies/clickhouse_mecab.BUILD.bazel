@@ -1,0 +1,58 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "mecab/COPYING",
+])
+
+ch_cc_library(
+    name = "_mecab",
+    srcs = [
+        "mecab/src/char_property.cpp",
+        "mecab/src/connector.cpp",
+        "mecab/src/context_id.cpp",
+        "mecab/src/dictionary.cpp",
+    ] + glob(["mecab/src/dictionary_*.cpp"]) + [
+        "mecab/src/eval.cpp",
+        "mecab/src/feature_index.cpp",
+        "mecab/src/iconv_utils.cpp",
+        "mecab/src/lbfgs.cpp",
+        "mecab/src/learner.cpp",
+        "mecab/src/learner_tagger.cpp",
+        "mecab/src/libmecab.cpp",
+        "mecab/src/nbest_generator.cpp",
+        "mecab/src/param.cpp",
+        "mecab/src/string_buffer.cpp",
+        "mecab/src/tagger.cpp",
+        "mecab/src/tokenizer.cpp",
+        "mecab/src/utils.cpp",
+        "mecab/src/viterbi.cpp",
+        "mecab/src/writer.cpp",
+    ] + glob(
+        ["mecab/src/**/*.h"],
+        exclude = [
+            "mecab/src/mecab.h",
+            "mecab/src/ucstable.h",
+            "mecab/src/winmain.h",
+        ],
+    ) + ["configured/private/config.h"],
+    hdrs = ["mecab/src/mecab.h"],
+    copts = [
+        "-w",
+        "-std=c++23",
+        "-Wno-register",
+    ],
+    includes = [
+        "mecab/src",
+    ],
+    local_defines = [
+        "HAVE_CONFIG_H",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "_LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = ["configured/private"],
+)

@@ -1,0 +1,6 @@
+diff --git a/include/msgpack/v1/version.hpp b/include/msgpack/v1/version.hpp
+--- a/include/msgpack/v1/version.hpp
++++ b/include/msgpack/v1/version.hpp
+@@ -13,1 +13,1 @@
+-#include "version_master.h"
++#include "msgpack/version_master.h"

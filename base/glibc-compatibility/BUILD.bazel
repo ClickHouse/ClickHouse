@@ -1,0 +1,66 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "glibc-compatibility",
+    srcs = ["glibc-compatibility.c"] + select({
+        "@platforms//cpu:x86_64": glob(["musl/*.c"]),
+        "@platforms//cpu:aarch64": glob(
+            ["musl/*.c"],
+            exclude = ["musl/getauxval.c"],
+        ),
+    }) + glob(["musl/*.h"]) + select({
+        "@platforms//cpu:x86_64": glob(["musl/x86_64/*.h"]),
+        "@platforms//cpu:aarch64": glob(["musl/aarch64/*.h"]),
+    }) + ["spawn.h"],
+    copts = [
+        "-fomit-frame-pointer",
+        "-std=gnu11",
+        "-Wno-unused-command-line-argument",
+        "-Wno-unused-but-set-variable",
+        "-Wno-builtin-requires-header",
+        "-Wno-error",
+    ],
+    implementation_deps = [
+        "//base/glibc-rseq",
+        ":glibc-compatibility__compile_1",
+    ],
+    language = "C",
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "musl/x86_64",
+        ],
+        "@platforms//cpu:aarch64": [
+            "musl/aarch64",
+        ],
+    }),
+)
+
+ch_cc_library(
+    name = "glibc-compatibility__compile_1",
+    srcs = select({
+        "@platforms//cpu:x86_64": [
+            "musl/x86_64/syscall.s",
+            "musl/x86_64/longjmp.s",
+        ],
+        "@platforms//cpu:aarch64": [
+            "musl/aarch64/syscall.s",
+            "musl/aarch64/longjmp.s",
+        ],
+    }),
+    copts = [
+        "-Wno-unused-command-line-argument",
+        "-Wno-unused-but-set-variable",
+        "-Wno-builtin-requires-header",
+    ],
+    language = "ASM",
+    local_includes = select({
+        "@platforms//cpu:x86_64": [
+            "musl/x86_64",
+        ],
+        "@platforms//cpu:aarch64": [
+            "musl/aarch64",
+        ],
+    }),
+)

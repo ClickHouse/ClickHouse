@@ -1,0 +1,101 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "poco/LICENSE",
+])
+
+_PRIVATE_COMMON_HEADERS = [
+    "base/mremap.h",
+]
+
+ch_cc_library(
+    name = "common",
+    srcs = [
+        "base/argsToConfig.cpp",
+        "base/cgroupsv2.cpp",
+        "base/coverage.cpp",
+        "base/demangle.cpp",
+        "base/Decimal.cpp",
+        "base/getAvailableMemoryAmount.cpp",
+        "base/getFQDNOrHostName.cpp",
+        "base/getL2CacheSize.cpp",
+        "base/getMemoryAmount.cpp",
+        "base/getPageSize.cpp",
+        "base/getThreadId.cpp",
+        "base/int8_to_string.cpp",
+        "base/itoa.cpp",
+        "base/JSON.cpp",
+        "base/mremap.cpp",
+        "base/openpty.cpp",
+        "base/phdr_cache.cpp",
+        "base/preciseExp10.cpp",
+        "base/shift10.cpp",
+        "base/sleep.cpp",
+        "base/terminalColors.cpp",
+        "base/errnoToString.cpp",
+        "base/safeExit.cpp",
+        "base/throwError.cpp",
+        "base/Numa.cpp",
+        "//bazel:gen/base/base/GitHash.generated.cpp",
+        "base/wide_integer_to_string.cpp",
+    ] + _PRIVATE_COMMON_HEADERS,
+    hdrs = glob(
+        ["base/**/*.h"],
+        exclude = _PRIVATE_COMMON_HEADERS + ["base/crc32c_s390x.h"],
+    ),
+    clickhouse_code = True,
+    implementation_deps = ["//base/poco/Net:_poco_net"],
+    includes = ["."],
+    local_defines = [
+        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+        "BOOST_ASIO_STANDALONE=1",
+        "BOOST_TIMER_ENABLE_DEPRECATED=1",
+        "POCO_ENABLE_CPP11",
+        "POCO_OS_FAMILY_UNIX",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "WITH_COVERAGE=0",
+        "WITH_COVERAGE_DEPTH=0",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    deps = [
+        "@clickhouse_cctz//:_cctz",
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "@clickhouse_fmtlib//:_fmt",
+        "@clickhouse_magic_enum//:magic_enum",
+        "@clickhouse_miniselect//:miniselect",
+        "//contrib/cityhash102:_cityhash",
+        "//contrib/driftsort:headers",
+        "//contrib/ipnsort:headers",
+        "//contrib/pdqsort:headers",
+    ],
+)
+
+ch_cc_library(
+    name = "harmful",
+    srcs = [
+        "harmful/harmful.c",
+        "base/sanitizer_defs.h",
+    ],
+    copts = [
+        "-std=gnu11",
+        "-Wno-error",
+    ],
+    language = "C",
+    local_includes = ["."],
+)
+
+cc_library(
+    name = "pcg_random",
+    hdrs = glob(["pcg-random/*.hpp"]),
+    includes = [
+        ".",
+        "pcg-random",
+    ],
+)

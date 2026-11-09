@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package dwyu.proto_compile.left;
+
+message Value {
+  int32 left = 1;
+}

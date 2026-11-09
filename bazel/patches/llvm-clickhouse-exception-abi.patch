@@ -1,0 +1,68 @@
+diff --git a/libcxx/include/__config_site b/libcxx/include/__config_site
+--- a/libcxx/include/__config_site
++++ b/libcxx/include/__config_site
+@@ -19,3 +19,6 @@
+ #define _LIBCPP_HAS_UNICODE 1
+ #define _LIBCPP_HAS_WIDE_CHARACTERS 1
+ #define _LIBCPP_HAS_NO_STD_MODULES
++
++// Use the same exception ABI in the compiler, runtimes, and ClickHouse.
++#define STD_EXCEPTION_HAS_STACK_TRACE 1
+diff --git a/libcxx/include/__assertion_handler b/libcxx/include/__assertion_handler
+--- a/libcxx/include/__assertion_handler
++++ b/libcxx/include/__assertion_handler
+@@ -13,2 +13,7 @@
+-#include <__config>
+-#include <__verbose_abort>
++#if __cplusplus < 201103L && defined(_LIBCPP_USE_FROZEN_CXX03_HEADERS)
++#  include <__cxx03/__config>
++#  include <__cxx03/__verbose_abort>
++#else
++#  include <__config>
++#  include <__verbose_abort>
++#endif
+diff --git a/libcxx/include/__cxx03/__exception/exception.h b/libcxx/include/__cxx03/__exception/exception.h
+--- a/libcxx/include/__cxx03/__exception/exception.h
++++ b/libcxx/include/__cxx03/__exception/exception.h
+@@ -21,1 +21,9 @@
+-#  pragma GCC system_header
++#  pragma GCC system_header
++#endif
++
++#ifdef STD_EXCEPTION_HAS_STACK_TRACE
++#  if defined(OS_DARWIN)
++extern "C" int backtrace(void**, int);
++#  else
++extern "C" int unw_backtrace(void**, int);
++#  endif
+@@ -74 +82,5 @@
+-  _LIBCPP_HIDE_FROM_ABI exception() _NOEXCEPT {}
++  _LIBCPP_HIDE_FROM_ABI exception() _NOEXCEPT {
++#ifdef STD_EXCEPTION_HAS_STACK_TRACE
++    capture();
++#endif
++  }
+@@ -79,1 +91,22 @@
+-  virtual const char* what() const _NOEXCEPT;
++  virtual const char* what() const _NOEXCEPT;
++#ifdef STD_EXCEPTION_HAS_STACK_TRACE
++  void** const get_stack_trace_frames() const _NOEXCEPT { return const_cast<void**>(frames); }
++  int get_stack_trace_size() const _NOEXCEPT { return size; }
++  void set_stack_trace(void** frames_, int size_) _NOEXCEPT {
++    size = size_;
++    for (int i = 0; i < size; ++i)
++      frames[i] = frames_[i];
++  }
++
++private:
++  static const int capacity = 32;
++  void* frames[capacity];
++  int size;
++  void capture() _NOEXCEPT {
++#  if defined(OS_DARWIN)
++    size = backtrace(frames, capacity);
++#  else
++    size = unw_backtrace(frames, capacity);
++#  endif
++  }
++#endif

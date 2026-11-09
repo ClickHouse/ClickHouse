@@ -1,0 +1,93 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "leaf",
+    hdrs = ["leaf.h"],
+)
+
+cc_library(
+    name = "bridge",
+    deps = [":leaf"],
+)
+
+filegroup(
+    name = "original_hdrs_with_inc",
+    srcs = [
+        "include/sample/api.h",
+        "include/sample/decl.inc",
+    ],
+)
+
+# Both variants must perform a real Clang compile, with hdrs supplied by a
+# filegroup and both strip_include_prefix and include_prefix rewriting.
+cc_library(
+    name = "public_declared",
+    srcs = ["public.cc"],
+    hdrs = [":original_hdrs_with_inc"],
+    include_prefix = "dwyu_alias",
+    strip_include_prefix = "include",
+    deps = [":leaf"],
+)
+
+cc_library(
+    name = "public_missing_leaf",
+    srcs = ["public.cc"],
+    hdrs = [":original_hdrs_with_inc"],
+    include_prefix = "dwyu_alias",
+    strip_include_prefix = "include",
+    deps = [":bridge"],
+)
+
+cc_library(
+    name = "public_unobserved",
+    srcs = ["unobserved.cc"],
+    hdrs = [
+        "include/sample/unobserved.h",
+        "include/sample/unobserved.inc",
+    ],
+    include_prefix = "dwyu_alias",
+    strip_include_prefix = "include",
+)
+
+cc_library(
+    name = "private_declared",
+    srcs = [
+        "private.cc",
+        "private.inc",
+    ],
+    implementation_deps = [":leaf"],
+)
+
+cc_library(
+    name = "private_missing_leaf",
+    srcs = [
+        "private.cc",
+        "private.inc",
+    ],
+    implementation_deps = [":bridge"],
+)
+
+cc_library(
+    name = "private_unobserved",
+    srcs = [
+        "include/sample/unobserved.inc",
+        "unused_private.cc",
+    ],
+)
+
+cc_library(
+    name = "mixed_declared",
+    srcs = ["mixed.cc"],
+    hdrs = [
+        "include/sample/api.h",
+        "include/sample/decl.inc",
+    ],
+    include_prefix = "dwyu_alias",
+    strip_include_prefix = "include",
+    # Include an ordinary extension from textual_hdrs as well. The checker
+    # cannot infer all textual declarations using a suffix test.
+    textual_hdrs = ["explicit_textual.h"],
+    deps = [":leaf"],
+)

@@ -1,0 +1,12 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "common_io_defines")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-docker-init-lib",
+    srcs = ["docker-init.cpp"],
+    clickhouse_code = True,
+    link_runtime = True,
+    local_defines = common_io_defines(),
+)

@@ -1,0 +1,21 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "common_io_defines")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "clickhouse-extract-from-config-lib",
+    srcs = ["ExtractFromConfig.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//base/poco/Foundation:_poco_foundation",
+        "//base/poco/Util:_poco_util",
+        "//src/Common",
+        "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
+        "//src/Common/Config:clickhouse_common_config",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "//src/Common:exception_api",
+    ],
+    link_runtime = True,
+    local_defines = common_io_defines(["USE_CLICKHOUSE_THREADS=1"]),
+)

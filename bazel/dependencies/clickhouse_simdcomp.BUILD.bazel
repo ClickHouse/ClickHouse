@@ -1,0 +1,32 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_simdcomp",
+    srcs = glob(["src/*.c"]),
+    hdrs = glob(["include/**/*.h"]),
+    arches = [
+        "x86_64",
+    ],
+    includes = [
+        "include",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+    local_includes = [
+        "src",
+    ],
+    source_header_directories = source_header_directories(["include"]),
+    target_compatible_with = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "@platforms//:incompatible",
+        ],
+    }),
+)

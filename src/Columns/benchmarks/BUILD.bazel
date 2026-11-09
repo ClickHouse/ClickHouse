@@ -1,0 +1,39 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "DBMS_CONSUMER_DEFINES")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "benchmark_compute_hash_into_objects",
+    srcs = ["benchmark_compute_hash_into.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:headers",
+        "//src:dbms__compile_0",
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//src/Common",
+        "//src:dbms",
+        "//src/Common:parser_support_api",
+        "//src:column_types",
+    ],
+    link_runtime = True,
+    local_defines = DBMS_CONSUMER_DEFINES,
+    alwayslink = True,
+)
+
+ch_cc_library(
+    name = "column_insert_many_from_objects",
+    srcs = ["benchmark_column_insert_many_from.cpp"],
+    clickhouse_code = True,
+    implementation_deps = [
+        "//src:headers",
+        "//src:dbms__compile_0",
+        "@clickhouse_google_benchmark//:google_benchmark",
+        "//base:common",
+        "//src:dbms",
+        "//src:column_types",
+    ],
+    link_runtime = True,
+    local_defines = DBMS_CONSUMER_DEFINES,
+    alwayslink = True,
+)

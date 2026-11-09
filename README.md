@@ -22,6 +22,7 @@ Or skip the install: try [ClickHouse Cloud](https://console.clickhouse.cloud/sig
 
 ## Useful Links
 
+* [Bazel build and binary comparison](README.bazel.md) describes this fork's native Bazel port and validation.
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
 * [ClickHouse Cloud](https://clickhouse.com/cloud) ClickHouse as a service, built by the creators and maintainers.
 * [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.

@@ -1,0 +1,25 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    glob([
+        "asm/**/*x86_64*.s",
+        "asm/**/rsaz-*.s",
+        "asm/crypto/aes/*-avx512.s",
+        "asm/crypto/modes/*-avx512.s",
+        "asm/**/*arm*.S",
+        "asm/**/*aarch64.S",
+        "common/**/*.c",
+    ]),
+    visibility = ["@clickhouse_openssl//:__pkg__"],
+)
+
+exports_files(glob([
+    "common/include/**/*.h",
+    "linux_x86_64/include_private/*.h",
+    "linux_aarch64/include_private/*.h",
+]))
+
+filegroup(
+    name = "openssl_configured_headers",
+    srcs = glob(["common/include/**"]),
+)

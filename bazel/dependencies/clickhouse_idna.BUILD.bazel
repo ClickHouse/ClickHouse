@@ -1,0 +1,31 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE-MIT",
+])
+
+ch_cc_library(
+    name = "_idna",
+    srcs = [
+        "src/idna.cpp",
+    ],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    private_textual_srcs = [
+        "src/identifier.cpp",
+        "src/mapping.cpp",
+        "src/normalization.cpp",
+        "src/punycode.cpp",
+        "src/to_ascii.cpp",
+        "src/to_unicode.cpp",
+        "src/unicode_transcoding.cpp",
+        "src/validity.cpp",
+        "src/id_tables.cpp",
+        "src/mapping_tables.cpp",
+        "src/normalization_tables.cpp",
+    ],
+    source_header_directories = source_header_directories(["include"]),
+)

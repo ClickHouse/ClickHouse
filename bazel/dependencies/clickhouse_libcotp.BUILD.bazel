@@ -1,0 +1,32 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+ch_cc_library(
+    name = "_libcotp",
+    srcs = glob(["src/*.c"]) + [
+        "src/utils/base32.c",
+        "src/utils/otpauth_uri.c",
+        "src/utils/pct.c",
+        "src/utils/secure_zero.c",
+        "src/utils/whash_openssl.c",
+        "src/utils/whmac_openssl.c",
+        "src/utils/yaotp_uri.c",
+    ] + glob(
+        ["src/**/*.h"],
+        exclude = ["src/cotp.h"],
+    ),
+    hdrs = ["src/cotp.h"],
+    implementation_deps = [
+        "@clickhouse_openssl//:crypto",
+    ],
+    includes = [
+        "src",
+    ],
+    language = "C",
+    local_defines = CXX_RUNTIME_DEFINES,
+)

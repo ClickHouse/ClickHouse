@@ -1,0 +1,160 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_COPTS", "AWS_CRT_DEFINES")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+expand_template(
+    name = "configure_include_aws_common_config_h",
+    out = "config/contrib/aws-cmake/include/aws/common/config.h",
+    substitutions = {
+        "#cmakedefine AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS": "/* #undef AWS_HAVE_GCC_OVERFLOW_MATH_EXTENSIONS */",
+        "#cmakedefine AWS_HAVE_POSIX_LARGE_FILE_SUPPORT": "/* #undef AWS_HAVE_POSIX_LARGE_FILE_SUPPORT */",
+        "#cmakedefine AWS_HAVE_MM256_EXTRACT_EPI64": "/* #undef AWS_HAVE_MM256_EXTRACT_EPI64 */",
+        "#cmakedefine AWS_HAVE_MSVC_INTRINSICS_X64": "/* #undef AWS_HAVE_MSVC_INTRINSICS_X64 */",
+        "#cmakedefine AWS_HAVE_AVX512_INTRINSICS": "/* #undef AWS_HAVE_AVX512_INTRINSICS */",
+        "#cmakedefine AWS_HAVE_AVX2_INTRINSICS": "/* #undef AWS_HAVE_AVX2_INTRINSICS */",
+        "#cmakedefine AWS_HAVE_LINUX_IF_LINK_H": "/* #undef AWS_HAVE_LINUX_IF_LINK_H */",
+        "#cmakedefine AWS_HAVE_GCC_INLINE_ASM": "#define AWS_HAVE_GCC_INLINE_ASM",
+        "#cmakedefine AWS_HAVE_WINAPI_DESKTOP": "/* #undef AWS_HAVE_WINAPI_DESKTOP */",
+        "#cmakedefine AWS_USE_CPU_EXTENSIONS": "/* #undef AWS_USE_CPU_EXTENSIONS */",
+        "#cmakedefine AWS_ARCH_INTEL_X64": "/* #undef AWS_ARCH_INTEL_X64 */",
+        "#cmakedefine AWS_HAVE_ARM32_CRC": "/* #undef AWS_HAVE_ARM32_CRC */",
+        "#cmakedefine AWS_HAVE_EXECINFO": "/* #undef AWS_HAVE_EXECINFO */",
+        "#cmakedefine AWS_HAVE_ARMv8_1": "/* #undef AWS_HAVE_ARMv8_1 */",
+        "#cmakedefine AWS_HAVE_CLMUL": "/* #undef AWS_HAVE_CLMUL */",
+    } | select({
+        "@platforms//cpu:x86_64": {
+            "#cmakedefine AWS_ARCH_ARM64": "/* #undef AWS_ARCH_ARM64 */",
+            "#cmakedefine AWS_ARCH_INTEL": "#define AWS_ARCH_INTEL",
+        },
+        "@platforms//cpu:aarch64": {
+            "#cmakedefine AWS_ARCH_ARM64": "#define AWS_ARCH_ARM64",
+            "#cmakedefine AWS_ARCH_INTEL": "/* #undef AWS_ARCH_INTEL */",
+        },
+    }),
+    template = "include/aws/common/config.h.in",
+)
+
+ch_cc_library(
+    name = "aws_c_common",
+    srcs = [
+        "source/allocator.c",
+        "source/allocator_sba.c",
+        "source/array_list.c",
+        "source/assert.c",
+        "source/byte_buf.c",
+        "source/cache.c",
+        "source/cbor.c",
+        "source/codegen.c",
+        "source/command_line_parser.c",
+        "source/common.c",
+        "source/condition_variable.c",
+        "source/date_time.c",
+        "source/device_random.c",
+        "source/encoding.c",
+        "source/error.c",
+    ] + glob(["source/external/**/*.c"]) + [
+        "source/fifo_cache.c",
+        "source/file.c",
+        "source/hash_table.c",
+        "source/host_utils.c",
+        "source/json.c",
+        "source/lifo_cache.c",
+        "source/linked_hash_table.c",
+        "source/linux/file_direct_io.c",
+        "source/linux/system_info.c",
+    ] + glob(["source/log_*.c"]) + [
+        "source/logging.c",
+        "source/lru_cache.c",
+        "source/math.c",
+        "source/memtrace.c",
+    ] + glob(["source/posix/*.c"]) + [
+        "source/priority_queue.c",
+        "source/process_common.c",
+        "source/ref_count.c",
+        "source/ring_buffer.c",
+        "source/statistics.c",
+        "source/string.c",
+        "source/system_info.c",
+        "source/task_scheduler.c",
+        "source/thread_scheduler.c",
+        "source/thread_shared.c",
+        "source/uri.c",
+        "source/uuid.c",
+        "source/xml_parser.c",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "source/arch/intel/asm/cpuid.c",
+            "source/arch/intel/cpuid.c",
+        ],
+        "@platforms//cpu:aarch64": ["source/arch/arm/auxv/cpuid.c"],
+    }) + glob(["source/external/**/*.h"]) + glob([
+        "include/aws/common/private/*.h",
+        "include/aws/common/private/*.inl",
+    ]) + ["include/aws/common/posix/common.inl"],
+    hdrs = glob([
+        "include/aws/common/*.h",
+        "include/aws/common/external/*.h",
+    ]) + ["config/contrib/aws-cmake/include/aws/common/config.h"],
+    copts = AWS_CRT_COPTS,
+    includes = [
+        "include",
+        "config/contrib/aws-cmake/include",
+    ],
+    language = "C",
+    local_defines = AWS_CRT_DEFINES,
+    local_includes = [
+        "source/external/libcbor/cbor",
+        "source/external/libcbor",
+    ],
+    source_header_directories = source_header_directories(["include/aws/common/private"]),
+    textual_hdrs = glob(
+        ["include/aws/common/*.inl"],
+        exclude = [
+            "include/aws/common/atomics_gnu_old.inl",
+            "include/aws/common/atomics_msvc.inl",
+            "include/aws/common/math.cbmc.inl",
+            "include/aws/common/math.fallback.inl",
+            "include/aws/common/math.gcc_arm64_asm.inl",
+            "include/aws/common/math.gcc_x64_asm.inl",
+            "include/aws/common/math.msvc_x64.inl",
+        ],
+    ),
+)
+
+ch_cc_library(
+    name = "aws_c_common__compile_2",
+    srcs = ["source/arch/intel/encoding_avx2.c"],
+    arches = [
+        "x86_64",
+    ],
+    copts = AWS_CRT_COPTS + [
+        "-mavx",
+        "-mavx2",
+    ],
+    implementation_deps = [":aws_c_common"],
+    language = "C",
+    local_defines = [
+        "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
+        "AWS_ENABLE_EPOLL",
+        "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
+        "ENABLE_OPENSSL_ENCRYPTION",
+        "INTEL_NO_ITTNOTIFY_API",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "USE_SIMD_ENCODING",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        "source/external/libcbor/cbor",
+        "source/external/libcbor",
+    ],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
+)

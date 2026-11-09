@@ -1,0 +1,21 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+exports_files([
+    "LICENSE.txt",
+])
+
+cc_library(
+    name = "libdivide",
+    hdrs = glob([
+        "*.h",
+        "*.hpp",
+    ]),
+    includes = [
+        ".",
+    ],
+)

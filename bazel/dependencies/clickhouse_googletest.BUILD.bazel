@@ -1,0 +1,75 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+_GENERATED_LOCAL_DEFINES_0 = [
+    "GTEST_HAS_POSIX_RE=0",
+] + CXX_RUNTIME_DEFINES
+
+ch_cc_library(
+    name = "_gmock",
+    srcs = [
+        "googlemock/src/gmock-all.cc",
+    ],
+    hdrs = glob(["googlemock/include/**/*.h"]),
+    includes = [
+        "googlemock/include",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "googlemock",
+    ],
+    private_textual_srcs = [
+        "googlemock/src/gmock-cardinalities.cc",
+        "googlemock/src/gmock-internal-utils.cc",
+        "googlemock/src/gmock-matchers.cc",
+        "googlemock/src/gmock-spec-builders.cc",
+        "googlemock/src/gmock.cc",
+    ],
+    deps = [":_gtest"],
+)
+
+ch_cc_library(
+    name = "_gmock_main",
+    srcs = [
+        "googlemock/src/gmock_main.cc",
+    ],
+    implementation_deps = [
+        ":_gmock",
+        ":_gtest",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+)
+
+ch_cc_library(
+    name = "_gtest",
+    srcs = [
+        "googletest/src/gtest-all.cc",
+    ] + glob(["googletest/src/*.h"]),
+    hdrs = glob(["googletest/include/**/*.h"]),
+    includes = [
+        "googletest/include",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "googletest",
+    ],
+    private_textual_srcs = [
+        "googletest/src/gtest-assertion-result.cc",
+        "googletest/src/gtest-death-test.cc",
+        "googletest/src/gtest-filepath.cc",
+        "googletest/src/gtest-matchers.cc",
+        "googletest/src/gtest-port.cc",
+        "googletest/src/gtest-printers.cc",
+        "googletest/src/gtest-test-part.cc",
+        "googletest/src/gtest-typed-test.cc",
+        "googletest/src/gtest.cc",
+    ],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_flags_internal",
+    ],
+)

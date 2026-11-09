@@ -1,0 +1,10 @@
+{
+  "_lz4": {
+    "module": "lz4",
+    "version": "1.10.0.bcr.2",
+    "deps": ["@lz4//:lz4_frame"],
+    "include_directories": ["contrib/lz4/lib"],
+    "source_equivalence": "All files in the release lib/ directory are byte-identical to the ClickHouse submodule. The module's frame target includes the same four C translation units.",
+    "configuration": "lz4-fast-decoder.patch preserves LZ4_FAST_DEC_LOOP=1 on both architectures. BCR namespaces its internal xxHash symbols as LZ4_; ClickHouse uses the separate inline xxHash implementation."
+  }
+}

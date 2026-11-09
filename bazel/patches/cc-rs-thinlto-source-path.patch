@@ -1,0 +1,17 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -2198,6 +2198,14 @@
+         } else {
+             compiler.to_command()
+         };
++        // LLVM bitcode records the source argument even when -ffile-prefix-map is set.
++        let mut obj = Cow::Borrowed(obj);
++        if obj.src.is_absolute() && compiler.args().iter().any(|arg| arg == "-flto=thin") {
++            if let Ok(relative) = obj.src.strip_prefix(std::env::current_dir()?) {
++                let src = Path::new(".").join(relative);
++                obj.to_mut().src = src;
++            }
++        }
+         let is_arm = is_arm(&target);
+         command_add_output_file(
+             &mut cmd,

@@ -1,0 +1,68 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+ch_cc_library(
+    name = "_prometheus_protobufs",
+    srcs = [
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.cc",
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.cc",
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.cc",
+    ],
+    hdrs = [
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/gogoproto/gogo.pb.h",
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/remote.pb.h",
+        "//bazel:gen/contrib/prometheus-protobufs-cmake/prompb/types.pb.h",
+    ],
+    link_runtime = True,
+    local_defines = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "ARM_ACLE",
+            "ARM_ASM_HWCAP",
+            "ARM_AUXV_HAS_CRC32",
+            "ARM_AUXV_HAS_NEON",
+            "ARM_FEATURES",
+            "ARM_NEON",
+            "ARM_NEON_HASLD4",
+            "HAVE_ARM_ACLE_H",
+        ],
+    }) + [
+        "HAVE_ATTRIBUTE_ALIGNED",
+        "HAVE_BUILTIN_CTZ",
+        "HAVE_BUILTIN_CTZLL",
+        "HAVE_POSIX_MEMALIGN",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            "HAVE_SYS_AUXV_H",
+        ],
+    }) + [
+        "HAVE_VISIBILITY_HIDDEN",
+        "HAVE_VISIBILITY_INTERNAL",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "UNALIGNED_OK",
+        "WITH_GZFILEOP",
+        "X86_64",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "X86_AVX2",
+            "X86_FEATURES",
+            "X86_PCLMULQDQ_CRC",
+            "X86_SSE2",
+            "X86_SSE42",
+            "X86_SSSE3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        "ZLIB_COMPAT",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    strip_include_prefix = "/bazel/gen/contrib/prometheus-protobufs-cmake",
+    deps = [
+        "@clickhouse_google_protobuf//:_libprotobuf",
+        "//base/glibc-compatibility",
+    ],
+)

@@ -1,0 +1,52 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "LICENSE",
+])
+
+_GENERATED_LOCAL_DEFINES_0 = [
+    "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
+    "BOOST_ASIO_STANDALONE=1",
+    "BOOST_TIMER_ENABLE_DEPRECATED=1",
+] + CXX_RUNTIME_DEFINES
+
+ch_cc_library(
+    name = "_silk_fibers",
+    srcs = glob([
+        "src/fibers/*.cpp",
+        "src/fibers/*.h",
+    ]),
+    implementation_deps = [
+        "@clickhouse_liburing//:_liburing",
+        ":_silk_util",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+        "@clickhouse_boost//:_boost_context",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "src",
+    ],
+)
+
+ch_cc_library(
+    name = "_silk_util",
+    srcs = glob(["src/util/*.cpp"]),
+    hdrs = glob(["include/**/*.h"]),
+    implementation_deps = [
+        "@clickhouse_librseq//:_librseq",
+    ],
+    includes = [
+        "include",
+    ],
+    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_includes = [
+        "src",
+    ],
+    source_header_directories = source_header_directories(["include"]),
+    deps = [
+        "@clickhouse_boost//:boost_headers_no_openssl",
+    ],
+)

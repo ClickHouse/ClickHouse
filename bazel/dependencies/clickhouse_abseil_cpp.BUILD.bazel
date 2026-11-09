@@ -1,0 +1,2235 @@
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["external_include_paths"],
+)
+
+_ABSL_COPTS = [
+    "-w",
+    "-std=c++17",
+]
+
+ch_cc_library(
+    name = "absl_base",
+    srcs = [
+        "absl/base/internal/cycleclock.cc",
+        "absl/base/internal/spinlock.cc",
+        "absl/base/internal/sysinfo.cc",
+        "absl/base/internal/thread_identity.cc",
+        "absl/base/internal/unscaledcycleclock.cc",
+    ],
+    hdrs = [
+        "absl/base/call_once.h",
+        "absl/base/casts.h",
+        "absl/base/internal/cycleclock.h",
+        "absl/base/internal/cycleclock_config.h",
+        "absl/base/internal/endian.h",
+        "absl/base/internal/low_level_scheduling.h",
+        "absl/base/internal/per_thread_tls.h",
+        "absl/base/internal/spinlock.h",
+        "absl/base/internal/sysinfo.h",
+        "absl/base/internal/thread_identity.h",
+        "absl/base/internal/tsan_mutex_interface.h",
+        "absl/base/internal/unaligned_access.h",
+        "absl/base/internal/unscaledcycleclock.h",
+        "absl/base/internal/unscaledcycleclock_config.h",
+    ],
+    copts = _ABSL_COPTS,
+    includes = ["."],
+    deps = [
+        ":absl_raw_logging_internal",
+        ":absl_spinlock_wait",
+        ":absl_type_traits",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_base_cpu_detect",
+    srcs = [
+        "absl/base/internal/cpu_detect.cc",
+    ],
+    hdrs = [
+        "absl/base/internal/cpu_detect.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_city",
+    srcs = [
+        "absl/hash/internal/city.cc",
+    ],
+    hdrs = [
+        "absl/hash/internal/city.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_bits",
+        ":absl_base",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_civil_time",
+    srcs = [
+        "absl/time/internal/cctz/src/civil_time_detail.cc",
+    ],
+    hdrs = [
+        "absl/time/internal/cctz/include/cctz/civil_time.h",
+        "absl/time/internal/cctz/include/cctz/civil_time_detail.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_cord",
+    srcs = [
+        "absl/strings/cord.cc",
+        "absl/strings/cord_analysis.cc",
+        "absl/strings/cord_analysis.h",
+    ],
+    hdrs = [
+        "absl/strings/cord.h",
+        "absl/strings/cord_buffer.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_crc32c",
+        ":absl_inlined_vector_internal",
+        ":absl_raw_logging_internal",
+        ":absl_strings_internal",
+    ],
+    deps = [
+        ":absl_cordz_info",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_bits",
+        ":absl_compare",
+        ":absl_cord_internal",
+        ":absl_crc_cord_state",
+        ":absl_function_ref",
+        ":absl_hardening",
+        ":absl_optional",
+        ":absl_span",
+        ":absl_strings",
+        ":absl_type_traits",
+        ":absl_weakly_mixed_integer",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_cord_internal",
+    srcs = [
+        "absl/strings/internal/cord_internal.cc",
+        "absl/strings/internal/cord_rep_btree.cc",
+        "absl/strings/internal/cord_rep_btree_navigator.cc",
+        "absl/strings/internal/cord_rep_btree_reader.cc",
+        "absl/strings/internal/cord_rep_crc.cc",
+        "absl/strings/internal/cord_rep_consume.cc",
+    ],
+    hdrs = [
+        "absl/strings/internal/cord_data_edge.h",
+        "absl/strings/internal/cord_internal.h",
+        "absl/strings/internal/cord_rep_btree.h",
+        "absl/strings/internal/cord_rep_btree_navigator.h",
+        "absl/strings/internal/cord_rep_btree_reader.h",
+        "absl/strings/internal/cord_rep_consume.h",
+        "absl/strings/internal/cord_rep_crc.h",
+        "absl/strings/internal/cord_rep_flat.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_container_memory",
+        ":absl_crc_cord_state",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_function_ref",
+        ":absl_inlined_vector_internal",
+        ":absl_raw_logging_internal",
+        ":absl_span",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_cordz_functions",
+    srcs = [
+        "absl/strings/internal/cordz_functions.cc",
+    ],
+    hdrs = [
+        "absl/strings/internal/cordz_functions.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_exponential_biased",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_cordz_handle",
+    srcs = [
+        "absl/strings/internal/cordz_handle.cc",
+    ],
+    hdrs = [
+        "absl/strings/internal/cordz_handle.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_synchronization",
+    ],
+    deps = [
+        ":absl_raw_logging_internal",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_cordz_info",
+    srcs = [
+        "absl/strings/internal/cordz_info.cc",
+    ],
+    hdrs = [
+        "absl/strings/internal/cordz_info.h",
+        "absl/strings/internal/cordz_statistics.h",
+        "absl/strings/internal/cordz_update_scope.h",
+        "absl/strings/internal/cordz_update_tracker.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_stacktrace",
+        ":absl_inlined_vector_internal",
+        ":absl_time",
+    ],
+    deps = [
+        ":absl_cord_internal",
+        ":absl_cordz_functions",
+        ":absl_cordz_handle",
+        ":absl_synchronization",
+        ":absl_base_config",
+        ":absl_raw_logging_internal",
+        ":absl_span",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_cordz_sample_token",
+    srcs = [
+        "absl/strings/internal/cordz_sample_token.cc",
+    ],
+    hdrs = [
+        "absl/strings/internal/cordz_sample_token.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_cordz_info",
+        ":absl_base_config",
+        ":absl_cordz_handle",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_crc32c",
+    srcs = [
+        "absl/crc/crc32c.cc",
+        "absl/crc/internal/crc_memcpy_fallback.cc",
+        "absl/crc/internal/crc_memcpy_x86_arm_combined.cc",
+        "absl/crc/internal/crc_non_temporal_memcpy.cc",
+    ] + select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": ["absl/crc/internal/non_temporal_arm_intrinsics.h"],
+    }) + [
+        "absl/crc/internal/non_temporal_memcpy.h",
+    ] + ["absl/crc/internal/crc32c_inline.h"],
+    hdrs = [
+        "absl/crc/crc32c.h",
+        "absl/crc/internal/crc32c.h",
+        "absl/crc/internal/crc_memcpy.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base_cpu_detect",
+    ],
+    deps = [
+        ":absl_crc_internal",
+        ":absl_str_format_internal",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_crc_cord_state",
+    srcs = [
+        "absl/crc/internal/crc_cord_state.cc",
+    ],
+    hdrs = [
+        "absl/crc/internal/crc_cord_state.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_bits",
+    ],
+    deps = [
+        ":absl_crc32c",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_crc_internal",
+    srcs = [
+        "absl/crc/internal/crc.cc",
+        "absl/crc/internal/crc_x86_arm_combined.cc",
+        "absl/crc/internal/crc_internal.h",
+    ],
+    hdrs = [
+        "absl/crc/internal/crc.h",
+        "absl/crc/internal/crc32_x86_arm_combined_simd.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base_cpu_detect",
+        ":absl_bits",
+        ":absl_memory",
+        ":absl_base",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_debugging_internal",
+    srcs = [
+        "absl/debugging/internal/address_is_readable.cc",
+        "absl/debugging/internal/elf_mem_image.cc",
+        "absl/debugging/internal/vdso_support.cc",
+        "absl/debugging/internal/decode_rust_punycode.cc",
+        "absl/debugging/internal/utf8_for_code_point.cc",
+        "absl/debugging/internal/bounded_utf8_length_sequence.h",
+        "absl/debugging/internal/utf8_for_code_point.h",
+    ],
+    hdrs = [
+        "absl/debugging/internal/address_is_readable.h",
+        "absl/debugging/internal/addresses.h",
+        "absl/debugging/internal/decode_rust_punycode.h",
+        "absl/debugging/internal/elf_mem_image.h",
+        "absl/debugging/internal/vdso_support.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_bits",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_demangle_internal",
+    srcs = [
+        "absl/debugging/internal/demangle.cc",
+        "absl/debugging/internal/demangle_rust.cc",
+        "absl/debugging/internal/demangle_rust.h",
+    ],
+    hdrs = [
+        "absl/debugging/internal/demangle.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_debugging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_die_if_null",
+    srcs = [
+        "absl/log/die_if_null.cc",
+    ],
+    hdrs = [
+        "absl/log/absl_log.h",
+        "absl/log/die_if_null.h",
+        "absl/log/internal/log_impl.h",
+        "absl/log/log.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_strings",
+    ],
+    deps = [
+        ":absl_log_internal_conditions",
+        ":absl_log_internal_message",
+        ":absl_vlog_config_internal",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_examine_stack",
+    srcs = [
+        "absl/debugging/internal/examine_stack.cc",
+    ],
+    hdrs = [
+        "absl/debugging/internal/examine_stack.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_stacktrace",
+        ":absl_symbolize",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_exponential_biased",
+    srcs = [
+        "absl/profiling/internal/exponential_biased.cc",
+    ],
+    hdrs = [
+        "absl/profiling/internal/exponential_biased.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_failure_signal_handler",
+    srcs = [
+        "absl/debugging/failure_signal_handler.cc",
+    ],
+    hdrs = [
+        "absl/debugging/failure_signal_handler.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base",
+        ":absl_examine_stack",
+        ":absl_stacktrace",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_commandlineflag",
+    srcs = [
+        "absl/flags/commandlineflag.cc",
+    ],
+    hdrs = [
+        "absl/flags/commandlineflag.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_flags_commandlineflag_internal",
+        ":absl_optional",
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_commandlineflag_internal",
+    srcs = [
+        "absl/flags/internal/commandlineflag.cc",
+    ],
+    hdrs = [
+        "absl/flags/internal/commandlineflag.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_config",
+    srcs = [
+        "absl/flags/usage_config.cc",
+    ],
+    hdrs = [
+        "absl/flags/config.h",
+        "absl/flags/usage_config.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_flags_program_name",
+        ":absl_synchronization",
+    ],
+    deps = [
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_internal",
+    srcs = [
+        "absl/flags/internal/flag.cc",
+    ],
+    hdrs = [
+        "absl/flags/declare.h",
+        "absl/flags/flag.h",
+        "absl/flags/internal/flag.h",
+        "absl/flags/internal/sequence_lock.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_memory",
+    ],
+    deps = [
+        ":absl_flags_config",
+        ":absl_flags_marshalling",
+        ":absl_flags_reflection",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_flags_commandlineflag",
+        ":absl_flags_commandlineflag_internal",
+        ":absl_strings",
+        ":absl_synchronization",
+        ":absl_type_traits",
+        ":absl_utility",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_marshalling",
+    srcs = [
+        "absl/flags/marshalling.cc",
+    ],
+    hdrs = [
+        "absl/flags/marshalling.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_str_format_internal",
+        ":absl_log_severity",
+    ],
+    deps = [
+        ":absl_optional",
+        ":absl_strings",
+        ":absl_base_config",
+        ":absl_int128",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_parse",
+    srcs = [
+        "absl/flags/parse.cc",
+    ],
+    hdrs = [
+        "absl/flags/internal/parse.h",
+        "absl/flags/parse.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_flags_private_handle_accessor",
+        ":absl_flags_program_name",
+        ":absl_flags_usage",
+        ":absl_algorithm",
+        ":absl_flags_commandlineflag",
+        ":absl_flags_commandlineflag_internal",
+        ":absl_flags_config",
+        ":absl_flags_reflection",
+        ":absl_synchronization",
+    ],
+    deps = [
+        ":absl_flags_internal",
+        ":absl_flags_usage_internal",
+        ":absl_base_config",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_private_handle_accessor",
+    srcs = [
+        "absl/flags/internal/private_handle_accessor.cc",
+    ],
+    hdrs = [
+        "absl/flags/internal/private_handle_accessor.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_flags_commandlineflag",
+        ":absl_base_config",
+        ":absl_flags_commandlineflag_internal",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_program_name",
+    srcs = [
+        "absl/flags/internal/program_name.cc",
+    ],
+    hdrs = [
+        "absl/flags/internal/path_util.h",
+        "absl/flags/internal/program_name.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_synchronization",
+    ],
+    deps = [
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_reflection",
+    srcs = [
+        "absl/flags/reflection.cc",
+    ],
+    hdrs = [
+        "absl/flags/internal/registry.h",
+        "absl/flags/reflection.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_flags_config",
+        ":absl_flags_private_handle_accessor",
+        ":absl_synchronization",
+    ],
+    deps = [
+        ":absl_flags_commandlineflag",
+        ":absl_raw_hash_set",
+        ":absl_base_config",
+        ":absl_flags_commandlineflag_internal",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_usage",
+    srcs = [
+        "absl/flags/usage.cc",
+    ],
+    hdrs = [
+        "absl/flags/usage.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_flags_usage_internal",
+        ":absl_synchronization",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_flags_usage_internal",
+    srcs = [
+        "absl/flags/internal/usage.cc",
+    ],
+    hdrs = [
+        "absl/flags/internal/usage.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_flags_internal",
+        ":absl_flags_private_handle_accessor",
+        ":absl_flags_program_name",
+        ":absl_flags_config",
+        ":absl_flags_reflection",
+        ":absl_synchronization",
+    ],
+    deps = [
+        ":absl_flags_commandlineflag",
+        ":absl_base_config",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_graphcycles_internal",
+    srcs = [
+        "absl/synchronization/internal/graphcycles.cc",
+    ],
+    hdrs = [
+        "absl/synchronization/internal/graphcycles.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_algorithm",
+        ":absl_base",
+        ":absl_malloc_internal",
+        ":absl_raw_logging_internal",
+        ":absl_spinlock_wait",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_hardening",
+    srcs = [
+        "absl/base/internal/hardening.cc",
+    ],
+    hdrs = [
+        "absl/base/internal/hardening.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_hash",
+    srcs = [
+        "absl/hash/internal/hash.cc",
+        "absl/hash/internal/hash.h",
+    ],
+    hdrs = ["absl/hash/hash.h"],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_city",
+        ":absl_function_ref",
+        ":absl_inlined_vector_internal",
+        ":absl_optional",
+        ":absl_strings",
+        ":absl_variant",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_bits",
+        ":absl_int128",
+        ":absl_type_traits",
+        ":absl_utility",
+        ":absl_weakly_mixed_integer",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_hashtablez_sampler",
+    srcs = [
+        "absl/container/internal/hashtablez_sampler.cc",
+        "absl/container/internal/hashtablez_sampler_force_weak_definition.cc",
+    ],
+    hdrs = [
+        "absl/container/internal/hashtablez_sampler.h",
+        "absl/profiling/internal/sample_recorder.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_exponential_biased",
+        ":absl_memory",
+        ":absl_stacktrace",
+        ":absl_raw_logging_internal",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_synchronization",
+        ":absl_base_config",
+        ":absl_time",
+        ":absl_utility",
+        ":absl_base",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_int128",
+    srcs = [
+        "absl/numeric/int128.cc",
+    ],
+    hdrs = [
+        "absl/numeric/int128.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_bits",
+    ],
+    textual_hdrs = [
+        "absl/numeric/int128_have_intrinsic.inc",
+    ],
+    deps = [
+        ":absl_compare",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_kernel_timeout_internal",
+    srcs = [
+        "absl/synchronization/internal/kernel_timeout.cc",
+    ],
+    hdrs = [
+        "absl/synchronization/internal/kernel_timeout.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_time",
+        ":absl_base_config",
+        ":absl_raw_logging_internal",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_leak_check",
+    srcs = [
+        "absl/debugging/leak_check.cc",
+    ],
+    hdrs = [
+        "absl/debugging/leak_check.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_flags",
+    srcs = [
+        "absl/log/flags.cc",
+        "absl/log/internal/flags.h",
+    ],
+    hdrs = [
+        "absl/log/flags.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_flags_internal",
+        ":absl_log_globals",
+        ":absl_log_internal_config",
+        ":absl_base_config",
+        ":absl_flags_marshalling",
+        ":absl_log_severity",
+        ":absl_strings",
+        ":absl_vlog_config_internal",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_globals",
+    srcs = [
+        "absl/log/globals.cc",
+    ],
+    hdrs = [
+        "absl/log/globals.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_hash",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_vlog_config_internal",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_initialize",
+    srcs = [
+        "absl/log/initialize.cc",
+    ],
+    hdrs = [
+        "absl/log/initialize.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_log_internal_globals",
+        ":absl_time",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_check_op",
+    srcs = [
+        "absl/log/internal/check_op.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/check_op.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_leak_check",
+    ],
+    deps = [
+        ":absl_has_ostream_operator",
+        ":absl_log_internal_message",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_log_internal_nullguard",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_conditions",
+    srcs = [
+        "absl/log/internal/conditions.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/conditions.h",
+        "absl/log/internal/voidify.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_fnmatch",
+    srcs = [
+        "absl/log/internal/fnmatch.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/fnmatch.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_format",
+    srcs = [
+        "absl/log/internal/log_format.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/append_truncated.h",
+        "absl/log/internal/log_format.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_log_internal_globals",
+        ":absl_str_format_internal",
+    ],
+    deps = [
+        ":absl_log_internal_config",
+        ":absl_span",
+        ":absl_time",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_strings",
+        ":absl_strings_internal",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_globals",
+    srcs = [
+        "absl/log/internal/globals.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/globals.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_time",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_log_sink_set",
+    srcs = [
+        "absl/log/internal/log_sink_set.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/log_sink_set.h",
+        "absl/log/log_sink_registry.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_cleanup_internal",
+        ":absl_log_globals",
+        ":absl_log_internal_globals",
+        ":absl_synchronization",
+        ":absl_base",
+        ":absl_log_internal_config",
+        ":absl_log_severity",
+        ":absl_raw_logging_internal",
+        ":absl_strings",
+    ],
+    deps = [
+        ":absl_log_sink",
+        ":absl_base_config",
+        ":absl_span",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_message",
+    srcs = [
+        "absl/log/internal/log_message.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/log_message.h",
+        "absl/log/internal/nullstream.h",
+        "absl/log/internal/strip.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_examine_stack",
+        ":absl_inlined_vector_internal",
+        ":absl_log_globals",
+        ":absl_log_internal_format",
+        ":absl_log_internal_globals",
+        ":absl_log_internal_log_sink_set",
+        ":absl_strerror",
+        ":absl_base",
+        ":absl_log_internal_proto",
+        ":absl_raw_logging_internal",
+        ":absl_strings_internal",
+    ],
+    deps = [
+        ":absl_log_internal_nullguard",
+        ":absl_log_internal_structured_proto",
+        ":absl_log_sink",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_source_location",
+        ":absl_span",
+        ":absl_strings",
+        ":absl_time",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_nullguard",
+    srcs = [
+        "absl/log/internal/nullguard.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/nullguard.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_proto",
+    srcs = [
+        "absl/log/internal/proto.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/proto.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_span",
+        ":absl_strings",
+        ":absl_base",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_internal_structured_proto",
+    srcs = [
+        "absl/log/internal/structured_proto.cc",
+    ],
+    hdrs = [
+        "absl/log/internal/structured_proto.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_log_internal_proto",
+        ":absl_variant",
+        ":absl_base_config",
+        ":absl_span",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_severity",
+    srcs = [
+        "absl/base/log_severity.cc",
+    ],
+    hdrs = [
+        "absl/base/log_severity.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_log_sink",
+    srcs = [
+        "absl/log/log_sink.cc",
+    ],
+    hdrs = [
+        "absl/log/log_entry.h",
+        "absl/log/log_sink.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_log_internal_config",
+        ":absl_span",
+        ":absl_time",
+        ":absl_base_config",
+        ":absl_log_severity",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_malloc_internal",
+    srcs = [
+        "absl/base/internal/low_level_alloc.cc",
+    ],
+    hdrs = [
+        "absl/base/internal/direct_mmap.h",
+        "absl/base/internal/low_level_alloc.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base",
+        ":absl_raw_logging_internal",
+        ":absl_spinlock_wait",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_periodic_sampler",
+    srcs = [
+        "absl/profiling/internal/periodic_sampler.cc",
+    ],
+    hdrs = [
+        "absl/profiling/internal/periodic_sampler.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_exponential_biased",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_distributions",
+    srcs = [
+        "absl/random/discrete_distribution.cc",
+        "absl/random/gaussian_distribution.cc",
+    ],
+    hdrs = [
+        "absl/random/bernoulli_distribution.h",
+        "absl/random/beta_distribution.h",
+        "absl/random/discrete_distribution.h",
+        "absl/random/distributions.h",
+        "absl/random/exponential_distribution.h",
+        "absl/random/gaussian_distribution.h",
+        "absl/random/internal/distribution_caller.h",
+        "absl/random/internal/fastmath.h",
+        "absl/random/internal/generate_real.h",
+        "absl/random/internal/iostream_state_saver.h",
+        "absl/random/internal/pcg_engine.h",
+        "absl/random/internal/wide_multiply.h",
+        "absl/random/log_uniform_int_distribution.h",
+        "absl/random/poisson_distribution.h",
+        "absl/random/uniform_int_distribution.h",
+        "absl/random/uniform_real_distribution.h",
+        "absl/random/zipf_distribution.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_random_mocking_access",
+        ":absl_utility",
+        ":absl_base_config",
+        ":absl_bits",
+        ":absl_int128",
+        ":absl_type_traits",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_distribution_test_util",
+    srcs = [
+        "absl/random/internal/chi_square.cc",
+        "absl/random/internal/distribution_test_util.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/chi_square.h",
+        "absl/random/internal/distribution_test_util.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_str_format_internal",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_span",
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_entropy_pool",
+    srcs = [
+        "absl/random/internal/entropy_pool.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/entropy_pool.h",
+        "absl/random/internal/nonsecure_base.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_random_internal_randen",
+        ":absl_random_seed_gen_exception",
+        ":absl_algorithm",
+        ":absl_base",
+        ":absl_random_internal_platform",
+        ":absl_span",
+    ],
+    deps = [
+        ":absl_random_internal_seed_material",
+        ":absl_base_config",
+        ":absl_inlined_vector_internal",
+        ":absl_type_traits",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_platform",
+    srcs = [
+        "absl/random/internal/randen_round_keys.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/platform.h",
+        "absl/random/internal/randen_traits.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_randen",
+    srcs = [
+        "absl/random/internal/randen.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/randen.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_random_internal_randen_hwaes",
+        ":absl_base_config",
+    ],
+    deps = [
+        ":absl_random_internal_platform",
+        ":absl_random_internal_randen_hwaes_impl",
+        ":absl_random_internal_randen_slow",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_randen_hwaes",
+    srcs = [
+        "absl/random/internal/randen_detect.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/randen_detect.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_random_internal_platform",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_randen_hwaes_impl",
+    srcs = [
+        "absl/random/internal/randen_hwaes.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/randen_hwaes.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_int128",
+        ":absl_random_internal_platform",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_randen_slow",
+    srcs = [
+        "absl/random/internal/randen_slow.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/randen_slow.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base",
+        ":absl_int128",
+        ":absl_random_internal_platform",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_internal_seed_material",
+    srcs = [
+        "absl/random/internal/seed_material.cc",
+    ],
+    hdrs = [
+        "absl/random/internal/salted_seed_seq.h",
+        "absl/random/internal/seed_material.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_strings",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_inlined_vector_internal",
+        ":absl_optional",
+        ":absl_random_mocking_access",
+        ":absl_base_config",
+        ":absl_span",
+        ":absl_type_traits",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_seed_gen_exception",
+    srcs = [
+        "absl/random/seed_gen_exception.cc",
+    ],
+    hdrs = [
+        "absl/random/seed_gen_exception.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_random_seed_sequences",
+    srcs = [
+        "absl/random/seed_sequences.cc",
+    ],
+    hdrs = [
+        "absl/random/seed_sequences.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_random_internal_entropy_pool",
+    ],
+    deps = [
+        ":absl_random_internal_seed_material",
+        ":absl_random_seed_gen_exception",
+        ":absl_strings",
+        ":absl_base_config",
+        ":absl_span",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_raw_hash_set",
+    srcs = [
+        "absl/container/internal/raw_hash_set.cc",
+        "absl/container/internal/raw_hash_set_resize_impl.h",
+        "absl/container/internal/btree.h",
+        "absl/container/internal/btree_container.h",
+    ],
+    hdrs = [
+        "absl/container/btree_map.h",
+        "absl/container/btree_set.h",
+        "absl/container/flat_hash_map.h",
+        "absl/container/flat_hash_set.h",
+        "absl/container/hash_container_defaults.h",
+        "absl/container/internal/common.h",
+        "absl/container/internal/common_policy_traits.h",
+        "absl/container/internal/hash_function_defaults.h",
+        "absl/container/internal/hash_policy_traits.h",
+        "absl/container/internal/hashtable_control_bytes.h",
+        "absl/container/internal/hashtable_debug_hooks.h",
+        "absl/container/internal/layout.h",
+        "absl/container/internal/node_slot_policy.h",
+        "absl/container/internal/raw_hash_map.h",
+        "absl/container/internal/raw_hash_set.h",
+        "absl/container/node_hash_map.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_cord",
+        ":absl_demangle_internal",
+        ":absl_hashtablez_sampler",
+        ":absl_algorithm",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_bits",
+        ":absl_compare",
+        ":absl_container_memory",
+        ":absl_function_ref",
+        ":absl_hardening",
+        ":absl_hash",
+        ":absl_inlined_vector_internal",
+        ":absl_iterator_traits_internal",
+        ":absl_memory",
+        ":absl_optional",
+        ":absl_raw_logging_internal",
+        ":absl_span",
+        ":absl_strings",
+        ":absl_throw_delegate",
+        ":absl_type_traits",
+        ":absl_utility",
+        ":absl_weakly_mixed_integer",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_raw_logging_internal",
+    srcs = [
+        "absl/base/internal/raw_logging.cc",
+    ],
+    hdrs = [
+        "absl/base/internal/atomic_hook.h",
+        "absl/base/internal/raw_logging.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_log_severity",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_scoped_set_env",
+    srcs = [
+        "absl/base/internal/scoped_set_env.cc",
+    ],
+    hdrs = [
+        "absl/base/internal/scoped_set_env.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_spinlock_wait",
+    srcs = [
+        "absl/base/internal/spinlock_wait.cc",
+        "absl/base/internal/spinlock_linux.inc",
+    ],
+    hdrs = [
+        "absl/base/internal/hide_ptr.h",
+        "absl/base/internal/scheduling_mode.h",
+        "absl/base/internal/spinlock_wait.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_stacktrace",
+    srcs = [
+        "absl/debugging/stacktrace.cc",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "absl/debugging/internal/stacktrace_x86-inl.inc",
+        ],
+        "@platforms//cpu:aarch64": [
+            "absl/debugging/internal/stacktrace_aarch64-inl.inc",
+        ],
+    }) + ["absl/debugging/internal/stacktrace_config.h"],
+    hdrs = ["absl/debugging/stacktrace.h"],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_debugging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_status",
+    srcs = [
+        "absl/status/internal/status_internal.cc",
+        "absl/status/status.cc",
+        "absl/status/status_payload_printer.cc",
+        "absl/status/status_payload_printer.h",
+        "absl/status/internal/status_internal.h",
+    ],
+    hdrs = [
+        "absl/status/status.h",
+        "absl/types/optional_ref.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_leak_check",
+        ":absl_stacktrace",
+        ":absl_strerror",
+        ":absl_symbolize",
+        ":absl_hash",
+        ":absl_raw_logging_internal",
+        ":absl_str_format_internal",
+    ],
+    deps = [
+        ":absl_cord",
+        ":absl_hardening",
+        ":absl_base_config",
+        ":absl_function_ref",
+        ":absl_inlined_vector_internal",
+        ":absl_optional",
+        ":absl_source_location",
+        ":absl_span",
+        ":absl_strings",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_statusor",
+    srcs = [
+        "absl/status/statusor.cc",
+        "absl/status/internal/statusor_internal.h",
+    ],
+    hdrs = ["absl/status/statusor.h"],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_has_ostream_operator",
+        ":absl_status",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_source_location",
+        ":absl_span",
+        ":absl_str_format_internal",
+        ":absl_strings",
+        ":absl_type_traits",
+        ":absl_utility",
+        ":absl_variant",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_str_format_internal",
+    srcs = glob(
+        ["absl/strings/internal/str_format/*.cc"],
+        exclude = ["**/*_test.cc"],
+    ) + [
+        "absl/numeric/internal/representation.h",
+    ],
+    hdrs = [
+        "absl/strings/str_format.h",
+    ] + glob([
+        "absl/strings/internal/str_format/*.h",
+    ]),
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_function_ref",
+        ":absl_bits",
+        ":absl_strings_internal",
+    ],
+    deps = [
+        ":absl_inlined_vector_internal",
+        ":absl_strings",
+        ":absl_base_config",
+        ":absl_int128",
+        ":absl_span",
+        ":absl_type_traits",
+        ":absl_utility",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_strerror",
+    srcs = [
+        "absl/base/internal/strerror.cc",
+    ],
+    hdrs = [
+        "absl/base/internal/strerror.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_strings",
+    srcs = [
+        "absl/strings/ascii.cc",
+        "absl/strings/charconv.cc",
+        "absl/strings/escaping.cc",
+        "absl/strings/internal/charconv_bigint.cc",
+        "absl/strings/internal/charconv_parse.cc",
+        "absl/strings/internal/damerau_levenshtein_distance.cc",
+        "absl/strings/internal/memutil.cc",
+        "absl/strings/internal/stringify_sink.cc",
+        "absl/strings/match.cc",
+        "absl/strings/numbers.cc",
+        "absl/strings/str_cat.cc",
+        "absl/strings/str_replace.cc",
+        "absl/strings/str_split.cc",
+        "absl/strings/substitute.cc",
+        "absl/strings/internal/charconv_bigint.h",
+        "absl/strings/internal/charconv_parse.h",
+        "absl/strings/internal/memutil.h",
+        "absl/strings/internal/str_join_internal.h",
+        "absl/strings/internal/str_split_internal.h",
+        "absl/strings/internal/stringify_sink.h",
+    ],
+    hdrs = [
+        "absl/strings/ascii.h",
+        "absl/strings/charconv.h",
+        "absl/strings/charset.h",
+        "absl/strings/escaping.h",
+        "absl/strings/has_absl_stringify.h",
+        "absl/strings/internal/append_and_overwrite.h",
+        "absl/strings/internal/damerau_levenshtein_distance.h",
+        "absl/strings/internal/string_constant.h",
+        "absl/strings/match.h",
+        "absl/strings/numbers.h",
+        "absl/strings/str_cat.h",
+        "absl/strings/str_join.h",
+        "absl/strings/str_replace.h",
+        "absl/strings/str_split.h",
+        "absl/strings/string_view.h",
+        "absl/strings/strip.h",
+        "absl/strings/substitute.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_bits",
+        ":absl_int128",
+        ":absl_iterator_traits_internal",
+        ":absl_source_location",
+        ":absl_strings_internal",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_hardening",
+        ":absl_raw_logging_internal",
+        ":absl_throw_delegate",
+        ":absl_type_traits",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_strings_internal",
+    srcs = [
+        "absl/strings/internal/ostringstream.cc",
+        "absl/strings/internal/utf8.cc",
+        "absl/strings/internal/escaping.cc",
+    ],
+    hdrs = [
+        "absl/strings/internal/escaping.h",
+        "absl/strings/internal/ostringstream.h",
+        "absl/strings/internal/resize_uninitialized.h",
+        "absl/strings/internal/utf8.h",
+        "absl/strings/resize_and_overwrite.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_hardening",
+        ":absl_throw_delegate",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_symbolize",
+    srcs = [
+        "absl/debugging/symbolize.cc",
+        "absl/debugging/symbolize_elf.inc",
+    ],
+    hdrs = [
+        "absl/debugging/internal/symbolize.h",
+        "absl/debugging/symbolize.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_debugging_internal",
+        ":absl_demangle_internal",
+        ":absl_malloc_internal",
+        ":absl_base",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_synchronization",
+    srcs = [
+        "absl/synchronization/barrier.cc",
+        "absl/synchronization/blocking_counter.cc",
+        "absl/synchronization/internal/create_thread_identity.cc",
+        "absl/synchronization/internal/futex_waiter.cc",
+        "absl/synchronization/internal/per_thread_sem.cc",
+        "absl/synchronization/internal/pthread_waiter.cc",
+        "absl/synchronization/internal/sem_waiter.cc",
+        "absl/synchronization/internal/stdcpp_waiter.cc",
+        "absl/synchronization/internal/waiter_base.cc",
+        "absl/synchronization/internal/win32_waiter.cc",
+        "absl/synchronization/notification.cc",
+        "absl/synchronization/mutex.cc",
+    ],
+    hdrs = [
+        "absl/synchronization/internal/create_thread_identity.h",
+        "absl/synchronization/internal/futex.h",
+        "absl/synchronization/internal/futex_waiter.h",
+        "absl/synchronization/internal/per_thread_sem.h",
+        "absl/synchronization/internal/pthread_waiter.h",
+        "absl/synchronization/internal/sem_waiter.h",
+        "absl/synchronization/internal/stdcpp_waiter.h",
+        "absl/synchronization/internal/waiter.h",
+        "absl/synchronization/internal/waiter_base.h",
+        "absl/synchronization/internal/win32_waiter.h",
+    ] + glob([
+        "absl/synchronization/*.h",
+    ]),
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_graphcycles_internal",
+        ":absl_malloc_internal",
+        ":absl_stacktrace",
+        ":absl_symbolize",
+        ":absl_raw_logging_internal",
+        ":absl_spinlock_wait",
+    ],
+    deps = [
+        ":absl_kernel_timeout_internal",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_time",
+        ":absl_type_traits",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_throw_delegate",
+    srcs = [
+        "absl/base/throw_delegate.cc",
+    ],
+    hdrs = [
+        "absl/base/throw_delegate.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_time",
+    srcs = [
+        "absl/time/civil_time.cc",
+        "absl/time/clock.cc",
+        "absl/time/duration.cc",
+        "absl/time/format.cc",
+        "absl/time/time.cc",
+        "absl/time/internal/get_current_time_posix.inc",
+    ],
+    hdrs = [
+        "absl/time/civil_time.h",
+        "absl/time/clock.h",
+        "absl/time/time.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_base",
+        ":absl_int128",
+        ":absl_raw_logging_internal",
+    ],
+    deps = [
+        ":absl_strings",
+        ":absl_time_zone",
+        ":absl_base_config",
+        ":absl_civil_time",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_time_zone",
+    srcs = [
+        "absl/time/internal/cctz/src/time_zone_fixed.cc",
+        "absl/time/internal/cctz/src/time_zone_format.cc",
+        "absl/time/internal/cctz/src/time_zone_if.cc",
+        "absl/time/internal/cctz/src/time_zone_impl.cc",
+        "absl/time/internal/cctz/src/time_zone_info.cc",
+        "absl/time/internal/cctz/src/time_zone_libc.cc",
+        "absl/time/internal/cctz/src/time_zone_lookup.cc",
+        "absl/time/internal/cctz/src/time_zone_posix.cc",
+        "absl/time/internal/cctz/src/zone_info_source.cc",
+        "absl/time/internal/cctz/src/time_zone_fixed.h",
+        "absl/time/internal/cctz/src/time_zone_if.h",
+        "absl/time/internal/cctz/src/time_zone_impl.h",
+        "absl/time/internal/cctz/src/time_zone_info.h",
+        "absl/time/internal/cctz/src/time_zone_libc.h",
+        "absl/time/internal/cctz/src/time_zone_posix.h",
+        "absl/time/internal/cctz/src/tzfile.h",
+    ],
+    hdrs = [
+        "absl/time/internal/cctz/include/cctz/time_zone.h",
+        "absl/time/internal/cctz/include/cctz/zone_info_source.h",
+    ],
+    copts = _ABSL_COPTS,
+    deps = [
+        ":absl_civil_time",
+        ":absl_base_config",
+    ],
+)
+
+ch_cc_library(
+    name = "absl_vlog_config_internal",
+    srcs = [
+        "absl/log/internal/vlog_config.cc",
+    ],
+    hdrs = [
+        "absl/log/absl_vlog_is_on.h",
+        "absl/log/internal/vlog_config.h",
+    ],
+    copts = _ABSL_COPTS,
+    implementation_deps = [
+        ":absl_log_internal_fnmatch",
+        ":absl_synchronization",
+        ":absl_base",
+        ":absl_spinlock_wait",
+    ],
+    deps = [
+        ":absl_strings",
+        ":absl_base_config",
+    ],
+)
+
+exports_files([
+    "LICENSE",
+])
+
+cc_library(
+    name = "absl_algorithm",
+    hdrs = glob([
+        "absl/algorithm/*.h",
+    ]),
+    includes = ["."],
+    deps = [
+        ":absl_hardening",
+        ":absl_iterator_traits_internal",
+        ":absl_base_config",
+        ":absl_type_traits",
+    ],
+)
+
+cc_library(
+    name = "absl_any",
+    hdrs = [
+        "absl/types/any.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_utility",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_base_config",
+    srcs = ["absl/base/internal/dynamic_annotations.h"],
+    hdrs = [
+        "absl/base/attributes.h",
+        "absl/base/config.h",
+        "absl/base/const_init.h",
+        "absl/base/dynamic_annotations.h",
+        "absl/base/fast_type_id.h",
+        "absl/base/internal/errno_saver.h",
+        "absl/base/internal/nullability_traits.h",
+        "absl/base/internal/tracing.h",
+        "absl/base/macros.h",
+        "absl/base/no_destructor.h",
+        "absl/base/nullability.h",
+        "absl/base/optimization.h",
+        "absl/base/options.h",
+        "absl/base/policy_checks.h",
+        "absl/base/port.h",
+        "absl/base/prefetch.h",
+        "absl/base/thread_annotations.h",
+    ],
+    includes = ["."],
+)
+
+cc_library(
+    name = "absl_bind_front",
+    srcs = ["absl/functional/internal/front_binder.h"],
+    hdrs = ["absl/functional/bind_front.h"],
+    includes = ["."],
+    deps = [
+        ":absl_inlined_vector_internal",
+        ":absl_type_traits",
+        ":absl_utility",
+    ],
+)
+
+cc_library(
+    name = "absl_bits",
+    hdrs = [
+        "absl/numeric/bits.h",
+        "absl/numeric/internal/bits.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_base",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_cleanup_internal",
+    hdrs = [
+        "absl/cleanup/cleanup.h",
+        "absl/cleanup/internal/cleanup.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_hardening",
+        ":absl_utility",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_compare",
+    hdrs = [
+        "absl/types/compare.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_type_traits",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_container_memory",
+    hdrs = [
+        "absl/container/internal/container_memory.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_hash",
+        ":absl_base_config",
+        ":absl_memory",
+        ":absl_type_traits",
+        ":absl_utility",
+    ],
+)
+
+cc_library(
+    name = "absl_function_ref",
+    srcs = [
+        "absl/functional/internal/any_invocable.h",
+        "absl/functional/internal/function_ref.h",
+    ],
+    hdrs = [
+        "absl/functional/any_invocable.h",
+        "absl/functional/function_ref.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_utility",
+        ":absl_base_config",
+        ":absl_type_traits",
+    ],
+)
+
+cc_library(
+    name = "absl_has_ostream_operator",
+    hdrs = [
+        "absl/strings/has_ostream_operator.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_inlined_vector_internal",
+    hdrs = [
+        "absl/container/fixed_array.h",
+        "absl/container/inlined_vector.h",
+        "absl/container/internal/compressed_tuple.h",
+        "absl/container/internal/inlined_vector.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_memory",
+        ":absl_span",
+        ":absl_utility",
+        ":absl_algorithm",
+        ":absl_base_config",
+        ":absl_hardening",
+        ":absl_iterator_traits_internal",
+        ":absl_throw_delegate",
+        ":absl_type_traits",
+        ":absl_weakly_mixed_integer",
+    ],
+)
+
+cc_library(
+    name = "absl_iterator_traits_internal",
+    hdrs = [
+        "absl/base/internal/iterator_traits.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_type_traits",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_log_internal_check_impl",
+    hdrs = [
+        "absl/log/absl_check.h",
+        "absl/log/check.h",
+        "absl/log/internal/check_impl.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_log_internal_check_op",
+        ":absl_log_internal_conditions",
+        ":absl_base_config",
+        ":absl_log_internal_message",
+    ],
+)
+
+cc_library(
+    name = "absl_log_internal_config",
+    hdrs = [
+        "absl/log/internal/config.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_memory",
+    hdrs = [
+        "absl/memory/memory.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_type_traits",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_optional",
+    hdrs = [
+        "absl/types/optional.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_utility",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_overload",
+    hdrs = [
+        "absl/functional/overload.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_type_traits",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_random_mocking_access",
+    hdrs = [
+        "absl/random/bit_gen_ref.h",
+        "absl/random/internal/fast_uniform_bits.h",
+        "absl/random/internal/traits.h",
+        "absl/random/internal/uniform_helper.h",
+        "absl/random/mocking_access.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_bits",
+        ":absl_int128",
+        ":absl_base_config",
+        ":absl_type_traits",
+    ],
+)
+
+cc_library(
+    name = "absl_random_random",
+    hdrs = [
+        "absl/random/internal/randen_engine.h",
+        "absl/random/random.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_random_distributions",
+        ":absl_random_internal_entropy_pool",
+        ":absl_random_internal_randen",
+        ":absl_random_seed_sequences",
+        ":absl_base",
+        ":absl_base_config",
+        ":absl_type_traits",
+    ],
+)
+
+cc_library(
+    name = "absl_source_location",
+    hdrs = [
+        "absl/types/source_location.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_span",
+    srcs = ["absl/types/internal/span.h"],
+    hdrs = ["absl/types/span.h"],
+    includes = ["."],
+    deps = [
+        ":absl_algorithm",
+        ":absl_throw_delegate",
+        ":absl_weakly_mixed_integer",
+        ":absl_base_config",
+        ":absl_hardening",
+        ":absl_type_traits",
+    ],
+)
+
+cc_library(
+    name = "absl_type_traits",
+    hdrs = [
+        "absl/meta/type_traits.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_utility",
+    hdrs = [
+        "absl/utility/utility.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_type_traits",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_variant",
+    hdrs = [
+        "absl/types/variant.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_utility",
+        ":absl_base_config",
+    ],
+)
+
+cc_library(
+    name = "absl_weakly_mixed_integer",
+    hdrs = [
+        "absl/hash/internal/weakly_mixed_integer.h",
+    ],
+    includes = ["."],
+    deps = [
+        ":absl_base_config",
+    ],
+)

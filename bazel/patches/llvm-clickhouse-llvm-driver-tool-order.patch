@@ -1,0 +1,114 @@
+diff --git a/llvm/BUILD.bazel b/llvm/BUILD.bazel
+--- a/llvm/BUILD.bazel
++++ b/llvm/BUILD.bazel
+@@ -11,7 +11,7 @@
+ load("//mlir:tblgen.bzl", "gentbl_cc_library", "gentbl_filegroup", "td_library")
+ load(":binary_alias.bzl", "binary_alias")
+ load(":config.bzl", "llvm_config_defines")
+-load(":driver.bzl", "generate_driver_selects", "generate_driver_tools_def", "llvm_driver_cc_binary", "select_driver_tools")
++load(":driver.bzl", "generate_driver_selects", "generate_driver_tools_def", "llvm_driver_cc_binary")
+ load(":enum_targets_gen.bzl", "enum_targets_gen")
+ load(":targets.bzl", "llvm_targets")
+ 
+@@ -791,13 +791,13 @@
+ )
+ 
+ # Command line flag to control which tools get included in the llvm driver binary.
+-# The macro also generates config_setting targets used by select_driver_tools().
+-generate_driver_selects(name = "driver-tools")
++# The macro also returns the selected tool dependencies.
++driver_tool_deps = generate_driver_selects(name = "driver-tools")
+ 
+ generate_driver_tools_def(
+     name = "gen_llvm_driver_tools_def",
+     out = "LLVMDriverTools.def",
+-    driver_tools = select_driver_tools(":driver-tools"),
++    driver_tools = ":driver-tools",
+ )
+ 
+ # Workaround inability to put `.def` files into `srcs` with a library
+@@ -813,7 +813,7 @@
+     deps = [
+         ":Support",
+         ":llvm_driver_tools_def_lib",
+-    ] + select_driver_tools(":driver-tools"),
++    ] + driver_tool_deps,
+ )
+ 
+ cc_binary(
+diff --git a/llvm/driver.bzl b/llvm/driver.bzl
+--- a/llvm/driver.bzl
++++ b/llvm/driver.bzl
+@@ -94,6 +94,8 @@
+ 
+     Args:
+       name: the name of the flag that configures which tools are included.
++    Returns:
++      Selected driver tool dependencies.
+     """
+ 
+     _validated_string_list_flag(
+@@ -101,42 +103,26 @@
+         build_setting_default = _TOOLS.keys(),
+         values = _TOOLS.keys(),
+     )
+-    for tool in _TOOLS.keys():
++    driver_tool_deps = []
++    for tool, target in _TOOLS.items():
+         native.config_setting(
+             name = "{}-include-{}".format(name, tool),
+             flag_values = {name: tool},
+         )
+-
+-def select_driver_tools(flag):
+-    """Produce a list of tool deps based on generate_driver_selects().
+-
+-    Args:
+-      flag: name that was used for generate_driver_selects().
+-    Returns:
+-      List of tool deps based on generate_driver_selects().
+-    """
+-    tools = []
+-    for tool, target in _TOOLS.items():
+-        tools += select({
+-            "{}-include-{}".format(flag, tool): [target],
++        driver_tool_deps += select({
++            "{}-include-{}".format(name, tool): [target],
+             "//conditions:default": [],
+         })
+-    return tools
++    return driver_tool_deps
+ 
+ def _generate_driver_tools_def_impl(ctx):
+-    # Depending on how the LLVM build files are included,
+-    # it may or may not have the @llvm-project repo prefix.
+-    # Compare just on the name. We could also include the package,
+-    # but the name itself is unique in practice.
+-    label_to_name = {Label(v).name: k for k, v in _TOOLS.items()}
+-
+     # Reverse sort by the *main* tool name, but keep aliases together.
+     # This is consistent with how tools/llvm-driver/CMakeLists.txt does it,
+     # and this makes sure that more specific tools are checked first.
+     # For example, "clang-scan-deps" should not match "clang".
+-    tools = [label_to_name[tool.label.name] for tool in ctx.attr.driver_tools]
++    tools = sorted(ctx.attr.driver_tools[BuildSettingInfo].value, reverse = True)
+     tool_alias_pairs = []
+-    for tool_name in reversed(tools):
++    for tool_name in tools:
+         tool_alias_pairs.append((tool_name, tool_name))
+         for extra_alias in _EXTRA_ALIASES.get(tool_name, []):
+             tool_alias_pairs.append((tool_name, extra_alias))
+@@ -160,9 +146,10 @@
+     doc = """Generate a list of LLVM_DRIVER_TOOL macros.
+ See tools/llvm-driver/CMakeLists.txt for the reference implementation.""",
+     attrs = {
+-        "driver_tools": attr.label_list(
+-            doc = "List of tools to include in the generated header. Use select_driver_tools() to provide this.",
+-            providers = [CcInfo],
++        "driver_tools": attr.label(
++            doc = "Build setting created by generate_driver_selects().",
++            mandatory = True,
++            providers = [BuildSettingInfo],
+         ),
+         "out": attr.output(
+             doc = "Name of the generated .def output file.",
