@@ -352,7 +352,7 @@ private:
         size_t initial_reservation{0};
         bool read_with_direct_io{false};
 
-        std::function<bool()> is_cancelled{};
+        std::function<bool()> merge_cancelled{};
 
         /// Local variables for this stage
         size_t sum_input_rows_upper_bound{0};
@@ -633,7 +633,15 @@ private:
 /// FIXME
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MergeTaskPtr task)
 {
-    while (task->execute()) {}
+    try
+    {
+        while (task->execute()) {}
+    }
+    catch (...)
+    {
+        task->cancel();
+        throw;
+    }
     return task->getFuture().get();
 }
 
