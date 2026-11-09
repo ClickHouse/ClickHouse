@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: distributed, no-parallel, no-fasttest
+# Tags: long, distributed, no-parallel, no-fasttest
+# long: many queries; near the time limit of the flaky check under the thread fuzzer.
 # no-fasttest: a failpoint.
 # no-parallel: the failpoint, and uses the shared `shard_0` / `shard_1` databases of `test_cluster_two_shards_different_databases`.
 

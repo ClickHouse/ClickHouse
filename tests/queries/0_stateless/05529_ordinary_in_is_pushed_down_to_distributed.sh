@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: distributed, no-fasttest
+# Tags: long, distributed, no-fasttest
+# long: many queries; near the time limit of the flaky check under the thread fuzzer.
 # no-fasttest: distributed index analysis
 
 # What the shards are sent for an `IN` written over a subquery that reads a `Distributed` table: its text, or the
@@ -171,7 +172,7 @@ done | uniq | wc -l
 $CLIENT -q "
 system flush logs query_log;
 select splitByChar('|', log_comment)[3], round(ProfileEvents['NetworkSendBytes'] / 1600000) from system.query_log
-where $LOG and log_comment like '%|sent%' and is_initial_query and type = 'QueryFinish' and query_kind in ('Select', 'Explain')
+where $LOG and current_database = currentDatabase() and log_comment like '%|sent%' and is_initial_query and type = 'QueryFinish' and query_kind in ('Select', 'Explain')
 order by log_comment;
 select max(position(query, 'some_dist') > 0) ? 'text' : '-', max(position(query, '_data_') > 0) ? 'result' : '-' from system.query_log
 where $LOG and log_comment like '%|replicas' and not is_initial_query and type = 'QueryStart' and match(query, 'parts|mergeTreeAnalyzeIndexes')
