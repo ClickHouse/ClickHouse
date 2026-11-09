@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 
 #define SYSTEM_PERIODIC_LOG_ELEMENTS(M) \
@@ -55,6 +56,8 @@ private:
     std::unique_ptr<ThreadFromGlobalPool> collecting_thread;
     size_t collect_interval_milliseconds{};
     std::atomic<bool> is_shutdown_metric_thread{false};
+    std::mutex sleep_mutex;
+    std::condition_variable sleep_cv;
 };
 
 }
