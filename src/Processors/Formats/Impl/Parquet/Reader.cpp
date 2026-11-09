@@ -2235,7 +2235,7 @@ void Reader::preparePrewhere()
         && isLazyReplicationUseful(pc.decoded_type->createColumn()))
     {
         pc.decode_dictionary_as_replicated = true;
-        for (const auto & node : steps.back().actions.getActionsDAG().getNodes())
+        for (const auto & node : steps.back().actions_pool->getPrototype()->getActionsDAG().getNodes())
         {
             /// A function whose result is already known is not executed.
             if (node.type != ActionsDAG::ActionType::FUNCTION || node.column)
