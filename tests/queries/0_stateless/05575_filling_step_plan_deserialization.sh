@@ -7,7 +7,8 @@
 # below. Each case forges one plan whose root is a `Filling` step and has to be refused with
 # INCORRECT_DATA instead of building a step that disagrees with its own stream, which
 # `FillingTransform` would then read out of range; the last plan is well-formed, so the refusals
-# are specific. Raw protocol client as in 05427_query_plan_deserialize_deep_recursion.sh.
+# are specific. The version-17 plan is refused earlier, by the version check of the query plan
+# serialization (`NOT_IMPLEMENTED`), because versions below 21 are not supported anymore. Raw protocol client as in 05427_query_plan_deserialize_deep_recursion.sh.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -96,7 +97,8 @@ def forge(label, payload, children=(), version=VERSION, out_columns=()):
         if rv(f) != 2:   # 2 == Protocol::Server::Exception
             print(label, "accepted")
             return
-        print(label, "INCORRECT_DATA" if int.from_bytes(f.read(4), "little") == 117 else "other")
+        code = int.from_bytes(f.read(4), "little")
+        print(label, {117: "INCORRECT_DATA", 48: "NOT_IMPLEMENTED"}.get(code, "other"))
 
 X8, X16 = (("x", U8),), (("x", U16),)
 IN8 = [(INPUT, "x", U8, ())]
