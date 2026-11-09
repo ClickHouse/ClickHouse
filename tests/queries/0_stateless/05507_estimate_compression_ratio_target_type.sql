@@ -27,6 +27,9 @@ SELECT estimateCompressionRatio('LZ4', 'ZSTD', 'String')(n) FROM src; -- { serve
 SELECT estimateCompressionRatio('LZ4', 65536, 8192)(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
 SELECT estimateCompressionRatio('LZ4', 0, 'String')(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
 SELECT estimateCompressionRatio('LZ4', 65536, 'String', 1)(n) FROM src; -- { serverError UNKNOWN_QUERY_PARAMETER }
+-- A string that starts with the name of a type is a type, with the error of that type.
+SELECT estimateCompressionRatio('Decimal(100, 2)')(n) FROM src; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT estimateCompressionRatio('LowCardinality(Strin)')(n) FROM src; -- { serverError UNKNOWN_TYPE }
 -- A conversion the types do not allow fails without rows; a value the target cannot hold fails when it comes.
 SELECT estimateCompressionRatio('Array(UInt8)')(n) FROM src WHERE n > 1000000; -- { serverError TYPE_MISMATCH }
 SELECT estimateCompressionRatio('UInt8')(n) FROM src; -- { serverError CANNOT_CONVERT_TYPE }
@@ -41,6 +44,14 @@ SELECT estimateCompressionRatio('DateTime')('01/02/2020') SETTINGS cast_string_t
 -- Suspicious and experimental types need their settings, as in `CAST`.
 SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) FROM src; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY }
 SELECT estimateCompressionRatio('LowCardinality(UInt8)')(toUInt8(n)) > 0 FROM src SETTINGS allow_suspicious_low_cardinality_types = 1;
+-- Only rows are checked: a stored state that names such a type is read, merged and attached without the setting.
+DROP TABLE IF EXISTS lc_states;
+CREATE TABLE lc_states (st AggregateFunction(estimateCompressionRatio('LowCardinality(UInt8)'), UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO lc_states SELECT estimateCompressionRatioState('LowCardinality(UInt8)')(toUInt8(n % 10)) FROM src SETTINGS allow_suspicious_low_cardinality_types = 1;
+DETACH TABLE lc_states;
+ATTACH TABLE lc_states;
+SELECT min(finalizeAggregation(st)) > 0, estimateCompressionRatioMerge('LowCardinality(UInt8)')(st) > 0 FROM lc_states;
+DROP TABLE lc_states;
 -- A codec the target type cannot take, or that compresses nothing by itself.
 SELECT estimateCompressionRatio('T64', 'String')(n) FROM src WHERE n > 1000000; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 SELECT estimateCompressionRatio('Delta', 'LowCardinality(String)')(n) FROM src WHERE n > 1000000; -- { serverError BAD_ARGUMENTS }

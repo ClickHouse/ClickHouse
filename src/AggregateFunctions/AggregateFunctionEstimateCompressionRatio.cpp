@@ -33,6 +33,7 @@
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -253,8 +254,9 @@ public:
 constexpr size_t GRANULE_ROWS = 8192;
 /// `index_granularity_bytes`: the writer ends a granule earlier when its rows take this much (over all columns of the table).
 constexpr size_t GRANULE_BYTES = 10 * 1024 * 1024;
-/// A state holds at most this many bytes of rows. A wider granule is written in pieces, which only a `LowCardinality` target
-/// notices (a header of 16 bytes per piece).
+/// A state holds at most this many bytes of rows. A wider granule is written in pieces; a piece writes what a serialization
+/// writes per call, which the writer writes once per granule: the header of a `LowCardinality` column (16 bytes), the end of a
+/// granule of a sparse column, the format of compact `Variant` discriminators.
 constexpr size_t PENDING_BYTES = DBMS_DEFAULT_BUFFER_SIZE;
 constexpr size_t DEFAULT_MIN_COMPRESS_BLOCK_SIZE = 65536;
 constexpr size_t DEFAULT_MAX_COMPRESS_BLOCK_SIZE = DBMS_DEFAULT_BUFFER_SIZE;
@@ -345,13 +347,15 @@ public:
         const Array & params,
         DataTypePtr target_type_,
         const std::optional<String> & codec,
-        std::optional<UInt64> block_size_bytes)
+        std::optional<UInt64> block_size_bytes,
+        std::optional<DataTypeValidationSettings> validation_settings_)
         : IAggregateFunctionDataHelper(arguments, params, std::make_shared<DataTypeFloat64>())
         , source_type(arguments[0])
         , source_serialization(source_type->getDefaultSerialization())
         , target_type(std::move(target_type_))
         , max_compress_block_size(block_size_bytes.value_or(DEFAULT_MAX_COMPRESS_BLOCK_SIZE))
         , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
+        , validation_settings(std::move(validation_settings_))
     {
         if (hasDataDependentStreams(*target_type))
             throw Exception(
@@ -552,6 +556,11 @@ private:
         throwIfBroken(data_ref);
         const bool ends_granule = completesGranule(data_ref);
 
+        /// As `CAST`, which rejects suspicious and experimental types the settings do not allow. Here and not when the function is
+        /// created, so that a state type that names such a type can still be read and merged (`ATTACH`, `-Merge`).
+        if (!data_ref.part && validation_settings)
+            validateDataType(target_type, *validation_settings);
+
         ColumnPtr rows = data_ref.pending->getPtr();
         /// A value the target type cannot hold is an error here, before the state changes.
         ColumnPtr converted = rows;
@@ -687,6 +696,8 @@ private:
     const DataTypePtr target_type;
     const size_t max_compress_block_size;
     const size_t min_compress_block_size;
+    /// The settings of the query that created the function, to validate the target type when rows are converted to it.
+    const std::optional<DataTypeValidationSettings> validation_settings;
     ASTPtr codec_description;
     FunctionBasePtr cast;
     UnorderedMapWithMemoryTracking<String, StreamLayout> stream_layouts;
@@ -710,8 +721,14 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         if (param.getType() == Field::Types::String)
         {
             const auto & value = param.safeGet<String>();
-            /// No codec is named like a type, so a string that names a type is the target type.
-            if (auto type = DataTypeFactory::instance().tryGet(value))
+            /// No codec is named like a type, so a string that names a type is the target type. A string that starts with the
+            /// name of a type but is not a valid type gets the error of that type, not of a codec.
+            auto type = DataTypeFactory::instance().tryGet(value);
+            String family = value.substr(0, value.find('('));
+            boost::algorithm::trim(family);
+            if (!type && DataTypeFactory::instance().hasNameOrAlias(family))
+                type = DataTypeFactory::instance().get(value);
+            if (type)
             {
                 if (target_type)
                     throw Exception(
@@ -762,12 +779,11 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 
     if (target_type)
     {
-        /// As `CAST` and `CREATE TABLE`, which reject suspicious and experimental types the settings do not allow. Without
-        /// settings (a state type read from a table) the type is trusted.
+        std::optional<DataTypeValidationSettings> validation_settings;
         if (settings)
-            validateDataType(target_type, DataTypeValidationSettings(*settings));
+            validation_settings.emplace(*settings);
         return std::make_shared<AggregateFunctionEstimateCompressionRatioWithTarget>(
-            arguments, parameters, std::move(target_type), codec, block_size_bytes);
+            arguments, parameters, std::move(target_type), codec, block_size_bytes, std::move(validation_settings));
     }
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
