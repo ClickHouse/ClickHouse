@@ -313,6 +313,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
             map.add("Node Hash", fmt::format("{}", it->second));
     }
 
+    if (options.exchange_ids)
+    {
+        if (auto it = options.exchange_ids->find(&step); it != options.exchange_ids->end())
+            map.add("Exchange Id", it->second);
+    }
+
     if (options.description)
     {
         const auto & description = step.getStepDescription();

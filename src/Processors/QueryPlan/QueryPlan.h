@@ -110,6 +110,9 @@ struct ExplainPlanOptions
     /// can hand them over and have the tree `EXPLAIN` already prints do the laying out. Keyed by
     /// step rather than by node so this header does not have to know about `QueryPlan::Node`.
     const std::unordered_map<const IQueryPlanStep *, UInt64> * step_hashes = nullptr;
+    /// When set, the JSON output adds `Exchange Id` to each send and receive step in the map: the id of the exchange it
+    /// writes to or reads from. Set by `EXPLAIN PLAN fragments = 1, json = 1` (see `explainAsFragmentsJSON`).
+    const std::unordered_map<const IQueryPlanStep *, UInt32> * exchange_ids = nullptr;
 
     SettingsChanges toSettingsChanges() const;
 };
