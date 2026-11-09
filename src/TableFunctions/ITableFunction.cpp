@@ -143,9 +143,10 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
         const auto access_object = getSourceAccessObject();
         if (access_object && !getFunctionURI().empty())
         {
+            /// The same check as for the URI template, so that a partition is refused whenever the typed URI would be.
             storage->setPartitionedWriteAccessCheck(
-                [source = String(toStringSource(*access_object))](const ContextPtr & write_context, const String & uri)
-                { write_context->getAccess()->checkAccessWithFilter(AccessType::WRITE, source, normalizeURIForAccessCheck(uri)); },
+                [source = *access_object](const ContextPtr & write_context, const String & uri)
+                { checkSourceAccessForURI(write_context, AccessType::WRITE, source, uri); },
                 IStorage::PartitionedWriteAccessKey{});
         }
     }
