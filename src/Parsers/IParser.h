@@ -87,8 +87,7 @@ struct Expected
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
 
-    /// The state a parser restores when it takes a reading back. `highlights` are not part of it: copying them
-    /// costs their size, and the tokens that are read again are highlighted again.
+    /// The state a parser restores when it takes a reading back. Not `highlights`: the re-read tokens are highlighted again.
     struct SavedState
     {
         InlineVector<const char *, 7> variants;
