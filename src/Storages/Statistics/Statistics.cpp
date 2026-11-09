@@ -353,6 +353,10 @@ void ColumnStatistics::addNullRows(UInt64 count)
 
 ColumnStatisticsPtr ColumnStatistics::createPathStatistics(const DataTypePtr & path_type) const
 {
+    /// The paths of a typed path of type `JSON` are not covered.
+    if (isObject(path_type))
+        return nullptr;
+
     const auto & factory = MergeTreeStatisticsFactory::instance();
     ColumnStatisticsDescription path_desc;
     path_desc.data_type = path_type;
