@@ -51,12 +51,12 @@ DarwinDirectoryWatchState::unwatchFile(std::map<std::string, WatchedFd>::iterato
     return watched_fds.erase(it);
 }
 
-void DarwinDirectoryWatchState::setSnapshot(std::map<std::string, UInt64> && new_snapshot)
+void DarwinDirectoryWatchState::setSnapshot(Listing && new_snapshot)
 {
     snapshot = std::move(new_snapshot);
     followed_files.clear();
-    for (const auto & [name, inode] : snapshot)
-        followed_files.emplace(inode, name);
+    for (const auto & [name, state] : snapshot)
+        followed_files.emplace(state.inode, name);
     has_snapshot = true;
 }
 

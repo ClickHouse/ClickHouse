@@ -631,6 +631,14 @@ void StorageFileLog::openFilesAndSetPos()
             }
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
+            /// The file was renamed and another file took its name. Skip it: the rename events, processed in this or a later
+            /// pass, will move the offset to the new name.
+            if (!file_ctx.open_failed && isTrackedByDirectoryEvents(file) && getInode(getFullDataPath(file)) != file_ctx.inode)
+            {
+                file_ctx.reader.reset();
+                file_ctx.status = FileStatus::NO_CHANGE;
+                continue;
+            }
             if (file_ctx.open_failed)
             {
                 /// The path may lead to another file now: read it from the start.

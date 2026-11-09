@@ -26,6 +26,18 @@ struct DarwinDirectoryWatchState
         UInt64 inode;
     };
 
+    /// The identity of a file and a fingerprint of its contents, as of a scan. The fingerprint lets the scan report
+    /// an append or truncation that kqueue did not, e.g. on a network file system.
+    struct FileState
+    {
+        UInt64 inode;
+        Int64 mtime_ns;
+        Int64 size;
+    };
+
+    /// The name of each listed file to its state.
+    using Listing = std::map<std::string, FileState>;
+
     explicit DarwinDirectoryWatchState(UInt64 milliseconds_to_wait_) : milliseconds_to_wait(milliseconds_to_wait_) {}
     ~DarwinDirectoryWatchState();
 
@@ -38,13 +50,13 @@ struct DarwinDirectoryWatchState
     /// Commit the listing of a successful scan as the snapshot, and follow its files under their current names.
     /// Keep `snapshot` and `followed_files` in sync, so call it only after the scan succeeded: a failed or
     /// discarded listing may lack followed files, which then would no longer be listed under an excluded name.
-    void setSnapshot(std::map<std::string, UInt64> && new_snapshot);
+    void setSnapshot(Listing && new_snapshot);
 
     /// The inode of each followed file to the name it was watched (or read) under, see `DirectoryWatcherBase::scan`.
     std::unordered_map<UInt64, std::string> followed_files;
 
-    /// The name of each file of the directory to its inode, as of the last scan.
-    std::map<std::string, UInt64> snapshot;
+    /// The name of each file of the directory to its state, as of the last scan.
+    Listing snapshot;
     std::map<std::string, WatchedFd> watched_fds;
     /// The name of each descriptor of `watched_fds`, to find the file that an event of the descriptor is for.
     std::unordered_map<int, std::string> watched_names;
@@ -67,6 +79,10 @@ struct DarwinDirectoryWatchState
     /// reports them after its events, under the names of its listing, so a modification is never reported under a
     /// stale name. Keyed by inode, as the name is what may be stale.
     std::set<UInt64> deferred_modifications;
+
+    /// Inodes of watched files whose modification `onVnodeEvent` reported at once since the last committed scan. The
+    /// scan does not report their changed fingerprint again, so a file being written does not reset the backoff.
+    std::set<UInt64> reported_modifications;
 
     /// Whether the first snapshot, the baseline of the files that already existed, has been taken. Until then
     /// the scans only take the snapshot and emit no events.

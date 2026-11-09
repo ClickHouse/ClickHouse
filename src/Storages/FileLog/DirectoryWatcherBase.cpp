@@ -68,9 +68,10 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     try
     {
 #if defined(OS_DARWIN)
-        /// macOS has no inotify: events are rebuilt by diffing a name -> inode snapshot, so a rename keeps its offset.
-        /// Directory events trigger a scan, per-file descriptors report `DW_ITEM_MODIFIED` (deferred to the scan while a
-        /// structural change is pending). A timer retries failed scans and, with backoff, catches network FS changes.
+        /// macOS has no inotify: events are rebuilt by diffing a name -> (inode, mtime, size) snapshot, so a rename keeps
+        /// its offset. Directory events trigger a scan, per-file descriptors report `DW_ITEM_MODIFIED` (deferred to the
+        /// scan while a structural change is pending). A timer retries failed scans and, with backoff, catches the changes
+        /// kqueue does not report, e.g. the appends on a network FS, by comparing the mtime and size of each file.
         const auto & settings = owner.storage.getFileLogSettings();
         watch_state = std::make_unique<DarwinDirectoryWatchState>(
             (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds());
@@ -262,6 +263,7 @@ void DirectoryWatcherBase::onVnodeEvent(int fd, uint32_t fflags)
         else
         {
             owner.onItemModified(DirectoryEvent(name_it->second, DW_ITEM_MODIFIED));
+            watch_state->reported_modifications.insert(watch_state->watched_fds.at(name_it->second).inode);
             has_uncommitted_events = true;
         }
     }
@@ -291,13 +293,13 @@ void DirectoryWatcherBase::onVnodeEvent(int fd, uint32_t fflags)
 }
 
 
-void DirectoryWatcherBase::scan(std::map<std::string, UInt64> & current_files_inodes)
+void DirectoryWatcherBase::scan(DarwinDirectoryWatchState::Listing & current_files)
 {
     const auto & followed_files = watch_state->followed_files;
 
-    current_files_inodes.clear();
-    /// The inode of each followed file that names the globs exclude list, to those names.
-    std::map<UInt64, std::vector<std::string>> followed_aliases;
+    current_files.clear();
+    /// The inode of each followed file that names the globs exclude list, to its state and those names.
+    std::map<UInt64, std::pair<DarwinDirectoryWatchState::FileState, std::vector<std::string>>> followed_aliases;
     std::unordered_set<UInt64> matching_inodes;
     for (const auto & entry : std::filesystem::directory_iterator(path))
     {
@@ -309,19 +311,28 @@ void DirectoryWatcherBase::scan(std::map<std::string, UInt64> & current_files_in
             continue;
         std::string file_name = entry.path().filename().string();
         const auto inode = static_cast<UInt64>(st.st_ino);
+        const DarwinDirectoryWatchState::FileState state{
+            inode,
+            static_cast<Int64>(st.st_mtimespec.tv_sec) * 1'000'000'000 + st.st_mtimespec.tv_nsec,
+            static_cast<Int64>(st.st_size)};
         if (owner.storage.fileNameMatches(file_name))
         {
             matching_inodes.insert(inode);
-            current_files_inodes.emplace(std::move(file_name), inode);
+            current_files.emplace(std::move(file_name), state);
             continue;
         }
         if (followed_files.contains(inode))
-            followed_aliases[inode].push_back(std::move(file_name));
+        {
+            auto & [alias_state, aliases] = followed_aliases[inode];
+            alias_state = state;
+            aliases.push_back(std::move(file_name));
+        }
     }
-    for (auto & [inode, aliases] : followed_aliases)
+    for (auto & [inode, alias_state_and_names] : followed_aliases)
     {
+        auto & [alias_state, aliases] = alias_state_and_names;
         if (!matching_inodes.contains(inode))
-            current_files_inodes.emplace(chooseFollowedAlias(inode, aliases), inode);
+            current_files.emplace(chooseFollowedAlias(inode, aliases), alias_state);
     }
 }
 
@@ -356,13 +367,14 @@ std::string DirectoryWatcherBase::chooseFollowedAlias(UInt64 inode, std::vector<
 /// Make the kqueue watch exactly the files in `files` (name -> inode). A name whose inode changed is re-opened.
 /// Files that vanished before they could be opened are removed from `files`. Called before any events are emitted,
 /// so a throw only causes the pass to be retried.
-void DirectoryWatcherBase::syncFileWatches(std::map<std::string, UInt64> & files)
+void DirectoryWatcherBase::syncFileWatches(DarwinDirectoryWatchState::Listing & files)
 {
     auto & watched_fds = watch_state->watched_fds;
 
     std::vector<std::string> vanished;
-    for (const auto & [name, inode] : files)
+    for (const auto & [name, state] : files)
     {
+        const UInt64 inode = state.inode;
         if (auto it = watched_fds.find(name); it != watched_fds.end())
         {
             if (it->second.inode == inode)
@@ -417,7 +429,7 @@ void DirectoryWatcherBase::syncFileWatches(std::map<std::string, UInt64> & files
 /// Returns true if the pass must be discarded and retried: the directory changed under it (a rename would be diffed
 /// as REMOVED + ADDED), or a drain did not take all ready events. Events are drained before `syncFileWatches`
 /// to keep the `NOTE_DELETE` of departed names, which closing their watches drops.
-bool DirectoryWatcherBase::scanFilesAndUpdateWatches(std::map<std::string, UInt64> & current_files_inodes)
+bool DirectoryWatcherBase::scanFilesAndUpdateWatches(DarwinDirectoryWatchState::Listing & current_files_inodes)
 {
     /// The events that came before are covered by the scan below.
     watch_state->directory_changed = false;
@@ -435,7 +447,7 @@ bool DirectoryWatcherBase::scanFilesAndUpdateWatches(std::map<std::string, UInt6
     return std::exchange(watch_state->directory_changed, false);
 }
 
-bool DirectoryWatcherBase::emitDeferredModifications(const std::map<std::string, UInt64> & current_files_inodes)
+bool DirectoryWatcherBase::emitDeferredModifications(const DarwinDirectoryWatchState::Listing & current_files_inodes)
 {
     auto & deferred_modifications = watch_state->deferred_modifications;
     if (deferred_modifications.empty())
@@ -443,9 +455,9 @@ bool DirectoryWatcherBase::emitDeferredModifications(const std::map<std::string,
 
     /// A file that is not listed anymore was removed or moved out, which the events of the scan report.
     bool emitted = false;
-    for (const auto & [name, inode] : current_files_inodes)
+    for (const auto & [name, state] : current_files_inodes)
     {
-        if (!deferred_modifications.contains(inode))
+        if (!deferred_modifications.contains(state.inode))
             continue;
         emitted = true;
         owner.onItemModified(DirectoryEvent(name, DW_ITEM_MODIFIED));
@@ -460,7 +472,7 @@ void DirectoryWatcherBase::onTimer()
 
     /// Pre-existing files are loaded by `StorageFileLog::loadFiles`, so like inotify the first snapshot emits no events.
     /// A transient failure is retried: an empty baseline would re-emit every pre-existing file as ADDED.
-    std::map<std::string, UInt64> current_files_inodes;
+    DarwinDirectoryWatchState::Listing current_files_inodes;
     if (!watch_state->has_snapshot)
     {
         try
@@ -474,6 +486,7 @@ void DirectoryWatcherBase::onTimer()
             if (emitDeferredModifications(current_files_inodes))
                 has_uncommitted_events = true;
             watch_state->structural_change_pending = false;
+            watch_state->reported_modifications.clear();
             watch_state->setSnapshot(std::move(current_files_inodes));
         }
         catch (const std::exception & e)
@@ -517,15 +530,15 @@ void DirectoryWatcherBase::onTimer()
     std::map<UInt64, size_t> current_inode_count;
     std::map<UInt64, std::string> snapshot_inode_name;
     std::map<UInt64, std::string> current_inode_name;
-    for (const auto & [name, inode] : snapshot)
+    for (const auto & [name, state] : snapshot)
     {
-        ++snapshot_inode_count[inode];
-        snapshot_inode_name[inode] = name;
+        ++snapshot_inode_count[state.inode];
+        snapshot_inode_name[state.inode] = name;
     }
-    for (const auto & [name, inode] : current_files_inodes)
+    for (const auto & [name, state] : current_files_inodes)
     {
-        ++current_inode_count[inode];
-        current_inode_name[inode] = name;
+        ++current_inode_count[state.inode];
+        current_inode_name[state.inode] = name;
     }
 
     /// True if `inode` uniquely identifies one name on each side and those names differ, i.e. it
@@ -544,21 +557,21 @@ void DirectoryWatcherBase::onTimer()
 
     /// A name keeps its identity if it exists on both sides with the same inode and was not
     /// unlinked in between (a delete+recreate reusing the inode breaks the identity).
-    auto same_identity = [&deleted_files](const std::map<std::string, UInt64> & other, const std::string & name, UInt64 inode)
+    auto same_identity = [&deleted_files](const DarwinDirectoryWatchState::Listing & other, const std::string & name, UInt64 inode)
     {
         if (deleted_files.contains(name))
             return false;
         auto it = other.find(name);
-        return it != other.end() && it->second == inode;
+        return it != other.end() && it->second.inode == inode;
     };
 
     /// Topologically order the MOVED_TO targets so a target follows the move of its old inode, otherwise its meta is
     /// erased and re-read from 0 (e.g. logrotate `a.1 -> a.2`, `a -> a.1`, new `a`). A rename cycle (an `a <-> b`
     /// swap in one scan) cannot be ordered from a snapshot, so it is emitted best-effort and one file is re-read.
     std::vector<std::string> move_targets;
-    for (const auto & [name, inode] : current_files_inodes)
+    for (const auto & [name, state] : current_files_inodes)
     {
-        if (!same_identity(snapshot, name, inode) && is_rename(inode))
+        if (!same_identity(snapshot, name, state.inode) && is_rename(state.inode))
             move_targets.push_back(name);
     }
 
@@ -571,7 +584,7 @@ void DirectoryWatcherBase::onTimer()
             auto snap_it = snapshot.find(name);
             if (snap_it == snapshot.end())
                 continue;
-            const UInt64 old_inode = snap_it->second;
+            const UInt64 old_inode = snap_it->second.inode;
             auto relocated_it = current_inode_name.find(old_inode);
             if (is_rename(old_inode) && relocated_it != current_inode_name.end()
                 && relocated_it->second != name && target_set.contains(relocated_it->second))
@@ -610,15 +623,15 @@ void DirectoryWatcherBase::onTimer()
     /// moved inode's meta is renamed before the fresh file resets it.
 
     /// Departed identities (name gone, or its inode replaced at that name).
-    for (const auto & [name, inode] : snapshot)
+    for (const auto & [name, state] : snapshot)
     {
-        if (same_identity(current_files_inodes, name, inode))
+        if (same_identity(current_files_inodes, name, state.inode))
             continue;
         changed = true;
-        if (is_rename(inode))
+        if (is_rename(state.inode))
         {
             if (eventMask() & DW_ITEM_MOVED_FROM)
-                owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM, inode));
+                owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM, state.inode));
         }
         else if (eventMask() & DW_ITEM_REMOVED)
         {
@@ -631,17 +644,39 @@ void DirectoryWatcherBase::onTimer()
     {
         changed = true;
         if (eventMask() & DW_ITEM_MOVED_TO)
-            owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO, current_files_inodes.at(name)));
+            owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO, current_files_inodes.at(name).inode));
     }
 
     /// Arrived identities that are genuinely new (including a name whose inode was replaced).
-    for (const auto & [name, inode] : current_files_inodes)
+    for (const auto & [name, state] : current_files_inodes)
     {
-        if (same_identity(snapshot, name, inode) || is_rename(inode))
+        if (same_identity(snapshot, name, state.inode) || is_rename(state.inode))
             continue;
         changed = true;
         if (eventMask() & DW_ITEM_ADDED)
             owner.onItemAdded(DirectoryEvent(name, DW_ITEM_ADDED));
+    }
+
+    /// The contents of a file kept (or renamed) changed, but kqueue reported no modification, e.g. on a network FS:
+    /// an append or truncation. Reported under the name of this listing, after the events that renamed the file.
+    const auto & reported_modifications = watch_state->reported_modifications;
+    const auto & deferred_modifications = watch_state->deferred_modifications;
+    for (const auto & [name, state] : current_files_inodes)
+    {
+        const DarwinDirectoryWatchState::FileState * previous = nullptr;
+        if (same_identity(snapshot, name, state.inode))
+            previous = &snapshot.at(name);
+        else if (is_rename(state.inode))
+            previous = &snapshot.at(snapshot_inode_name.at(state.inode));
+        else
+            continue;
+        if (previous->mtime_ns == state.mtime_ns && previous->size == state.size)
+            continue;
+        if (reported_modifications.contains(state.inode) || deferred_modifications.contains(state.inode))
+            continue;
+        changed = true;
+        if (eventMask() & DW_ITEM_MODIFIED)
+            owner.onItemModified(DirectoryEvent(name, DW_ITEM_MODIFIED));
     }
 
     /// The modifications deferred while the change was pending, under the names of this listing and after the events
@@ -653,6 +688,7 @@ void DirectoryWatcherBase::onTimer()
     /// This pass committed successfully, so the deletes it collected have been applied; start the next
     /// pass with a clean set. (On a retried pass we return early, keeping them.)
     deleted_files.clear();
+    watch_state->reported_modifications.clear();
     watch_state->structural_change_pending = false;
 
     if (changed)

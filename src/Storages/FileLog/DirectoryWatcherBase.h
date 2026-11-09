@@ -151,15 +151,15 @@ private:
     /// When `onTimer` is due, `nullopt` if the watcher does not watch.
     std::optional<std::chrono::steady_clock::time_point> nextScan() const;
 
-    void scan(std::map<std::string, UInt64> & current_files_inodes);
+    void scan(DarwinDirectoryWatchState::Listing & current_files);
     /// The one of the excluded names `aliases` of the followed file `inode` that `scan` lists it under.
     std::string chooseFollowedAlias(UInt64 inode, std::vector<std::string> & aliases) const;
-    void syncFileWatches(std::map<std::string, UInt64> & files);
+    void syncFileWatches(DarwinDirectoryWatchState::Listing & files);
     /// Returns whether the directory changed during the scan, then the caller discards it.
-    bool scanFilesAndUpdateWatches(std::map<std::string, UInt64> & current_files_inodes);
-    /// Reports the `deferred_modifications` under the names of the committed listing `current_files_inodes`, and
+    bool scanFilesAndUpdateWatches(DarwinDirectoryWatchState::Listing & current_files);
+    /// Reports the `deferred_modifications` under the names of the committed listing `current_files`, and
     /// returns whether it reported any. The inodes the listing does not have anymore are dropped.
-    bool emitDeferredModifications(const std::map<std::string, UInt64> & current_files_inodes);
+    bool emitDeferredModifications(const DarwinDirectoryWatchState::Listing & current_files);
 #endif
 };
 
