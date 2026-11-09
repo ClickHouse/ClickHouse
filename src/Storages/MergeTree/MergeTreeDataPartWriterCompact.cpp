@@ -337,12 +337,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, size_t 
             ++end;
         }
 
-        writeStripe(block, Granules(granules.begin() + begin, granules.begin() + end));
+        /// The vector dimensions of the columns are discovered once per block, in its first stripe.
+        writeStripe(block, Granules(granules.begin() + begin, granules.begin() + end), /* set_vector_dimensions = */ begin == 0);
         begin = end;
     }
 }
 
-void MergeTreeDataPartWriterCompact::writeStripe(const Block & block, const Granules & granules)
+void MergeTreeDataPartWriterCompact::writeStripe(const Block & block, const Granules & granules, bool set_vector_dimensions)
 {
     WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
 
@@ -393,10 +394,10 @@ void MergeTreeDataPartWriterCompact::writeStripe(const Block & block, const Gran
                 /// require specifying the array dimensions before compression starts.
                 /// For 1D arrays, it's simply the length. The dimension is a property of the whole column
                 /// and `setAndCheckVectorDimension` accumulates it monotonically, so it only needs to be
-                /// computed once per block: rescanning the full column on every granule would make SZ3
+                /// computed once per block: rescanning the full column on every granule or stripe would make SZ3
                 /// writes O(rows * granules) in the insert/merge hot path. Do it while writing the first
-                /// granule, before its data is compressed.
-                if (&granule == &granules.front())
+                /// granule of the first stripe of the block, before its data is compressed.
+                if (set_vector_dimensions && granule_index == 0)
                 {
                     auto compression_codec = result_stream->compressed_buf.getCodec();
                     setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());

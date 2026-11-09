@@ -51,7 +51,7 @@ private:
     void writeDataBlock(const Block & block, size_t block_bytes, const Granules & granules);
 
     /// Write a stripe: the given granules of the block, column after column.
-    void writeStripe(const Block & block, const Granules & granules);
+    void writeStripe(const Block & block, const Granules & granules, bool set_vector_dimensions);
 
     /// Write block of rows into .bin file and marks in .mrk files, primary index in .idx file
     /// and skip indices in their corresponding files.
