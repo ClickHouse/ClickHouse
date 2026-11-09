@@ -16,6 +16,9 @@ missing with dot, alone:	['','']
 missing with dot, beside one:	[]	[]
 missing with dot, beside one:	['1-0']	['']
 missing with dot, beside one:	['2-0','2-1']	['','']
+missing with dot, default:	[]	[]
+missing with dot, default:	['1-0']	['d']
+missing with dot, default:	['2-0','2-1']	['d','d']
 array join:	3
 where:	2
 prewhere:	2

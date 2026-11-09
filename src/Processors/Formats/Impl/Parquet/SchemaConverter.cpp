@@ -1470,6 +1470,7 @@ void SchemaConverter::addMissingElementsOfTuplesInArrays()
             output_idx = output_columns.size() - 1;
         }
         output_columns[output_idx].idx_in_output_block = pos;
+        output_columns[output_idx].report_as_missing = true;
     }
 }
 

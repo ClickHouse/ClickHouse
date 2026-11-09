@@ -18,6 +18,7 @@ $CHL -q "select 'all elements missing:', * from file('$file', Parquet, 'x Array(
 # The arrays of a missing element have the sizes of the arrays in the file.
 $CHL -q "select 'missing with dot, alone:', * from file('$file', Parquet, '\`x.z\` Array(String)')"
 $CHL -q "select 'missing with dot, beside one:', * from file('$file', Parquet, '\`x.y\` Array(String), \`x.z\` Array(String)')"
+$CHL -q "select 'missing with dot, default:', * from file('$file', Parquet, '\`x.y\` Array(String), \`x.z\` Array(String) DEFAULT arrayMap(s -> ''d'', \`x.y\`)') settings input_format_defaults_for_omitted_fields = 1"
 $CHL -q "select 'array join:', count() from file('$file', Parquet, '\`x.z\` Array(String)') array join \`x.z\`"
 $CHL -q "select 'where:', count() from file('$file', Parquet, '\`x.z\` Array(String)') where length(\`x.z\`) > 0 settings optimize_move_to_prewhere = 0"
 $CHL -q "select 'prewhere:', count() from file('$file', Parquet, '\`x.z\` Array(String)') prewhere length(\`x.z\`) > 0"
