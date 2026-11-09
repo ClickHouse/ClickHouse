@@ -247,6 +247,7 @@ enum class PredicatePropagationStage : uint8_t
 };
 
 /// For an equi-join, copy filter conjuncts from one side onto the other via equi-key substitution.
+/// With `index_analysis_enabled` off (`use_primary_key = 0`) no key column prunes, so `Pruning` copies nothing.
 /// `added_filters` collects the filters this pass adds, so that a later stage does not take one for a source filter
 size_t tryPropagatePredicateAcrossEquiJoin(
     QueryPlan::Node * parent_node,
