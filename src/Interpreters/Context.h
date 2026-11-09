@@ -1913,6 +1913,16 @@ public:
 
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
+    /// Recheck occupancy, persist, and insert a SQL-managed cluster under `clusters_mutex`
+    /// so a concurrent `SYSTEM RELOAD CONFIG` cannot occupy the name in between.
+    /// `allow_replace_sql` is true for `ALTER CLUSTER` (replace an existing SQL cluster).
+    void installSQLCluster(
+        const String & cluster_name,
+        const std::shared_ptr<Cluster> & cluster,
+        std::function<void()> persist,
+        bool allow_replace_sql);
+    /// Insert or replace a SQL-managed cluster unless another source already owns the name.
+    bool trySetSQLCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     /// Removes the cluster only if it is SQL-managed. Returns whether it was removed.
     bool removeSQLCluster(const String & cluster_name);
     void reloadClusterConfig() const;

@@ -4,8 +4,11 @@
 #include <Parsers/formatSettingName.h>
 #include <IO/Operators.h>
 #include <Common/quoteString.h>
+#include <base/find_symbols.h>
 
 #include <cstring>
+#include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -22,8 +25,11 @@ bool equalsKeywordIgnoreCase(std::string_view name, std::string_view keyword)
 
 void formatSQLClusterSettingName(const String & name, WriteBuffer & ostr)
 {
-    /// Unquoted, `shard` / `replica` are parsed as the `SHARD` / `REPLICA` keywords.
-    if (equalsKeywordIgnoreCase(name, "shard") || equalsKeywordIgnoreCase(name, "replica"))
+    /// Unquoted, `shard` / `replica` (and `shard.x` / `replica.x`) are parsed as the
+    /// `SHARD` / `REPLICA` keywords rather than as a property assignment.
+    std::vector<std::string_view> parts;
+    splitInto<'.'>(parts, name);
+    if (!parts.empty() && (equalsKeywordIgnoreCase(parts.front(), "shard") || equalsKeywordIgnoreCase(parts.front(), "replica")))
         ostr << backQuote(name);
     else
         formatSettingName(name, ostr);

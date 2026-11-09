@@ -8158,6 +8158,24 @@ size_t Context::getClustersVersion() const
 }
 
 
+namespace
+{
+
+[[noreturn]] void throwClusterNameOccupied(const String & cluster_name, Cluster::SourceId source)
+{
+    if (source == Cluster::SourceId::CONFIG)
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cluster `{}` already exists in server configuration", cluster_name);
+    if (source == Cluster::SourceId::SQL)
+        throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "SQL cluster `{}` already exists", cluster_name);
+    throw Exception(
+        ErrorCodes::CLUSTER_ALREADY_EXISTS,
+        "Cluster `{}` already exists (source: {})",
+        cluster_name,
+        Cluster::formatSourceIdForSystemTable(source));
+}
+
+}
+
 void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
 {
     {
@@ -8166,6 +8184,59 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
         ++shared->clusters_version;
     }
     notifyDDLWorkerAfterClustersChange();
+}
+
+void Context::installSQLCluster(
+    const String & cluster_name,
+    const std::shared_ptr<Cluster> & cluster,
+    std::function<void()> persist,
+    bool allow_replace_sql)
+{
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        auto clusters = getClustersImpl(lock);
+
+        if (auto existing = clusters->getCluster(cluster_name))
+        {
+            if (existing->getSourceId() != Cluster::SourceId::SQL)
+                throwClusterNameOccupied(cluster_name, existing->getSourceId());
+            if (!allow_replace_sql)
+                throwClusterNameOccupied(cluster_name, Cluster::SourceId::SQL);
+        }
+
+        if (shared->cluster_discovery)
+        {
+            if (auto discovered = shared->cluster_discovery->getCluster(cluster_name))
+                throwClusterNameOccupied(cluster_name, discovered->getSourceId());
+        }
+
+        persist();
+        clusters->setCluster(cluster_name, cluster);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+}
+
+bool Context::trySetSQLCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+{
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        auto clusters = getClustersImpl(lock);
+
+        if (shared->cluster_discovery)
+        {
+            if (shared->cluster_discovery->getCluster(cluster_name))
+                return false;
+        }
+
+        if (auto existing = clusters->getCluster(cluster_name); existing && existing->getSourceId() != Cluster::SourceId::SQL)
+            return false;
+
+        clusters->setCluster(cluster_name, cluster);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+    return true;
 }
 
 bool Context::removeSQLCluster(const String & cluster_name)

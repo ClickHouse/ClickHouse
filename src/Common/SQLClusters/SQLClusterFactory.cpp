@@ -1,5 +1,6 @@
 #include <Common/SQLClusters/SQLClusterFactory.h>
 
+#include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -23,6 +24,11 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace FailPoints
+{
+    extern const char sql_cluster_create_pause_after_namespace_check[];
 }
 
 namespace ErrorCodes
@@ -458,7 +464,15 @@ void SQLClusterFactory::reloadFromStorage()
     }
 
     for (auto & [cluster_name, cluster] : materialized)
-        context->setCluster(cluster_name, cluster);
+    {
+        if (context->trySetSQLCluster(cluster_name, cluster))
+            continue;
+
+        LOG_ERROR(log, "Not loading SQL cluster `{}`: a cluster with the same name already exists", cluster_name);
+        new_stored_cluster_names.erase(cluster_name);
+        /// A leftover SQL cluster in the static map must not keep shadowing a discovered name.
+        context->removeSQLCluster(cluster_name);
+    }
 
     stored_cluster_names = std::move(new_stored_cluster_names);
 
@@ -493,6 +507,8 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
         throw Exception(ErrorCodes::CLUSTER_ALREADY_EXISTS, "Cluster `{}` already exists (cluster discovery)", query.cluster_name);
     }
 
+    FailPointInjection::pauseFailPoint(FailPoints::sql_cluster_create_pause_after_namespace_check);
+
     validateSQLClusterDefinition(query.definition->as<const ASTSQLClusterDefinition &>());
 
     /// Build the in-memory cluster first, then persist, as named collections and handlers do.
@@ -501,8 +517,14 @@ void SQLClusterFactory::createFromSQL(const ASTCreateSQLClusterQuery & query)
     /// `CLUSTER_ALREADY_EXISTS` and blocks other servers at `loadIfNot`.
     auto create_statement = query.formatWithSecretsOneLine();
     auto cluster = materializeCluster(query, context, create_statement);
-    metadata_storage->writeCreateQuery(query.cluster_name, create_statement, false);
-    context->setCluster(query.cluster_name, cluster);
+    context->installSQLCluster(
+        query.cluster_name,
+        cluster,
+        [&]
+        {
+            metadata_storage->writeCreateQuery(query.cluster_name, create_statement, false);
+        },
+        /*allow_replace_sql=*/ false);
     stored_cluster_names.insert(query.cluster_name);
 }
 
@@ -537,8 +559,14 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
 
     auto create_statement = create_query.formatWithSecretsOneLine();
     auto cluster = materializeCluster(create_query, context, create_statement);
-    metadata_storage->writeCreateQuery(query.cluster_name, create_statement, true);
-    context->setCluster(query.cluster_name, cluster);
+    context->installSQLCluster(
+        query.cluster_name,
+        cluster,
+        [&]
+        {
+            metadata_storage->writeCreateQuery(query.cluster_name, create_statement, true);
+        },
+        /*allow_replace_sql=*/ true);
     /// The cluster may have been created on another replica and not yet loaded here by the background reload.
     /// Register it, so that a later reload or `DROP CLUSTER` removes it once it is gone from the metadata storage.
     stored_cluster_names.insert(query.cluster_name);

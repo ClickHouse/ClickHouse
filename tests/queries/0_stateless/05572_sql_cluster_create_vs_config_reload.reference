@@ -1,0 +1,9 @@
+reload
+after_reload
+t05572_foo	CONFIG
+create
+rejected
+after_create
+t05572_foo	CONFIG
+after_drop
+t05572_foo	CONFIG
