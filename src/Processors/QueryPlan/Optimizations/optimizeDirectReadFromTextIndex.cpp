@@ -102,6 +102,32 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
+/// Number of non-leaf nodes in the expression of `node` expanded into a tree, aliases excluded, saturated.
+size_t countExpandedNodes(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, size_t> & counts)
+{
+    node = node->getWithoutAlias();
+    if (node->children.empty())
+        return 0;
+
+    auto [it, inserted] = counts.try_emplace(node, 1);
+    size_t & count = it->second;
+    if (!inserted)
+        return count;
+
+    for (const auto * child : node->children)
+        count = std::min(count + countExpandedNodes(child, counts), std::numeric_limits<size_t>::max() / 2);
+
+    return count;
+}
+
+/// Number of copies of shared subexpressions made by expanding the expression of `node` into a tree.
+size_t countSharedCopies(const ActionsDAG::Node * node)
+{
+    std::unordered_map<const ActionsDAG::Node *, size_t> counts;
+    size_t expanded = countExpandedNodes(node, counts);
+    return expanded - counts.size();
+}
+
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
 bool hasSubexpression(const ActionsDAG::Node * node, const String & subexpression_name)
 {
@@ -505,6 +531,22 @@ public:
             if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
                 virtual_column_inputs.emplace(input->result_name, input);
         }
+
+        if (!composed_nodes)
+            return;
+
+        for (const auto & [_, info] : text_index_read_infos)
+        {
+            const auto & index = info.index ? info.index->index : info.index_helper;
+            if (!index || !index->index.expression)
+            {
+                max_index_shared_copies = std::numeric_limits<size_t>::max();
+                break;
+            }
+
+            for (const auto * output : index->index.expression->getActionsDAG().getOutputs())
+                max_index_shared_copies = std::max(max_index_shared_copies, countSharedCopies(output));
+        }
     }
 
     struct ResultReplacement
@@ -595,6 +637,8 @@ private:
     bool direct_read_from_text_index = false;
     /// Maps the nodes of this DAG to the DAG composed with the steps below, i.e. to what they compute over the scan columns.
     const ActionsDAG::NodeMapping * composed_nodes = nullptr;
+    /// The most copies of shared subexpressions in the expression of a text index, see `countSharedCopies`.
+    size_t max_index_shared_copies = 0;
     /// Input nodes of the virtual columns in the DAG, by column name.
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
@@ -711,7 +755,14 @@ private:
         if (!need_transform_function && !direct_read_from_text_index)
             return &function_node;
 
-        auto selected_conditions = selectConditions(*getComposedNode(&function_node), context);
+        const auto * matched_node = getComposedNode(&function_node);
+
+        /// `selectConditions` copies a shared subexpression once per reference, which is exponential in the nesting of the
+        /// steps. A function that can use an index shares no more subexpressions than the index expression.
+        if (matched_node != &function_node && countSharedCopies(matched_node) > max_index_shared_copies)
+            return &function_node;
+
+        auto selected_conditions = selectConditions(*matched_node, context);
         if (selected_conditions.empty())
             return &function_node;
 
