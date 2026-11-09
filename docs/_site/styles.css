@@ -3266,12 +3266,11 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     background: transparent !important;
 }
 
-/* Two-column layout for the Solutions dropdown. Browsers don't allow
-   `:has()` inside `:has()`, so we gate on "menu contains a section-header
-   img" — only Solutions has those, so the targeting is unique. Items before
-   the second header land in column 1; the second header and everything
-   after it land in column 2. Mirrors `clickhouse.com/clickhouse`. */
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) {
+/* Two-column layout for top-nav dropdowns that use section headers. Browsers
+   don't allow `:has()` inside `:has()`, so the presence of a section-header
+   icon gates the layout. Items before the second header land in column 1; the
+   second header and everything after it land in column 2. */
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) {
     display: grid !important;
     grid-template-columns: 1fr 1fr;
     column-gap: 8px;
@@ -3285,22 +3284,387 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     background-position: 50% 12px;
     background-repeat: no-repeat;
 }
-.dark [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]),
-:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) {
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])),
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) {
     background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.1));
 }
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item {
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) > .nav-dropdown-item {
     grid-column: 2;
 }
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="section-header.svg"]) {
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="section-header.svg"]) {
     grid-column: 1;
 }
 /* Pin the second header (the one with no following header sibling) to row 1
    so column 2 starts at the top of the panel instead of below column 1. */
-[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]):not(:has(~ .nav-dropdown-item img[src$="section-header.svg"])) {
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]):not(:has(.nav-dropdown-item img[src$="icon-postgres.svg"])) > .nav-dropdown-item:has(img[src$="section-header.svg"]):not(:has(~ .nav-dropdown-item img[src$="section-header.svg"])) {
     grid-row: 1;
 }
 
+/* The Databases dropdown is a compact product menu rather than a two-column
+   taxonomy. The ClickHouse documentation sections form an indented list below
+   the product; Managed Postgres links directly to its overview. */
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 280px;
+    padding: 8px !important;
+    background-image: none;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item {
+    grid-column: auto;
+    grid-row: auto;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px !important;
+    color: #111827 !important;
+    font-size: 14px !important;
+    font-weight: 700;
+    line-height: 1.25 !important;
+    pointer-events: none;
+    cursor: default;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img {
+    display: block !important;
+    width: 18px;
+    height: 18px;
+    filter: grayscale(1);
+    opacity: 0.85;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) span {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+}
+/* The four ClickHouse documentation sections precede the Postgres product
+   item, which lets us indent exactly those links without affecting other
+   top-nav menus. */
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"])) {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    min-height: auto !important;
+    padding: 3px 8px 3px 34px !important;
+    font-size: 13px !important;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"])) img {
+    display: none !important;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] {
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #ffffff !important;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] span {
+    color: inherit !important;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    min-height: auto !important;
+    margin-top: 8px;
+    padding: 10px 8px 4px !important;
+    font-size: 0 !important;
+    line-height: 1 !important;
+    color: transparent !important;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img {
+    display: block !important;
+    order: 0;
+    width: 18px;
+    height: 18px;
+    filter: grayscale(1);
+    opacity: 0.85;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) > *:not(img) {
+    display: none !important;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current] {
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08) !important;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current]::before {
+    color: #ffffff;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before {
+    content: "Managed Postgres";
+    display: block;
+    order: 1;
+    color: #111827;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]),
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) {
+    color: #ffffff !important;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before {
+    color: #ffffff;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-clickhouse.svg"]) img {
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img {
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+
+/* Products is a three-column product catalogue. The marker is the Security
+   entry, which uniquely identifies this menu without coupling the layout to
+   its translated tab label. */
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) {
+    display: grid !important;
+    grid-template-columns: repeat(3, max-content) !important;
+    grid-template-rows: 28px 28px 28px 52px 52px 28px;
+    grid-auto-flow: row !important;
+    align-content: start;
+    justify-content: start;
+    column-gap: 24px !important;
+    row-gap: 0;
+    width: fit-content !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 32px) !important;
+    padding: 16px !important;
+    background-image: none !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item {
+    grid-row: auto !important;
+    grid-column: 3 !important;
+    min-height: auto !important;
+    margin: 0;
+    padding: 4px 0 !important;
+    font-size: 14px !important;
+    line-height: 20px !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(-n + 3) {
+    grid-column: 1 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(n + 4):nth-child(-n + 8) {
+    grid-column: 2 !important;
+}
+/* Each section owns its rows. Without explicit row positions, CSS grid's
+   placement cursor starts the Open source links after Applications. */
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(4),
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(9) {
+    grid-row: 1 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(5),
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(10) {
+    grid-row: 2 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(6),
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
+    grid-row: 3 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7),
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
+    grid-row: 4 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8),
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(13) {
+    grid-row: 5 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(14) {
+    grid-row: 6 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) {
+    min-height: auto !important;
+    padding: 2px 0 8px !important;
+    color: #6b7280 !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 16px !important;
+    letter-spacing: normal;
+    text-transform: uppercase;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) span {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
+    align-items: flex-start;
+    padding: 4px 0 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) img {
+    display: none !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
+    color: #111827;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    line-height: 20px !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7),
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after,
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > div > span:first-child::after {
+    display: block;
+    margin-top: 2px;
+    padding-left: 16px;
+    color: #a3a3a3;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: 12px;
+    content: "";
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child,
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > div > span:first-child {
+    display: block;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after {
+    content: "langfuse";
+    background-image: url("/images/icons/logo-langfuse.svg");
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > div > span:first-child::after {
+    content: "runreveal";
+    background-image: url("/images/integrations/logos/runreveal.webp");
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg:last-child,
+[role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:nth-child(8) > svg:last-child {
+    display: none !important;
+}
+.dark [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]),
+:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) {
+    color: #a3a3a3 !important;
+}
+.dark [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
+    color: #ffffff;
+}
+
+/* Keep the Products layout coupled to the Security destination. */
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) {
+    display: grid !important;
+    grid-template-columns: repeat(3, max-content) !important;
+    grid-template-rows: 28px 28px 52px 52px 28px;
+    grid-auto-flow: row !important;
+    align-content: start;
+    justify-content: start;
+    column-gap: 24px !important;
+    row-gap: 0;
+    width: fit-content !important;
+    min-width: 0 !important;
+    max-width: calc(100vw - 32px) !important;
+    padding: 16px !important;
+    background-image: none !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item {
+    grid-row: auto !important;
+    grid-column: 3 !important;
+    min-height: auto !important;
+    margin: 0;
+    padding: 4px 0 !important;
+    font-size: 14px !important;
+    line-height: 20px !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(-n + 3) {
+    grid-column: 1 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(n + 4):nth-child(-n + 7) {
+    grid-column: 2 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(4),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(8) {
+    grid-row: 1 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(9) {
+    grid-row: 2 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(10) {
+    grid-row: 3 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7),
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
+    grid-row: 4 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
+    grid-row: 5 !important;
+}
+/* Applications has two taller partner-logo rows. Pull the Open source rows
+   back into their own 28px rhythm instead of inheriting those row heights. */
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(11) {
+    transform: translateY(-24px);
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(12) {
+    transform: translateY(-48px);
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) {
+    padding: 2px 0 8px !important;
+    color: #6b7280 !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 16px !important;
+    letter-spacing: normal;
+    text-transform: uppercase;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) span {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) {
+    align-items: flex-start;
+    padding: 4px 0 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) img {
+    display: none !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
+    color: #111827;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    line-height: 20px !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child {
+    display: block;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child::after,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after {
+    display: block;
+    margin-top: 2px;
+    padding-left: 16px;
+    color: #a3a3a3;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: 12px;
+    content: "";
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > div > span:first-child::after {
+    content: "langfuse";
+    background-image: url("/images/icons/logo-langfuse.svg");
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > div > span:first-child::after {
+    content: "runreveal";
+    background-image: url("/images/integrations/logos/runreveal.webp");
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > svg:last-child,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg:last-child {
+    display: block !important;
+    opacity: 0.6 !important;
+}
+.dark [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:not(:has(img[src$="section-header.svg"])) span {
+    color: #ffffff;
+}
 /* Horizontal separator in the Integrations top-nav dropdown, between the
    "Ecosystem" entry and the section entries (ClickPipes / Language clients /
    Connectors) below it. Mintlify has no built-in divider, so we add a bottom

@@ -9,16 +9,24 @@
     {
       "menu": [
         {
-          "$ref": "./get-started/navigation.json"
+          "href": "#",
+          "icon": "/images/icons/icon-clickhouse.svg",
+          "item": "ClickHouse"
         },
         {
-          "$ref": "./concepts/navigation.json"
+          "$ref": "./get-started/navigation.json"
         },
         {
           "$ref": "./guides/navigation.json"
         },
         {
+          "$ref": "./concepts/navigation.json"
+        },
+        {
           "$ref": "./reference/navigation.json"
+        },
+        {
+          "$ref": "./products/managed-postgres/navigation.json"
         }
       ],
       "tab": "データベース"
@@ -32,9 +40,6 @@
         },
         {
           "$ref": "./products/cloud/navigation.json"
-        },
-        {
-          "$ref": "./products/managed-postgres/navigation.json"
         },
         {
           "href": "https://langfuse.com/docs",
@@ -59,7 +64,7 @@
           "$ref": "./products/kubernetes-operator/navigation.json"
         }
       ],
-      "tab": "ソリューション"
+      "tab": "製品"
     },
     {
       "menu": [
