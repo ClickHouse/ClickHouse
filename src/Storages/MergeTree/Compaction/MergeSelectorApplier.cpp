@@ -210,6 +210,12 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
         /// `small_parts_min_count`, until the small parts age.
         simple_merge_settings.min_parts_to_merge_at_once = std::min(simple_merge_settings.min_parts_to_merge_at_once, affordable);
         simple_merge_settings.small_parts_min_count = std::min(simple_merge_settings.small_parts_min_count, affordable);
+
+        /// The selector lowers the base for old parts and for partitions with many parts, but not below 2, and the
+        /// ratio of the sum of two unequal parts to the larger of them is below 2: with a cap of 2 no merge would
+        /// ever be accepted in the background, and the table would accumulate parts. Lower the floor with the cap,
+        /// to 1 (any merge) for a cap of 2 and to 1.5 for a cap of 3, so that the narrowed merges make progress.
+        simple_merge_settings.min_lowered_base = std::min(simple_merge_settings.min_lowered_base, static_cast<double>(affordable) / 2);
     }
 
     return simple_merge_settings;

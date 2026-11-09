@@ -253,8 +253,9 @@ bool allow(
     /// The ratio should be within [0, 1]
     double combined_ratio = std::min(1.0, age_normalized + num_parts_normalized);
 
-    double lowered_base = interpolateLinear(settings.base, 2.0, combined_ratio);
-    if (settings.use_blurry_base)
+    double lowered_base = interpolateLinear(settings.base, settings.min_lowered_base, combined_ratio);
+    /// A base of 1 accepts any merge, and a normal distribution needs a positive standard deviation.
+    if (settings.use_blurry_base && lowered_base > 1)
     {
         double partition_fill_factor = std::max(0., 1 - partition_size / static_cast<double>(settings.parts_to_throw_insert));
         /// Scale factor controls when (relativelty to the number of parts in partition)
