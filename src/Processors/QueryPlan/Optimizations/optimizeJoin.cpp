@@ -1826,7 +1826,7 @@ const std::vector<const ActionsDAG::Node *> & JoinOrderPlanBuilder::inputsOf(con
 }
 
 /// The members of the equivalence classes, one list per class, each in the order of the global inputs.
-static std::vector<std::vector<JoinActionRef>> sortedEquivalenceClasses(
+std::vector<std::vector<JoinActionRef>> sortedEquivalenceClasses(
     const EquivalenceClasses<JoinActionRef> & classes, const std::unordered_map<const ActionsDAG::Node *, size_t> & input_node_map)
 {
     std::unordered_set<const void *> seen;
@@ -1835,15 +1835,14 @@ static std::vector<std::vector<JoinActionRef>> sortedEquivalenceClasses(
     {
         if (!seen.insert(members.get()).second)
             continue;
-        std::vector<JoinActionRef> sorted(members->begin(), members->end());
+        auto & sorted = result.emplace_back(members->begin(), members->end());
         std::ranges::sort(sorted, {}, [&](const JoinActionRef & ref) { return input_node_map.at(ref.getNode()); });
-        result.push_back(std::move(sorted));
     }
     std::ranges::sort(result, {}, [&](const auto & members) { return input_node_map.at(members.front().getNode()); });
     return result;
 }
 
-static std::optional<size_t> singleRelation(const JoinActionRef & ref)
+std::optional<size_t> singleRelation(const JoinActionRef & ref)
 {
     return ref.getSourceRelations().getSingleBit();
 }
@@ -1851,7 +1850,7 @@ static std::optional<size_t> singleRelation(const JoinActionRef & ref)
 /// The splits of the `orders` cheapest complete join orders by the DPsub cost, by set. The cost of an order is the sum of
 /// the local costs of its joins, so the cheapest plans of a set are among the combinations of the cheapest plans of the
 /// two sides of each of its splits.
-static std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
+std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
     const RecordedJoinSplits & recorded_splits, const std::unordered_map<UInt64, std::vector<size_t>> & splits_by_set, size_t orders)
 {
     struct Plan
@@ -1918,7 +1917,7 @@ static std::unordered_map<UInt64, std::vector<size_t>> cheapestOrdersSplits(
 /// The bytes of the output columns of a join input, as Cascades sizes a read: the widths the storage of the table gives
 /// them. The steps above the read rename its columns, so a name is followed down to the read through `ALIAS` nodes.
 /// Without these widths a string column gets the default width of its type.
-static std::unordered_map<String, double> estimateInputColumnBytes(const QueryPlan::Node & input)
+std::unordered_map<String, double> estimateInputColumnBytes(const QueryPlan::Node & input)
 {
     const QueryPlan::Node * read_node = &input;
     while (!typeid_cast<const ReadFromMergeTree *>(read_node->step.get()) && read_node->children.size() == 1
@@ -1959,7 +1958,7 @@ static std::unordered_map<String, double> estimateInputColumnBytes(const QueryPl
 }
 
 /// The input columns of the graph for `QueryGraph::distribution_columns`.
-static std::vector<QueryGraph::DistributionColumn> distributionColumns(
+std::vector<QueryGraph::DistributionColumn> distributionColumns(
     const QueryGraph & query_graph, const ActionsDAG & global_actions_dag, const JoinExpressionActions & global_expression_actions,
     const std::vector<QueryPlan::Node *> & inputs)
 {
