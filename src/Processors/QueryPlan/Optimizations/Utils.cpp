@@ -102,14 +102,19 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
     return false;
 }
 
+const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step)
+{
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+        return &expression->getExpression();
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
+        return &filter->getExpression();
+    return nullptr;
+}
+
 bool canHoistGatherThroughStep(const IQueryPlanStep & step)
 {
-    const ActionsDAG * dag = nullptr;
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        dag = &expression->getExpression();
-    else if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-        dag = &filter->getExpression();
-    else if (!typeid_cast<const BuildRuntimeFilterStep *>(&step))
+    const ActionsDAG * dag = tryGetActionsDAG(&step);
+    if (!dag && !typeid_cast<const BuildRuntimeFilterStep *>(&step))
         return false;
 
     /// Per-block functions (rowNumberInAllBlocks, blockNumber, nowInBlock, ...) depend on the whole block

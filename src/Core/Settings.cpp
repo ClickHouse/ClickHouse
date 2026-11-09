@@ -11292,6 +11292,7 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
         {"25.5", 8, 8, "New experimental setting."}) \
     DECLARE(NonZeroUInt64, distributed_plan_min_rows_per_reader, 1000000, R"(
 Minimum number of rows for each read task when `distributed_plan_default_reader_bucket_count` is `0`.
+Also the minimum estimated rows per `UNION ALL` branch for the branches to shuffle by key directly instead of gathering on one task first.
 Used by the rule-based distributed planner.
 )", EXPERIMENTAL, \
         {"26.11", 1000000, 1000000, "New experimental setting."}) \

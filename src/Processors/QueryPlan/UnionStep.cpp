@@ -137,6 +137,18 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             "Invalid value for `max_streams_for_union_step_to_max_threads_ratio`: {}. Must be a finite non-negative number.",
             max_streams_ratio);
 
+    if (narrow_to_max_threads)
+    {
+        if (pipeline->getNumStreams() > new_max_threads)
+        {
+            QueryPipelineProcessorsCollector collector(*pipeline, this);
+            pipeline->narrow(new_max_threads);
+            auto added_processors = collector.detachProcessors();
+            processors.insert(processors.end(), added_processors.begin(), added_processors.end());
+        }
+        return pipeline;
+    }
+
     if (!allow_narrowing)
         return pipeline;
 
@@ -183,6 +195,8 @@ void UnionStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (allow_narrowing)
         flags |= 1;
+    if (narrow_to_max_threads)
+        flags |= 2;
     writeIntBinary(flags, ctx.out);
 }
 
@@ -190,12 +204,17 @@ QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
-    return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
+    auto step = std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
+    if (flags & 2)
+        step->narrowToMaxThreads();
+    return step;
 }
 
 QueryPlanStepPtr UnionStep::clone() const
 {
-    return std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
+    auto step = std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
+    step->narrow_to_max_threads = narrow_to_max_threads;
+    return step;
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry);

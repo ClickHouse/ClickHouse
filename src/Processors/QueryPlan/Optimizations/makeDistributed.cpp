@@ -27,6 +27,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeFilterExchangeWiring.h>
@@ -1157,6 +1158,116 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     node->children = std::move(node->children[0]->children);
 }
 
+/// A shuffle with no keys that keeps the bucket count only spreads rows round-robin, which no
+/// consumer depends on: drop it, so its child runs in the destination bucket directly.
+static void tryRemoveRedundantShuffle(QueryPlan::Node & node)
+{
+    const auto * shuffle = dynamic_cast<const ShuffleExchangeStep *>(node.step.get());
+    if (!shuffle || !shuffle->getKeys().empty() || shuffle->getResultBucketCount() != shuffle->getSourceBucketCount())
+        return;
+
+    node.step = std::move(node.children[0]->step);
+    node.children = std::move(node.children[0]->children);
+}
+
+/// Translate scatter keys to the step input. Reject steps that a gather cannot cross and computed keys,
+/// whose values do not exist below the step.
+static bool translateKeysThroughStep(const IQueryPlanStep & step, Names & keys)
+{
+    if (!canHoistGatherThroughStep(step))
+        return false;
+
+    const ActionsDAG * dag = tryGetActionsDAG(&step);
+    if (!dag)
+        return true;
+
+    for (auto & key : keys)
+    {
+        String input_name;
+        switch (classifyOutputName(*dag, key, input_name))
+        {
+            case TranslatedName::Traced:
+                key = std::move(input_name);
+                break;
+            case TranslatedName::Passthrough:
+                break;
+            case TranslatedName::Computed:
+                return false;
+        }
+    }
+    return true;
+}
+
+/// A keyed shuffle has a fixed per-branch cost (senders and receiver streams) and saves work proportional
+/// to the rows no longer passing through one task. It pays off when the estimated rows per branch reach
+/// `distributed_plan_min_rows_per_reader`, or when some branch has no estimate.
+static bool keyedPushdownPaysOff(QueryPlan::Node & union_node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    UInt64 total_rows = 0;
+    for (auto * branch : union_node.children)
+    {
+        auto stats = estimateReadRowsCount(*branch);
+        if (!stats.estimated_rows)
+            return true;
+        total_rows += *stats.estimated_rows;
+    }
+    return total_rows >= optimization_settings.distributed_plan_min_rows_per_reader * union_node.children.size();
+}
+
+/// Rewrite
+///   Scatter(D) <- [transparent unary]* <- Union <- [Gather ...]
+/// to
+///   [transparent unary]* <- Union <- [Shuffle(D) ...]
+/// so each branch shuffles to the destination buckets directly, instead of gathering to one node first.
+/// A keyless rewrite removes the exchange entirely and is always taken; a keyed one only if `keyedPushdownPaysOff`.
+static void tryPushScatterBelowUnion(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (node.children.size() != 1)
+        return;
+
+    const auto * scatter_step = typeid_cast<const ScatterExchangeStep *>(node.step.get());
+    if (!scatter_step)
+        return;
+
+    Names keys = scatter_step->getKeys();
+    QueryPlan::Node * current = node.children[0];
+    while (current->children.size() == 1 && translateKeysThroughStep(*current->step, keys))
+        current = current->children[0];
+
+    auto * union_step = typeid_cast<UnionStep *>(current->step.get());
+    if (!union_step)
+        return;
+
+    for (const auto * branch : current->children)
+        if (!typeid_cast<const GatherExchangeStep *>(branch->step.get()))
+            return;
+
+    if (!keys.empty() && !keyedPushdownPaysOff(*current, optimization_settings))
+        return;
+
+    const size_t max_step_description_length = optimization_settings.max_step_description_length;
+    for (auto * branch : current->children)
+    {
+        const auto * gather_step = typeid_cast<const GatherExchangeStep *>(branch->step.get());
+        auto shuffle_step = std::make_unique<ShuffleExchangeStep>(
+            branch->step->getOutputHeader(), keys, gather_step->getSourceBucketCount(),
+            scatter_step->getResultBucketCount(), scatter_step->getHashCastTypes());
+        if (keys == scatter_step->getKeys())
+            shuffle_step->setStepDescription(*scatter_step);
+        else
+            shuffle_step->setStepDescription(
+                fmt::format("by hash([{}])", fmt::join(keys, ", ")), max_step_description_length);
+        branch->step = std::move(shuffle_step);
+        tryRemoveRedundantShuffle(*branch);
+    }
+
+    /// Keep the stream width the removed scatter delivered.
+    union_step->narrowToMaxThreads();
+
+    node.step = std::move(node.children[0]->step);
+    node.children = std::move(node.children[0]->children);
+}
+
 /// True if `column_name` reaches the step's output with its value unchanged, so a merge by it stays
 /// sort-preserving. A column the `dag` does not mention is preserved: the step forwards it untouched.
 /// A column the `dag` does mention is preserved only if it is the input column of the same name.
@@ -1339,11 +1450,7 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                 {
                     SharedHeader expression_header = frame.node->step->getOutputHeader();
 
-                    const ActionsDAG * dag = nullptr;
-                    if (auto * expr = typeid_cast<ExpressionStep *>(frame.node->step.get()))
-                        dag = &expr->getExpression();
-                    else if (auto * filter = typeid_cast<FilterStep *>(frame.node->step.get()))
-                        dag = &filter->getExpression();
+                    const ActionsDAG * dag = tryGetActionsDAG(frame.node->step.get());
 
                     bool can_move_gather_up = true;
 
@@ -1373,17 +1480,9 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                 }
             }
 
+            tryPushScatterBelowUnion(*frame.node, optimization_settings);
             tryReplaceScatterGatherWithShuffle(frame.node);
-
-            if (const auto * shuffle = dynamic_cast<const ShuffleExchangeStep *>(frame.node->step.get()))
-            {
-                /// Remove shuffle with empty keys as redundant
-                if (shuffle->getKeys().empty() && shuffle->getResultBucketCount() == shuffle->getSourceBucketCount())
-                {
-                    frame.node->step = std::move(frame.node->children[0]->step);
-                    frame.node->children = std::move(frame.node->children[0]->children);
-                }
-            }
+            tryRemoveRedundantShuffle(*frame.node);
         }
 
         stack.pop_back();
