@@ -1,0 +1,30 @@
+id	UInt64					
+issue	Map(Array(Nullable(Float32)), String)					
+list_key	Map(Array(Nullable(UInt64)), String)					
+map_key	Map(Map(String, UInt64), UInt64)					
+list_of_lists_key	Map(Array(Array(UInt64)), UInt64)					
+list_of_maps_key	Map(Array(Map(String, UInt64)), UInt64)					
+list_key_in_value	Map(UInt64, Map(Array(UInt64), String))					
+list_key_in_array	Array(Map(Array(UInt64), String))					
+list_in_struct_key	Map(Tuple(a Array(UInt64)), String)					
+0	{[1,2]:'a'}	{[]:'0',[100,NULL]:'x'}	{{'k':0}:0}	{[[0],[]]:0}	{[{'a':0}]:0}	{0:{[0]:'v'}}	[{[0]:'e'}]	{([0]):'t'}
+1	{[1,2]:'a'}	{[0]:'1',[100,NULL]:'x'}	{{'k':1}:1}	{[[1],[]]:1}	{[{'a':1}]:1}	{1:{[1]:'v'}}	[{[1]:'e'}]	{([1]):'t'}
+2	{[1,2]:'a'}	{[0,1]:'2',[100,NULL]:'x'}	{{'k':2}:2}	{[[2],[]]:2}	{[{'a':2}]:2}	{2:{[2]:'v'}}	[{[2]:'e'}]	{([2]):'t'}
+0	{[1,2]:'a'}	{[]:'0',[100,NULL]:'x'}	{{'k':0}:0}
+1	{[1,2]:'a'}	{[0]:'1',[100,NULL]:'x'}	{{'k':1}:1}
+2	{[1,2]:'a'}	{[0,1]:'2',[100,NULL]:'x'}	{{'k':2}:2}
+0	[[],[100,NULL]]	['0','x']	0
+1	[[0],[100,NULL]]	['1','x']	1
+2	[[0,1],[100,NULL]]	['2','x']	0
+1
+0	{([(1),(2)]):'a'}
+1	{([(1),(2)]):'a'}
+2	{([(1),(2)]):'a'}
+0	{'{"list":[{"element":1},{"element":2}]}':'a'}	{'{"k":0}':0}
+1	{'{"list":[{"element":1},{"element":2}]}':'a'}	{'{"k":1}':1}
+2	{'{"list":[{"element":1},{"element":2}]}':'a'}	{'{"k":2}':2}
+1	{[1,2]:'a'}	{{'k':1}:'b'}	{[(1,'x'),(2,'y')]:'c'}
+2	{[]:'d',[3]:'e'}	{{}:'f'}	{[]:'g'}
+[[1,2]]	[{'k':1}]	[[(1,'x'),(2,'y')]]
+[[],[3]]	[{}]	[[]]
+2

@@ -25,7 +25,11 @@
 #include <Interpreters/ExpandedASTBudget.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageLog.h>
+#include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageStripeLog.h>
+#include <Common/assert_cast.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTLiteral.h>
@@ -1266,9 +1270,10 @@ NameSet getTableExpressionAliases(const ASTTablesInSelectQuery & tables)
     return aliases;
 }
 
-/// Appends each `MergeTree` table a read of `ast` (an `expandWithElements` output) reaches, then its active part
-/// names: parts are immutable and their names are never reused, so an unchanged list means unchanged data.
-/// Not recorded: `APPLY` members (not reached by the `WITH` expansion) and a name as an `IN` operand (may be a column).
+/// Appends each table a read of `ast` (an `expandWithElements` output) reaches, then a version of its data that changes with
+/// each committed write of rows: the active part names of a `MergeTree` table (immutable, never reused), the generation, first
+/// block number and row count of a `Memory` one, the file sizes of a `Log`, `TinyLog` or `StripeLog` one.
+/// Not recorded: other engines, `APPLY` members (not reached by the `WITH` expansion) and a name as an `IN` operand (may be a column).
 void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & parts, size_t depth = 0, const NameSet & from_aliases = {})
 {
     if (!ast || depth > MAX_DEFINITION_SCREEN_DEPTH)
@@ -1287,6 +1292,24 @@ void collectReadParts(const ASTPtr & ast, const ContextPtr & context, Strings & 
                          {MergeTreeData::DataPartState::Active},
                          {MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch}))
                     parts.push_back(part->name);
+            }
+            else if (const auto memory = castStorage<StorageMemory>(storage, DeferredTable::Load))
+            {
+                const auto metadata = memory->getInMemoryMetadataPtr(nullptr, /* bypass_metadata_cache = */ false);
+                const auto snapshot = memory->getStorageSnapshot(metadata, nullptr);
+                const auto & data = assert_cast<const StorageMemory::SnapshotData &>(*snapshot->data);
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(fmt::format("{}_{}_{}", data.generation, data.first_block_number, data.rows));
+            }
+            else if (const auto log_table = castStorage<StorageLog>(storage, DeferredTable::Load))
+            {
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(std::to_string(log_table->totalBytes(context).value_or(0)));
+            }
+            else if (const auto stripe_log_table = castStorage<StorageStripeLog>(storage, DeferredTable::Load))
+            {
+                parts.push_back(storage->getStorageID().getNameForLogs());
+                parts.push_back(std::to_string(stripe_log_table->totalBytes(context).value_or(0)));
             }
             else if (storage->getName() == "View")
             {
@@ -3040,7 +3063,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
                 /// A merge, insert or mutation between the reads means they compared different data.
                 if (readPartsChanged(context))
                 {
-                    LOG_TRACE(logger, "{} oracle mismatch skipped: the parts of a table it reads changed", name);
+                    LOG_TRACE(logger, "{} oracle mismatch skipped: the data of a table it reads changed", name);
                     return;
                 }
                 ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
