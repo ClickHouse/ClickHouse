@@ -8,8 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The keeper HTTP control API (docs/en/guides/sre/keeper/index.md, "HTTP control") answers keeper
 # client commands and four-letter words under /api/v1/commands, and is built only when
-# `keeper_server.http_control.port` is set - which no stateless server config does, hence the keeper
-# of this test, started as in 04936_keeper_handler_config_error.sh.
+# `keeper_server.http_control.port` is set - which no stateless config does, hence the own keeper.
 if ! "$CLICKHOUSE_BINARY" help 2>&1 | grep -qF 'clickhouse keeper [args]'; then
     exit 0
 fi
@@ -21,25 +20,18 @@ NODE="n_${CLICKHOUSE_DATABASE}"
 # The storage and log directories must outlive their process, so a keeper is waited for first.
 function cleanup()
 {
-    if [ -n "$KEEPER_PID" ] && kill -0 "$KEEPER_PID" 2>/dev/null; then
-        kill "$KEEPER_PID" 2>/dev/null
-        wait "$KEEPER_PID" 2>/dev/null
-    fi
+    [ -n "$KEEPER_PID" ] && { kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; }
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
 # Three free ports are needed, and keeper refuses a raft port equal to its own tcp_port, so none can
 # be left at 0. They are random and retried on collision rather than probed: nothing here is unique
-# per concurrent copy, so a derived port would be the same in every copy, and probe-then-bind is a
-# race those copies lose. The window keeps out of the ephemeral range, which TIME_WAIT fills up.
+# per copy, a derived port repeats, probe-then-bind races. The window avoids the ephemeral range.
 read -r EPH_LOW EPH_HIGH <<< "$(cat /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null)"
 : "${EPH_LOW:=32768}" "${EPH_HIGH:=60999}"
-if [ "$((EPH_LOW - 1024))" -ge "$((65535 - EPH_HIGH))" ]; then
-    WIN_LOW=1024; WIN_HIGH=$((EPH_LOW - 1))
-else
-    WIN_LOW=$((EPH_HIGH + 1)); WIN_HIGH=65535
-fi
+WIN_LOW=1024; WIN_HIGH=$((EPH_LOW - 1))
+if [ "$((EPH_LOW - 1024))" -lt "$((65535 - EPH_HIGH))" ]; then WIN_LOW=$((EPH_HIGH + 1)); WIN_HIGH=65535; fi
 
 # A slot holds all three ports; a range covering everything leaves one, so fall back to every port.
 WIN_SLOTS=$(((WIN_HIGH - 2 - WIN_LOW) / 4 + 1))
@@ -47,13 +39,16 @@ if [ "$WIN_SLOTS" -lt 256 ]; then
     WIN_LOW=1024; WIN_HIGH=65535; WIN_SLOTS=$(((WIN_HIGH - 2 - WIN_LOW) / 4 + 1))
 fi
 
-# Readiness is the control listener answering, waited for by curl's own retry, which covers both a
-# refused connection and the 503 of a keeper without a leader yet. A keeper that is gone is retried.
+# Readiness must be the listener of the keeper started here: a copy that drew the same ports answers
+# /ready too, and trusting that answer would send the commands to a keeper another copy then stops.
+# Ownership is proven by the private log of this process, which carries "Listening for HTTP Control:
+# <address>" (programs/keeper/Keeper.cpp) once this process holds the socket. `tail --pid` ends that
+# wait the moment the keeper exits - which is what a keeper that loses the bind race does - and the
+# next ports are drawn. A keeper of another copy is therefore never spoken to, and never waited for.
 READY=000
 for _ in $(seq 1 10); do
     PORT_BASE=$((WIN_LOW + RANDOM % WIN_SLOTS * 4))
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.log" "${TMP_DIR}/keeper.err.log"
-
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"; : > "${TMP_DIR}/keeper.log"
     cat > "${TMP_DIR}/keeper_config.xml" <<EOF
 <clickhouse><listen_host>127.0.0.1</listen_host>
     <logger><level>information</level><console>0</console>
@@ -75,21 +70,25 @@ EOF
 
     "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" > "${TMP_DIR}/keeper.out" 2>&1 &
     KEEPER_PID=$!
-
     URL="http://127.0.0.1:${PORT_BASE}"
-    READY="$(${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}' --retry 6 --retry-connrefused \
-                 --retry-delay 0 --retry-max-time 120 --max-time 10 "${URL}/ready")"
-    [ "$READY" = 200 ] && break
-
+    OWNED=0
+    timeout 60 grep -qF "Listening for HTTP Control: ${URL}" \
+        <(tail -n +1 -f --pid="$KEEPER_PID" "${TMP_DIR}/keeper.log") && OWNED=1
+    # The socket is this process's now; /ready answers 503 until the raft leader is there, so
+    # curl's own retry waits for it - and nothing but this keeper can answer that retry.
+    if [ "$OWNED" = 1 ]; then
+        READY="$(${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}' --retry 6 --retry-connrefused \
+                     --retry-delay 0 --retry-max-time 120 --max-time 10 "${URL}/ready")"
+        [ "$READY" = 200 ] && kill -0 "$KEEPER_PID" 2>/dev/null && break
+    fi
     kill "$KEEPER_PID" 2>/dev/null
     wait "$KEEPER_PID" 2>/dev/null
     KEEPER_PID=""
 done
 
-if [ "$READY" != 200 ]; then
-    echo "keeper did not become ready: ${READY}" >&2
-    cat "${TMP_DIR}/keeper.out" "${TMP_DIR}/keeper.err.log" >&2 2>/dev/null
-    exit 1
+if [ -z "$KEEPER_PID" ]; then
+    echo "keeper did not become ready: owned=${OWNED} code=${READY}" >&2
+    cat "${TMP_DIR}/keeper.out" "${TMP_DIR}/keeper.err.log" >&2 2>/dev/null; exit 1
 fi
 
 # $1 = label, $2 = target. Status only, where the body is a fixed sentence or an exception message.
