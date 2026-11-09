@@ -1451,35 +1451,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    /// Resolve function parameters
-
-    auto parameters_projection_names = resolveExpressionNodeList(
-        function_node_ptr->getParametersNode(),
-        scope,
-        false /*allow_lambda_expression*/,
-        false /*allow_table_expression*/,
-        allow_niladic_functions);
-
-    /// Convert function parameters into constant parameters array
-
-    Array parameters;
-
-    auto & parameters_nodes = function_node_ptr->getParameters().getNodes();
-    parameters.reserve(parameters_nodes.size());
-
-    for (auto & parameter_node : parameters_nodes)
-    {
-        const auto * constant_node = parameter_node->as<ConstantNode>();
-        if (!constant_node)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Parameter for function '{}' expected to have constant value. Actual: {}. In scope {}",
-            function_name,
-            parameter_node->formatASTForErrorMessage(),
-            scope.scope_node->formatASTForErrorMessage());
-
-        parameters.push_back(constant_node->getValue());
-    }
-
     /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
       * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
       * argument is a composition. A composition being resolved by itself denotes a function,
@@ -1519,23 +1490,43 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "If groupConcat is used with two arguments, the second argument must be a constant String");
 
-        /// The separator replaces the delimiter parameter and keeps the optional limit
-        if (parameters_nodes.empty())
-            parameters_nodes.push_back(arguments_nodes[1]);
+        /// The separator replaces the raw delimiter parameter and keeps the optional limit. This happens
+        /// before the parameters are resolved, so an overridden delimiter expression is never evaluated.
+        auto & raw_parameters_nodes = function_node_ptr->getParameters().getNodes();
+        if (raw_parameters_nodes.empty())
+            raw_parameters_nodes.push_back(arguments_nodes[1]);
         else
-            parameters_nodes[0] = arguments_nodes[1];
+            raw_parameters_nodes[0] = arguments_nodes[1];
         arguments_nodes.erase(arguments_nodes.begin() + 1);
+    }
 
-        parameters_projection_names = resolveExpressionNodeList(
-            function_node_ptr->getParametersNode(),
-            scope,
-            false /*allow_lambda_expression*/,
-            false /*allow_table_expression*/,
-            allow_niladic_functions);
+    /// Resolve function parameters
 
-        parameters.clear();
-        for (const auto & parameter_node : parameters_nodes)
-            parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
+    auto parameters_projection_names = resolveExpressionNodeList(
+        function_node_ptr->getParametersNode(),
+        scope,
+        false /*allow_lambda_expression*/,
+        false /*allow_table_expression*/,
+        allow_niladic_functions);
+
+    /// Convert function parameters into constant parameters array
+
+    Array parameters;
+
+    auto & parameters_nodes = function_node_ptr->getParameters().getNodes();
+    parameters.reserve(parameters_nodes.size());
+
+    for (auto & parameter_node : parameters_nodes)
+    {
+        const auto * constant_node = parameter_node->as<ConstantNode>();
+        if (!constant_node)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Parameter for function '{}' expected to have constant value. Actual: {}. In scope {}",
+            function_name,
+            parameter_node->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+
+        parameters.push_back(constant_node->getValue());
     }
 
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
