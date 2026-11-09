@@ -101,7 +101,7 @@ namespace
         void deserialize(ReadBuffer &, size_t) override {}
         String getIdentifier() const override { return "_bucket_" + std::to_string(bucket); }
         String getFormatName() const override { return "Test"; }
-        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &) const override { return nullptr; }
+        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices &) const override { return nullptr; }
     private:
         size_t bucket;
     };
