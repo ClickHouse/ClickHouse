@@ -1,6 +1,5 @@
 ---
 sidebarTitle: 'Monitoring'
-icon: 'chart-line'
 description: 'Monitor ClickPipes using Prometheus metrics.'
 slug: /integrations/clickpipes/monitoring
 title: 'Monitoring ClickPipes'
@@ -79,6 +78,7 @@ Not every metric is emitted by every pipe type. In particular, CDC ClickPipes ex
 |-------------------------------------|---------|---------------|-------------|
 | `ClickPipes_FetchedEvents_Total`    | Counter | Streaming, object storage | Total number of records fetched from the source. |
 | `ClickPipes_SentEvents_Total`       | Counter | Streaming, object storage | Total number of records sent to ClickHouse. |
+| `ClickPipes_FetchedEvents_PerTable` | Gauge   | CDC | Number of records fetched per destination table and event type. Uses additional `destination_table` and `event_type` labels. |
 
 ### Errors {#metrics-errors}
 

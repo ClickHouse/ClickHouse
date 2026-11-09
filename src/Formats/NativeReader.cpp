@@ -199,7 +199,7 @@ Block NativeReader::read()
         ColumnWithTypeAndName column;
 
         /// Name
-        readStringBinaryGrowing(column.name, istr);
+        readBinary(column.name, istr);
 
         /// Type
         String type_name;
@@ -210,7 +210,7 @@ Block NativeReader::read()
         }
         else
         {
-            readStringBinaryGrowing(type_name, istr);
+            readBinary(type_name, istr);
             column.type = data_type_factory.get(type_name);
         }
 
@@ -305,14 +305,6 @@ Block NativeReader::read()
                         column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
                     }
 
-                    column.type = header_column.type;
-                }
-                else if (!haveSameAggregateStateVersions(*header_column.type, *column.type))
-                {
-                    /// `equals` ignores the state version of `AggregateFunction` types, e.g. a version `0` state
-                    /// from an older writer read into a `AggregateFunction(1, uniq, UInt64)` header, where the query
-                    /// expects the version of the header. So relabel the column with the header type.
-                    column.column = relabelAggregateStateVersions(column.column, header_column.type);
                     column.type = header_column.type;
                 }
             }

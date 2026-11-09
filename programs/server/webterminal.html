@@ -29,7 +29,6 @@
         body {
             background: #000;
             overflow: hidden;
-            overscroll-behavior: contain;
             height: 100vh;
             width: 100vw;
         }
@@ -37,27 +36,25 @@
         #terminal-container {
             height: 100%;
             width: 100%;
-            overscroll-behavior: contain;
         }
 
         /* Dark themed scrollbar */
         .xterm-viewport::-webkit-scrollbar {
-            width: 6px;
+            width: 8px;
         }
         .xterm-viewport::-webkit-scrollbar-track {
-            background: #000;
+            background: #1e1e1e;
         }
         .xterm-viewport::-webkit-scrollbar-thumb {
-            background: #333;
-            border-radius: 999px;
+            background: #555;
+            border-radius: 4px;
         }
         .xterm-viewport::-webkit-scrollbar-thumb:hover {
-            background: #555;
+            background: #777;
         }
         .xterm-viewport {
             scrollbar-width: thin;
-            scrollbar-color: #333 #000;
-            overscroll-behavior: contain;
+            scrollbar-color: #555 #1e1e1e;
         }
     </style>
 </head>
@@ -90,17 +87,6 @@
     // We need this because postMessage's targetOrigin must equal the parent's actual origin,
     // and cross-origin restrictions prevent reading window.parent.location.
     var trustedParentOrigin = null;
-
-    /// Tell the embedding page that the user pressed Escape, or that the session ended, so that
-    /// it can close the panel the terminal is embedded in.
-    ///
-    /// These notifications carry no data, so they go to `'*'` when the parent origin is not
-    /// (yet) known to be trusted: an embedder learns only that its own iframe is done, which it
-    /// is entitled to know. Credentials still travel only between the terminal and a trusted
-    /// parent - see `isTrustedParentOrigin`, which gates the inbound direction.
-    function notifyParent(type) {
-        window.parent.postMessage({type: type}, trustedParentOrigin || '*');
-    }
 
     function isTrustedParentOrigin(origin) {
         if (origin === window.location.origin) return true;
@@ -165,7 +151,9 @@
         if (window.parent !== window) {
             term.attachCustomKeyEventHandler(function(e) {
                 if (e.type === 'keydown' && e.key === 'Escape') {
-                    notifyParent('webterminal-escape');
+                    if (trustedParentOrigin) {
+                        window.parent.postMessage({type: 'webterminal-escape'}, trustedParentOrigin);
+                    }
                     return false;
                 }
                 return true;
@@ -354,7 +342,9 @@
                 // Normal disconnect after session was active
                 if (window.parent !== window) {
                     // Inside an iframe - notify parent to deactivate terminal
-                    notifyParent('webterminal-closed');
+                    if (trustedParentOrigin) {
+                        window.parent.postMessage({type: 'webterminal-closed'}, trustedParentOrigin);
+                    }
                 } else {
                     window.location.href = 'https://github.com/ClickHouse/ClickHouse';
                 }
@@ -394,8 +384,7 @@
             // otherwise fitAddon may compute a tiny column count from stale dimensions.
             requestAnimationFrame(function() {
                 fitAddon.fit();
-                if (e.data.focus !== false)
-                    term.focus();
+                term.focus();
             });
         }
     });
