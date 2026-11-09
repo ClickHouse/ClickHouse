@@ -128,6 +128,13 @@ String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code)
     return std::to_string(static_cast<std::underlying_type_t<Aws::Http::HttpResponseCode>>(response_code));
 }
 
+String encodeRequestPath(const String & path)
+{
+    String encoded;
+    Poco::URI::encode(path, "?#:;+@&=%", encoded); /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
+    return encoded;
+}
+
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
     const String & force_region_,
@@ -605,10 +612,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
               * Therefore we shall encode some symbols "manually" to fit the signatures.
               */
 
-            std::string path_and_query;
+            std::string path_and_query = encodeRequestPath(target_uri.getPath());
             const std::string & query = target_uri.getRawQuery();
-            const std::string reserved = "?#:;+@&=%"; /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
-            Poco::URI::encode(target_uri.getPath(), reserved, path_and_query);
 
             if (!query.empty())
             {

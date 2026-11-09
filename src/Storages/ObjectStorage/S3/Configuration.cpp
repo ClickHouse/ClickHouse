@@ -1196,7 +1196,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     /// An explicit Google credential is pinned like a key pair, so that the server's `<s3>` and endpoint auth settings are
     /// not merged over it when the client is rebuilt.
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
@@ -1216,7 +1216,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
         String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
         setPathForRead(String(root / suffix));
-        keys = {String(root / suffix)};
+        setPaths({String(root / suffix)});
     }
 }
 
@@ -1225,7 +1225,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     chassert(s3_settings != nullptr);
     /// The Google credential of a BigLake catalog replaces any Google credential merged from the server `<s3>` and
     /// endpoint config: keeping an inherited one would leave two credential types, which the client refuses.
