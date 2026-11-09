@@ -1996,8 +1996,7 @@ static std::vector<QueryGraph::DistributionColumn> distributionColumns(
         const auto & widths = input_widths[*relation];
         auto it = widths.find(input->result_name);
         column_index[input] = columns.size();
-        const double type_bytes = estimateColumnWidthFromType(*input->result_type);
-        columns.push_back({.relation = *relation, .bytes = it != widths.end() ? it->second : type_bytes, .type_bytes = type_bytes});
+        columns.push_back({.relation = *relation, .bytes = it != widths.end() ? it->second : estimateColumnWidthFromType(*input->result_type)});
     }
     auto mark = [&](const ActionsDAG::Node * input, UInt64 relations, bool output)
     {

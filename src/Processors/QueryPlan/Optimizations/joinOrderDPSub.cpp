@@ -259,9 +259,7 @@ private:
     {
         return {cost_config, static_cast<double>(query_graph.distribution_node_count), rowBytes(left_mask), rowBytes(right_mask)};
     }
-    /// The bytes of a row of the join of the relations: of their columns that are still needed above it. A single
-    /// relation has the widths of its storage, a join result the widths of the column types, as Cascades sizes them: the
-    /// columns are renamed above a read, so Cascades no longer finds their storage widths in a join result.
+    /// The bytes of a row of the join of the relations: of their columns that are still needed above it.
     double rowBytes(UInt32 relations) const;
     /// The bytes of all input columns of the relations. Cascades may keep columns in a join result that no later join
     /// needs, so the size check of a broadcast counts them all: a broadcast that it declines is not costed.
@@ -933,7 +931,7 @@ double DPSubJoinOrderOptimizer::allColumnBytes(UInt32 relations) const
     double bytes = 0;
     for (const auto & column : query_graph.distribution_columns)
         if ((relations >> column.relation) & 1)
-            bytes += std::popcount(relations) == 1 ? column.bytes : column.type_bytes;
+            bytes += column.bytes;
     return std::max(bytes, 1.0);
 }
 
@@ -942,7 +940,7 @@ double DPSubJoinOrderOptimizer::rowBytes(UInt32 relations) const
     double bytes = 0;
     for (const auto & column : query_graph.distribution_columns)
         if (((relations >> column.relation) & 1) && (column.output || (column.compared_with & ~static_cast<UInt64>(relations))))
-            bytes += std::popcount(relations) == 1 ? column.bytes : column.type_bytes;
+            bytes += column.bytes;
     return std::max(bytes, 1.0);
 }
 

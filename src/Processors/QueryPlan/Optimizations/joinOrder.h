@@ -240,8 +240,6 @@ struct QueryGraph
     {
         size_t relation = 0;
         double bytes = 0;
-        /// The default width of its type, which Cascades gives the column in a join result.
-        double type_bytes = 0;
         bool output = false;
         /// The relations of the predicates and equivalence classes that use the column.
         UInt64 compared_with = 0;
