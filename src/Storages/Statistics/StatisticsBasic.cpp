@@ -77,27 +77,37 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
 
 /// The Field produced by `IColumn::insertDefault` for a column of `data_type`. It is the same for all
 /// columns of a type, and the statistics of all columns of a data part are loaded at once, so it is
-/// computed once per type. The cache outlives the tables, so it is bounded: large defaults (e.g. of a
-/// wide `FixedString`) are not cached, and the cache is cleared when it has too many types.
+/// computed once per type. The cache outlives the tables, so the bytes it retains are bounded: types with a
+/// long name (e.g. an `Enum` with many labels) or a large default (e.g. of a wide `FixedString`) are not cached,
+/// and the cache is cleared when it has too many types.
 Field getColumnDefaultField(const DataTypePtr & data_type)
 {
     static constexpr size_t max_cached_types = 10000;
+    static constexpr size_t max_cached_type_name_bytes = 256;
     static constexpr size_t max_cached_default_bytes = 256;
 
     static std::mutex mutex;
     static std::unordered_map<String, Field> default_fields;
 
+    auto compute_default = [&]
+    {
+        auto default_col = data_type->createColumn();
+        default_col->insertDefault();
+        return std::pair{(*default_col)[0], default_col->byteSize()};
+    };
+
     String type_name = data_type->getName();
+    if (type_name.size() > max_cached_type_name_bytes)
+        return compute_default().first;
+
     {
         std::lock_guard lock(mutex);
         if (auto it = default_fields.find(type_name); it != default_fields.end())
             return it->second;
     }
 
-    auto default_col = data_type->createColumn();
-    default_col->insertDefault();
-    Field default_field = (*default_col)[0];
-    if (default_col->byteSize() > max_cached_default_bytes)
+    auto [default_field, default_bytes] = compute_default();
+    if (default_bytes > max_cached_default_bytes)
         return default_field;
 
     std::lock_guard lock(mutex);

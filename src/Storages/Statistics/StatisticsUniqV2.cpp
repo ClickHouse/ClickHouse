@@ -26,26 +26,39 @@ static constexpr UInt64 UNIQ_COMBINED_PRECISION = 12;
 
 /// The statistics of all columns of a data part are loaded at once, so getting the aggregate function from
 /// the factory for every column would dominate the loading. An aggregate function is immutable, so it is
-/// shared by all statistics of the same type. The cache outlives the tables, so it is cleared when it has too many types.
+/// shared by all statistics of the same type. The cache outlives the tables, so the bytes it retains are bounded:
+/// types with a long name are not cached (the name of a type describes all of its parameters, e.g. all labels of an
+/// `Enum`, so a short name also means that the argument type owned by the aggregate function is small), and the cache
+/// is cleared when it has too many types.
 static AggregateFunctionPtr getCollector(const DataTypePtr & data_type)
 {
     static constexpr size_t max_cached_types = 10000;
+    static constexpr size_t max_cached_type_name_bytes = 256;
 
     static std::mutex mutex;
     static std::unordered_map<String, AggregateFunctionPtr> collectors;
 
+    auto create_function = [&]
+    {
+        AggregateFunctionProperties properties;
+        auto function = AggregateFunctionFactory::instance().get(
+            "uniqCombined64", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
+        if (function->allocatesMemoryInArena())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} for uniq_v2 statistics allocates memory in arena", function->getName());
+        return function;
+    };
+
     String type_name = data_type->getName();
+    if (type_name.size() > max_cached_type_name_bytes)
+        return create_function();
+
     {
         std::lock_guard lock(mutex);
         if (auto it = collectors.find(type_name); it != collectors.end())
             return it->second;
     }
 
-    AggregateFunctionProperties properties;
-    auto function = AggregateFunctionFactory::instance().get(
-        "uniqCombined64", NullsAction::IGNORE_NULLS, {data_type}, Array{UNIQ_COMBINED_PRECISION}, properties);
-    if (function->allocatesMemoryInArena())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregate function {} for uniq_v2 statistics allocates memory in arena", function->getName());
+    auto function = create_function();
 
     std::lock_guard lock(mutex);
     if (collectors.size() >= max_cached_types)
