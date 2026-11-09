@@ -4415,6 +4415,7 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
    This is deliberately later than the Langfuse-specific dropdown styles. */
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > a.nav-dropdown-item[href^="https://"] > svg:last-child {
     display: block !important;
+    align-self: center;
     width: 0.75rem !important;
     height: 0.75rem !important;
     padding: 0 !important;
