@@ -572,10 +572,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
-            configuration->format,
+            configuration,
             object_storage,
-            local_context
-        );
+            local_context,
+            getStorageID());
     }
 
     iterator->setTasksGoToOtherReplicas(true);

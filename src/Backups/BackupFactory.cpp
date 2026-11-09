@@ -1,7 +1,7 @@
-#include <Access/ContextAccess.h>
 #include <Backups/BackupFactory.h>
 #include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/Context.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Common/Exception.h>
 
 #include <fmt/format.h>
@@ -62,8 +62,7 @@ void BackupFactory::checkSourceAccess(const BackupInfo & backup_info, ContextPtr
         return;
 
     if (auto target = it->second.source_access(backup_info, context, open_mode))
-        context->getAccess()->checkAccessWithFilter(
-            target->flags, AccessTypeObjects::toStringSource(target->source), target->uri);
+        ITableFunction::checkSourceAccessForURI(context, target->flags, target->source, target->uri);
 }
 
 BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const

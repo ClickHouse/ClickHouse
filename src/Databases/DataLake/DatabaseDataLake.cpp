@@ -43,6 +43,7 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -109,6 +110,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
+    extern const DatabaseDataLakeSettingsDatabaseDataLakeSnapshotLoadingMode snapshot_loading_mode;
 }
 
 namespace Setting
@@ -276,6 +278,8 @@ void DatabaseDataLake::initialize() const
         .aws_external_id = settings[DatabaseDataLakeSetting::aws_external_id].value,
     };
 
+    const auto snapshot_loading_mode = settings[DatabaseDataLakeSetting::snapshot_loading_mode].value;
+
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
     {
         case DB::DatabaseDataLakeCatalogType::ICEBERG_REST:
@@ -289,7 +293,8 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
@@ -305,7 +310,8 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
@@ -322,7 +328,8 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
@@ -344,7 +351,8 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 settings[DatabaseDataLakeSetting::flat_namespaces].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
@@ -375,7 +383,8 @@ void DatabaseDataLake::initialize() const
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
                 Context::getGlobalContextInstance(),
-                allow_server_credentials_in_user_queries);
+                allow_server_credentials_in_user_queries,
+                snapshot_loading_mode);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::UNITY:
@@ -401,7 +410,8 @@ void DatabaseDataLake::initialize() const
                 unity_auth_scope,
                 settings[DatabaseDataLakeSetting::auth_header].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                snapshot_loading_mode);
             break;
         }
 
@@ -473,7 +483,8 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::region].value,
                 catalog_parameters,
                 Context::getGlobalContextInstance(),
-                allow_server_credentials_in_user_queries);
+                allow_server_credentials_in_user_queries,
+                snapshot_loading_mode);
 #else
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
@@ -627,6 +638,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         }
         case DatabaseDataLakeCatalogType::UNITY:
         {
+#if USE_DELTA_KERNEL_RS
             switch (type)
             {
 #if USE_AWS_S3
@@ -662,6 +674,10 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
                                     "Server does not contain support for storage type {} for Unity catalog",
                                     type);
             }
+#else
+            /// The Unity catalogs mark Delta Lake tables unreadable without `delta-kernel-rs`.
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Unity catalog requires the server to be built with delta-kernel-rs");
+#endif
         }
         case DatabaseDataLakeCatalogType::GLUE:
         {
@@ -1221,7 +1237,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         context_->getAccess()->checkAccessWithFilter(
             AccessType::READ,
             toStringSource(AccessTypeObjects::Source::HDFS),
-            hdfs_configuration->getRawURI());
+            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
         /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
         /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
         hdfs_configuration->setReadOnly();
@@ -2168,6 +2184,7 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
+| `snapshot_loading_mode` | For Iceberg REST based catalogs: the `snapshots` query parameter of the load-table request. `all` loads every snapshot of the table, `refs` loads only the snapshots referenced by branches and tags. `auto` (the default) uses the `snapshot-loading-mode` that the catalog advertises in its configuration, or `all` if it advertises none. A `snapshot-loading-mode` in the catalog's `overrides` is used even when the setting is set. ClickHouse reads snapshots from the table's metadata file, so `refs` only makes the catalog response smaller, which matters for tables with a long snapshot history. Requires catalog support: some catalogs reject `refs` for tables with statistics files, or omit `metadata-location` from the response. |
 
 ## Examples {#examples}
 

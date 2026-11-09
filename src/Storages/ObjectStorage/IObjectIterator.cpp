@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -132,14 +133,14 @@ std::string ObjectInfo::getPathOrPathToArchiveIfArchive() const
 
 ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     ObjectIterator iterator_,
-    const String & format_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const ContextPtr & context_,
     const StorageID & storage_id_,
     FormatFilterInfoPtr format_filter_info_)
     : WithContext(context_)
     , iterator(iterator_)
-    , format(format_)
+    , configuration(std::move(configuration_))
     , object_storage(object_storage_)
     , format_settings(getFormatSettings(context_))
     , storage_id(storage_id_)
@@ -157,10 +158,10 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         if (!last_object_info)
             return {};
 
-        auto splitter = FormatFactory::instance().getSplitter(format);
+        auto splitter = FormatFactory::instance().getSplitter(configuration->format);
         if (splitter)
         {
-            std::vector<size_t> matching_row_groups;
+            RowGroupIndices matching_row_groups;
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
@@ -188,7 +189,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
             const auto & settings = getContext()->getSettingsRef();
             size_t bucket_size = settings[Setting::cluster_table_function_buckets_batch_size];
-            std::vector<FileBucketInfoPtr> file_bucket_infos;
+            VectorWithMemoryTracking<FileBucketInfoPtr> file_bucket_infos;
             if (settings[Setting::cluster_table_function_split_by_split_offsets] && !has_cache_entry)
             {
                 if (auto file_size = last_object_info->getFileSizeHint())
@@ -196,9 +197,13 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             }
             if (file_bucket_infos.empty())
             {
+                auto & object = last_object_info->relative_path_with_metadata;
+                if (!object.metadata)
+                    object.metadata = StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(
+                        *configuration, *last_object_info, object_storage, storage_id);
                 auto storage_to_use = last_object_info->getResolvedStorage(object_storage);
-                auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, storage_to_use, getContext(), log);
-                file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+                auto buffer = createReadBuffer(object, storage_to_use, getContext(), log);
+                file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, object, format_settings, getContext());
             }
             for (const auto & file_bucket : file_bucket_infos)
             {

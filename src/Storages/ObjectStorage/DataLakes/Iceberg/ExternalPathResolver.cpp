@@ -14,6 +14,7 @@
 #include <IO/S3/URI.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Poco/Util/MapConfiguration.h>
@@ -479,13 +480,17 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             maskCredentialsInURI(path));
     };
 
+    /// Local paths are already normal; a URI is normalized as source grant filters are matched against.
     auto check_grant = [&](AccessTypeObjects::Source source, const std::string & uri_to_check)
     {
+        const auto subject = source == AccessTypeObjects::Source::FILE
+            ? uri_to_check
+            : DB::ITableFunction::normalizeURIForAccessCheck(uri_to_check);
         if (access_check)
             access_check->granted = context->getAccess()->isGrantedWithFilter(
-                access_type, AccessTypeObjects::toStringSource(source), uri_to_check);
+                access_type, AccessTypeObjects::toStringSource(source), subject);
         else
-            context->getAccess()->checkAccessWithFilter(access_type, AccessTypeObjects::toStringSource(source), uri_to_check);
+            context->getAccess()->checkAccessWithFilter(access_type, AccessTypeObjects::toStringSource(source), subject);
     };
 
     /// Object keys are used verbatim, while the grant check percent-decodes URIs, so escape `%` to keep the checked key exact.

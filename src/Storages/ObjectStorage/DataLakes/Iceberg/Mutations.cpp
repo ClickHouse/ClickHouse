@@ -1,3 +1,4 @@
+#include <Formats/ColumnNameMaps.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Columns/ColumnNullable.h>
@@ -28,6 +29,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -213,7 +215,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
                     auto delete_file_sample_block = getPositionDeleteFileSampleBlock();
                     ColumnMapperPtr column_mapper = std::make_shared<ColumnMapper>();
-                    std::unordered_map<String, Int64> field_ids;
+                    ColumnNameToFieldId field_ids;
                     field_ids[IcebergPositionDeleteTransform::positions_column_name] = IcebergPositionDeleteTransform::positions_column_field_id;
                     field_ids[IcebergPositionDeleteTransform::data_file_path_column_name] = IcebergPositionDeleteTransform::data_file_path_column_field_id;
                     column_mapper->setStorageColumnEncoding(std::move(field_ids));
@@ -310,6 +312,10 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
+                /// Drive the write and stats from this partition's rows only; the full `chunk`
+                /// spans every partition and would duplicate rows into each per-partition file.
+                auto partition_block = data_block.cloneWithColumns(partition_chunk.getColumns());
+
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
 
@@ -328,15 +334,15 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                     ColumnMapperPtr data_column_mapper = createColumnMapper(data_schema);
                     FormatFilterInfoPtr data_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, data_column_mapper, nullptr, nullptr);
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
-                        write_format, *data_write_buffer, data_block, context, format_settings, data_format_filter_info);
+                        write_format, *data_write_buffer, partition_block, context, format_settings, data_format_filter_info);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
                     it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
                 }
 
-                update_data_result[partition_key].total_rows += data_block.rows();
-                it->second->write(data_block);
-                update_data_statistics.at(partition_key).update(chunk);
+                update_data_result[partition_key].total_rows += partition_block.rows();
+                it->second->write(partition_block);
+                update_data_statistics.at(partition_key).update(partition_chunk);
             }
         }
 
@@ -899,6 +905,11 @@ void alter(
                 new_schema = schemas->getObject(schema_index);
                 break;
             }
+        }
+        if (new_schema)
+        {
+            if (auto violation = IcebergSchemaProcessor::findSchemaViolation(*new_schema, /*is_table_schema=*/ true))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter the Iceberg table, its new schema would be invalid: {}", *violation);
         }
 
         std::string json_representation = stringifyJSON(metadata, 4);
