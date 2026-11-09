@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-msan, no-parallel
+# Tags: no-msan, no-parallel, no-fasttest
 # The sampling query profiler is disabled under MSan.
 # Keep competing profilers from dropping this query's samples in the shared pipe.
 
