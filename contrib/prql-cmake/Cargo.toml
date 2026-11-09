@@ -1,4 +1,5 @@
 [package]
+workspace = "../rust-contrib-workspace"
 edition = "2021"
 name = "_ch_rust_prql"
 version = "0.1.0"
