@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
 #include <Core/ResultColumnOrigin.h>
@@ -164,6 +165,11 @@ struct FormatSettings
     InputFormatColumnMatchingCaseSensitivity input_format_column_matching_case_sensitivity = InputFormatColumnMatchingCaseSensitivity::AUTO;
 
     UInt64 client_protocol_version = 0;
+
+    /// The hash of the settings `getFormatSettings` derived this from (see `getFormatSettingsHash`), for
+    /// keying a value by the format settings it was read with. Unset when the struct was not built by
+    /// `getFormatSettings`. A member changed afterwards is not reflected in it.
+    std::optional<UInt64> source_settings_hash = std::nullopt;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
@@ -366,6 +372,7 @@ struct FormatSettings
         bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
+        bool type_json_skip_duplicate_key_detection = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;
         char pretty_print_indent = ' ';
@@ -420,7 +427,7 @@ struct FormatSettings
         bool enable_row_group_prefetch = true;
         bool verify_checksums = true;
         bool local_time_as_utc = true;
-        std::unordered_set<int> skip_row_groups = {};
+        UnorderedSetWithMemoryTracking<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         size_t local_read_min_bytes_for_seek = 8192;
@@ -600,7 +607,7 @@ struct FormatSettings
         int64_t row_batch_size = 100'000;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
-        std::unordered_set<int> skip_stripes = {};
+        UnorderedSetWithMemoryTracking<int> skip_stripes = {};
         bool output_string_as_string = false;
         ORCCompression output_compression_method = ORCCompression::NONE;
         bool filter_push_down = true;
@@ -616,6 +623,7 @@ struct FormatSettings
     {
         bool filter_push_down = true;
         bool preserve_order = false;
+        bool output_string_as_string = true;
     } vortex{};
 
     /// For capnProto format we should determine how to
