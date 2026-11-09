@@ -18,6 +18,7 @@ FROM system.query_log
 WHERE query_kind = 'Insert'
   AND current_database = currentDatabase()
   AND log_comment = '05175_source_target_columns'
+ORDER BY type
 FORMAT VERTICAL;
 
 

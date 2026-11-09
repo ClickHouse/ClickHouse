@@ -1559,6 +1559,8 @@ BlockIO InterpreterInsertQuery::execute()
 
     setInsertContextValues(context, query, table, column_names);
 
+    if (context->hasQueryContext())
+        context->getQueryContext()->addQueryAccessInfo(table->getStorageID(), column_names);
 
     /// Access the storage itself guards the write with (e.g. the source access of a table of a
     /// `URL` database). It is also checked when the sink is created, but that happens in a

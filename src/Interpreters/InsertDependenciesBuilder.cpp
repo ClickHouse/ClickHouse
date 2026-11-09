@@ -1523,7 +1523,16 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     metadata_snapshots[current] = metadata;
     storage_locks[current] = std::move(lock);
 
-    auto column_names = init_context->getInsertionTableColumnsDescription()->getAllPhysical().getNames();
+    Names column_names;
+    if (current == init_table_id)
+        /// Exactly the columns the INSERT statement writes; the sink adds defaults for the rest
+        column_names = init_header->getNames();
+    else if (materialized_view)
+        /// The columns the view's SELECT produces
+        column_names = metadata->getColumns().getNamesOfPhysical();
+    else
+        /// The target of a view: the same list the INSERT access check below uses
+        column_names = metadata->getSampleBlockInsertable().getNames();
 
     if (init_context->hasQueryContext())
         init_context->getQueryContext()->addQueryAccessInfo(current, column_names);
