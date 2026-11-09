@@ -669,8 +669,7 @@ void validateSnapshotForMutation(
                     file_entry->parsed_entry->file_path_key.serialize(),
                     file_format);
 
-            /// A mutation computes `truncate[W]` of an `int` column as an `int`, so its delete file would not be
-            /// paired with a data file whose recorded value does not fit one.
+            /// A delete file records `truncate[W]` of an `int` column as an `int`, so it never pairs with a value outside that range.
             const auto & partition_value = file_entry->normalized_partition_key_value;
             for (const auto & partition_field : *file_entry->common_partition_specification)
             {

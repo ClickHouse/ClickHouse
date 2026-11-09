@@ -47,7 +47,6 @@ private:
     std::vector<std::optional<size_t>> function_params;
     std::vector<String> columns_to_apply;
     DataTypes result_data_types;
-    /// The transform functions' own return types, which executing them requires.
     DataTypes transform_result_data_types;
     std::vector<bool> is_truncate_of_int;
 
