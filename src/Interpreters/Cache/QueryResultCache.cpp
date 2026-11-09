@@ -126,6 +126,12 @@ struct HasNonDeterministicFunctionsMatcher
         if (data.has_non_deterministic_functions)
             return;
 
+        if (const auto * select = node->as<ASTSelectQuery>(); select && select->shuffle)
+        {
+            data.has_non_deterministic_functions = true;
+            return;
+        }
+
         if (const auto * identifier = node->as<ASTIdentifier>(); identifier && data.check_niladic_identifiers && !identifier->compound())
         {
             if (const auto func = FunctionFactory::instance().tryGet(identifier->name(), data.context);
