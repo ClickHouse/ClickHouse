@@ -37,8 +37,8 @@ p	2
 3
 p	3
 -- Projection sorting key with a folded constant, reload after the ALTER
-['plus(toStartOfMonth(toDate32(\'2020-01-15\')), y)']
-['plus(toStartOfMonth(toDate32(\'2020-01-15\')), y)']
+['plus(_CAST(\'2020-01-01\', \'Date\'), y)']
+['plus(_CAST(\'2020-01-01\', \'Date\'), y)']
 1
 p	3
 -- ReplicatedMergeTree projection, INSERT after a comment-only ALTER
