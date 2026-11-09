@@ -7,7 +7,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <DataTypes/IDataType.h>
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <unordered_map>
 
 
 namespace DB::QueryPlanOptimizations
@@ -64,12 +64,12 @@ void useShuffleForOrderByRand(QueryPlan::Node & node)
     if (!key_output)
         return;
 
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> num_parents;
+    std::unordered_map<const ActionsDAG::Node *, size_t> num_parents;
     for (const auto & dag_node : dag.getNodes())
         for (const auto * child : dag_node.children)
             ++num_parents[child];
 
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> num_outputs;
+    std::unordered_map<const ActionsDAG::Node *, size_t> num_outputs;
     for (const auto * output : dag.getOutputs())
         ++num_outputs[output];
 

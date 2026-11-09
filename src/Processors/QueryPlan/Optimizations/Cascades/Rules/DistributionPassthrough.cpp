@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
 #include <Common/logger_useful.h>
@@ -47,9 +46,9 @@ public:
     bool isTransformation() const override { return false; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
-        VectorWithMemoryTracking<GroupExpressionPtr> result;
+        std::vector<GroupExpressionPtr> result;
 
         /// Per-block and non-deterministic functions (`rowNumberInAllBlocks`, `blockNumber`,
         /// `nowInBlock`, `rand`, ...) produce different values when the stream is split across

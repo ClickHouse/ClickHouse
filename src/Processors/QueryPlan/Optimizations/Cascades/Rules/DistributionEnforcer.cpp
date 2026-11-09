@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeFactory.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Common/logger_useful.h>
@@ -42,7 +41,7 @@ public:
     class EnforcerEnumerator;
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the exchange enforcers that can bridge one distribution gap, one method per
@@ -59,7 +58,7 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        VectorWithMemoryTracking<GroupExpressionPtr> & result_)
+        std::vector<GroupExpressionPtr> & result_)
         : rule(rule_)
         , expression(std::move(expression_))
         , input_header(expression->getQueryPlanStep()->getOutputHeader())
@@ -86,7 +85,7 @@ private:
     const SharedHeader & input_header;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    VectorWithMemoryTracking<GroupExpressionPtr> & result;
+    std::vector<GroupExpressionPtr> & result;
 };
 
 bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
@@ -233,9 +232,9 @@ void DistributionEnforcer::EnforcerEnumerator::addKeyedShuffle()
     addEnforcer(std::move(exchange_step), inputAtSourceDistribution());
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    std::vector<GroupExpressionPtr> result;
     EnforcerEnumerator enforcers(*this, expression, required_properties, memo, result);
 
     if (required_properties.distribution.columns.empty())

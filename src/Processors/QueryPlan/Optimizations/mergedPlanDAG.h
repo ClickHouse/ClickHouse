@@ -3,9 +3,6 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Common/ListWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -49,7 +46,7 @@ struct MergedPlanDAG
 
     /// A list rather than a vector so that joining two of these is a splice and the pointers below stay
     /// put, which saves renumbering every value's padded side on the way up.
-    using PaddedSides = ListWithMemoryTracking<PaddedSide>;
+    using PaddedSides = std::list<PaddedSide>;
 
     /// Where a value comes from in the plan: the plan node whose step computes it, and the node of that
     /// step's own DAG it is a copy of. A source's columns have the source's plan node and no step node,
@@ -77,7 +74,7 @@ struct MergedPlanDAG
 
     /// A position in this vector is the source index reported by `getSources`, which is how the sources
     /// of a value are read off a `BitSet`, so this one has to stay indexable.
-    VectorWithMemoryTracking<Source> sources;
+    std::vector<Source> sources;
     PaddedSides padded_sides;
 
     /// The values with a join above their own computation point, whatever its kind, an `ARRAY JOIN` included. Letting one
@@ -89,17 +86,17 @@ struct MergedPlanDAG
     /// because it cannot be recovered from the DAG afterwards, and it is the only one such a node needs:
     /// a mask column emitted at a join's unmatched side is carried through the joins above it and
     /// padded by them in turn, so it already answers "did every join above this point match".
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const PaddedSide *> nearest_padded_side;
+    std::unordered_map<const ActionsDAG::Node *, const PaddedSide *> nearest_padded_side;
 
     /// Every value, mapped to where it comes from. Needed to rebuild the plan step by step: the steps are
     /// not interchangeable - a filter decides which rows the steps above it see, so moving something it
     /// sits below to beneath it can throw where the query does not - so whatever is decided about a value
     /// has to be carried out in the step that computes it.
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Origin> origins;
+    std::unordered_map<const ActionsDAG::Node *, Origin> origins;
 
     /// Per plan node of the subtree, sources included: the value of each column of its output header, in
     /// order. What a step passes through without reading is only here.
-    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
+    std::unordered_map<const QueryPlan::Node *, ActionsDAG::NodeRawConstPtrs> step_outputs;
 
     const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 

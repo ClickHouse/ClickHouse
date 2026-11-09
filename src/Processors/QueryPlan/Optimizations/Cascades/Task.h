@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
@@ -50,7 +49,7 @@ public:
 private:
     /// Stage 3: run the enforcer rules to a fixed point over the group's physical expressions
     /// and return the expressions they inserted; satisfying expressions update the best plan.
-    VectorWithMemoryTracking<GroupExpressionPtr> runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const;
+    std::vector<GroupExpressionPtr> runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const;
 
     GroupId group_id;
     ExpressionProperties required_properties;
@@ -117,7 +116,7 @@ public:
     String describe() const override;
 
 private:
-    void updateMemo(const VectorWithMemoryTracking<GroupExpressionPtr> & new_expressions, CascadesOptimizer & optimizer);
+    void updateMemo(const std::vector<GroupExpressionPtr> & new_expressions, CascadesOptimizer & optimizer);
 
     GroupExpressionPtr expression;
     ExpressionProperties required_properties;

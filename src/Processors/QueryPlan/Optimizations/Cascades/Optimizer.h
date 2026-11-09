@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
@@ -11,7 +10,6 @@
 #include <Common/Logger.h>
 #include <stack>
 #include <utility>
-#include <Common/StackWithMemoryTracking.h>
 
 namespace DB
 {
@@ -51,9 +49,9 @@ public:
 
     LoggerPtr log = getLogger("CascadesOptimizer");
 
-    const VectorWithMemoryTracking<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
-    const VectorWithMemoryTracking<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
-    const VectorWithMemoryTracking<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
+    const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
+    const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
+    const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
 
     Memo & getMemo() { return memo; }
     const Memo & getMemo() const { return memo; }
@@ -68,15 +66,15 @@ private:
     const QueryPlanOptimizationSettings & optimization_settings;
     bool optimize_was_called = false;
 
-    VectorWithMemoryTracking<OptimizationRulePtr> transformation_rules;
-    VectorWithMemoryTracking<OptimizationRulePtr> implementation_rules;
-    VectorWithMemoryTracking<OptimizationRulePtr> enforcer_rules;
+    std::vector<OptimizationRulePtr> transformation_rules;
+    std::vector<OptimizationRulePtr> implementation_rules;
+    std::vector<OptimizationRulePtr> enforcer_rules;
 
     /// The table statistics that the derivation reads. Owned here because
     /// `statistics_derivation` keeps a reference to it.
     OptimizerStatisticsPtr statistics;
     Memo memo{log};
-    StackWithMemoryTracking<OptimizationTaskPtr> tasks;
+    std::stack<OptimizationTaskPtr> tasks;
     CostEstimator cost_estimator;
     StatisticsDerivation statistics_derivation;
 };

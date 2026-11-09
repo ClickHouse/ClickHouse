@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -72,18 +71,18 @@ TEST(CascadesDagNameTranslation, ComputedOnlyDistributionColumnsAreUnderivable)
     auto dag = makeDag();
 
     /// Renamed and materialized columns translate to the input name; unknown names are kept.
-    VectorWithMemoryTracking<NameSet> columns = {{"y"}, {"m", "not_in_dag"}};
+    std::vector<NameSet> columns = {{"y"}, {"m", "not_in_dag"}};
     ASSERT_TRUE(translateDistributionColumns(dag, columns));
     EXPECT_EQ(columns[0], NameSet{"x"});
     EXPECT_EQ(columns[1], (NameSet{"x", "not_in_dag"}));
 
     /// In a mixed equivalence set only the computed name drops out.
-    VectorWithMemoryTracking<NameSet> mixed = {{"y", "computed"}};
+    std::vector<NameSet> mixed = {{"y", "computed"}};
     ASSERT_TRUE(translateDistributionColumns(dag, mixed));
     EXPECT_EQ(mixed[0], NameSet{"x"});
 
     /// A set of only computed columns makes the distribution underivable from the input.
-    VectorWithMemoryTracking<NameSet> computed_only = {{"computed"}};
+    std::vector<NameSet> computed_only = {{"computed"}};
     EXPECT_FALSE(translateDistributionColumns(dag, computed_only));
 }
 

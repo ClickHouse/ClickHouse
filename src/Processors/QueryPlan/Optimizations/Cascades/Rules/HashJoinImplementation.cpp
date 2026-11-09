@@ -1,5 +1,4 @@
 #include <DataTypes/getLeastSupertype.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
@@ -36,7 +35,7 @@ public:
     class StrategyEnumerator;
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
 /// Emits the physical alternatives of one logical join into the memo, one method per strategy.
@@ -48,7 +47,7 @@ public:
         GroupExpressionPtr expression_,
         const ExpressionProperties & required_properties_,
         Memo & memo_,
-        VectorWithMemoryTracking<GroupExpressionPtr> & result_);
+        std::vector<GroupExpressionPtr> & result_);
 
     void addLocalJoin();
     void addBroadcastJoins(size_t node_count);
@@ -87,8 +86,8 @@ private:
     const JoinStepLogical & join_step;
     const ExpressionProperties & required_properties;
     Memo & memo;
-    VectorWithMemoryTracking<GroupExpressionPtr> & result;
-    VectorWithMemoryTracking<JoinKeyPair> equi_keys;
+    std::vector<GroupExpressionPtr> & result;
+    std::vector<JoinKeyPair> equi_keys;
     bool needs_hash_cast = false;
     bool left_preserved = false;
     bool right_preserved = false;
@@ -102,7 +101,7 @@ bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const E
 
 /// Whether `join_algorithm` allows an algorithm from the hash family, so the local join can
 /// actually run as the hash join the strategies of this rule cost.
-static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `JoinSettings::join_algorithms` and `TableJoin::isEnabledAlgorithm` both use std::vector
+static bool allowsHashFamilyAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms)
 {
     return TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::GRACE_HASH)
@@ -127,7 +126,7 @@ HashJoinImplementation::StrategyEnumerator::StrategyEnumerator(
     GroupExpressionPtr expression_,
     const ExpressionProperties & required_properties_,
     Memo & memo_,
-    VectorWithMemoryTracking<GroupExpressionPtr> & result_)
+    std::vector<GroupExpressionPtr> & result_)
     : rule(rule_)
     , expression(std::move(expression_))
     , join_step(*typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()))
@@ -433,7 +432,7 @@ void HashJoinImplementation::StrategyEnumerator::addSingleKeyShuffleJoins(size_t
     }
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     chassert(typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()));
     chassert(expression->inputs.size() == 2);
@@ -441,7 +440,7 @@ VectorWithMemoryTracking<GroupExpressionPtr> HashJoinImplementation::applyImpl(G
     const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    std::vector<GroupExpressionPtr> result;
     StrategyEnumerator strategies(*this, expression, required_properties, memo, result);
 
     strategies.addLocalJoin();

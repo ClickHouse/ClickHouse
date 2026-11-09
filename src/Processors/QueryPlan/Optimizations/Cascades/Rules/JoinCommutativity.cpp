@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -21,7 +20,7 @@ public:
     bool isTransformation() const override { return true; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const override;
 };
 
 bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
@@ -63,7 +62,7 @@ static std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & joi
     return swapped_join_step;
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     chassert(expression->inputs.size() == 2);
     const auto * join_step = typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());

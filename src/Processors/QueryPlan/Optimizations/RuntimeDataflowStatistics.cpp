@@ -1,5 +1,4 @@
 #include <Core/ProtocolDefines.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -381,7 +380,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
     const auto & columns = chunk.getColumns();
 
     /// Mark key columns so we can skip them — only non-key columns are aggregate states.
-    VectorWithMemoryTracking<bool> is_key(columns.size(), false);
+    std::vector<bool> is_key(columns.size(), false);
     for (auto pos : keys_positions)
         is_key[pos] = true;
 

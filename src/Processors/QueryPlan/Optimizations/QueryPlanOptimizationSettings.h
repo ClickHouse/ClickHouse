@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Joins.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsEnums.h>
 #include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -293,7 +292,7 @@ struct QueryPlanOptimizationSettings
     UInt64 join_runtime_filter_min_probe_rows = 1000;
     bool join_runtime_filter_size_from_hash_table_stats = false;
 
-    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- assigned from `SettingFieldMultiEnum`, which converts only to std::vector
+    std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
     size_t min_columns_for_join_lazy_indexing = 0;
     size_t max_limit_for_join_lazy_indexing = 0;

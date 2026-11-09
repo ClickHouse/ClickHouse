@@ -320,7 +320,7 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
     Stack stack;
     stack.push_back({.node = &root});
 
-    using SortingPropertyStack = VectorWithMemoryTracking<SortingProperty>;
+    using SortingPropertyStack = std::vector<SortingProperty>;
     SortingPropertyStack properties;
 
     while (!stack.empty())

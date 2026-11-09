@@ -1,6 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/ListWithMemoryTracking.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -29,9 +27,9 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     /// resolved to physical columns. This is essential for correct index
     /// analysis when plan optimizations like mergeExpressions have not
     /// merged these steps into the filter.
-    VectorWithMemoryTracking<const ActionsDAG *> expression_dags;
+    std::vector<const ActionsDAG *> expression_dags;
     /// A list, `expression_dags` keeps pointers into it.
-    ListWithMemoryTracking<ActionsDAG> array_join_dags;
+    std::list<ActionsDAG> array_join_dags;
 
     /// Resolve the filter's columns down to the source through the steps below it.
     auto compose = [&](ActionsDAG filter_dag)

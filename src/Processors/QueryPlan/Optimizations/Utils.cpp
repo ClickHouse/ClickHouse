@@ -17,10 +17,9 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_set>
 #include <utility>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -169,8 +168,8 @@ bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
 
 bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
 {
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
-    VectorWithMemoryTracking<const ActionsDAG::Node *> stack{root};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -221,8 +220,8 @@ namespace
 template <typename IsMarkedInput>
 NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
 {
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> marked;
-    VectorWithMemoryTracking<std::pair<const ActionsDAG::Node *, bool>> stack;
+    std::unordered_map<const ActionsDAG::Node *, bool> marked;
+    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
     for (const auto * output : dag.getOutputs())
         stack.emplace_back(output, false);
 
@@ -271,8 +270,8 @@ ConstantColumns collectConstantColumns(const QueryPlan::Node & root)
         return it == result.end() ? no_columns : it->second;
     };
 
-    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> visited;
-    VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
+    std::unordered_set<const QueryPlan::Node *> visited;
+    std::vector<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
     while (!stack.empty())
     {
         auto [node, expanded] = stack.back();

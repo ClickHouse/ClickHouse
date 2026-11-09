@@ -1,7 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -101,7 +98,7 @@ public:
     bool isTransformation() const override { return true; }
 
 protected:
-    VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+    std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 
 private:
     GroupExpressionPtr buildPushdownAlternative(
@@ -162,7 +159,7 @@ bool isFullPushdownAllowed(JoinKind kind, JoinStrictness strictness, JoinTableSi
 /// Turns a `JoinStepLogical` group expression into a candidate, appending it to `result` unless
 /// its `join_expression` pointer was already collected (the same join reachable via more than
 /// one identity-expression path above it).
-void addJoinCandidate(VectorWithMemoryTracking<MatchedJoin> & result, GroupExpressionPtr join_expression, const ExpressionStep * peeled_expression)
+void addJoinCandidate(std::vector<MatchedJoin> & result, GroupExpressionPtr join_expression, const ExpressionStep * peeled_expression)
 {
     for (const auto & existing : result)
         if (existing.join_expression == join_expression)
@@ -200,9 +197,9 @@ void addJoinCandidate(VectorWithMemoryTracking<MatchedJoin> & result, GroupExpre
 /// `stop_at_first_pushable` short-circuits (for `checkPattern`'s cheap existence check) as soon
 /// as a collected candidate's join kind/strictness allows pushing to either side - no DAG walks,
 /// just the coarse `isPushdownAllowed` test. `applyImpl` passes false to collect every candidate.
-VectorWithMemoryTracking<MatchedJoin> collectJoinsUnderAggregation(const GroupExpression & expression, const Memo & memo, bool stop_at_first_pushable)
+std::vector<MatchedJoin> collectJoinsUnderAggregation(const GroupExpression & expression, const Memo & memo, bool stop_at_first_pushable)
 {
-    VectorWithMemoryTracking<MatchedJoin> result;
+    std::vector<MatchedJoin> result;
     if (expression.inputs.size() != 1)
         return result;
     if (!(expression.inputs[0].required_properties == ExpressionProperties{}))
@@ -277,7 +274,7 @@ bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const Expr
 /// query (e.g. `rand`).
 std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & join_step)
 {
-    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, JoinActionRef> input_refs;
+    std::unordered_map<const ActionsDAG::Node *, JoinActionRef> input_refs;
     for (const auto & input : join_step.getInputActions())
         input_refs.emplace(input.getNode(), input);
 
@@ -285,14 +282,14 @@ std::optional<ConditionInputs> collectConditionInputs(const JoinStepLogical & jo
     const auto & right_header = *join_step.getInputHeaders().back();
     const auto & join_operator = join_step.getJoinOperator();
 
-    VectorWithMemoryTracking<const ActionsDAG::Node *> stack;
+    std::vector<const ActionsDAG::Node *> stack;
     for (const auto & action : join_operator.expression)
         stack.push_back(action.getNode());
     for (const auto & action : join_operator.residual_filter)
         stack.push_back(action.getNode());
 
     ConditionInputs result;
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    std::unordered_set<const ActionsDAG::Node *> visited;
     NameSet seen_left;
     NameSet seen_right;
     while (!stack.empty())
@@ -406,7 +403,7 @@ std::unique_ptr<JoinStepLogical> rebuildJoinWithNewInput(
     if (dag.getInputs().size() != all_columns.size())
         return nullptr;
 
-    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> inputs_by_name;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs_by_name;
     for (const auto * input : dag.getInputs())
         inputs_by_name.emplace(input->result_name, input);
 
@@ -799,7 +796,7 @@ GroupExpressionPtr AggregationPushdown::buildPushdownAlternative(
         std::move(partial_expression), std::move(join_alternative), std::move(merge_step));
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> AggregationPushdown::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+std::vector<GroupExpressionPtr> AggregationPushdown::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
@@ -807,7 +804,7 @@ VectorWithMemoryTracking<GroupExpressionPtr> AggregationPushdown::applyImpl(Grou
             "AggregationPushdown::applyImpl called for non-AggregatingStep expression '{}'",
             expression->getDescription());
 
-    VectorWithMemoryTracking<GroupExpressionPtr> result;
+    std::vector<GroupExpressionPtr> result;
     for (const auto & match : collectJoinsUnderAggregation(*expression, memo, /*stop_at_first_pushable=*/false))
     {
         const auto & join_step = *match.join_step;

@@ -10,7 +10,6 @@
 #include <Common/typeid_cast.h>
 
 #include <unordered_map>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -53,7 +52,7 @@ StreamOrderUse getStreamOrderUse(const IQueryPlanStep & step)
 
 void allowReadingShardsFromSeveralReplicas(QueryPlan::Node & root)
 {
-    UnorderedMapWithMemoryTracking<ReadFromRemote *, bool> allowed;
+    std::unordered_map<ReadFromRemote *, bool> allowed;
     Stack stack;
 
     traverseQueryPlan(stack, root, [&](QueryPlan::Node & node)

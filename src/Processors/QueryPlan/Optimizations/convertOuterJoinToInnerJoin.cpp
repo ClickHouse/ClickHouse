@@ -12,7 +12,6 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Common/StackWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -109,7 +108,7 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
     {
         if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
-            StackWithMemoryTracking<const ActionsDAG::Node *> nodes_to_process;
+            std::stack<const ActionsDAG::Node *> nodes_to_process;
             nodes_to_process.push(node);
             while (!nodes_to_process.empty())
             {

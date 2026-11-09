@@ -1,5 +1,4 @@
 #include <cmath>
-#include <Common/VectorWithMemoryTracking.h>
 #include <limits>
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
@@ -90,9 +89,9 @@ void OptimizeGroupTask::execute(CascadesOptimizer & optimizer)
     }
 }
 
-VectorWithMemoryTracking<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const
+std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const
 {
-    VectorWithMemoryTracking<GroupExpressionPtr> enforcer_expressions;
+    std::vector<GroupExpressionPtr> enforcer_expressions;
 
     /// Fixed-point loop: iterate over newly-added physical expressions until no
     /// new enforcers are produced.  Each iteration may create expressions that
@@ -165,9 +164,9 @@ static void scheduleApplicableRules(
     CascadesOptimizer & optimizer,
     const GroupExpressionPtr & expression,
     const ExpressionProperties & required_properties,
-    const VectorWithMemoryTracking<OptimizationRulePtr> & rules)
+    const std::vector<OptimizationRulePtr> & rules)
 {
-    VectorWithMemoryTracking<std::pair<Promise, OptimizationRulePtr>> moves;
+    std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
     for (const auto & rule : rules)
     {
         if (!expression->isApplied(*rule, required_properties) && rule->checkPattern(expression, required_properties, optimizer.getMemo()))

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Columns/Collator.h>
 #include <base/types.h>
@@ -13,7 +12,7 @@ namespace DB
 {
 
 /// A set of columns, but each column can also have multiple equivalent names derived from equality predicates
-using DistributionColumns = VectorWithMemoryTracking<NameSet>;
+using DistributionColumns = std::vector<NameSet>;
 
 struct DistributionDescription
 {
