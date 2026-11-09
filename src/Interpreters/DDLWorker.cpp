@@ -1,5 +1,6 @@
 
 #include <Common/CurrentThread.h>
+#include <Common/DNSResolver.h>
 #include <Common/QueryScope.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
@@ -87,6 +88,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
+    extern const int REPLICA_ALREADY_EXISTS;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -1530,7 +1532,26 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         }
         else
         {
-            zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+            /// Stale DNS can make a peer's host ID look local (e.g. a new pod got its old IP). Resolve again; DNS errors throw.
+            auto is_still_local = [&]
+            {
+                HostID host = HostID::fromString(host_id);
+                auto & resolver = DNSResolver::instance();
+                auto cached_address = resolver.resolveAddress(host.host_name, host.port);
+                resolver.removeHostFromCache(host.host_name);
+                auto address = resolver.resolveAddress(host.host_name, host.port);
+                bool is_local = (maybe_secure_port && DB::isLocalAddress(address, *maybe_secure_port))
+                    || DB::isLocalAddress(address, port);
+                LOG_INFO(log, "Cannot claim active node of host ID {}. Address before re-check: {}, after re-check: {}, local: {}",
+                    host_id, cached_address.toString(), address.toString(), is_local);
+                return is_local;
+            };
+            if (auto removed = zookeeper->tryDeleteEphemeralNodeIfContentMatches(active_path, active_id); !removed)
+            {
+                if (!is_still_local())
+                    continue;
+                throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "{}", removed.error());
+            }
         }
         Coordination::Requests ops;
         Coordination::Responses res;
