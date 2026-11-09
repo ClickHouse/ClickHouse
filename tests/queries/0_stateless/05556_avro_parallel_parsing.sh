@@ -90,9 +90,12 @@ ${CLICKHOUSE_LOCAL} -q "
     FROM numbers(20000)
     INTO OUTFILE '${D}_limits.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 256"
 block_sizes="SELECT blockSize() AS b FROM file('${D}_limits.avro', 'Avro', 'i Int64, s String')"
-# The byte limit alone: rows are not limited, so more than one block means the 4 KiB limit cut the file.
+# The byte limit alone: rows are not limited (max_block_size is the whole file), so a block smaller than
+# all 20000 rows means the 4 KiB byte limit closed a segment. `max(b)` forces the block sizes to be
+# materialized -- a bare `count()` is answered from the file without parsing, so it would pass even with
+# parallel parsing disabled.
 echo -n "byte-limit split: "; ${CLICKHOUSE_LOCAL} -q "
-    SELECT count() > 1 FROM (${block_sizes})
+    SELECT max(b) < 20000 FROM (${block_sizes})
     SETTINGS ${PAR}, min_chunk_bytes_for_parallel_parsing=4096, max_block_size=20000"
 # The row limit alone: the byte limit is far above the file size, so a block smaller than 100 rows means
 # a segment was closed after reaching `max_block_size` rows, at the next Avro block boundary.
