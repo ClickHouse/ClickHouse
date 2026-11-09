@@ -3,6 +3,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
@@ -184,9 +185,9 @@ protected:
     {
         String cache_file_key;
         size_t total_row_groups = 0;
-        std::vector<size_t> matched_row_groups;
+        RowGroupIndices matched_row_groups;
         /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
-        std::vector<std::pair<size_t, Field>> best_values;
+        VectorWithMemoryTracking<std::pair<size_t, Field>> best_values;
     };
     std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
