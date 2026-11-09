@@ -1721,6 +1721,11 @@ public:
     void setGPU(const ServerSettings & server_settings);
     /// Throws when `enable_gpu` is not set.
     GPU::GPUDevice & getGPU() const;
+    /// Applies the limits of the cache of the kernels compiled for expressions from the reloaded `server_settings`.
+    /// Without a GPU there is no cache to resize, as `enable_gpu` takes effect only at the start of the server.
+    void updateGPUKernelCacheConfiguration(const ServerSettings & server_settings);
+    /// The limits of that cache, in bytes and in kernels, or zeros without a GPU.
+    std::pair<size_t, size_t> getGPUKernelCacheLimits() const;
 #endif
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
