@@ -209,3 +209,36 @@ def test_drop_database_refused_by_leftover_of_pending_refresh(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT refresh_mv_skip_execution")
     node.query("DROP DATABASE d6 SYNC SETTINGS max_table_size_to_drop = 0")
+
+
+def test_drop_database_concurrent_exchange(started_cluster):
+    # A table exchanged out of the database while DROP DATABASE stops a refresh is not dropped.
+    for db in ["d7", "d8"]:
+        node.query(f"CREATE DATABASE {db} ENGINE=Atomic")
+        node.query(f"CREATE TABLE {db}.t (s String) ENGINE=MergeTree ORDER BY s")
+        node.query(f"INSERT INTO {db}.t VALUES ('{db}')")
+    node.query(
+        "CREATE MATERIALIZED VIEW d7.rmv REFRESH EVERY 1 YEAR (x UInt64) ENGINE=MergeTree ORDER BY x EMPTY "
+        "AS SELECT number AS x FROM numbers(10)"
+    )
+    fp = "refresh_mv_pause_after_executor_published"
+    node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        node.query("SYSTEM REFRESH VIEW d7.rmv")
+        node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
+        drop = node.get_query_request(
+            "DROP DATABASE d7 SYNC SETTINGS max_table_size_to_drop = 0"
+        )
+        # The refresh is cancelled by stopping the view, after the checks that precede it.
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM system.processes WHERE query LIKE '%.tmp.inner_id.%' AND is_cancelled",
+            "1",
+        )
+        node.query("EXCHANGE TABLES d7.t AND d8.t")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+    drop.get_answer()
+    assert node.query("SELECT count() FROM system.databases WHERE name = 'd7'") == "0\n"
+    assert node.query("SELECT s FROM d8.t") == "d7\n"
+    node.query("DROP DATABASE d8 SYNC SETTINGS max_table_size_to_drop = 0")

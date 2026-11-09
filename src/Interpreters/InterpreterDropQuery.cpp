@@ -643,7 +643,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 std::vector<StoragePtr> tables_to_check_size;
                 for (const auto & [table_id, _] : tables_to_drop)
                 {
-                    auto table = DatabaseCatalog::instance().tryGetTable(table_id, table_context);
+                    /// Not `DatabaseCatalog::tryGetTable`: it would pin the name to this storage for the rest of the query.
+                    auto table = database->tryGetTable(table_id.table_name, table_context);
                     if (!table)
                         continue;
                     checkStorageSupportsTransactionsIfNeeded(table, table_context);
