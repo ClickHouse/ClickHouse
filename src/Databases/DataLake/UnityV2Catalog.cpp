@@ -20,7 +20,7 @@
 #include <sstream>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaSchemaJSON.h>
 #include <Interpreters/Context.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <fmt/ranges.h>
@@ -608,14 +608,14 @@ bool UnityV2Catalog::tryGetTableMetadata(
         {
             /// Status codes for a refused request are undocumented, so any failure marks the table unreadable.
             std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
-            auto reason = fmt::format(
+            auto reason = PreformattedMessage::create(
                 "Cannot read Iceberg table `{}`: the Unity Iceberg REST endpoint `{}` returned an error: {}. "
                 "Reading managed Iceberg tables from Unity requires 'External data access' to be enabled on the metastore "
                 "and the `EXTERNAL USE SCHEMA` privilege for the principal; "
                 "check these if the error above indicates a permission problem.",
                 full_table_name, iceberg_rest_url, DB::getCurrentExceptionMessage(false));
-            LOG_DEBUG(log, "{}", reason);
-            result.setTableIsNotReadable(reason);
+            LOG_DEBUG(log, reason);
+            result.setTableIsNotReadable(reason.text);
             return true;
         }
     }
@@ -659,6 +659,12 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
             full_table_name));
     }
 
+#if !USE_DELTA_KERNEL_RS
+    if (result.isDefaultReadableTable())
+        result.setTableIsNotReadable(fmt::format(
+            "Cannot read Delta Lake table `{}` because the server is built without delta-kernel-rs", full_table_name));
+#endif
+
     LOG_DEBUG(log, "Processing Delta table {} is default readable {}", full_table_name, result.isDefaultReadableTable());
 
     if (result.requiresSchema())
@@ -682,14 +688,14 @@ bool UnityV2Catalog::tryGetDeltaTableMetadata(
                     if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                     {
                         String type_name = type_json_str.substr(1, type_json_str.size() - 2);
-                        auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                        auto data_type_from_str = DB::getDeltaLakeSimpleTypeByName(type_name);
                         data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
                     }
                     else
                     {
                         Poco::JSON::Parser parser;
                         auto parsed_json_type = parser.parse(type_json_str);
-                        data_type = DB::DeltaLakeMetadata::getFieldType(
+                        data_type = DB::getDeltaLakeFieldType(
                             parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                     }
                 }
