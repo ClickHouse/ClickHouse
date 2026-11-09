@@ -302,9 +302,10 @@ TEST_F(AzureReadBufferSessions, ChangesAndClearsTheRightBoundAfterReleasingTheSe
     EXPECT_EQ(readBytes(*reader, 2), "23");
     reader->setReadUntilEnd();
     EXPECT_EQ(reader->getPosition(), 4);
+    EXPECT_EQ(readBytes(*reader, 2), "45");
     ASSERT_TRUE(reader->next());
     expectInUse(0);
-    EXPECT_EQ(readBytes(*reader, 12), "456789abcdef");
+    EXPECT_EQ(readBytes(*reader, 10), "6789abcdef");
     EXPECT_TRUE(reader->eof());
     EXPECT_EQ(requests.load(), 4);
 }
