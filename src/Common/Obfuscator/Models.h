@@ -1450,7 +1450,7 @@ public:
 
         ColumnPtr new_nested_column = nested_model->generate(nested_column);
 
-        return ColumnNullable::create(std::move(new_nested_column), column_nullable.tryGetNullMapColumnPtr());
+        return ColumnNullable::create(new_nested_column, column_nullable.tryGetNullMapColumnPtr());
     }
 
     void updateSeed() override

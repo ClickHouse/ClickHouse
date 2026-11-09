@@ -46,7 +46,7 @@ private:
     ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_);
     /// Creates a column without NULLs and without a null map.
     explicit ColumnNullable(MutableColumnPtr && nested_column_);
-    ColumnNullable(const ColumnNullable & other);
+    ColumnNullable(const ColumnNullable &) = default;
 
 public:
     static constexpr UInt8 IS_NULL_MASK = 1;

@@ -63,13 +63,6 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_)
 {
 }
 
-ColumnNullable::ColumnNullable(const ColumnNullable & other)
-    : COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>(other)
-    , nested_column(other.nested_column)
-    , null_map(other.null_map)
-{
-}
-
 namespace
 {
 
