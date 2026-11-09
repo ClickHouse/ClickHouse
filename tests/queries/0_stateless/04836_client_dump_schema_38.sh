@@ -40,6 +40,9 @@ CREATE DICTIONARY d.dw (k UInt64, v UInt64) PRIMARY KEY k
     SOURCE(CLICKHOUSE(TABLE 'src' DB 'd' WHERE 'k IN (SELECT k FROM url(ncw))')) LAYOUT(FLAT()) LIFETIME(0);
 CREATE TABLE d.cached (x UInt64) ENGINE = MergeTree ORDER BY x
     SETTINGS disk = disk(name = 'dc', type = cache, disk = 'blob', cache_name = 'ncc');
+CREATE NAMED COLLECTION ncm AS path = 'cm', max_size = '100Mi';
+CREATE MATERIALIZED VIEW d.mv_cached ENGINE = MergeTree ORDER BY x
+    SETTINGS disk = disk(name = 'dm', type = cache, disk = 'blob', cache_name = 'ncm') AS SELECT k AS x FROM d.src;
 "
 
 $CLICKHOUSE_LOCAL --config-file "$config" --path "$work/src" --format_display_secrets_in_show_and_select=1 --dump-schema=d \
@@ -48,5 +51,6 @@ echo "dump rc=$?"
 echo "source query warned: $(grep -c 'd.dq depends on named collection ncq,' "$work/err")"
 echo "source condition warned: $(grep -c 'd.dw depends on named collection ncw,' "$work/err")"
 echo "cache disk warned: $(grep -c 'd.cached depends on named collection ncc,' "$work/err")"
+echo "inner cache disk warned: $(grep -c 'd.mv_cached depends on named collection ncm,' "$work/err")"
 echo "collections emitted: $(grep -c 'CREATE NAMED COLLECTION' "$work/dump.sql")"
 

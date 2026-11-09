@@ -103,3 +103,14 @@ $CLICKHOUSE_CLIENT --dump-schema "${CLICKHOUSE_DATABASE}" > "$work/constraint.sq
     || echo "constraint: dump failed: $(cat "$work/constraint.err")"
 $CLICKHOUSE_LOCAL --path "$work/constraint_dst" -n --queries-file "$work/constraint.sql" > "$work/constraint.out" 2>&1
 echo "constraint_subquery: replay rc=$? $(head -c 200 "$work/constraint.out")"
+
+# The only analyzer gate of this table is in the subquery of its constraint, which CREATE runs.
+$CLICKHOUSE_CLIENT -n -q "
+SET allow_suspicious_types_in_group_by = 1;
+CREATE TABLE gate_in_constraint (id UInt64,
+    CONSTRAINT c CHECK id <= (SELECT count() FROM numbers(1) GROUP BY CAST(number AS Variant(UInt64, String)))) ENGINE = Memory;"
+$CLICKHOUSE_CLIENT --dump-schema "${CLICKHOUSE_DATABASE}" > "$work/gate.sql" 2> "$work/gate.err" \
+    || echo "constraint_gate: dump failed: $(cat "$work/gate.err")"
+echo "constraint_gate: gate emitted: $(grep -c '^SET allow_suspicious_types_in_group_by = 1;' "$work/gate.sql")"
+$CLICKHOUSE_LOCAL --path "$work/gate_dst" -n --queries-file "$work/gate.sql" > "$work/gate.out" 2>&1
+echo "constraint_gate: replay rc=$? $(head -c 200 "$work/gate.out")"

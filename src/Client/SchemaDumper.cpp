@@ -2067,8 +2067,18 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
             value && value->getType() == Field::Types::String && !value->safeGet<String>().empty())
             addNamedCollectionDependency(value->safeGet<String>(), clusters, dependencies);
     /// A cache disk defined in a `disk = disk(...)` setting reads the collection its `cache_name` key names when it is created.
-    if (create->storage && create->storage->settings)
-        for (const auto & change : create->storage->settings->changes)
+    /// The inner engine of a materialized view keeps its settings in `targets`.
+    std::vector<const ASTStorage *> storages;
+    if (create->storage)
+        storages.push_back(create->storage);
+    if (create->targets)
+        for (const auto * inner : create->targets->getInnerEngines())
+            storages.push_back(inner);
+    for (const auto * storage : storages)
+    {
+        if (!storage->settings)
+            continue;
+        for (const auto & change : storage->settings->changes)
         {
             CustomType custom;
             if (change.name != "disk" || !change.value.tryGet<CustomType>(custom)
@@ -2091,6 +2101,7 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
                     addNamedCollectionDependency(name, clusters, dependencies);
             });
         }
+    }
     if (const auto * function = create->as_table_function ? create->as_table_function->as<ASTFunction>() : nullptr)
         collectNamedCollectionsFromTableFunction(*function, clusters, dependencies);
     if (create->select)
@@ -4406,6 +4417,19 @@ ReplayGateNeeds collectReplayGateNeeds(
             add_carriers(scan_analyzed(*query));
         /// CREATE also analyzes a query in the storage definition: a table function that a `Remote` table reads, or that the
         /// table is created `AS`, folds its arguments, and a scalar subquery in one, such as a computed structure, with them.
+        /// CREATE runs the scalar subqueries of a constraint, and each runs as a SELECT of its own.
+        if (create->columns_list && create->columns_list->constraints)
+            forEachNode(*create->columns_list->constraints, [&](const IAST & node)
+            {
+                if (!node.as<ASTSubquery>())
+                    return;
+                for (const auto & query : node.children)
+                {
+                    AnalyzerCarriers carriers = scan_analyzed(*query);
+                    carriers.subquery = false;
+                    add_carriers(carriers);
+                }
+            });
         if (create->as_table_function)
             add_carriers(scan_analyzed(*create->as_table_function));
         if (create->storage)
