@@ -13,3 +13,6 @@ SELECT groupConcatOrNull(x, ', ') FROM values('x String', 'a', 'b') WHERE x = 'z
 SELECT groupConcatOrDefault(x, ', ') FROM values('x String', 'a', 'b') WHERE x = 'z';
 SELECT groupConcatMerge(', ')(s) FROM (SELECT groupConcatState(x, ', ') AS s FROM values('x String', 'a', 'b'));
 WITH (x, y) -> concat(x, y) AS groupConcatDistinct SELECT groupConcatDistinct('a', 'b');
+SELECT groupConcatArgMin(x, '-', y) FROM values('x String, y UInt8', ('a', 2), ('b', 1), ('c', 3));
+SELECT groupConcatArgMax(x, '-', y) FROM values('x String, y UInt8', ('a', 2), ('b', 1), ('c', 3));
+SELECT groupConcatArray(arr, '-') FROM values('arr Array(String)', ['a', 'b'], ['c']);

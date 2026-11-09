@@ -118,7 +118,7 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 /** The number of arguments of `function_name` when it is a `groupConcat` alias, possibly with combinators,
   * called with the separator as its second argument. Nothing for any other name.
   * `STRING_AGG(DISTINCT x, sep) FILTER (WHERE cond)` is parsed as `STRING_AGGDistinctIf(x, sep, cond)`.
-  * Only combinators that keep the separator as the second argument are matched, `-If` appends the condition.
+  * Only combinators that keep the separator as the second argument are matched, `-If` appends the condition and `-ArgMin`/`-ArgMax` the key.
   */
 std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & function_name)
 {
@@ -135,9 +135,9 @@ std::optional<size_t> getGroupConcatArgumentsCountWithSeparator(const String & f
             return {};
 
         const auto suffix = combinator->getName();
-        if (suffix == "If")
+        if (suffix == "If" || suffix == "ArgMin" || suffix == "ArgMax")
             ++arguments_count;
-        else if (suffix != "Distinct" && suffix != "OrNull" && suffix != "OrDefault" && suffix != "State")
+        else if (suffix != "Distinct" && suffix != "OrNull" && suffix != "OrDefault" && suffix != "State" && suffix != "Array")
             return {};
 
         nested_name.resize(nested_name.size() - suffix.size());
