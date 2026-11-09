@@ -20,7 +20,7 @@ using namespace DB;
 /// `max_bytes_before_external_join` alone.
 ///
 /// A peer below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS` does not know the name -
-/// `QueryPlanSerializationSettings` is a strict named schema, so `readBinary` would reject the plan outright - but
+/// the reader of the step settings in such a peer throws on an unknown name, so it would reject the plan outright - but
 /// it does know the settings whose meaning changed, and it applies the legacy contract to them. Omitting the name
 /// alone would therefore hand such a peer a plan it happily runs with a different spill behavior, so serialization
 /// fails closed whenever the two contracts can diverge for the step being serialized, and only then.
@@ -38,11 +38,11 @@ JoinSettings makeJoinSettings(const std::vector<std::pair<String, Field>> & chan
     return JoinSettings(query_settings);
 }
 
-/// The name as it appears in the binary settings stream written by `writeChangedBinary`.
+/// The name as it appears in the settings stream written by `QueryPlanSerializationSettings::write`.
 bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains("legacy_join_size_limits_trigger_spilling");
 }
 
@@ -566,4 +566,27 @@ TEST(JoinSpillTriggerPlanSetting, NullSafeEqualityIsAKeyForTheMergeAlgorithmsToo
             Exception)
             << algorithms;
     }
+}
+
+/// `allow_block_nested_loop_join` is written only towards a peer that knows the name, and a plan from a peer that
+/// predates it is read back with the block nested loop join disabled, which is how that peer ran its joins.
+TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_block_nested_loop_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN - 1;
+    const auto disabled = makeJoinSettings({{"allow_block_nested_loop_join", false}});
+
+    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
+    {
+        WriteBufferFromOwnString out;
+        settings.write(out);
+        return out.str().contains("allow_block_nested_loop_join");
+    };
+
+    EXPECT_TRUE(carries_setting(serializeAt(disabled, current_version)));
+    EXPECT_FALSE(JoinSettings(serializeAt(disabled, current_version), current_version).allow_block_nested_loop_join);
+    EXPECT_TRUE(JoinSettings(serializeAt(makeJoinSettings({}), current_version), current_version).allow_block_nested_loop_join);
+
+    EXPECT_FALSE(carries_setting(serializeAt(disabled, pre_block_nested_loop_version)));
+    EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
+                     .allow_block_nested_loop_join);
 }

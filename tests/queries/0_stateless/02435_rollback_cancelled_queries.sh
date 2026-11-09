@@ -138,6 +138,7 @@ $CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000
 
 # thread_cancel kills the client, not the query: once the HTTP body has been received the server has
 # nothing left to read from the socket, so an orphaned INSERT runs to completion (is_cancelled = 0).
-$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE '$TEST_MARK%' ASYNC FORMAT Null"
+# This KILL is a best-effort cleanup, so it must not throw when there is nothing left to kill.
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id LIKE '$TEST_MARK%' ASYNC SETTINGS kill_throw_if_noop = 0 FORMAT Null"
 wait_for_queries_to_finish 30
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table dedup_test"

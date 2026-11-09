@@ -10,19 +10,17 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="distributed_index_analysis">
-  ## distributed_index_analysis
-</div>
+## distributed_index_analysis {#distributed_index_analysis}
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Nueva configuración experimental"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "El análisis distribuido de índices pasó a Beta."}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Nueva configuración experimental"}]}]} />
 
 El análisis de índices se distribuirá entre las réplicas.
 Resulta beneficioso para el almacenamiento compartido y grandes volúmenes de datos en el clúster.
@@ -34,9 +32,7 @@ Usa las réplicas de cluster&#95;for&#95;parallel&#95;replicas.
 * [distributed&#95;index&#95;analysis&#95;min&#95;parts&#95;to&#95;activate](/es/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_parts_to_activate)
 * [distributed&#95;index&#95;analysis&#95;min&#95;indexes&#95;bytes&#95;to&#95;activate](/es/reference/settings/merge-tree-settings/distributed-index#distributed_index_analysis_min_indexes_bytes_to_activate)
 
-<div id="distributed_index_analysis_for_non_shared_merge_tree">
-  ## distributed_index_analysis_for_non_shared_merge_tree
-</div>
+## distributed_index_analysis_for_non_shared_merge_tree {#distributed_index_analysis_for_non_shared_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -44,9 +40,7 @@ Usa las réplicas de cluster&#95;for&#95;parallel&#95;replicas.
 
 Activa el análisis distribuido de índices incluso para motores distintos de SharedMergeTree (solo Cloud).
 
-<div id="distributed_index_analysis_only_on_coordinator">
-  ## distributed_index_analysis_only_on_coordinator
-</div>
+## distributed_index_analysis_only_on_coordinator {#distributed_index_analysis_only_on_coordinator}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

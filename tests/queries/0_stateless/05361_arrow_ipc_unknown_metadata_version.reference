@@ -1,0 +1,15 @@
+-- a stream whose schema message declares a version that does not exist
+1
+1
+-- a stream whose schema message declares a version this reader does not know
+1
+-- a file whose footer declares a version that does not exist
+1
+-- a stream and a file ClickHouse writes itself still read back
+6
+6
+-- a stream pyarrow writes at V4 still reads
+6
+-- a union declared at V4 is rejected
+1
+1

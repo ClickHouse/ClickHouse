@@ -83,7 +83,7 @@ void ASTRefreshStrategy::formatImpl(
 void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "RefreshStrategy");
-    w.writeString("schedule_kind", std::string(magic_enum::enum_name(schedule_kind)));
+    w.writeString("schedule_kind", magic_enum::enum_name(schedule_kind));
     w.writeChild("period", period);
     w.writeChild("offset", offset);
     w.writeChild("spread", spread);

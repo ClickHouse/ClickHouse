@@ -31,6 +31,7 @@ void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 void registerTableFunctionBigQuery(TableFunctionFactory & factory);
+void registerTableFunctionElasticsearch(TableFunctionFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
@@ -55,6 +56,8 @@ void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 void registerTableFunctionView(TableFunctionFactory & factory);
 void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
+
+void registerTableFunctionObfuscate(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);

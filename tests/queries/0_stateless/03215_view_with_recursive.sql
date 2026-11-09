@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 CREATE VIEW 03215_test_v
 AS WITH RECURSIVE test_table AS

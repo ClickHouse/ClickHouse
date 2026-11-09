@@ -2,8 +2,9 @@
 # Tags: no-replicated-database
 # `CREATE OR REPLACE TABLE ... CLONE AS` attaches the source partitions to an internal `_tmp_replace_*`
 # table before publishing it under the final name. The random temporary name cannot be covered by any grant,
-# so the attach must be authorized against the name the table is published under: `ALTER DELETE` and `INSERT`
-# on the final name plus `SELECT` on the source -- exactly what a plain `CREATE TABLE ... CLONE AS` requires.
+# so the attach must be authorized against the name the table is published under: `INSERT` on the final
+# name plus `SELECT` on the source -- exactly what a plain `CREATE TABLE ... CLONE AS` requires. The user
+# below is granted `DROP TABLE` on top of that only because of `CREATE OR REPLACE` itself.
 # https://github.com/ClickHouse/ClickHouse/issues/90919
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -27,18 +28,18 @@ CREATE TABLE cloned_denied (a Int32) ENGINE = MergeTree ORDER BY a;
 
 -- Table-scoped grants only: none of them can cover the internal \`_tmp_replace_*\` name.
 GRANT SELECT ON ${db}.src TO ${granted}, ${nogrant};
-GRANT CREATE TABLE, DROP TABLE, INSERT, ALTER DELETE ON ${db}.cloned TO ${granted};
+GRANT CREATE TABLE, DROP TABLE, INSERT ON ${db}.cloned TO ${granted};
 -- Everything except the target-side grants the attach needs.
 GRANT CREATE TABLE, DROP TABLE ON ${db}.cloned_denied TO ${nogrant};
 "
 
-echo "-- [SELECT on the source, ALTER DELETE and INSERT on the target] the clone must succeed:"
+echo "-- [SELECT on the source, INSERT on the target] the clone must succeed:"
 if output=$(${CLICKHOUSE_CLIENT} --user "${granted}" --password "${granted}" \
     --query "CREATE OR REPLACE TABLE ${db}.cloned CLONE AS ${db}.src ENGINE = MergeTree ORDER BY a" 2>&1)
 then echo "succeeded"; else echo "FAILED: ${output}"; fi
 ${CLICKHOUSE_CLIENT} --query "SELECT a FROM ${db}.cloned ORDER BY a"
 
-echo "-- [no ALTER DELETE or INSERT on the target] the clone must be denied:"
+echo "-- [no INSERT on the target] the clone must be denied:"
 ${CLICKHOUSE_CLIENT} --user "${nogrant}" --password "${nogrant}" \
     --query "CREATE OR REPLACE TABLE ${db}.cloned_denied CLONE AS ${db}.src ENGINE = MergeTree ORDER BY a" 2>&1 | grep -Fo ACCESS_DENIED | uniq
 

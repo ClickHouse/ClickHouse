@@ -4,7 +4,7 @@
 -- as a row-level no-op - turned the query into an exception.
 
 DROP TABLE IF EXISTS t_hint_null;
-CREATE TABLE t_hint_null (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_hint_null (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 10;
 INSERT INTO t_hint_null SELECT number FROM numbers(100);
 
 SELECT count() FROM t_hint_null WHERE id = 16 AND toInt64OrNull('x');
@@ -71,6 +71,6 @@ SELECT count() FROM t_hint_null WHERE indexHint(id < 10) AND id < 10;
 SELECT count() FROM t_hint_null WHERE id = 16;
 
 SELECT 'the hint still narrows the read';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM t_hint_null WHERE indexHint(id < 10)) WHERE explain LIKE '%Granules: 1/%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM t_hint_null WHERE indexHint(id < 10)) WHERE explain LIKE '%Granules: 1/10%';
 
 DROP TABLE t_hint_null;

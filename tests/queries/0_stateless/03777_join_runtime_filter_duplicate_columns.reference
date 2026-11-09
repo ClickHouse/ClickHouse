@@ -19,13 +19,15 @@ Header: number UInt64
               __table1.e UInt64
               __table3.k UInt64
               __table3.k UInt64
-        Filter ((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        Expression ((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Header: __table1.number UInt64
                 __table1.number UInt64
                 __table1.e UInt64
                 __table1.e UInt64
-          ReadFromSystemNumbers
+          Filter (((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))[split])
           Header: number UInt64
+            ReadFromSystemNumbers
+            Header: number UInt64
         BuildRuntimeFilter (Build runtime join filter on __table3.number)
         Header: __table3.number UInt64
                 __table3.k UInt64
@@ -60,13 +62,15 @@ Header: number UInt64
               __table1.e UInt64
               __table3.k UInt64
               __table3.k UInt64
-        Filter ((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        Expression ((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Header: __table1.number UInt64
                 __table1.number UInt64
                 __table1.e UInt64
                 __table1.e UInt64
-          ReadFromSystemNumbers
+          Filter (((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))[split])
           Header: number UInt64
+            ReadFromSystemNumbers
+            Header: number UInt64
         BuildRuntimeFilter (Build runtime join filter on __table3.number)
         Header: __table3.number UInt64
                 __table3.k UInt64

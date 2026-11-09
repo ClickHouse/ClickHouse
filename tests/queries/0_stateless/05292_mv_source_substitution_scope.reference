@@ -1,0 +1,16 @@
+view in scalar subquery
+1	2
+2	2
+3	3
+view in join
+1	2
+2	2
+3	3
+source table in subquery
+1	2
+2	2
+3	1
+source table in IN
+1	2
+2	2
+3	1

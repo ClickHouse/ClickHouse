@@ -30,11 +30,6 @@
 
 using namespace DB;
 
-namespace DB::ErrorCodes
-{
-    extern const int ICEBERG_SPECIFICATION_VIOLATION;
-}
-
 namespace DB::Iceberg
 {
 
@@ -134,8 +129,9 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
-    const ManifestFileIterator & manifest_file,
-    DB::ContextPtr context)
+    const DB::KeyDescription * partition_key_,
+    DB::ContextPtr context,
+    bool require_ready_sets)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
     , initial_schema_id(initial_schema_id_)
@@ -151,12 +147,32 @@ ManifestFilesPruner::ManifestFilesPruner(
         schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns);
     chassert(transformed_dag != nullptr);
 
-    if (manifest_file.hasPartitionKey())
+    if (partition_key_)
     {
-        partition_key = &manifest_file.getPartitionKeyDescription();
+        partition_key = partition_key_;
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         partition_key_condition.emplace(
-            inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            inverted_dag,
+            context,
+            partition_key->column_names,
+            partition_key->expression,
+            /* single_point_ */ true,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
+
+        NamesAndTypesList nullable_columns;
+        for (const auto & [name, type] : partition_key->expression->getRequiredColumnsWithTypes())
+            nullable_columns.emplace_back(name, makeNullableSafe(type));
+        nullable_partition_key.emplace(
+            KeyDescription::getKeyFromAST(partition_key->definition_ast, ColumnsDescription(nullable_columns), {}, context));
+        nullable_partition_key_condition.emplace(
+            inverted_dag,
+            context,
+            nullable_partition_key->column_names,
+            nullable_partition_key->expression,
+            /* single_point_ */ true,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
@@ -180,7 +196,16 @@ ManifestFilesPruner::ManifestFilesPruner(
             = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
-        min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
+        min_max_key_conditions.emplace(
+            used_column_id,
+            KeyCondition(
+                inverted_dag,
+                context,
+                {name_and_type->name},
+                expression,
+                /* single_point_ */ false,
+                /* skip_analysis_ */ false,
+                require_ready_sets));
     }
 }
 
@@ -188,7 +213,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    bool keep_nullable)
 {
     PartitionKeyFromSpec result;
 
@@ -223,7 +249,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
         /// against these input columns, which must contain each source column at most once.
         if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(column_characteristics->type));
+            partition_columns_description.emplace_back(
+                numeric_column_name, keep_nullable ? column_characteristics->type : removeNullable(column_characteristics->type));
     }
 
     if (!partition_columns_description.empty())
@@ -231,23 +258,6 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
             std::move(partition_key_ast), ColumnsDescription(partition_columns_description), {}, context));
 
     return result;
-}
-
-namespace
-{
-
-Field decodePartitionDecimal(const String & bytes, const IDataType & type)
-{
-    auto decoded = deserializeDecimalFromBinaryRepr(bytes, type);
-    if (!decoded.has_value())
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {}",
-            bytes.size(),
-            type.getName());
-    return *decoded;
-}
-
 }
 
 namespace
@@ -425,31 +435,36 @@ std::optional<Range> rangeOfPartitionValue(const String & transform_name, const 
 PruningReturnStatus ManifestFilesPruner::canBePruned(
     const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
-    const auto & partition_value = entry->parsed_entry->partition_key_value;
+    const auto & partition_value = entry->normalized_partition_key_value;
 
     if (partition_key_condition.has_value())
     {
+        /// The stripped key drops a set's NULL elements, so a tuple holding NULL (+inf) needs the Nullable key.
+        bool holds_null = false;
+        for (size_t i = 0; i < partition_value.size() && i < nullable_partition_key->data_types.size(); ++i)
+            holds_null |= partition_value[i].isNull() && nullable_partition_key->data_types[i]->isNullable();
+        const auto & key = holds_null ? *nullable_partition_key : *partition_key;
+        const auto & key_condition = holds_null ? *nullable_partition_key_condition : *partition_key_condition;
+
         /// A spec field whose source column or transform cannot be modelled is left out of the
         /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
         /// Only the partition key is unusable then; the min/max conditions below still apply.
-        if (partition_key->data_types.size() == partition_value.size())
+        if (key.data_types.size() == partition_value.size())
         {
             std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
             for (size_t i = 0; i < index_value.size(); ++i)
             {
                 auto & field = index_value[i];
-                const auto & type = partition_key->data_types.at(i);
+                const auto & type = key.data_types.at(i);
                 // NULL_LAST
                 if (field.isNull())
                     field = POSITIVE_INFINITY;
-                else if (field.getType() == Field::Types::Int64 && WhichDataType(type).isDateTime64()) /// clickhouse used to write timestamp as simple long in avro
-                    field = DecimalField<Decimal64>(field.safeGet<Int64>(), getDecimalScale(*type));
-                else if (field.getType() == Field::Types::String && WhichDataType(type).isDecimal())
-                    field = decodePartitionDecimal(field.safeGet<String>(), *type);
+                else
+                    field = convertPartitionValueToType(field, type);
             }
 
-            bool can_be_true = partition_key_condition->mayBeTrueInRange(
-                partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+            bool can_be_true = key_condition.mayBeTrueInRange(
+                partition_value.size(), index_value.data(), index_value.data(), key.data_types);
 
             if (!can_be_true)
             {

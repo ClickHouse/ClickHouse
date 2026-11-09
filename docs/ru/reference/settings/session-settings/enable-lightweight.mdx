@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_lightweight_delete">
-  ## enable_lightweight_delete
-</div>
+## enable_lightweight_delete {#enable_lightweight_delete}
 
 **Псевдонимы**: `allow_experimental_lightweight_delete`
 
@@ -24,9 +22,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает легковесные DELETE-мутации для таблиц семейства MergeTree.
 
-<div id="enable_lightweight_update">
-  ## enable_lightweight_update
-</div>
+## enable_lightweight_update {#enable_lightweight_update}
 
 <BetaBadge />
 
@@ -34,7 +30,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Легковесные обновления переведены в статус бета. Добавлен псевдоним для настройки 'allow_experimental_lightweight_update'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Легковесные обновления переведены в статус бета. Добавлен псевдоним для настройки 'allow_experimental_lightweight_update'."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "Новая настройка. Изначально она называлась `allow_experimental_lightweight_update`; теперь это её псевдоним."}]}]} />
 
 Разрешает использовать легковесные обновления.
 

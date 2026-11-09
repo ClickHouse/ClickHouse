@@ -393,14 +393,10 @@ void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row
 
     openOutputStreamOnFirstEntry();
 
-    /// Detect a duplicate UNIQUE KEY within the block here, before RocksDB
-    /// rejects the non-increasing `Put` with a raw low-level error. Interim
-    /// fail-closed stance: no INSERT-time dedup yet, so a clear defined error.
+    /// One INSERT block may not repeat a key; the commit's probe resolves conflicts only between blocks.
     if (entries_added > 0 && encoded_key == impl->last_key)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "INSERT block contains duplicate UNIQUE KEY values (part rows {} and {}). "
-            "INSERT-time UNIQUE KEY deduplication is not yet implemented; "
-            "deduplicate the block before inserting.",
+            "INSERT block contains duplicate UNIQUE KEY values (part rows {} and {}); deduplicate the block before inserting.",
             impl->last_row_number, row_number);
 
     char value_buf[4];
@@ -479,7 +475,7 @@ UInt64 SSTIndexWriter::writeDenseIndexOnInsert(
     /// The SST needs Full part storage: load-time rebuild calls `removeFileIfExists`
     /// + `writeFile`, but packed storage only supports these through the writer,
     /// which is not initialized at load/ATTACH time.
-    /// (`MergeTreeDataWriter` forces Full storage for UNIQUE KEY parts.)
+    /// (`MergeTreeData::choosePartFormat` forces Full storage for UNIQUE KEY parts.)
     if (storage.getType() != MergeTreeDataPartStorageType::Full)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY dense index requires full part storage, got part storage type {}",

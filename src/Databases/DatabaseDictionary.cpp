@@ -168,7 +168,7 @@ void registerDatabaseDictionary(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Dictionary", create_fn, {}, Documentation{
+    factory.registerDatabase("Dictionary", create_fn, SecretArgumentsSpec{}, {}, Documentation{
         .description = R"DOCS_MD(
 The `Dictionary` database engine exposes every configured [dictionary](/reference/statements/create/dictionary) as a read-only table. It is useful when a query needs to read or join dictionary data using ordinary table syntax.
 
