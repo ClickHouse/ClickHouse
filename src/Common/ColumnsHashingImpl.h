@@ -65,7 +65,8 @@ struct LastElementCacheStats
 
 /// The rows of the block a hashing state will be asked about. A `SubRangeState` skips whole-column
 /// precomputation outside them, so a caller building one state per sub-range of a block does not pay
-/// whole-block work per sub-range; other states ignore it. `end` defaults to the whole block.
+/// whole-block work per sub-range; a state that hashes rows ahead of the asked ones stops at `end`;
+/// other states ignore it. `end` defaults to the whole block.
 struct RowRange
 {
     size_t begin = 0;
@@ -75,6 +76,8 @@ struct RowRange
     /// so the state does not scan them again. A caller building one state per sub-range of a block does it once
     /// per block, because the scan is whole-block work.
     bool negative_zeros_canonicalized = false;
+    /// Some rows of the range are never asked about (e.g. the rows with a NULL key), so no state hashes rows ahead of the asked ones.
+    bool skips_rows = false;
 };
 
 /// The state type to build over a sub-range of a block. It differs from `State` only where `State` does

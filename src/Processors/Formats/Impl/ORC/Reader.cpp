@@ -104,9 +104,14 @@ void Reader::readTail()
     /// Validate the stripes once, so that the sums of their offsets and lengths cannot overflow later.
     if (footer.stripes.size() > static_cast<size_t>(std::numeric_limits<Int32>::max()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Too many stripes {} in ORC file {}", footer.stripes.size(), stream->getName());
+    stripe_first_rows.resize(footer.stripes.size());
+    UInt64 rows = 0;
     for (size_t i = 0; i < footer.stripes.size(); ++i)
     {
         const auto & stripe = footer.stripes[i];
+        stripe_first_rows[i] = rows;
+        if (common::addOverflow(rows, stripe.number_of_rows, rows))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too many rows in the stripes of ORC file {}", stream->getName());
         UInt64 stripe_end = 0;
         if (common::addOverflow(stripe.offset, stripe.index_length, stripe_end)
             || common::addOverflow(stripe_end, stripe.data_length, stripe_end)
@@ -812,6 +817,8 @@ bool RowReader::next(ColumnVectorBatch & batch, size_t max_rows)
         current_stripe = last_stripe;
         return false;
     }
+
+    batch_first_row = reader.getStripeFirstRow(current_stripe) + current_row_in_stripe;
 
     if (options.enable_lazy_decoding)
         column_reader->nextEncoded(batch, rows_to_read, nullptr);
