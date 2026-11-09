@@ -29,6 +29,7 @@ struct SSHKeyAuthChannelBinding
 /// Throws if the connection uses TLS but its session cannot provide a safe binding
 /// (for example, a TLS 1.2 session without the Extended Master Secret extension).
 /// It never falls back to the "none" binding for a TLS connection.
+/// On a TLS 1.2 connection, it disables renegotiation for the rest of the connection (RFC 9266, section 4.2).
 SSHKeyAuthChannelBinding getSSHKeyAuthChannelBinding(const Poco::Net::SocketImpl * socket_impl);
 
 /// Builds the message that the client signs and the server verifies, in the layout used

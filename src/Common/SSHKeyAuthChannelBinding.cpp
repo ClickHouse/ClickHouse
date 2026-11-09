@@ -54,10 +54,19 @@ SSHKeyAuthChannelBinding getSSHKeyAuthChannelBinding([[maybe_unused]] const Poco
         /// Before TLS 1.3, the exporter is unique to the session only with the Extended Master Secret extension (RFC 7627).
         /// Without it, two sessions can be made to share a master secret (the triple handshake attack),
         /// so refuse to authenticate instead of producing a binding that does not bind.
-        if (SSL_version(ssl) < TLS1_3_VERSION && SSL_get_extms_support(ssl) != 1)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot use ssh_key authentication over a TLS session without the Extended Master Secret extension. "
-                "Use TLS 1.3, or enable Extended Master Secret for TLS 1.2");
+        if (SSL_version(ssl) < TLS1_3_VERSION)
+        {
+            if (SSL_get_extms_support(ssl) != 1)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot use ssh_key authentication over a TLS session without the Extended Master Secret extension. "
+                    "Use TLS 1.3, or enable Extended Master Secret for TLS 1.2");
+
+            /// RFC 9266, section 4.2: the binding is not defined for a connection with renegotiation enabled.
+            /// Disable it for the rest of this connection before deriving the binding, so that its session
+            /// (and the value both ends have mixed into the signature) cannot be replaced later.
+            /// TLS 1.3 has no renegotiation.
+            SSL_set_options(ssl, SSL_OP_NO_RENEGOTIATION);
+        }
 
         /// RFC 9266: the label without a terminating NUL, a zero-length context (which is different from no context
         /// before TLS 1.3), and 32 bytes of output.

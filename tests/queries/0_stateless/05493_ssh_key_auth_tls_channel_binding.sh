@@ -67,5 +67,54 @@ run_through_relay tls "${CLICKHOUSE_PORT_TCP_SECURE}" tls --secure --accept-inva
 echo '--- relay from TLS to the plaintext port'
 run_through_relay tls "${CLICKHOUSE_PORT_TCP}" raw --secure --accept-invalid-certificate
 
+echo '--- TLS 1.2 with the Extended Master Secret extension (enabled by default)'
+cat > "${TMP_DIR}/tls12_client.xml" <<'EOF'
+<clickhouse>
+    <openSSL>
+        <client>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_3</disableProtocols>
+        </client>
+    </openSSL>
+</clickhouse>
+EOF
+run_client "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_TCP_SECURE}" --config-file "${TMP_DIR}/tls12_client.xml" --secure --accept-invalid-certificate
+
+# The protocol-level cases use a minimal native-protocol peer over the plaintext port.
+# The version inside the signed message is the protocol revision the client announces in `Hello`.
+# A client of `REVISION_WITH_BINDING` or newer must sign the bound message, an older one signs the legacy message.
+REVISION_WITH_BINDING=54497
+REVISION_BEFORE_BINDING=54496
+
+function run_peer()
+{
+    python3 "${CUR_DIR}/helpers/ssh_key_auth_peer.py" client "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_TCP}" \
+        "${USER_NAME}" "${TMP_DIR}/id_ed25519" "$@"
+}
+
+echo '--- a client of the new revision signing the bound message'
+run_peer "${REVISION_WITH_BINDING}" bound "${REVISION_WITH_BINDING}"
+
+echo '--- a client of an older revision signing the legacy message'
+run_peer "${REVISION_BEFORE_BINDING}" legacy "${REVISION_BEFORE_BINDING}"
+
+echo '--- a client of the new revision signing the legacy message, as after a relay has replaced the challenge packet'
+run_peer "${REVISION_WITH_BINDING}" legacy "${REVISION_WITH_BINDING}"
+
+echo '--- a lowered revision in Hello, while the client has signed its real revision, as after a relay has rewritten Hello'
+run_peer "${REVISION_BEFORE_BINDING}" legacy "${REVISION_WITH_BINDING}"
+
+echo '--- the client against an old server: the signature is over the exact legacy message'
+PORT_FILE="${TMP_DIR}/old_server.port"
+python3 "${CUR_DIR}/helpers/ssh_key_auth_peer.py" old-server "${PORT_FILE}" &
+OLD_SERVER_PID=$!
+for _ in $(seq 1 100)
+do
+    [ -s "${PORT_FILE}" ] && break
+    sleep 0.1
+done
+${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "$(cat "${PORT_FILE}")" \
+    --user "${USER_NAME}" --ssh-key-file "${TMP_DIR}/id_ed25519" --query "SELECT 1" > /dev/null 2>&1
+wait "${OLD_SERVER_PID}"
+
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER_NAME}"
 rm -rf "${TMP_DIR}"
