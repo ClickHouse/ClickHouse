@@ -2,7 +2,8 @@
 -- codec) is estimated and also stored. The estimates must rank the candidates as the parts do, and the estimated sizes must
 -- be proportional to the stored ones within 2%. All the settings the estimate follows are pinned to their defaults.
 
-SET max_threads = 1, max_insert_threads = 1;
+-- A state split between threads or replicas is estimated as several parts.
+SET max_threads = 1, max_insert_threads = 1, enable_parallel_replicas = 0;
 SET max_insert_block_size = 1048576, min_insert_block_size_rows = 1048576, min_insert_block_size_bytes = 0;
 SET low_cardinality_max_dictionary_size = 8192, low_cardinality_use_single_dictionary_for_part = 0;
 

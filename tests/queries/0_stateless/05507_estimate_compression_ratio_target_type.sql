@@ -1,7 +1,7 @@
 -- `estimateCompressionRatio` with a `target_type`: parameters, errors, the common numerator, and the aggregation paths.
 
--- A state split between threads or spilled to disk is estimated as several parts.
-SET max_threads = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+-- A state split between threads, replicas or spilled to disk is estimated as several parts.
+SET max_threads = 1, enable_parallel_replicas = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 DROP TABLE IF EXISTS src;
 CREATE TABLE src (n UInt64, s String) ENGINE = Memory;

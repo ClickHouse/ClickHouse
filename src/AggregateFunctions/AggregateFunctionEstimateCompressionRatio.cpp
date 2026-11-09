@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
@@ -306,18 +307,6 @@ ISerialization::SerializeBinaryBulkSettings mergeTreeBulkSettings()
     return settings;
 }
 
-/// `Dynamic` and `JSON`, also nested: their substreams depend on the data, and the writer has more rules for them.
-bool hasDataDependentStreams(const IDataType & type)
-{
-    WhichDataType which(type);
-    if (which.isDynamic() || which.isObject())
-        return true;
-    for (size_t i = 0; i < type.getNumberOfChildren(); ++i)
-        if (hasDataDependentStreams(*type.getChild(i)))
-            return true;
-    return false;
-}
-
 String streamName(const ISerialization::SubstreamPath & path)
 {
     return ISerialization::getFileNameForStream("c", path, ISerialization::StreamFileNameSettings{});
@@ -377,7 +366,8 @@ public:
         , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
         , validation_settings(std::move(validation_settings_))
     {
-        if (hasDataDependentStreams(*target_type))
+        /// `Dynamic` and `JSON`, also nested: their substreams depend on the data, and the writer has more rules for them.
+        if (anyInTypeTree(*target_type, [](const IDataType & type) { return isDynamic(type) || isObject(type); }))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support target type {}", getName(), target_type->getName());
 
@@ -768,8 +758,9 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
             if (codec.has_value())
                 throw Exception(
                     ErrorCodes::BAD_QUERY_PARAMETER,
-                    "Multiple string type parameters specified for {}. Expected at most one string type (codec) parameter",
-                    name);
+                    "Multiple codecs specified for {}: '{}' and '{}'. A string parameter is the codec unless it names a data type "
+                    "(the target type)",
+                    name, *codec, value);
             codec = value;
         }
         else if (param.getType() == Field::Types::UInt64)
@@ -829,7 +820,7 @@ a simpler model, and its result is not comparable with these.
 With `target_type`, the estimate follows how a `MergeTree` table with the default settings writes a column of a wide part: a
 compressed stream per substream (for example, the sizes and the characters of a `String`, the dictionary and the indexes of
 a `LowCardinality` column), granules of 8192 rows, sparse serialization for columns of mostly default values (decided from
-the first 8192 rows, where a part decides from all its rows). It does not read the settings of any table. The values are
+the first rows of a state, 8192 or the rows of 1 MiB, where a part decides from all its rows). It does not read the settings of any table. The values are
 converted as `accurateCast` converts them, so a value that `target_type` cannot hold is an error. The numerator of a
 `LowCardinality` column is the size of its values, not of its dictionary. Every thread of a query estimates its rows as a
 separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON` are not supported as target types.
