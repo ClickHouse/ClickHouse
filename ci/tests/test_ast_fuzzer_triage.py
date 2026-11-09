@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 import types
 
+import pytest
+
 import ci.jobs.ast_fuzzer_job as ast_job
 import ci.jobs.scripts.ai_fuzz_triage as triage
 import ci.praktika.result as praktika_result
@@ -54,7 +56,14 @@ def _logical_error(func):
     )
 
 
-def _triaged_failures(tmp_path, monkeypatch, stderr_text, server_text=""):
+def _triaged_failures(
+    tmp_path,
+    monkeypatch,
+    stderr_text,
+    server_text="",
+    fuzzer_text="Fuzzing step 1 out of 1\nSELECT 1\n",
+    fuzzer_exit_code=0,
+):
     # The real analysis of a dead server, then the failures `triage_failure` hands over.
     # `run-fuzzer.sh` appends the sanitizer reports to `server.log` too.
     artifacts = tuple(
@@ -64,7 +73,7 @@ def _triaged_failures(tmp_path, monkeypatch, stderr_text, server_text=""):
     server_log, fuzzer_log, stderr_log, _, _ = artifacts
     server_log.write_text(server_text + stderr_text, encoding="utf-8")
     stderr_log.write_text(stderr_text, encoding="utf-8")
-    fuzzer_log.write_text("Fuzzing step 1 out of 1\nSELECT 1\n", encoding="utf-8")
+    fuzzer_log.write_text(fuzzer_text, encoding="utf-8")
     monkeypatch.setattr(ast_job, "JOB_ARTIFACTS", artifacts)
     # `Result.create_from` names the result after the job, which only a CI run has.
     monkeypatch.setattr(
@@ -73,7 +82,7 @@ def _triaged_failures(tmp_path, monkeypatch, stderr_text, server_text=""):
         staticmethod(lambda: types.SimpleNamespace(JOB_NAME="AST fuzzer (amd_debug)")),
     )
     result = ast_job.analyze_job_logs(
-        list(artifacts), True, 134, 0, True, fuzzer_log
+        list(artifacts), True, 134, fuzzer_exit_code, True, fuzzer_log
     )
     assert result.is_failure()
 
@@ -108,6 +117,49 @@ def test_single_report_still_passes_on_known_issue(tmp_path, monkeypatch):
     failures = _triaged_failures(tmp_path, monkeypatch, _asan("ClientKnown", 11))
 
     assert "Incomplete failure inventory" not in [n for n, _ in failures]
+    assert _known_issue_passes(failures)
+
+
+# What the client's own signal handler writes to its stderr, so to `fuzzer.log`.
+_CLIENT_ASSERTION = (
+    "Fuzzing step 7 out of 9\nSELECT 1\n"
+    "########## Short fault info ############\n"
+    "(version 26.11.1.1, build id: X, git hash: Y, architecture: x86_64) (from thread 1) "
+    "Received signal Aborted (6)\n"
+    "Stack trace: 0x1 0x2\n"
+    "0. src/Client/ClientBase.cpp:10: DB::ClientBase::onData() @ 0x1\n"
+)
+
+
+@pytest.mark.parametrize("fuzzer_exit_code", [134, 139])
+def test_client_failure_next_to_known_server_report_blocks_pass(
+    tmp_path, monkeypatch, fuzzer_exit_code
+):
+    # The client's report is in `fuzzer.log` only, which no server-side count reads.
+    failures = _triaged_failures(
+        tmp_path,
+        monkeypatch,
+        _asan("ServerKnown", 11),
+        fuzzer_text=_CLIENT_ASSERTION,
+        fuzzer_exit_code=fuzzer_exit_code,
+    )
+
+    assert failures[0][0].startswith("AddressSanitizer")
+    client = [info for name, info in failures if name == "Client failure"]
+    assert len(client) == 1 and "DB::ClientBase::onData" in client[0]
+    assert "Incomplete failure inventory" not in [n for n, _ in failures]
+    assert not _known_issue_passes(failures)
+
+
+@pytest.mark.parametrize("fuzzer_exit_code", [32, 210])
+def test_client_losing_the_server_still_passes_on_known_issue(
+    tmp_path, monkeypatch, fuzzer_exit_code
+):
+    failures = _triaged_failures(
+        tmp_path, monkeypatch, _asan("ServerKnown", 11), fuzzer_exit_code=fuzzer_exit_code
+    )
+
+    assert "Client failure" not in [n for n, _ in failures]
     assert _known_issue_passes(failures)
 
 

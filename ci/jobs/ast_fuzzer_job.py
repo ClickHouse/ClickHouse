@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import re
+import signal
 import traceback
 from pathlib import Path
 
@@ -331,6 +332,35 @@ def get_run_command(
     )
 
 
+# The signals the client's own handlers report (`setupCommonDeadlySignalHandlers`), to its stderr,
+# which `run-fuzzer.sh` sends to `fuzzer.log`. `timeout --preserve-status` exits with 128 + signal.
+CLIENT_DEADLY_SIGNALS = frozenset(
+    {
+        signal.SIGABRT,
+        signal.SIGSEGV,
+        signal.SIGILL,
+        signal.SIGBUS,
+        signal.SIGSYS,
+        signal.SIGFPE,
+        signal.SIGTRAP,
+    }
+)
+CLIENT_FAILURE_NAME = "Client failure"
+
+
+def _client_failure(fuzzer_log: Path, fuzzer_exit_code: int) -> Result | None:
+    """The client's own failure, when it died of a deadly signal: no server log holds its report."""
+    if fuzzer_exit_code - 128 not in CLIENT_DEADLY_SIGNALS:
+        return None
+    return Result(
+        name=CLIENT_FAILURE_NAME,
+        info=f"The client died of {signal.Signals(fuzzer_exit_code - 128).name} "
+        f"(exit code {fuzzer_exit_code}). End of `fuzzer.log`:\n"
+        + _log_tail(fuzzer_log, max_lines=100),
+        status=Result.Status.FAIL,
+    )
+
+
 # What La Casa del Dolor's load generator may exit with when the run ends normally: it is
 # killed (negative codes from Python's `subprocess`) or loses the server it was talking to.
 # Same set as `BuzzHouseGenerator.validate_exit_code` in `tests/casa_del_dolor/generators.py`.
@@ -495,6 +525,13 @@ def analyze_job_logs(
                 )
             )
 
+    # A dead server skips the client's exit code above, but a client that died of a signal failed
+    # on its own. La Casa del Dolor names a failed generator itself.
+    if server_died and not server_fuzzer and (
+        client_failure := _client_failure(fuzzer_log, fuzzer_exit_code)
+    ):
+        results.append(client_failure)
+
     result = Result.create_from(
         results=(extra_results or []) + results,
         status=status if not results else None,
@@ -550,7 +587,10 @@ def triage_failure(
                     "the server and the client",
                     err_logs,
                     stderr_log,
-                    FuzzerLogParser.named_reports(info for _, info in failures),
+                    # The client's own failure is in `fuzzer.log`, not in these logs.
+                    FuzzerLogParser.named_reports(
+                        info for name, info in failures if name != CLIENT_FAILURE_NAME
+                    ),
                 )
             ]
         )
