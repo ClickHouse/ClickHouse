@@ -848,8 +848,9 @@ class FuzzerLogParser:
     @staticmethod
     def count_failure_reports(err_logs, stderr_log) -> int:
         """A lower bound on the failure reports of one process over all its restarts, from its
-        `err_logs` and `stderr_log`. A crash header and a sanitizer report can belong to the same
-        abort, so it is the larger of the two counts."""
+        `err_logs` and `stderr_log`. A sanitizer report never comes with a crash header: the
+        sanitizer resets the signal handlers before it aborts (`sanitizerDeathCallback`), so the
+        two count different failures."""
 
         def count(paths, predicate):
             total = 0
@@ -869,7 +870,7 @@ class FuzzerLogParser:
             lambda line: FuzzerLogParser.SANITIZER_REPORT_START_RE.search(line)
             and not FuzzerLogParser.SANITIZER_OOM_RE.search(line),
         )
-        return max(crashes, sanitizer_reports)
+        return crashes + sanitizer_reports
 
     @staticmethod
     def incomplete_inventory(processes):

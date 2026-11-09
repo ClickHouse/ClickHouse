@@ -39,14 +39,27 @@ def _asan(func, pid):
     )
 
 
-def _triaged_failures(tmp_path, monkeypatch, stderr_text):
+def _logical_error(func):
+    # A logical exception aborts through the signal handler, which logs the crash header.
+    return (
+        "2026.11.09 10:00:00.000000 [ 1068 ] {q} <Fatal> : Logical error: "
+        f"'Bad cast in {func}'.\n"
+        "2026.11.09 10:00:00.000001 [ 1068 ] {q} <Fatal> : Stack trace (when copying this "
+        "message, always include the lines below):\n"
+        f"0. src/{func}.cpp:10: DB::{func}() @ 0x0000000000000001\n"
+        f"1. src/{func}.cpp:20: DB::{func}Caller() @ 0x0000000000000002\n\n" + _BANNER
+    )
+
+
+def _triaged_failures(tmp_path, monkeypatch, stderr_text, server_text=""):
     # The real analysis of a dead server, then the failures `triage_failure` hands over.
+    # `run-fuzzer.sh` appends the sanitizer reports to `server.log` too.
     artifacts = tuple(
         tmp_path / n
         for n in ("server.log", "fuzzer.log", "stderr.log", "dmesg.log", "fatal.log")
     )
     server_log, fuzzer_log, stderr_log, _, _ = artifacts
-    server_log.write_text(_BANNER + stderr_text, encoding="utf-8")
+    server_log.write_text(server_text + stderr_text, encoding="utf-8")
     stderr_log.write_text(stderr_text, encoding="utf-8")
     fuzzer_log.write_text("Fuzzing step 1 out of 1\nSELECT 1\n", encoding="utf-8")
     monkeypatch.setattr(ast_job, "JOB_ARTIFACTS", artifacts)
@@ -93,3 +106,15 @@ def test_single_report_still_passes_on_known_issue(tmp_path, monkeypatch):
 
     assert "Incomplete failure inventory" not in [n for n, _ in failures]
     assert _known_issue_passes(failures)
+
+
+def test_logical_error_next_to_known_sanitizer_report_blocks_pass(tmp_path, monkeypatch):
+    # A sanitizer abort logs no crash header, so the header is an independent server failure
+    # that the parser does not name next to the ASan report.
+    failures = _triaged_failures(
+        tmp_path, monkeypatch, _asan("ClientKnown", 11), _logical_error("ServerNew")
+    )
+
+    assert failures[0][0].startswith("AddressSanitizer")
+    assert "logged 2 reports, 1 named" in failures[-1][1]
+    assert not _known_issue_passes(failures)

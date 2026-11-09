@@ -152,10 +152,23 @@ def test_unknown_error_when_nothing_classified(tmp_path):
     assert results[0][0] == FuzzerLogParser.UNKNOWN_ERROR
 
 
+
 _CRASH_BANNER = (
     "2026.09.04 00:44:57.972626 [ 1 ] {} <Fatal> BaseDaemon: "
     "########################################\n"
 )
+
+
+def _logical_error_log(func):
+    # A logical exception aborts through the signal handler, which logs the crash header.
+    return (
+        "2026.09.04 00:44:57.000000 [ 1068 ] {q} <Fatal> : Logical error: "
+        f"'Bad cast in {func}'.\n"
+        "2026.09.04 00:44:57.000001 [ 1068 ] {q} <Fatal> : Stack trace (when copying this "
+        "message, always include the lines below):\n"
+        f"0. src/{func}.cpp:10: DB::{func}() @ 0x0000000000000001\n"
+        f"1. src/{func}.cpp:20: DB::{func}Caller() @ 0x0000000000000002\n\n" + _CRASH_BANNER
+    )
 
 
 def _inventory(results_omitted):
@@ -164,13 +177,11 @@ def _inventory(results_omitted):
 
 def test_second_report_in_one_stderr_blocks_known_issue_pass(tmp_path):
     # Two independent ASan reports in one stderr (a restart appends to it): the parser names
-    # the first only, so an issue of that one must not pass the run over the second.
+    # the first only, so an issue of that one must not pass the run over the second. A
+    # sanitizer abort resets the signal handlers first, so it logs no crash header.
     pairs = [
         _pair(
-            tmp_path,
-            "main",
-            _CRASH_BANNER * 2,
-            _asan_stderr("unsigned long") + _ASAN_STDERR,
+            tmp_path, "main", _UNKNOWN_LOG, _asan_stderr("unsigned long") + _ASAN_STDERR
         )
     ]
     omitted = []
@@ -180,15 +191,26 @@ def test_second_report_in_one_stderr_blocks_known_issue_pass(tmp_path):
     assert "main logged 2 reports, 1 named" in _inventory(omitted)[0][1]
 
 
+def test_logical_error_next_to_sanitizer_report_blocks_known_issue_pass(tmp_path):
+    # The ASan report wins the classification, and the crash header belongs to an independent
+    # logical exception, which no issue of the ASan report may pass the run over.
+    pairs = [_pair(tmp_path, "main", _logical_error_log("ServerNew"), _ASAN_STDERR)]
+    omitted = []
+    results = select_replica_failures(pairs, omitted)
+
+    assert [n for n, _, _ in results][0].startswith("AddressSanitizer")
+    assert "main logged 2 reports, 1 named" in _inventory(omitted)[0][1]
+
+
 def test_crash_in_rotated_log_unnamed_blocks_known_issue_pass(tmp_path):
-    # Each server log is paired with the same stderr, whose ASan report wins every time, so the
-    # crash of the rotated log is not named.
+    # The server before the restart crashed, the current one has an ASan report: each server
+    # log is paired with the same stderr, whose report wins every time, so the crash is not named.
     stderr = tmp_path / "stderr.log"
     stderr.write_text(_ASAN_STDERR, encoding="utf-8")
     current = tmp_path / "clickhouse-server.err.log"
     rotated = tmp_path / "clickhouse-server.err.log.0"
-    current.write_text(_CRASH_BANNER, encoding="utf-8")
-    rotated.write_text(_CRASH_BANNER, encoding="utf-8")
+    current.write_text(_UNKNOWN_LOG, encoding="utf-8")
+    rotated.write_text(_logical_error_log("Rotated"), encoding="utf-8")
     omitted = []
     select_replica_failures(
         [("main", current, stderr), ("main", rotated, stderr)], omitted
@@ -200,11 +222,11 @@ def test_crash_in_rotated_log_unnamed_blocks_known_issue_pass(tmp_path):
 def test_one_report_per_replica_is_complete(tmp_path):
     # The same report on two replicas is reported once, but each replica named its own.
     pairs = [
-        _pair(tmp_path, "main", _CRASH_BANNER, _ASAN_STDERR),
-        _pair(tmp_path, "sc1", _CRASH_BANNER, _ASAN_STDERR),
+        _pair(tmp_path, "main", _UNKNOWN_LOG, _ASAN_STDERR),
+        _pair(tmp_path, "sc1", _logical_error_log("Replica"), None),
     ]
     omitted = []
     results = select_replica_failures(pairs, omitted)
 
-    assert len(results) == 1
+    assert len(results) == 2
     assert _inventory(omitted) == []
