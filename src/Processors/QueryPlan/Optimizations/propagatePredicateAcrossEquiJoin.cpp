@@ -249,6 +249,19 @@ std::optional<std::string> resolveDown(const QueryPlan::Node * node, std::string
     return name;
 }
 
+/// `optimizeJoinLogical` keys the hash table statistics of the build side by the input it saw. A copy made after it
+/// changes that input, so the size the build records must not go under the key of the unfiltered input.
+/// The key is zero before `optimizeJoinLogical` and with the statistics off
+void rekeyBuildSideStatistics(JoinStepLogical & join, const QueryPlan::Node & build_root)
+{
+    if (!join.getRightHashTableCacheKey())
+        return;
+    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
+    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
+    calculateHashTableCacheKeys(build_root, cache_keys, raw_hashes);
+    join.setRightHashTableCacheKey(raw_hashes.at(&build_root) ^ calculateJoinStepCacheKeyContribution(join, JoinTableSide::Right));
+}
+
 size_t tryPropagateToSide(
     QueryPlan::Node * join_node,
     size_t target_idx,
@@ -325,8 +338,11 @@ size_t tryPropagateToSide(
     }
 
     addFilterOnTop(*join_node, target_idx, nodes, std::move(*propagated_dag));
-    join_node->children[target_idx]->step->setStepDescription("Propagated equi-join filter");
-    added_filters.insert(join_node->children[target_idx]);
+    auto * added_filter = join_node->children[target_idx];
+    added_filter->step->setStepDescription("Propagated equi-join filter");
+    added_filters.insert(added_filter);
+    if (target_idx == 1)
+        rekeyBuildSideStatistics(typeid_cast<JoinStepLogical &>(*join_node->step), *added_filter);
     return 1;
 }
 
