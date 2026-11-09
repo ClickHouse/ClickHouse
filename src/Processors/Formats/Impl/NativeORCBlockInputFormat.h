@@ -6,13 +6,12 @@
 
 #include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <boost/algorithm/string.hpp>
-#include <orc/OrcFile.hh>
+#include <Processors/Formats/Impl/ORC/Reader.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
@@ -20,21 +19,23 @@ namespace DB
 
 class KeyCondition;
 
-class ORCInputStream : public orc::InputStream
+class ORCInputStream : public ORC::InputStream
 {
 public:
     ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch);
 
-    uint64_t getLength() const override;
-    uint64_t getNaturalReadSize() const override;
-    void read(void * buf, uint64_t length, uint64_t offset) override;
-    std::future<void> readAsync(void * buf, uint64_t length, uint64_t offset) override;
+    UInt64 getLength() const override;
+    void read(void * buf, UInt64 length, UInt64 offset) override;
+    std::future<void> readAsync(void * buf, UInt64 length, UInt64 offset) override;
     const std::string & getName() const override { return name; }
 
 protected:
     SeekableReadBuffer & in;
     size_t file_size;
-    bool supports_read_at;
+    /// Use offset-based reads (ReadBuffer::readBigAt) instead of seek+read; needed for ORC tail.
+    bool use_offset_based_read;
+    /// Async wrapper only when caller enabled prefetch and the buffer supports read-at.
+    bool use_async_prefetch;
     ThreadPoolCallbackRunnerUnsafe<void> async_runner;
 
     std::string name = "ORCInputStream";
@@ -50,22 +51,20 @@ public:
     }
 };
 
-std::unique_ptr<orc::InputStream>
+std::unique_ptr<ORC::InputStream>
 asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_prefetch, std::atomic<int> & is_cancelled);
 
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
-std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
+std::unique_ptr<ORC::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
-/// The memory pool to set on the options of every ORC reader and writer we create: unlike the
-/// default one of the library, it is accounted for by the memory tracker and it throws on failure
-/// instead of returning a null pointer that the library dereferences.
-orc::MemoryPool & getORCMemoryPool();
+/// Creates an ORC file reader; throws INCORRECT_DATA if the root type of the file is not a struct.
+std::unique_ptr<ORC::Reader> createORCReader(std::unique_ptr<ORC::InputStream> stream, const ORC::ReaderOptions & options);
 
-std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
+std::unique_ptr<ORC::SearchArgument> buildORCSearchArgument(
+    const KeyCondition & key_condition, const Block & header, const ORC::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
-class NativeORCBlockInputFormat : public IInputFormat
+class NativeORCBlockInputFormat final : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
@@ -96,14 +95,14 @@ private:
     bool prepareStripeReader();
     void prefetchStripes();
 
-    std::unique_ptr<orc::Reader> file_reader;
-    std::unique_ptr<orc::RowReader> stripe_reader;
+    std::unique_ptr<ORC::Reader> file_reader;
+    std::unique_ptr<ORC::RowReader> stripe_reader;
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
 
-    std::shared_ptr<orc::SearchArgument> sargs;
+    std::shared_ptr<ORC::SearchArgument> sargs;
 
     // indices of columns to read from ORC file
-    std::list<UInt64> include_indices;
+    std::vector<UInt64> include_indices;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
@@ -115,30 +114,36 @@ private:
     FormatFilterInfoPtr format_filter_info;
 
     std::vector<int> selected_stripes;
-    size_t read_iterator;
-    size_t prefetch_iterator;
+    size_t read_iterator{};
+    size_t prefetch_iterator{};
 
-    std::unique_ptr<orc::StripeInformation> current_stripe_info;
+    const ORC::Proto::StripeInformation * current_stripe_info = nullptr;
 
     std::atomic<int> is_stopped{0};
 };
 
-class NativeORCSchemaReader : public ISchemaReader
+class NativeORCSchemaReader final : public ISchemaReader
 {
 public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
 private:
+    void initializeIfNeeded();
+
     const FormatSettings format_settings;
+    std::unique_ptr<ORC::Reader> file_reader;
+    std::atomic<int> is_stopped{0};
+    bool initialized = false;
 };
 
 class ORCColumnToCHColumn
 {
 public:
-    using ORCColumnPtr = const orc::ColumnVectorBatch *;
-    using ORCTypePtr = const orc::Type *;
+    using ORCColumnPtr = const ORC::ColumnVectorBatch *;
+    using ORCTypePtr = const ORC::Type *;
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
     using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
 
@@ -147,22 +152,27 @@ public:
         bool allow_missing_columns_,
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
-        bool dictionary_as_low_cardinality_ = false);
+        bool dictionary_as_low_cardinality_ = false,
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
 
     void orcTableToCHChunk(
         Chunk & res,
-        const orc::Type * schema,
-        const orc::ColumnVectorBatch * table,
+        const ORC::Type * schema,
+        const ORC::ColumnVectorBatch * table,
         size_t num_rows,
         BlockMissingValues * block_missing_values = nullptr);
 
     void orcColumnsToCHChunk(
-        Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
+        Chunk & res,
+        NameToColumnPtr & name_to_column_ptr,
+        const Names & orc_field_names,
+        size_t num_rows,
+        BlockMissingValues * block_missing_values = nullptr);
 
 private:
     ColumnWithTypeAndName readColumnFromORCColumn(
-        const orc::ColumnVectorBatch * orc_column,
-        const orc::Type * orc_type,
+        const ORC::ColumnVectorBatch * orc_column,
+        const ORC::Type * orc_type,
         const std::string & column_name,
         bool inside_nullable,
         DataTypePtr type_hint = nullptr) const;
@@ -173,6 +183,7 @@ private:
     bool null_as_default;
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
 };
 }
 #endif
