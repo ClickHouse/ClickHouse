@@ -9,6 +9,14 @@ inherits = "release"
 lto = true
 
 @RUST_DEV_PROFILE@
+# Features are resolved once for all members of the workspace in `contrib/rust-contrib-workspace`,
+# so a crate that several members use is compiled once.
+[unstable]
+feature-unification = true
+
+[resolver]
+feature-unification = "workspace"
+
 [source.vendored-sources]
 directory = "@RUST_VENDOR_DIR@"
 

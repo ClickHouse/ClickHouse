@@ -336,7 +336,12 @@ endfunction()
 
 # Configure a Rust crate target with ClickHouse-specific flags.
 function(clickhouse_config_crate_flags target_name)
-    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS}")
+    # Every member of the workspace gets the same environment: they share one target directory, and a build script whose
+    # environment differs between two of them reruns, with everything depending on it, on every build.
+    #
+    # The build-script for `openssl-sys` expects all includes to be in one path
+    # but the CMake build for OpenSSL results in headers in two different places
+    corrosion_set_env_vars(${target_name} "CFLAGS=${RUST_CFLAGS} -I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
     corrosion_set_env_vars(${target_name} "CXXFLAGS=${RUST_CXXFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTFLAGS=${RUSTFLAGS}")
     corrosion_set_env_vars(${target_name} "RUSTDOCFLAGS=${RUSTFLAGS}")
@@ -364,6 +369,15 @@ function(clickhouse_config_crate_flags target_name)
     #
     # Refs: https://github.com/rust-lang/cargo/issues/15099#issuecomment-2732847355
     corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
+    # The build script of `delta_kernel_ffi` runs `cargo metadata` (cbindgen), which finds the vendored sources only through this.
+    corrosion_set_env_vars(${target_name} "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/")
+    # Empty, so that `openssl-sys` does not bundle a copy of OpenSSL into the archive:
+    # the binary links `OpenSSL::SSL` and `OpenSSL::Crypto`.
+    corrosion_set_env_vars(${target_name}
+        "OPENSSL_LIBS="
+        "OPENSSL_STATIC=1"
+        "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
+        "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/")
     corrosion_link_libraries(${target_name} cxx)
 
     # Localize all C-namespace symbols from Rust static libraries so they

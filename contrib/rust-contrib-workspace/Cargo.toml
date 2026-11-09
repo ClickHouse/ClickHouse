@@ -7,5 +7,7 @@ members = [
     "../vortex-cmake",
     "../pcodec-cmake",
     "../wasmtime-cmake",
+    "../delta-kernel-rs-cmake",
+    "../chdig-cmake",
 ]
 resolver = "2"
