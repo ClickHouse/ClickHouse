@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "id": 0,
+  "fields": [
+    {
+      "id": 0,
+      "name": "id",
+      "type": "BIGINT"
+    },
+    {
+      "id": 1,
+      "name": "s",
+      "type": {
+        "type": "ROW",
+        "fields": [
+          {
+            "id": 2,
+            "name": "a",
+            "type": "BIGINT"
+          },
+          {
+            "id": 3,
+            "name": "b",
+            "type": "BIGINT"
+          }
+        ],
+        "nullable": true
+      }
+    }
+  ],
+  "highestFieldId": 3,
+  "partitionKeys": [],
+  "primaryKeys": [],
+  "options": {
+    "file.format": "parquet"
+  },
+  "comment": null,
+  "timeMillis": 1794238435785
+}
