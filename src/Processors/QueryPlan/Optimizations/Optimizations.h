@@ -232,6 +232,10 @@ size_t removeUnusedColumns(QueryPlan::Node & root, RemoveUnusedColumnsMode mode)
 /// finds the unused columns of the whole plan at once.
 size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
+/// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
+/// `can_run_grace_hash` is `JoinSettings::canRunGraceHash` for the `join_algorithm` list as the user gave it.
+bool supportsRuntimeFilter(JoinAlgorithm join_algorithm, bool can_run_grace_hash, JoinStrictness join_strictness);
+
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
