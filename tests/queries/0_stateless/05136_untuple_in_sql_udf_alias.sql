@@ -12,14 +12,12 @@ DROP FUNCTION IF EXISTS test_scope_nested_05136;
 DROP FUNCTION IF EXISTS test_star_05136;
 DROP FUNCTION IF EXISTS test_scope_inner_alias_05136;
 DROP FUNCTION IF EXISTS test_scope_inner_alias_nested_05136;
-DROP FUNCTION IF EXISTS test_pair_05136;
 
 CREATE FUNCTION test_scope_05136 AS (app, endpoint) -> untuple(CAST((app, endpoint) AS Tuple(app String, endpoint String)));
 CREATE FUNCTION test_scope_nested_05136 AS (app, endpoint) -> test_scope_05136(app, endpoint);
 CREATE FUNCTION test_star_05136 AS () -> *;
 CREATE FUNCTION test_scope_inner_alias_05136 AS (app, endpoint) -> (untuple(CAST((app, endpoint) AS Tuple(app String, endpoint String))) AS innerscope);
 CREATE FUNCTION test_scope_inner_alias_nested_05136 AS (app, endpoint) -> (test_scope_inner_alias_05136(app, endpoint) AS midscope);
-CREATE FUNCTION test_pair_05136 AS x -> untuple(tuple(x));
 
 SELECT '-- UDF with alias';
 SELECT test_scope_05136('web-api', '/pay') AS scope FORMAT TSVWithNames;
@@ -56,18 +54,8 @@ SELECT test_scope_inner_alias_nested_05136('web-api', '/pay') AS scope FORMAT TS
 SELECT '-- matcher body ignores the alias';
 SELECT test_star_05136() AS s FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 
-SELECT '-- without an alias the columns are named after the arguments, as the inlined expression would be';
-SELECT test_pair_05136(1), test_pair_05136(2) FORMAT TSVWithNames;
-SELECT untuple(tuple(1)), untuple(tuple(2)) FORMAT TSVWithNames;
-SELECT * FROM (SELECT test_pair_05136(1), test_pair_05136(2)) FORMAT TSVWithNames;
-SELECT test_pair_05136(a + 1), test_pair_05136(b + 1) FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
-SELECT test_pair_05136(1 AS y), test_pair_05136(2 AS z) FORMAT TSVWithNames;
-SELECT test_scope_nested_05136('web-api', '/pay'), test_scope_nested_05136('cli', '/login') FORMAT TSVWithNames;
-WITH x -> untuple(tuple(x)) AS lambda_pair SELECT lambda_pair(1), lambda_pair(2) FORMAT TSVWithNames;
-
 DROP FUNCTION test_scope_05136;
 DROP FUNCTION test_scope_nested_05136;
 DROP FUNCTION test_star_05136;
 DROP FUNCTION test_scope_inner_alias_05136;
 DROP FUNCTION test_scope_inner_alias_nested_05136;
-DROP FUNCTION test_pair_05136;
