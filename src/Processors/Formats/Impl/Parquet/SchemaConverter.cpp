@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,7 +25,6 @@
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
-#include <unordered_set>
 #include <boost/algorithm/string/predicate.hpp>
 #include <fmt/ranges.h>
 
@@ -45,7 +45,7 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const FileFooter & file_footer_, const ReadOptions & options_,
-    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
+    const Block * sample_block_, std::optional<UnorderedMapWithMemoryTracking<String, GeoColumnMetadata>> precomputed_geo_columns)
     : file_footer(file_footer_), file_metadata(file_footer_.metadata), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
@@ -88,7 +88,7 @@ void SchemaConverter::prepareForReading()
     addMissingElementsOfTuplesInArrays();
 
     /// Check that all requested columns were found.
-    std::vector<UInt8> found_columns(sample_block->columns());
+    VectorWithMemoryTracking<UInt8> found_columns(sample_block->columns());
     for (const auto & col : output_columns)
     {
         if (!col.idx_in_output_block.has_value())
@@ -237,7 +237,7 @@ static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadat
     if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
 
-    std::unordered_set<std::string_view> seen_names;
+    UnorderedSetWithMemoryTracking<std::string_view> seen_names;
     for (size_t i = 0; i < size_t(group.num_children); ++i)
     {
         /// Every child must be a primitive node (checked below), so the children are consecutive.
@@ -830,14 +830,14 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
 /// definition-level null map is exactly the root group's null map. This lets us reconstruct the
 /// group null map from any leaf and read a physically nullable struct (OPTIONAL group) as
 /// Nullable(Tuple(...)) losslessly. Returns false for any OPTIONAL/REPEATED descendant.
-static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx)
+static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- reads thrift `parq::FileMetaData::schema`
 {
     /// schema is a flattened pre-order tree; num_children counts direct children, laid out
     /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
     /// remaining-children counters for the groups we descended into.
     if (root_idx >= schema.size())
         return false;
-    std::vector<size_t> stack;
+    VectorWithMemoryTracking<size_t> stack;
     stack.push_back(size_t(schema.at(root_idx).num_children));
     size_t idx = root_idx + 1;
     while (!stack.empty())
@@ -860,7 +860,7 @@ static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & s
     return true;
 }
 
-static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx)
+static std::optional<size_t> subtreeEnd(const std::vector<parq::SchemaElement> & schema, size_t idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `parq::FileMetaData::schema` is a thrift-generated std::vector
 {
     size_t remaining = 1;
     while (remaining > 0)
@@ -893,7 +893,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node)
     enum ChildRole : size_t { Metadata = 0, Value = 1, TypedValue = 2, NumRoles = 3 };
 
     std::array<std::optional<size_t>, NumRoles> schema_idx_of_role;
-    std::vector<size_t> role_of_child(num_children);
+    VectorWithMemoryTracking<size_t> role_of_child(num_children);
     size_t child_schema_idx = schema_idx;
     for (size_t i = 0; i < num_children; ++i)
     {
@@ -1087,7 +1087,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///    In other modes, we skip the whole tuple if any element is unsupported.
 
     bool lookup_by_name = false;
-    std::vector<size_t> elements;
+    VectorWithMemoryTracking<size_t> elements;
     if (tuple_type_hint)
     {
         if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
@@ -1123,7 +1123,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     size_t primitive_start = primitive_columns.size();
     size_t output_start = output_columns.size();
     size_t skipped_unsupported_columns = 0;
-    std::vector<String> element_names_in_file;
+    VectorWithMemoryTracking<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
         bool not_in_schema = false;
@@ -1257,26 +1257,26 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
 
 std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
     size_t first_schema_idx, size_t first_primitive_column_idx, size_t num_subtrees,
-    const std::vector<LevelInfo> & base_levels, const String & name)
+    const VectorWithMemoryTracking<LevelInfo> & base_levels, const String & name)
 {
     struct Leaf
     {
         size_t schema_idx;
         size_t column_idx;
-        std::vector<LevelInfo> levels;
+        VectorWithMemoryTracking<LevelInfo> levels;
         /// Lower is cheaper: a leaf of fixed width, without arrays of its own, not read for another column.
         UInt8 cost;
     };
-    std::vector<Leaf> leaves;
+    VectorWithMemoryTracking<Leaf> leaves;
 
-    std::unordered_set<size_t> read_column_idxs;
+    UnorderedSetWithMemoryTracking<size_t> read_column_idxs;
     for (const auto & primitive : primitive_columns)
         read_column_idxs.insert(primitive.column_idx);
 
     /// Pre-order walk with the levels of the path computed as in processSubtree. For each group on the
     /// path: the number of its children not visited yet, and whether it added a level.
-    std::vector<LevelInfo> path_levels = base_levels;
-    std::vector<std::pair<size_t, bool>> groups = {{num_subtrees, false}};
+    VectorWithMemoryTracking<LevelInfo> path_levels = base_levels;
+    VectorWithMemoryTracking<std::pair<size_t, bool>> groups = {{num_subtrees, false}};
     size_t idx = first_schema_idx;
     size_t column_idx = first_primitive_column_idx;
     while (!groups.empty())
@@ -1381,7 +1381,7 @@ void SchemaConverter::addMissingElementsOfTuplesInArrays()
     if (tuples_in_arrays.empty() || !options.format.parquet.allow_missing_columns)
         return;
 
-    std::vector<UInt8> found_columns(sample_block->columns());
+    VectorWithMemoryTracking<UInt8> found_columns(sample_block->columns());
     for (const auto & col : output_columns)
         if (col.idx_in_output_block.has_value())
             found_columns.at(*col.idx_in_output_block) = true;
@@ -1531,7 +1531,7 @@ std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_
     auto is_2d_geometry_type = [](Int32 geospatial_type) { return geospatial_type >= 1 && geospatial_type <= 6; };
 
     /// The footer is parsed without column chunks, parse the chunks of only this column.
-    std::vector<FileColumnChunks> parsed;
+    VectorWithMemoryTracking<FileColumnChunks> parsed;
     deserializeColumnChunks(
         file_footer.serialized.data(), file_footer.serialized.size(), file_footer.column_chunk_offsets, {column_idx}, parsed);
     const auto & chunks = parsed.at(0).chunks;

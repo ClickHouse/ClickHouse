@@ -174,8 +174,11 @@ ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<Reserva
             for (auto it = disks_with_size.begin(); it != disks_with_size.end(); ++it)
             {
                 std::iter_swap(it, std::max_element(it, disks_with_size.end()));
-                ReservationPtr reservation = try_reserve(it->disk);
-                it->unreserved_space = reservation ? reservation->getUnreservedSpace() : it->disk->getUnreservedSpace();
+                ReservationPtr reservation;
+                if (it->disk->isReadOnly())
+                    it->unreserved_space = it->disk->getUnreservedSpace();
+                else
+                    reservation = it->disk->reserveAndGetUnreservedSpace(bytes, constraints, it->unreserved_space);
                 if (reservation)
                     return reservation;
             }
