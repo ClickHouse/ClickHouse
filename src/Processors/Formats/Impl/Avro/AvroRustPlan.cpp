@@ -1054,7 +1054,7 @@ std::optional<size_t> Plan::Impl::variantMetadataPosition(Node node, const DataT
 Plan::Impl::Reader Plan::Impl::createVariantReader(Node node, const DataTypePtr & type, size_t metadata_position)
 {
     addNode(node, AVRO_ACTION_RECORD, AVRO_NO_SINK, AVRO_NO_SINK, 0, 2);
-    std::array<UInt32, 2> blobs;
+    std::array<UInt32, 2> blobs{};
     for (UInt32 i = 0; i < 2; ++i)
     {
         blobs[i] = addSink(AVRO_SINK_BYTES);
