@@ -1619,6 +1619,7 @@ void MergeTreeData::checkProperties(
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
         std::vector<std::pair<int, String>> index_errors;
+        const bool has_expression_validation_errors = secondary_index_errors && !secondary_index_errors->empty();
         if (secondary_index_errors)
             index_errors = *secondary_index_errors;
 
@@ -1711,9 +1712,12 @@ void MergeTreeData::checkProperties(
                 (void)code;
                 errors.push_back(error);
             }
+            const auto error_message = has_expression_validation_errors
+                ? "Cannot apply ALTER because it breaks skip indices: {}"
+                : "Cannot validate secondary indices: {}";
             throw Exception(
                 index_errors.front().first,
-                "Cannot validate secondary indices: {}",
+                error_message,
                 fmt::join(errors, "; "));
         }
     }

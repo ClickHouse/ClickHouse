@@ -173,6 +173,7 @@ SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_c
 bloom_filter_mixed_invalid_indices_error=$($CLICKHOUSE_CLIENT --query="ALTER TABLE bloom_filter_mixed_invalid_indices MODIFY COLUMN x UInt64" 2>&1)
 if [[ "$bloom_filter_mixed_invalid_indices_error" != *'Code: 43.'* \
     || "$bloom_filter_mixed_invalid_indices_error" != *'ILLEGAL_TYPE_OF_ARGUMENT'* \
+    || "$bloom_filter_mixed_invalid_indices_error" != *'Cannot apply ALTER because it breaks skip indices:'* \
     || "$bloom_filter_mixed_invalid_indices_error" != *'idx_length'* \
     || "$bloom_filter_mixed_invalid_indices_error" != *'idx_token'* ]]; then
     echo "$bloom_filter_mixed_invalid_indices_error"
