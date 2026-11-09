@@ -538,7 +538,6 @@ private:
         const TextIndexReadInfo * info = nullptr;
         /// The virtual column replacing the function. An empty name means the inject-only rewrite (no direct read).
         IndexReadTask::Column virtual_column;
-        /// The haystack is the index expression itself, so the index preprocessor applies to it.
         bool haystack_is_index_expression = false;
     };
 
