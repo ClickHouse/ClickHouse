@@ -1781,15 +1781,6 @@ class LogTablePropertiesGroup(PropertiesGroup):
             # Created only with this `schema_type`; the default ("bucketed") makes the section a no-op
             schema_type_xml = ET.SubElement(property_element, "schema_type")
             schema_type_xml.text = "transposed"
-        elif (
-            self.log_table == "zookeeper_log"
-            and os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1"
-        ):
-            # Every Keeper request and multi sub-request adds rows, so the queue can stay full and the
-            # shutdown flush then writes up to two whole batches; at the default 1048576 rows that
-            # outlasts `SERVER_STOP_WAIT_SECONDS` under sanitizers.
-            max_size_rows_xml = ET.SubElement(property_element, "max_size_rows")
-            max_size_rows_xml.text = "65536"
         # Can't use this without the engine parameter?
         # number_policies = 0
         # storage_configuration_xml = top_root.find("storage_configuration")
