@@ -3923,7 +3923,19 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = stopMergesAndWait();
+        /// A merge or mutation never produces a part outside the partition of its source parts,
+        /// so dropping a single partition only needs to stop the merges in that partition.
+        ActionLock merge_blocker;
+        String partition_id_to_drop;
+        if (partition_ast && partition_ast->all)
+        {
+            merge_blocker = stopMergesAndWait();
+        }
+        else
+        {
+            partition_id_to_drop = getPartitionIDFromQuery(partition, query_context);
+            merge_blocker = stopMergesAndWaitForPartition(partition_id_to_drop);
+        }
 
         /// Only base parts are detached; pending patches are left behind, so re-attaching would
         /// silently revert the update. Reject instead (same guard as the Replicated engine).
@@ -3931,15 +3943,13 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         {
             auto data_parts_lock = lockParts();
             DataPartsVector parts_to_detach;
-            String guard_partition_id;
             if (partition_ast && partition_ast->all)
             {
                 parts_to_detach = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
             }
             else
             {
-                guard_partition_id = getPartitionIDFromQuery(partition, query_context, &data_parts_lock);
-                parts_to_detach = getVisibleDataPartsVectorInPartition(query_context, guard_partition_id, data_parts_lock);
+                parts_to_detach = getVisibleDataPartsVectorInPartition(query_context, partition_id_to_drop, data_parts_lock);
             }
 
             NameSet partition_ids;
@@ -3974,8 +3984,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                     parts_to_remove = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
                 else
                 {
-                    String partition_id = getPartitionIDFromQuery(partition, query_context, &data_parts_lock);
-                    parts_to_remove = getVisibleDataPartsVectorInPartition(query_context, partition_id, data_parts_lock);
+                    parts_to_remove = getVisibleDataPartsVectorInPartition(query_context, partition_id_to_drop, data_parts_lock);
                 }
                 removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
             }
@@ -3995,8 +4004,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             }
             else
             {
-                String partition_id = getPartitionIDFromQuery(partition, query_context);
-                parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
+                parts = getVisibleDataPartsVectorInPartition(query_context, partition_id_to_drop);
             }
 
             /// Same as in `dropPart`: refuse before anything is written, and clone to `detached/`
