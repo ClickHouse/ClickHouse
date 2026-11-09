@@ -13,10 +13,10 @@ trap 'rm -rf "${ROOT}" 2>/dev/null' EXIT
 rm -rf "${ROOT}"
 
 # A clickhouse-local launch costs seconds on slow builds, and one launch per query used to blow
-# past the 180s test limit. The test therefore records everything first - `make_table`, `check`
-# and `expect_error` only declare work - and `run_all` at the bottom executes it in five batched
-# launches: one for the data files, then one per engine-predicate mode for the checks and one
-# per mode for the expected errors. Per-query numbers are recovered from consecutive reads of
+# past the 180s test limit. The test therefore records everything first - `make_table`, `check`,
+# `check_pruned` and `expect_error` only declare work - and `run_all` at the bottom executes it in
+# six batched launches: one for the data files, then one per engine-predicate mode for the checks,
+# one for the pruned-only checks and one per mode for the expected errors. Per-query numbers are recovered from consecutive reads of
 # the cumulative counters in `system.events` and `system.errors`, which is exact because the
 # statements of one launch run sequentially in a single process.
 
@@ -111,8 +111,9 @@ EOF
 
 ITEMS=()
 CHECK_TABLES=() CHECK_WHERES=() CHECK_SETTINGS=()
+PRUNED_TABLES=() PRUNED_WHERES=() PRUNED_SETTINGS=()
 ERR_HEADERS=() ERR_TABLES=() ERR_WHERES=() ERR_ENABLED=() ERR_CODES=() ERR_SETTINGS=()
-OFF_ROWS=() OFF_DELTAS=() ON_ROWS=() ON_DELTAS=()
+OFF_ROWS=() OFF_DELTAS=() ON_ROWS=() ON_DELTAS=() PRUNED_ROWS=() PRUNED_DELTAS=()
 
 # check <table> <where> [settings]: rows with the engine predicate on must match the rows with
 # it off, the off run must scan every file, and the on rows and scan count go to the reference.
@@ -121,6 +122,15 @@ check() {
     CHECK_TABLES+=("$1")
     CHECK_WHERES+=("$2")
     CHECK_SETTINGS+=("${3:-}")
+}
+
+# check_pruned <table> <where> [settings]: for a filter that throws on a NULL row of a full scan, only
+# the engine-predicate-on run is executed; its rows and scan count go to the reference.
+check_pruned() {
+    ITEMS+=("pruned ${#PRUNED_TABLES[@]}")
+    PRUNED_TABLES+=("$1")
+    PRUNED_WHERES+=("$2")
+    PRUNED_SETTINGS+=("${3:-}")
 }
 
 # expect_error <header> <table> <where> <enabled> <error> [settings]: the query must fail with
@@ -152,26 +162,28 @@ run_batch() {
         --delta_lake_enable_engine_predicate="${enabled}" --delta_lake_throw_on_engine_predicate_error=1 "$@"
 }
 
-# Runs every recorded check in one launch. Each data query is followed by a read of the
-# cumulative `DeltaLakeScannedFiles` counter; consecutive differences give per-query scan counts.
+# run_checks <enabled> <CHECK|PRUNED> <rows_out> <deltas_out>: runs every recorded case of that kind
+# in one launch. Each data query is followed by a read of the cumulative `DeltaLakeScannedFiles`
+# counter; consecutive differences give per-query scan counts.
 run_checks() {
     local enabled=$1
-    local -n rows_out=$2 deltas_out=$3
+    local -n tables="$2_TABLES" wheres="$2_WHERES" settings="$2_SETTINGS"
+    local -n rows_out=$3 deltas_out=$4
     local i batch="" out
-    for i in "${!CHECK_TABLES[@]}"; do
-        batch+="$(data_query "${CHECK_TABLES[$i]}" "${CHECK_WHERES[$i]}" "${CHECK_SETTINGS[$i]}")
+    for i in "${!tables[@]}"; do
+        batch+="$(data_query "${tables[$i]}" "${wheres[$i]}" "${settings[$i]}")
             SELECT sumIf(value, event = 'DeltaLakeScannedFiles') FROM system.events;"
     done
     out=$(run_batch "${enabled}" --query "${batch}")
     local -a lines
     mapfile -t lines <<< "${out}"
-    if [[ "${#lines[@]}" != "$(( 2 * ${#CHECK_TABLES[@]} ))" ]]; then
-        printf 'Expected %s lines from the check batch (engine predicate %s), got %s:\n%s\n' \
-            "$(( 2 * ${#CHECK_TABLES[@]} ))" "${enabled}" "${#lines[@]}" "${out}" >&2
+    if [[ "${#lines[@]}" != "$(( 2 * ${#tables[@]} ))" ]]; then
+        printf 'Expected %s lines from the %s batch (engine predicate %s), got %s:\n%s\n' \
+            "$(( 2 * ${#tables[@]} ))" "$2" "${enabled}" "${#lines[@]}" "${out}" >&2
         return 1
     fi
     local previous=0 cumulative
-    for i in "${!CHECK_TABLES[@]}"; do
+    for i in "${!tables[@]}"; do
         rows_out+=("${lines[2 * i]}")
         cumulative="${lines[2 * i + 1]}"
         deltas_out+=("$(( cumulative - previous ))")
@@ -221,6 +233,13 @@ emit_results() {
             printf '1\n'
             continue
         fi
+        if [[ "${kind}" == pruned ]]; then
+            printf '%s: %s%s (engine predicate 1)\n' "${PRUNED_TABLES[$idx]}" "${PRUNED_WHERES[$idx]}" \
+                "${PRUNED_SETTINGS[$idx]:+ SETTINGS ${PRUNED_SETTINGS[$idx]}}"
+            printf '%s\n' "${PRUNED_ROWS[$idx]}"
+            printf '%s\n' "${PRUNED_DELTAS[$idx]}"
+            continue
+        fi
         local table="${CHECK_TABLES[$idx]}" where="${CHECK_WHERES[$idx]}" settings="${CHECK_SETTINGS[$idx]}"
         local files=("${ROOT}/${table}/"*.parquet)
         printf '%s: %s%s\n' "${table}" "${where}" "${settings:+ SETTINGS ${settings}}"
@@ -241,8 +260,9 @@ run_all() {
     for table in "${TABLES[@]}"; do
         write_log "${table}"
     done
-    run_checks 0 OFF_ROWS OFF_DELTAS
-    run_checks 1 ON_ROWS ON_DELTAS
+    run_checks 0 CHECK OFF_ROWS OFF_DELTAS
+    run_checks 1 CHECK ON_ROWS ON_DELTAS
+    run_checks 1 PRUNED PRUNED_ROWS PRUNED_DELTAS
     run_errors 0
     run_errors 1
     emit_results
@@ -290,12 +310,12 @@ check nullable "CAST(d AS Nullable(Date)) != '2026-01-01'"
 make_table no_stats Date32 none 2026-01-01 2026-01-02
 check no_stats "toDate(d) = '2026-01-01'"
 
-# A non-nullable cast must still reject the stats-bearing NULL file.
-for enabled in 0 1; do
-    expect_error "nullable: cast rejects NULL (engine predicate ${enabled})" \
-        nullable "CAST(d AS Date) = '2026-01-01'" "${enabled}" \
-        CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
-done
+# A full scan of a non-nullable cast throws on the all-NULL file. A comparison never matches NULL,
+# so the engine predicate skips that file and the query succeeds.
+expect_error "nullable: cast rejects NULL (engine predicate 0)" \
+    nullable "CAST(d AS Date) = '2026-01-01'" 0 \
+    CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+check_pruned nullable "CAST(d AS Date) = '2026-01-01'" "cast_keep_nullable=0"
 
 # `groupArray` must not hide the all-null file in the unfiltered fixture check.
 check nullable "1"
@@ -384,8 +404,7 @@ for enabled in 0 1; do
         "date_time_overflow_behavior='throw'"
 done
 
-# A non-nullable `CAST` of a `Nullable(Date32)` column throws on NULL rows, but files with `nullCount` 0
-# hold none, so min/max pruning must still apply to them.
+# Min/max pruning applies to a non-nullable `CAST` of a `Nullable(Date32)` column.
 make_table nullable_no_nulls 'Nullable(Date32)' full 2026-01-01 2026-01-02 2026-01-03
 for where in "d::Date = '2026-01-02'" "d::date = '2026-01-02'" "CAST(d AS Date) = '2026-01-02'" \
     "CAST(d, 'Date') = '2026-01-02'" "d::Date32 = '2026-01-02'" \
@@ -400,25 +419,32 @@ check nullable_no_nulls "d::Date = '2026-01-02'" "cast_keep_nullable=1"
 check nullable_no_nulls "toDate(d) = '2026-01-02'"
 check nullable_no_nulls "d::Nullable(Date) = '2026-01-02'"
 
-# The NULLs share a file whose min/max alone would prune it; it must stay scanned in either polarity.
+# A full scan throws on the NULL row. The engine predicate prunes its file by min/max like any other,
+# so the query succeeds when min/max exclude that file, in either polarity.
 make_table nullable_with_nulls 'Nullable(Date32)' full 2026-01-01 2026-01-02 2026-01-03,NULL
 check nullable_with_nulls "1"
 for where in "d::Date = '2026-01-01'" "d::Date32 = '2026-01-01'" "d::Date < '2026-01-02'" \
     "NOT (d::Date = '2026-01-03')" "NOT (d::Date32 != '2026-01-01')"; do
+    expect_error "nullable_with_nulls: ${where} (engine predicate 0)" \
+        nullable_with_nulls "${where}" 0 \
+        CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+    check_pruned nullable_with_nulls "${where}" "cast_keep_nullable=0"
+done
+# When min/max keep the file, its NULL row is read and the cast throws.
+for where in "d::Date = '2026-01-03'" "d::Date != '2026-01-01'" "NOT (d::Date32 < '2026-01-02')"; do
     for enabled in 0 1; do
         expect_error "nullable_with_nulls: ${where} (engine predicate ${enabled})" \
             nullable_with_nulls "${where}" "${enabled}" \
             CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
     done
 done
-# An all-NULL file must also survive negation.
-for enabled in 0 1; do
-    expect_error "nullable: negated cast rejects NULL (engine predicate ${enabled})" \
-        nullable "NOT (CAST(d AS Date) = '2026-01-01')" "${enabled}" \
-        CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
-done
+# The all-NULL file is skipped under negation too.
+expect_error "nullable: negated cast rejects NULL (engine predicate 0)" \
+    nullable "NOT (CAST(d AS Date) = '2026-01-01')" 0 \
+    CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+check_pruned nullable "NOT (CAST(d AS Date) = '2026-01-01')" "cast_keep_nullable=0"
 
-# Without `nullCount` a file cannot be proven NULL-free, so a non-nullable cast prunes nothing.
+# Pruning does not need `nullCount`: min/max alone decide. Without any stats nothing is pruned.
 make_table nullable_no_null_count 'Nullable(Date32)' no_null_count 2026-01-01 2026-01-02
 check nullable_no_null_count "d::Date = '2026-01-01'" "cast_keep_nullable=0"
 check nullable_no_null_count "NOT (d::Date = '2026-01-01')" "cast_keep_nullable=0"
@@ -431,15 +457,15 @@ check partitioned_no_nulls "d::Date = '2026-01-01'" "cast_keep_nullable=0"
 check partitioned_no_nulls "d::Date32 = '2026-01-02'" "cast_keep_nullable=0"
 check partitioned_no_nulls "d::Date != '2026-01-01'" "cast_keep_nullable=0"
 
-# A NULL partition must stay scanned in either polarity, so the cast still rejects it.
+# A full scan throws on the NULL partition. A comparison never matches a NULL partition value, so
+# the engine predicate skips it in either polarity and the query succeeds.
 make_table partitioned 'Nullable(Date32)' partition 2026-01-01 2026-01-02 2205-06-08 NULL
 for where in "d::Date = '2026-01-01'" "d::Date32 = '2026-01-02'" \
     "d::Date != '2026-01-01'" "NOT (d::Date = '2026-01-01')"; do
-    for enabled in 0 1; do
-        expect_error "partitioned: ${where} (engine predicate ${enabled})" \
-            partitioned "${where}" "${enabled}" \
-            CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
-    done
+    expect_error "partitioned: ${where} (engine predicate 0)" \
+        partitioned "${where}" 0 \
+        CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+    check_pruned partitioned "${where}" "cast_keep_nullable=0"
 done
 
 run_all

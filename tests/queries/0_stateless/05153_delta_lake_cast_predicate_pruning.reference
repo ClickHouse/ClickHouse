@@ -75,8 +75,9 @@ no_stats: toDate(d) = '2026-01-01'
 2
 nullable: cast rejects NULL (engine predicate 0)
 1
-nullable: cast rejects NULL (engine predicate 1)
-1
+nullable: CAST(d AS Date) = '2026-01-01' SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-01','2205-06-08']
+2
 nullable: 1
 ['2026-01-01','2026-01-02','2205-06-08','NULL']
 4
@@ -300,34 +301,52 @@ nullable_with_nulls: 1
 3
 nullable_with_nulls: d::Date = '2026-01-01' (engine predicate 0)
 1
-nullable_with_nulls: d::Date = '2026-01-01' (engine predicate 1)
+nullable_with_nulls: d::Date = '2026-01-01' SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-01']
 1
 nullable_with_nulls: d::Date32 = '2026-01-01' (engine predicate 0)
 1
-nullable_with_nulls: d::Date32 = '2026-01-01' (engine predicate 1)
+nullable_with_nulls: d::Date32 = '2026-01-01' SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-01']
 1
 nullable_with_nulls: d::Date < '2026-01-02' (engine predicate 0)
 1
-nullable_with_nulls: d::Date < '2026-01-02' (engine predicate 1)
+nullable_with_nulls: d::Date < '2026-01-02' SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-01']
 1
 nullable_with_nulls: NOT (d::Date = '2026-01-03') (engine predicate 0)
 1
-nullable_with_nulls: NOT (d::Date = '2026-01-03') (engine predicate 1)
-1
+nullable_with_nulls: NOT (d::Date = '2026-01-03') SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-01','2026-01-02']
+2
 nullable_with_nulls: NOT (d::Date32 != '2026-01-01') (engine predicate 0)
 1
-nullable_with_nulls: NOT (d::Date32 != '2026-01-01') (engine predicate 1)
+nullable_with_nulls: NOT (d::Date32 != '2026-01-01') SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-01']
+1
+nullable_with_nulls: d::Date = '2026-01-03' (engine predicate 0)
+1
+nullable_with_nulls: d::Date = '2026-01-03' (engine predicate 1)
+1
+nullable_with_nulls: d::Date != '2026-01-01' (engine predicate 0)
+1
+nullable_with_nulls: d::Date != '2026-01-01' (engine predicate 1)
+1
+nullable_with_nulls: NOT (d::Date32 < '2026-01-02') (engine predicate 0)
+1
+nullable_with_nulls: NOT (d::Date32 < '2026-01-02') (engine predicate 1)
 1
 nullable: negated cast rejects NULL (engine predicate 0)
 1
-nullable: negated cast rejects NULL (engine predicate 1)
-1
-nullable_no_null_count: d::Date = '2026-01-01' SETTINGS cast_keep_nullable=0
-['2026-01-01']
-2
-nullable_no_null_count: NOT (d::Date = '2026-01-01') SETTINGS cast_keep_nullable=0
+nullable: NOT (CAST(d AS Date) = '2026-01-01') SETTINGS cast_keep_nullable=0 (engine predicate 1)
 ['2026-01-02']
 2
+nullable_no_null_count: d::Date = '2026-01-01' SETTINGS cast_keep_nullable=0
+['2026-01-01']
+1
+nullable_no_null_count: NOT (d::Date = '2026-01-01') SETTINGS cast_keep_nullable=0
+['2026-01-02']
+1
 nullable_no_stats: d::Date = '2026-01-01' SETTINGS cast_keep_nullable=0
 ['2026-01-01']
 2
@@ -342,17 +361,21 @@ partitioned_no_nulls: d::Date != '2026-01-01' SETTINGS cast_keep_nullable=0
 2
 partitioned: d::Date = '2026-01-01' (engine predicate 0)
 1
-partitioned: d::Date = '2026-01-01' (engine predicate 1)
-1
+partitioned: d::Date = '2026-01-01' SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-01','2205-06-08']
+2
 partitioned: d::Date32 = '2026-01-02' (engine predicate 0)
 1
-partitioned: d::Date32 = '2026-01-02' (engine predicate 1)
+partitioned: d::Date32 = '2026-01-02' SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-02']
 1
 partitioned: d::Date != '2026-01-01' (engine predicate 0)
 1
-partitioned: d::Date != '2026-01-01' (engine predicate 1)
-1
+partitioned: d::Date != '2026-01-01' SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-02']
+2
 partitioned: NOT (d::Date = '2026-01-01') (engine predicate 0)
 1
-partitioned: NOT (d::Date = '2026-01-01') (engine predicate 1)
-1
+partitioned: NOT (d::Date = '2026-01-01') SETTINGS cast_keep_nullable=0 (engine predicate 1)
+['2026-01-02']
+2
