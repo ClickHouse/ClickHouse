@@ -1,6 +1,6 @@
--- A filter fused into `ARRAY JOIN` is not shipped to the replicas: `ArrayJoinStep` writes its element filter
--- without a serialization version bump. Plan-based parallel replicas fuses only the steps left on the initiator,
--- after deciding what is shipped, so a shipped fragment keeps the filter as a separate `Filter` step.
+-- A filter is fused into `ARRAY JOIN` with plan-based parallel replicas, also in a plan fragment shipped to the
+-- replicas: only replicas at `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS` or later take part,
+-- and they all can read the fused filter.
 
 -- Fusion is skipped for serialized plans; pin it so the plan-shape checks below hold in every suite.
 SET serialize_query_plan = 0;
@@ -36,12 +36,12 @@ SELECT countIf(explain LIKE '%Element filter%') = 1 AS fused_with_parallel_repli
 FROM (EXPLAIN actions = 1 SELECT id FROM t_pr_fuse ARRAY JOIN arr AS elem WHERE elem = 'b');
 
 -- Here the ARRAY JOIN is shipped, on the broadcast side of the join: it appears in the local replica plan
--- and in the fragment, and only the local one has the filter fused. The fragment is printed without actions,
--- so its unfused filter is seen as a separate `Filter (WHERE)` step, which the fused local plan does not have.
+-- and in the fragment, and both have the filter fused. The fragment is printed without actions, so its fused
+-- filter is seen as the absence of a separate `Filter (WHERE)` step.
 SELECT
     countIf(explain LIKE '%ArrayJoin%') = 2 AS array_join_shipped,
-    countIf(explain LIKE '%Element filter%') = 1 AS fused_only_locally,
-    countIf(explain LIKE '%Filter (WHERE)%') = 1 AS not_fused_in_fragment
+    countIf(explain LIKE '%Element filter%') = 1 AS fused_locally,
+    countIf(explain LIKE '%Filter (WHERE)%') = 0 AS fused_in_fragment
 FROM (EXPLAIN actions = 1
     SELECT count() FROM t_pr_fuse AS l
     INNER JOIN (SELECT id FROM t_pr_fuse_small ARRAY JOIN arr AS elem WHERE elem = 'b') AS r ON l.id = r.id);

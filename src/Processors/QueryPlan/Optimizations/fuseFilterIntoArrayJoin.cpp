@@ -13,9 +13,8 @@ namespace DB::QueryPlanOptimizations
 /// space before expansion. Runs after filterPushDown, which already pushed the non-element conjuncts down
 size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
-    /// fused filter can't be read by older workers, and it's perf-only - skip if the plan may be shipped out.
-    /// With parallel replicas the steps that stay on the initiator are fused after `applyParallelReplicas`.
-    if (settings.make_distributed_plan || settings.serialize_query_plan || settings.enable_parallel_replicas)
+    /// fused filter can't be read by older workers, and it's perf-only - skip if the plan may be shipped out
+    if (settings.make_distributed_plan || settings.serialize_query_plan)
         return 0;
 
     auto & parent = parent_node->step;
