@@ -744,15 +744,45 @@ void SerializationString::serializeTextJSON(const IColumn & column, size_t row_n
 }
 
 
+/// Reads a JSON object or array as a raw string with `reader`, see `FormatSettings::JSON::reject_mongodb_isodate_wrapper_in_strings`.
+template <typename ReturnType, typename Reader>
+static ReturnType readJSONObjectOrArrayAsString(IColumn & column, ReadBuffer & istr, const FormatSettings::JSON & settings, Reader && reader)
+{
+    return read<ReturnType>(column, [&](ColumnString::Chars & data)
+    {
+        size_t old_size = data.size();
+        if constexpr (std::is_same_v<ReturnType, void>)
+            reader(data, istr);
+        else if (!reader(data, istr))
+            return ReturnType(false);
+
+        if (!settings.reject_mongodb_isodate_wrapper_in_strings)
+            return ReturnType(true);
+
+        FormatSettings::JSON strict_settings = settings;
+        strict_settings.allow_mongodb_isodate_wrapper = false;
+        ReadBufferFromMemory buf(reinterpret_cast<const char *>(data.data() + old_size), data.size() - old_size);
+        if (trySkipJSONField(buf, "", strict_settings) && buf.eof())
+            return ReturnType(true);
+
+        if constexpr (std::is_same_v<ReturnType, void>)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read a JSON object or array that is not valid JSON as String");
+        else
+            return ReturnType(false);
+    });
+}
+
 void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
     {
-        read<void>(column, [&](ColumnString::Chars & data) { readJSONObjectPossiblyInvalid(data, istr); });
+        readJSONObjectOrArrayAsString<void>(column, istr, settings.json,
+            [](ColumnString::Chars & data, ReadBuffer & buf) { readJSONObjectPossiblyInvalid(data, buf); });
     }
     else if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
     {
-        read<void>(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
+        readJSONObjectOrArrayAsString<void>(column, istr, settings.json,
+            [](ColumnString::Chars & data, ReadBuffer & buf) { readJSONArrayInto(data, buf); });
     }
     else if (settings.json.read_bools_as_strings && !istr.eof() && (*istr.position() == 't' || *istr.position() == 'f'))
     {
@@ -788,10 +818,12 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
-        return read<bool>(column, [&](ColumnString::Chars & data) { return readJSONObjectPossiblyInvalid<ColumnString::Chars, bool>(data, istr); });
+        return readJSONObjectOrArrayAsString<bool>(column, istr, settings.json,
+            [](ColumnString::Chars & data, ReadBuffer & buf) { return readJSONObjectPossiblyInvalid<ColumnString::Chars, bool>(data, buf); });
 
     if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
-        return read<bool>(column, [&](ColumnString::Chars & data) { return readJSONArrayInto<ColumnString::Chars, bool>(data, istr); });
+        return readJSONObjectOrArrayAsString<bool>(column, istr, settings.json,
+            [](ColumnString::Chars & data, ReadBuffer & buf) { return readJSONArrayInto<ColumnString::Chars, bool>(data, buf); });
 
     if (settings.json.read_bools_as_strings && !istr.eof() && (*istr.position() == 't' || *istr.position() == 'f'))
     {

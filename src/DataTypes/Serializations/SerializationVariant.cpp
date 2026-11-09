@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NullableUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnVariant.h>
 
 #include <IO/ReadBuffer.h>
@@ -111,6 +112,23 @@ SerializationVariant::SerializationVariant(
     , deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_))
     , variant_name(variant_name_)
 {
+    for (const auto & variant_type : variant_types)
+    {
+        if (anyInTypeTree(*variant_type, [](const IDataType & type) { return isDateTime64(type); }))
+            has_datetime64_in_variants = true;
+
+        if (anyInTypeTree(*variant_type, [](const IDataType & type)
+            {
+                const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type);
+                return tuple_type && tuple_type->hasExplicitNames();
+            }))
+            has_named_tuple_in_variants = true;
+    }
+}
+
+bool SerializationVariant::allowsISODateWrapperInJSON(const FormatSettings & settings) const
+{
+    return has_datetime64_in_variants || (has_named_tuple_in_variants && settings.json.ignore_unknown_keys_in_named_tuple);
 }
 
 
@@ -1431,19 +1449,47 @@ void SerializationVariant::serializeTextJSONPretty(const IColumn & column, size_
         variant_serializations[global_discr]->serializeTextJSONPretty(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings, indent);
 }
 
+/// The MongoDB shell `ISODate("...")` wrapper is not valid JSON, only `DateTime64` understands it,
+/// and a named `Tuple` skips it in ignored keys. So it is tokenized only when some variant may accept it.
+static FormatSettings::JSON getJSONSettingsForReadingField(const FormatSettings::JSON & settings, bool allow_isodate_wrapper)
+{
+    FormatSettings::JSON result = settings;
+    result.allow_mongodb_isodate_wrapper = allow_isodate_wrapper;
+    return result;
+}
+
+/// A value that is valid only with the `ISODate` wrapper must reach a `DateTime64` or be rejected:
+/// a `String` variant must not take an object or an array containing the wrapper as a raw string.
+bool SerializationVariant::tryDeserializeTextJSONField(IColumn & column, const String & field, const FormatSettings & settings) const
+{
+    if (!allowsISODateWrapperInJSON(settings) || !field.contains("ISODate("))
+        return tryDeserializeTextJSONImpl(column, field, settings);
+
+    /// The wrapper text may also be inside a JSON string, check whether the value is valid JSON without it.
+    FormatSettings::JSON strict_json_settings = settings.json;
+    strict_json_settings.allow_mongodb_isodate_wrapper = false;
+    ReadBufferFromString buf(field);
+    if (trySkipJSONField(buf, "", strict_json_settings) && buf.eof())
+        return tryDeserializeTextJSONImpl(column, field, settings);
+
+    FormatSettings adjusted_settings = settings;
+    adjusted_settings.json.reject_mongodb_isodate_wrapper_in_strings = true;
+    return tryDeserializeTextJSONImpl(column, field, adjusted_settings);
+}
+
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    if (!tryReadJSONField(field, istr, settings.json))
+    if (!tryReadJSONField(field, istr, getJSONSettingsForReadingField(settings.json, allowsISODateWrapperInJSON(settings))))
         return false;
-    return tryDeserializeTextJSONImpl(column, field, settings);
+    return tryDeserializeTextJSONField(column, field, settings);
 }
 
 void SerializationVariant::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
-    readJSONField(field, istr, settings.json);
-    if (!tryDeserializeTextJSONImpl(column, field, settings))
+    readJSONField(field, istr, getJSONSettingsForReadingField(settings.json, allowsISODateWrapperInJSON(settings)));
+    if (!tryDeserializeTextJSONField(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON value of type {} here: {}", variant_name, field);
 }
 

@@ -985,6 +985,13 @@ namespace JSONUtils
         return false;
     }
 
+    FormatSettings::JSON getJSONSettingsForSkippingField(const FormatSettings::JSON & settings)
+    {
+        FormatSettings::JSON result = settings;
+        result.allow_mongodb_isodate_wrapper = true;
+        return result;
+    }
+
     void skipTheRestOfObject(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         while (!checkAndSkipObjectEnd(in))

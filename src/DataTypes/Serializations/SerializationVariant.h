@@ -5,6 +5,8 @@
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -259,6 +261,9 @@ private:
     bool tryDeserializeWholeTextImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextCSVImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextJSONImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
+    /// Deserializes a JSON value read with `readJSONField` into the variants,
+    /// adjusting `settings` for a value that is valid only with the `ISODate` wrapper.
+    bool tryDeserializeTextJSONField(IColumn & column, const String & field, const FormatSettings & settings) const;
 
     bool tryDeserializeImpl(
         IColumn & column,
@@ -271,6 +276,14 @@ private:
     VariantSerializations variant_serializations;
     std::vector<String> variant_names;
     std::vector<size_t> deserialize_text_order;
+    /// Whether the MongoDB shell `ISODate("...")` wrapper may be a part of a JSON value of this `Variant`.
+    bool allowsISODateWrapperInJSON(const FormatSettings & settings) const;
+
+    /// Whether some variant contains `DateTime64`, which understands the MongoDB shell `ISODate("...")` wrapper in JSON.
+    bool has_datetime64_in_variants = false;
+    /// Whether some variant contains a named `Tuple`, which skips the wrapper in ignored keys
+    /// with `input_format_json_ignore_unknown_keys_in_named_tuple`.
+    bool has_named_tuple_in_variants = false;
     /// Name of Variant data type for better exception messages.
     String variant_name;
 };
