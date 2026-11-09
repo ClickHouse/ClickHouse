@@ -430,11 +430,17 @@ namespace
         };
     }
 
-    auto makeHistogramSampleWins(const TimeSeriesHistogramsColumnsView & view)
+    /// The histogram comparator also marks in `duplicate_hints_differ` (indexed like the nested columns of `view`) the kept sample
+    /// of a pair the rule considers equal but with different counter hints: its stored hint is made unknown (see
+    /// detectTimeSeriesHistogramResets), as `timeSeriesGroupArrayHistograms` does, so that it doesn't depend on which one was kept.
+    auto makeHistogramSampleWins(const TimeSeriesHistogramsColumnsView & view, PaddedPODArray<UInt8> & duplicate_hints_differ)
     {
-        return [&view](size_t kept_index, size_t new_index)
+        return [&view, &duplicate_hints_differ](size_t kept_index, size_t new_index)
         {
-            return TimeSeriesDuplicateTimestampRule::histogramSampleWins(view, kept_index, new_index);
+            const int comparison = TimeSeriesDuplicateTimestampRule::compareHistograms(view, new_index, kept_index);
+            if ((comparison == 0) && (view.counter_reset_hint.getData()[kept_index] != view.counter_reset_hint.getData()[new_index]))
+                duplicate_hints_differ[kept_index] = 1;
+            return comparison > 0;
         };
     }
 
@@ -778,8 +784,9 @@ namespace
                 TimeSeriesColumnNames::Histograms,
                 histograms_array_type}};
         kinds[0].sort(filter, ts_offsets, makeFloatSampleWins(ts_values), "samples");
+        PaddedPODArray<UInt8> duplicate_hints_differ(histograms ? histograms->timestamps.size() : 0, 0);
         if (histograms)
-            kinds[1].sort(filter, *histograms->outer_offsets, makeHistogramSampleWins(*histograms), "histogram samples");
+            kinds[1].sort(filter, *histograms->outer_offsets, makeHistogramSampleWins(*histograms, duplicate_hints_differ), "histogram samples");
         const std::span<const SortedSamples<TimestampColumn>> used_kinds = std::span(kinds.data(), histograms_array_type ? 2 : 1);
 
         ColumnPtr normalized_histogram_hints;
@@ -798,7 +805,7 @@ namespace
                     hints = normalized_histogram_hints;
                 else
                 {
-                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_offsets);
+                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_offsets, kinds[1].sorted_indices, duplicate_hints_differ);
                     normalized_histogram_hints = hints;
                 }
                 column = std::move(mutable_column);

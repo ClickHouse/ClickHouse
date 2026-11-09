@@ -12,9 +12,9 @@ namespace DB
 /// duplicates within one INSERT, the aggregate functions `timeSeriesGroupArray` (through `timeseriesMaxValueForDuplicateTimestamp`)
 /// and `timeSeriesGroupArrayHistograms` to the duplicates across the rows of the samples tables, when parts are merged or read.
 /// Both must apply the same rule, or the stored result would depend on whether the duplicates arrived in one block or in two.
-/// The histogram rule compares counter reset hints only after the other payload elements, so changing a hint during merging
-/// (see TimeSeriesHistogramCounterResetRule) cannot change the winning payload (up to payloads the comparison of ClickHouse
-/// considers equal, see `compareHistograms`).
+/// The histogram rule doesn't compare the counter reset hints, which merging changes (see TimeSeriesHistogramCounterResetRule); of
+/// the hints only the gauge marker, which merging keeps, takes part. Where the kept one of two samples equal under the rule keeps
+/// its hint, the callers make it unknown unless the two hints agree, so that it doesn't depend on which one was kept.
 class TimeSeriesDuplicateTimestampRule
 {
 public:
@@ -28,16 +28,12 @@ public:
         return isNaN(kept) || (candidate > kept);
     }
 
-    /// Whether the histogram sample `candidate` of `view` replaces the histogram sample `kept`: `compareHistograms(view, candidate, kept) > 0`.
-    static bool histogramSampleWins(const TimeSeriesHistogramPayloadColumnsView & view, size_t kept, size_t candidate);
-
     /// An order over the payload (every element but `timestamp`) of the histogram samples `lhs` and `rhs` of `view`: the greater
     /// sample is preferred. Returns a negative number, 0 or a positive number. The first differing key decides:
     /// 1. the total count (`count_int` or `count_float` by flavour), compared exactly across flavours;
     /// 2. `sum`;
     /// 3. the other elements in the stored order by `IColumn::compareAt` (arrays and tuples lexicographically); of the counter
-    ///    reset hint only the gauge marker;
-    /// 4. for otherwise identical payloads, the counter reset hint, unknown preferred over known hints.
+    ///    reset hint only the gauge marker, so samples differing in their counter hints only are equal.
     /// Floats compare as in `CompareHelper`: a NaN is less than any number, two NaNs are equal, as are `0.0` and `-0.0`; only for
     /// payloads equal up to those does the kept sample depend on the order of the samples (the limit of `floatSampleWins` too).
     static int compareHistograms(const TimeSeriesHistogramPayloadColumnsView & view, size_t lhs, size_t rhs);

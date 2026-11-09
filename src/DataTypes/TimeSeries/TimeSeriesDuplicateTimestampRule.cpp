@@ -33,11 +33,6 @@ namespace
 }
 
 
-bool TimeSeriesDuplicateTimestampRule::histogramSampleWins(const View & view, size_t kept, size_t candidate)
-{
-    return compareHistograms(view, candidate, kept) > 0;
-}
-
 int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_t lhs, size_t rhs)
 {
     if (const int by_count = compareCounts(view, lhs, rhs))
@@ -51,7 +46,8 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
     {
         if (column == &view.counter_reset_hint)
         {
-            /// Changing a counter hint during merging must not change which histogram payload wins a later merge.
+            /// Merging changes the counter hints, so a winner they decided would depend on the order of the merges. The gauge marker
+            /// describes the sample itself and is never changed.
             const bool lhs_gauge = view.counter_reset_hint.getData()[lhs] == TimeSeriesHistogramCounterResetHint::Gauge;
             const bool rhs_gauge = view.counter_reset_hint.getData()[rhs] == TimeSeriesHistogramCounterResetHint::Gauge;
             if (lhs_gauge != rhs_gauge)
@@ -61,18 +57,7 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
         if (const int result = column->compareAt(lhs, rhs, *column, nan_is_less))
             return result;
     }
-
-    /// Only identical payloads are ordered by their hints. Prefer an unknown hint, so that a duplicate cannot replace a hint which
-    /// merging made unknown with a known one.
-    const UInt8 lhs_hint = view.counter_reset_hint.getData()[lhs];
-    const UInt8 rhs_hint = view.counter_reset_hint.getData()[rhs];
-    if (lhs_hint == rhs_hint)
-        return 0;
-    if (lhs_hint == TimeSeriesHistogramCounterResetHint::Unknown)
-        return 1;
-    if (rhs_hint == TimeSeriesHistogramCounterResetHint::Unknown)
-        return -1;
-    return lhs_hint > rhs_hint ? 1 : -1;
+    return 0;
 }
 
 }

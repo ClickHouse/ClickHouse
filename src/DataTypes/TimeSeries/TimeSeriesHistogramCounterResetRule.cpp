@@ -39,18 +39,15 @@ bool TimeSeriesHistogramCounterResetRule::isStaleMarker(Float64 sum)
     return std::bit_cast<UInt64>(sum) == 0x7ff0000000000002ULL;
 }
 
-UInt8 TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(
-    const View & view,
-    size_t previous,
-    size_t current,
-    bool preserve_explicit_reset)
+UInt8 TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(const View & view, size_t previous, size_t current)
 {
     /// A stale marker carries only `sum`, so its counts can't be compared with the predecessor's.
     if (isStaleMarker(view.sum.getData()[current]))
         return Hint::Unknown;
-    /// A gauge marker describes the sample itself, not its relation to the predecessor.
+    /// A gauge marker describes the sample itself, not its relation to the predecessor. A counter hint the sample was sent with is
+    /// about the predecessor its sender saw, which this one need not be, so it is detected from the data instead.
     const UInt8 hint = view.counter_reset_hint.getData()[current];
-    if ((hint == Hint::Gauge) || (preserve_explicit_reset && (hint == Hint::Reset)))
+    if (hint == Hint::Gauge)
         return hint;
     return detect(view, previous, current);
 }

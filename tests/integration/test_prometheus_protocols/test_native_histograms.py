@@ -439,8 +439,9 @@ def test_remote_read_clears_hints_after_float_collisions():
 def test_remote_read_returns_stored_resets_as_unknown():
     # Prometheus returns `GAUGE`, `NO` or `UNKNOWN` over remote read, never `YES`: a reset, explicit or detected, starts a new chunk
     # whose first sample is returned with an unknown hint, and PromQL trusts `YES` without checking the data. A stored reset is
-    # returned as unknown the same way, whether it was sent explicitly or detected on insert. The first histogram of a series is
-    # returned as unknown too: the sink keeps the sender's hint of the first sample of an insert without checking it against the
+    # returned as unknown the same way. A sender's `YES` the data doesn't show (the counts increase) isn't stored at all: the sink
+    # detects every hint but the first of an insert from the data, so it is returned as `NO`. The first histogram of a series is
+    # returned as unknown: the sink keeps the sender's hint of the first sample of an insert without checking it against the
     # predecessor, which is in an earlier insert, and Prometheus never trusts a sender's `NO`. The other hints are returned as stored.
     timestamps = [TIMESTAMP_MS + i * 1000 for i in range(3)]
 
@@ -452,19 +453,23 @@ def test_remote_read_returns_stored_resets_as_unknown():
     detected = [histogram(t, count, types_pb2.Histogram.UNKNOWN) for t, count in zip(timestamps, [5, 2, 3])]
     send(make_write_request(({"__name__": "explicit"}, explicit), ({"__name__": "detected"}, detected)))
 
-    # Stored: the explicit hints of the first sample and of the reset are kept, the decrease of the count is detected as a reset,
-    # the increases as no reset.
+    # Stored: the hint of the first sample is kept, the decrease of the count is detected as a reset, the increases as no reset,
+    # the sender's reset included.
     assert node.query(
         "SELECT metric_name, histograms.counter_reset_hint FROM prometheus WHERE metric_name IN ('explicit', 'detected') ORDER BY metric_name"
-    ) == "detected\t[0,1,2]\nexplicit\t[2,1,2]\n"
+    ) == "detected\t[0,1,2]\nexplicit\t[2,2,2]\n"
 
     series = remote_read(timestamps[0], timestamps[-1])
-    for name in ("explicit", "detected"):
-        assert [h.reset_hint for h in series[labels_key(__name__=name)].histograms] == [
-            types_pb2.Histogram.UNKNOWN,
-            types_pb2.Histogram.UNKNOWN,
-            types_pb2.Histogram.NO,
-        ]
+    assert [h.reset_hint for h in series[labels_key(__name__="detected")].histograms] == [
+        types_pb2.Histogram.UNKNOWN,
+        types_pb2.Histogram.UNKNOWN,
+        types_pb2.Histogram.NO,
+    ]
+    assert [h.reset_hint for h in series[labels_key(__name__="explicit")].histograms] == [
+        types_pb2.Histogram.UNKNOWN,
+        types_pb2.Histogram.NO,
+        types_pb2.Histogram.NO,
+    ]
 
 
 def test_fields_of_the_other_flavour_are_ignored():

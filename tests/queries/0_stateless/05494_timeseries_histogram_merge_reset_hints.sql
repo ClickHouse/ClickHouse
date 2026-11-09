@@ -1,9 +1,9 @@
--- The counter reset hints after `timeSeriesGroupArrayHistograms` merges arrays of histogram samples: where the sample's predecessor
--- is no longer the one the hint was computed against (the first sample of every merged array but the first, and every sample whose
--- neighbour changed by sorting or deduplication), the hint is detected again from the data against the new predecessor, as the sink does
--- within one insert (a count decrease is a reset), an explicit reset too; hints within an array and gauge markers are kept, the result
--- doesn't depend on the order of the inputs, and the changed hints don't change which payload wins a later conflict. The same happens
--- when the parts of the samples table are merged.
+-- The counter reset hints after `timeSeriesGroupArrayHistograms` merges arrays of histogram samples: every sample whose predecessor
+-- may have changed (the first sample of every appended array but the first, every sample but the first of overlapping arrays) gets its
+-- hint detected again from the data against its predecessor in the result, as the sink does within one insert (a count decrease is a
+-- reset), whatever hint it had; the other hints and gauge markers are kept, a single array is returned as it is, the result doesn't
+-- depend on the order of the inputs, and the hints don't take part in choosing which payload wins a conflict. The same happens when
+-- the parts of the samples table are merged.
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 SET max_threads = 1;
@@ -28,14 +28,15 @@ FROM values('scenario String, part UInt8, samples Array(Tuple(UInt32, Int64, UIn
     ('conflict', 1, [(100, 100, 2), (101, 120, 2)]),
     ('conflict', 2, [(100, 1, 2), (101, 2, 2), (102, 3, 2)]),
     ('append', 1, [(100, 100, 2), (101, 120, 2)]),
-    ('append', 2, [(102, 3, 2), (103, 4, 1)]),
+    ('append', 2, [(102, 3, 2), (103, 4, 2)]),
     ('interleave', 1, [(100, 1, 2), (102, 3, 2)]),
     ('interleave', 2, [(101, 2, 1), (103, 4, 1)]),
     ('gauge', 1, [(100, 100, 3), (101, 120, 3)]),
     ('gauge', 2, [(100, 1, 3), (101, 2, 3), (102, 3, 3)]),
     ('single', 1, [(100, 1, 2), (101, 2, 1)]));
 
--- Detect hints only where adjacency changes, preserving known hints within a range and gauge markers everywhere.
+-- Appended arrays keep their hints but for their first sample (the sink detected them), sorted arrays get all of them detected;
+-- gauge markers are kept; the single array of `single` is returned as it is.
 SELECT scenario, arrayMap(s -> (s.timestamp, s.count_int, s.counter_reset_hint), merged),
        merged = arrayReduce('timeSeriesGroupArrayHistograms', arrayReverse(arrays))
 FROM
@@ -53,8 +54,8 @@ FROM histogram_hint_inputs WHERE scenario = 'conflict' GROUP BY part;
 SELECT arrayMap(s -> (s.count_int, s.counter_reset_hint), timeSeriesGroupArrayHistogramsMerge(state)) FROM histogram_hint_states;
 DROP TABLE histogram_hint_states;
 
--- Changing a hint during an earlier merge must not change which payload wins a later conflict: the inner merge of parts 1 and 3
--- makes the hint of part 3 unknown (the schema changed), and the outer merge must still prefer its payload (schema 1) to part 2.
+-- The counter hints don't take part in choosing which payload wins a conflict: the inner merge of parts 1 and 3 makes the hint of
+-- part 3 unknown (the schema changed), and the outer merge must still prefer its payload (schema 1) to part 2.
 INSERT INTO histogram_hint_inputs
 SELECT 'payload', part, arrayMap(s -> (s.1, 0, s.3, schema, 0., toFloat64(s.2), s.2, s.2, 0., 0., [], [], [], [], []), samples)
 FROM values('part UInt8, schema Int8, samples Array(Tuple(UInt32, Int64, UInt8))',

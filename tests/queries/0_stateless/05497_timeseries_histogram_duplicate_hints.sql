@@ -1,7 +1,8 @@
 -- Histogram samples with the same timestamp whose payloads are identical except for the counter reset hint: the order of
--- TimeSeriesDuplicateTimestampRule compares the hints last, a gauge marker beats a counter hint, an unknown hint beats a known one,
--- and otherwise the greater hint wins. The sink (INSERT) and the aggregate `timeSeriesGroupArrayHistograms` apply the same order,
--- whatever the input order. A payload difference (here the schema) decides before the hints, but not before the gauge marker.
+-- TimeSeriesDuplicateTimestampRule doesn't compare the counter hints, a gauge marker beats a counter hint, and the kept sample gets
+-- the common hint of the two, or an unknown one if they differ. The sink (INSERT) and the aggregate `timeSeriesGroupArrayHistograms`
+-- apply the same rule, whatever the input order. A payload difference (here the schema) decides the winner, which keeps its own
+-- hint, but not before the gauge marker.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -32,6 +33,7 @@ FROM values('name String, a_hint UInt8, a_schema Int8, b_hint UInt8, b_schema In
     ('gauge_vs_no', 3, 0, 2, 0),
     ('unknown_vs_reset', 0, 0, 1, 0),
     ('reset_vs_no', 1, 0, 2, 0),
+    ('no_vs_no', 2, 0, 2, 0),
     ('gauge_vs_no_schema', 3, 0, 2, 1),
     ('unknown_vs_reset_schema', 0, 0, 1, 1));
 
@@ -43,7 +45,7 @@ SELECT name,
 FROM hint_pairs
 ORDER BY name;
 
-SELECT '-- the sink: one sample per series, so the detection of resets leaves the kept hint alone';
+SELECT '-- the sink: one sample per series after the deduplication, the first, which keeps the common hint or gets an unknown one';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
 INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.counter_reset_hint, histograms.count_int, histograms.sum, histograms.positive_int)
     VALUES
@@ -52,7 +54,8 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.counter_rese
     ('unknown_last', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [1, 0], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
     ('unknown_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [0, 1], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
     ('no_last', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [1, 2], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
-    ('no_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [2, 1], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]);
+    ('no_first', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [2, 1], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]),
+    ('no_both', map(), [toDateTime64(100, 3), toDateTime64(100, 3)], [2, 2], [1, 1], [1, 1], [[(0, 1)], [(0, 1)]]);
 
 SELECT t.metric_name, s.histograms.counter_reset_hint
 FROM timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) AS s JOIN timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) AS t ON s.id = t.id

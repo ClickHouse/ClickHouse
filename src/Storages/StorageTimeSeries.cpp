@@ -1138,18 +1138,20 @@ support native histograms: the histogram samples of the selected series are igno
 rows with samples in the queried range.
 
 Counter reset hints are maintained in two places with one set of rules. On insert, after sorting and deduplication, the hint of every
-histogram sample but the first one of each series is computed against its predecessor in the same `INSERT`: an explicit reset hint is
-kept (a reset can't always be told from the data, e.g. after a schema change); otherwise a decrease of the total count is a reset; with
-the same schema and zero threshold, so is a decrease of any bucket count, the disappearance of a populated bucket, or a change of the
-custom bucket bounds; a change of the schema or of the zero threshold leaves the hint unknown. The first sample of a series keeps the
-hint it was sent with: its predecessor is in an earlier insert, which is not consulted. Gauge markers are kept. A stale sample gets an
-unknown hint. A counter sample following a gauge sample, the sample following a stale one, and a sample of the other flavour than its
-predecessor (an integer histogram after a float one or the reverse) get an unknown hint whatever their counts.
+histogram sample but the first one of each series is detected from the data against its predecessor in the same `INSERT`, whatever
+hint it was sent with: a decrease of the total count is a reset; with the same schema and zero threshold, so is a decrease of any
+bucket count, the disappearance of a populated bucket, or a change of the custom bucket bounds; a change of the schema or of the zero
+threshold leaves the hint unknown, for the reader to resolve from the data, as Prometheus does. The first sample of a series keeps the
+hint it was sent with: its predecessor is in an earlier insert, which is not consulted; but if duplicates of it with the same payload
+and other counter hints were dropped, its hint is unknown. Gauge markers are kept. A stale sample gets an unknown hint. A counter
+sample following a gauge sample, the sample following a stale one, and a sample of the other flavour than its predecessor (an integer
+histogram after a float one or the reverse) get an unknown hint whatever their counts.
 When rows are merged by `timeSeriesGroupArrayHistograms` (in background merges, in reads with `FINAL`, and when the aggregate is called
-directly), the hint of every sample whose predecessor changed (the first sample of every merged array but the first, and every sample
-whose neighbour changed by sorting or deduplication) is detected again from the data against the new predecessor by the same rules,
-whatever hint it had: an explicit or an earlier detected reset was about another predecessor. Gauge markers are kept. So a stored hint
-depends only on the sample's final predecessor, not on the order of the merges.
+directly), the hint of every sample whose predecessor may have changed (the first sample of every appended array but the first, every
+sample but the first of arrays overlapping in time) is detected again the same way against its predecessor in the result, and the hint
+of the first one is kept, or made unknown when dropped duplicates of it had other counter hints. So a stored hint depends only on the
+sample and its final predecessor, not on the order of the merges, and a reset the sender reported but the data doesn't show is not
+stored: Prometheus doesn't return one either, its readers detect the resets from the data.
 
 The _samples_ table must have columns:
 
