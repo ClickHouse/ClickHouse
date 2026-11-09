@@ -1,2 +1,2 @@
-Algorithm: HashJoin
-Algorithm: ConcurrentHashJoin
+04356_hint	1	0
+04356_cache	0	1

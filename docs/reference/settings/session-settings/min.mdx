@@ -54,6 +54,23 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
 
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
 
+## min_marks_per_part_to_load_statistics {#min_marks_per_part_to_load_statistics}
+
+<SettingsInfoBlock type="UInt64" default_value="64" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "64"},{"label": "New setting to skip loading statistics when the primary key leaves only a small read."}]}]}/>
+
+The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
+
+Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
+
+Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
+
+Possible values:
+
+- 0 — Load statistics regardless of the size of the read.
+- Positive integer — The number of marks per data part.
+
 ## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw}
 
 <SettingsInfoBlock type="Float" default_value="0" />

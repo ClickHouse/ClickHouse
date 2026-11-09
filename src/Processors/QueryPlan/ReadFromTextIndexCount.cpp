@@ -259,12 +259,14 @@ UInt64 computeCountForPart(
             if (!(token_info->header & PostingsSerialization::Flags::IsCompressed))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uncompressed multi-block posting list in text index {}", index.index->index.name);
 
+            /// use_page_cache_lookahead: the cursor can skip segments forward.
             cursor_streams.push_back(makeTextIndexInputStream(
                 part_info,
                 index.index->getFileName(),
                 substreams[2],
                 reader_settings,
-                estimatePostingListBufferSize(*token_info)));
+                estimatePostingListBufferSize(*token_info),
+                /*use_page_cache_lookahead=*/ false));
 
             cursors.push_back(std::make_shared<PostingListCursor>(
                 *cursor_streams.back(),
@@ -292,12 +294,14 @@ UInt64 computeCountForPart(
     for (const auto * token_info : tokens_to_read)
         largest_segment_bytes = std::max(largest_segment_bytes, estimatePostingListBufferSize(*token_info));
 
+    /// use_page_cache_lookahead: `tokens_to_read` is not in file order.
     auto postings_stream = makeTextIndexInputStream(
         part_info,
         index.index->getFileName(),
         substreams[2],
         reader_settings,
-        largest_segment_bytes);
+        largest_segment_bytes,
+        /*use_page_cache_lookahead=*/ false);
 
     const PostingBlockReader<CheckCancelledCallback> posting_reader(
         *postings_stream,
