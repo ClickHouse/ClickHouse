@@ -6,7 +6,6 @@
 #include <Storages/StatisticsDescription.h>
 #include <boost/core/noncopyable.hpp>
 
-#include <memory>
 #include <optional>
 
 namespace DB
@@ -131,38 +130,6 @@ protected:
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
 
-/// An optional `Field` that takes one pointer inline and allocates the value only when it is set.
-/// `Estimates` keep an `Estimate` per column per part in memory, and an inline `std::optional<Field>` (64 bytes) would
-/// move every hash node of `Estimates` to a larger allocation size class, even for the columns that never set the value.
-class OptionalFieldPtr
-{
-public:
-    OptionalFieldPtr() = default;
-    OptionalFieldPtr(const OptionalFieldPtr & other) : value(other.value ? std::make_unique<Field>(*other.value) : nullptr) {}
-    OptionalFieldPtr(OptionalFieldPtr && other) noexcept = default;
-
-    OptionalFieldPtr & operator=(const OptionalFieldPtr & other)
-    {
-        if (this != &other)
-            value = other.value ? std::make_unique<Field>(*other.value) : nullptr;
-        return *this;
-    }
-    OptionalFieldPtr & operator=(OptionalFieldPtr && other) noexcept = default;
-    OptionalFieldPtr & operator=(Field field)
-    {
-        value = std::make_unique<Field>(std::move(field));
-        return *this;
-    }
-
-    explicit operator bool() const { return value != nullptr; }
-    /// Null if not set.
-    const Field * get() const { return value.get(); }
-    const Field & operator*() const { return *value; }
-
-private:
-    std::unique_ptr<Field> value;
-};
-
 struct Estimate
 {
     std::set<StatisticsType> types;
@@ -172,7 +139,7 @@ struct Estimate
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
     std::optional<UInt64> estimated_default_count;
-    OptionalFieldPtr estimated_sum;
+    std::optional<Field> estimated_sum;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;

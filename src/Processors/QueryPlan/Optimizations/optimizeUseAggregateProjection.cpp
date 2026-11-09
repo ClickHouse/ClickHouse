@@ -1124,17 +1124,15 @@ static Block makeBlockFromStatistics(
             if (estimate.rows_count != part->rows_count)
                 return false;
 
-            const Field * value = nullptr;
-            if (stats_aggregate.isSum())
-                value = estimate.estimated_sum.get();
-            else if (const auto & extreme = stats_aggregate.kind == StatisticsAggregate::Kind::Min ? estimate.estimated_min : estimate.estimated_max)
-                value = &*extreme;
+            const auto & value = stats_aggregate.isSum() ? estimate.estimated_sum
+                : stats_aggregate.kind == StatisticsAggregate::Kind::Min ? estimate.estimated_min
+                : estimate.estimated_max;
 
             /// Reject legacy statistics whose min/max were stored lossy (as Float64 for any column type).
             if (!value || (!stats_aggregate.isSum() && value->getType() != stats_aggregate.expected_field_type))
                 return false;
 
-            part_values[i] = value;
+            part_values[i] = &*value;
         }
 
         for (size_t i = 0; i < stats_aggregates.size(); ++i)

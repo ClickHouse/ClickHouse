@@ -878,8 +878,7 @@ TEST(Statistics, BasicSumMissingFromOlderStatistics)
     auto fresh = createTestStats({StatisticsType::Basic}, data_type);
     fresh->build(std::move(col));
     /// `max + 1` wraps around to the minimum, as in `sum`, which computes the statistics' sum.
-    ASSERT_TRUE(fresh->hasSum());
-    ASSERT_EQ(*fresh->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+    ASSERT_EQ(fresh->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
 
     String older_payload;
     {
@@ -915,8 +914,7 @@ TEST(Statistics, BasicSumMissingFromOlderStatistics)
 
     auto merged = fresh->cloneEmpty();
     merged->merge(fresh);
-    ASSERT_TRUE(merged->hasSum());
-    EXPECT_EQ(*merged->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
+    EXPECT_EQ(merged->getEstimate().estimated_sum, Field(std::numeric_limits<Int64>::min()));
     merged->merge(older);
     EXPECT_FALSE(merged->hasSum());
 }
@@ -942,7 +940,7 @@ TEST(Statistics, BasicSumRoundTrip)
         ReadBufferFromString read_buf(buf.str());
         auto read_stats = ColumnStatistics::deserialize(read_buf, data_type);
         ASSERT_TRUE(read_stats->hasSum()) << type_name;
-        EXPECT_EQ(*read_stats->getEstimate().estimated_sum, *stats->getEstimate().estimated_sum) << type_name;
+        EXPECT_EQ(read_stats->getEstimate().estimated_sum, stats->getEstimate().estimated_sum) << type_name;
     }
 }
 
