@@ -563,6 +563,11 @@ void MergeTreeDataPartWriterParquet::writeColumnChunks(size_t column_idx, const 
     /// the indexes too, and is not the size of the values of the rows.
     ColumnPtr column_in_file = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
     DataTypePtr type_in_file = type;
+    /// The uncompressed size of a column is its size in memory, but for a binary column it is the size of the serialized
+    /// values: the size in memory may not count the data at all, e.g. a `cut` of a column of aggregate states shares
+    /// the arena with the whole column, so its `byteSize` counts only the pointers to the states.
+    /// Likewise, a `LowCardinality` column counts the values that it refers to, even if it shares the dictionary.
+    size_t uncompressed_bytes = 0;
     if (column_to_write.binary)
     {
         ColumnPtr full_column = column_in_file;
@@ -581,15 +586,17 @@ void MergeTreeDataPartWriterParquet::writeColumnChunks(size_t column_idx, const 
             }
             buf.finalize();
         }
+        /// Only the serialized values, without the offsets of the temporary `ColumnString`: for a numeric type, such as
+        /// `BFloat16`, it is the size of the values in memory, which `loadRowsCount` divides by the size of one value.
+        uncompressed_bytes = chars.size();
         column_in_file = std::move(binary_column);
         type_in_file = std::make_shared<DataTypeString>();
     }
-
-    /// The uncompressed size of a column is its size in memory, but for a binary column it is the size of the serialized
-    /// values: the size in memory may not count the data at all, e.g. a `cut` of a column of aggregate states shares
-    /// the arena with the whole column, so its `byteSize` counts only the pointers to the states.
-    /// Likewise, a `LowCardinality` column counts the values that it refers to, even if it shares the dictionary.
-    columns_to_write[column_idx].uncompressed_bytes += columnUncompressedBytes(*column_in_file);
+    else
+    {
+        uncompressed_bytes = columnUncompressedBytes(*column_in_file);
+    }
+    columns_to_write[column_idx].uncompressed_bytes += uncompressed_bytes;
 
     size_t start = data_hashing->count();
     chassert(start == file_state.offset);
