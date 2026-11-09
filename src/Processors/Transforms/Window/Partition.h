@@ -11,7 +11,8 @@ struct PartitionBounds
     RowNumber start;
     RowNumber end;
     int64_t rows_count = 0;
-    bool fully_visible = false;
+    bool start_visible = false;
+    bool end_visible = false;
 };
 
 class Partition

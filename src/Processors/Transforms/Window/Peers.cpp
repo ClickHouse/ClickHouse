@@ -38,12 +38,12 @@ void advancePeerGroupEnd(const SlidingBlocks & blocks, const PartitionBounds & p
         const int64_t rows_end = partition_end.block == end.location.block ? partition_end.row : block.rows_count;
         if (advancePeerGroupEndInBlock(block, group, rows_end, end))
         {
-            peers.fully_visible = true;
+            peers.end_visible = true;
             return;
         }
     }
 
-    peers.fully_visible = partition.fully_visible;
+    peers.end_visible = partition.end_visible;
 }
 
 }
@@ -53,12 +53,13 @@ void Peers::enterPartition(RowNumber partition_start)
     current_row = RowPoint{.location = partition_start};
     peers_bounds.start = RowPoint{.location = partition_start};
     peers_bounds.end = RowPoint{.location = partition_start};
-    peers_bounds.fully_visible = false;
+    peers_bounds.start_visible = true;
+    peers_bounds.end_visible = false;
 }
 
 void Peers::advancePeerGroupBounds(const SlidingBlocks & blocks, const PartitionBounds & partition)
 {
-    if (!peers_bounds.fully_visible)
+    if (!peers_bounds.end_visible)
         advancePeerGroupEnd(blocks, partition, peerGroupAt(blocks, peers_bounds.start.location), peers_bounds);
 
     if (current_row.row_index_in_partition >= peers_bounds.end.row_index_in_partition)

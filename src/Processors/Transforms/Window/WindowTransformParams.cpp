@@ -243,7 +243,7 @@ WindowFunctionRequirements collectRequirements(const WindowDescription & descrip
         if (auto general = asGeneralWindowFunction(function.aggregate_function))
             requirements = unionOf(requirements, general->getRequirements(description));
         else
-            requirements = unionOf(requirements, WindowFunctionRequirements{.frame = true});
+            requirements = unionOf(requirements, WindowFunctionRequirements{.frame_start = true, .frame_end = true});
     }
 
     return requirements;
@@ -251,8 +251,8 @@ WindowFunctionRequirements collectRequirements(const WindowDescription & descrip
 
 bool needsPeerGroupIndexes(const WindowDescription & description, const WindowFunctionRequirements & requirements)
 {
-    const bool functions_read_peer_groups = requirements.peers;
-    const bool frame_reads_peer_groups = requirements.frame && description.frame.type != WindowFrame::FrameType::ROWS;
+    const bool functions_read_peer_groups = requirements.peers_start || requirements.peers_end;
+    const bool frame_reads_peer_groups = (requirements.frame_start || requirements.frame_end) && description.frame.type != WindowFrame::FrameType::ROWS;
     return functions_read_peer_groups || frame_reads_peer_groups;
 }
 

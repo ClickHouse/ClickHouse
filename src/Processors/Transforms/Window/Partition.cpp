@@ -4,20 +4,20 @@ namespace DB
 {
 
 Partition::Partition()
-    : partition_bounds{.start = RowNumber{0, 0}, .end = RowNumber{0, 0}, .rows_count = 0, .fully_visible = true}
+    : partition_bounds{.start = RowNumber{0, 0}, .end = RowNumber{0, 0}, .rows_count = 0, .start_visible = true, .end_visible = true}
 {
 }
 
 void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
-    partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .rows_count = 1, .fully_visible = false};
+    partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .rows_count = 1, .start_visible = true, .end_visible = false};
     advance(blocks);
 }
 
 void Partition::advance(const SlidingBlocks & blocks)
 {
     RowNumber & end = partition_bounds.end;
-    while (!partition_bounds.fully_visible && end < blocks.end())
+    while (!partition_bounds.end_visible && end < blocks.end())
     {
         const SlidingBlock & block = blocks.blockAt(end.block);
 
@@ -35,7 +35,7 @@ void Partition::advance(const SlidingBlocks & blocks)
 
 void Partition::finish()
 {
-    partition_bounds.fully_visible = true;
+    partition_bounds.end_visible = true;
 }
 
 const PartitionBounds & Partition::bounds() const

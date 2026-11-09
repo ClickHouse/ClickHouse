@@ -29,7 +29,7 @@ int64_t peerGroupAt(const SlidingBlocks & blocks, RowNumber row)
 
 bool advanceToPartitionEnd(const PartitionBounds & partition, RowPoint & bound)
 {
-    if (!partition.fully_visible)
+    if (!partition.end_visible)
         return false;
 
     bound.location = partition.end;
@@ -55,7 +55,7 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & pa
 {
     const RowNumber partition_end = partition.end;
     if (bound.location == partition_end)
-        return partition.fully_visible;
+        return partition.end_visible;
 
     if (peerGroupAt(blocks, bound.location) >= group)
         return true;
@@ -78,7 +78,7 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const PartitionBounds & pa
         bound.location = blocks.move(bound.location, row - bound.location.row);
     }
 
-    return partition.fully_visible;
+    return partition.end_visible;
 }
 
 /// The first row whose ORDER BY key is at the offset from the current row's key, or past it when `past`.
@@ -107,7 +107,7 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
         bound.location = blocks.move(bound.location, row - bound.location.row);
     }
 
-    return partition.fully_visible;
+    return partition.end_visible;
 }
 
 bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const PartitionBounds & partition, const RowPoint & current, RowPoint & start)
@@ -182,20 +182,20 @@ Frame::Frame(const WindowTransformParams & params_)
 
 void Frame::enterPartition(RowNumber partition_start)
 {
-    frame_bounds = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .fully_visible = false};
+    frame_bounds = FrameBounds{.start = {.location = partition_start}, .end = {.location = partition_start}, .start_visible = false, .end_visible = false};
 }
 
 void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition)
 {
-    frame_bounds.fully_visible = false;
-
-    if (!advanceFrameStart(params, blocks, partition, current, frame_bounds.start))
+    frame_bounds.start_visible = advanceFrameStart(params, blocks, partition, current, frame_bounds.start);
+    frame_bounds.end_visible = false;
+    if (!frame_bounds.start_visible)
         return;
 
     if (frame_bounds.end.row_index_in_partition < frame_bounds.start.row_index_in_partition)
         frame_bounds.end = frame_bounds.start;
 
-    frame_bounds.fully_visible = advanceFrameEnd(params, blocks, partition, current, frame_bounds.end);
+    frame_bounds.end_visible = advanceFrameEnd(params, blocks, partition, current, frame_bounds.end);
 }
 
 const FrameBounds & Frame::bounds() const

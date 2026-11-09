@@ -77,9 +77,11 @@ MutableColumns initializeResultColumns(const VectorWithMemoryTracking<GeneralWin
 
 bool isRowReady(const WindowFunctionRequirements & required, const Frame & frame, const Peers & peers, const Partition & partition)
 {
-    return (!required.frame || frame.bounds().fully_visible)
-        && (!required.peers || peers.bounds().fully_visible)
-        && (!required.partition || partition.bounds().fully_visible);
+    return (!required.frame_start || frame.bounds().start_visible)
+        && (!required.frame_end || frame.bounds().end_visible)
+        && (!required.peers_start || peers.bounds().start_visible)
+        && (!required.peers_end || peers.bounds().end_visible)
+        && (!required.partition_end || partition.bounds().end_visible);
 }
 
 }
@@ -143,16 +145,16 @@ void WindowTransform::computeReadyRows()
         if (peers.current().location == partition.bounds().end)
         {
             /// The rest of this partition is not read yet, or the last partition is done.
-            if (!partition.bounds().fully_visible || input_is_finished)
+            if (!partition.bounds().end_visible || input_is_finished)
                 break;
 
             evaluateRowsBatch();
             startNextPartition();
         }
 
-        if (params.requirements.peers)
+        if (params.requirements.peers_start || params.requirements.peers_end)
             peers.advancePeerGroupBounds(blocks, partition.bounds());
-        if (params.requirements.frame)
+        if (params.requirements.frame_start || params.requirements.frame_end)
             frame.advance(blocks, peers.current(), partition.bounds());
         if (!isRowReady(params.requirements, frame, peers, partition))
             break;
@@ -171,21 +173,18 @@ void WindowTransform::recordCurrentRowBounds()
         batch_start = current.location;
 
     bounds.row.push_back(current.row_index_in_partition);
-    if (params.requirements.frame)
-    {
+    if (params.requirements.frame_start)
         bounds.frame_start.push_back(frame.bounds().start.row_index_in_partition);
+    if (params.requirements.frame_end)
         bounds.frame_end.push_back(frame.bounds().end.row_index_in_partition);
-    }
-    if (params.requirements.peers)
-    {
+    if (params.requirements.peers_start)
         bounds.peers_start.push_back(peers.bounds().start.row_index_in_partition);
-        bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
+    if (params.requirements.peers_start)
         bounds.peer_group_index.push_back(peers.currentGroupIndex(blocks));
-    }
-    if (params.requirements.partition)
-    {
+    if (params.requirements.peers_end)
+        bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
+    if (params.requirements.partition_end)
         bounds.partition_end.push_back(partition.bounds().rows_count);
-    }
     ++bounds.rows;
 }
 
@@ -315,7 +314,7 @@ void WindowTransform::work()
 void WindowTransform::releaseUnusedBlocks()
 {
     const RowPoint & current = peers.current();
-    const Int64 first_row_read_by_frame = params.requirements.frame ? frame.firstRowToRead() : std::numeric_limits<Int64>::max();
+    const Int64 first_row_read_by_frame = (params.requirements.frame_start || params.requirements.frame_end) ? frame.firstRowToRead() : std::numeric_limits<Int64>::max();
     const Int64 first_row_to_keep = std::min({current.row_index_in_partition, first_row_read_by_frame, first_row_read_by_functions});
     const Int64 first_position_to_keep = blocks.positionOf(current.location) - (current.row_index_in_partition - first_row_to_keep);
 
