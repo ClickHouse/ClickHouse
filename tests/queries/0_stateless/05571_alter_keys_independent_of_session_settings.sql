@@ -103,7 +103,21 @@ ENGINE = MergeTree ORDER BY tuple();
 ALTER TABLE t_cast_aggregate_projection COMMENT COLUMN x 'c' SETTINGS cast_keep_nullable = 1;
 INSERT INTO t_cast_aggregate_projection VALUES (1), (2), (2);
 SELECT CAST(x, 'UInt32') AS k, count() FROM t_cast_aggregate_projection GROUP BY k ORDER BY k;
+SELECT name, sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_cast_aggregate_projection' AND active GROUP BY name;
 DROP TABLE t_cast_aggregate_projection;
+
+SELECT '-- Projection sorting key, another type-affecting setting, INSERT after the ALTER';
+DROP TABLE IF EXISTS t_date32_projection;
+-- enable_extended_results_for_datetime_functions makes toStartOfMonth of a Date32 a Date32.
+CREATE TABLE t_date32_projection (d Date32, y UInt64, PROJECTION p (SELECT d, y ORDER BY toStartOfMonth(d)))
+ENGINE = MergeTree ORDER BY y;
+ALTER TABLE t_date32_projection COMMENT COLUMN d 'c' SETTINGS enable_extended_results_for_datetime_functions = 1;
+INSERT INTO t_date32_projection VALUES ('2020-01-15', 10), ('2020-02-15', 20), ('2020-03-15', 30);
+SELECT count() FROM t_date32_projection;
+SELECT name, sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_date32_projection' AND active GROUP BY name;
+DROP TABLE t_date32_projection;
 
 SELECT '-- ReplicatedMergeTree projection, INSERT after a comment-only ALTER';
 DROP TABLE IF EXISTS t_cast_projection_replicated;
@@ -112,4 +126,6 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_cast_projection_re
 ALTER TABLE t_cast_projection_replicated COMMENT COLUMN x 'c' SETTINGS cast_keep_nullable = 1;
 INSERT INTO t_cast_projection_replicated VALUES (1, 10), (2, 20), (3, 30);
 SELECT count() FROM t_cast_projection_replicated;
+SELECT name, sum(rows) FROM system.projection_parts
+WHERE database = currentDatabase() AND table = 't_cast_projection_replicated' AND active GROUP BY name;
 DROP TABLE t_cast_projection_replicated;

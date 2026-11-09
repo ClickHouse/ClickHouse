@@ -32,5 +32,10 @@ p	3
 -- Aggregate projection, an unrelated ALTER is not refused
 1	1
 2	2
+p	2
+-- Projection sorting key, another type-affecting setting, INSERT after the ALTER
+3
+p	3
 -- ReplicatedMergeTree projection, INSERT after a comment-only ALTER
 3
+p	3
