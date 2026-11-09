@@ -230,7 +230,7 @@ public:
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -238,9 +238,7 @@ public:
         size_t num_streams) override
     {
         auto storage = getNested();
-        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
-        auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
-        storage->read(query_plan, column_names, nested_snapshot, query_info, context,
+        storage->read(query_plan, column_names, getNestedSnapshot(storage, storage_snapshot, context), query_info, context,
                       processed_stage, max_block_size, num_streams);
     }
 

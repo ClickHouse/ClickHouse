@@ -37,6 +37,17 @@ public:
         return nested ? ask(*nested) : decltype(ask(*nested)){};
     }
 
+    /// A snapshot of `nested` for a query that analyzed the proxy with `proxy_snapshot`. A data lake pins the table
+    /// state selected for the query (e.g. by `iceberg_snapshot_id`) in the metadata during analysis, and two
+    /// `SELECT`s of one query can pin different states, so the current metadata of `nested` would read another
+    /// state. Other metadata of the proxy may be the stub from the `CREATE` query, so it is not used.
+    static StorageSnapshotPtr getNestedSnapshot(const StoragePtr & nested, const StorageSnapshotPtr & proxy_snapshot, ContextPtr context)
+    {
+        if (proxy_snapshot && proxy_snapshot->metadata && proxy_snapshot->metadata->datalake_table_state)
+            return nested->getStorageSnapshot(proxy_snapshot->metadata, context);
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
+        return nested->getStorageSnapshot(nested_metadata, context);
+    }
 
     String getName() const override { return "Proxy"; }
 
@@ -99,11 +110,11 @@ public:
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr context,
         QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr &,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & info) const override
     {
-        const auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, false);
-        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
+        auto nested = getNested();
+        return nested->getQueryProcessingStage(context, to_stage, getNestedSnapshot(nested, storage_snapshot, context), info);
     }
 
     void read(
@@ -264,12 +275,10 @@ public:
 
     /// The proxy's snapshot carries no engine-specific data, which the nested storage would
     /// misread, so build one from the nested storage instead.
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr query_context) const override
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
     {
         auto nested = getNested();
-        auto nested_metadata = nested->getInMemoryMetadataPtr(query_context, false);
-        auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, query_context);
-        return nested->supportsTrivialCountOptimization(nested_snapshot, query_context);
+        return nested->supportsTrivialCountOptimization(getNestedSnapshot(nested, storage_snapshot, query_context), query_context);
     }
 
     void startup() override { getNested()->startup(); }
