@@ -448,7 +448,7 @@ namespace
                 data[i]->forEachIndexedCell<Method>(
                     unit_first_partition,
                     unit_end_partition,
-                    [&](const auto & key, auto && mapped, size_t hash)
+                    [&](const auto & key, [[maybe_unused]] auto && mapped, size_t hash)
                     {
                         if constexpr (DB::MapAggregationMethod<Method>)
                             callback(key, &mapped, hash);
