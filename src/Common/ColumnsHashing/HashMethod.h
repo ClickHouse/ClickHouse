@@ -538,8 +538,7 @@ struct HashMethodKeysFixed
                 packed_size += size;
                 has_narrow_key |= size < 8;
             }
-            /// An 8-byte word of a row packed per row that holds a narrower key cannot be store-forwarded to the
-            /// hash. Words holding whole 8- and 16-byte keys can, so such sets are cheaper to pack per row.
+            /// Per-row packing is cheaper unless a key narrower than 8 bytes defeats store-forwarding to the hash.
             if (!has_nullable_keys && !has_narrow_key)
                 return false;
             return packed_size <= sizeof(Key);
