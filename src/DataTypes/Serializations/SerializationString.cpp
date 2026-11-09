@@ -277,8 +277,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
 /// buffer of concatenated values is scanned for the needle only once, and the found occurrences
 /// are mapped to values. This is much faster than a search per value, and together with the
 /// skipped copying it is faster than reading all the values.
-/// Returns the total size of the replaced values.
-static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
+static NO_INLINE void deserializeBinaryFilteredWithKnownSizes(
     ColumnString::Chars & data,
     ColumnString::Offsets & offsets,
     ReadBuffer & istr,
@@ -402,14 +401,12 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
     data.resize_exact(offset);
     filter.updateStats(values_checked, values_replaced, bytes_skipped);
     filter.updateStatsOfBulkScan(bulk_values_checked, bulk_values_replaced, bulk_bytes_skipped, bulk_values_checked_individually);
-    return bytes_skipped + bulk_bytes_skipped;
 }
 
 /// Deserialization which checks every value against the filter and reads non-matching values as empty strings.
 /// See the comment for `StringValueFilter`: it is only correct because the rows with non-matching values
 /// are guaranteed to be filtered out later by PREWHERE.
-/// Returns the total size of the replaced values.
-static NO_INLINE size_t deserializeBinaryFiltered(
+static NO_INLINE void deserializeBinaryFiltered(
     ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit, const StringValueFilter & filter)
 try
 {
@@ -447,7 +444,6 @@ try
 
     data.resize_exact(offset);
     filter.updateStats(values_checked, values_replaced, bytes_skipped);
-    return bytes_skipped;
 }
 catch (...)
 {
@@ -630,10 +626,7 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
         auto & column_string = assert_cast<ColumnString &>(column);
 
         column_string.getOffsets().reserve(column_string.getOffsets().size() + limit);
-        const size_t bytes_skipped = deserializeBinaryFiltered(
-            column_string.getChars(), column_string.getOffsets(), *stream, limit, *settings.string_value_filter);
-        if (settings.string_value_filter_bytes_skipped)
-            *settings.string_value_filter_bytes_skipped += bytes_skipped;
+        deserializeBinaryFiltered(column_string.getChars(), column_string.getOffsets(), *stream, limit, *settings.string_value_filter);
 
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         /// Note: we intentionally do not update the average value size hint from a filtered column.
@@ -1180,10 +1173,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     {
         /// Check every value against the filter and read non-matching values as empty strings,
         /// rewriting the just-appended offsets accordingly. See the comment for `StringValueFilter`.
-        const size_t bytes_skipped = deserializeBinaryFilteredWithKnownSizes(
-            data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter);
-        if (settings.string_value_filter_bytes_skipped)
-            *settings.string_value_filter_bytes_skipped += bytes_skipped;
+        deserializeBinaryFilteredWithKnownSizes(data, string_column.getOffsets(), *stream, prev_num_rows, *settings.string_value_filter);
     }
     else
     {

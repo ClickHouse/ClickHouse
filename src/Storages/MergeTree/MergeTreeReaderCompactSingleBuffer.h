@@ -25,6 +25,7 @@ public:
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
     std::optional<size_t> takeCompressedBytesRead() override;
+    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override;
     void addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark) override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override
@@ -41,14 +42,11 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStreamAllOfMultipleColumns> stream;
-    /// Since `takeCompressedBytesRead` was called: the ranges in the file of the compressed blocks read, in the order they are
-    /// loaded, see `CompressedReadBufferBase::setBlocksReadSink`, and of the blocks that hold the granules served from the cache.
+    /// The ranges in the file of the compressed blocks read, and of those that hold the granules served from the columns
+    /// cache, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`.
     CompressedBlockRanges ranges_read;
-    CompressedBlockRanges ranges_served;
-    /// The block the buffer loaded last, which it keeps loaded.
-    std::optional<std::pair<size_t, size_t>> last_loaded_block;
-    /// The ranges counted by the previous call of `takeCompressedBytesRead` and the last loaded block, merged and sorted.
-    CompressedBlockRanges ranges_counted_before;
+    /// Of `counted_compressed_blocks`, looked up at the first take.
+    CountedCompressedBlocks::File * counted_file = nullptr;
 };
 
 }
