@@ -501,19 +501,23 @@ static bool canMergeFilterIntoJoinGraph(const T & filter_step)
         && !isSensitiveToEvaluationCount(dag) && !hasOutputShadowingInputName(dag);
 }
 
-/// Whether the filter contains an equality, anywhere (also inside a disjunction), that must not become a
-/// join key. A merged filter condition is indistinguishable from an `ON` condition, so the physical join
+/// Whether the actions contain an equality (`equals` or the null-safe `isNotDistinctFrom`), anywhere (also
+/// inside a disjunction), that must not become a join key. A merged filter condition is indistinguishable from an `ON` condition, so the physical join
 /// can turn an equality into a hash join key and drop the comparison itself. That is wrong for a key type
 /// whose matching admits pairs `equals` rejects (`NULL` inside a `Variant` matches another `NULL`), and a
 /// `Dynamic` key is rejected by the join unless `allow_dynamic_type_in_join_keys` is set (declined here
 /// regardless of it), while the same comparison is valid in `WHERE`. Operands that `equals` can compare
 /// but that have no common supertype (`DateTime` and `UInt32`) cannot form a join key either. Such a
-/// filter keeps its step, see `extractActionsForJoinCondition`.
+/// filter keeps its step, see `extractActionsForJoinCondition`. The null-safe `isNotDistinctFrom` is
+/// consumed as a key the same way, and its key matching differs too (a NaN matches another NaN).
 static bool hasEqualityUnsafeAsJoinKey(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
     {
-        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals")
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+            continue;
+        const auto & function_name = node.function_base->getName();
+        if (function_name != "equals" && function_name != "isNotDistinctFrom")
             continue;
         for (const auto * argument : node.children)
         {
@@ -589,16 +593,42 @@ static bool isMergeableStepAboveJoin(
     if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
     {
         return merge_filters_into_join && !below_null_supplying && canMergeFilterIntoJoinGraph(*filter_step)
-            && !hasEqualityUnsafeAsJoinKey(filter_step->getExpression()) && !hasPreparedStorageJoin(node->children[0]);
+            && !hasPreparedStorageJoin(node->children[0]);
     }
     return false;
 }
 
+/// Look through the chain of steps above a join that may be merged into the join graph, see
+/// `isMergeableStepAboveJoin`, and return the node the chain stops at: the join to flatten, or another step.
+/// A merged filter must not contain an equality unsafe as a join key, see `hasEqualityUnsafeAsJoinKey`. The
+/// condition of a filter can be computed by an expression step below it (with `query_plan_merge_expressions = 0`
+/// the filter reads only the result), and that expression is merged into the join graph too, so the check
+/// covers the expression steps below each filter as well. The chain stops at the topmost filter that fails it.
 static const QueryPlan::Node * peelMergeableStepsAboveJoin(
     const QueryPlan::Node * node, bool merge_expression_into_join, bool merge_filters_into_join, bool below_null_supplying)
 {
+    std::vector<const QueryPlan::Node *> chain;
     while (isMergeableStepAboveJoin(node, merge_expression_into_join, merge_filters_into_join, below_null_supplying))
+    {
+        chain.push_back(node);
         node = node->children[0];
+    }
+
+    bool unsafe_equality_below = false;
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+    {
+        const auto * step = (*it)->step.get();
+        if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+        {
+            unsafe_equality_below = unsafe_equality_below || hasEqualityUnsafeAsJoinKey(expression_step->getExpression());
+        }
+        else if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+        {
+            unsafe_equality_below = unsafe_equality_below || hasEqualityUnsafeAsJoinKey(filter_step->getExpression());
+            if (unsafe_equality_below)
+                node = *it;
+        }
+    }
     return node;
 }
 
@@ -720,7 +750,8 @@ static size_t addChildQueryGraph(
     }
 
     std::vector<QueryPlan::Node *> merge_steps;
-    while (isMergeableStepAboveJoin(root_node, merge_expression_into_join, merge_filters_into_join, below_null_supplying))
+    const auto * join_candidate = peelMergeableStepsAboveJoin(root_node, merge_expression_into_join, merge_filters_into_join, below_null_supplying);
+    while (root_node != join_candidate)
     {
         merge_steps.push_back(root_node);
         root_node = root_node->children[0];
