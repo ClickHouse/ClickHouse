@@ -108,6 +108,7 @@ protected:
     virtual void addStreams(const NameAndTypePair & name_and_type) = 0;
 
     /// Per-column min_compress_block_size override if set, otherwise the table default.
+    /// Resolved once per column in the constructor, see `min_compress_block_sizes`.
     UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
 
     /// Codec for one substream of a column: the codec declared for the column or for the subcolumn the substream
@@ -190,6 +191,10 @@ protected:
     ColumnsSubstreams columns_substreams;
 
 private:
+    /// The effective min_compress_block_size of every column of `columns_list`. The writers ask for it per granule
+    /// and the column description it comes from is returned by value, so it is resolved once per column.
+    std::unordered_map<String, UInt64> min_compress_block_sizes;
+
     void initSkipIndices();
     void initPrimaryIndex();
 

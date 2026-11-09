@@ -75,7 +75,8 @@ private:
         ISerialization::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
 
-    /// Take offsets from column and return as MarkInCompressed file with stream name
+    /// Take offsets from column and return as MarkInCompressed file with stream name.
+    /// `offset_substreams` are the offsets streams already written in this block, skipped here.
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & name_and_type,
         const WrittenOffsetSubstreams & offset_substreams);
@@ -133,6 +134,19 @@ private:
         const WrittenOffsetSubstreams & offset_substreams) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
+    /// A stream of a column resolved once in `addStreams`; its name is `stream->escaped_column_name`. The list of
+    /// a column is in the order of `enumerateStreams`, without the ephemeral substreams and without the offsets
+    /// streams written before this writer (`written_offset_substreams`).
+    struct ResolvedStream
+    {
+        MergeTreeWriterStream * stream = nullptr;
+        /// ArraySizes substream; the columns of a Nested type share it and write it once per block.
+        bool is_offsets = false;
+    };
+    using ResolvedStreams = std::vector<ResolvedStream>;
+
+    const ResolvedStreams & getResolvedStreams(const String & column_name) const;
+
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
@@ -140,6 +154,11 @@ private:
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
+
+    /// The streams of every column, filled in addStreams. The set of streams of a column and their names do not
+    /// change while the part is written (they are enumerated from the fixed `block_sample`), so the per-granule
+    /// functions iterate this list instead of enumerating the substreams and building the stream names again.
+    std::unordered_map<String, ResolvedStreams> resolved_streams_by_column;
 
     /// Some long column names may be replaced to hashes.
     /// Below are mapping from original stream name to actual
