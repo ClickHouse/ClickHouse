@@ -1261,6 +1261,7 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         && !main_query_node.hasGroupBy()
         && !main_query_node.hasHaving()
         && !main_query_node.hasOrderBy()
+        && !main_query_node.isShuffle()
         && !main_query_node.hasLimitBy()
         && !select_query_info.need_aggregate
         && !select_query_info.has_window
@@ -1546,8 +1547,9 @@ void pushOrderByIntoView(
     if (!sel)
         return;
 
-    /// View must not have transformations that change ORDER BY semantics
-    if (sel->hasJoin() || sel->groupBy() || sel->distinct)
+    /// View must not have transformations that change `ORDER BY` semantics.
+    /// Injecting `ORDER BY` into a `SHUFFLE` query would also create incompatible clauses.
+    if (sel->hasJoin() || sel->groupBy() || sel->distinct || sel->shuffle)
         return;
 
     /// Window functions partition/order globally; with ORDER BY/LIMIT pushed

@@ -17,7 +17,7 @@ Delete unused git worktrees and stale build directories across all checkouts dir
 ## Rules
 
 - **Main repos** (`.git` is a directory) are never deleted. Only their old `build*` dirs are.
-- **Worktrees** (`.git` is a file pointing to `.../worktrees/<name>`, found directly under the root or up to 6 levels deeper) are deleted as a whole if no file in them (excluding `build*`, `contrib`, `.git`) is newer than the threshold, and they have no uncommitted changes or local commits that would be lost (including inside submodules).
+- **Worktrees** (`.git` is a file pointing to `<main>/.git/worktrees/<name>`, unlike submodules, found directly under the root or up to 6 levels deeper) are deleted as a whole if no file in them (excluding `build*`, `contrib`, `.git`) is newer than the threshold, and they have no uncommitted changes or local commits that would be lost (including inside submodules).
 - **Build dirs** (`build*`) inside kept checkouts are deleted if no file inside is newer than the threshold.
 - Anything whose age cannot be established (e.g. unreadable subdirectories) is kept.
 - Never delete directories in use by a process, containing mount points (e.g. `/dev` mounted into a chroot), or containing block device files. `delete.sh` checks this right before deleting each entry and skips it.
