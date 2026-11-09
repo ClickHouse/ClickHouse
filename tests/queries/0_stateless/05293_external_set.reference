@@ -28,7 +28,7 @@ cast Int64 to UInt64	3000	7000	602421085067201851
 cast Float64 to Int32	1667	8333	14704324406458888532
 cast String to FixedString	1000	9000	3758621883572277986
 cast LowCardinality to String	3000	7000	1384208262667381765
-floats	[1,0,1,1,1,0,1,0]	[0,1,0,0,0,1,0,1]
+floats	[1,1,1,1,1,0,1,0]	[0,0,0,0,0,1,0,1]
 constant	1	0	0
 empty	0	10
 shared	0	0

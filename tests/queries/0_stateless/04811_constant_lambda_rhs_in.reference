@@ -19,6 +19,6 @@ SELECT 5 IN (arrayMap(x -> x + 1, [1, 2]));
 SELECT 3 NOT IN (arrayMap(x -> x + 1, [1, 2]));
 0
 WITH toFloat64(0.0) AS c SELECT toFloat64(-0.0) IN (c);
-0
+1
 SELECT toFloat64(0.0) AS c, toFloat64(-0.0) IN (c);
-0	0
+0	1
