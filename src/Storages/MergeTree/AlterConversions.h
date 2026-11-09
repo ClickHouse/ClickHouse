@@ -8,7 +8,6 @@ namespace DB
 {
 
 struct StorageInMemoryMetadata;
-class ColumnsDescription;
 class IMergeTreeDataPartInfoForReader;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
@@ -24,8 +23,7 @@ public:
     AlterConversions(
         const MutationCommands & mutation_commands_,
         const PatchPartsForReader & patch_parts_,
-        const ContextPtr & context,
-        const ColumnsDescription * schema = nullptr);
+        const ContextPtr & context);
 
     struct RenamePair
     {

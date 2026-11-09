@@ -128,20 +128,10 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
 AlterConversions::AlterConversions(
     const MutationCommands & mutation_commands_,
     const PatchPartsForReader & patch_parts_,
-    const ContextPtr & context,
-    const ColumnsDescription * schema)
+    const ContextPtr & context)
 {
     for (const auto & command : mutation_commands_)
         addMutationCommand(command, context);
-
-    if (schema)
-    {
-        for (const auto & name : dropped_columns)
-        {
-            if (schema->has(name) || schema->hasNested(name))
-                exact_column_drops.insert(name);
-        }
-    }
 
     for (const auto & patch : patch_parts_)
         addPatchPart(patch);
@@ -257,6 +247,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
         /// The reader returns the replacement column's defaults instead of the stored values.
         value_updated_columns.insert(dropped_column_name);
+        if (command.targets_exact_column)
+            exact_column_drops.insert(dropped_column_name);
         dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
@@ -387,8 +379,7 @@ bool AlterConversions::isColumnDropped(
     if (!dropped_columns.contains(prefix))
         return false;
 
-    /// Exact `n` (including one that was never stored) leaves `n.*` in the schema. A nested-parent
-    /// drop removes them, so only then is `n.a` dropped along with `n`.
+    /// Exact `n` is marked on the command. A legacy parent `DROP`/`CLEAR` is not, so `n.a` follows `n`.
     if (exact_column_drops.contains(prefix))
         return false;
 

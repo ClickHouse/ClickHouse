@@ -95,6 +95,7 @@ namespace FailPoints
     extern const char backup_add_empty_memory_table[];
     extern const char memory_sink_pause_before_commit[];
     extern const char memory_write_pause_before_sink[];
+    extern const char memory_alter_pause_before_metadata_commit[];
 }
 
 static void applyStoredColumnIdentity(
@@ -165,7 +166,8 @@ public:
     {
         FailPointInjection::pauseFailPoint(FailPoints::memory_sink_pause_before_commit);
 
-        std::lock_guard lock(storage.mutex);
+        std::unique_lock lock(storage.mutex);
+        storage.data_commit_cv.wait(lock, [&] { return !storage.block_data_commits; });
 
         if (!new_blocks.empty())
         {
@@ -355,7 +357,8 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
+    data_commit_cv.wait(lock, [&] { return !block_data_commits; });
 
     /// Filter mutation commands that have no per-row data effect on a `Memory` engine.
     /// `Memory` keeps raw column blocks in RAM and has no on-storage analog of skip
@@ -690,13 +693,36 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
 
     const bool rewrite_blocks = changesStoredColumns(params);
 
-    std::shared_ptr<const BlocksWithCounts> previous_blocks;
-    MultiVersion<MemorySettings>::Version previous_settings;
-    size_t previous_rewrite_count = 0;
-    UInt64 previous_generation = 0;
-    bool published_blocks = false;
-    bool published_settings = false;
-    bool published_rewrite = false;
+    /// If `alterTable` throws, drop the barrier. Nothing has been published, so an `INSERT` cannot be discarded.
+    struct CommitBarrier
+    {
+        StorageMemory & storage;
+        bool active = false;
+
+        explicit CommitBarrier(StorageMemory & storage_)
+            : storage(storage_)
+        {
+        }
+
+        ~CommitBarrier()
+        {
+            if (!active)
+                return;
+
+            std::lock_guard lock(storage.mutex);
+            storage.block_data_commits = false;
+            storage.data_commit_cv.notify_all();
+        }
+
+        void disarm()
+        {
+            active = false;
+        }
+    };
+
+    CommitBarrier commit_barrier(*this);
+    std::unique_ptr<BlocksWithCounts> pending_data;
+    std::unique_ptr<MemorySettings> pending_settings;
 
     if (params.isSettingsAlter() || rewrite_blocks)
     {
@@ -718,121 +744,105 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 || current_settings[MemorySetting::max_rows_to_keep] > changed_settings[MemorySetting::max_rows_to_keep];
         }
 
-        /// Installed under `mutex` together with the rewritten blocks, so that an `INSERT` finishing meanwhile
-        /// (`MemorySink::onFinish`) evicts by either the old or the new limits, and never reads freed settings.
+        /// Stage under `mutex`. Commits wait until metadata persistence succeeds.
         std::lock_guard lock(mutex);
-        previous_blocks = data.get();
-        previous_settings = memory_settings.get();
-        previous_rewrite_count = identity_rewrites.size();
-        previous_generation = schema_generation;
 
-        std::unique_ptr<BlocksWithCounts> new_data;
         if (shrink_limits)
         {
-            new_data = std::make_unique<BlocksWithCounts>(*(data.get()));
+            pending_data = std::make_unique<BlocksWithCounts>(*(data.get()));
             const auto & changed_settings = *changed_settings_ptr;
-            while (!new_data->blocks.empty()
-                   && ((changed_settings[MemorySetting::max_bytes_to_keep] && new_data->bytes > changed_settings[MemorySetting::max_bytes_to_keep])
-                       || (changed_settings[MemorySetting::max_rows_to_keep] && new_data->rows > changed_settings[MemorySetting::max_rows_to_keep])))
+            while (!pending_data->blocks.empty()
+                   && ((changed_settings[MemorySetting::max_bytes_to_keep] && pending_data->bytes > changed_settings[MemorySetting::max_bytes_to_keep])
+                       || (changed_settings[MemorySetting::max_rows_to_keep] && pending_data->rows > changed_settings[MemorySetting::max_rows_to_keep])))
             {
-                Block oldest_block = new_data->blocks.front();
+                Block oldest_block = pending_data->blocks.front();
                 UInt64 rows_to_remove = oldest_block.rows();
                 UInt64 bytes_to_remove = oldest_block.allocatedBytes();
-                if (new_data->bytes - bytes_to_remove < changed_settings[MemorySetting::min_bytes_to_keep]
-                    || new_data->rows - rows_to_remove < changed_settings[MemorySetting::min_rows_to_keep])
+                if (pending_data->bytes - bytes_to_remove < changed_settings[MemorySetting::min_bytes_to_keep]
+                    || pending_data->rows - rows_to_remove < changed_settings[MemorySetting::min_rows_to_keep])
                 {
                     break;
                 }
 
-                new_data->rows -= rows_to_remove;
-                new_data->bytes -= bytes_to_remove;
-                new_data->blocks.erase(new_data->blocks.begin());
-                ++new_data->first_block_number;
+                pending_data->rows -= rows_to_remove;
+                pending_data->bytes -= bytes_to_remove;
+                pending_data->blocks.erase(pending_data->blocks.begin());
+                ++pending_data->first_block_number;
             }
         }
 
         if (rewrite_blocks)
         {
-            if (!new_data)
+            if (!pending_data)
             {
-                new_data = std::make_unique<BlocksWithCounts>();
-                new_data->blocks = data.get()->blocks;
-                new_data->rows = data.get()->rows;
+                pending_data = std::make_unique<BlocksWithCounts>();
+                pending_data->blocks = data.get()->blocks;
+                pending_data->rows = data.get()->rows;
             }
 
             const bool compress = changed_settings_ptr
                 ? (*changed_settings_ptr)[MemorySetting::compress]
                 : (*memory_settings.get())[MemorySetting::compress];
-            for (auto & block : new_data->blocks)
+            for (auto & block : pending_data->blocks)
                 applyStoredColumnIdentity(block, params, new_metadata, context, compress);
 
-            new_data->rows = 0;
-            new_data->bytes = 0;
-            for (const auto & block : new_data->blocks)
+            pending_data->rows = 0;
+            pending_data->bytes = 0;
+            for (const auto & block : pending_data->blocks)
             {
-                new_data->rows += block.rows();
-                new_data->bytes += block.allocatedBytes();
+                pending_data->rows += block.rows();
+                pending_data->bytes += block.allocatedBytes();
             }
 
-            /// Reject a temporary table that would exceed its limit before publishing blocks.
+            /// Check the temporary-table limit before commits start waiting.
             if (is_temporary_table)
-                checkTemporaryTableMemoryUsage(new_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
+                checkTemporaryTableMemoryUsage(pending_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
+        }
 
-            /// Publish only after the blocks rewrite succeeds. A throw leaves history and generation unchanged.
+        pending_settings = std::move(changed_settings_ptr);
+        if (pending_data || pending_settings)
+        {
+            block_data_commits = true;
+            commit_barrier.active = true;
+        }
+    }
+
+    if (commit_barrier.active)
+        FailPointInjection::pauseFailPoint(FailPoints::memory_alter_pause_before_metadata_commit);
+
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+    {
+        std::lock_guard lock(mutex);
+        if (rewrite_blocks)
+        {
             IdentityRewrite rewrite;
             rewrite.schema_generation = schema_generation + 1;
             rewrite.commands = params;
             rewrite.metadata = new_metadata;
+            rewrite.metadata.memory_schema_generation = rewrite.schema_generation;
             identity_rewrites.push_back(std::move(rewrite));
             ++schema_generation;
             new_metadata.memory_schema_generation = schema_generation;
-            published_rewrite = true;
+        }
+        else
+        {
+            /// `ADD COLUMN` does not rewrite blocks, but it still changes the schema an in-flight sink was created with.
+            ++schema_generation;
+            new_metadata.memory_schema_generation = schema_generation;
         }
 
-        if (new_data)
-        {
-            setData(std::move(new_data));
-            published_blocks = true;
-        }
-        if (changed_settings_ptr)
-        {
-            memory_settings.set(std::move(changed_settings_ptr));
-            published_settings = true;
-        }
-    }
+        if (pending_data)
+            setData(std::move(pending_data));
+        if (pending_settings)
+            memory_settings.set(std::move(pending_settings));
 
-    try
-    {
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
-    }
-    catch (...)
-    {
-        /// A rejected metadata commit must not keep the staged blocks or rewrite history.
-        if (published_blocks || published_settings || published_rewrite)
+        if (commit_barrier.active)
         {
-            std::lock_guard lock(mutex);
-            if (published_rewrite)
-            {
-                identity_rewrites.resize(previous_rewrite_count);
-                schema_generation = previous_generation;
-            }
-            if (published_settings)
-            {
-                auto restored_settings = std::make_unique<MemorySettings>(*previous_settings);
-                memory_settings.set(std::move(restored_settings));
-            }
-            if (published_blocks)
-                setData(std::make_unique<BlocksWithCounts>(*previous_blocks));
+            block_data_commits = false;
+            data_commit_cv.notify_all();
+            commit_barrier.disarm();
         }
-        throw;
-    }
-
-    /// `ADD COLUMN` does not rewrite blocks, but it still changes the schema an in-flight sink was created with.
-    if (!rewrite_blocks)
-    {
-        std::lock_guard lock(mutex);
-        ++schema_generation;
-        new_metadata.memory_schema_generation = schema_generation;
     }
 
     /// The generation is part of the snapshot. A sink built earlier keeps the older one.

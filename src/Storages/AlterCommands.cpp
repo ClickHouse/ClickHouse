@@ -1802,6 +1802,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     {
         result.type = MutationCommand::Type::DROP_COLUMN;
         result.column_name = column_name;
+        result.targets_exact_column = targets_exact_column;
         if (clear)
             result.clear = true;
     }

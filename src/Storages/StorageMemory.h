@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <optional>
 #include <mutex>
 #include <vector>
@@ -206,6 +207,10 @@ private:
     MultiVersion<BlocksWithCounts> data;
 
     mutable std::mutex mutex;
+
+    /// While set, data commits wait until `alter` finishes persisting metadata.
+    bool block_data_commits = false;
+    mutable std::condition_variable data_commit_cv;
 
     bool delay_read_for_global_subqueries = false;
     bool is_temporary_table = false;

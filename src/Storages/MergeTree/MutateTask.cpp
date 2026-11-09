@@ -824,10 +824,10 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
-    /// `getMutationCommands` already expanded parent drops. A command that still names `n` is exact.
+    /// Exact commands set `targets_exact_column`. An unmarked legacy parent `DROP`/`CLEAR` still applies to `n.*`.
     auto drop_keeps_dotted_columns = [](const MutationCommand & command)
     {
-        return command.type == MutationCommand::Type::DROP_COLUMN;
+        return command.targets_exact_column;
     };
     auto nameInPart = [&](String name)
     {

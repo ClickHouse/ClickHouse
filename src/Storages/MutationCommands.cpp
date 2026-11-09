@@ -1,6 +1,9 @@
+#include <cctype>
 #include <Storages/MutationCommands.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -307,11 +310,75 @@ ASTPtr parseMutationCommandsList(const String & commands_str)
         p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
+/// `/*exact*/` is the first token inside an exact command. The parser drops comments, so the mark is read from the text.
+std::vector<char> exactColumnMarks(const String & commands_str)
+{
+    std::vector<char> marks;
+    size_t i = 0;
+    while (i < commands_str.size())
+    {
+        if (commands_str[i] != '(')
+        {
+            ++i;
+            continue;
+        }
+
+        const size_t start = i;
+        int depth = 0;
+        for (; i < commands_str.size(); ++i)
+        {
+            if (commands_str[i] == '(')
+                ++depth;
+            else if (commands_str[i] == ')')
+            {
+                --depth;
+                if (depth == 0)
+                {
+                    ++i;
+                    break;
+                }
+            }
+        }
+
+        const std::string_view piece(commands_str.data() + start, i - start);
+        size_t pos = 1;
+        while (pos < piece.size() && std::isspace(static_cast<unsigned char>(piece[pos])))
+            ++pos;
+        marks.push_back(piece.substr(pos).starts_with("/*exact*/"));
+    }
+    return marks;
+}
+
 }
 
 void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
 {
-    String commands_str = ast(with_pure_metadata_commands)->formatWithSecretsOneLine();
+    WriteBufferFromOwnString commands;
+    bool first = true;
+    for (const auto & command : *this)
+    {
+        if (command.isPureMetadataCommand() && !with_pure_metadata_commands)
+            continue;
+
+        auto parsed = command.ast();
+        if (!parsed)
+            continue;
+
+        if (!first)
+            commands << ", ";
+        first = false;
+
+        String formatted = parsed->formatWithSecretsOneLine();
+        if (command.targets_exact_column)
+        {
+            if (formatted.empty() || formatted.front() != '(')
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot mark an exact column mutation command: {}", formatted);
+            formatted.insert(1, "/*exact*/ ");
+        }
+        commands << formatted;
+    }
+
+    String commands_str = commands.str();
 
     /// Check that the serialized commands can be parsed back the same way `readText` will parse
     /// them. If they cannot (i.e. some AST is formatted in a way the parser does not accept),
@@ -339,6 +406,8 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
     readEscapedString(commands_str, in);
 
     auto commands_ast = parseMutationCommandsList(commands_str);
+    const auto marks = exactColumnMarks(commands_str);
+    size_t index = 0;
 
     for (const auto & child : commands_ast->children)
     {
@@ -346,8 +415,15 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
         auto command = MutationCommand::parse(*command_ast, true, with_pure_metadata_commands);
         if (!command)
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command_ast->type));
+        if (index >= marks.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover exact-column marks from mutation commands: {}", commands_str);
+        command->targets_exact_column = marks[index];
+        ++index;
         push_back(std::move(*command));
     }
+
+    if (index != marks.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot recover exact-column marks from mutation commands: {}", commands_str);
 }
 
 std::string MutationCommands::toString(bool with_pure_metadata_commands) const
