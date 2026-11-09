@@ -19,7 +19,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to recognize a database name in the URL path of HTTP requests."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Enabled by default: the HTTP interface interprets a `\/database\/` component of the URL path as the current database."}]}]}/>
 
-If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database.
+If enabled, the HTTP interface recognizes a `/database/` component in the URL path and uses it as the current database. It also enables database-prefixed path-based `PUT` uploads such as `/database/table.CSV`.
 
 This is a per-user setting that controls whether a routed path-style request is interpreted. Routing itself is gated globally by the server-level `http_allow_path_requests` configuration setting (on by default), which must be enabled for the HTTP interface to route a path-style request (such as `/my_db/my_table.csv`) to the query handler at all — that routing decision is made before the request is authenticated, so it cannot depend on a per-user setting. When `http_allow_path_requests` is off, unknown paths return a plain `404`. After routing, this setting is re-checked against the authenticated user's effective settings, so it can be disabled selectively per user, role, or profile.
 
@@ -52,7 +52,7 @@ Disabled by default, unlike the other `http_allow_*` settings: it applies to eve
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to recognize a table name in the URL path of HTTP requests, with optional format\/compression extensions."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Enabled by default: the HTTP interface interprets the last URL path component as `table[.format[.compression]]` and answers it with `SELECT * FROM table`."}]}]}/>
 
-If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. The path is interpreted as `SELECT * FROM table`.
+If enabled, the HTTP interface recognizes the last URL path component as a table name in the form `table`, `table.format`, or `table.format.compression`. For `GET` and `HEAD`, the path is interpreted as `SELECT * FROM table`; for a path-based `PUT`, it identifies the existing destination table and input format for the upload.
 
 Like [`http_allow_database_as_path`](/reference/settings/session-settings/http#http_allow_database_as_path), this is a per-user setting; routing of path-style requests is gated globally by the server-level `http_allow_path_requests` configuration setting (routing happens before authentication).
 
