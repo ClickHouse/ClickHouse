@@ -96,12 +96,13 @@
                 "item": "Deployments"
               },
               {
-                "href": "/products/cloud/getting-started/cloud-get-started",
-                "item": "Cloud"
+                "$ref": "./products/cloud/navigation.json"
               },
               {
-                "href": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
-                "item": "BYOC"
+                "item": "BYOC",
+                "pages": [
+                  "products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                ]
               },
               {
                 "href": "#",
@@ -109,8 +110,7 @@
                 "item": "Applications"
               },
               {
-                "href": "/clickstack/observability",
-                "item": "Observability"
+                "$ref": "./clickstack/navigation.json"
               },
               {
                 "href": "https://langfuse.com/docs",
@@ -126,20 +126,23 @@
                 "item": "Open source"
               },
               {
-                "href": "/clickstack",
-                "item": "ClickStack"
+                "item": "ClickStack",
+                "pages": [
+                  "clickstack/observability/index"
+                ]
               },
               {
-                "href": "/chdb",
-                "item": "chDB"
+                "$ref": "./chdb/navigation.json"
               },
               {
-                "href": "/products/kubernetes-operator/overview",
-                "item": "Kubernetes Operator"
+                "$ref": "./products/kubernetes-operator/navigation.json"
               },
               {
                 "href": "https://www.librechat.ai/docs",
                 "item": "LibreChat"
+              },
+              {
+                "$ref": "./products/agentic-data-stack/navigation.json"
               }
             ],
             "tab": "Products"

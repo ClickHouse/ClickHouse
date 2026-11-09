@@ -3354,8 +3354,8 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] {
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.08) !important;
-    color: #ffffff !important;
+    background: rgba(17, 24, 39, 0.08) !important;
+    color: #111827 !important;
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] span {
     color: inherit !important;
@@ -3384,10 +3384,10 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current] {
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.08) !important;
+    background: rgba(17, 24, 39, 0.08) !important;
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current]::before {
-    color: #ffffff;
+    color: #111827;
 }
 [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])::before {
     content: "Managed Postgres";
@@ -3415,6 +3415,19 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 :is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"]) img {
     filter: brightness(0) invert(1);
     opacity: 0.85;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current],
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="icon-postgres.svg"]):not(:has(img[src$="icon-clickhouse.svg"]))[aria-current] {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #ffffff !important;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current],
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current] {
+    background: rgba(255, 255, 255, 0.08) !important;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current]::before,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-postgres.svg"]) > .nav-dropdown-item:has(img[src$="icon-postgres.svg"])[aria-current]::before {
+    color: #ffffff;
 }
 
 /* Products is a three-column product catalogue. The marker is the Security
@@ -4444,4 +4457,24 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span {
     color: #ffffff !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5) > div > span {
+    font-size: 0 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span::before,
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5) > div > span::before {
+    color: #9f9f9f;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span::before {
+    content: "Cloud";
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(5) > div > span::before {
+    content: "Observability";
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href="/products/agentic-data-stack/overview"] {
+    display: none !important;
 }
