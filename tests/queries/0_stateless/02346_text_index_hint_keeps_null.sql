@@ -53,3 +53,25 @@ SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_hint_null WHERE NO
 WHERE explain ILIKE '%__text_index_idx_JSONPathExists%';
 
 DROP TABLE t_hint_null;
+
+SELECT 'several hints for one predicate';
+DROP TABLE IF EXISTS t_hint_null_map;
+CREATE TABLE t_hint_null_map
+(
+    id UInt64,
+    m Map(String, Nullable(String)),
+    INDEX idx_keys mapKeys(m) TYPE text(tokenizer = 'array') GRANULARITY 1,
+    INDEX idx_values mapValues(m) TYPE text(tokenizer = 'array') GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_hint_null_map VALUES (1, {'k': 'v'}), (2, {'k': 'w'}), (3, {'x': 'v'}), (4, {'x': 'y'}), (5, {'k': NULL});
+
+-- text_index_hint_max_selectivity = 1 keeps the hints on this small table.
+SELECT id, m['k'] = 'v' AS x FROM t_hint_null_map WHERE x OR id > 0 ORDER BY id SETTINGS text_index_hint_max_selectivity = 1;
+SELECT id FROM t_hint_null_map WHERE NOT (m['k'] = 'v' AND id > 0) ORDER BY id SETTINGS text_index_hint_max_selectivity = 1;
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_hint_null_map WHERE m['k'] = 'v')
+WHERE explain ILIKE '%nullIf(__text_index_idx_keys_%' AND explain ILIKE '%nullIf(__text_index_idx_values_%';
+
+DROP TABLE t_hint_null_map;

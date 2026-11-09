@@ -21,3 +21,11 @@ NOT of a non-NULL predicate on an absent path
 text index is used
 1
 1
+several hints for one predicate
+1	1
+2	0
+3	\N
+4	\N
+5	\N
+2
+1
