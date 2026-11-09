@@ -14,6 +14,12 @@ SELECT estimateCompressionRatio('LowCardinality(String)')(s) = estimateCompressi
 SELECT estimateCompressionRatio('LZ4', 'String')(s) > 0, estimateCompressionRatio(65536, 'String')(s) > 0 FROM src;
 -- No rows.
 SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src WHERE n > 1000000;
+-- Composite targets: `Map` has dynamic subcolumns (its keys) but a fixed set of streams.
+SELECT
+    estimateCompressionRatio('LZ4', 'Map(String, UInt32)')(map('a', n)) > 0,
+    estimateCompressionRatio('LZ4', 'Variant(UInt64, String)')(n) > 0,
+    estimateCompressionRatio('LZ4', 'Tuple(a UInt32, b String)')(tuple(n, s)) > 0
+FROM src;
 
 SELECT 'errors';
 SELECT estimateCompressionRatio('String', 'UInt64')(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
@@ -35,6 +41,7 @@ SELECT estimateCompressionRatio('Quantized(8)', 'Array(Float32)')([1.0]) FROM sr
 -- Types whose substreams depend on the data are not supported as targets.
 SELECT estimateCompressionRatio('JSON')(s) FROM src; -- { serverError NOT_IMPLEMENTED }
 SELECT estimateCompressionRatio('Tuple(a UInt8, b Dynamic)')(tuple(1, 2)) FROM src; -- { serverError NOT_IMPLEMENTED }
+SELECT estimateCompressionRatio('Map(String, JSON)')(map('a', s)) FROM src; -- { serverError NOT_IMPLEMENTED }
 
 SELECT 'numerator';
 -- The first number of the state is the bytes of the rows in their own type: the same for every target and codec, and the same

@@ -279,6 +279,18 @@ ISerialization::SerializeBinaryBulkSettings mergeTreeBulkSettings()
     return settings;
 }
 
+/// `Dynamic` and `JSON`, also nested: their substreams depend on the data, and the writer has more rules for them.
+bool hasDataDependentStreams(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isDynamic() || which.isObject())
+        return true;
+    for (size_t i = 0; i < type.getNumberOfChildren(); ++i)
+        if (hasDataDependentStreams(*type.getChild(i)))
+            return true;
+    return false;
+}
+
 String streamName(const ISerialization::SubstreamPath & path)
 {
     return ISerialization::getFileNameForStream("c", path, ISerialization::StreamFileNameSettings{});
@@ -333,8 +345,7 @@ public:
         , max_compress_block_size(block_size_bytes.value_or(DEFAULT_MAX_COMPRESS_BLOCK_SIZE))
         , min_compress_block_size(block_size_bytes.value_or(DEFAULT_MIN_COMPRESS_BLOCK_SIZE))
     {
-        /// Their substreams depend on the data, and the writer has more rules for them.
-        if (target_type->hasDynamicSubcolumns())
+        if (hasDataDependentStreams(*target_type))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} does not support target type {}", getName(), target_type->getName());
 
