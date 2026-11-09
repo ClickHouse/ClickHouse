@@ -416,7 +416,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         {
             for (const auto & table : tables)
                 if (table)
-                    run_concurrently([&prepare_for_shutdown, table]
+                    run_concurrently([prepare_for_shutdown, table]
                     {
                         auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
                         prepare_for_shutdown(table, /*only_background_writes=*/ true);

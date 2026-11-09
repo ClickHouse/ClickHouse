@@ -377,6 +377,8 @@ public:
         pending.waitForAllIssued(query_status);
     }
 
+    bool hasJobs() const { return pool.active() > 0; }
+
     void shutdown()
     {
         if (shutdown_called.exchange(true))
@@ -829,7 +831,7 @@ void StorageQueryRunner::flushAndPrepareForShutdown()
 
 bool StorageQueryRunner::hasBackgroundWrites() const
 {
-    return mode == QueryRunnerMode::ASYNCHRONOUS;
+    return mode == QueryRunnerMode::ASYNCHRONOUS || dispatcher->hasJobs();
 }
 
 void StorageQueryRunner::waitForQueriesToFinish(const QueryStatusPtr & query_status)
