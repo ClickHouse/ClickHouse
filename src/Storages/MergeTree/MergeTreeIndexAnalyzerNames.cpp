@@ -422,6 +422,28 @@ String getSourceColumnOfSubcolumn(const String & subcolumn_name, const NameSet &
     return {};
 }
 
+/// Whether `prefix` of the name of a subcolumn input of the alternative form is a column of the table
+/// that the name can resolve through, rather than through `source_column`, the key's source column the
+/// subcolumn is read from (see `getSourceColumnOfSubcolumn`). The source column itself is not such a
+/// column, and neither is the storage column that owns it when it is a subcolumn itself (e.g. the
+/// column `c` of the key's input `c.m` for `c Tuple(m Map(String, Int32))`): the subcolumn `c.m.key_k`
+/// is read through the same substream of `c` as `c.m`. A physical column named `c.m` is owned by
+/// itself, so another column `c` of the table still counts.
+bool isOtherTableColumnPrefix(const String & prefix, const String & source_column, const ColumnsDescription & table_columns)
+{
+    if (prefix == source_column || !table_columns.has(prefix))
+        return false;
+
+    if (source_column.starts_with(prefix + '.'))
+    {
+        auto source = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, source_column);
+        if (source && source->isSubcolumn() && source->getNameInStorage() == prefix)
+            return false;
+    }
+
+    return true;
+}
+
 /// The alternative form is computed against a storage with only the source columns of the key, so the
 /// rewrite passes do not see the other columns of the table, and the names of the alternative form can
 /// refer to other columns in the real table:
@@ -430,7 +452,8 @@ String getSourceColumnOfSubcolumn(const String & subcolumn_name, const NameSet &
 ///   the other column, not to the key. Likewise, the name can resolve as a subcolumn of another column
 ///   of the table (e.g. `j.m.key_k` as a subcolumn of a `JSON` column `j` rather than of the key's
 ///   column `j.m`). So the subcolumn read is rejected if its name, or any prefix of it other than the
-///   key's source column, is a column of the table.
+///   key's source column and the storage column that owns it, is a column of the table, see
+///   `isOtherTableColumnPrefix`.
 /// - A rewritten (sub)expression can be named as another column of the table (e.g. a column named
 ///   `if(greater(v, 0), v, 0)` while the key is `multiIf(v > 0, v, 0)`), and the filter on that column
 ///   would be matched with the key by name. The name index analysis reconstructs for a node can differ
@@ -466,8 +489,7 @@ bool collidesWithOtherTableColumn(
             return true;
         for (size_t pos = node.result_name.find('.'); pos != String::npos; pos = node.result_name.find('.', pos + 1))
         {
-            String prefix = node.result_name.substr(0, pos);
-            if (prefix != source_column && table_columns.has(prefix))
+            if (isOtherTableColumnPrefix(node.result_name.substr(0, pos), source_column, table_columns))
                 return true;
         }
     }
@@ -509,7 +531,8 @@ PredicateNames getPredicateNames(const ActionsDAG::Node * predicate)
 /// The source columns of the key whose rewrites to subcolumn reads (e.g. `m.key_k` after
 /// `FunctionToSubcolumnsPass`) the query did not apply, so the alternative form must be computed
 /// without them:
-/// - the subcolumn's name, or a prefix of it other than the source column, is a column of the table:
+/// - the subcolumn's name, or a prefix of it other than the source column and its owning column, is a
+///   column of the table:
 ///   `FunctionToSubcolumnsPass` does not rewrite to it then, see `collidesWithOtherTableColumn`;
 /// - the filter does not read the subcolumn (only checked if `predicate` is given);
 /// - the filter still has a function of the source column from the key (e.g. `arrayElement(m, 'k')`)
@@ -562,8 +585,7 @@ std::optional<NameSet> getSourceColumnsOfSubcolumnsNotInQuery(
         bool shadowed = table_columns.has(node.result_name);
         for (size_t pos = node.result_name.find('.'); !shadowed && pos != String::npos; pos = node.result_name.find('.', pos + 1))
         {
-            String prefix = node.result_name.substr(0, pos);
-            shadowed = prefix != source_column && table_columns.has(prefix);
+            shadowed = isOtherTableColumnPrefix(node.result_name.substr(0, pos), source_column, table_columns);
         }
 
         bool rewritten_in_query = !predicate
