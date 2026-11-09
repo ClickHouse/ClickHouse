@@ -25,6 +25,10 @@ CREATE CLUSTER test_sql_cluster_05573 (
     SHARD (
         weight = 0,
         REPLICA (host = '127.0.0.1', port = 9000, priority = -5)
+    ),
+    SHARD (
+        weight = 1,
+        REPLICA (host = '127.0.0.2', port = 9000)
     )
 );
 
