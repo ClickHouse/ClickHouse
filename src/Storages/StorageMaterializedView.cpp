@@ -18,6 +18,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/DefinerDependencies.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -1330,6 +1331,19 @@ void StorageMaterializedView::checkTableIsNotIncrementalRefreshSource(const Stor
                 "Drop the view first",
                 table_id.getNameForLogs(), view->getStorageID().getNameForLogs());
     }
+}
+
+void StorageMaterializedView::checkDatabaseHasNoIncrementalRefreshSources(
+    const IDatabase & database, const String & database_name, const ContextPtr & local_context, bool is_drop_database)
+{
+    for (auto iterator = database.getTablesIterator(local_context); iterator->isValid(); iterator->next())
+        checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->name()), local_context, is_drop_database);
+
+    /// External databases do not track detached tables, and cannot hold the `MergeTree` source of an incremental view.
+    if (database.isExternal())
+        return;
+    for (auto iterator = database.getDetachedTablesIterator(local_context, {}, false); iterator->isValid(); iterator->next())
+        checkTableIsNotIncrementalRefreshSource(StorageID(database_name, iterator->table()), local_context, is_drop_database);
 }
 
 StorageID StorageMaterializedView::getTargetTableId() const
