@@ -96,12 +96,19 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 SERVER_STOP_WAIT_SECONDS = 30
 
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
-SERVER_START_WAIT_SECONDS = 10
+SERVER_START_WAIT_SECONDS = 180
 
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
 SERVER_SETTLE_SLEEP_SECONDS = 1
 KEEPER_SESSION_EXPIRE_SLEEP_SECONDS = 3
+
+# The ports these services listen on inside the docker network, which is how the server reaches them.
+# The cluster's nginx/redis/mongo/kafka ports are host-side (Kafka's listener there advertises localhost).
+NGINX_INTERNAL_PORT = 80
+REDIS_INTERNAL_PORT = 6379
+MONGO_INTERNAL_PORT = 27017
+KAFKA_INTERNAL_PORT = 19092
 
 
 rocksdb_properties = {
@@ -725,8 +732,10 @@ object_storages_properties = {
             0.2, 0.2, 1000, 10000, allow_unlimited=False
         ),
         "s3_slow_all_threads_after_network_error": true_false_lambda,
+        # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
+        # rejects strict > max
         "s3_strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 100 * 1024 * 1024
+            0.2, 0.2, 0, 16 * 1024 * 1024, 24
         ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
@@ -1231,7 +1240,7 @@ def add_single_disk(
         elif object_storage_type == "web":
             endpoint_xml = ET.SubElement(next_disk, "endpoint")
             endpoint_xml.text = (
-                f"http://{cluster.nginx_host}:{cluster.nginx_port}/data{i}/"
+                f"http://{cluster.nginx_host}:{NGINX_INTERNAL_PORT}/data{i}/"
             )
         elif object_storage_type == "local":
             path_xml = ET.SubElement(next_disk, "path")
@@ -1934,7 +1943,7 @@ def modify_server_settings(
         modified = True
         mongo_xml = ET.SubElement(named_collections_xml, "mongo_remote")
         ET.SubElement(mongo_xml, "host").text = cluster.mongo_host
-        ET.SubElement(mongo_xml, "port").text = str(cluster.mongo_port)
+        ET.SubElement(mongo_xml, "port").text = str(MONGO_INTERNAL_PORT)
         ET.SubElement(mongo_xml, "user").text = "root"
         ET.SubElement(mongo_xml, "password").text = mongo_pass
         ET.SubElement(mongo_xml, "database").text = "test"

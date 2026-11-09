@@ -39,6 +39,7 @@
 #include <Common/DateLUT.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -86,6 +87,9 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int FILE_ALREADY_EXISTS;
+extern const int STALE_VERSION;
+extern const int S3_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -366,6 +370,13 @@ void writeMessageToFile(
     }
 }
 
+bool isConditionalWriteConflict(const Exception & e)
+{
+    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
+        || e.code() == ErrorCodes::STALE_VERSION
+        || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
+}
+
 /// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
 static bool isRefusedWrite(const Exception & e)
 {
@@ -426,7 +437,11 @@ bool writeMetadataFile(
         /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
         if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (isConditionalWriteConflict(e))
+            LOG_DEBUG(
+                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
+        else
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
     catch (...)
@@ -513,6 +528,17 @@ bool tryWriteVersionHintFile(
 
             if (!assert_version_exactly)
                 return true;
+        }
+        catch (const Exception & e)
+        {
+            if (isConditionalWriteConflict(e))
+                LOG_DEBUG(
+                    getLogger("IcebergWrites"),
+                    "Version hint {} was changed by a concurrent writer: {}",
+                    storage_version_hint_path,
+                    e.message());
+            else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         catch (...)
         {
@@ -727,6 +753,42 @@ Poco::JSON::Object::Ptr deepCopy(const Poco::JSON::Object::Ptr & object)
     return result;
 }
 
+static Poco::JSON::Object::Ptr getMetadataJSONObjectImpl(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid,
+    bool validate)
+{
+    auto read_fn = [&]()
+    {
+        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
+    };
+
+    if (!metadata_cache || !table_uuid.has_value())
+    {
+        auto metadata_object = parseMetadataJSONString(read_fn());
+        if (validate)
+            IcebergSchemaProcessor::checkTableSchemas(*metadata_object);
+        return metadata_object;
+    }
+
+    std::function<void(const Poco::JSON::Object &)> validate_fn;
+    if (validate)
+        validate_fn = [](const Poco::JSON::Object & metadata) { IcebergSchemaProcessor::checkTableSchemas(metadata); };
+    return metadata_cache->getOrSetTableMetadata(
+        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
+        [&]()
+        {
+            auto metadata_json_str = read_fn();
+            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
+        },
+        validate_fn);
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -736,21 +798,8 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid)
 {
-    auto read_fn = [&]()
-    {
-        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
-    };
-
-    if (!metadata_cache || !table_uuid.has_value())
-        return parseMetadataJSONString(read_fn());
-
-    return metadata_cache->getOrSetTableMetadata(
-        IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
-        [&]()
-        {
-            auto metadata_json_str = read_fn();
-            return std::make_shared<IcebergMetadataFilesCacheCell>(parseMetadataJSONString(metadata_json_str), metadata_json_str.size());
-        });
+    return getMetadataJSONObjectImpl(
+        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ true);
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -1490,26 +1539,42 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             && !data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed;
 
         std::vector<String> metadata_files;
-        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+        String listed_prefix;
         {
-            /// Manifests and manifest lists share this directory but are never named `v...`.
-            if (list_v_prefixed_names_only)
-                metadata_files = listFiles(*object_storage, table_path, "metadata/v", ".metadata.json");
+            PrefixListing listing;
+            Stopwatch listing_watch;
+            for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+            {
+                /// Manifests and manifest lists share this directory but are never named `v...`.
+                if (list_v_prefixed_names_only)
+                    listing = listPrefix(*object_storage, table_path, "metadata/v", ".metadata.json");
+                if (!list_v_prefixed_names_only || listing.matched.empty())
+                    listing = listPrefix(*object_storage, table_path, "metadata", ".metadata.json");
+                if (!listing.matched.empty())
+                    break;
+                if (attempt + 1 < MAX_LIST_RETRIES)
+                    LOG_DEBUG(
+                        log,
+                        "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                        "(attempt {} of {}), retrying",
+                        table_path,
+                        attempt + 1,
+                        MAX_LIST_RETRIES);
+            }
+            metadata_files = std::move(listing.matched);
+            listed_prefix = std::move(listing.listed_prefix);
             if (metadata_files.empty())
-                metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
-            if (!metadata_files.empty())
-                break;
-            LOG_DEBUG(
-                log,
-                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
-                "(attempt {} of {}), retrying",
-                table_path,
-                attempt + 1,
-                MAX_LIST_RETRIES);
-        }
-        if (metadata_files.empty())
-        {
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
+            {
+                throw Exception(
+                    ErrorCodes::FILE_DOESNT_EXIST,
+                    "The metadata file for Iceberg table with path {} doesn't exist. {} listing attempts over {} ms found "
+                    "no .metadata.json under {}, which held {}",
+                    table_path,
+                    MAX_LIST_RETRIES,
+                    listing_watch.elapsedMilliseconds(),
+                    listed_prefix,
+                    describeListedObjects(listing.entries, listed_prefix, MAX_REPORTED_LISTING_ENTRIES));
+            }
         }
 
         /// A candidate outside the scheme the table itself commits through counts a version sequence
@@ -1601,19 +1666,24 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
+        size_t temporary_candidates = 0;
         for (const auto & path : metadata_files)
         {
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
+            {
+                ++temporary_candidates;
                 continue;
+            }
             if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
             auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
 
             if (need_all_metadata_files_parsing)
             {
-                auto metadata_file_object = getMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                /// A candidate may be another table's metadata file, so it is checked only once it is chosen.
+                auto metadata_file_object = getMetadataJSONObjectImpl(
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, /* validate = */ false);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))
@@ -1647,18 +1717,32 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
         if (metadata_files_with_versions.empty())
         {
+            const String candidates = describeObjectKeys(metadata_files, listed_prefix, MAX_REPORTED_LISTING_ENTRIES);
+            const char * candidate_noun = metadata_files.size() == 1 ? "candidate" : "candidates";
             if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
             {
                 throw Exception(
                     ErrorCodes::FILE_DOESNT_EXIST,
-                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist. "
+                    "{} {} found under {}, {} of them temporary commit files: {}",
                     table_path,
-                    table_uuid.value());
+                    table_uuid.value(),
+                    metadata_files.size(),
+                    candidate_noun,
+                    listed_prefix,
+                    temporary_candidates,
+                    candidates);
             }
             throw Exception(
                 ErrorCodes::FILE_DOESNT_EXIST,
-                "The metadata file for Iceberg table with path {} doesn't exist",
-                table_path);
+                "The metadata file for Iceberg table with path {} doesn't exist. "
+                "{} {} found under {}, {} of them temporary commit files: {}",
+                table_path,
+                metadata_files.size(),
+                candidate_noun,
+                listed_prefix,
+                temporary_candidates,
+                candidates);
         }
 
         /// Two schemes among the candidates mean no `v<N>` pointer declared one, and their numbers are

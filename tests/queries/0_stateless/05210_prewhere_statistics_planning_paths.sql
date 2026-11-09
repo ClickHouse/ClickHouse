@@ -2,6 +2,8 @@
 -- no-random-detach: the oracle is an exact `SharedPartsLocks` delta between the same query with
 -- statistics on and off. A random `DETACH`/`ATTACH` before a query takes parts locks of its own,
 -- so the delta no longer isolates the statistics loads.
+
+SET min_marks_per_part_to_load_statistics = 0;
 SET use_statistics_for_part_pruning = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1, max_threads = 1;
