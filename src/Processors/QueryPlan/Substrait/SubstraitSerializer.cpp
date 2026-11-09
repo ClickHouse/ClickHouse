@@ -255,6 +255,17 @@ std::expected<ResolvedAggregate, String> mapAggregateFunction(
     };
 }
 
+/// True when rows leave the step in an order a sort below established.
+/// A sorting step starts it, the steps that destroy row order end it, and every other step is assumed to keep it.
+bool sortReachesOutput(const IQueryPlanStep & step, bool any_child_sorted)
+{
+    if (typeid_cast<const SortingStep *>(&step))
+        return true;
+    if (typeid_cast<const AggregatingStep *>(&step) || typeid_cast<const JoinStepLogical *>(&step) || typeid_cast<const UnionStep *>(&step))
+        return false;
+    return any_child_sorted;
+}
+
 }
 
 const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const QueryPlan::Node & root)
@@ -293,10 +304,12 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
         std::vector<NodeState *> children;
         children.reserve(node.children.size());
         bool children_eligible = true;
+        bool any_child_sorted = false;
         for (const auto * child : node.children)
         {
             auto & child_state = states.at(child);
             children_eligible &= child_state.verdict.subtree_eligible;
+            any_child_sorted |= child_state.sort_reaches_output;
             children.push_back(&child_state);
         }
 
@@ -309,6 +322,7 @@ const SubstraitPlanSerializer::Verdict & SubstraitPlanSerializer::visit(const Qu
         {
             state = std::move(*converted);
             state.verdict.subtree_eligible = true;
+            state.sort_reaches_output = sortReachesOutput(*node.step, any_child_sorted);
         }
         else
             state.verdict.blocking_reason = std::move(converted.error());
@@ -417,8 +431,7 @@ SubstraitPlanSerializer::convertStep(const QueryPlan::Node & node, std::vector<N
     return blocked("the step has no Substrait representation");
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
-SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read)
+std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertReadFromMergeTree(const ReadFromMergeTree & read)
 {
     NodeState out;
 
@@ -496,13 +509,12 @@ SubstraitPlanSerializer::convertFilterOrExpression(const FilterStep * filter, co
         *filter_body->mutable_input() = std::move(rel);
         rel = std::move(filter_rel);
     }
-    auto converted = converter.convertProjection(dag, *(filter ? filter->getOutputHeader() : expression->getOutputHeader()), std::move(rel));
+    auto converted
+        = converter.convertProjection(dag, *(filter ? filter->getOutputHeader() : expression->getOutputHeader()), std::move(rel));
     if (!converted)
         return std::unexpected(std::move(converted.error()));
     out.rel = std::move(converted->rel);
     out.schema = std::move(converted->schema);
-
-    out.sort_reaches_output = child.sort_reaches_output;
     return out;
 }
 
@@ -578,8 +590,7 @@ SubstraitPlanSerializer::convertAggregation(const AggregatingStep & aggregating,
     {
         const auto position = direct_schema.positionByName(header.getByPosition(i).name);
         if (!position)
-            return blocked(
-                fmt::format("aggregation output column {} was not produced by the conversion", header.getByPosition(i).name));
+            return blocked(fmt::format("aggregation output column {} was not produced by the conversion", header.getByPosition(i).name));
         identity &= *position == i;
         mapping_to_header.push_back(static_cast<Int32>(*position));
         out.schema.append(header.getByPosition(i).name, direct_schema.columns[*position].type);
@@ -650,12 +661,10 @@ SubstraitPlanSerializer::convertSorting(const SortingStep & sorting, NodeState &
         out.rel = std::move(sort_rel);
 
     out.schema = std::move(child.schema);
-    out.sort_reaches_output = true;
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
-SubstraitPlanSerializer::convertLimit(const LimitStep & limit, NodeState & child)
+std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertLimit(const LimitStep & limit, NodeState & child)
 {
     NodeState out;
 
@@ -666,7 +675,6 @@ SubstraitPlanSerializer::convertLimit(const LimitStep & limit, NodeState & child
 
     out.rel = makeFetchRel(std::move(child.rel), static_cast<Int64>(limit.getLimit()), static_cast<Int64>(limit.getOffset()));
     out.schema = std::move(child.schema);
-    out.sort_reaches_output = child.sort_reaches_output;
     return out;
 }
 
@@ -680,12 +688,10 @@ SubstraitPlanSerializer::convertOffset(const OffsetStep & offset, NodeState & ch
 
     out.rel = makeFetchRel(std::move(child.rel), {}, static_cast<Int64>(offset.getOffset()));
     out.schema = std::move(child.schema);
-    out.sort_reaches_output = child.sort_reaches_output;
     return out;
 }
 
-std::expected<SubstraitPlanSerializer::NodeState, String>
-SubstraitPlanSerializer::convertUnion(const std::vector<NodeState *> & children)
+std::expected<SubstraitPlanSerializer::NodeState, String> SubstraitPlanSerializer::convertUnion(const std::vector<NodeState *> & children)
 {
     NodeState out;
 
