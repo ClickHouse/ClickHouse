@@ -10,11 +10,17 @@
 #include <utility>
 #include <vector>
 
+#include <Columns/IColumn.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
+#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <DataFile.hh>
 #include <Decoder.hh>
 #include <Exception.hh>
@@ -419,6 +425,7 @@ public:
         init(schema);
     }
 
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
     PreparedRead(const std::string & writer_schema_json, const std::string & reader_schema_json, std::vector<uint8_t> data_)
         : data(std::move(data_)), schema(avro::compileJsonSchemaFromString(reader_schema_json))
     {
@@ -426,6 +433,7 @@ public:
         decoder = avro::resolvingDecoder(writer_schema, schema, avro::binaryDecoder());
         init(schema);
     }
+#endif
 
     void read() { avro::GenericReader::read(*decoder, datum); }
 
@@ -640,6 +648,44 @@ TEST(AvroGenericReader, RecursiveUnionBranchesAreRead)
     EXPECT_NO_THROW(PreparedRead(R"(["null",)" + node + "]", {0x02, 0x02, 0x02, 0x00}).read());
     EXPECT_NO_THROW(PreparedRead(
         makeRecordSchema(R"({"type":"array","items":["null",)" + node + "]}"), {0x02, 0x02, 0x02, 0x00, 0x00}).read());
+}
+
+TEST(AvroGenericReader, DeserializerRetainsFixedSizeAfterTruncatedRead)
+{
+    /// A truncated `fixed` read leaves `tmp_fixed` partially resized inside `readSizedInto`. Reusing the same
+    /// `AvroDeserializer` on a valid value must still read the full declared width rather than `tmp_fixed.size()`.
+    constexpr size_t fixed_size = 131072;
+    const avro::ValidSchema schema = avro::compileJsonSchemaFromString(
+        R"({"type":"record","name":"r","fields":[{"name":"x","type":{"type":"fixed","name":"f","size":)" + std::to_string(fixed_size) + "}}]}");
+
+    const DB::DataTypePtr type = std::make_shared<DB::DataTypeFixedString>(fixed_size);
+    const DB::Block header({DB::ColumnWithTypeAndName(type->createColumn(), type, "x")});
+    const DB::FormatSettings format_settings;
+    DB::AvroDeserializer deserializer(header, schema, /*allow_missing_fields=*/false, /*null_as_default=*/false, format_settings);
+
+    const std::vector<uint8_t> truncated(65536, 'a');
+    {
+        auto in = avro::memoryInputStream(truncated.data(), truncated.size());
+        auto decoder = avro::binaryDecoder();
+        decoder->init(*in);
+        auto columns = header.cloneEmptyColumns();
+        DB::RowReadExtension ext;
+        EXPECT_THROW(deserializer.deserializeRow(columns, *decoder, ext), avro::Exception);
+    }
+
+    std::vector<uint8_t> valid(fixed_size, 'b');
+    valid.back() = 'z';
+    {
+        auto in = avro::memoryInputStream(valid.data(), valid.size());
+        auto decoder = avro::binaryDecoder();
+        decoder->init(*in);
+        auto columns = header.cloneEmptyColumns();
+        DB::RowReadExtension ext;
+        EXPECT_NO_THROW(deserializer.deserializeRow(columns, *decoder, ext));
+        ASSERT_EQ(columns[0]->size(), 1U);
+        EXPECT_EQ(columns[0]->getDataAt(0), std::string_view(reinterpret_cast<const char *>(valid.data()), valid.size()));
+        EXPECT_EQ(decoder->inputPosition(), valid.size());
+    }
 }
 
 #endif
