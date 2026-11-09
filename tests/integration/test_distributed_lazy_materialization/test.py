@@ -36,6 +36,25 @@ SELECT_QUERY = (
 EXPECTED = "90\ts2-90\n80\ts1-80\n70\ts2-70\n"
 PAUSE_FAILPOINT = "distributed_top_k_pause_before_candidate_submission"
 FALLBACK_FAILPOINT = "distributed_top_k_force_fallback"
+THROW_FAILPOINT = "distributed_top_k_throw_after_candidate_selection"
+COMPETING_QUERY = (
+    "SELECT key, payload FROM competing_data "
+    "ORDER BY key DESC LIMIT 3 OFFSET 1"
+)
+
+
+def _competing_settings(receive_data_timeout_ms):
+    # `in_order` tries `shard2` first for the first shard; `shard1` is its hedged alternative,
+    # started once `shard2` sends nothing for `receive_data_timeout_ms`.
+    return ", ".join(
+        [
+            BASE_SETTINGS,
+            "use_hedged_requests = 1",
+            "load_balancing = 'in_order'",
+            f"receive_data_timeout_ms = {receive_data_timeout_ms}",
+            "query_plan_optimize_distributed_lazy_materialization = 1",
+        ]
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -56,9 +75,36 @@ def started_cluster():
             "CREATE TABLE distributed_data (key UInt64, payload String) "
             "ENGINE = Distributed(distributed_lazy_materialization, default, local_data, rand())"
         )
+        _create_competing_replicas()
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def _create_competing_replicas():
+    for shard in shards:
+        shard.query("CREATE DATABASE competing_a")
+        shard.query(
+            "CREATE TABLE competing_a.competing_data (key UInt64, payload String) "
+            "ENGINE = MergeTree ORDER BY tuple()"
+        )
+        shard.query(
+            "INSERT INTO competing_a.competing_data VALUES "
+            f"(95, 'a-{shard.name}-95'), (85, 'a-{shard.name}-85'), (65, 'a-{shard.name}-65')"
+        )
+    shard1.query("CREATE DATABASE competing_b")
+    shard1.query(
+        "CREATE TABLE competing_b.competing_data (key UInt64, payload String) "
+        "ENGINE = MergeTree ORDER BY tuple()"
+    )
+    shard1.query(
+        "INSERT INTO competing_b.competing_data VALUES "
+        "(90, 'b-90'), (80, 'b-80'), (70, 'b-70')"
+    )
+    initiator.query(
+        "CREATE TABLE competing_data (key UInt64, payload String) "
+        "ENGINE = Distributed(competing_replicas, '', competing_data, rand())"
+    )
 
 
 def _load_shard2():
@@ -181,3 +227,53 @@ def test_cancellation_wakes_waiting_candidate():
         executor.shutdown(wait=True)
 
     assert _run(f"{query_id}-after-cancel") == EXPECTED
+
+
+def test_competing_replicas_commit_first_candidate_set():
+    # `shard2` stalls before submitting its candidates, so the hedged request starts `shard1`
+    # for the same shard. Only the first complete candidate set may commit: every row of
+    # that shard must come from `shard1`, and the cancelled `shard2` must contribute nothing.
+    shard2.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_FAILPOINT}")
+    query_id = f"distributed-lazy-competing-{uuid.uuid4()}"
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(
+            lambda: initiator.query(
+                f"{COMPETING_QUERY} SETTINGS {_competing_settings(500)}",
+                query_id=query_id,
+                timeout=60,
+            )
+        )
+        shard2.query(f"SYSTEM WAIT FAILPOINT {PAUSE_FAILPOINT} PAUSE")
+        result = future.result(timeout=60)
+    finally:
+        shard2.query(f"SYSTEM NOTIFY FAILPOINT {PAUSE_FAILPOINT}")
+        shard2.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_FAILPOINT}")
+        executor.shutdown(wait=True)
+
+    assert result == "90\tb-90\n85\ta-shard1-85\n80\tb-80\n"
+    assert _profile_event(initiator, query_id, "HedgedRequestsChangeReplica") >= 1
+    # Three candidates from each shard; the loser's candidates are never merged.
+    assert _profile_event(initiator, query_id, "DistributedTopKCandidateRows") == 6
+
+
+def test_competing_replicas_committed_replica_failure_fails_query():
+    # `shard2` submits its candidates first and is committed, then fails. The query must fail
+    # instead of switching to `shard1` or returning the rows of the other shard alone.
+    shard2.query(f"SYSTEM ENABLE FAILPOINT {THROW_FAILPOINT}")
+    query_id = f"distributed-lazy-committed-failure-{uuid.uuid4()}"
+    try:
+        error = initiator.query_and_get_error(
+            f"{COMPETING_QUERY} SETTINGS {_competing_settings(30000)}",
+            query_id=query_id,
+            timeout=60,
+        )
+    finally:
+        shard2.query(f"SYSTEM DISABLE FAILPOINT {THROW_FAILPOINT}")
+
+    assert "Injected failure after distributed TopK candidate selection" in error
+
+    assert (
+        initiator.query(f"{COMPETING_QUERY} SETTINGS {_competing_settings(30000)}")
+        == "90\tb-90\n85\ta-shard2-85\n80\tb-80\n"
+    )

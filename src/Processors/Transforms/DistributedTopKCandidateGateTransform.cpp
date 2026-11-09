@@ -22,10 +22,12 @@ namespace FailPoints
 {
 extern const char distributed_top_k_force_fallback[];
 extern const char distributed_top_k_pause_before_candidate_submission[];
+extern const char distributed_top_k_throw_after_candidate_selection[];
 }
 
 namespace ErrorCodes
 {
+extern const int FAULT_INJECTED;
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
 }
@@ -168,6 +170,12 @@ void DistributedTopKCandidateGateTransform::coordinate()
             .mode = force_fallback ? QueryCoordinationRequestMode::FallbackAll : QueryCoordinationRequestMode::Candidates,
             .payload = force_fallback ? Block{} : std::move(candidates),
         });
+
+    /// The initiator has committed to this replica's candidates, so losing it now must fail the query.
+    fiu_do_on(FailPoints::distributed_top_k_throw_after_candidate_selection,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after distributed TopK candidate selection");
+    });
 
     if (force_fallback && response.mode != QueryCoordinationResponseMode::FallbackAll)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected FallbackAll response to a fallback request");

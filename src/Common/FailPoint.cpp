@@ -59,6 +59,7 @@ static struct InitFiu
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(distributed_top_k_force_fallback) \
     PAUSEABLE_ONCE(distributed_top_k_pause_before_candidate_submission) \
+    ONCE(distributed_top_k_throw_after_candidate_selection) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
     ONCE(remote_query_executor_cancel_in_finish_drain) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
