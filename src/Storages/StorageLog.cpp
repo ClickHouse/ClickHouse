@@ -17,6 +17,7 @@
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -616,7 +617,7 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, const
         /// `FirstApplicable` selects the codec for the data type of every substream, as in `MergeTree`: the structural
         /// substreams (e.g. the sizes of an array) keep only generic codecs. Other codecs keep applying to the whole
         /// column type here, so that the data written by the previous versions does not change.
-        if (CompressionCodecFactory::hasFirstApplicable(column_desc.codec))
+        if (CompressionCodecFirstApplicable::isInChain(column_desc.codec))
         {
             const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
             return CompressionCodecFactory::instance().get(

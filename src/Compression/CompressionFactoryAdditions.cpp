@@ -91,15 +91,6 @@ void forEachCodecFamilyNameInChain(const ASTPtr & ast, Check && check)
     forEachCodecFamilyNameInList(func->arguments->children, check);
 }
 
-bool isFirstApplicableElement(const ASTPtr & element)
-{
-    if (const auto * identifier = element->as<ASTIdentifier>())
-        return equalsCaseInsensitive(identifier->name(), FIRST_APPLICABLE_CODEC_NAME);
-    if (const auto * function = element->as<ASTFunction>())
-        return equalsCaseInsensitive(function->name, FIRST_APPLICABLE_CODEC_NAME);
-    return false;
-}
-
 }
 
 void CompressionCodecFactory::checkCodecChainIsNotColumnLevelOnly(const ASTPtr & ast) const
@@ -187,15 +178,6 @@ bool typeContainsMap(const DataTypePtr & type)
 
 }
 
-bool CompressionCodecFactory::hasFirstApplicable(const ASTPtr & codec)
-{
-    const auto * func = codec ? codec->as<ASTFunction>() : nullptr;
-    if (!func || !func->arguments)
-        return false;
-
-    return std::ranges::any_of(func->arguments->children, isFirstApplicableElement);
-}
-
 void CompressionCodecFactory::checkCodecIsEnabled(const String & family_name, const Settings * settings)
 {
     if (!settings)
@@ -224,26 +206,16 @@ void CompressionCodecFactory::checkCodecIsEnabled(const String & family_name, co
         gate_setting_name);
 }
 
-void CompressionCodecFactory::validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings) const
+void CompressionCodecFactory::validateFirstApplicableAlternative(const ASTPtr & element, const Settings * settings, bool reject_lossy) const
 {
-    String name;
-    ASTPtr arguments;
-    if (const auto * identifier = element->as<ASTIdentifier>())
-        name = identifier->name();
-    else if (const auto * function = element->as<ASTFunction>())
-    {
-        name = function->name;
-        arguments = function->arguments;
-    }
-    else
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec: {}", element->formatForErrorMessage());
+    const auto [name, arguments] = getCodecNameAndArguments(element);
 
     if (isCodecCombinator(name))
     {
         if (!arguments || arguments->children.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec {} requires at least one codec as an argument", name);
         for (const auto & codec : arguments->children)
-            validateFirstApplicableAlternative(codec, settings);
+            validateFirstApplicableAlternative(codec, settings, reject_lossy);
         return;
     }
 
@@ -260,8 +232,15 @@ void CompressionCodecFactory::validateFirstApplicableAlternative(const ASTPtr & 
 
     /// Only the codec name, its arguments and its gate setting. The checks that depend on the data type, or on the
     /// other codecs of a chain, apply to the chains resolved for the data types.
-    getImpl(name, arguments, nullptr);
+    const CompressionCodecPtr codec = getImpl(name, arguments, nullptr);
     checkCodecIsEnabled(name, settings);
+
+    if (reject_lossy && codec->isLossyCompression())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Codec {} is lossy and cannot be an alternative of {} where the data type is unknown, e.g. as a default or "
+            "TTL recompression codec, or for a column with dynamic subcolumns (Dynamic, JSON): it would be selected for the type of every column, including the ones where lossy "
+            "compression is not allowed (a sorting key, the keys of a Map or a LowCardinality dictionary)",
+            name, FIRST_APPLICABLE_CODEC_NAME);
 }
 
 void CompressionCodecFactory::validateCodecWithFirstApplicable(
@@ -270,19 +249,15 @@ void CompressionCodecFactory::validateCodecWithFirstApplicable(
     /// The combinator itself is validated as an alternative, so that all of its alternatives are.
     for (const auto & element : ast->as<const ASTFunction &>().arguments->children)
     {
-        if (isFirstApplicableElement(element))
-        {
-            validateFirstApplicableAlternative(element, settings);
-            /// The streams of the dynamic subcolumns (of `Dynamic` or `JSON`) and their types become known only at
-            /// insertion time, after this validation, and may include a `Map` or a sorting key: the same as without a type.
-            if (!column_type || column_type->hasDynamicSubcolumns())
-                checkFirstApplicableHasNoLossyAlternative(element);
-        }
+        /// The streams of the dynamic subcolumns (of `Dynamic` or `JSON`) and their types become known only at
+        /// insertion time, after this validation, and may include a `Map` or a sorting key: the same as without a type.
+        if (CompressionCodecFirstApplicable::isFirstApplicable(element))
+            validateFirstApplicableAlternative(element, settings, /*reject_lossy=*/ !column_type || column_type->hasDynamicSubcolumns());
     }
 
     if (!column_type)
     {
-        validateCodecAndGetPreprocessedASTImpl(resolveFirstApplicable(ast, nullptr), {}, settings, sanity_check);
+        validateCodecAndGetPreprocessedASTImpl(CompressionCodecFirstApplicable::resolveInChain(ast, nullptr), {}, settings, sanity_check);
         return;
     }
 
@@ -295,7 +270,7 @@ void CompressionCodecFactory::validateCodecWithFirstApplicable(
         has_substreams = true;
 
         const auto & substream_type = substream_path.back().data.type;
-        const ASTPtr resolved = resolveFirstApplicable(ast, substream_type.get());
+        const ASTPtr resolved = CompressionCodecFirstApplicable::resolveInChain(ast, substream_type.get());
         validateCodecAndGetPreprocessedASTImpl(resolved, substream_type, settings, sanity_check);
 
         /// See the same check in `validateCodecAndGetPreprocessedASTImpl`, which does not see the whole column here.
@@ -323,7 +298,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
 {
     /// `FirstApplicable` is kept as written, to be resolved for the data type of every substream when compressing,
     /// so that it follows a change of the type of the column.
-    if (hasFirstApplicable(ast))
+    if (CompressionCodecFirstApplicable::isInChain(ast))
     {
         validateCodecWithFirstApplicable(ast, column_type, settings, sanity_check);
         return ast;
