@@ -66,9 +66,10 @@ if (CCACHE_EXECUTABLE MATCHES "/ccache$")
     # dependency file (.d) to track input files instead of its own source parser.
     # This is needed because ccache's built-in parser does not recognize C23 #embed directives,
     # so changes to files included via #embed would not invalidate the cache in direct mode.
+    # Depend mode is silently off when run_second_cpp is false, so force it too.
     if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0")
         message(STATUS "Enabling ccache depend mode for correct #embed tracking")
-        set(LAUNCHER env CCACHE_DEPEND=true ${CCACHE_EXECUTABLE})
+        set(LAUNCHER env -u CCACHE_NOCPP2 CCACHE_CPP2=true CCACHE_DEPEND=true ${CCACHE_EXECUTABLE})
     else()
         set(LAUNCHER ${CCACHE_EXECUTABLE})
     endif()
