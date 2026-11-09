@@ -30,6 +30,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageSet.h>
 
 namespace DB
@@ -82,7 +83,7 @@ bool isSetTable(const ASTPtr & set_side, const ContextPtr & context)
         return false;
 
     auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
-    return storage && typeid_cast<const StorageSet *>(storage.get());
+    return storage && castStorage<StorageSet>(storage, DeferredTable::Load);
 }
 
 bool containsForbiddenSubquery(const ASTPtr & ast, const ContextPtr & context)
