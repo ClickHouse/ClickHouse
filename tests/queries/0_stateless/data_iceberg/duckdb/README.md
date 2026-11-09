@@ -2,9 +2,11 @@
 
 The tables in this directory are copied from `data/persistent` of the DuckDB Iceberg extension,
 https://github.com/duckdb/duckdb-iceberg/tree/b57f45c2c78965c71f699aa23ae73c292923668e/data/persistent
-(MIT License, see the license text below). The expected results in the tests `05710_iceberg_duckdb_*` to
-`05716_iceberg_duckdb_*` are taken from the sqllogictest files of the extension, `test/sql/local/**/*.test`
+(MIT License, see the license text below). The expected results in the tests `05620_iceberg_duckdb_*` to
+`05626_iceberg_duckdb_*` are taken from the sqllogictest files of the extension, `test/sql/local/**/*.test`
 at the same commit, and from the comments in them that describe how the tables were written.
+The tests `05572_parquet_map_requested_as_tuple` (table `mapping_failures/map_to_struct`) and
+`05612_iceberg_row_lineage_stored_values_pruning` (table `row_lineage_stored_columns`) use the same tables.
 
 The directory layout `data/persistent/<table>` is kept, because most tables have relative locations like
 `data/persistent/<table>`, and some manifest lists reference files of other tables
