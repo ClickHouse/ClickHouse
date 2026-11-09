@@ -82,7 +82,6 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
-    extern const int AUTHENTICATION_FAILED;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
@@ -967,7 +966,8 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     {
 #if USE_SSL
         std::string data(salt);
-        data += std::to_string(nonce.value());
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
         data += cluster_secret;
         data += "TablesStatusRequest";
         /// Bind the hash to the request body so a relayed hash cannot be reused for a
@@ -1132,13 +1132,10 @@ void Connection::sendQuery(
         if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         {
 #if USE_SSL
-            if (!nonce.has_value())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Server {} with protocol revision {} is too old for interserver secret, the minimum is {}",
-                    getDescription(), server_revision, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
-
             std::string data(salt);
-            data += std::to_string(nonce.value());
+            // For backward compatibility
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;

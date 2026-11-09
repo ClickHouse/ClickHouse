@@ -69,16 +69,6 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null;
 Introduced in: v1.1.0
 
 Returns the leftmost non-`NULL` argument.
-
-The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
-
-If enabled, an argument is evaluated only on the rows where all the preceding arguments are `NULL`.
-
-For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
-
-```sql
-SELECT coalesce(if(number = 0, toNullable(0), NULL), intDiv(42, number)) FROM numbers(10)
-```
     
 
 **Syntax**
@@ -195,16 +185,6 @@ SELECT firstNonDefault(NULL, 0 :: Nullable(UInt8), 1 :: Nullable(UInt8))
 Introduced in: v1.1.0
 
 Returns an alternative value if the first argument is `NULL`.
-
-The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
-
-If enabled, the `alt` expression is evaluated only on the rows where `x` is `NULL`.
-
-For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
-
-```sql
-SELECT ifNull(if(number = 0, toNullable(0), NULL), intDiv(42, number)) FROM numbers(10)
-```
     
 
 **Syntax**

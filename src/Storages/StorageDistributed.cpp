@@ -960,8 +960,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
             return {};
     }
 
-    // ORDER BY, SHUFFLE
-    if (query_node.hasOrderBy() || query_node.isShuffle())
+    // ORDER BY
+    if (query_node.hasOrderBy())
         return default_stage;
 
     // LIMIT

@@ -23,7 +23,7 @@ The following guide assumes you have deployed a [ClickStack OTel collector as a 
 
 To collect logs and metrics from both each node and the cluster itself, we'll need to deploy two separate OpenTelemetry collectors. One will be deployed as a DaemonSet to collect logs and metrics from each node, and the other will be deployed as a deployment to collect logs and metrics from the cluster itself.
 
-### Creating an API key secret {#create-api-key-secret}
+### Creating a API key secret {#create-api-key-secret}
 
 Create a new Kubernetes secret with the [ingestion API Key](/clickstack/ingesting-data/opentelemetry#sending-otel-data) from HyperDX. This will be used by the components installed below to securely ingest into your ClickStack OTel collector:
 

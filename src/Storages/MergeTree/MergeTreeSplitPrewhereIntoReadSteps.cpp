@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
@@ -49,11 +48,6 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     for (const auto & child : nodes)
         types.push_back({child->result_type, child->column != nullptr});
     return types;
-}
-
-bool isTopKFilter(const ActionsDAG::Node * node)
-{
-    return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "__topKFilter";
 }
 
 /// Fills the info of an input column. A virtual column of an index is resolved to the name of the index whose reader fills it.
@@ -365,12 +359,8 @@ bool tryBuildPrewhereSteps(
             num_attributed_steps = condition_groups.size();
 
         const bool same_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
-        /// `__topKFilter` is the first condition (see `buildTopKDynamicFilterPrewhere`). In its own step the condition runs only
-        /// on the rows the threshold passes once it is selective, because the `__topKFilter` step's filter stays optional.
-        const bool follows_top_k_filter = same_columns && read_ahead_columns && isTopKFilter(condition_groups.back().front())
-            && canBeMovedToTheFrontOfAndChain(node);
 
-        if (same_columns && !node_info.may_throw && !is_first_unattributed && !follows_top_k_filter)
+        if (same_columns && !node_info.may_throw && !is_first_unattributed)
         {
             condition_groups.back().push_back(node);
             continue;
@@ -401,7 +391,7 @@ bool tryBuildPrewhereSteps(
     struct Step
     {
         ActionsDAGPtr actions;
-        /// Original condition if the step has one condition, null for an AND of several.
+        /// Original condition, in case if we have only one condition, and it was not cast
         const ActionsDAG::Node * original_node;
         /// Result condition node
         const ActionsDAG::Node * result_node;
@@ -439,7 +429,6 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
-            original_node = condition_group.front();
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);
@@ -452,7 +441,6 @@ bool tryBuildPrewhereSteps(
     /// 7. Find all outputs that were computed in the already built DAGs, mark these nodes as outputs in the steps where they were computed
     /// 8. Add computation of the remaining outputs to the last step with the procedure similar to 4
     std::unordered_set<const ActionsDAG::Node *> all_outputs;
-    ActionsDAG::NodeRawConstPtrs outputs_computed_in_last_step;
     for (const auto * output : original_outputs)
     {
         all_outputs.insert(output);
@@ -480,36 +468,25 @@ bool tryBuildPrewhereSteps(
         {
             const auto & node_in_new_dag = addClonedDAGToDAG(steps.size() - 1, output, steps.back().actions, node_remap, node_to_step);
             steps.back().actions->getOutputs().push_back(&node_in_new_dag);
-            outputs_computed_in_last_step.push_back(output);
         }
     }
 
     /// 9. Build PrewhereExprInfo
     {
-        /// Deferring a step filter needs a reader that neither converts nor fills PREWHERE columns, and a filtering last step.
-        const bool can_skip_forced_filters = force_short_circuit_execution && read_ahead_columns && prewhere_info->need_filter;
-
         for (size_t step_index = 0; step_index < steps.size(); ++step_index)
         {
             auto & step = steps[step_index];
-            const size_t next = step_index + 1;
-            const bool next_step_can_see_rejected_rows = can_skip_forced_filters && next < steps.size()
-                && std::ranges::all_of(condition_groups[next], canBeMovedToTheFrontOfAndChain)
-                && (next + 1 < steps.size() || std::ranges::all_of(outputs_computed_in_last_step, canBeMovedToTheFrontOfAndChain));
             PrewhereExprStep new_step
             {
                 .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.result_node->result_name,
-                /// Don't remove a condition that is an original output or that a later step uses.
-                /// An AND of several conditions is a node the steps create, nothing else references it.
-                /// A stored column used as the condition stays: a later step may read it as the parent of a subcolumn.
-                .remove_filter_column = !step.original_node
-                    || (step.original_node->type != ActionsDAG::ActionType::INPUT && !all_outputs.contains(step.original_node)
-                        && node_to_step[step.original_node] <= step_index),
+                /// Don't remove if it's in the list of original outputs
+                .remove_filter_column =
+                    step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 /// A step that precedes a may_throw condition must materialize its filter, so that
                 /// the throwing condition is not evaluated on the rows this step rejects.
-                .need_filter = groups_requiring_filtered_input.contains(step_index + 1) || (force_short_circuit_execution && !next_step_can_see_rejected_rows),
+                .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,

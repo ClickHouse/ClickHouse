@@ -45,7 +45,7 @@ namespace Net
     /// status code and a reason phrase.
     {
     public:
-        enum HTTPStatus : int
+        enum HTTPStatus
         {
             HTTP_CONTINUE = 100,
             HTTP_SWITCHING_PROTOCOLS = 101,
