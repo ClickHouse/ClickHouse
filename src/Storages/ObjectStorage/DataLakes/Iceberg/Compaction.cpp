@@ -1103,6 +1103,7 @@ static bool writeMetadataFiles(
                              Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id})
         if (plan.initial_metadata_object->has(key))
             metadata_object->set(key, plan.initial_metadata_object->get(key));
+    metadata_object->set(Iceberg::f_last_column_id, getLastAssignedFieldId(metadata_object));
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;

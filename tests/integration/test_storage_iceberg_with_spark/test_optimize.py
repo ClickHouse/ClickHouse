@@ -486,7 +486,13 @@ def test_optimize_keeps_field_ids_of_reordered_columns(started_cluster_iceberg_w
     )
     create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
+    count_position_deletes = (
+        f"SELECT count() FROM system.iceberg_files "
+        f"WHERE database = currentDatabase() AND table = '{TABLE_NAME}' AND content = 'POSITION_DELETE'"
+    )
+    assert int(instance.query(count_position_deletes)) > 0
     instance.query(f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction": 1})
+    assert int(instance.query(count_position_deletes)) == 0
     write_settings = {"allow_insert_into_iceberg": 1, "mutations_sync": 1}
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('c', 4)", settings=write_settings)
     instance.query(f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 3", settings=write_settings)
