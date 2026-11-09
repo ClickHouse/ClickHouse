@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 INSERT_SETTINGS=(
     --max_threads=4 --max_insert_threads=4
     --max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0
-    --use_concurrency_control_for_max_threads=0 --use_strict_insert_block_limits=0 --deduplicate_insert=never
+    --use_concurrency_control_for_max_threads=0 --use_strict_insert_block_limits=0 --deduplicate_insert=disable
     --async_insert=0
 )
 
