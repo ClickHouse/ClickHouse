@@ -1,5 +1,4 @@
 import os
-import time
 
 import pytest
 
@@ -202,14 +201,6 @@ def run_in_node(command):
     node.exec_in_container(["bash", "-c", command])
 
 
-def wait_for_new_log_line(pattern, count_before, timeout=30):
-    """The server logs asynchronously, so poll until `pattern` appears more often than `count_before`."""
-    deadline = time.monotonic() + timeout
-    while int(node.count_in_log(pattern)) <= count_before:
-        assert time.monotonic() < deadline, f"no new log line matching {pattern!r}"
-        time.sleep(0.1)
-
-
 def test_mismatched_pair_is_rejected():
     """Replacing only the key of a cert/key pair must keep serving the previous pair until the cert is replaced too."""
     run_in_node(f"cp {CONFIG_DIR}/first.crt {CONFIG_DIR}/cur.crt && cp {CONFIG_DIR}/first.key {CONFIG_DIR}/cur.key")
@@ -217,11 +208,10 @@ def test_mismatched_pair_is_rejected():
     assert curl_ok("first")
 
     # Only the key is rotated: the pair is inconsistent.
-    pattern = "does not match the certificate"
-    count_before = int(node.count_in_log(pattern))
+    log_anchor = max(1, node.count_log_lines())
     run_in_node(f"cp {CONFIG_DIR}/second.key {CONFIG_DIR}/cur.key")
     node.query("SYSTEM RELOAD CONFIG")
-    wait_for_new_log_line(pattern, count_before)
+    node.wait_for_log_line("does not match the certificate", look_behind_lines=f"+{log_anchor}")
     # Leftover errors of the expected end of a certificate file must not leak into the message.
     assert int(node.count_in_log("does not match the certificate.*no start line")) == 0
     assert curl_ok("first")
