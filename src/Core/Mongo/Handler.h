@@ -134,9 +134,11 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
 void appendTypedValue(bson_t * document, const String & key, const rapidjson::Value & value, const DataTypePtr & type);
 
 /** The prefix of the string `parseQueryResult` keeps an integer as when it does not fit a 64-bit
-  * integer. A zero byte, which the JSON of a result only has escaped inside a string.
+  * integer. The byte `0xFF` is never a part of valid UTF-8, and the `JSON` output format always
+  * replaces invalid UTF-8 of the values, so no string of a result can start with it: a zero byte,
+  * on the contrary, is a valid character of a stored string, which JSON writes escaped.
   */
-inline constexpr std::string_view wide_integer_marker{"\0", 1};
+inline constexpr std::string_view wide_integer_marker{"\xFF", 1};
 
 /** Parses the `FORMAT JSON` output of a query. RapidJSON reads an integer that does not fit a 64-bit
   * one - the value of a `UInt128` column, for example - as a double, which loses its low digits,
