@@ -365,11 +365,26 @@ TEST(ColumnStatsProvenance, ValueRangeComesWithTheNullFractionOfTheSameRows)
 
 TEST(ColumnStatsProvenance, SyntheticPlannerInputsCarryOverrideProvenance)
 {
+    /// A hint labels every fact it gives that has a provenance: the distinct count of `k` and the ranges of `k` and `r`.
+    /// A width has no provenance, and a fact that the hint does not give stays `Unknown`.
     const auto hinted = parseTableStatsHint(
-        R"({"t":{"cardinality":100,"distinct_keys":{"k":25}}})", "t");
+        R"({"t":{"cardinality":100,"distinct_keys":{"k":25},"key_ranges":{"k":[0,99],"r":[5,10]},"column_bytes":{"w":8}}})", "t");
     ASSERT_EQ(hinted.source, RowEstimateSource::Hint);
-    ASSERT_EQ(hinted.column_stats.size(), 1);
-    EXPECT_EQ(hinted.column_stats.at("k").ndv_provenance.origin, ColumnStatsOrigin::SyntheticOverride);
+    ASSERT_EQ(hinted.column_stats.size(), 3);
+    const auto & k = hinted.column_stats.at("k");
+    EXPECT_EQ(k.ndv_provenance.origin, ColumnStatsOrigin::SyntheticOverride);
+    EXPECT_EQ(k.range_provenance.origin, ColumnStatsOrigin::SyntheticOverride);
+    EXPECT_EQ(hinted.column_stats.at("r").ndv_provenance.origin, ColumnStatsOrigin::Unknown);
+    EXPECT_EQ(hinted.column_stats.at("r").range_provenance.origin, ColumnStatsOrigin::SyntheticOverride);
+    EXPECT_EQ(hinted.column_stats.at("w").ndv_provenance.origin, ColumnStatsOrigin::Unknown);
+    EXPECT_EQ(hinted.column_stats.at("w").range_provenance.origin, ColumnStatsOrigin::Unknown);
+
+    /// The hinted distinct count is trusted as if measured. The hinted range gives no guarantee, but stays for the
+    /// readers that do not consult provenance.
+    EXPECT_EQ(k.distinctCount(DistinctCountGuarantee::Exact), std::optional<UInt64>(25));
+    EXPECT_FALSE(k.valueRange(ValueRangeGuarantee::Superset).has_value());
+    EXPECT_EQ(k.min_value, Field(Float64{0}));
+    EXPECT_EQ(k.max_value, Field(Float64{99}));
 
     const auto randomized = getRandomizedStats(42, 0, "t", *makeHeader());
     ASSERT_EQ(randomized.source, RowEstimateSource::Randomized);
@@ -915,7 +930,7 @@ TEST(ColumnStatsProvenance, LimitSortLimitAndGroupingKeepOnlyEnclosingRanges)
     auto hinted_input = [&]
     {
         auto result = inputRelationStats();
-        result.column_stats.at("k").range_provenance.origin = ColumnStatsOrigin::Unknown;
+        result.column_stats.at("k").range_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
         return result;
     };
 

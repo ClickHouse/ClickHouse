@@ -117,8 +117,11 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
                 const auto & range = value.extract<Poco::JSON::Array::Ptr>();
                 if (!range || range->size() != 2)
                     continue;
-                stats.column_stats[key].min_value = Field(range->get(0).convert<Float64>());
-                stats.column_stats[key].max_value = Field(range->get(1).convert<Float64>());
+                auto & column_stats = stats.column_stats[key];
+                column_stats.min_value = Field(range->get(0).convert<Float64>());
+                column_stats.max_value = Field(range->get(1).convert<Float64>());
+                /// Unlike a hinted distinct count, a hinted range gives no guarantee, see `SyntheticOverride`.
+                column_stats.range_provenance.origin = ColumnStatsOrigin::SyntheticOverride;
             }
         }
         LOG_DEBUG(

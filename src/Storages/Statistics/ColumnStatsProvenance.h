@@ -44,7 +44,8 @@ enum class ColumnStatsOrigin : UInt8
     MeasuredStatistics,
     /// A heuristic distinct count, guessed in the absence of a distinct-count statistic.
     SyntheticFallback,
-    /// A distinct count from test-only statistics hints or randomization, which the planner trusts as if measured.
+    /// A fact from test-only statistics hints or randomization. A distinct count of this origin is trusted as if
+    /// measured; a value range of this origin gives no guarantee, so only readers that ignore provenance use it.
     SyntheticOverride,
 };
 
