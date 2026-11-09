@@ -1266,6 +1266,9 @@ bool PrometheusHTTPProtocolAPI::queryExemplars(
         Block block;
         while (executor.pull(block))
         {
+            /// The executor can return an empty block without columns while the query is still running.
+            if (block.rows() == 0)
+                continue;
             const auto & tags_column = *block.getByName(TimeSeriesColumnNames::Tags).column;
             const auto & timestamp_column = typeid_cast<const ColumnDecimal<DateTime64> &>(*block.getByName("exemplar_timestamp").column);
             const auto & value_column = *block.getByName(TimeSeriesColumnNames::Value).column;
