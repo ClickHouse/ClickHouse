@@ -1049,6 +1049,15 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
     /// storage's pointer would poison lookups if a new storage is allocated at the same address.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
+
+    /// A projection part holds the indices of its projection, not those of the table.
+    if (isProjectionPart())
+    {
+        if (!metadata_snapshot->projections.has(name))
+            return;
+        metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
+    }
+
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
     if (secondary_indices.empty())
         return;
@@ -1104,14 +1113,9 @@ void IMergeTreeDataPart::clearCaches()
     /// The projection parts go away with this part. Their entries are removed when they are destroyed, but a part
     /// whose caches are cleared early (an outdated part that nobody else holds) should not keep them until then.
     /// A reader of a projection part holds its parent part, so no reader can still write them either.
-    if (auto columns_cache = storage.getContext()->getColumnsCache())
-    {
-        for (const auto & [_, projection_part] : projection_parts)
-        {
-            if (projection_part->mayStoreColumnsInColumnsCache())
-                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name));
-        }
-    }
+    /// Neither should a part about to be renamed to `detached`: the rename moves the paths their keys are built from.
+    for (const auto & [_, projection_part] : projection_parts)
+        projection_part->clearCaches();
 }
 
 bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
