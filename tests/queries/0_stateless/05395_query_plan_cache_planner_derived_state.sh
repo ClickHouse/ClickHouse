@@ -5,8 +5,8 @@
 # twice (a miss, then a hit) and must behave like normal execution:
 #   1. The analyzer checks `max_rows_in_set` / `max_bytes_in_set` while folding an all-constant `IN`.
 #      A hit carries only the folded constant, so tightening the limit must not reuse that entry.
-#   2. The planner exempts a single read of `system.one` from quotas and result limits. Both the miss
-#      and the hit must keep the exemption.
+#   2. The planner exempts a single read of `system.one` from quotas, but not from result limits.
+#      Both the miss and the hit must keep applying the result limits.
 # The streaming read case lives in `05401_query_plan_cache_streaming_queries_read.sh`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -31,6 +31,6 @@ run --max_bytes_in_set 0 --query "SELECT 3 IN (1, 3)"
 run --max_bytes_in_set 0 --query "SELECT 3 IN (1, 3)"
 run --max_bytes_in_set 1 --query "SELECT 3 IN (1, 3)"
 
-echo "-- 2. result limits exemption for system.one"
+echo "-- 2. result limits apply to system.one"
 run --max_result_bytes 1 --query "SELECT repeat('x', 100)"
 run --max_result_bytes 1 --query "SELECT repeat('x', 100)"
