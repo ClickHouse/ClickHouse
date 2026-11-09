@@ -602,7 +602,7 @@ TEST(JoinRowStoreStringPlanSetting, GatedOnThePlanVersion)
     auto carries_setting = [](const QueryPlanSerializationSettings & settings)
     {
         WriteBufferFromOwnString out;
-        settings.writeChangedBinary(out);
+        settings.write(out);
         return out.str().contains("min_string_column_bytes_for_hash_join_row_store");
     };
 
