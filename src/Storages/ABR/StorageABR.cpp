@@ -967,6 +967,15 @@ void StorageABR::rename(const String & /* new_path_to_table_data */, const Stora
     renameInMemory(new_table_id);
 }
 
+void StorageABR::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
+{
+    const auto table_id = getStorageID();
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot rename database {} to {}: it contains table {} with the `ABR` engine, which does not support renaming its "
+        "database. Drop the `ABR` table, rename the database, and create the `ABR` table again",
+        backQuoteIfNeed(table_id.database_name), backQuoteIfNeed(new_database_name), table_id.getNameForLogs());
+}
+
 size_t StorageABR::getFirstCandidateTableIndex(const ContextPtr & context) const
 {
     const UInt64 first_suffix = context->getSettingsRef()[Setting::abr_first_table_suffix];
@@ -1172,7 +1181,9 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 - `ABR` does not support `additional_table_filters` for the `ABR` table, or for a table that reads from it. Add the condition
   to the query instead.
 - An `ABR` table cannot be moved to another database with `RENAME TABLE` or `EXCHANGE TABLES`, because its source tables are
-  found in its own database. Renaming it within its database, or renaming the whole database, is supported.
+  found in its own database. Renaming it within its database is supported.
+- A database that contains an `ABR` table cannot be renamed with `RENAME DATABASE`. Drop the `ABR` table, rename the
+  database, and create the `ABR` table again.
 - An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
   condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
 - An `ABR` table cannot be read from a serialized query plan, which does not carry the filters of the query. With

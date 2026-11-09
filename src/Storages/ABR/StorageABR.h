@@ -131,6 +131,10 @@ public:
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    /// Renaming the database is not supported for now: `source_table_ids` keep the old name of the database, by which the
+    /// source tables would no longer be found. Supporting it would mean taking the database from the ID of this table instead.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
+
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr,
         QueryProcessingStage::Enum to_stage,
