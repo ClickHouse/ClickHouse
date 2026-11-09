@@ -371,27 +371,24 @@ public:
             key_types.emplace_back(key.type);
         }
 
-        /// Normalize wrapper-compatible key columns to the declared key schema via `convertKeyColumns`.
-        /// Track NULL rows and unwrap the outer `Nullable` first: casting a real NULL to a
-        /// non-Nullable declared type would throw.
+        /// Prepare probe keys as `HashJoin` does: dictionary sources read key columns as plain columns, so drop
+        /// `Const`/`Sparse`/`ColumnReplicated` and `LowCardinality`. Track NULL rows and unwrap the outer `Nullable`
+        /// before `convertKeyColumns`: casting a real NULL to a non-Nullable declared type would throw.
         PaddedPODArray<UInt8> key_row_is_null;
         for (size_t i = 0; i < key_columns.size(); ++i)
         {
-            if (!isNullableOrLowCardinalityNullable(key_types[i]))
-                continue;
-
-            /// Drop `Const`/`Sparse`/`ColumnReplicated` and `LowCardinality` (as `HashJoin` prepares
-            /// probe keys) so the null map is exposed, then peel off the outer `Nullable`.
             ColumnPtr full_column = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_columns[i]->convertToFullColumnIfConst()));
             DataTypePtr full_type = recursiveRemoveLowCardinality(key_types[i]);
 
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(full_column.get()))
             {
-                const auto & row_null_map = nullable->getNullMapData();
-                if (key_row_is_null.empty())
-                    key_row_is_null.resize_fill(row_null_map.size(), 0);
-                for (size_t row = 0; row < row_null_map.size(); ++row)
-                    key_row_is_null[row] |= row_null_map[row];
+                if (const auto * row_null_map = nullable->tryGetNullMapData())
+                {
+                    if (key_row_is_null.empty())
+                        key_row_is_null.resize_fill(row_null_map->size(), 0);
+                    for (size_t row = 0; row < row_null_map->size(); ++row)
+                        key_row_is_null[row] |= (*row_null_map)[row];
+                }
 
                 key_columns[i] = nullable->getNestedColumnPtr();
                 key_types[i] = removeNullable(full_type);

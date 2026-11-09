@@ -216,10 +216,15 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
         current_offset = next_offset; \
     }
 
+    /// A `Nullable` column without a null map has no NULLs: sort by its nested column.
+    const IColumn * sort_column = mapped.get();
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(sort_column); nullable && !nullable->hasNullMap())
+        sort_column = &nullable->getNestedColumn();
+
 #define DISPATCH_FOR_NONNULLABLE_COLUMN(TYPE) \
-    else if (checkAndGetColumn<TYPE>(mapped.get())) \
+    else if (checkAndGetColumn<TYPE>(sort_column)) \
     { \
-        Less<positive, TYPE> cmp(*mapped); \
+        Less<positive, TYPE> cmp(*sort_column); \
         APPLY_COMPARATOR(cmp) \
     }
 
@@ -244,9 +249,9 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     DISPATCH_FOR_NONNULLABLE_COLUMN(ColumnFixedString)
 #undef DISPATCH_FOR_NONNULLABLE_COLUMN
 
-    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(mapped.get()))
+    else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(sort_column))
     {
-        const auto & null_map = nullable->getNullMapData();
+        const auto & null_map = *nullable->tryGetNullMapData();
 
 #define DISPATCH_FOR_NULLABLE_COLUMN(TYPE) \
     else if (checkAndGetColumn<TYPE>(&nullable->getNestedColumn())) \
@@ -283,7 +288,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     }
     else
     {
-        GenericLess<positive> cmp(*mapped);
+        GenericLess<positive> cmp(*sort_column);
         APPLY_COMPARATOR(cmp)
     }
 #undef APPLY_COMPARATOR

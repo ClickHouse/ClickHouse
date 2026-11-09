@@ -336,10 +336,12 @@ public:
         {
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(a.column.get()))
             {
-                has_nulls = true;
-                const auto & map = nullable->getNullMapData();
-                for (size_t row = 0; row < input_rows_count; ++row)
-                    null_rows[row] |= map[row];
+                if (const auto * map = nullable->tryGetNullMapData())
+                {
+                    has_nulls = true;
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                        null_rows[row] |= (*map)[row];
+                }
                 a.column = nullable->getNestedColumnPtr();
             }
         }

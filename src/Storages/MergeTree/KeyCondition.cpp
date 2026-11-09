@@ -1590,6 +1590,52 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
     return names;
 }
 
+/// A filter names a column by its raw name and a key node by its expression, so a column
+/// named `f(x)` and the key node computing `f(x)` look the same.
+static NameSet getColumnsNamedLikeKeyExpressions(const ActionsDAGWithInversionPushDown & filter_dag, const ExpressionActions & key_expr)
+{
+    if (!filter_dag.dag)
+        return {};
+
+    NameSet computed_names;
+    NameSet input_names;
+    for (const auto & node : key_expr.getActionsDAG().getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT)
+            input_names.insert(node.result_name);
+        else if (node.type != ActionsDAG::ActionType::COLUMN)
+            computed_names.insert(node.result_name);
+    }
+
+    NameSet result;
+    for (const auto * input : filter_dag.dag->getInputs())
+        if (computed_names.contains(input->result_name) && !input_names.contains(input->result_name))
+            result.insert(input->result_name);
+
+    return result;
+}
+
+static bool readsInputNamedIn(const ActionsDAG::Node & root, const NameSet & names)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT && names.contains(node->result_name))
+            return true;
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
 void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 {
     /// So far the only supported function is mortonEncode and hilbertEncode (Morton and Hilbert curves).
@@ -1626,8 +1672,8 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 
             /// So far we only support the case of two arguments.
             if (2 == curve.arguments.size()
-                && !WhichDataType(removeLowCardinality(curve.arguments[0].type)).isUInt64()
-                && !WhichDataType(removeLowCardinality(curve.arguments[1].type)).isUInt64())
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[0].type))).isUInt64()
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[1].type))).isUInt64())
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
@@ -1688,6 +1734,7 @@ KeyCondition::KeyCondition(
     auto info = BuildInfo {
         .key_expr = key_expr_,
         .key_subexpr_names = getAllSubexpressionNames(*key_expr_),
+        .columns_named_like_key_expressions = getColumnsNamedLikeKeyExpressions(filter_dag, *key_expr_),
         .require_ready_sets = require_ready_sets_};
 
     if (context->getSettingsRef()[Setting::analyze_index_with_space_filling_curves])
@@ -2064,11 +2111,13 @@ static bool applyFunctionChainToColumn(
         /// plain `ColumnNullable`.
         result_column = result_column->convertToFullColumnIfConst();
         const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
-        const auto & null_map_data = result_column_nullable.getNullMapData();
-        for (char8_t i : null_map_data)
+        if (const auto * null_map_data = result_column_nullable.tryGetNullMapData())
         {
-            if (i != 0)
-                return false;
+            for (char8_t i : *null_map_data)
+            {
+                if (i != 0)
+                    return false;
+            }
         }
         result_column = result_column_nullable.getNestedColumnPtr();
         result_type = removeNullable(in_argument_type);
@@ -2198,11 +2247,13 @@ static bool applyFunctionChainToColumn(
         if (result_column->isNullable())
         {
             const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
-            const auto & null_map_data = result_column_nullable.getNullMapData();
-            for (char8_t i : null_map_data)
+            if (const auto * null_map_data = result_column_nullable.tryGetNullMapData())
             {
-                if (i != 0)
-                    return false;
+                for (char8_t i : *null_map_data)
+                {
+                    if (i != 0)
+                        return false;
+                }
             }
             result_column = result_column_nullable.getNestedColumnPtr();
             result_type = removeNullable(result_type);
@@ -2744,9 +2795,10 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
     if (column->isNullable())
     {
         const auto & n = assert_cast<const ColumnNullable &>(*column);
-        for (char8_t b : n.getNullMapData())
-            if (b)
-                return false;
+        if (const auto * null_map = n.tryGetNullMapData())
+            for (char8_t b : *null_map)
+                if (b)
+                    return false;
         column = n.getNestedColumnPtr();
         type = removeNullable(type);
     }
@@ -2928,9 +2980,10 @@ static bool castColumnWithoutNulls(
     const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
 
     /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
-    for (char8_t b : n.getNullMapData())
-        if (b)
-            return false;
+    if (const auto * null_map = n.tryGetNullMapData())
+        for (char8_t b : *null_map)
+            if (b)
+                return false;
 
     /// Every value fits, so ask the reverse cast whether anything was lost on the way. The probe above
     /// is the forward cast, so it is read back instead of being computed again - as its nested column,
@@ -3642,6 +3695,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// or a NULL row of a subquery set. Stays nullptr when the set element type is not Nullable.
         /// `Nothing` is another representation of an all-NULL literal array and is handled below.
         const NullMap * source_null_map = nullptr;
+        bool source_is_nullable = false;
         const bool source_is_nothing = WhichDataType(*set_element_type).isNothing();
 
         if (isNullableOrLowCardinalityNullable(set_element_type))
@@ -3658,7 +3712,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             if (!source_nullable_column)
                 return false;
 
-            source_null_map = &source_nullable_column->getNullMapData();
+            source_null_map = source_nullable_column->tryGetNullMapData();
+            source_is_nullable = true;
             set_column = source_nullable_column->getNestedColumnPtr();
         }
 
@@ -3669,8 +3724,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         if (!cast_nullable_column)
             return false;
 
-        const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
-        size_t set_size = cast_failure_null_map.size();
+        const NullMap * cast_failure_null_map = cast_nullable_column->tryGetNullMapData();
+        size_t set_size = cast_nullable_column->size();
 
         const bool key_is_nullable = key_column_type->isNullable();
 
@@ -3679,7 +3734,7 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         for (size_t i = 0; i < set_size; ++i)
         {
             const bool null_in_source = source_null_map && (*source_null_map)[i];
-            if ((!key_is_nullable && null_in_source) || (cast_failure_null_map[i] && !source_is_nothing))
+            if ((!key_is_nullable && null_in_source) || (cast_failure_null_map && (*cast_failure_null_map)[i] && !source_is_nothing))
                 filter[i] = 0;
         }
 
@@ -3696,10 +3751,15 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 removeNullable(key_column_type), &filter))
             out_is_exact = false;
 
-        if (key_is_nullable && (source_null_map || source_is_nothing))
+        if (key_is_nullable && (source_is_nullable || source_is_nothing))
         {
-            auto null_map = ColumnUInt8::create();
-            null_map->getData().assign(cast_failure_null_map);
+            MutableColumnPtr null_map;
+            if (cast_failure_null_map)
+            {
+                auto cast_failure_null_map_copy = ColumnUInt8::create();
+                cast_failure_null_map_copy->getData().assign(*cast_failure_null_map);
+                null_map = std::move(cast_failure_null_map_copy);
+            }
             auto nullable_set_column = ColumnNullable::create(cast_nullable_column->getNestedColumn().cloneResized(set_size), std::move(null_map));
             if (source_null_map)
                 nullable_set_column->applyNullMap(*source_null_map);
@@ -5245,6 +5305,10 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         return;
     }
 
+    if (node_dag && !info.columns_named_like_key_expressions.empty()
+        && readsInputNamedIn(*node_dag, info.columns_named_like_key_expressions))
+        return;
+
     /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
     if (node.isFunction())
     {
@@ -6079,7 +6143,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     return std::nullopt;
                 }
 
-                const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                /// A string that does not parse as the key type, such as `'2026-07-16T12:30:45.123Z'` for a
+                /// `DateTime64` key, cannot supply a comparison bound. The comparison itself may still accept
+                /// it (for example, with `cast_string_to_date_time_mode = 'best_effort'`), so the index
+                /// declines the candidate instead of failing the query.
+                const_value = tryConvertFieldToType(const_value, *key_expr_type_not_null);
                 if (const_value.isNull())
                     return std::nullopt;
                 /// This exact conversion preserves the candidate's relaxation state.
@@ -9008,7 +9076,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 }
 
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                          std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+                                          std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
     forEachAtomWithPolarity(rpn, [&](RPNElement & rpn_element, bool positive)
     {
@@ -9044,7 +9112,7 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                 return;
             }
 
-            hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
+            hashes.emplace_back(VectorWithMemoryTracking<uint64_t>{*hashed_value});
 
             std::vector<std::size_t> key_columns_for_element;
             key_columns_for_element.emplace_back(rpn_element.getKeyColumn());
@@ -9528,7 +9596,7 @@ std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelC
     return std::move(stack[0].conjuncts);
 }
 
-void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const
+void KeyCondition::extractSingleColumnConditions(VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const
 {
     using RPNRanges = std::vector<std::pair<size_t, size_t>>;
     RPNRanges conjuncts = topLevelConjunction();

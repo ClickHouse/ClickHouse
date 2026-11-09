@@ -1,4 +1,3 @@
-#include <Columns/ColumnNullable.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -97,15 +96,6 @@ static void checkTemporaryTableMemoryUsage(UInt64 total_bytes, UInt64 max_tempor
             ReadableSize(total_bytes), ReadableSize(max_temporary_table_memory_usage));
 }
 
-/// Create the null maps of the `Nullable` columns (and subcolumns) of a block that is stored uncompressed.
-/// The reading queries share the stored columns and may create a missing null map lazily, which would change
-/// `allocatedBytes` of a stored block after it was accounted in `BlocksWithCounts::bytes`, so create them beforehand.
-static void materializeNullMaps(const Block & block)
-{
-    for (const auto & elem : block)
-        materializeNullMapsRecursively(*elem.column);
-}
-
 class MemorySink final : public SinkToStorage
 {
 public:
@@ -137,7 +127,6 @@ public:
         }
         else
         {
-            materializeNullMaps(block);
             new_blocks.push_back(std::move(block));
         }
 
@@ -384,14 +373,8 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     while (executor.pull(block))
     {
         if ((*memory_settings_snapshot)[MemorySetting::compress])
-        {
             for (auto & elem : block)
                 elem.column = elem.column->compress(/*force_compression=*/true);
-        }
-        else
-        {
-            materializeNullMaps(block);
-        }
 
         out.push_back(block);
     }
@@ -773,7 +756,6 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             }
             else
             {
-                materializeNullMaps(block);
                 new_blocks.push_back(std::move(block));
             }
 

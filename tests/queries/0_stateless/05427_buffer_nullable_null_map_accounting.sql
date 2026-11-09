@@ -1,4 +1,4 @@
--- A `Nullable` column without NULLs may have no null map, and a reading query may create it lazily
+-- A `Nullable` column without NULLs may have no null map, and a reading query must not create it
 -- in the shared buffered column. The accounted bytes of the `Buffer` must stay consistent,
 -- so that flushing the buffer does not make `total_bytes` underflow.
 

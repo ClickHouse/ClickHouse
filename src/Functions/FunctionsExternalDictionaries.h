@@ -362,6 +362,16 @@ public:
 
     bool useDefaultImplementationForConstants() const final { return true; }
     bool useDefaultImplementationForNulls() const final { return false; }
+
+    /// For a `LowCardinality` argument the function runs on the values of its dictionary, which always
+    /// holds the type's default value. A default argument of `dictGetOrDefault` is converted to the
+    /// attribute type, and the type's default value (such as an empty `String` for a numeric attribute)
+    /// may be impossible to convert, though no row uses it.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault;
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final
     {
         if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
@@ -698,11 +708,13 @@ private:
         /// A NULL key takes NULL from the key's null map after the lookup, so it never takes the default.
         if (const auto * nullable_key = checkAndGetColumn<ColumnNullable>(nullable_key_column.get()))
         {
-            const auto & null_map = nullable_key->getNullMapData();
-            chassert(null_map.size() == default_mask.size());
-            for (size_t i = 0; i < default_mask.size(); ++i)
-                if (null_map[i])
-                    default_mask[i] = 0;
+            if (const auto * null_map = nullable_key->tryGetNullMapData())
+            {
+                chassert(null_map->size() == default_mask.size());
+                for (size_t i = 0; i < default_mask.size(); ++i)
+                    if ((*null_map)[i])
+                        default_mask[i] = 0;
+            }
         }
         else if (nullable_key_column && nullable_key_column->isNullAt(0))
         {
@@ -907,6 +919,8 @@ private:
     bool isVariadic() const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+
+    bool canBeExecutedOnDefaultArguments() const override { return impl.canBeExecutedOnDefaultArguments(); }
 
     bool isDeterministic() const override { return false; }
 

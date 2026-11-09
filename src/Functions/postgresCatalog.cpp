@@ -196,7 +196,7 @@ public:
             if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.values))
             {
                 result.values = &nullable->getNestedColumn();
-                result.null_map = &nullable->getNullMapData();
+                result.null_map = nullable->tryGetNullMapData();
             }
             return result;
         };

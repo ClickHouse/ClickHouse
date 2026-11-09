@@ -44,7 +44,7 @@ namespace
         bool executeNumber(
             const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
             IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
-            const NullMap * src_null_map,
+            const UInt8 * src_null_map,
             NullMap * res_null_map)
         {
             if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
@@ -57,7 +57,7 @@ namespace
                 res_data.reserve(src_data_vec.size());
 
                 if (nullable)
-                    res_null_map->reserve(src_null_map->size());
+                    res_null_map->reserve(src_data.size());
 
                 ColumnArray::Offset src_prev_offset = 0;
                 ColumnArray::Offset res_prev_offset = 0;
@@ -73,7 +73,7 @@ namespace
                         if (nullable)
                         {
                             res_null_map->resize(res_prev_offset + size_to_write);
-                            memcpy(&(*res_null_map)[res_prev_offset], &(*src_null_map)[src_prev_offset], size_to_write);
+                            memcpy(&(*res_null_map)[res_prev_offset], &src_null_map[src_prev_offset], size_to_write);
                         }
 
                         res_prev_offset += size_to_write;
@@ -102,7 +102,7 @@ namespace
         bool executeFixedString(
             const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
             IColumn & res_data_col, ColumnArray::Offsets & res_offsets,
-            const NullMap * src_null_map,
+            const UInt8 * src_null_map,
             NullMap * res_null_map)
         {
             if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
@@ -120,7 +120,7 @@ namespace
                 res_data.reserve(src_data_vec.size());
 
                 if (nullable)
-                    res_null_map->reserve(src_null_map->size());
+                    res_null_map->reserve(src_data.size());
 
                 ColumnArray::Offset src_prev_offset = 0;
                 ColumnArray::Offset res_prev_offset = 0;
@@ -137,7 +137,7 @@ namespace
                         if (nullable)
                         {
                             res_null_map->resize(res_prev_offset + size_to_write);
-                            memcpy(&(*res_null_map)[res_prev_offset], &(*src_null_map)[src_prev_offset], size_to_write);
+                            memcpy(&(*res_null_map)[res_prev_offset], &src_null_map[src_prev_offset], size_to_write);
                         }
 
                         res_prev_offset += size_to_write;
@@ -168,7 +168,7 @@ namespace
         bool executeString(
             const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
             IColumn & res_data_col, ColumnArray::Offsets & res_array_offsets,
-            const NullMap * src_null_map,
+            const UInt8 * src_null_map,
             NullMap * res_null_map)
         {
             if (const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data))
@@ -193,7 +193,7 @@ namespace
                 res_data.reserve(src_data_vec.size());
 
                 if (nullable)
-                    res_null_map->reserve(src_null_map->size());
+                    res_null_map->reserve(src_data.size());
 
                 ColumnArray::Offset src_array_prev_offset = 0;
                 ColumnArray::Offset res_array_prev_offset = 0;
@@ -227,7 +227,7 @@ namespace
                         if (nullable)
                         {
                             res_null_map->resize(res_array_prev_offset + array_size);
-                            memcpy(&(*res_null_map)[res_array_prev_offset], &(*src_null_map)[src_array_prev_offset], array_size);
+                            memcpy(&(*res_null_map)[res_array_prev_offset], &src_null_map[src_array_prev_offset], array_size);
                         }
 
                         res_array_prev_offset += array_size;
@@ -260,7 +260,7 @@ namespace
         void executeGeneric(
             const IColumn & src_data, const ColumnArray::Offsets & src_offsets,
             IColumn & res_data, ColumnArray::Offsets & res_offsets,
-            const NullMap * src_null_map,
+            const UInt8 * src_null_map,
             NullMap * res_null_map)
         {
             size_t size = src_offsets.size();
@@ -268,7 +268,7 @@ namespace
             res_data.reserve(src_data.size());
 
             if (nullable)
-                res_null_map->reserve(src_null_map->size());
+                res_null_map->reserve(src_data.size());
 
             ColumnArray::Offset src_prev_offset = 0;
             ColumnArray::Offset res_prev_offset = 0;
@@ -283,7 +283,7 @@ namespace
                     if (nullable)
                     {
                         res_null_map->resize(res_prev_offset + size_to_write);
-                        memcpy(&(*res_null_map)[res_prev_offset], &(*src_null_map)[src_prev_offset], size_to_write);
+                        memcpy(&(*res_null_map)[res_prev_offset], &src_null_map[src_prev_offset], size_to_write);
                     }
 
                     res_prev_offset += size_to_write;
@@ -308,7 +308,7 @@ namespace
         void executeDispatch(
             const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets,
             IColumn & res_data_col, ColumnArray::Offsets & res_array_offsets,
-            const NullMap * src_null_map,
+            const UInt8 * src_null_map,
             NullMap * res_null_map)
         {
             if (!(executeNumber<UInt8, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
@@ -346,7 +346,7 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
-    const NullMap * src_null_map = nullptr;
+    const UInt8 * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
 
     const IColumn * inner_col = nullptr;
@@ -356,7 +356,7 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
     if (nullable_col)
     {
         inner_col = &nullable_col->getNestedColumn();
-        src_null_map = &nullable_col->getNullMapData();
+        src_null_map = nullable_col->getNullMapRawDataOrZeros();
 
         auto & nullable_res_col = assert_cast<ColumnNullable &>(res_data);
         inner_res_col = &nullable_res_col.getNestedColumn();

@@ -306,7 +306,7 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
             if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column); nullable_column && nullable_column->hasNullMap())
-                column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapData(), true);
+                column.column = JoinCommon::filterWithBlanks(column.column, *nullable_column->tryGetNullMapData(), true);
 
         JoinCommon::removeColumnNullability(column);
     }
@@ -1141,7 +1141,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             }
             else if (const auto * asof_null_map = assert_cast<const ColumnNullable &>(*all_key_columns.at(asof_key_name)).tryGetNullMapData())
             {
-                /// A column without a null map has no NULLs. Do not create the null map: the block is stored and accounted.
+                /// A column without a null map has no NULLs.
                 const auto & asof_column_nullable = *asof_null_map;
 
                 auto new_selector = ScatteredBlock::Indexes::create();
@@ -2501,7 +2501,6 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         for (auto & columns : data->build_streams.front().columns)
         {
             columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
-            columns.materializeNullMaps();
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->setBytes(data->allocated_size, new_blocks_allocated_size);

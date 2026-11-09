@@ -699,7 +699,7 @@ namespace
             if (!component.cast_column)
                 return {};
             const auto & col_nullable = assert_cast<const ColumnNullable &>(*component.cast_column);
-            component.null_map = &col_nullable.getNullMapData();
+            component.null_map = col_nullable.tryGetNullMapData();
             component.column = col_nullable.getNestedColumnPtr();
         }
 

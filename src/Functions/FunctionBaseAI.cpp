@@ -58,6 +58,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -370,6 +371,32 @@ void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & proc
     column.insertData(processed.data(), processed.size());
 }
 
+void FunctionBaseAI::checkHasUser(const ContextPtr & context)
+{
+    if (context->getUserID())
+        return;
+
+    /// A background operation is retried, and its failure is visible only in the logs and system tables.
+    context->addOrUpdateWarningMessage(
+        Context::WarningType::AI_FUNCTION_IN_BACKGROUND_OPERATION,
+        PreformattedMessage::create(
+            "A background operation (merge, mutation or `Buffer` flush) failed because it evaluates an AI function, "
+            "which is executed only in queries run by a user. {}Remove the AI function from the table's keys, TTL, "
+            "skip indexes, projections, `DEFAULT` and `MATERIALIZED` columns and constraints.",
+            context->getCurrentQueryId().empty() ? "" : fmt::format("Last failed task: {}. ", context->getCurrentQueryId())));
+
+    throw Exception(ErrorCodes::ACCESS_DENIED,
+        "AI functions cannot be executed without a user, e.g. in background merges, mutations or `Buffer` flushes");
+}
+
+void FunctionBaseAI::throwIfBackgroundExpression(const ContextPtr & context)
+{
+    if (context->isAnalyzingBackgroundExpressions())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "AI functions cannot be used in expressions executed in the background: mutations, keys, TTL, skip indexes "
+            "and projections. Use a lightweight `UPDATE` or `INSERT ... SELECT` instead");
+}
+
 AIParamSpecs FunctionBaseAI::embeddingParams()
 {
     return {
@@ -471,6 +498,9 @@ void FunctionBaseAI::embedTexts(
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// Before resolving the credentials: their validation errors must not reveal a named collection.
+    checkHasUser(getContext());
+
     const auto & settings = getContext()->getSettingsRef();
     auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);
 
@@ -546,7 +576,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         {
             /// A NULL prompt produces NULL, and once the quota is exhausted a row keeps its default
             /// value. Neither issues a request, so the row's slot stays an empty future.
-            if ((prompt_nullable && prompt_nullable->getNullMapData()[row]) || quota_tracker->checkQuotas())
+            if ((prompt_nullable && prompt_nullable->isNullAt(row)) || quota_tracker->checkQuotas())
             {
                 wave.emplace_back();
                 continue;
@@ -571,7 +601,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             const size_t row = wave_begin + k;
 
             /// A NULL prompt produces NULL without a request.
-            if (prompt_nullable && prompt_nullable->getNullMapData()[row])
+            if (prompt_nullable && prompt_nullable->isNullAt(row))
             {
                 result_col->insertDefault();
                 null_map_col->getData()[row] = 1;

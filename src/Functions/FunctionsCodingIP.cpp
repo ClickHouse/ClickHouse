@@ -293,12 +293,13 @@ public:
         ColumnPtr column = arguments[0].column;
         ColumnPtr null_map_column;
         const NullMap * null_map = nullptr;
-        if (column->isNullable())
+        const bool is_nullable = column->isNullable();
+        if (is_nullable)
         {
             const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
             column = column_nullable->getNestedColumnPtr();
-            null_map_column = column_nullable->getNullMapColumnPtr();
-            null_map = &column_nullable->getNullMapData();
+            null_map_column = column_nullable->tryGetNullMapColumnPtr();
+            null_map = column_nullable->tryGetNullMapData();
         }
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
@@ -306,15 +307,15 @@ public:
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
                 auto result = convertToIPv6<IPStringToNumExceptionMode::Default, ColumnFixedString>(column, null_map);
-                if (null_map && !result->isNullable())
+                if (is_nullable && !result->isNullable())
                     return ColumnNullable::create(result, null_map_column);
                 return result;
             }
         }
 
         auto result = convertToIPv6<exception_mode, ColumnFixedString>(column, null_map);
-        if (null_map && !result->isNullable())
-            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
+        if (is_nullable && !result->isNullable())
+            return ColumnNullable::create(IColumn::mutate(result), null_map_column ? IColumn::mutate(null_map_column) : MutableColumnPtr{});
         return result;
     }
 
@@ -456,12 +457,13 @@ public:
         ColumnPtr column = arguments[0].column;
         ColumnPtr null_map_column;
         const NullMap * null_map = nullptr;
-        if (column->isNullable())
+        const bool is_nullable = column->isNullable();
+        if (is_nullable)
         {
             const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
             column = column_nullable->getNestedColumnPtr();
-            null_map_column = column_nullable->getNullMapColumnPtr();
-            null_map = &column_nullable->getNullMapData();
+            null_map_column = column_nullable->tryGetNullMapColumnPtr();
+            null_map = column_nullable->tryGetNullMapData();
         }
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
@@ -469,15 +471,15 @@ public:
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
                 auto result = convertToIPv4<IPStringToNumExceptionMode::Default, ColumnUInt32>(column, null_map);
-                if (null_map && !result->isNullable())
+                if (is_nullable && !result->isNullable())
                     return ColumnNullable::create(result, null_map_column);
                 return result;
             }
         }
 
         auto result = convertToIPv4<exception_mode, ColumnUInt32>(column, null_map);
-        if (null_map && !result->isNullable())
-            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
+        if (is_nullable && !result->isNullable())
+            return ColumnNullable::create(IColumn::mutate(result), null_map_column ? IColumn::mutate(null_map_column) : MutableColumnPtr{});
         return result;
     }
 

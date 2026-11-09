@@ -2425,7 +2425,7 @@ public:
     }
 
 protected:
-    /// `DataTypesWithConstInfo` does not carry the value of a constant divisor, so `intDiv` and `modulo` are
+    /// The value of a constant divisor is not used here, so `intDiv` and `modulo` are
     /// described as not throwing only if the caller knows that the constant divisor is safe: it is not zero
     /// and, for a signed dividend, it does not become negative after the cast to a signed type.
     bool canThrowImpl(const DataTypesWithConstInfo & arguments, bool divisor_is_known_safe) const
@@ -3611,8 +3611,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
-            const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
+            /// Without a null map the denominator has no NULLs, so there are no rows to skip.
+            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, nullable_column->tryGetNullMapData());
             /// When the framework declared a non-Nullable result type (e.g. `Array` via `makeNullableSafe`),
             /// `wrapInNullable` would produce a `ColumnNullable` that disagrees with `result_type`.
             if (!result_type->isNullable())

@@ -77,7 +77,7 @@ void gatherColumn(const IColumn & source, size_t count, SourceRow source_row, De
         }
     };
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&source))
-        copy.template operator()<true>(nullable->getNestedColumn(), nullable->getNullMapData().data());
+        copy.template operator()<true>(nullable->getNestedColumn(), nullable->getNullMapRawDataOrZeros());
     else
         copy.template operator()<false>(source, nullptr);
 }

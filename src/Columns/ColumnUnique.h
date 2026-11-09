@@ -488,7 +488,7 @@ std::pair<const ColumnType *, const NullMap *> ColumnUnique<ColumnType>::getValu
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src))
     {
         src_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
-        null_map = &nullable_column->getNullMapData();
+        null_map = nullable_column->tryGetNullMapData();
     }
     else
         src_column = typeid_cast<const ColumnType *>(&src);

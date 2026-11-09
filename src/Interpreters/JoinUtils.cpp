@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/getMostSubtype.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
@@ -50,7 +51,6 @@ namespace
 void insertFromNullableOrDefault(MutableColumnPtr & dst, const ColumnNullable * nullable_col)
 {
     const auto & nested = nullable_col->getNestedColumn();
-    /// Do not create the null map: the column may be shared (e.g. stored in a hash join).
     const UInt8 * nullmap = nullable_col->getNullMapRawDataOrZeros();
     if (auto * lc = typeid_cast<ColumnLowCardinality *>(dst.get()); lc && !nested.lowCardinality())
     {
@@ -275,6 +275,28 @@ static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
         tuple_type->getElements(),
         [](const auto & element)
         { return element->isLowCardinalityNullable() || hasNullableLowCardinalityTupleElement(element); });
+}
+
+DataTypePtr compareBoolKeysAsUInt8(DataTypePtr type, const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    for (const auto & key_type : {left_type, right_type})
+    {
+        bool replaced = false;
+        auto result = replaceNestedTypesInPair(type, key_type,
+            [&](const DataTypePtr & leaf, const DataTypePtr & key_leaf) -> DataTypePtr
+            {
+                if (isBool(leaf) && !isBool(key_leaf) && leaf->equals(*key_leaf))
+                {
+                    replaced = true;
+                    return std::make_shared<DataTypeUInt8>();
+                }
+                return leaf;
+            },
+            /*left_is_common_type=*/ true);
+        if (replaced && result)
+            type = std::move(result);
+    }
+    return type;
 }
 
 DataTypePtr tryGetCommonSubtypeForJoinKeys(
@@ -757,13 +779,13 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
 
         auto nested_column = castToBoolColumn(nullable_col->getNestedColumnPtr());
 
-        /// A column without a null map has no NULLs. Do not create the null map: the column may be stored in a hash join.
+        /// A column without a null map has no NULLs.
         if (!nullable_col->hasNullMap())
             return JoinMask(std::move(nested_column));
 
         /// Return nested column with NULL set to false
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(*nested_column);
-        const auto & null_map = nullable_col->getNullMapColumn();
+        const auto & null_map = *nullable_col->tryGetNullMapColumn();
 
         auto res = ColumnUInt8::create(nullable_col->size(), static_cast<UInt8>(0));
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
@@ -883,13 +905,26 @@ bool hasNonJoinedBlocks(const TableJoin & table_join)
     return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
-ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
+ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter, const DataTypePtr & default_type)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
     MutableColumnPtr mut_column = column->cloneEmpty();
     mut_column->reserve(column->size());
 
-    if (inverse_filter)
+    if (default_type && !default_type->isDefaultInsertTrivial())
+    {
+        /// `mut_column` keeps the wrapper of `column` (e.g. `ColumnReplicated`), so the type default is built unwrapped.
+        auto default_row = default_type->createColumn();
+        default_type->insertDefaultInto(*default_row);
+        for (size_t row = 0; row < filter.size(); ++row)
+        {
+            if (static_cast<bool>(filter[row]) != inverse_filter)
+                mut_column->insertFrom(*column, row);
+            else
+                mut_column->insertFrom(*default_row, 0);
+        }
+    }
+    else if (inverse_filter)
     {
         for (size_t row = 0; row < filter.size(); ++row)
         {

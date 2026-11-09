@@ -111,6 +111,8 @@ private:
         struct UnpackedArray
         {
             bool is_const = false;
+            bool is_nullable = false;
+            /// Null if the elements are not `Nullable` or have no NULLs.
             const NullMap * null_map = nullptr;
             const NullMap * overflow_mask = nullptr;
             const ColumnArray::ColumnOffsets::Container * offsets = nullptr;
@@ -261,7 +263,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
         if (nullable_type)
         {
             auto cast_column = castRemoveNullable(nested, nullable_type->getNestedType());
-            return ColumnNullable::create(cast_column, column_nullable->getNullMapColumnPtr());
+            return ColumnNullable::create(cast_column, column_nullable->tryGetNullMapColumnPtr());
         }
         return castRemoveNullable(nested, data_type);
     }
@@ -427,7 +429,8 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
 
             if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(arg.nested_column))
             {
-                arg.null_map = &column_nullable->getNullMapData();
+                arg.is_nullable = true;
+                arg.null_map = column_nullable->tryGetNullMapData();
                 arg.nested_column = &column_nullable->getNestedColumn();
             }
 
@@ -648,7 +651,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         if (!columns.back())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected array type for function arrayIntersect");
 
-        if (arg.null_map)
+        if (arg.is_nullable)
             has_nullable = true;
     }
 

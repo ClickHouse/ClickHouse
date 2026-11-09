@@ -687,13 +687,13 @@ template <typename ArraySource, typename ValueSource, typename Sink>
 void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
 {
     const auto * size_nullable = typeid_cast<const ColumnNullable *>(&size_column);
-    const NullMap * size_null_map = size_nullable ? &size_nullable->getNullMapData() : nullptr;
+    const UInt8 * size_null_map = size_nullable ? size_nullable->getNullMapRawDataOrZeros() : nullptr;
     const IColumn * size_nested_column = size_nullable ? &size_nullable->getNestedColumn() : &size_column;
 
     while (!sink.isEnd())
     {
         size_t row_num = array_source.rowNum();
-        bool has_size = !size_null_map || (*size_null_map)[row_num];
+        bool has_size = !size_null_map || size_null_map[row_num];
 
         if (has_size)
         {

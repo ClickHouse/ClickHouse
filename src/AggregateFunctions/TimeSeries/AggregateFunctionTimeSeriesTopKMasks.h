@@ -125,7 +125,7 @@ public:
         const NullMap * null_map = nullptr;
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(values_nested))
         {
-            null_map = &nullable->getNullMapData();
+            null_map = nullable->tryGetNullMapData();
             values_nested = &nullable->getNestedColumn();
         }
         [[maybe_unused]] const auto & values_data = assert_cast<const ColumnVector<ValueType> &>(*values_nested).getData();

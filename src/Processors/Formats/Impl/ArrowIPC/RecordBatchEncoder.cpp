@@ -663,7 +663,7 @@ void RecordBatchEncoder::encodeField(const IColumn & column, const DataTypePtr &
     if (type->isNullable())
     {
         const auto & nullable = assert_cast<const ColumnNullable &>(column);
-        null_map_column = &nullable.getNullMapColumn();
+        null_map_column = nullable.tryGetNullMapColumn();
         nested = &nullable.getNestedColumn();
         nested_type = removeNullable(type);
     }
@@ -693,8 +693,8 @@ void RecordBatchEncoder::encodeVariant(const IColumn & column, const DataTypePtr
     /// `ColumnVariant::updateHashWithValueRange`), so the range maps to one contiguous child range per
     /// alternative, and the union offsets are rebased against that child's start.
     const size_t num_local = variant_column.getNumVariants();
-    std::vector<size_t> nested_begin(num_local, 0);
-    std::vector<size_t> nested_rows(num_local, 0);
+    VectorWithMemoryTracking<size_t> nested_begin(num_local, 0);
+    VectorWithMemoryTracking<size_t> nested_rows(num_local, 0);
     for (size_t row = begin; row != end; ++row)
     {
         const auto local = local_discriminators[row];

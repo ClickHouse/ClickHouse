@@ -1570,7 +1570,7 @@ struct ConvertThroughParsing
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
-            read_buffer.setPadded();
+            read_buffer.setPaddedStorage(*chars, current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -4010,18 +4010,21 @@ public:
 
                             continue;
                         }
+                        const auto & arg_nullable = assert_cast<const ColumnNullable &>(*arg.column);
+                        if (!arg_nullable.hasNullMap())
+                            continue;
                         if (result_null_map)
                         {
                             MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
                             auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                            const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                            const auto & null_map = *arg_nullable.tryGetNullMapData();
                             for (size_t i = 0; i < input_rows_count; ++i)
                                 result_null_map_data[i] |= null_map[i];
                             result_null_map = std::move(mut);
                         }
                         else
                         {
-                            result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                            result_null_map = arg_nullable.tryGetNullMapColumnPtr();
                         }
                     }
                     else if (isDynamic(*arg.type))

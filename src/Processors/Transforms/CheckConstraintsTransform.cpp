@@ -126,9 +126,9 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 const auto & nested_column = column_nullable->getNestedColumnPtr();
 
                 /// Check if constraint value is nullable
-                const auto & null_map = column_nullable->getNullMapColumn();
-                const PaddedPODArray<UInt8> & null_map_data = null_map.getData();
-                bool null_map_contains_null = !memoryIsZero(null_map_data.raw_data(), 0, null_map_data.size() * sizeof(UInt8));
+                const auto * null_map_data = column_nullable->tryGetNullMapData();
+                bool null_map_contains_null = null_map_data
+                    && !memoryIsZero(null_map_data->raw_data(), 0, null_map_data->size() * sizeof(UInt8));
 
                 if (null_map_contains_null)
                     throw Exception(

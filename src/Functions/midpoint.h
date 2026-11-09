@@ -130,10 +130,8 @@ private:
 
             for (size_t i = 0; i < input_columns.size(); ++i)
             {
-                chassert(input_null_maps[i] != nullptr);
-
                 /// Ignore the entries that are NULL so that we can compute average over non-NULLs only.
-                if ((*input_null_maps[i])[row])
+                if (input_null_maps[i] && (*input_null_maps[i])[row])
                     continue;
 
                 const auto * col_vec = assert_cast<const ResultColumnType *>(input_columns[i].get());
@@ -199,8 +197,7 @@ private:
 
             for (size_t i = 0; i < input_columns.size(); ++i)
             {
-                chassert(input_null_maps[i] != nullptr);
-                if ((*input_null_maps[i])[row])
+                if (input_null_maps[i] && (*input_null_maps[i])[row])
                     continue;
 
                 const auto * col_vec = assert_cast<const ResultColumnType *>(input_columns[i].get());
@@ -266,7 +263,8 @@ private:
             {
                 const auto * col_nullable = assert_cast<const ColumnNullable *>(col.get());
                 columns.emplace_back(col_nullable->getNestedColumnPtr());
-                input_null_maps.emplace_back(&col_nullable->getNullMapData());
+                /// nullptr if the column has no NULLs.
+                input_null_maps.emplace_back(col_nullable->tryGetNullMapData());
             }
         }
         else

@@ -39,12 +39,12 @@ namespace ErrorCodes
 }
 
 /// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr
-/// when the column cannot hold NULLs. Dynamic/Variant encode NULLs with their
+/// when the column has no NULLs. Dynamic/Variant encode NULLs with their
 /// null discriminator instead of a separate null map.
 static ColumnPtr getSourceNullMap(const IColumn & source_column)
 {
     if (const auto * source_nullable = checkAndGetColumn<ColumnNullable>(&source_column))
-        return source_nullable->getNullMapColumnPtr();
+        return source_nullable->tryGetNullMapColumnPtr();
     if (const auto * source_dynamic = checkAndGetColumn<ColumnDynamic>(&source_column))
         return source_dynamic->getVariantColumn().createNullMap();
     if (const auto * source_variant = checkAndGetColumn<ColumnVariant>(&source_column))
@@ -192,13 +192,12 @@ public:
         const auto * source_null_map_data = source_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*source_null_map_column).getData()
             : nullptr;
-        if (!cast_null_map_data)
+        const auto * cast_result_nullable = checkAndGetColumn<ColumnNullable>(cast_result.get());
+        if (!cast_null_map_data && !cast_result_nullable)
             return cast_result;
 
         auto result = return_type->createColumn();
         result->reserve(cast_result->size());
-
-        const auto * cast_result_nullable = checkAndGetColumn<ColumnNullable>(cast_result.get());
 
         Field default_value;
         ColumnPtr default_column;
@@ -226,7 +225,7 @@ public:
         const size_t rows = cast_result->size();
         size_t start_insert_index = 0;
 
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t i = 0; cast_null_map_data && i < rows; ++i)
         {
             const bool is_source_null = source_null_map_data && (*source_null_map_data)[i];
             const bool cast_failed = (*cast_null_map_data)[i] && (!is_source_null || !return_type_can_contain_null);

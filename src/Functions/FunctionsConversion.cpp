@@ -112,12 +112,12 @@ static void unifyConvertedColumnsNullability(std::initializer_list<VectorWithMem
 }
 
 /// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr when the column
-/// cannot hold NULLs. Dynamic/Variant encode NULLs via NULL_DISCRIMINATOR rather than a separate
+/// has no NULLs. Dynamic/Variant encode NULLs via NULL_DISCRIMINATOR rather than a separate
 /// null map, so reconstruct it via createNullMap() (the same way FunctionConvert does).
 static ColumnPtr getSourceNullMap(const IColumn & src_col)
 {
     if (const auto * src_nullable = checkAndGetColumn<ColumnNullable>(&src_col))
-        return src_nullable->getNullMapColumnPtr();
+        return src_nullable->tryGetNullMapColumnPtr();
     if (const auto * src_dynamic = checkAndGetColumn<ColumnDynamic>(&src_col))
         return src_dynamic->getVariantColumn().createNullMap();
     if (const auto * src_variant = checkAndGetColumn<ColumnVariant>(&src_col))
@@ -1318,9 +1318,11 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                     ///     accurateOrNull conversions inject a ColumnNullable to mark them).
                     if (nullable_col)
                     {
-                        const auto & result_null_map = nullable_col->getNullMapData();
-                        for (size_t row = 0; row < input_rows_count; ++row)
-                            null_map_data[row] |= result_null_map[row];
+                        if (const auto * result_null_map = nullable_col->tryGetNullMapData())
+                        {
+                            for (size_t row = 0; row < input_rows_count; ++row)
+                                null_map_data[row] |= (*result_null_map)[row];
+                        }
                         converted_columns[i] = nullable_col->getNestedColumnPtr();
                     }
                     /// (b) A Dynamic/Variant source whose block has no convertible row yields a
@@ -1338,13 +1340,13 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                         }
                     }
                 }
-                else if (nullable_col && to_reverse_index[i])
+                else if (nullable_col && nullable_col->hasNullMap() && to_reverse_index[i])
                 {
                     /// Nullable target with a source element: only NULLs that are NEW
                     /// (present in result but not in source) are conversion failures.
                     /// Source may be ColumnNullable, ColumnLowCardinality wrapping, or a
                     /// Dynamic/Variant whose NULLs are encoded by NULL_DISCRIMINATOR.
-                    const auto & result_null_map = nullable_col->getNullMapData();
+                    const auto & result_null_map = *nullable_col->tryGetNullMapData();
                     size_t from_idx = *to_reverse_index[i];
                     auto src_col = column_tuple.getColumns()[from_idx]->convertToFullColumnIfLowCardinality();
                     auto source_null_map_col = getSourceNullMap(*src_col);
@@ -1362,8 +1364,8 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                     }
                     /// Keep ColumnNullable -- target type is Nullable.
                 }
-                /// else: Nullable target without source (named tuple default), or a plain
-                /// converted column with no NULL info -- not a conversion failure.
+                /// else: Nullable target without source (named tuple default), or a converted
+                /// column with no NULL info or without NULLs -- not a conversion failure.
             }
 
             return ColumnNullable::create(ColumnTuple::create(converted_columns), std::move(combined_null_map));
@@ -1588,9 +1590,10 @@ FunctionCast::WrapperType FunctionCast::createArrayToQBitWrapper(const DataTypeA
         /// map to a per-row null map before stripping it; wrapInNullable in prepareRemoveNullable then
         /// merges this with the source null map.
         ColumnPtr row_null_map_column;
-        if (const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(converted_nested.get()))
+        const auto * nullable_nested = checkAndGetColumn<ColumnNullable>(converted_nested.get());
+        if (nullable_nested && nullable_nested->hasNullMap())
         {
-            const auto & element_null_map = nullable_nested->getNullMapData();
+            const auto & element_null_map = *nullable_nested->tryGetNullMapData();
             const auto & offsets = col_array.getOffsets();
             const size_t rows = offsets.size();
             auto row_null_map = ColumnUInt8::create(rows, UInt8(0));
@@ -2098,6 +2101,8 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             FormatSettings format_settings = settings.format_settings;
             auto serialization = arguments[0].type->getDefaultSerialization();
             format_settings.json.quote_64bit_integers = false;
+            /// JSON has no number for inf and nan, unquoted they would be written as null.
+            format_settings.json.quote_denormals = true;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
@@ -2408,7 +2413,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
         if (const ColumnNullable * col_nullable = typeid_cast<const ColumnNullable *>(arguments.front().column.get()))
         {
             const auto & column = col_nullable->getNestedColumnPtr();
-            const auto & null_map = col_nullable->getNullMapData();
+            const auto * null_map = col_nullable->tryGetNullMapData();
             IColumn::Filter filter;
             filter.reserve(column->size());
             auto discriminators = ColumnVariant::ColumnDiscriminators::create();
@@ -2417,7 +2422,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
             size_t variant_size_hint = 0;
             for (size_t i = 0; i != column->size(); ++i)
             {
-                if (null_map[i])
+                if (null_map && (*null_map)[i])
                 {
                     discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
                     filter.push_back(static_cast<UInt8>(0));
@@ -2936,9 +2941,7 @@ FunctionCast::WrapperType FunctionCast::createNumberToEnumWrapper() const
 
         const auto default_enum_value = result_type.getValues().front().second;
 
-        const NullMap * null_map = nullptr;
-        if (nullable_col)
-            null_map = &nullable_col->getNullMapData();
+        const NullMap * null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -2989,7 +2992,7 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
             if (auto * res_string = typeid_cast<ColumnString *>(res.get()))
             {
-                const auto * null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
+                const auto * null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr;
                 auto & chars = res_string->getChars();
                 auto & offsets = res_string->getOffsets();
                 offsets.resize(size);
@@ -3063,7 +3066,7 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
     {
         const auto & data = typeid_cast<const typename EnumType::ColumnType &>(*arguments.front().column).getData();
         /// Set by a surrounding `Nullable(Tuple(...))`, whose NULL rows hold placeholder values.
-        const auto * null_map = nullable_source ? &nullable_source->getNullMapData() : nullptr;
+        const auto * null_map = nullable_source ? nullable_source->tryGetNullMapData() : nullptr;
         auto indexes = ColumnUInt32::create(data.size());
         auto & indexes_data = indexes->getData();
         for (size_t i = 0; i < data.size(); ++i)
@@ -3252,11 +3255,13 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
                 nullable_source = typeid_cast<const ColumnNullable *>(arguments.front().column.get());
             }
 
-            if (exclude_source_nulls)
+            const auto * exclude_nullable_column
+                = exclude_source_nulls ? &assert_cast<const ColumnNullable &>(*arguments.front().column) : nullptr;
+            if (exclude_nullable_column && exclude_nullable_column->hasNullMap())
             {
                 /// The nested column of a NULL row holds a default, not a value to convert.
-                const auto & nullable_column = assert_cast<const ColumnNullable &>(*arguments.front().column);
-                const auto & null_map = nullable_column.getNullMapData();
+                const auto & nullable_column = *exclude_nullable_column;
+                const auto & null_map = *nullable_column.tryGetNullMapData();
                 const size_t rows_with_nulls = countBytesInFilter(null_map.data(), 0, input_rows_count);
 
                 if (rows_with_nulls == input_rows_count && input_rows_count != 0)
@@ -3276,7 +3281,7 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
                     auto filtered_res = wrapper(tmp_args, nested_type, nullptr, rows_without_nulls);
                     auto mutable_res = IColumn::mutate(std::move(filtered_res));
                     mutable_res->expand(not_null, /* inverted */ false);
-                    return wrapInNullable(std::move(mutable_res), nullable_column.getNullMapColumnPtr());
+                    return wrapInNullable(std::move(mutable_res), nullable_column.tryGetNullMapColumnPtr());
                 }
             }
 
@@ -3313,9 +3318,9 @@ FunctionCast::WrapperType FunctionCast::prepareRemoveNullable(const DataTypePtr 
             {
                 const auto & col = arguments[0].column;
                 const auto & nullable_col = assert_cast<const ColumnNullable &>(*col);
-                const auto & null_map = nullable_col.getNullMapData();
+                const auto * null_map = nullable_col.tryGetNullMapData();
 
-                if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+                if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
                     throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type");
             }
 

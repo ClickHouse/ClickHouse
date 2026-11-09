@@ -60,7 +60,7 @@ public:
         ColumnPtr res;
         if (const ColumnNullable * input_column_nullable = checkAndGetColumn<ColumnNullable>(input_column.get()))
         {
-            const NullMap & null_map = input_column_nullable->getNullMapData();
+            const NullMap * null_map = input_column_nullable->tryGetNullMapData();
             const IColumn * nested_column = &input_column_nullable->getNestedColumn();
 
             if (!castTypeToEither<
@@ -70,7 +70,10 @@ public:
                 nested_column, [&](const auto & column)
                 {
                     auto col = ColumnUInt8::create(input_rows_count);
-                    processNullable(column.getData(), null_map, col->getData(), input_rows_count);
+                    if (null_map)
+                        processNullable(column.getData(), *null_map, col->getData(), input_rows_count);
+                    else
+                        processNotNullable(column.getData(), col->getData(), input_rows_count);
                     res = std::move(col);
                     return true;
                 }))

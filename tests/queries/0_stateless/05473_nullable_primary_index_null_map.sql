@@ -1,10 +1,10 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 
 -- A `Nullable` primary key column without NULLs may be read or written without a null map. The primary index
--- is shared with the readers and weighed by `PrimaryIndexCache`, so its null maps must be created when the index
--- is set or loaded, and not lazily by a query reading the index. Each query reading the null map of the index
--- is run twice: if the first one created the null map of the shared index column, it counts one more
--- `NullableNullMapMaterializations` than the second one.
+-- is shared with the readers and weighed by `PrimaryIndexCache`, so a query reading the index must not create
+-- the null map of the shared index column. Each query reading the null map of the index is run twice: if the
+-- first one created the null map of the shared index column, it counts one more `NullableNullMapMaterializations`
+-- than the second one.
 
 SET max_threads = 1, enable_parallel_replicas = 0;
 

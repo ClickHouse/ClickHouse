@@ -439,8 +439,8 @@ private:
                 nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
             if (!nullable_col)
                 return;
-            const auto & null_map = nullable_col->getNullMapData();
-            if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+            const auto * null_map = nullable_col->tryGetNullMapData();
+            if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal (null) value column {} of argument of function {}", col.column->getName(), getName());
         };
 

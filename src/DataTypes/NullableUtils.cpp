@@ -71,7 +71,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
         if (!null_map_holder)
         {
             /// First nullable column: just take its null map as the base
-            null_map_holder = column_nullable->getNullMapColumnPtr();
+            null_map_holder = column_nullable->tryGetNullMapColumnPtr();
         }
         else
         {
@@ -79,7 +79,7 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
             MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
 
             PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
-            const PaddedPODArray<UInt8> & other_null_map = column_nullable->getNullMapData();
+            const PaddedPODArray<UInt8> & other_null_map = *column_nullable->tryGetNullMapData();
 
             for (size_t i = 0, size = mutable_null_map.size(); i < size; ++i)
                 mutable_null_map[i] |= other_null_map[i];

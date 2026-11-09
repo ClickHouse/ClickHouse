@@ -502,7 +502,7 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
     if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
-        null_map = &col_nullable->getNullMapData();
+        null_map = col_nullable->tryGetNullMapData();
         nullable = true;
     }
 

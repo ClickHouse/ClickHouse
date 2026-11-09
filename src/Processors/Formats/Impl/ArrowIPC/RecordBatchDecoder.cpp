@@ -1347,7 +1347,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// `RunEndEncoded` key carry their own nullability. Its referenced keys must not be null.
             if (const auto * nullable_keys = typeid_cast<const ColumnNullable *>(keys.get()))
             {
-                if (std::ranges::find(nullable_keys->getNullMapData(), UInt8{1}) != nullable_keys->getNullMapData().end())
+                const auto * keys_null_map = nullable_keys->tryGetNullMapData();
+                if (keys_null_map && std::ranges::find(*keys_null_map, UInt8{1}) != keys_null_map->end())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map field '{}' has null keys", field.name);
                 keys = nullable_keys->getNestedColumnPtr();
             }
@@ -1825,7 +1826,10 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
         if (child_column->isNullable())
         {
             const auto & nullable = assert_cast<const ColumnNullable &>(*child_column);
-            child_null_map = nullable.getNullMapColumn().getPtr();
+            if (const auto * map = nullable.tryGetNullMapColumn())
+                child_null_map = map->getPtr();
+            else
+                child_null_map = nullptr;
             child_column = nullable.getNestedColumnPtr();
         }
         type_id_to_local[tid] = static_cast<int>(variant_columns.size());
@@ -2026,7 +2030,8 @@ ColumnPtr RecordBatchDecoder::decodeRunEndEncoded(
         list_depth, /*invisible_rows=*/nullptr);
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(run_ends.get()))
     {
-        if (std::ranges::find(nullable->getNullMapData(), UInt8{1}) != nullable->getNullMapData().end())
+        const auto * run_ends_null_map = nullable->tryGetNullMapData();
+        if (run_ends_null_map && std::ranges::find(*run_ends_null_map, UInt8{1}) != run_ends_null_map->end())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC RunEndEncoded field '{}' has null run ends", field.name);
         run_ends = nullable->getNestedColumnPtr();
     }
@@ -2441,7 +2446,12 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     {
         decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
         if (decoded_null_map && field.type.kind == TypeKind::Null)
-            *decoded_null_map = assert_cast<const ColumnNullable &>(*decoded.column).getNullMapColumn().getPtr();
+        {
+            if (const auto * map = assert_cast<const ColumnNullable &>(*decoded.column).tryGetNullMapColumn())
+                *decoded_null_map = map->getPtr();
+            else
+                *decoded_null_map = nullptr;
+        }
     }
     else
     {

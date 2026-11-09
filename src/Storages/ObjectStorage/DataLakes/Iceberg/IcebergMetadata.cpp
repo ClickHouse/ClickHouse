@@ -126,10 +126,8 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
-extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
-extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -150,17 +148,18 @@ extern const SettingsBool allow_insert_into_iceberg;
 extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
-extern const SettingsBool allow_experimental_expire_snapshots;
+extern const SettingsBool allow_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
 extern const SettingsSeconds lock_acquire_timeout;
 extern const SettingsSeconds iceberg_compaction_delay_bias;
 extern const SettingsSeconds iceberg_compaction_data_cleanup;
-extern const SettingsBool allow_experimental_cleanup_old_data_files_compaction;
+extern const SettingsBool enable_cleanup_old_data_files_compaction;
 extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
 extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
 extern const SettingsUInt64 iceberg_max_number_datafiles_to_compact;
 extern const SettingsUInt64 iceberg_data_file_size_lower_threshold_compaction;
 extern const SettingsUInt64 iceberg_data_file_size_upper_threshold_compaction;
+extern const SettingsBool use_iceberg_table_statistics_ndv;
 }
 
 namespace
@@ -513,7 +512,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_position_deletes,
         total_equality_deletes,
         refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
+        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr,
+        metadata_object->getArray(f_statistics));
 }
 
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
@@ -844,7 +844,8 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
             "iceberg_recent_metadata_file_by_last_updated_ms_field",
             "iceberg_metadata_async_prefetch_period_ms",
             "allow_experimental_iceberg_compaction",
-            "allow_experimental_cleanup_old_data_files_compaction",
+            "enable_cleanup_old_data_files_compaction",
+            "allow_experimental_cleanup_old_data_files_compaction", /// The alias of `enable_cleanup_old_data_files_compaction`.
             "iceberg_compaction_lock_lease_seconds",
             "iceberg_compaction_delay_bias",
             "iceberg_compaction_data_cleanup",
@@ -1013,12 +1014,12 @@ Pipe IcebergMetadata::executeCommand(
 
     if (command_name == "expire_snapshots")
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_expire_snapshots].value)
+        if (!context->getSettingsRef()[Setting::allow_expire_snapshots].value)
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Iceberg expire_snapshots is experimental. "
-                "To allow its usage, enable setting allow_experimental_expire_snapshots");
+                "To allow its usage, enable setting allow_expire_snapshots");
         }
 
         checkTableRootIsQueriedPath("expire_snapshots");
@@ -1144,10 +1145,7 @@ void IcebergMetadata::createInitial(
         }
         catch (const Exception & e)
         {
-            const bool precondition_failed
-                = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
-                || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
-            if (if_not_exists && precondition_failed)
+            if (if_not_exists && isConditionalWriteConflict(e))
                 return;
             throw;
         }
@@ -1653,6 +1651,63 @@ std::optional<UInt64> countDeletedRows(
     return deleted_rows;
 }
 
+/// An integer JSON value, std::nullopt for any other value. Poco keeps an integer above the `Int64` range as `UInt64`.
+std::optional<Int64> tryGetInt64(const Poco::Dynamic::Var & value)
+{
+    if (!value.isInteger() || value.isBoolean())
+        return std::nullopt;
+    if (value.isSigned())
+        return value.convert<Int64>();
+    const auto unsigned_value = value.convert<UInt64>();
+    if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+        return std::nullopt;
+    return static_cast<Int64>(unsigned_value);
+}
+
+/// Field id -> `ndv` of the one-column theta sketches in the first statistics file of snapshot `snapshot_id`; skips malformed
+/// entries and the blobs that the file keeps from an earlier snapshot.
+std::unordered_map<Int32, UInt64> readTableStatisticsDistinctValues(const Poco::JSON::Array::Ptr & statistics, Int64 snapshot_id)
+{
+    static constexpr auto theta_sketch_blob_type = "apache-datasketches-theta-v1";
+
+    std::unordered_map<Int32, UInt64> distinct_values;
+    if (!statistics)
+        return distinct_values;
+
+    for (unsigned i = 0; i < statistics->size(); ++i)
+    {
+        const auto statistics_file = statistics->getObject(i);
+        if (!statistics_file || tryGetInt64(statistics_file->get(f_metadata_snapshot_id)) != snapshot_id)
+            continue;
+
+        const auto blobs = statistics_file->getArray(f_blob_metadata);
+        for (unsigned j = 0; blobs && j < blobs->size(); ++j)
+        {
+            const auto blob = blobs->getObject(j);
+            if (!blob)
+                continue;
+
+            const auto type = blob->get(f_type);
+            const auto fields = blob->getArray(f_fields);
+            if (!type.isString() || type.convert<String>() != theta_sketch_blob_type || !fields || fields->size() != 1
+                || tryGetInt64(blob->get(f_metadata_snapshot_id)) != snapshot_id)
+                continue;
+
+            const auto field_id = tryGetInt64(fields->get(0));
+            if (!field_id || *field_id < std::numeric_limits<Int32>::min() || *field_id > std::numeric_limits<Int32>::max())
+                continue;
+
+            const auto properties = blob->getObject(f_properties);
+            const auto ndv = properties ? properties->get(f_ndv) : Poco::Dynamic::Var{};
+            UInt64 num_distinct_values = 0;
+            if (ndv.isString() && tryParse(num_distinct_values, ndv.convert<String>()))
+                distinct_values[static_cast<Int32>(*field_id)] = num_distinct_values;
+        }
+        break;
+    }
+    return distinct_values;
+}
+
 }
 
 std::optional<DataLakeReadEstimate>
@@ -1678,11 +1733,29 @@ IcebergMetadata::estimateRead(
         return estimate;
     }
 
+    const auto & settings = context->getSettingsRef();
+
+    std::unordered_map<Int32, UInt64> table_distinct_values;
+    if (settings[Setting::use_iceberg_table_statistics_ndv])
+    {
+        table_distinct_values = readTableStatisticsDistinctValues(data_snapshot->statistics, data_snapshot->snapshot_id);
+        if (!table_distinct_values.empty())
+            LOG_TRACE(
+                log,
+                "Table statistics of snapshot {} give the numbers of distinct values of {} fields",
+                data_snapshot->snapshot_id,
+                table_distinct_values.size());
+    }
+
     ManifestColumnStatistics column_statistics(
-        column_names, storage_metadata_snapshot->getColumns(), *persistent_components.schema_processor, table_state_snapshot->schema_id, context);
+        column_names,
+        storage_metadata_snapshot->getColumns(),
+        *persistent_components.schema_processor,
+        table_state_snapshot->schema_id,
+        context,
+        table_distinct_values);
 
     /// Prune as the read does (`IcebergIterator`), but never build an `IN` set: planning must not run a subquery.
-    const auto & settings = context->getSettingsRef();
     const ActionsDAG * pruning_filter = settings[Setting::use_iceberg_partition_pruning] ? filter : nullptr;
 
     std::unique_ptr<ManifestListPruner> manifest_list_pruner;
@@ -2079,8 +2152,9 @@ void IcebergMetadata::addDeleteTransformers(
                 = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
             const ActionsDAG::Node * in_lhs_arg
                 = left_columns.size() == 1 ? left_columns.front() : &dag.addFunction(func_tuple_builder, std::move(left_columns), {});
-            /// we got the NOT IN function
-            auto func_not_in = FunctionFactory::instance().get("notIn", nullptr);
+            /// Iceberg compares equality-delete keys null-safely: a NULL key matches only a NULL delete value.
+            /// The set above keeps NULLs (transform_null_in), and `notNullIn` looks NULL keys up in it.
+            auto func_not_in = FunctionFactory::instance().get("notNullIn", nullptr);
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
