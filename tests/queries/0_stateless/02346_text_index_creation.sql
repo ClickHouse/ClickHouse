@@ -1,3 +1,4 @@
+-- Tags: no-msan
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Must not have no arguments.';
