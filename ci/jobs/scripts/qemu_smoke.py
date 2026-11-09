@@ -55,6 +55,9 @@ class Target:
     # which does not work without a binfmt_misc handler.
     loader: str = ""
     library_path: str = ""
+    # Guest files to create empty. Without /etc/ld.so.cache in the sysroot, QEMU hands the guest loader the host's,
+    # which a big-endian guest misreads and crashes on when it looks for a library by the cache (s390x).
+    empty_files: tuple = ()
 
 
 # Build types that are cross-compiled and then run here. Adding one is a line, given a toolchain in cmake/linux/.
@@ -71,6 +74,13 @@ TARGETS = {
         qemu="qemu-riscv64-static",
         sysroot="contrib/sysroot/linux-riscv64",
     ),
+    BuildTypes.S390X: Target(
+        qemu="qemu-s390x-static",
+        sysroot="contrib/sysroot/linux-s390x/s390x-linux-gnu/libc",
+        loader="lib/ld64.so.1",
+        library_path="/lib64",
+        empty_files=("etc/ld.so.cache",),
+    ),
 }
 
 
@@ -80,23 +90,32 @@ def ensure_qemu(qemu):
     subprocess.run("apt-get update -qq && apt-get install -y -qq qemu-user-static", shell=True, check=True)
 
 
-def overlay_sysroot(sysroot, links, work):
-    """A sysroot made of symlinks to `sysroot`, plus `links`, for QEMU's -L; the real sysroot is left untouched."""
-    if not links:
+def overlay_sysroot(sysroot, links, empty_files, work):
+    """A sysroot made of symlinks to `sysroot`, plus `links` and `empty_files`, for QEMU's -L; the real one is left untouched."""
+    if not links and not empty_files:
         return sysroot
     root = work / "sysroot"
     root.mkdir()
     for entry in Path(sysroot).iterdir():
         (root / entry.name).symlink_to(entry)
-    for guest, real in links:
-        top = guest.split("/")[0]
+
+    def make_room(guest):
+        parent = Path(guest).parent
+        top = parent.parts[0]
         if (root / top).is_symlink():  # a directory of the sysroot that gets a new entry: copy it as links
             real_dir = Path(sysroot) / top
             (root / top).unlink()
             (root / top).mkdir()
             for entry in real_dir.iterdir():
                 (root / top / entry.name).symlink_to(entry)
+        (root / parent).mkdir(parents=True, exist_ok=True)
+
+    for guest, real in links:
+        make_room(guest)
         (root / guest).symlink_to(Path(sysroot) / real)
+    for guest in empty_files:
+        make_room(guest)
+        (root / guest).write_bytes(b"")
     return str(root)
 
 
@@ -217,7 +236,7 @@ def check(build_dir, repo_dir, work_dir, build_type, starts=STARTS):
     binary = str(Path(build_dir) / "programs" / "clickhouse")
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
-    sysroot = overlay_sysroot(str(repo / target.sysroot), target.links, work)
+    sysroot = overlay_sysroot(str(repo / target.sysroot), target.links, target.empty_files, work)
     try:
         ensure_qemu(target.qemu)
     except (subprocess.CalledProcessError, OSError) as e:
