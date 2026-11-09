@@ -7126,14 +7126,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             }
 
             if (!lazy_conversion_index_errors.empty())
-                throw Exception(
+                secondary_index_errors.emplace_back(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "ALTER of column {} changes the on-disk type of a subcolumn stored by skip indices {}; "
-                    "a metadata-only ALTER cannot rebuild them. Disable {} to run this change as a full mutation, "
-                    "or drop the indices first",
-                    backQuoteIfNeed(command.column_name),
-                    fmt::join(lazy_conversion_index_errors, ", "),
-                    lazy_settings_description);
+                    fmt::format(
+                        "ALTER of column {} changes the on-disk type of a subcolumn stored by skip indices {}; "
+                        "a metadata-only ALTER cannot rebuild them. Disable {} to run this change as a full mutation, "
+                        "or drop the indices first",
+                        backQuoteIfNeed(command.column_name),
+                        fmt::join(lazy_conversion_index_errors, ", "),
+                        lazy_settings_description));
 
             /// A subcolumn can feed a projection's sort key (positionally persisted) or a filtered
             /// projection's WHERE (which fixes the stored row set); both go stale on a lazy change.

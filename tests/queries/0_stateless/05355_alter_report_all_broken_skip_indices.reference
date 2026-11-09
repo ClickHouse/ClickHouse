@@ -8,6 +8,7 @@ Rename reports whole-column and subcolumn indices
 Clear reports whole-column and subcolumn indices
 Modify reports whole-column and subcolumn indices
 Both mixed-stage invalid indices reported
+Expression, type, and lazy-conversion index errors reported together
 Both invalid text indices reported
 Both lazy JSON indices reported
 3	7
