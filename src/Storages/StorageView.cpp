@@ -669,8 +669,11 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
 bool StorageView::readRequiresFullQuery() const
 {
     std::vector<std::pair<ASTPtr, String>> nodes;
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited_views;
     auto add_view_query = [&](const StorageView & view)
     {
+        if (!visited_views.insert(view.getStorageID()).second)
+            return;
         const auto metadata = view.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         if (const auto & inner_query = metadata->getSelectQuery().inner_query)
             nodes.emplace_back(inner_query, view.getStorageID().database_name);
@@ -689,12 +692,13 @@ bool StorageView::readRequiresFullQuery() const
             if (storage_id.database_name.empty())
                 storage_id.database_name = database;
 
+            /// A view is expanded here rather than asked, so that each view is traversed once.
             if (const auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context); storage)
             {
-                if (storage->readRequiresFullQuery())
-                    return true;
                 if (const auto view = castStorage<StorageView>(storage, DeferredTable::Load))
                     add_view_query(*view);
+                else if (storage->readRequiresFullQuery())
+                    return true;
             }
         }
         else
