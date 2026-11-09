@@ -480,7 +480,8 @@ private:
 
     /// Generates the next portion of addresses, applies the `_path` / `_file` filter to it and
     /// appends the survivors to `batch`, keeping the buffered unconsumed ones. Appends nothing only
-    /// when the pattern is exhausted or the whole portion was filtered out.
+    /// when the pattern is exhausted, the whole portion was filtered out, or the limit is reached while
+    /// unconsumed addresses are still buffered.
     void fillBatch() TSA_REQUIRES(mutex)
     {
         /// Everything within the limit has been generated, and there is more.
@@ -533,7 +534,9 @@ private:
                 fresh.push_back(std::move(uri));
             }
 
-            if (fresh.empty() && limit_exceeded)
+            /// `sizeForStreams` prefetches while earlier survivors are still buffered: those can be read,
+            /// and the query may stop at one of them, so the limit is reported only when nothing is left.
+            if (fresh.empty() && batch.empty() && limit_exceeded)
                 throwTooManyAddressesForDescription(description, ',', '|', caller, max_addresses_upper_bound);
 
             exhausted = !limit_exceeded && generator->isExhausted();
