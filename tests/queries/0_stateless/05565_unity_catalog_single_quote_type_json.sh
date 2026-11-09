@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # - no-fasttest: `DataLakeCatalog` requires the USE_AVRO and USE_PARQUET build options.
+# - no-msan: delta-kernel-rs is not built with MSan, so Unity catalog Delta tables are unreadable there.
 
 # A Unity catalog column whose `type_json` is a single `"` is a malformed catalog response.
 
