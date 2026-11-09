@@ -147,6 +147,12 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
 }
 
+bool JoinSettings::hasDefaultJoinAlgorithms() const
+{
+    static const std::vector<JoinAlgorithm> default_algorithms = Settings{}[Setting::join_algorithm];
+    return join_algorithms == default_algorithms;
+}
+
 JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
     : join_analyze_mode(join_analyze_mode_)
 {

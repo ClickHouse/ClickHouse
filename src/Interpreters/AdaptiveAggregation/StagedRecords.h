@@ -107,14 +107,14 @@ Key ALWAYS_INLINE readStagedKey(const char * key_pos, [[maybe_unused]] size_t ke
     else if constexpr (is_keys_and_packed_string<Key>)
     {
         /// The packed values come first, then the string. For a non-empty string the staged routing hash is
-        /// the hash that the packed string stores (see `KeysAndPackedStringHashMap::hash`), so the rebuild
-        /// reuses it. `build` consults the functor only for the strings that store a hash (see
-        /// `KeysAndPackedString`).
+        /// the hash that the key stores (see `KeysAndPackedStringHashMap::hash`), so the rebuild reuses it.
+        /// `build` consults the functor only for the strings that store a hash (see `KeysAndPackedString`).
         using Keys = decltype(Key::keys);
-        return Key{
+        return Key::build(
             unalignedLoad<Keys>(key_pos),
-            Key::PackedString::build(
-                key_pos + sizeof(Keys), key_size - sizeof(Keys), [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); })};
+            key_pos + sizeof(Keys),
+            key_size - sizeof(Keys),
+            [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
     }
     else
     {
@@ -249,7 +249,7 @@ private:
 /// non-empty string. A key with an empty string, the common case of a missing value, is hashed by its
 /// packed values alone (see `KeysAndPackedStringHashMap::hash`). The readers compute that hash again in a
 /// few instructions, so the record is as narrow as that of a fixed-width key. A non-empty string stages
-/// the 32-bit hash that its packed form stores (see `KeysAndPackedString`). The key's bytes, the packed
+/// the 32-bit hash that the key stores (see `KeysAndPackedString`). The key's bytes, the packed
 /// values followed by the string, are contiguous for `readStagedKey`.
 template <typename Keys, bool with_count_>
 struct StagedKeyRecord<KeysAndPackedString<Keys>, with_count_>
@@ -291,7 +291,7 @@ struct StagedKeyRecord<KeysAndPackedString<Keys>, with_count_>
     {
         if (hasString(record))
             return unalignedLoad<UInt32>(record + 2 * sizeof(UInt32));
-        return table.hash(KeysAndPackedString<Keys>{unalignedLoad<Keys>(record + headerBytes(false)), {}});
+        return table.hash(KeysAndPackedString<Keys>::withEmptyString(unalignedLoad<Keys>(record + headerBytes(false))));
     }
 
     static UInt32 count(const char * record) { return unalignedLoad<UInt32>(record) >> 1; }

@@ -134,7 +134,7 @@ private:
         return {buffer.data(), buffer.size()};
     }
 
-    template <is_any_of<PackedStringRef, PackedStringRef20> PackedString>
+    template <is_any_of<PackedStringRef, UnhashedPackedStringRef> PackedString>
     static PackedString copyKey(PackedString key, std::vector<char> & buffer)
     {
         /// The strings kept inline hold their bytes in the value itself.

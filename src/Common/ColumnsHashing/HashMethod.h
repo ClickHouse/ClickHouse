@@ -402,8 +402,8 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
     /// The fixed-width values are packed and the string is hashed in place, as by `HashMethodPackedString`.
     static constexpr bool has_cheap_key_holder = true;
 
-    /// The hash stored in the packed string: the content hash of the string, continued with the fixed-width
-    /// values, so that it covers the whole key.
+    /// The hash that the key stores (see `KeysAndPackedString`): the content hash of the string, continued with
+    /// the fixed-width values, so that it covers the whole key.
     struct Hash
     {
         Keys keys;
@@ -485,7 +485,7 @@ struct HashMethodKeysAndPackedString : public columns_hashing_impl::HashMethodBa
     ALWAYS_INLINE ArenaKeysAndPackedStringHolder<Keys> getKeyHolder(ssize_t row, Arena & pool) const
     {
         const auto [keys, str] = getKeyParts(row);
-        return {{keys, KeysAndPackedString<Keys>::PackedString::build(str.data(), str.size(), Hash{keys})}, pool};
+        return {KeysAndPackedString<Keys>::build(keys, str.data(), str.size(), Hash{keys}), pool};
     }
 
     /// Puts the key columns in the order of the key's bytes: the fixed-width values as `packFixedBatch` packs them,

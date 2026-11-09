@@ -147,7 +147,7 @@ namespace DB
 
 /// Copies the out-of-line payload of a packed string into `pool` and rebases the packed pointer onto the copy.
 /// The strings kept inline are self-contained and need no copy.
-template <is_any_of<PackedStringRef, PackedStringRef20> PackedString>
+template <is_any_of<PackedStringRef, UnhashedPackedStringRef> PackedString>
 inline void ALWAYS_INLINE persistPackedStringRef(PackedString & key, Arena & pool)
 {
     if (const size_t size = key.heapSize())

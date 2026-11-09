@@ -9,13 +9,13 @@
 #include <boost/noncopyable.hpp>
 
 
-/// The hash of a key with a non-empty string: the hash stored in the packed string (see `KeysAndPackedString`).
+/// The hash of a key with a non-empty string: the hash that the key stores (see `KeysAndPackedString`).
 struct KeysAndPackedStringHash
 {
     template <typename Keys>
     size_t ALWAYS_INLINE operator()(const KeysAndPackedString<Keys> & key) const
     {
-        return key.str.getHash();
+        return key.getHash();
     }
 };
 
@@ -50,7 +50,7 @@ class TwoLevelKeysAndPackedStringHashMap;
   * cells of `m0` are as narrow as fixed-width keys.
   *
   * The hash of a key is the hash of its sub-table: `KeysHash` of the fixed-width part for an empty
-  * string, and otherwise the hash stored in the packed string. The operations that take a saved hash
+  * string, and otherwise the hash that the key stores. The operations that take a saved hash
   * expect this one.
   */
 template <typename Keys, typename TMapped, typename KeysHash, typename Grower = HashTableGrowerWithPrecalculation<>, typename Allocator = HashTableAllocator>
@@ -271,7 +271,7 @@ public:
     void ALWAYS_INLINE forEachValue(Func && func)
     {
         for (auto & cell : m0)
-            func(Key{cell.getKey(), {}}, cell.getMapped());
+            func(Key::withEmptyString(cell.getKey()), cell.getMapped());
         m1.forEachValue(func);
     }
 
@@ -281,7 +281,7 @@ public:
     void ALWAYS_INLINE forEachValueWithHash(Func && func)
     {
         for (auto it = m0.begin(), end = m0.end(); it != end; ++it)
-            func(Key{it->getKey(), {}}, it->getMapped(), it.getHash());
+            func(Key::withEmptyString(it->getKey()), it->getMapped(), it.getHash());
         for (auto it = m1.begin(), end = m1.end(); it != end; ++it)
             func(it->getKey(), it->getMapped(), it.getHash());
     }

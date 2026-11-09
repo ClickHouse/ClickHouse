@@ -22,10 +22,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_LOGS = 54406;
 /// 54489: the method for a single `String` key follows `enable_packed_string_keys_in_aggregation`.
 /// A peer below this revision always uses the packed method and does not know the setting, so it
 /// cannot follow a query that disables it.
-/// 54496: fixed-width keys and one `String` key get the `keys32_packed_string`, `keys64_packed_string`
+/// 54497: fixed-width keys and one `String` key get the `keys32_packed_string`, `keys64_packed_string`
 /// and `keys128_packed_string` methods, which follow `enable_fixed_and_packed_string_keys_in_aggregation`.
 /// A peer below this revision always uses the serialized method for such keys.
-static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54496;
+static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54497;
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA = 54410;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE = 54405;
@@ -59,7 +59,8 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTR
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS = 13;
 /// The number of rows of a data lake object recorded in the table metadata, to report `total_rows_approx` from the workers.
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS = 14;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE = 15;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -382,6 +383,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54
 /// while it sends the data of the INSERT, and before `EndOfStream`.
 static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 
+/// The server sends the final `ProfileEvents` report of a secondary `INSERT` (to the initiator of a distributed
+/// `INSERT`) after it has received all the data. Older initiators do not expect it.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT = 54496;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -390,5 +395,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54496;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54497;
 }

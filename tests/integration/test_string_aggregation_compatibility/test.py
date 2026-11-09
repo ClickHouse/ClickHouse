@@ -12,7 +12,7 @@ node256 = cluster.add_instance(
     with_installed_binary=True,
 )
 # A release that has `enable_packed_string_keys_in_aggregation` (revision 54489 or above) but predates
-# `enable_fixed_and_packed_string_keys_in_aggregation` (below revision 54496).
+# `enable_fixed_and_packed_string_keys_in_aggregation` (below revision 54497).
 node268 = cluster.add_instance(
     "node268",
     image="clickhouse/clickhouse-server",
@@ -357,12 +357,12 @@ def count_fixed_and_string_groups(source, node):
 def test_fixed_and_string_keys_aggregation_compatibility(started_cluster):
     # Both servers hold the same rows, so the distributed `GROUP BY` must return as many groups as one
     # server's table. A server that predates `enable_fixed_and_packed_string_keys_in_aggregation` always
-    # uses the serialized method, so servers below revision 54496 are fenced off by
+    # uses the serialized method, so servers below revision 54497 are fenced off by
     # `DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD`: the initiator zeroes the
     # two-level thresholds for them, and a current shard answering an older initiator disables two-level
     # aggregation itself. Without the fence, the same key lands in different buckets on the two servers
     # and comes back twice. The 26.8 node knows `enable_packed_string_keys_in_aggregation` (revision 54489)
-    # but predates this setting, so revision 54496 alone fences it off. The 25.6 node is below 54489 as
+    # but predates this setting, so revision 54497 alone fences it off. The 25.6 node is below 54489 as
     # well, so it would pass without that revision.
     create_fixed_and_string_tables("repro7", node1, other_node_name=node268.name)
     create_fixed_and_string_tables("repro7", node268, other_node_name=node1.name)

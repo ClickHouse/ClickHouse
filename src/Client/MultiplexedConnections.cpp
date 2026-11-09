@@ -200,6 +200,12 @@ void MultiplexedConnections::sendQuery(
     /// the same inter-server protocol.
     modified_settings.set("allow_experimental_analyzer", true);
 
+    /// The quotas over profile events charge the initiating user with what the remote servers report
+    /// in their `ProfileEvents` packets, so the reports must not depend on `send_profile_events` of the
+    /// query or of the user's profile on the remote server. Force it into the changed set, so it is
+    /// always sent. The initiator does not pass the reports on to its client unless the client asked.
+    modified_settings.set("send_profile_events", true);
+
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
