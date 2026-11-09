@@ -102,30 +102,56 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
-/// Number of non-leaf nodes in the expression of `node` expanded into a tree, aliases excluded, saturated.
-size_t countExpandedNodes(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, size_t> & counts)
+using NameLengthBounds = std::unordered_map<const ActionsDAG::Node *, size_t>;
+
+/// A lower bound, at most `limit`, of the length of the name of `node` in index analysis (`RPNBuilderTreeNode::getColumnName`).
+/// Every column and every function occurs in that name, except casts, `materialize` and `not`, which the analysis may remove.
+/// A lambda occurs with its body, in which a captured expression occurs once per reference.
+size_t getNameLengthLowerBound(
+    const ActionsDAG::Node * node,
+    size_t limit,
+    NameLengthBounds & bounds,
+    const std::unordered_map<String, size_t> & captured_bounds)
 {
-    node = node->getWithoutAlias();
-    if (node->children.empty())
+    /// Not counted: constant arguments, such as a needle or a tokenizer, also folded functions, are matched by value.
+    if (node->column)
         return 0;
 
-    auto [it, inserted] = counts.try_emplace(node, 1);
-    size_t & count = it->second;
-    if (!inserted)
-        return count;
+    if (auto it = bounds.find(node); it != bounds.end())
+        return it->second;
 
-    for (const auto * child : node->children)
-        count = std::min(count + countExpandedNodes(child, counts), std::numeric_limits<size_t>::max() / 2);
+    size_t bound = 0;
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        auto it = captured_bounds.find(node->result_name);
+        bound = it == captured_bounds.end() ? 1 : it->second;
+    }
+    else if (const auto * capture = typeid_cast<const ExecutableFunctionCapture *>(node->function.get()))
+    {
+        const auto & captured_names = capture->getCapture()->captured_names;
+        std::unordered_map<String, size_t> body_captured_bounds;
+        for (size_t i = 0; i < captured_names.size() && i < node->children.size(); ++i)
+            body_captured_bounds[captured_names[i]] = getNameLengthLowerBound(node->children[i], limit, bounds, captured_bounds);
 
-    return count;
-}
+        NameLengthBounds body_bounds;
+        const auto & body = capture->getActions()->getActionsDAG().getOutputs();
+        bound = 1 + (body.empty() ? 0 : getNameLengthLowerBound(body.front(), limit, body_bounds, body_captured_bounds));
+    }
+    else
+    {
+        static const NameSet removable_functions = {"CAST", "_CAST", "toNullable", "toLowCardinality", "materialize", "not"};
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+            bound = removable_functions.contains(node->function_base->getName()) ? 0 : 1;
+        else if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            bound = 1;
 
-/// Number of copies of shared subexpressions made by expanding the expression of `node` into a tree.
-size_t countSharedCopies(const ActionsDAG::Node * node)
-{
-    std::unordered_map<const ActionsDAG::Node *, size_t> counts;
-    size_t expanded = countExpandedNodes(node, counts);
-    return expanded - counts.size();
+        for (const auto * child : node->children)
+            bound = std::min(bound + getNameLengthLowerBound(child, limit, bounds, captured_bounds), limit);
+    }
+
+    bound = std::min(bound, limit);
+    bounds.emplace(node, bound);
+    return bound;
 }
 
 /// Check if a node with the given canonical name exists as a subexpression within the DAG rooted at `node`.
@@ -536,17 +562,8 @@ public:
             return;
 
         for (const auto & [_, info] : text_index_read_infos)
-        {
-            const auto & index = info.index ? info.index->index : info.index_helper;
-            if (!index || !index->index.expression)
-            {
-                max_index_shared_copies = std::numeric_limits<size_t>::max();
-                break;
-            }
-
-            for (const auto * output : index->index.expression->getActionsDAG().getOutputs())
-                max_index_shared_copies = std::max(max_index_shared_copies, countSharedCopies(output));
-        }
+            for (const auto & name : typeid_cast<const MergeTreeIndexConditionText &>(*info.condition).getHeader().getNames())
+                max_index_name_length = std::max(max_index_name_length, name.size());
     }
 
     struct ResultReplacement
@@ -637,8 +654,8 @@ private:
     bool direct_read_from_text_index = false;
     /// Maps the nodes of this DAG to the DAG composed with the steps below, i.e. to what they compute over the scan columns.
     const ActionsDAG::NodeMapping * composed_nodes = nullptr;
-    /// The most copies of shared subexpressions in the expression of a text index, see `countSharedCopies`.
-    size_t max_index_shared_copies = 0;
+    size_t max_index_name_length = 0;
+    NameLengthBounds name_length_bounds;
     /// Input nodes of the virtual columns in the DAG, by column name.
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
@@ -757,9 +774,13 @@ private:
 
         const auto * matched_node = getComposedNode(&function_node);
 
-        /// `selectConditions` copies a shared subexpression once per reference, which is exponential in the nesting of the
-        /// steps. A function that can use an index shares no more subexpressions than the index expression.
-        if (matched_node != &function_node && countSharedCopies(matched_node) > max_index_shared_copies)
+        /// Index analysis expands the arguments into trees, exponential in the nesting of steps that share subexpressions.
+        /// An argument that matches an index has no more functions and columns than its index column name has characters.
+        if (matched_node != &function_node
+            && std::ranges::any_of(matched_node->children, [&](const auto * argument)
+            {
+                return getNameLengthLowerBound(argument, max_index_name_length + 1, name_length_bounds, {}) > max_index_name_length;
+            }))
             return &function_node;
 
         auto selected_conditions = selectConditions(*matched_node, context);
