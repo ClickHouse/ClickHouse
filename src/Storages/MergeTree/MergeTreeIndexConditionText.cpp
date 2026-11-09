@@ -1990,14 +1990,14 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
-/// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
-/// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
-/// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
-static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
+/// Whether the predicate of the sub-DAG may be true when `node` has `default_value`, i.e. for a row with a
+/// missing map key or JSON path. Unknown if the predicate throws on the default value,
+/// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN,
+/// or if it reads another input.
+static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag, const ActionsDAG::Node * node, ColumnWithTypeAndName default_value)
 {
-    const auto * input = subdag.getInputs().front();
     ActionsDAG::IntermediateExecutionResult default_input;
-    default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
+    default_input.emplace(node, std::move(default_value));
 
     ColumnsWithTypeAndName result;
     try
@@ -2010,6 +2010,14 @@ static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
     }
 
     return !result.front().column || result.front().column->getBool(0);
+}
+
+/// The same for the default value of the single input column.
+static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
+{
+    const auto * input = subdag.getInputs().front();
+    return mayBeTrueOnDefaultValue(
+        subdag, input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
@@ -2360,38 +2368,11 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
         element_node->result_name,
     };
 
-    /// `substitute` leaves a replaced INPUT in `inputs`, where `getRequiredColumns` still finds it.
-    if (element_node->type == ActionsDAG::ActionType::INPUT)
-        subdag.substituteInputForConsumersOnly(element_node->result_name, default_element);
-    else
-        subdag.substitute({{element_node, default_element}});
-
-    subdag.removeUnusedActions(/*allow_remove_inputs=*/ true);
-
-    if (!subdag.getRequiredColumns().empty())
-        return false;
-
     if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
         return false;
 
-    auto output_column_name = subdag.getOutputs().front()->result_name;
-
-    Block block;
-    size_t num_rows = 1;
-    ExpressionActions actions(std::move(subdag));
-    try
-    {
-        actions.execute(block, num_rows);
-    }
-    catch (const Exception &)
-    {
-        /// Unknown if the predicate throws on the default, e.g. a `CAST` that drops `Nullable` on NULL.
-        return false;
-    }
-    const auto & result_column = block.getByName(output_column_name).column;
-
     /// A Nullable map value type defaults to NULL, for which the function is NULL and not true.
-    return result_column->isNullAt(0) || !result_column->getBool(0);
+    return !mayBeTrueOnDefaultValue(subdag, element_node, std::move(default_element));
 }
 
 bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
