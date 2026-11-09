@@ -132,6 +132,10 @@ private:
 
     Names parseTopics(String topic_list) const;
 
+    /// Expands the macros in one of the broker-facing settings and accumulates in `macros_info`
+    /// whether the `{database}` and `{table}` macros were used (for the rename check).
+    String expandMacros(const String & value);
+
     void scheduleStreamingTasksImpl() override;
 
     void streaming();

@@ -306,8 +306,8 @@ void StoragePulsar::checkTableCanBeRenamed(const StorageID & new_name) const
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "Cannot rename Pulsar table {}, because one of its `pulsar_*` settings uses the implicit `{{database}}` or `{{table}}` macro "
-        "through a macro from the server configuration, so the topic or the subscription would change after the table is reloaded. "
-        "Use `{{database}}` and `{{table}}` directly in the settings: then they are unfolded on `CREATE` and the table can be renamed",
+        "through a macro from the server configuration that was changed after the table was created, so the topic or the subscription "
+        "would change after the table is reloaded. Recreate the table: then the macros are unfolded on `CREATE` and the table can be renamed",
         old_name.getNameForLogs());
 }
 
@@ -316,6 +316,20 @@ void StoragePulsar::checkTableCanBeRenamedByDatabaseRename(const String & new_da
     auto new_name = getStorageID();
     new_name.database_name = new_database_name;
     checkTableCanBeRenamed(new_name);
+}
+
+String StoragePulsar::expandMacros(const String & value)
+{
+    /// The settings are independent, so each of them is expanded from the top level: `Macros::expand`
+    /// does not restore the recursion depth, and `{uuid}` is rejected below the top level.
+    Macros::MacroExpansionInfo info{.table_id = macros_info.table_id};
+    auto result = getContext()->getMacros()->expand(value, info);
+    macros_info.expanded_database |= info.expanded_database;
+    macros_info.expanded_table |= info.expanded_table;
+    macros_info.expanded_uuid |= info.expanded_uuid;
+    macros_info.expanded_other |= info.expanded_other;
+    macros_info.has_unknown |= info.has_unknown;
+    return result;
 }
 
 void StoragePulsar::rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)
@@ -338,13 +352,13 @@ StoragePulsar::StoragePulsar(
     , format_name(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_format].value))
     , num_consumers((*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value)
     , max_rows_per_message((*pulsar_settings)[PulsarSetting::pulsar_max_rows_per_message].value)
-    , group_name(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_group_name].value, macros_info))
-    , schema_name(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_schema].value, macros_info))
+    , group_name(expandMacros((*pulsar_settings)[PulsarSetting::pulsar_group_name].value))
+    , schema_name(expandMacros((*pulsar_settings)[PulsarSetting::pulsar_schema].value))
     , log(getLogger("Storage Pulsar(" + table_id_.table_name + ")"))
     , pulsar_client(
-          getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_service_url].value, macros_info),
+          expandMacros((*pulsar_settings)[PulsarSetting::pulsar_service_url].value),
           createClientConfiguration())
-    , topics(parseTopics(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_topic_list].value, macros_info)))
+    , topics(parseTopics(expandMacros((*pulsar_settings)[PulsarSetting::pulsar_topic_list].value)))
     , semaphore(0, static_cast<int>(num_consumers))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -956,12 +970,24 @@ void registerStoragePulsar(StorageFactory & factory)
 
         auto expand_table_macros = [&](const String & value)
         {
+            const auto macros = args.getContext()->getMacros();
             Macros::MacroExpansionInfo info;
             /// NOTE: it's not recursive
             info.expand_special_macros_only = true;
             info.table_id = args.table_id;
             info.table_id.uuid = UUIDHelpers::Nil;
-            return args.getContext()->getMacros()->expand(value, info);
+            auto expanded = macros->expand(value, info);
+            if (!expanded.contains('{'))
+                return expanded;
+
+            /// `{database}` and `{table}` may also be reached through a macro from the server configuration.
+            /// Then the whole value is stored expanded, because its broker identity depends on the names of the
+            /// table, which may change while the table is detached (for example, by `RENAME DATABASE`).
+            Macros::MacroExpansionInfo full_info{.table_id = args.table_id};
+            auto fully_expanded = macros->expand(expanded, full_info);
+            if (full_info.expanded_database || full_info.expanded_table)
+                return fully_expanded;
+            return expanded;
         };
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
