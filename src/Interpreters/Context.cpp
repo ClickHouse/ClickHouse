@@ -8126,14 +8126,19 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         if (shared->clusters && shared->clusters_config && isSameConfiguration(*config, *shared->clusters_config, config_name))
             return;
 
+        /// Publish `clusters_config` only after the in-memory map is consistent.
+        /// Assigning it first made a failed `updateClusters` (for example a
+        /// SQL/config name collision) look like a successful reload on retry:
+        /// `isSameConfiguration` matched the already-stored config and skipped
+        /// the keys that had not been installed.
         auto old_clusters_config = shared->clusters_config;
-        shared->clusters_config = config;
 
         if (!shared->clusters)
-            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+            shared->clusters = std::make_shared<Clusters>(*config, *settings, getMacros(), config_name);
         else
-            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+            shared->clusters->updateClusters(*config, *settings, config_name, old_clusters_config.get());
 
+        shared->clusters_config = config;
         ++shared->clusters_version;
     }
     notifyDDLWorkerAfterClustersChange();

@@ -366,36 +366,42 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
     std::lock_guard lock(mutex);
 
+    /// Apply deletions and insertions on a copy so a throw (a SQL/config name
+    /// collision, a cluster name with a dot, or a constructor error) cannot
+    /// leave `impl` with only a prefix of the new keys. The caller then sees
+    /// the previous topology and can retry after fixing the configuration.
+    Impl new_impl = impl;
+    auto new_automatic_clusters = automatic_clusters;
+
     /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
     if (old_config)
     {
         for (const auto & key : deleted_keys)
         {
-            if (!automatic_clusters.contains(key))
+            if (!new_automatic_clusters.contains(key))
             {
-                auto it = impl.find(key);
-                if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+                auto it = new_impl.find(key);
+                if (it != new_impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
                     continue;
 
-                impl.erase(key);
+                new_impl.erase(key);
             }
         }
     }
     else
     {
-        if (!automatic_clusters.empty())
-            std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
+        if (!new_automatic_clusters.empty())
+            std::erase_if(new_impl, [&](const auto & e) { return new_automatic_clusters.contains(e.first); });
         else
-            std::erase_if(impl, [](const auto & e) { return e.second->getSourceId() != Cluster::SourceId::SQL; });
+            std::erase_if(new_impl, [](const auto & e) { return e.second->getSourceId() != Cluster::SourceId::SQL; });
     }
-
 
     for (const auto & key : new_config_keys)
     {
         if (new_config.has(config_prefix + "." + key + ".discovery"))
         {
             /// Handled in ClusterDiscovery
-            automatic_clusters.insert(key);
+            new_automatic_clusters.insert(key);
             continue;
         }
 
@@ -405,8 +411,8 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
         /// If old config is set and cluster config wasn't changed, don't update this cluster.
         if (!old_config || !isSameConfiguration(new_config, *old_config, config_prefix + "." + key))
         {
-            auto it = impl.find(key);
-            if (it != impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
+            auto it = new_impl.find(key);
+            if (it != new_impl.end() && it->second->getSourceId() == Cluster::SourceId::SQL)
             {
                 throw Exception(
                     ErrorCodes::CLUSTER_ALREADY_EXISTS,
@@ -415,9 +421,12 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
                     key);
             }
 
-            impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
+            new_impl[key] = std::make_shared<Cluster>(new_config, settings, config_prefix, key);
         }
     }
+
+    impl = std::move(new_impl);
+    automatic_clusters = std::move(new_automatic_clusters);
 }
 
 Clusters::Impl Clusters::getContainer() const
