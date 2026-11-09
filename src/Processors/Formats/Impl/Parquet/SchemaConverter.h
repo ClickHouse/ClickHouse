@@ -134,6 +134,17 @@ private:
         }
     };
 
+    /// A tuple inside an array that is not requested as a whole. A requested subcolumn of an element
+    /// it does not have (`arr.missing`) takes the array sizes from it.
+    struct TupleInArray
+    {
+        String name;
+        size_t schema_idx = 0;
+        size_t first_primitive_column_idx = 0;
+        std::vector<LevelInfo> levels;
+    };
+    std::vector<TupleInArray> tuples_in_arrays;
+
     void checkHasColumns();
 
     void processSubtree(TraversalNode & node);
@@ -147,6 +158,18 @@ private:
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
     bool processSubtreeDynamic(TraversalNode & node);
+
+    /// The sizes of an array are stored only in the leaves under it. Adds a primitive column with
+    /// PrimitiveColumnInfo::levels_only_arrays set and no output, for a leaf in the `num_subtrees`
+    /// subtrees starting at `first_schema_idx` that are under the arrays of `base_levels`.
+    /// Returns its index in primitive_columns, or nullopt if the subtrees have no leaf.
+    std::optional<size_t> addLevelsOnlyPrimitive(
+        size_t first_schema_idx, size_t first_primitive_column_idx, size_t num_subtrees,
+        const std::vector<LevelInfo> & base_levels, const String & name);
+
+    /// Outputs the requested columns `arr.missing` that matched no schema element, where `arr` is in
+    /// tuples_in_arrays, as arrays of defaults sized like `arr`.
+    void addMissingElementsOfTuplesInArrays();
 
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,

@@ -190,6 +190,10 @@ struct Reader
         /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
         UInt8 max_array_def = 0;
 
+        /// If nonzero, the column is read only for the sizes of its `levels_only_arrays` outermost
+        /// arrays, and its values are not used. See SchemaConverter::addLevelsOnlyPrimitive.
+        UInt8 levels_only_arrays = 0;
+
         bool use_bloom_filter = false;
 
         /// A single-column `KeyCondition` used for page-level pruning through the column index.
