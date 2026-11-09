@@ -50,4 +50,7 @@ public:
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
 
+/// `SimpleAggregateFunction(f, T)` -> `T`, nested layers too; any other type is returned unchanged.
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type);
+
 }

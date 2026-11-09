@@ -690,7 +690,8 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         !hasNullable(column_type) && col_decl.default_specifier == ColumnDefaultSpecifier::Default && default_expr
         && default_expr->as<ASTLiteral>() && default_expr->as<ASTLiteral>()->value.isNull())
     {
-        if (column_type->lowCardinality())
+        /// Rewrapping the dictionary type would drop a custom name of the LowCardinality type.
+        if (column_type->lowCardinality() && !column_type->hasCustomName())
         {
             const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
             chassert(low_cardinality_type);

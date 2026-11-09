@@ -291,13 +291,13 @@
         FROM
         (
             SELECT
-                if(max(nDateTime_02_date_292929292) > '2020-10-31 00:00:00', max(nDateTime_02_date_292929292), NULL) AS o1,
-                if(max(other_max_datetime_05) > '2020-10-31 00:00:00', max(other_max_datetime_05), NULL) AS o2,
-                if(max(nDateTime_03_date) > '2020-10-31 00:00:00', max(nDateTime_03_date), NULL) AS o3,
-                if(max(nDateTime_04_date) > '2020-10-31 00:00:00', max(nDateTime_04_date), NULL) AS o4,
-                if(max(nDateTime_02_date) > '2020-10-31 00:00:00', max(nDateTime_02_date), NULL) AS o5,
-                if(max(other_max_datetime_01) > '2020-10-31 00:00:00', max(other_max_datetime_01), NULL) AS o6,
-                if(max(other_max_datetime_02) > '2020-10-31 00:00:00', max(other_max_datetime_02), NULL) AS o7,
+                if(max(nDateTime_02_date_292929292) > '2020-10-31 00:00:00', CAST(max(nDateTime_02_date_292929292) AS DateTime), NULL) AS o1,
+                if(max(other_max_datetime_05) > '2020-10-31 00:00:00', CAST(max(other_max_datetime_05) AS DateTime), NULL) AS o2,
+                if(max(nDateTime_03_date) > '2020-10-31 00:00:00', CAST(max(nDateTime_03_date) AS DateTime), NULL) AS o3,
+                if(max(nDateTime_04_date) > '2020-10-31 00:00:00', CAST(max(nDateTime_04_date) AS DateTime), NULL) AS o4,
+                if(max(nDateTime_02_date) > '2020-10-31 00:00:00', CAST(max(nDateTime_02_date) AS DateTime), NULL) AS o5,
+                if(max(other_max_datetime_01) > '2020-10-31 00:00:00', CAST(max(other_max_datetime_01) AS DateTime), NULL) AS o6,
+                if(max(other_max_datetime_02) > '2020-10-31 00:00:00', CAST(max(other_max_datetime_02) AS DateTime), NULL) AS o7,
                 argMaxMerge(agg_argmax_string_datetime_13) AS o8,
                 argMaxMerge(agg_argmax_string_datetime_05) AS o9,
                 argMaxMerge(agg_argmax_string_datetime_06) AS o10,
@@ -328,9 +328,9 @@
                     PREWHERE cityHash64('0321352416546546546546546546546', lower('BU'), lower('random2')) = c.idColumnU64
                 ) AS other_idU128
             SELECT
-                if(max(other_max_datetime_05) > '2020-10-31 00:00:00', max(other_max_datetime_05), NULL) AS o28,
-                if(max(other_max_datetime_01) > '2020-10-31 00:00:00', max(other_max_datetime_01), NULL) AS o29,
-                if(max(nDateTime_02_date) > '2020-10-31 00:00:00', max(nDateTime_02_date), NULL) AS o30,
+                if(max(other_max_datetime_05) > '2020-10-31 00:00:00', CAST(max(other_max_datetime_05) AS DateTime), NULL) AS o28,
+                if(max(other_max_datetime_01) > '2020-10-31 00:00:00', CAST(max(other_max_datetime_01) AS DateTime), NULL) AS o29,
+                if(max(nDateTime_02_date) > '2020-10-31 00:00:00', CAST(max(nDateTime_02_date) AS DateTime), NULL) AS o30,
                 other_idU128
             FROM interpret_table_01 AS c
             PREWHERE cityHash64('0321352416546546546546546546546', lower('BU'), lower('random2'), toUInt128(other_idU128)) = c.idColumnU64

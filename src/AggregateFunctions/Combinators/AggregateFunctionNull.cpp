@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -128,6 +129,8 @@ public:
 
         bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+        if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(nested_function->getResultType()->getCustomName()))
+            return_type_is_nullable = false;
 
         if (arguments.size() == 1)
         {
