@@ -272,3 +272,32 @@ def test_count_fatal_failures(tmp_path):
     # Two oracle mismatches of different queries of one thread.
     assert _fatal_failures(tmp_path, _ORACLE_MISMATCH_LOG + other_query) == 2
     assert _fatal_failures(tmp_path, watchdog) == 0
+
+
+_DEADLY_SIGNAL = "AddressSanitizer:DEADLYSIGNAL\n"
+_ASAN_SEGV_STDERR = (
+    "AddressSanitizer:DEADLYSIGNAL\n"
+    "=================================================================\n"
+    "==1234==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000\n"
+    "    #0 0x55b9b8db9bc7 in DB::Foo::bar() src/Foo.cpp:10:5\n"
+    "SUMMARY: AddressSanitizer: SEGV src/Foo.cpp:10:5\n"
+)
+
+
+def test_interrupted_report_next_to_sanitizer_report_blocks_known_issue_pass(tmp_path):
+    # A restart appended a report cut short after its `DEADLYSIGNAL` line to the same stderr.
+    pairs = [_pair(tmp_path, "main", _UNKNOWN_LOG, _ASAN_STDERR + _DEADLY_SIGNAL)]
+    omitted = []
+    results = select_replica_failures(pairs, omitted)
+
+    assert [n for n, _, _ in results][0].startswith("AddressSanitizer")
+    assert "main logged 2 reports, 1 named" in _inventory(omitted)[0][1]
+
+
+def test_complete_deadly_signal_report_is_counted_once(tmp_path):
+    omitted = []
+    select_replica_failures(
+        [_pair(tmp_path, "main", _UNKNOWN_LOG, _ASAN_SEGV_STDERR)], omitted
+    )
+
+    assert _inventory(omitted) == []

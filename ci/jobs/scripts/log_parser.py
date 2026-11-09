@@ -29,6 +29,13 @@ class FuzzerLogParser:
     SANITIZER_REPORT_START_RE = re.compile(
         r"^(==\d+==)?(ERROR|WARNING): [a-zA-Z]+Sanitizer:|[a-zA-Z]+Sanitizer: CHECK failed:|: runtime error: "
     )
+    # The first line of a report of a deadly signal, which the sanitizer writes straight to stderr,
+    # also when the rest of the report goes to `log_path` (`StartReportDeadlySignal`).
+    SANITIZER_DEADLY_SIGNAL_RE = re.compile(r"[a-zA-Z]+Sanitizer:DEADLYSIGNAL")
+    # The header of a report of a deadly signal (`ReportDeadlySignal`).
+    SANITIZER_DEADLY_REPORT_RE = re.compile(
+        r"Sanitizer: (?:\S+ on unknown address|stack-overflow on address)"
+    )
     # A sanitizer OOM, which the log analysis passes the run for.
     SANITIZER_OOM_RE = re.compile(
         r"out-of-memory|out of memory|failed to allocate|allocation-size-too-big"
@@ -914,14 +921,28 @@ class FuzzerLogParser:
             if path and Path(path).is_file():
                 total += FuzzerLogParser.count_fatal_failures(path)
         if stderr_log and Path(stderr_log).is_file():
-            with FuzzerLogParser._open_log(stderr_log) as f:
-                total += sum(
-                    1
-                    for line in f
-                    if FuzzerLogParser.SANITIZER_REPORT_START_RE.search(line)
-                    and not FuzzerLogParser.SANITIZER_OOM_RE.search(line)
-                )
+            total += FuzzerLogParser.count_sanitizer_reports(stderr_log)
         return total
+
+    @staticmethod
+    def count_sanitizer_reports(stderr_log) -> int:
+        """The sanitizer reports in `stderr_log`, but a sanitizer OOM. A report of a deadly signal
+        starts with a `DEADLYSIGNAL` line, which may be far from the rest of the report, so one
+        without a header is counted as an unfinished report: one per line or header, whichever
+        is more."""
+        deadly_signals = deadly_reports = other_reports = 0
+        with FuzzerLogParser._open_log(stderr_log) as f:
+            for line in f:
+                if FuzzerLogParser.SANITIZER_DEADLY_SIGNAL_RE.search(line):
+                    deadly_signals += 1
+                elif FuzzerLogParser.SANITIZER_REPORT_START_RE.search(
+                    line
+                ) and not FuzzerLogParser.SANITIZER_OOM_RE.search(line):
+                    if FuzzerLogParser.SANITIZER_DEADLY_REPORT_RE.search(line):
+                        deadly_reports += 1
+                    else:
+                        other_reports += 1
+        return other_reports + max(deadly_signals, deadly_reports)
 
     @staticmethod
     def incomplete_inventory(processes):

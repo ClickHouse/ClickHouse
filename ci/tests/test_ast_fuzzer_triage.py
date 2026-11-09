@@ -141,3 +141,39 @@ def test_oracle_mismatch_next_to_known_sanitizer_report_blocks_pass(tmp_path, mo
     assert failures[0][0].startswith("AddressSanitizer")
     assert "logged 2 reports, 1 named" in failures[-1][1]
     assert not _known_issue_passes(failures)
+
+
+_DEADLY_SIGNAL = "AddressSanitizer:DEADLYSIGNAL\n"
+
+
+def _asan_segv(func, pid):
+    # A report of a deadly signal: the sanitizer writes its first line straight to stderr,
+    # so with `log_path` it is in `stderr.log` long before the rest is merged in.
+    return (
+        f"=== sanitizer report from /workspace/sanitizer.log.{pid} ===\n"
+        "=================================================================\n"
+        f"=={pid}==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000\n"
+        f"    #0 0x1 in DB::{func}() src/{func}.cpp:10:5\n"
+        f"    #1 0x2 in DB::{func}Caller() src/{func}.cpp:20:5\n"
+        f"SUMMARY: AddressSanitizer: SEGV src/{func}.cpp:10:5\n\n"
+    )
+
+
+def test_interrupted_report_next_to_known_sanitizer_report_blocks_pass(tmp_path, monkeypatch):
+    # A second report cut short after its `DEADLYSIGNAL` line is not a report the parser names.
+    failures = _triaged_failures(
+        tmp_path, monkeypatch, _DEADLY_SIGNAL + _asan("ClientKnown", 11)
+    )
+
+    assert failures[0][0].startswith("AddressSanitizer")
+    assert "logged 2 reports, 1 named" in failures[-1][1]
+    assert not _known_issue_passes(failures)
+
+
+def test_complete_deadly_signal_report_is_counted_once(tmp_path, monkeypatch):
+    failures = _triaged_failures(
+        tmp_path, monkeypatch, _DEADLY_SIGNAL + _asan_segv("ServerKnown", 22)
+    )
+
+    assert "Incomplete failure inventory" not in [n for n, _ in failures]
+    assert _known_issue_passes(failures)
