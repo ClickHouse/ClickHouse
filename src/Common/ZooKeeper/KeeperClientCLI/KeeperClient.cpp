@@ -91,7 +91,6 @@ void KeeperClientBase::askConfirmation(const String & prompt, std::function<void
 
 fs::path KeeperClientBase::getAbsolutePath(const String & relative) const
 {
-    /// Lexical only: do not follow host symlinks (`weakly_canonical` used to).
     String result = (cwd / relative).lexically_normal();
 
     if (result.ends_with('/') && result.size() > 1)
