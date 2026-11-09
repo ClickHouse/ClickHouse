@@ -94,6 +94,21 @@ bool TopKThresholdTrackerNumeric<T>::isValueInsideThreshold(const Field & value)
     return !CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction);
 }
 
+template <typename T>
+bool TopKThresholdTrackerNumeric<T>::isValueStrictlyInsideThreshold(const Field & value) const
+{
+    T current = threshold.load(std::memory_order_relaxed);
+    if (current == sentinel<T>(sort_desc.direction))
+        return true;
+
+    T candidate = value.safeGet<T>();
+
+    if (sort_desc.direction == 1)
+        return CompareHelper<T>::less(candidate, current, sort_desc.nulls_direction);
+
+    return CompareHelper<T>::greater(candidate, current, sort_desc.nulls_direction);
+}
+
 template class TopKThresholdTrackerNumeric<UInt64>;
 template class TopKThresholdTrackerNumeric<Int64>;
 template class TopKThresholdTrackerNumeric<Float64>;
@@ -139,6 +154,16 @@ bool TopKThresholdTrackerGeneric::isValueInsideThreshold(const Field & value) co
         return false;
 
     return true;
+}
+
+bool TopKThresholdTrackerGeneric::isValueStrictlyInsideThreshold(const Field & value) const
+{
+    if (!is_set)
+        return true;
+
+    std::shared_lock lock(mutex);
+    int cmp = compareFields(value, threshold);
+    return sort_desc.direction == 1 ? cmp < 0 : cmp > 0;
 }
 
 Field TopKThresholdTrackerGeneric::getValue() const

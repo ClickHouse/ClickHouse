@@ -19,6 +19,8 @@ public:
 
     virtual void testAndSet(const Field & value) = 0;
     virtual bool isValueInsideThreshold(const Field & value) const = 0;
+    /// Like `isValueInsideThreshold`, but a value equal to the threshold is outside.
+    virtual bool isValueStrictlyInsideThreshold(const Field & value) const = 0;
     virtual Field getValue() const = 0;
     virtual bool isSet() const = 0;
 
@@ -52,6 +54,7 @@ public:
 
     void testAndSet(const Field & value) override;
     bool isValueInsideThreshold(const Field & value) const override;
+    bool isValueStrictlyInsideThreshold(const Field & value) const override;
 
     /// Returns the sentinel if no value was published yet; callers must check `isSet` first.
     Field getValue() const override { return threshold.load(std::memory_order_relaxed);}
@@ -68,6 +71,7 @@ public:
 
     void testAndSet(const Field & value) override;
     bool isValueInsideThreshold(const Field & value) const override;
+    bool isValueStrictlyInsideThreshold(const Field & value) const override;
     Field getValue() const override;
     bool isSet() const override { return is_set; }
 
