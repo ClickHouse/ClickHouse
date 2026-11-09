@@ -34,3 +34,18 @@ web-api	/pay
 -- matcher body ignores the alias
 a	b
 1	2
+-- without an alias the columns are named after the arguments, as the inlined expression would be
+tupleElement((1), \'1\')	tupleElement((2), \'1\')
+1	2
+tupleElement((1), \'1\')	tupleElement((2), \'1\')
+1	2
+tupleElement((1), \'1\')	tupleElement((2), \'1\')
+1	2
+tupleElement((plus(a, 1)), \'1\')	tupleElement((plus(b, 1)), \'1\')
+2	3
+tupleElement((y), \'1\')	tupleElement((z), \'1\')
+1	2
+tupleElement(CAST((\'web-api\', \'/pay\'), \'Tuple(app String, endpoint String)\'), \'app\')	tupleElement(CAST((\'web-api\', \'/pay\'), \'Tuple(app String, endpoint String)\'), \'endpoint\')	tupleElement(CAST((\'cli\', \'/login\'), \'Tuple(app String, endpoint String)\'), \'app\')	tupleElement(CAST((\'cli\', \'/login\'), \'Tuple(app String, endpoint String)\'), \'endpoint\')
+web-api	/pay	cli	/login
+tupleElement((1), \'1\')	tupleElement((2), \'1\')
+1	2

@@ -3084,6 +3084,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
+            /// Name the body as if the call were written inline: an identifier bound to an argument takes the argument's
+            /// projection name, so `f(1), f(2)` with body `untuple(tuple(x))` gives `tupleElement((1), '1')` and
+            /// `tupleElement((2), '1')`, like `untuple(tuple(1)), untuple(tuple(2))`, instead of one name for both columns.
+            for (size_t i = 0; i < function_arguments_size; ++i)
+                node_to_projection_name.emplace(function_arguments[i], arguments_projection_names[i]);
+
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
