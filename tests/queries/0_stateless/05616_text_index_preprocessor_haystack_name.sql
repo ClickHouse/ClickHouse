@@ -33,6 +33,7 @@ SELECT 'constant lambda in an ALIAS column';
 SELECT s, hasToken(a, 'HELLOX') FROM tab ORDER BY s;
 SELECT count() FROM tab WHERE hasToken(a, 'HELLOX');
 SELECT count() FROM tab WHERE hasToken(a, 'HELLOX') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(a, 'HELLOX') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE NOT hasToken(a, 'HELLOX') SETTINGS query_plan_direct_read_from_text_index = 0;
 
 SELECT 'lambda without captures';
@@ -54,6 +55,7 @@ SELECT count() FROM tab WHERE hasToken(arrayStringConcat(arrayFilter(x -> x != '
 SELECT 'comparison with an empty string';
 SELECT s, hasToken(if(s != '', s, 'none'), 'HELLO') FROM tab ORDER BY s;
 SELECT count() FROM tab WHERE hasToken(if(s != '', s, 'none'), 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE hasToken(if(s != '', s, 'none'), 'HELLO') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasToken(if(s != '', s, 'none'), 'HELLO') SETTINGS query_plan_direct_read_from_text_index = 0, optimize_empty_string_comparisons = 0;
 
 SELECT 'lambda capturing a column';
