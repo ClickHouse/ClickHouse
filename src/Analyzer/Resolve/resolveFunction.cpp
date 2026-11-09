@@ -3157,7 +3157,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (parent_expressions_stack.empty())
                     break;
 
+                /// Only a call is inlined; the lambda of an `APPLY` transformer sits under the matcher it expands.
                 const auto & call_node = parent_expressions_stack.getTop();
+                if (call_node->getNodeType() != QueryTreeNodeType::FUNCTION)
+                    break;
+
                 if (call_node->hasAlias())
                     untuple_alias = call_node->getAlias();
                 current_node = call_node.get();

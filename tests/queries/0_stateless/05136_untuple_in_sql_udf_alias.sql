@@ -54,6 +54,10 @@ SELECT test_scope_inner_alias_nested_05136('web-api', '/pay') AS scope FORMAT TS
 SELECT '-- matcher body ignores the alias';
 SELECT test_star_05136() AS s FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 
+SELECT '-- an APPLY lambda inside the body is not a call: its columns keep their own names and values';
+WITH () -> * APPLY (x -> untuple(tuple(x))) AS apply_pair SELECT * FROM (SELECT apply_pair() AS scope FROM (SELECT 1 AS a, 2 AS b)) FORMAT TSVWithNames;
+WITH () -> * APPLY (x -> untuple(tuple(x))) AS apply_pair SELECT apply_pair() AS scope FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
+
 DROP FUNCTION test_scope_05136;
 DROP FUNCTION test_scope_nested_05136;
 DROP FUNCTION test_star_05136;

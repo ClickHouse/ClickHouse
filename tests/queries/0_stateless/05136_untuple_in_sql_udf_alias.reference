@@ -34,3 +34,8 @@ web-api	/pay
 -- matcher body ignores the alias
 a	b
 1	2
+-- an APPLY lambda inside the body is not a call: its columns keep their own names and values
+tupleElement((a), \'1\')	tupleElement((b), \'1\')
+1	2
+tupleElement((a), \'1\')	tupleElement((b), \'1\')
+1	2
