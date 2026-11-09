@@ -24,6 +24,7 @@
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -89,6 +90,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsNameMatchMode database_and_table_name_matching;
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
@@ -1706,7 +1708,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         scope.scope_node->formatASTForErrorMessage());
             }
 
-            first_argument = std::make_shared<ConstantNode>(identifier.getFullName());
+            String table_or_dictionary_name = identifier.getFullName();
+            /// `getJoin` resolves the table again from this name. Under `standard` matching write a name with
+            /// double-quoted parts in the identifier syntax, so these parts stay exact in that lookup too.
+            if (is_special_function_join_get
+                && scope.context->getSettingsRef()[Setting::database_and_table_name_matching] == NameMatchMode::Standard)
+            {
+                const auto & name_parts = first_argument_identifier.getIdentifierName().parts;
+                bool has_double_quoted_part = std::ranges::any_of(
+                    name_parts, [](const IdentifierPart & part) { return part.quote == IdentifierPartQuote::DoubleQuoted; });
+                if (has_double_quoted_part)
+                {
+                    table_or_dictionary_name.clear();
+                    for (const auto & part : name_parts)
+                    {
+                        if (!table_or_dictionary_name.empty())
+                            table_or_dictionary_name += '.';
+                        table_or_dictionary_name += part.quote == IdentifierPartQuote::DoubleQuoted
+                            ? doubleQuoteString(part.spelling)
+                            : backQuote(part.spelling);
+                    }
+                }
+            }
+
+            first_argument = std::make_shared<ConstantNode>(std::move(table_or_dictionary_name));
         }
     }
 
