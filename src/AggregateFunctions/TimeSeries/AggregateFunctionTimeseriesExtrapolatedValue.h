@@ -71,16 +71,16 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 *this = added;
                 return;
             }
-            if constexpr (check_resets)
+            if (added.exact) [[unlikely]]
+                mergeExactResets(added);
+            else
             {
-                if (last_value > added.first_value)
-                    addToResets(static_cast<Float64>(last_value), added.exact);     /// reset across the bucket boundary
-            }
-            addToResets(added.resets, added.exact);
-            if (added.exact)
-            {
-                addToResetsError(added.resets_error);
-                resets_error_inexact |= added.resets_error_inexact;
+                if constexpr (check_resets)
+                {
+                    if (last_value > added.first_value)
+                        resets += static_cast<Float64>(last_value);     /// reset across the bucket boundary
+                }
+                resets += added.resets;
             }
             last_timestamp = added.last_timestamp;
             last_value = added.last_value;
@@ -89,27 +89,54 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void unmerge(const Summary & leaving, const Summary * new_first)
         {
-            addToResets(-leaving.resets, leaving.exact);
-            if (leaving.exact)
-                addToResetsError(-leaving.resets_error);
+            if (leaving.exact) [[unlikely]]
+                unmergeExactResets(leaving, new_first);
+            else
+            {
+                resets -= leaving.resets;
+                if constexpr (check_resets)
+                {
+                    if (new_first && leaving.last_value > new_first->first_value)
+                        resets -= static_cast<Float64>(leaving.last_value);     /// drop the cross-boundary reset
+                }
+            }
             count -= leaving.count;
             if (new_first)
             {
-                if constexpr (check_resets)
-                {
-                    if (leaving.last_value > new_first->first_value)
-                        addToResets(-static_cast<Float64>(leaving.last_value), leaving.exact);     /// drop the cross-boundary reset
-                }
                 first_timestamp = new_first->first_timestamp;
                 first_value = new_first->first_value;
             }
         }
 
-        /// `resets += value`, with the rounding error of the addition added to `resets_error` (the TwoSum algorithm) if `exact_mode`.
-        void addToResets(Float64 value, bool exact_mode)
+        /// The exact mode's `merge` and `unmerge` of the resets, kept out of line so the default mode stays as cheap as before.
+        NO_INLINE void mergeExactResets(const Summary & added)
+        {
+            if constexpr (check_resets)
+            {
+                if (last_value > added.first_value)
+                    addToResets(static_cast<Float64>(last_value));
+            }
+            addToResets(added.resets);
+            addToResetsError(added.resets_error);
+            resets_error_inexact |= added.resets_error_inexact;
+        }
+
+        NO_INLINE void unmergeExactResets(const Summary & leaving, const Summary * new_first)
+        {
+            addToResets(-leaving.resets);
+            addToResetsError(-leaving.resets_error);
+            if constexpr (check_resets)
+            {
+                if (new_first && leaving.last_value > new_first->first_value)
+                    addToResets(-static_cast<Float64>(leaving.last_value));
+            }
+        }
+
+        /// `resets += value`, with the rounding error of the addition added to `resets_error` (the TwoSum algorithm).
+        void addToResets(Float64 value)
         {
             const Float64 sum = resets + value;
-            if (exact_mode && std::isfinite(sum))
+            if (std::isfinite(sum))
             {
                 const Float64 value_part = sum - resets;
                 addToResetsError((resets - (sum - value_part)) + (value - value_part));
@@ -154,23 +181,9 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
-            if (exact_rate)
+            if (exact_rate) [[unlikely]]
             {
-                /// In the exact mode the buckets cover more than the window (see `getBucketsWindow`), so a bucket can be
-                /// partly in the window: each sample is added on its own, with its own timestamp, to leave the window exactly.
-                samples.forEachSample([this](TimestampType timestamp, ValueType value)
-                {
-                    Summary summary;
-                    summary.first_timestamp = timestamp;
-                    summary.first_value = value;
-                    summary.last_timestamp = timestamp;
-                    summary.last_value = value;
-                    summary.count = 1;
-                    summary.exact = true;
-                    /// The sample is in a bucket, so its timestamp converted to the scale of the grid can't overflow.
-                    const GridScaleTimestampType grid_timestamp{static_cast<Int64>(timestamp) * column_to_grid_multiplier};
-                    sliding_sum.add(std::move(summary), grid_timestamp);
-                });
+                addExact(samples);
                 return;
             }
 
@@ -203,12 +216,34 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
-            if (!exact_rate)
-            {
+            if (exact_rate) [[unlikely]]
+                removeBeforeExact(cut_off);
+            else
                 sliding_sum.removeBefore(cut_off);
-                return;
-            }
+        }
 
+        /// The exact mode's `add` and `removeBefore`, kept out of line so the default mode stays as cheap as before.
+        NO_INLINE void addExact(const Samples & samples)
+        {
+            /// In the exact mode the buckets cover more than the window (see `getBucketsWindow`), so a bucket can be
+            /// partly in the window: each sample is added on its own, with its own timestamp, to leave the window exactly.
+            samples.forEachSample([this](TimestampType timestamp, ValueType value)
+            {
+                Summary summary;
+                summary.first_timestamp = timestamp;
+                summary.first_value = value;
+                summary.last_timestamp = timestamp;
+                summary.last_value = value;
+                summary.count = 1;
+                summary.exact = true;
+                /// The sample is in a bucket, so its timestamp converted to the scale of the grid can't overflow.
+                const GridScaleTimestampType grid_timestamp{static_cast<Int64>(timestamp) * column_to_grid_multiplier};
+                sliding_sum.add(std::move(summary), grid_timestamp);
+            });
+        }
+
+        NO_INLINE void removeBeforeExact(GridScaleTimestampType cut_off)
+        {
             /// The exact mode measures from the last sample that left the window.
             for (const auto & timestamp_and_value : sliding_sum.getWindow())
             {
@@ -235,7 +270,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         {
             const Summary combined = sliding_sum.getCurrentSum();
 
-            if (exact_rate)
+            if (exact_rate) [[unlikely]]
                 return getExactResult(combined, grid_timestamp);
 
             /// Need at least two samples to calculate the rate or delta.
