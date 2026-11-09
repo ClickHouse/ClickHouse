@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
@@ -176,6 +177,23 @@ static void readHeaderAndGetCodecAndSize(
             size_compressed_without_checksum, static_cast<size_t>(header_size));
 }
 
+/// Grows `buf` only by the bytes `in` already holds, so a declared block size is never allocated before its bytes arrive.
+static void readBlockGrowing(ReadBuffer & in, PODArray<char> & buf, size_t offset, size_t size)
+{
+    size_t bytes_read = 0;
+    while (bytes_read < size)
+    {
+        if (in.eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes_read, size);
+        const size_t bytes_to_copy = std::min(size - bytes_read, in.available());
+        buf.resize(offset + bytes_read + bytes_to_copy);
+        memcpy(buf.data() + offset + bytes_read, in.position(), bytes_to_copy);
+        in.position() += bytes_to_copy;
+        bytes_read += bytes_to_copy;
+    }
+}
+
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
 /// Returns number of compressed bytes read.
 size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy)
@@ -232,16 +250,16 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         /// We read directly from compressed_in but we can't get the full buffer now. We need to copy it, so we'll read everything,
         /// including the header and checksum again as it's simpler than regenerating it
-        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_in->position() -= size_header_plus_checksum;
-        compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum + size_compressed_without_checksum - header_size);
+        readBlockGrowing(*compressed_in, own_compressed_buffer, 0, sizeof(Checksum) + size_compressed_without_checksum);
+        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         own_compressed_buffer_header_init = true;
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
     else
     {
+        readBlockGrowing(*compressed_in, own_compressed_buffer, size_header_plus_checksum, size_compressed_without_checksum - header_size);
         own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
-        compressed_in->readStrict(own_compressed_buffer.data() + size_header_plus_checksum, size_compressed_without_checksum - header_size);
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
     }
 
