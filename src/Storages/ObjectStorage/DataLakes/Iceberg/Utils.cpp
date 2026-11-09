@@ -1684,6 +1684,72 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
 }
 
+static bool isFormatVersion1(const Poco::JSON::Object::Ptr & metadata)
+{
+    return metadata->has(f_format_version) && metadata->getValue<Int32>(f_format_version) == 1;
+}
+
+Poco::JSON::Array::Ptr tryGetPartitionSpecs(const Poco::JSON::Object::Ptr & metadata)
+{
+    if (metadata->has(f_partition_specs))
+        return metadata->getArray(f_partition_specs);
+
+    if (!isFormatVersion1(metadata))
+        return nullptr;
+
+    auto fields = metadata->getArray(f_partition_spec);
+    if (!fields)
+        return nullptr;
+
+    Poco::JSON::Object::Ptr spec = new Poco::JSON::Object;
+    spec->set(f_spec_id, 0);
+    spec->set(f_fields, fields);
+    Poco::JSON::Array::Ptr specs = new Poco::JSON::Array;
+    specs->add(spec);
+    return specs;
+}
+
+Poco::JSON::Object::Ptr getDefaultPartitionSpec(const Poco::JSON::Object::Ptr & metadata)
+{
+    const auto specs = tryGetPartitionSpecs(metadata);
+    if (!specs)
+    {
+        if (isFormatVersion1(metadata))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot resolve the partition spec of Iceberg table metadata: neither '{}' nor '{}' field is present",
+                f_partition_specs,
+                f_partition_spec);
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot resolve the partition spec of Iceberg table metadata: '{}' field is missing",
+            f_partition_specs);
+    }
+
+    Int32 default_spec_id = 0;
+    if (metadata->has(f_partition_specs))
+    {
+        if (!metadata->has(f_default_spec_id))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot resolve the partition spec of Iceberg table metadata: '{}' field is missing",
+                f_default_spec_id);
+        default_spec_id = metadata->getValue<Int32>(f_default_spec_id);
+    }
+
+    for (UInt32 i = 0; i < specs->size(); ++i)
+    {
+        const auto spec = specs->getObject(i);
+        if (spec && spec->has(f_spec_id) && spec->getValue<Int32>(f_spec_id) == default_spec_id && spec->getArray(f_fields))
+            return spec;
+    }
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot resolve the partition spec of Iceberg table metadata: there is no partition spec with '{}' {}",
+        f_spec_id,
+        default_spec_id);
+}
+
 void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
 {
     if (metadata->getValue<Int32>(f_format_version) != 1)
@@ -1691,27 +1757,15 @@ void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata)
 
     metadata->set(f_schema, deepCopy(parseTableSchemaV2Method(metadata).first));
 
-    for (const auto * field : {f_default_spec_id, f_partition_specs})
-        if (!metadata->has(field))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot write Iceberg table metadata: '{}' field is missing", field);
-
-    const auto default_spec_id = metadata->getValue<Int32>(f_default_spec_id);
-    const auto partition_specs = metadata->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>();
-    for (UInt32 i = 0; i < partition_specs->size(); ++i)
+    const auto default_spec = getDefaultPartitionSpec(metadata);
+    if (!metadata->has(f_partition_specs))
     {
-        const auto spec = partition_specs->getObject(i);
-        if (spec->getValue<Int32>(f_spec_id) == default_spec_id)
-        {
-            metadata->set(f_partition_spec, deepCopy(spec->get(f_fields).extract<Poco::JSON::Array::Ptr>()));
-            return;
-        }
+        Poco::JSON::Array::Ptr specs = new Poco::JSON::Array;
+        specs->add(deepCopy(default_spec));
+        metadata->set(f_partition_specs, specs);
+        metadata->set(f_default_spec_id, default_spec->getValue<Int32>(f_spec_id));
     }
-    throw Exception(
-        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-        "Cannot write Iceberg table metadata: there is no partition spec with '{}' {}",
-        f_spec_id,
-        default_spec_id);
+    metadata->set(f_partition_spec, deepCopy(default_spec->getArray(f_fields)));
 }
 
 template <typename LoadFunc>

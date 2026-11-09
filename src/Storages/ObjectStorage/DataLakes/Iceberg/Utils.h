@@ -134,6 +134,13 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ContextPtr context,
     UInt64 format_version = 2);
 
+/// Partition specs of the table metadata, or nullptr if there are none. Format version 1 metadata written before
+/// `partition-specs` existed has only `partition-spec`: the fields of the only spec, whose id is 0.
+Poco::JSON::Array::Ptr tryGetPartitionSpecs(const Poco::JSON::Object::Ptr & metadata);
+
+/// The default partition spec, an object with `spec-id` and `fields`. Throws ICEBERG_SPECIFICATION_VIOLATION if it can't be resolved.
+Poco::JSON::Object::Ptr getDefaultPartitionSpec(const Poco::JSON::Object::Ptr & metadata);
+
 /// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
 void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
 

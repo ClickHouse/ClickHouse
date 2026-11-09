@@ -508,7 +508,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         total_position_deletes,
         total_equality_deletes,
         refresh_cursor,
-        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr,
+        tryGetPartitionSpecs(metadata_object),
         metadata_object->getArray(f_statistics));
 }
 
