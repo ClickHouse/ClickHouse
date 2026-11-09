@@ -74,6 +74,22 @@ NameSet columnsAbsentFromFile(const Block & header, const ColumnMapper & mapper,
     return result;
 }
 
+/// Iceberg row lineage columns are stored only by a rewritten data file: a file without them reads them as NULL.
+void addRowLineageColumnsAbsentFromFile(NameSet & absent, const Block & header, const ColumnMapper & mapper, const AvroRust::Schema & schema)
+{
+    const auto root = schema.root();
+    for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
+    {
+        if (!header.has(name) || mapper.getStorageColumnEncoding().contains(name))
+            continue;
+        bool in_file = false;
+        for (UInt32 i = 0; i < root.childCount() && !in_file; ++i)
+            in_file = root.fieldName(i) == name;
+        if (!in_file)
+            absent.insert(name);
+    }
+}
+
 /// The same set as `isConnectionError` in `IRowInputFormat.cpp`, which is private to that file.
 bool isConnectionError(int code)
 {
@@ -118,7 +134,10 @@ void AvroRowInputFormat::readPrefix()
     file_reader_ptr = std::make_unique<AvroRust::OcfReader>(*in);
     NameSet absent;
     if (column_mapper)
+    {
         absent = columnsAbsentFromFile(output.getHeader(), *column_mapper, file_reader_ptr->schema());
+        addRowLineageColumnsAbsentFromFile(absent, output.getHeader(), *column_mapper, file_reader_ptr->schema());
+    }
     if (need_only_count)
     {
         /// Preserve schema/header validation even though the count program has no output sinks.

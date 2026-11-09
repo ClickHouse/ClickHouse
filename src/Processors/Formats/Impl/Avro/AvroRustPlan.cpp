@@ -34,6 +34,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 
@@ -785,6 +786,8 @@ struct Plan::Impl
     Reader createReaderImpl(Node node, const DataTypePtr & type, size_t direct_column);
     Reader createIntegerReader(Node node, const DataTypePtr & type, UInt32 sink);
     template <typename DecimalType> Reader createDecimalReader(Node node, const DataTypePtr & type);
+    static std::optional<size_t> variantMetadataPosition(Node node, const DataTypePtr & type);
+    Reader createVariantReader(Node node, const DataTypePtr & type, size_t metadata_position);
     Action createAction(const Block & header, Node node, const std::string & current_path, bool direct);
 
     static UInt64 width(const AvroSinkDesc & desc)
@@ -1032,6 +1035,40 @@ Plan::Impl::Reader Plan::Impl::createReader(Node node, const DataTypePtr & type,
     return createReaderImpl(node, type, direct_column);
 }
 
+/// Iceberg v3 stores a `variant` in Avro as a record of exactly two `bytes` fields, `metadata` and `value`, which is read
+/// into `Dynamic` or `JSON`. The position of the `metadata` field when `node` is such a record and `type` such a column.
+std::optional<size_t> Plan::Impl::variantMetadataPosition(Node node, const DataTypePtr & type)
+{
+    if (!isDynamic(type) && !isObject(removeNullable(type)))
+        return std::nullopt;
+    if (node.kind() != AVRO_KIND_RECORD || node.info().child_count != 2 || node.child(0).kind() != AVRO_KIND_BYTES
+        || node.child(1).kind() != AVRO_KIND_BYTES)
+        return std::nullopt;
+    if (node.fieldName(0) == "metadata" && node.fieldName(1) == "value")
+        return 0;
+    if (node.fieldName(0) == "value" && node.fieldName(1) == "metadata")
+        return 1;
+    return std::nullopt;
+}
+
+Plan::Impl::Reader Plan::Impl::createVariantReader(Node node, const DataTypePtr & type, size_t metadata_position)
+{
+    addNode(node, AVRO_ACTION_RECORD, AVRO_NO_SINK, AVRO_NO_SINK, 0, 2);
+    std::array<UInt32, 2> blobs;
+    for (UInt32 i = 0; i < 2; ++i)
+    {
+        blobs[i] = addSink(AVRO_SINK_BYTES);
+        addNode(node.child(i), AVRO_ACTION_VALUE, blobs[i]);
+    }
+    return [this, blobs, metadata_position, decoder = Parquet::VariantValueDecoder(type, String(current_column), settings)](IColumn & column)
+    {
+        const auto first = nextBytes(blobs[0]);
+        const auto second = nextBytes(blobs[1]);
+        decoder.decode(metadata_position == 0 ? first : second, metadata_position == 0 ? second : first, column);
+        return true;
+    };
+}
+
 Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & type, size_t direct_column)
 {
     checkStackSize();
@@ -1232,6 +1269,29 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
             if (count == 2 && (node.child(0).kind() == AVRO_KIND_NULL || node.child(1).kind() == AVRO_KIND_NULL))
             {
                 const UInt32 non_null = node.child(0).kind() == AVRO_KIND_NULL ? 1 : 0;
+                if (const auto metadata_position = variantMetadataPosition(node.child(non_null), type))
+                {
+                    const UInt32 null_map = addSink(AVRO_SINK_NULL_MAP);
+                    addNode(node, AVRO_ACTION_UNION, null_map, AVRO_NO_SINK, 1 - non_null, count);
+                    Reader variant_reader;
+                    for (UInt32 i = 0; i < count; ++i)
+                    {
+                        if (i == non_null)
+                            variant_reader = createVariantReader(node.child(i), type, *metadata_position);
+                        else
+                            skip(node.child(i));
+                    }
+                    /// A null is the default value, which is a variant null for `Dynamic` and an empty object for `JSON`.
+                    return [this, null_map, nested = std::move(variant_reader)](IColumn & column)
+                    {
+                        if (next<UInt8>(null_map))
+                        {
+                            column.insertDefault();
+                            return true;
+                        }
+                        return nested(column);
+                    };
+                }
                 if (!target.isNullable() && !null_as_default)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -1412,6 +1472,8 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
         }
         case AVRO_KIND_RECORD:
         {
+            if (const auto metadata_position = variantMetadataPosition(node, type))
+                return createVariantReader(node, type, *metadata_position);
             PathGuard guard(path, node);
             if (!target.isTuple())
                 break;

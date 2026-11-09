@@ -645,18 +645,31 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         return false;
     /// If an element is declared as MAP, but doesn't have the expected structure of children
     /// and grandchildren, we fall back to interpreting it as array of tuples, as if there were
-    /// no MAP annotation on it. Also fall back if Tuple type was requested
+    /// no MAP annotation on it. Also fall back if a positional Tuple or one naming the repeated group was requested
     /// (presumably `Tuple(Array(Tuple(key, value))` - a literal interpretation of the schema tree)
     /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
-        return false;
-    if (typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
         return false;
     if (node.element->num_children != 1)
         return false;
     const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
     if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 2)
         return false;
+    if (const auto * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    {
+        /// Names are matched as in processSubtreeTuple; any other Tuple is rejected below.
+        bool literal = !tuple_type_hint->hasExplicitNames() || tuple_type_hint->getElements().empty();
+        if (!literal)
+        {
+            bool not_in_schema = false;
+            std::string_view child_name = useColumnMapperIfNeeded(child, node.name, not_in_schema);
+            literal = !not_in_schema
+                && tuple_type_hint->tryGetPositionByName(child_name, options.format.parquet.case_insensitive_column_matching).has_value();
+        }
+        if (literal)
+            return false;
+    }
 
     DataTypePtr array_type_hint;
     bool no_map = false; // return plain Array(Tuple) instead of Map
@@ -735,7 +748,12 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
+        return false;
+    /// A LIST map key requested as `Tuple` or `JSON` is read as the tuple of its children.
+    if (node.schema_context == SchemaContext::MapKey
+        && (typeid_cast<const DataTypeTuple *>(node.type_hint.get()) || typeid_cast<const DataTypeObject *>(node.type_hint.get())))
         return false;
     if (node.element->num_children != 1)
         return false;
