@@ -14,7 +14,6 @@ INSERT INTO t_pr_join_fact SELECT number FROM numbers(20);
 INSERT INTO t_pr_join_dim SELECT number FROM numbers(15);
 INSERT INTO t_pr_join_allow SELECT number FROM numbers(10);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

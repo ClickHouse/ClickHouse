@@ -266,7 +266,8 @@ public:
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
-        DataTypePtr current_type,
+        size_t first_function_number,
+        const DataTypePtr & key_type,
         bool single_point = false);
 
     /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
@@ -429,6 +430,10 @@ public:
         /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
 
+        /// The number of the first function of `monotonic_functions_chain`, or of the chains of `set_index` in mapping
+        /// order. Assigned when the condition is built, it names the cached results of the functions (see `applyFunction`).
+        size_t first_function_number = 0;
+
         std::optional<BloomFilterData> bloom_filter_data;
     };
 
@@ -574,6 +579,9 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
+        /// Filter columns named like a node the key computes (not like a column it reads).
+        /// An atom reading one of them is not analyzed against this key.
+        const NameSet columns_named_like_key_expressions;
         /// If true, an `IN` atom whose set is not built yet is declined instead of building it.
         /// Analysis passes that are not allowed to execute a user subquery set this.
         const bool require_ready_sets = false;
@@ -1027,4 +1035,9 @@ private:
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
     KeyOrder key_order;
 };
+
+/// Whether a float among the values of `column` can equal a value of `key_expression_input_type` other than its
+/// cast to that type, when the two are compared in `comparison_type`. See the definition.
+bool floatValuesMissKeyValues(
+    ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type);
 }

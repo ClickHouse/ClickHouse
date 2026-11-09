@@ -1299,11 +1299,16 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
         /// `offset * scale_multiplier > t`, but cannot overflow near the top of the `DateTime64` range.
         /// `addMonths` keeps the time of day of the origin, also when the UTC offset changes on the day of the bucket
         /// start between midnight and that time, which the difference between the midnights would not account for.
-        Int64 offset = time_zone.addMonths(scaled_origin, month_multiplier) - scaled_origin;
+        /// `addMonths` maps the second occurrence of a repeated hour to the first one, so zero months is not passed to it.
+        auto bucket_start = [&](Int64 num_months)
+        {
+            return num_months == 0 ? 0 : time_zone.addMonths(scaled_origin, num_months) - scaled_origin;
+        };
+        Int64 offset = bucket_start(month_multiplier);
         while (month_multiplier >= months && offset > scaled_time)
         {
             month_multiplier -= months;
-            offset = time_zone.addMonths(scaled_origin, month_multiplier) - scaled_origin;
+            offset = bucket_start(month_multiplier);
         }
         return offset;
     }
@@ -3110,7 +3115,7 @@ struct ToRelativeSubsecondNumImpl
         if (scale == scale_multiplier)
             return t.value;
         if (scale > scale_multiplier)
-            return t.value / (scale / scale_multiplier);
+            return wholeSecondsRoundedDown(t.value, scale / scale_multiplier);
         return common::mulIgnoreOverflow(t.value, scale_multiplier / scale);
     }
     static Int64 execute(const Time64 &, const Time64::NativeType, const DateLUTImpl &)
@@ -3260,18 +3265,11 @@ struct ToDateTimeComponentsImpl
             --components.whole;
         }
 
-        // Normalize the dividers between microseconds and nanoseconds w.r.t. the scale.
-        Int64 microsecond_divider = (millisecond_multiplier * scale_multiplier) / microsecond_multiplier;
-        Int64 nanosecond_divider = scale_multiplier / microsecond_multiplier;
-
-        // Protect against division by zero for smaller scale multipliers.
-        microsecond_divider = (microsecond_divider ? microsecond_divider : 1);
-        nanosecond_divider = (nanosecond_divider ? nanosecond_divider : 1);
-
-        const Int64 & fractional = components.fractional;
-        UInt16 millisecond = static_cast<UInt16>(fractional / microsecond_divider);
-        UInt16 microsecond = static_cast<UInt16>((fractional % microsecond_divider) / nanosecond_divider);
-        UInt16 nanosecond = static_cast<UInt16>(fractional % nanosecond_divider);
+        /// In nanoseconds, so that the components of values with different scales can be compared.
+        const Int64 fractional = components.fractional * (nanosecond_multiplier / scale_multiplier);
+        UInt16 millisecond = static_cast<UInt16>(fractional / 1'000'000);
+        UInt16 microsecond = static_cast<UInt16>(fractional / 1000 % 1000);
+        UInt16 nanosecond = static_cast<UInt16>(fractional % 1000);
 
         return DateTimeComponentsWithFractionalPart{time_zone.toDateTimeComponents(components.whole), millisecond, microsecond, nanosecond};
     }
