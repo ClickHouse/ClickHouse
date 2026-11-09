@@ -99,5 +99,58 @@ submit
 expect "44601"
 expect ":) "
 
+# `v` toggles the inclusivity of a multiline bracket object. When the closing bracket is in the first
+# column or after blanks, `i(` is exclusive up to it, and `v` also takes the closing bracket.
+send -- "SELECT (\r1000\r+234\r) + 44700"
+escape
+send -- "ggjcvi(9000)"
+escape
+submit
+expect "53700"
+expect ":) "
+
+send -- "SELECT 2 * (\r1000\r+234\r  ) + 45000"
+escape
+send -- "ggjcvi(9"
+escape
+submit
+expect "45018"
+expect ":) "
+
+# Otherwise `i(` is inclusive, and `v` leaves the last character before the closing bracket.
+send -- "SELECT (\r1000\r+234) + 44800"
+escape
+send -- "ggjdvi("
+escape
+submit
+expect "44804"
+expect ":) "
+
+# An exclusive range that ends in the first column ends at the end of the previous line, here linewise.
+send -- "SELECT (\r1000\r+234\r5) + 44900"
+escape
+send -- "ggjdvi("
+escape
+submit
+expect "44905"
+expect ":) "
+
+send -- "SELECT 45100 + (1\r+2\r) * 3"
+escape
+send -- "ggjcva(4 + (5"
+escape
+submit
+expect "45119"
+expect ":) "
+
+# A single-line inner object loses its last character.
+send -- "SELECT 45200 + (1) * 3"
+escape
+send -- "ggf(cvi(4"
+escape
+submit
+expect "45323"
+expect ":) "
+
 send -- "\4"
 expect eof

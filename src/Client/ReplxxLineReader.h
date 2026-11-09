@@ -106,6 +106,7 @@ private:
     void vimWordMotion(int & pos, std::u32string & text, char motion);
     void vimWordObject(int & pos, std::u32string & text, bool bigword);
     void vimBracketObject(int & pos, std::u32string & text, char32_t open_char, char32_t close_char);
+    void vimForcedBracketObject(int & pos, std::u32string & text, int open, int close, bool around);
     void find(std::u32string & text, int & pos, char direction, char32_t c, bool repeat);
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).

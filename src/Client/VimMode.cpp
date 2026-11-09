@@ -942,6 +942,82 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
         resetVim(&pos, &text);
 }
 
+void ReplxxLineReader::vimForcedBracketObject(int & pos, std::u32string & text, int open, int close, bool around)
+{
+    /* Like vim, `v` after the operator toggles the inclusivity of the characterwise bracket object,
+     * e.g. `dvi(` or `dva(`. Vim computes the object as follows: `a(` is inclusive from the opening
+     * through the closing bracket. `i(` starts after the opening bracket, or on the next line when the
+     * bracket ends its line. Its end is the character before the closing bracket, skipping the blanks
+     * of the indentation before it on its line, up to the end of the previous line. When the closing
+     * bracket is in the first column or preceded only by blanks, the object is instead exclusive up to
+     * the start of the next line after that end: with `v`, it then becomes inclusive and also takes
+     * that character, e.g. the closing bracket. */
+    int start = open;
+    int end = close;
+    if (!around)
+    {
+        auto at_line_start = [&](int i) { return i == 0 || text[i - 1] == '\n'; };
+        auto in_indent = [&](int i)
+        {
+            if (text[i] != ' ' && text[i] != '\t')
+                return false;
+            for (int j = i - 1; j >= 0 && text[j] != '\n'; j--)
+                if (text[j] != ' ' && text[j] != '\t')
+                    return false;
+            return true;
+        };
+        /* One character back: from the first column, to the last character of the previous line,
+         * or to its line break when it is empty. Returns whether a line break was crossed. */
+        auto back = [&](int & i)
+        {
+            bool crossed = at_line_start(i);
+            i--;
+            if (crossed && !at_line_start(i))
+                i--;
+            return crossed;
+        };
+
+        start = open + 1;
+        if (text[start] == '\n')
+            start++;
+        int last = close;
+        bool after_indent = at_line_start(close);
+        back(last);
+        while (in_indent(last))
+        {
+            after_indent = true;
+            if (back(last))
+                break;
+        }
+        if (after_indent)
+        {
+            /* The exclusive end is the next position after `last`, which skips the line break of a
+             * non-empty line. With `v`, the range is inclusive and takes that position as well. */
+            int next = last + 1;
+            if (text[last] != '\n' && text[next] == '\n')
+                next++;
+            inclusivity_flip = 0;
+            pos = start;
+            vimCharwise(pos, text, next + 1, /* allow_empty = */ true);
+            return;
+        }
+        if (start > last)
+        {
+            /* An empty object, e.g. `()`, is exclusive at its start: with `v`, it takes that character. */
+            inclusivity_flip = 0;
+            pos = start;
+            vimCharwise(pos, text, start + 1, /* allow_empty = */ true);
+            return;
+        }
+        /* The inclusive object through `last` becomes exclusive with `v`. */
+        end = last;
+    }
+    /* An exclusive range: like for other motions, when it ends in the first column of a line,
+     * it ends at the end of the previous line instead, and may become linewise. */
+    pos = start;
+    vimLinewise(pos, text, end);
+}
+
 void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32_t open_char, char32_t close_char)
 {
     if (!op || !flag)
@@ -966,13 +1042,16 @@ void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32
         return;
     }
 
+    if (inclusivity_flip)
+    {
+        vimForcedBracketObject(pos, text, open, close, around);
+        return;
+    }
+
     int start = around ? open : open + 1;
     int count = around ? close - open + 1 : close - open - 1;
     bool linewise = false;
-    /* Like vim, `v` after the operator makes the inclusive text object exclusive, e.g. `dvi(`. */
-    if (inclusivity_flip)
-        count--;
-    else if (!around)
+    if (!around)
     {
         /* Like vim, the inner object of a multiline block starts on the next line when the opening
          * bracket ends its line, and ends at the end of the previous line when only blanks precede
