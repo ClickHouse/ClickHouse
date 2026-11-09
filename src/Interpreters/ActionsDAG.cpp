@@ -51,6 +51,7 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/inlined_vector.h>
 
 
@@ -1112,61 +1113,52 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     return false;
 }
 
-bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
+namespace
 {
-    std::unordered_set<const Node *> used_inputs;
-    if (!allow_remove_inputs)
-    {
-        for (const auto * input : inputs)
-            used_inputs.insert(input);
-    }
-    return removeUnusedActions(used_inputs, allow_constant_folding, evaluate_constants);
-}
 
-bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
+/// Removes the nodes that are not reachable from `roots`, folding constants on the way.
+bool removeUnreachableNodes(
+    ActionsDAG::Nodes & nodes,
+    ActionsDAG::NodeRawConstPtrs & inputs,
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    bool allow_constant_folding,
+    bool evaluate_constants)
 {
-    NodeRawConstPtrs roots;
-    roots.reserve(outputs.size() + used_inputs.size());
-    roots = outputs;
+    using Node = ActionsDAG::Node;
+    using ActionType = ActionsDAG::ActionType;
 
-    for (auto & node : nodes)
-    {
-        /// We cannot remove arrayJoin because it changes the number of rows.
-        if (node.type == ActionType::ARRAY_JOIN)
-            roots.push_back(&node);
-
-        if (node.type == ActionType::INPUT && used_inputs.contains(&node))
-            roots.push_back(&node);
-    }
-
-    std::unordered_set<const Node *> required_nodes;
-    std::unordered_set<const Node *> non_deterministic_nodes;
+    absl::flat_hash_set<const Node *> required_nodes;
+    required_nodes.reserve(nodes.size());
+    absl::flat_hash_set<const Node *> non_deterministic_nodes;
 
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const Node * node;
         size_t next_child_to_visit = 0;
     };
 
-    std::stack<Frame> stack;
+    std::vector<Frame> stack;
+    bool has_folded_nodes = false;
 
     enum class VisitStage { NonDeterministic, Required };
 
     for (auto stage : {VisitStage::NonDeterministic, VisitStage::Required})
     {
+        /// Folding drops the children of a node, which may become unreachable.
+        /// Without folding, the first pass has already found exactly the required nodes.
+        if (stage == VisitStage::Required && !has_folded_nodes)
+            break;
+
         required_nodes.clear();
 
         for (const auto * root : roots)
         {
-            if (!required_nodes.contains(root))
-            {
-                required_nodes.insert(root);
-                stack.push({.node = root});
-            }
+            if (required_nodes.insert(root).second)
+                stack.push_back({.node = root});
 
             while (!stack.empty())
             {
-                auto & frame = stack.top();
+                auto & frame = stack.back();
                 auto * node = const_cast<Node *>(frame.node);
 
                 while (frame.next_child_to_visit < node->children.size())
@@ -1174,18 +1166,17 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                     const auto * child = node->children[frame.next_child_to_visit];
                     ++frame.next_child_to_visit;
 
-                    if (!required_nodes.contains(child))
+                    if (required_nodes.insert(child).second)
                     {
-                        required_nodes.insert(child);
-                        stack.push({.node = child});
+                        stack.push_back({.node = child});
                         break;
                     }
                 }
 
-                if (stack.top().node != node)
+                if (stack.back().node != node)
                     continue;
 
-                stack.pop();
+                stack.pop_back();
 
                 if (stage == VisitStage::Required)
                     continue;
@@ -1205,7 +1196,7 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                 }
 
                 /// Best-effort evaluation of functions whose children have become constant.
-                if (evaluate_constants && node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+                if (evaluate_constants && node->type == ActionType::FUNCTION && !node->column)
                 {
                     auto [arguments, all_const] = getFunctionArguments(node->children);
                     node->function = node->function_base->prepare(arguments);
@@ -1219,9 +1210,10 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                     && (!node->children.empty()
                         || (node->type == ActionType::FUNCTION && WhichDataType(node->result_type).isFunction())))
                 {
-                    node->type = ActionsDAG::ActionType::COLUMN;
+                    node->type = ActionType::COLUMN;
                     node->children.clear();
                     node->is_deterministic_constant = !non_deterministic_nodes.contains(node);
+                    has_folded_nodes = true;
                 }
             }
         }
@@ -1231,6 +1223,48 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
     std::erase_if(inputs, [&](const Node * node) { return !required_nodes.contains(node); });
 
     return erased_count != 0;
+}
+
+}
+
+bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
+{
+    NodeRawConstPtrs roots;
+    roots.reserve(outputs.size() + (allow_remove_inputs ? 0 : inputs.size()));
+    roots = outputs;
+
+    /// We cannot remove arrayJoin because it changes the number of rows.
+    for (auto & node : nodes)
+        if (node.type == ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
+
+    if (!allow_remove_inputs)
+    {
+        for (const auto * input : inputs)
+            if (input->type == ActionType::INPUT)
+                roots.push_back(input);
+    }
+
+    return removeUnreachableNodes(nodes, inputs, roots, allow_constant_folding, evaluate_constants);
+}
+
+bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
+{
+    NodeRawConstPtrs roots;
+    roots.reserve(outputs.size() + used_inputs.size());
+    roots = outputs;
+
+    for (auto & node : nodes)
+    {
+        /// We cannot remove arrayJoin because it changes the number of rows.
+        if (node.type == ActionType::ARRAY_JOIN)
+            roots.push_back(&node);
+
+        if (node.type == ActionType::INPUT && used_inputs.contains(&node))
+            roots.push_back(&node);
+    }
+
+    return removeUnreachableNodes(nodes, inputs, roots, allow_constant_folding, evaluate_constants);
 }
 
 
@@ -2032,11 +2066,14 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 Block ActionsDAG::updateHeader(const Block & header) const
 {
     IntermediateExecutionResult node_to_column;
-    std::set<size_t> pos_to_remove;
+    node_to_column.reserve(nodes.size());
+    std::vector<UInt8> is_input_position(header.columns());
+    size_t num_input_positions = 0;
 
     {
         using inline_vector = absl::InlinedVector<size_t, 7>; // 64B, holding max 7 size_t elements inlined
         absl::flat_hash_map<std::string_view, inline_vector> input_positions;
+        input_positions.reserve(inputs.size());
 
         /// We insert from last to first in the inlinedVector so it's easier to pop_back matches later
         for (size_t pos = inputs.size(); pos != 0; pos--)
@@ -2048,7 +2085,8 @@ Block ActionsDAG::updateHeader(const Block & header) const
             auto it = input_positions.find(col.name);
             if (it != input_positions.end() && !it->second.empty())
             {
-                pos_to_remove.insert(pos);
+                is_input_position[pos] = 1;
+                ++num_input_positions;
 
                 auto & v = it->second;
                 node_to_column[inputs[v.back()]] = col;
@@ -2071,14 +2109,13 @@ Block ActionsDAG::updateHeader(const Block & header) const
     }
 
     Block res;
-    res.reserve(result_columns.size());
+    res.reserve(result_columns.size() + header.columns() - num_input_positions);
     for (auto & col : result_columns)
         res.insert(std::move(col));
 
-    res.reserve(header.columns() - pos_to_remove.size());
     for (size_t i = 0; i < header.columns(); i++)
     {
-        if (!pos_to_remove.contains(i))
+        if (!is_input_position[i])
             res.insert(header.data[i]);
     }
 
@@ -2137,16 +2174,17 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     };
 
     {
+        std::vector<Frame> stack;
+
         for (const auto * output_node : outputs)
         {
             if (!node_to_column.contains(output_node))
             {
-                std::stack<Frame> stack;
-                stack.push({.node = output_node});
+                stack.push_back({.node = output_node});
 
                 while (!stack.empty())
                 {
-                    auto & frame = stack.top();
+                    auto & frame = stack.back();
                     const auto * node = frame.node;
 
                     while (frame.next_child < node->children.size())
@@ -2155,15 +2193,15 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                         ++frame.next_child;
                         if (!node_to_column.contains(child))
                         {
-                            stack.push({.node = child});
+                            stack.push_back({.node = child});
                             break;
                         }
                     }
 
-                    if (stack.top().node != node)
+                    if (stack.back().node != node)
                         continue;
 
-                    stack.pop();
+                    stack.pop_back();
 
                     if (node->type == ActionsDAG::ActionType::PLACEHOLDER)
                     {
@@ -2221,7 +2259,7 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
 
             auto it = node_to_column.find(output_node);
             if (it != node_to_column.end())
-                result_columns.push_back(node_to_column[output_node]);
+                result_columns.push_back(it->second);
             else
                 result_columns.emplace_back(nullptr, output_node->result_type, output_node->result_name);
         }
