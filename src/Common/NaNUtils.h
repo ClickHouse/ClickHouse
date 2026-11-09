@@ -58,10 +58,8 @@ bool canConvertTo(Float64 x)
 template <typename T>
 T NaNOrZero()
 {
-    if constexpr (std::is_floating_point_v<T>)
+    if constexpr (std::is_floating_point_v<T> || std::is_same_v<T, BFloat16>)
         return std::numeric_limits<T>::quiet_NaN();
-    if constexpr (std::is_same_v<T, BFloat16>)
-        return BFloat16(std::numeric_limits<Float32>::quiet_NaN());
     return {};
 }
 
