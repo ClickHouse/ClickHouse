@@ -1,5 +1,8 @@
 <clickhouse>
     <keeper_server>
+        <!-- Also store the nodes digest in snapshots (it's off by default), so that both
+             digest and no-digest snapshots are covered by the tests. -->
+        <digest_enabled>true</digest_enabled>
         <coordination_settings>
             <compress_snapshots_with_zstd_format>false</compress_snapshots_with_zstd_format>
         </coordination_settings>

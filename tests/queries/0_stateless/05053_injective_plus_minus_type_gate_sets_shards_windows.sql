@@ -15,8 +15,6 @@ SET max_rows_to_group_by = 0;
 SET max_rows_to_sort = 0;
 SET max_bytes_to_sort = 0;
 SET optimize_use_implicit_projections = 0;
--- The values and plans below are the analyzer's, so pin it.
-SET enable_analyzer = 1;
 
 -- { echo }
 

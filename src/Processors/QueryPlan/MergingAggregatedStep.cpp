@@ -85,12 +85,39 @@ MergingAggregatedStep::MergingAggregatedStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
 {
+    /// The parallel-replicas and distributed rewrites build this step from the params of an
+    /// `AggregatingStep`, which may carry the top-K threshold merge set by the first optimization
+    /// pass. The merging transforms go through `Aggregator::mergeBlocks` and never reach
+    /// `Aggregator::mergeAndConvertOneBucketToChunk`, so it would be a silent no-op here. Drop it,
+    /// so that the plan does not claim an optimization the pipeline does not perform.
+    params.threshold_top_k.reset();
+
+    /// The bucket-local Top-K conversion (`bucket_top_k`) is consumed by
+    /// `Aggregator::convertOneBucketToChunk`, which the ordinary merging path reaches, but
+    /// `MergingAggregatedMemoryEfficientTransform` converts through `Aggregator::mergeBlocks` and
+    /// never selects the best groups. Drop it there for the same reason.
+    if (memory_efficient_aggregation)
+        params.bucket_top_k = 0;
+
+    /// The ordinary merging path (`MergingAggregatedTransform` -> `Aggregator::convertToChunks`) does
+    /// not count the merged groups of each bucket before pruning them, unlike
+    /// `ConvertingAggregatedToChunksWithMergingSource`. With a `throw` group limit, pruning there could
+    /// return rows instead of throwing on the true merged group count. Drop it in that case.
+    if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW)
+        params.bucket_top_k = 0;
 }
 
 void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
 {
     /// Columns might be reordered during optimization, so we better to update sort description.
     group_by_sort_description = std::move(input_sort_description);
+
+    /// The memory-bound merging path (`FinishAggregatingInOrderTransform`, `MergingAggregatedBucketTransform`)
+    /// converts through `Aggregator::mergeBlocks` and never reaches `Aggregator::convertOneBucketToChunkTopK`,
+    /// so the bucket-local Top-K conversion would be a silent no-op there. Drop it, like the constructor does
+    /// for the memory-efficient merging.
+    if (memoryBoundMergingWillBeUsed())
+        params.bucket_top_k = 0;
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -209,12 +236,22 @@ void MergingAggregatedStep::updateOutputHeader()
 
 QueryPlanStepPtr MergingAggregatedStep::clone() const
 {
+    return cloneImpl(memory_efficient_aggregation);
+}
+
+QueryPlanStepPtr MergingAggregatedStep::cloneWithoutMemoryEfficientAggregation() const
+{
+    return cloneImpl(false);
+}
+
+std::unique_ptr<MergingAggregatedStep> MergingAggregatedStep::cloneImpl(bool memory_efficient_aggregation_) const
+{
     auto cloned = std::make_unique<MergingAggregatedStep>(
         input_headers.front(),
         params,
         grouping_sets_params,
         final,
-        memory_efficient_aggregation,
+        memory_efficient_aggregation_,
         memory_efficient_merge_threads,
         should_produce_results_in_order_of_bucket_number,
         max_block_size,
