@@ -426,10 +426,11 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(table);
 
-    /// `fiu_fail` takes process-wide locks of libfiu. Once any failpoint has been enabled in the process,
-    /// even if it was disabled since, a call costs about a microsecond with a dozen merging threads, more
-    /// than creating the states of a key. So a drain asks once, at its first created key, and a `ONCE`
-    /// failpoint is still consumed only by a created key.
+    /// `fiu_do_on` calls `fiu_fail` only after the first failpoint has been enabled in the process, and from
+    /// then on at every check, even after that failpoint is disabled. `fiu_fail` takes process-wide locks of
+    /// libfiu: about a microsecond per call with a dozen merging threads, more than creating the states of a
+    /// key. So a drain asks once, at its first created key, and a `ONCE` failpoint is still consumed only by
+    /// a created key.
     bool states_failure_checked = false;
     const auto inject_states_failure = [&]() ALWAYS_INLINE
     {
