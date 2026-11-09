@@ -314,7 +314,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     size_t wrap_in_arrays = 0;
     DataTypePtr outer_type_hint = node.type_hint;
 
-    if (node.schema_context == SchemaContext::None)
+    if (node.schema_context == SchemaContext::None || node.schema_context == SchemaContext::MapKey)
     {
         bool not_in_schema = false;
         node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
@@ -335,7 +335,12 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                     throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Requested column {} is part of another requested column", node.getNameForLogging());
 
                 node.requested = true;
-                node.name = sample_block->getByPosition(pos.value()).name; // match case
+                /// Match case. Keep the name according to the parquet schema, it is used to look up
+                /// the GeoParquet metadata.
+                const String & requested_name = sample_block->getByPosition(pos.value()).name;
+                if (!node.parquet_name.has_value() && requested_name != node.name)
+                    node.parquet_name = node.name;
+                node.name = requested_name;
                 chassert(!node.type_hint);
                 node.type_hint = sample_block->getByPosition(pos.value()).type;
                 outer_type_hint = node.type_hint; // before unwrapping arrays
@@ -354,6 +359,33 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 chassert(wrap_in_arrays == levels.back().rep);
 
                 idx_in_output_block = pos;
+            }
+        }
+    }
+
+    /// GeoParquet geometry column with a native (GeoArrow) encoding: nested lists of
+    /// `struct<x, y>` with the same layout as the corresponding geo type. Read it as a regular
+    /// nested column, requesting the geo type (so that it is also the inferred type). If `Geometry`
+    /// is requested, read the specific geo type and convert it at the end.
+    /// Only top-level columns, because geometry columns must be at the root of the schema.
+    DataTypePtr native_geo_type;
+    if (node.requested && levels.size() == 1 && node.schema_context == SchemaContext::None
+        && options.format.parquet.allow_geoparquet_parser && !isPrimitiveNode(*node.element))
+    {
+        auto geo_it = geo_columns.find(node.getParquetName());
+        if (geo_it != geo_columns.end() && geo_it->second.encoding == GeoEncoding::Native)
+        {
+            DataTypePtr geo_type = getGeoDataType(geo_it->second.type);
+            if (!node.type_hint)
+            {
+                node.type_hint = geo_type;
+                outer_type_hint = geo_type;
+                native_geo_type = geo_type;
+            }
+            else if (node.type_hint->getName() == "Geometry")
+            {
+                node.type_hint = geo_type;
+                native_geo_type = geo_type;
             }
         }
     }
@@ -447,6 +479,16 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             make_array(static_cast<UInt8>(levels[prev_levels_size - 1].rep - i));
 
         output_columns[node.output_idx.value()].idx_in_output_block = idx_in_output_block;
+    }
+
+    if (native_geo_type)
+    {
+        /// The type assembled from the nested columns has the same structure, but loses the custom
+        /// names of the geo types (e.g. `Array(Ring)` instead of `Polygon`), which matter for the
+        /// conversion to `Geometry`.
+        OutputColumnInfo & output = output_columns.at(node.output_idx.value());
+        chassert(output.input_type->equals(*native_geo_type));
+        output.input_type = native_geo_type;
     }
 
     if (outer_type_hint)
@@ -603,18 +645,31 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
         return false;
     /// If an element is declared as MAP, but doesn't have the expected structure of children
     /// and grandchildren, we fall back to interpreting it as array of tuples, as if there were
-    /// no MAP annotation on it. Also fall back if Tuple type was requested
+    /// no MAP annotation on it. Also fall back if a positional Tuple or one naming the repeated group was requested
     /// (presumably `Tuple(Array(Tuple(key, value))` - a literal interpretation of the schema tree)
     /// (not to be confused with the case when `Array(Tuple(key, value))` was requested).
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
-        return false;
-    if (typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
         return false;
     if (node.element->num_children != 1)
         return false;
     const parq::SchemaElement & child = file_metadata.schema.at(schema_idx);
     if (child.repetition_type != parq::FieldRepetitionType::REPEATED || child.num_children != 2)
         return false;
+    if (const auto * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get()))
+    {
+        /// Names are matched as in processSubtreeTuple; any other Tuple is rejected below.
+        bool literal = !tuple_type_hint->hasExplicitNames() || tuple_type_hint->getElements().empty();
+        if (!literal)
+        {
+            bool not_in_schema = false;
+            std::string_view child_name = useColumnMapperIfNeeded(child, node.name, not_in_schema);
+            literal = !not_in_schema
+                && tuple_type_hint->tryGetPositionByName(child_name, options.format.parquet.case_insensitive_column_matching).has_value();
+        }
+        if (literal)
+            return false;
+    }
 
     DataTypePtr array_type_hint;
     bool no_map = false; // return plain Array(Tuple) instead of Map
@@ -693,7 +748,12 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
 
     if (node.element->converted_type != parq::ConvertedType::LIST && !node.element->logicalType.__isset.LIST)
         return false;
-    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement)
+    if (node.schema_context != SchemaContext::None && node.schema_context != SchemaContext::ListElement
+        && node.schema_context != SchemaContext::MapKey)
+        return false;
+    /// A LIST map key requested as `Tuple` or `JSON` is read as the tuple of its children.
+    if (node.schema_context == SchemaContext::MapKey
+        && (typeid_cast<const DataTypeTuple *>(node.type_hint.get()) || typeid_cast<const DataTypeObject *>(node.type_hint.get())))
         return false;
     if (node.element->num_children != 1)
         return false;
@@ -1589,6 +1649,10 @@ void SchemaConverter::processPrimitiveColumn(
     /// If type hint is String, ignore geoparquet and return raw bytes.
     if (geo_metadata.has_value() && (!type_hint || !typeid_cast<const DataTypeString *>(type_hint.get())))
     {
+        if (geo_metadata->encoding == GeoEncoding::Native)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "GeoParquet column with a native (GeoArrow) encoding must be a group (a struct or a list), but it is a primitive column of type {}",
+                thriftToString(type));
         if (type != parq::Type::BYTE_ARRAY)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
@@ -2071,7 +2135,9 @@ void SchemaConverter::processPrimitiveColumn(
         case parq::Type::INT96:
         {
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
-            out_decoder.fixed_size_converter = std::make_shared<Int96Converter>();
+            auto converter = std::make_shared<Int96Converter>();
+            converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            out_decoder.fixed_size_converter = std::move(converter);
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;
         }
