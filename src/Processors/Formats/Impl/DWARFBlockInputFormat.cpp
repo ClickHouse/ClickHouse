@@ -694,12 +694,12 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     initialized = true;
     opened = true;
 
-    const size_t max_queued_chunks = std::min<size_t>(num_threads, 16);
+    const size_t max_in_flight_chunks = std::max<size_t>(1, std::min<size_t>(num_threads, 32));
     runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
     runner.value().reserve(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
         runner.value().enqueueAndKeepTrack(
-            [this, max_queued_chunks, thread_group = CurrentThread::getGroup()]()
+            [this, max_in_flight_chunks, thread_group = CurrentThread::getGroup()]()
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::DWARF_DECODER);
                 try
@@ -707,7 +707,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
                     std::unique_lock lock(mutex);
                     while (!units_queue.empty() && !is_stopped)
                     {
-                        if (delivery_queue.size() >= max_queued_chunks)
+                        if (delivery_queue.size() + units_in_progress >= max_in_flight_chunks)
                         {
                             wake_up_threads.wait(lock);
                             continue;
@@ -727,6 +727,10 @@ void DWARFBlockInputFormat::initializeIfNeeded()
                             delivery_queue.emplace_back(std::move(result.chunk), result.bytes_advanced);
                             deliver_chunk.notify_one();
                         }
+                        else
+                        {
+                            wake_up_threads.notify_one();
+                        }
                         if (!result.finished)
                         {
                             units_queue.push_front(std::move(unit));
@@ -741,7 +745,10 @@ void DWARFBlockInputFormat::initializeIfNeeded()
                 catch (...)
                 {
                     std::lock_guard lock(mutex);
+                    --units_in_progress;
+                    is_stopped = 1;
                     background_exception = std::current_exception();
+                    wake_up_threads.notify_all();
                     deliver_chunk.notify_all();
                 }
             });
