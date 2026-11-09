@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include <Formats/ColumnNameMaps.h>
 #include <memory>
 #include <mutex>
 
@@ -126,7 +127,7 @@ public:
     /// or the legacy `schema` when there is no `schemas`.
     static void checkTableSchemas(const Poco::JSON::Object & metadata);
 
-    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
+    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema);
 
     /// The largest field id in `schema`, nested ids included.
     static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);
