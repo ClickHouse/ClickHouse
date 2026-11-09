@@ -22,7 +22,7 @@ class ASTFunction : public ASTWithAlias
     struct ASTFunctionFlags
     {
         using ParentFlags = ASTWithAlias::ASTWithAliasFlags;
-        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 13;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 14;
 
         UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
         UInt32 is_operator : 1;
@@ -33,9 +33,9 @@ class ASTFunction : public ASTWithAlias
         UInt32 no_empty_args : 1;
         UInt32 is_compound_name : 1;
         UInt32 nulls_action : 2; /// 2 bits for NullsAction (3 values)
-        UInt32 kind : 3; /// 3 bits for Kind (8 values)
+        UInt32 kind : 4; /// 4 bits for Kind
         UInt32 has_order_by_combinator_limit : 1;
-        UInt32 unused : 18;
+        UInt32 unused : 17;
     };
 
 public:
@@ -122,6 +122,7 @@ public:
         BACKUP_NAME,
         CODEC,
         STATISTICS,
+        TABLE_FUNCTION,
     };
     Kind getKind() const { return static_cast<Kind>(flags<ASTFunctionFlags>().kind); }
     void setKind(Kind value) { flags<ASTFunctionFlags>().kind = static_cast<UInt32>(value); }
