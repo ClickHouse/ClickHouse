@@ -768,3 +768,37 @@ SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_joinget_default_dep;
 DROP TABLE t_proj_joinget_source;
+
+-- a physical column may shadow a virtual name such as `_part`; a default over it follows the rules of any
+-- other stored column, so the projection part, which does not store it, cannot fill that default
+DROP TABLE IF EXISTS t_proj_shadowed_virtual_dep;
+
+CREATE TABLE t_proj_shadowed_virtual_dep
+(
+    a UInt64,
+    _part String,
+    c String ALIAS toString(a),
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_shadowed_virtual_dep (a, _part) VALUES (1, 'stored');
+
+ALTER TABLE t_proj_shadowed_virtual_dep ADD COLUMN d String DEFAULT _part;
+ALTER TABLE t_proj_shadowed_virtual_dep MODIFY COLUMN c String ALIAS d;
+
+-- served from the parent: c = d = the stored `_part`
+SELECT 'shadowed-virtual-dep read after drift', a, c FROM t_proj_shadowed_virtual_dep ORDER BY a;
+
+SELECT a, c FROM t_proj_shadowed_virtual_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- the merge rebuilds the projection from the parent instead of throwing on the missing `_part`
+OPTIMIZE TABLE t_proj_shadowed_virtual_dep FINAL;
+
+SELECT 'shadowed-virtual-dep read after merge', a, c FROM t_proj_shadowed_virtual_dep ORDER BY a;
+
+SELECT 'shadowed-virtual-dep forced after merge', a, c FROM t_proj_shadowed_virtual_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_shadowed_virtual_dep;

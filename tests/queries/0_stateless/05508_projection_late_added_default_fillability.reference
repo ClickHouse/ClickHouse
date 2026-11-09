@@ -94,3 +94,6 @@ joinget-dep read after drift	1	71
 joinget-dep read after drift	2	91
 joinget-dep force projection	1	71
 joinget-dep force projection	2	91
+shadowed-virtual-dep read after drift	1	stored
+shadowed-virtual-dep read after merge	1	stored
+shadowed-virtual-dep forced after merge	1	stored

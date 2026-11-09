@@ -60,9 +60,8 @@ bool canFillDefault(
 
     for (const auto & identifier : columns_context.requiredColumns())
     {
-        if ((projection_part.tryGetColumn(identifier)
-             && projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
-            || projection.metadata->virtuals.has(identifier))
+        if (projection_part.tryGetColumn(identifier)
+            && projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
             continue;
 
         /// Not a column: a dictionary or `Join` table named by a bare identifier (`dictGet(dict, ...)`),
