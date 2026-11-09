@@ -376,8 +376,24 @@ parseData(const char * begin, const char * end, rapidjson::Document::AllocatorTy
 
 ASTPtr makeMongoSortKey(ASTPtr key)
 {
+    auto array_prefix = [] { return make_intrusive<ASTLiteral>(Field(String("Array("))); };
+    auto type_name = [&] { return makeASTFunction("toTypeName", key->clone()); };
+    /// A `Dynamic` or a `Variant` column can hold an array in some rows, so for them the type of
+    /// every value is checked as well. The constant condition makes `and` fold to `0` for any
+    /// other column, so that the conversion to `Dynamic` is not evaluated for them.
+    auto may_hold_array = makeASTFunction(
+        "or",
+        makeASTFunction("equals", type_name(), make_intrusive<ASTLiteral>(Field(String("Dynamic")))),
+        makeASTFunction("startsWith", type_name(), make_intrusive<ASTLiteral>(Field(String("Variant(")))));
+    auto value_is_array = makeASTFunction(
+        "startsWith",
+        makeASTFunction(
+            "dynamicType", makeASTFunction("CAST", key->clone(), make_intrusive<ASTLiteral>(Field(String("Dynamic"))))),
+        array_prefix());
     auto is_array = makeASTFunction(
-        "startsWith", makeASTFunction("toTypeName", key->clone()), make_intrusive<ASTLiteral>(Field(String("Array("))));
+        "or",
+        makeASTFunction("startsWith", type_name(), array_prefix()),
+        makeASTFunction("and", std::move(may_hold_array), std::move(value_is_array)));
     auto guard = makeASTFunction(
         "throwIf",
         std::move(is_array),
