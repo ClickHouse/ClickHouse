@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
@@ -34,7 +35,7 @@ static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
 /// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
 static bool canProduceTotals(QueryPlan::Node & root)
 {
-    std::vector<QueryPlan::Node *> stack{&root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         auto * node = stack.back();

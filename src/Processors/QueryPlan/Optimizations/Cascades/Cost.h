@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Logger.h>
 #include <base/types.h>
 #include <cmath>
@@ -132,7 +133,7 @@ struct CostInputs
     const ExpressionStatistics & output_stats;
     /// Per-input statistics, aligned with the expression inputs; an entry is null when the
     /// input group has no derived statistics.
-    std::vector<const ExpressionStatistics *> input_stats;
+    VectorWithMemoryTracking<const ExpressionStatistics *> input_stats;
     /// Partitioned = node_count per node; replicated = 1 (each node does the full work).
     Float64 parallelism = 1.0;
     /// Node count of the expression's own distribution property.
