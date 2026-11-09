@@ -865,12 +865,13 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeDate32>();
     if (type_name == f_time)
         return std::make_shared<DataTypeInt64>();
+    /// `timestamp` and `timestamp_ns` store a wall-clock reading; in UTC the stored value and its rendering coincide.
     if (type_name == f_timestamp)
-        return std::make_shared<DataTypeDateTime64>(6);
+        return std::make_shared<DataTypeDateTime64>(6, "UTC");
     if (type_name == f_timestamptz)
         return std::make_shared<DataTypeDateTime64>(6, "UTC");
     if (type_name == f_timestamp_ns)
-        return std::make_shared<DataTypeDateTime64>(9);
+        return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_timestamptz_ns)
         return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
@@ -1365,6 +1366,27 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
                 [&](Int64 field_id, const Poco::Dynamic::Var & type)
                 {
                     if (type.isString() && canonicalizeTypeName(type.extract<String>()) == Iceberg::f_time)
+                        result.insert(field_id);
+                });
+    }
+    return result;
+}
+
+std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimestamptzFieldIds(Poco::JSON::Array::Ptr schema)
+{
+    std::unordered_set<Int64> result;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var & type)
+                {
+                    if (!type.isString())
+                        return;
+                    const String type_name = canonicalizeTypeName(type.extract<String>());
+                    if (type_name == Iceberg::f_timestamptz || type_name == Iceberg::f_timestamptz_ns)
                         result.insert(field_id);
                 });
     }

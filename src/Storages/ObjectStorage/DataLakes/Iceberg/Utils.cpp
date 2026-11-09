@@ -1170,7 +1170,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
-Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
+Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id, bool adjust_to_utc)
 {
     switch (type->getTypeId())
     {
@@ -1199,7 +1199,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
             timestamp_type->set("type", "long");
             timestamp_type->set("logicalType", "timestamp-micros");
-            timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
+            timestamp_type->set("adjust-to-utc", adjust_to_utc);
             return timestamp_type;
         }
         case TypeIndex::Float32:
@@ -1236,7 +1236,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
             union_array->add("null");
-            union_array->add(getAvroType(type_nullable->getNestedType(), field_id));
+            union_array->add(getAvroType(type_nullable->getNestedType(), field_id, adjust_to_utc));
             return union_array;
         }
         default:

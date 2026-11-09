@@ -1277,9 +1277,9 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `double` | `Float64` | |
 | `date` | `Date32` | |
 | `time` | `Int64` | Microseconds since midnight |
-| `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
+| `timestamp` | `DateTime64(6, 'UTC')` | Microseconds, no timezone: shown as stored in any session time zone |
 | `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
-| `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
+| `timestamp_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, no timezone: shown as stored in any session time zone (since Iceberg v3 only) |
 | `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
 | `string`, `binary` | `String` | |
 | `uuid` | `UUID` | |
@@ -1301,7 +1301,7 @@ The data type mappings above apply to reads. The following limitations apply whe
 
 - ClickHouse cannot create an Iceberg schema containing `FixedString`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. `Bool` is stored as Iceberg `boolean`. Iceberg has no 8-bit or 16-bit integer types, so `Int8`, `UInt8`, `Int16`, and `UInt16` columns are widened to Iceberg `int` and are therefore read back as `Int32`.
 - ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
-- When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
+- When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema. Such columns are read back as `DateTime64(6, 'UTC')`.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
 - For data files containing types whose bounds ClickHouse cannot serialize, such as `Float32`, `Float64`, and `UUID`, ClickHouse omits the lower and upper bounds of those columns from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
