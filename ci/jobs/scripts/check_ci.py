@@ -57,6 +57,7 @@ class JobTypes:
 
 
 GROENEAI_LOGIN = "groeneai"
+MAX_COMMENT_LENGTH = 65536
 
 
 def get_job_report_url(pr_number, head_sha, job_name=""):
@@ -356,35 +357,64 @@ def post_investigation_request(
             return f"- `{job_name}`"
         return f"- `{failure.name}` in `{job_name}`"
 
-    lines = [
+    def plural(n):
+        return f"{n} failure{'s' if n != 1 else ''}"
+
+    header = [
         f"@{GROENEAI_LOGIN}, please investigate the CI failures in this PR "
         f"(commit {head_sha}) and fix them, or link existing fixes.",
         "",
         f"CI report: {get_job_report_url(pr_number, head_sha)}",
     ]
+    footer = []
+    if sync_failures_count:
+        footer = ["", f"Also, {plural(sync_failures_count)} in the private sync PR."]
+
+    sections = []
     if unknown_failures:
-        lines += ["", "Failures without a known issue:"]
+        entries = []
         for job_name, failure in unknown_failures:
             cidb = failure.get_label_link(Result.Label.CIDB)
             line = describe(job_name, failure)
             if cidb:
                 line += f" ([history]({cidb}))"
-            lines.append(line)
+            entries.append(line)
+        sections.append(("Failures without a known issue:", entries))
     if known_failures:
-        lines += ["", "Failures with an open issue:"]
+        entries = []
         for job_name, failure in known_failures:
             issue = failure.get_label_link(Result.Label.ISSUE)
             line = describe(job_name, failure)
             if issue:
                 line += f": {issue}"
-            lines.append(line)
-    if sync_failures_count:
+            entries.append(line)
+        sections.append(("Failures with an open issue:", entries))
+
+    # GitHub rejects comments longer than 65536 characters, and history links
+    # embed SQL, so list failures only while the body fits in the budget
+    # (leaving room for the comment tags and the line about omitted failures).
+    budget = MAX_COMMENT_LENGTH - 1000 - len("\n".join(header + footer))
+    lines = list(header)
+    omitted = 0
+    for title, entries in sections:
+        title_lines = ["", title]
+        for entry in entries:
+            cost = len(entry) + 1 + (sum(len(x) + 1 for x in title_lines))
+            if omitted or cost > budget:
+                omitted += 1
+                continue
+            lines += title_lines + [entry]
+            budget -= cost
+            title_lines = []
+    if omitted:
         lines += [
             "",
-            f"Also, {sync_failures_count} failure"
-            f"{'s' if sync_failures_count != 1 else ''} in the private sync PR.",
+            f"{omitted} more failure{'s are' if omitted != 1 else ' is'} not listed "
+            "because of the comment size limit, see the CI report.",
         ]
+    lines += footer
     body = "\n".join(lines) + "\n"
+    assert len(body) < MAX_COMMENT_LENGTH
     print(f"\nPosting investigation request to PR #{pr_number}:\n{body}")
     if not GH.post_fresh_comment(
         tag="investigate_failures",
