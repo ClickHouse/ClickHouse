@@ -813,12 +813,18 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     if (params.bucket_top_k)
     {
+        const bool counts_rows
+            = typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()) != nullptr;
         if (is_simple_count)
             bucket_top_k_rank = BucketTopKRank::InlineCount;
-        else if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()))
+        else if (counts_rows)
             bucket_top_k_rank = BucketTopKRank::CountState;
         else
             bucket_top_k_rank = BucketTopKRank::FinalizedResult;
+        /// `AggregateFunctionCount` counts every row of a group, and a group has at least one row. Any other
+        /// rank can be 0: `count` and `uniqExact` of a `Nullable` argument skip the NULLs, and `uniqExactIf`
+        /// skips the rows that its condition rejects.
+        bucket_top_k_min_rank = counts_rows ? 1 : 0;
     }
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
