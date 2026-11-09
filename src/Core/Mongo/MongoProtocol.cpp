@@ -231,6 +231,18 @@ String QueryExecutor::execute(const String & query, const SettingsChanges & extr
     /// can see after the query has finished.
     query_context->setSetting("date_time_output_format", String("iso"));
 
+    /// The query construction settings of a profile rewrite every `SELECT` that is run: with
+    /// `select = '0'` the count of the matched rows of a `delete` would be `0` while its `DELETE`
+    /// still removes them, and the queries reading the metadata of a collection would lose their
+    /// columns. The generated statements are complete, so none of them applies to the statements.
+    query_context->setSetting("select", String(""));
+    query_context->setSetting("filter", String(""));
+    query_context->setSetting("order", String(""));
+    query_context->setSetting("sort", String(""));
+    query_context->setSetting("limit", Float64(0));
+    query_context->setSetting("offset", Float64(0));
+    query_context->setSetting("page", Float64(0));
+
     for (const auto & change : extra_settings)
         query_context->setSetting(change.name, change.value);
 
