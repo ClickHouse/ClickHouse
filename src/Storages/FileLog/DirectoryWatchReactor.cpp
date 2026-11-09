@@ -9,7 +9,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/thread_local_rng.h>
 #include <base/scope_guard.h>
 
 #include <algorithm>
@@ -18,7 +17,6 @@
 #include <optional>
 #include <unistd.h>
 #if defined(OS_LINUX)
-#include <random>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 #elif defined(OS_DARWIN)
@@ -48,7 +46,8 @@ void DirectoryWatchReactor::stop()
         thread->join();
 
     chassert(registrations.empty());
-    chassert(commands.empty());
+    /// The reactor thread is joined, so nothing else uses `commands`.
+    chassert(TSA_SUPPRESS_WARNING_FOR_READ(commands).empty());
 }
 
 void DirectoryWatchReactor::add(DirectoryWatcherBase & watcher)
@@ -286,8 +285,8 @@ void DirectoryWatchReactor::runLoop()
 
 void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration)
 {
-    /// select one inotify fd at random from the pool
-    const int inotify_fd = inotify_fds[std::uniform_int_distribution<size_t>(0, inotify_instances - 1)(thread_local_rng)];
+    /// inotify fd chosen by the path, so that the watchers of the same directory share one watch and one fd.
+    const int inotify_fd = inotify_fds[std::hash<std::string>{}(watcher.path) % inotify_instances];
     registration->inotify_fd = inotify_fd;
 
     /// The kernel shares one watch per directory in an inotify instance, so the queue can hold events from before this

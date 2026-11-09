@@ -8,10 +8,16 @@
 namespace DB
 {
 
+namespace
+{
+
+/// Closing a descriptor also removes it from the kqueue of the reactor.
 void closeFileDescriptor(int fd)
 {
     [[maybe_unused]] int err = ::close(fd);
     chassert(!err || errno == EINTR);
+}
+
 }
 
 DarwinDirectoryWatchState::~DarwinDirectoryWatchState()

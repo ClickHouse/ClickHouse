@@ -29,6 +29,7 @@
 #include <sys/event.h>
 #include <sys/param.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace DB
@@ -394,7 +395,9 @@ void DirectoryWatcherBase::syncFileWatches(std::map<std::string, UInt64> & files
         }
         catch (...)
         {
-            closeFileDescriptor(fd);
+            /// The result is ignored on purpose: we are already rethrowing, and the descriptor was opened above and
+            /// is owned by no one else.
+            (void)::close(fd);
             throw;
         }
     }

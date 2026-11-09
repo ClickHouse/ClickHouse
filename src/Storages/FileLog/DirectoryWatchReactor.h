@@ -103,9 +103,8 @@ private:
     PipeFDs control_pipe;
 
     std::mutex mutex;
-    std::deque<Command> commands;
-    /// Set under `mutex`, so that no command is queued once the reactor thread has stopped taking them.
-    bool stopped = false;
+    std::deque<Command> commands TSA_GUARDED_BY(mutex);
+    bool stopped TSA_GUARDED_BY(mutex) = false;
 
     /// Used only by the reactor thread.
     std::unordered_map<DirectoryWatcherBase *, std::unique_ptr<WatcherRegistration>> registrations;
@@ -152,6 +151,7 @@ private:
 
     Epoll epoll;
     /// Each inotify descriptor can have at most 16384 events in the queue by default, so we use a pool of them to avoid overflow.
+    /// A directory is assigned to a descriptor by the hash of its path (see `attachWatcher`).
     static constexpr size_t inotify_instances = 8;
     std::array<int, inotify_instances> inotify_fds{};
 
