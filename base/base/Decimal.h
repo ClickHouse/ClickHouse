@@ -92,7 +92,7 @@ struct Decimal
     template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x);
     template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x);
 
-    /// This is to avoid UB for sumWithOverflow()
+    /// Adds with wrap-around and without UB (e.g. for `timestamp`).
     void NO_SANITIZE_UNDEFINED addOverflow(const T & x);
 
     T value;
