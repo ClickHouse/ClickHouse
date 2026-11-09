@@ -1375,45 +1375,32 @@ void IcebergStorageSink::consume(Chunk & chunk)
             writer_per_partition_key.emplace(partition_key, std::move(writer));
         }
 
-        if (!sort_description.column_names.empty() && part_chunk.hasRows() && last_fields_of_last_chunks.contains(partition_key))
+        /// Start a new file when this chunk's first key sorts before the previous chunk's last key, so each data file stays sorted.
+        if (!sort_description.column_names.empty() && part_chunk.hasRows())
         {
-            const auto & last_fields = last_fields_of_last_chunks.at(partition_key);
-            std::vector<Field> last_fields_new_chunk;
-            if (!last_fields.empty())
+            const auto & part_columns = part_chunk.getColumns();
+            auto & last_sort_key = last_sort_key_per_partition[partition_key];
+            if (!last_sort_key.empty())
             {
-                bool should_create_new_file = false;
                 for (size_t i = 0; i < sort_description.column_names.size(); ++i)
                 {
-                    auto column_idx = column_name_to_column_index[sort_description.column_names[i]];
-                    Field last_field_from_last_chunk = last_fields[i];
-                    Field first_field_from_new_chunk;
-                    part_chunk.getColumns()[column_idx]->get(0, first_field_from_new_chunk);
-
-                    Field last_field_from_new_chunk;
-                    part_chunk.getColumns()[column_idx]->get(part_chunk.getNumRows() - 1, first_field_from_new_chunk);
-
-                    last_fields_new_chunk.push_back(last_field_from_new_chunk);
-                    if (sort_description.reverse_flags.empty() || !sort_description.reverse_flags[i])
-                    {
-                        if (last_field_from_last_chunk > first_field_from_new_chunk)
-                        {
-                            should_create_new_file = true;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        if (last_field_from_last_chunk < first_field_from_new_chunk)
-                        {
-                            should_create_new_file = true;
-                            break;
-                        }
-                    }
+                    const auto & column = part_columns[column_name_to_column_index[sort_description.column_names[i]]];
+                    int direction = !sort_description.reverse_flags.empty() && sort_description.reverse_flags[i] ? -1 : 1;
+                    int res = direction * column->compareAt(0, 0, *last_sort_key[i], /*nan_direction_hint=*/1);
+                    if (res < 0)
+                        writer_per_partition_key.at(partition_key).startNewFile();
+                    if (res != 0)
+                        break;
                 }
-                if (should_create_new_file)
-                    writer_per_partition_key.at(partition_key).startNewFile();
             }
-            last_fields_of_last_chunks[partition_key] = std::move(last_fields_new_chunk);
+            last_sort_key.clear();
+            for (const auto & column_name : sort_description.column_names)
+            {
+                const auto & column = part_columns[column_name_to_column_index[column_name]];
+                auto last_row = column->cloneEmpty();
+                last_row->insertFrom(*column, part_chunk.getNumRows() - 1);
+                last_sort_key.push_back(std::move(last_row));
+            }
         }
 
         auto columns = part_chunk.getColumns();

@@ -194,7 +194,7 @@ private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
-    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
+    std::unordered_map<ChunkPartitioner::PartitionKey, Columns, ChunkPartitioner::PartitionKeyHasher> last_sort_key_per_partition;
     std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
