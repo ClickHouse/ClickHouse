@@ -144,21 +144,23 @@ public:
     }
 
     /// The answers that exist only once the storage does. An observer that walks every table gets
-    /// the empty answer rather than loading one.
+    /// the empty answer rather than loading one. These take only `resolved_nested_mutex` and do not wait
+    /// for a load in progress: `RENAME` asks `getDataPaths` with the database mutex held (to create the symlink
+    /// of the data directory), while loading the table holds `nested_mutex` and can take the database mutex.
     template <typename Ask>
     auto answerIfLoaded(Ask && ask) const
     {
-        std::lock_guard lock{nested_mutex};
-        using Answer = decltype(ask(*nested));
-        return nested ? ask(*nested) : Answer{};
+        auto storage = nestedIfResolved();
+        using Answer = decltype(ask(*storage));
+        return storage ? ask(*storage) : Answer{};
     }
 
     /// `system.tables` reads these, so answering must not load the table. While the storage does not
     /// exist they are answered from the `CREATE` query, like `getName`, or reported as unknown.
     StoragePolicyPtr getStoragePolicy() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested ? nested->getStoragePolicy() : nullptr;
+        auto storage = nestedIfResolved();
+        return storage ? storage->getStoragePolicy() : nullptr;
     }
 
     Strings getDataPaths() const override
@@ -168,8 +170,8 @@ public:
 
     bool supportsReplication() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested ? nested->supportsReplication() : supports_replication;
+        auto storage = nestedIfResolved();
+        return storage ? storage->supportsReplication() : supports_replication;
     }
 
     /// Startup is deferred until first access via `getNested`.
