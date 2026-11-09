@@ -4,6 +4,8 @@
 
 #if USE_AVRO_RUST
 
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 #include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
@@ -95,7 +97,7 @@ public:
     /// for a block begins the block in `plan` (`Plan::beginBlock`). The budget of the work of the items that occupy no
     /// bytes is a row's, not the block's: no window, batch or block boundary changes what a row may spend.
     /// On failure only fully decoded rows remain in `columns`.
-    void decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing);
+    void decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & columns, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing);
 
     /// The rows that `decodeRows` has put into the columns in the call that is running or failed last, to number the
     /// row that an exception was thrown at: those that the failed call committed before it.
@@ -104,7 +106,7 @@ public:
     /// Counts `n` rows of the current block as done without decoding them. Only for `canCountRows`.
     void discardRows(UInt64 n);
 
-    const std::map<std::string, std::vector<uint8_t>> & metadata() const { return metadata_; }
+    const MapWithMemoryTracking<std::string, VectorWithMemoryTracking<uint8_t>> & metadata() const { return metadata_; }
 
 private:
     friend class detail::RawPayload;
@@ -133,16 +135,16 @@ private:
     /// Makes room in `plain` by dropping the consumed bytes, then appends the next window. False if nothing was added.
     bool fillPlain();
     /// `decodeRows` of every codec but null: from the window of plain bytes in `plain`.
-    void decodeFromPlain(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing);
+    void decodeFromPlain(Plan & plan, UInt64 max_rows, MutableColumns & columns, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing);
     /// `decodeRows` of the null codec: from the input itself. Nothing is copied but the bytes of a value that the end of
     /// a piece of the input cuts (with the start of the next piece), and the pieces that are too small to be worth a
     /// call of the decoder, which are gathered into a window of `PLAIN_WINDOW_BYTES`.
-    void decodeFromInput(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing);
+    void decodeFromInput(Plan & plan, UInt64 max_rows, MutableColumns & columns, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing);
     const UInt8 * plainData() const { return plain.data() + plain_begin; }
     size_t plainSize() const { return plain.size() - plain_begin; }
 
     ReadBuffer & in;
-    std::map<std::string, std::vector<uint8_t>> metadata_;
+    MapWithMemoryTracking<std::string, VectorWithMemoryTracking<uint8_t>> metadata_;
     UInt32 codec = 0;
     UInt8 sync[16] = {};
     UInt64 min_record_size = 0;
@@ -186,7 +188,7 @@ private:
 /// Receives one batch of freshly decoded rows: the columns of the header, `missing[column][row]` set for a value that
 /// the file does not have (the Avro null of a union), and the number of rows. `missing[column]` is empty for a
 /// column that the plan always reads (see `Plan::decode`).
-using DecodedBatchCallback = std::function<void(MutableColumns & columns, const std::vector<std::vector<UInt8>> & missing, UInt64 rows)>;
+using DecodedBatchCallback = std::function<void(MutableColumns & columns, const VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing, UInt64 rows)>;
 
 /// Decodes the remaining blocks of `reader` through `plan`, whose header is `header`, in batches of at most
 /// `CANCELLATION_CHECK_PERIOD_ROWS` rows, so a file is never held whole and a declared block size neither reserves

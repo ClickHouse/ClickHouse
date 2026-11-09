@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -83,9 +84,9 @@ uint32_t readConfluentSchemaId(ReadBuffer & in)
 ///    the decode of the whole window) is known: the last incomplete prefix, the first complete one and one byte of
 ///    the next frame;
 ///  - the whole window.
-std::vector<size_t> prefixSchedule(size_t window_size, std::optional<size_t> datum_size)
+VectorWithMemoryTracking<size_t> prefixSchedule(size_t window_size, std::optional<size_t> datum_size)
 {
-    std::vector<size_t> lengths;
+    VectorWithMemoryTracking<size_t> lengths;
     lengths.reserve(MAX_PREFIXES);
 
     for (size_t length = 0; length < 8; ++length)
@@ -111,9 +112,9 @@ std::vector<size_t> prefixSchedule(size_t window_size, std::optional<size_t> dat
     return lengths;
 }
 
-std::vector<size_t> columnSizes(const MutableColumns & columns)
+VectorWithMemoryTracking<size_t> columnSizes(const MutableColumns & columns)
 {
-    std::vector<size_t> sizes;
+    VectorWithMemoryTracking<size_t> sizes;
     sizes.reserve(columns.size());
     for (const auto & column : columns)
         sizes.push_back(column->size());
@@ -151,13 +152,13 @@ void probeFragmentedDatum(
     AvroRust::Plan & plan,
     std::span<const UInt8> window,
     std::optional<size_t> oracle_consumed,
-    const std::vector<std::vector<UInt8>> & oracle_missing,
+    const VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & oracle_missing,
     MutableColumns & columns,
-    std::vector<std::vector<UInt8>> & missing)
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing)
 {
     for (const size_t length : prefixSchedule(window.size(), oracle_consumed))
     {
-        const std::vector<size_t> sizes = columnSizes(columns);
+        const VectorWithMemoryTracking<size_t> sizes = columnSizes(columns);
         AvroRust::Plan::DatumResult result;
         try
         {
@@ -186,13 +187,13 @@ void probeFragmentedDatum(
         requireInvariant(result.consumed == *oracle_consumed, "a prefix completed the datum with other consumed bytes than the whole window");
         requireInvariant(plan.committedRows() == 1, "a complete prefix did not commit exactly one row");
         requireInvariant(missing == oracle_missing, "a prefix completed the datum with another `missing` than the whole window");
-        const std::vector<size_t> sizes_after = columnSizes(columns);
+        const VectorWithMemoryTracking<size_t> sizes_after = columnSizes(columns);
         for (size_t i = 0; i < sizes.size(); ++i)
             requireInvariant(sizes_after[i] == sizes[i] + 1, "a complete prefix did not add one row to every column");
         break;
     }
 
-    const std::vector<size_t> sizes = columnSizes(columns);
+    const VectorWithMemoryTracking<size_t> sizes = columnSizes(columns);
     try
     {
         const auto result = plan.decodeDatum(window, false, columns, missing);
@@ -200,7 +201,7 @@ void probeFragmentedDatum(
         requireInvariant(oracle_consumed.has_value(), "a decode without more input completed a datum that `decode` rejects");
         requireInvariant(result.consumed == *oracle_consumed, "a decode without more input consumed other bytes than `decode`");
         requireInvariant(missing == oracle_missing, "a decode without more input produced another `missing` than `decode`");
-        const std::vector<size_t> sizes_after = columnSizes(columns);
+        const VectorWithMemoryTracking<size_t> sizes_after = columnSizes(columns);
         for (size_t i = 0; i < sizes.size(); ++i)
             requireInvariant(sizes_after[i] == sizes[i] + 1, "a decode without more input did not add one row to every column");
     }
@@ -296,10 +297,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         AvroRust::Plan plan(header, schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
 
         MutableColumns columns = header.cloneEmptyColumns();
-        std::vector<std::vector<UInt8>> missing;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> missing;
         /// The destination of the decodes of `probeFragmentedDatum`: the real columns keep only what `decode` produced.
         MutableColumns probe_columns = header.cloneEmptyColumns();
-        std::vector<std::vector<UInt8>> probe_missing;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> probe_missing;
         size_t rows = 0;
         size_t messages = 0;
         while (!in.eof() && in.available() != 0 && messages++ < MAX_MESSAGES)

@@ -1,3 +1,7 @@
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Avro/AvroRustPlan.h>
 #include <Processors/Formats/Impl/Avro/AvroRustSchema.h>
 
@@ -181,10 +185,10 @@ std::string concatPath(const std::string & prefix, std::string_view name)
 /// columns are independent mappings. Skipped back edges never enter this guard.
 struct PathGuard
 {
-    std::unordered_set<UInt32> & path;
+    UnorderedSetWithMemoryTracking<UInt32> & path;
     UInt32 id;
 
-    PathGuard(std::unordered_set<UInt32> & path_, Node node) : path(path_), id(node.id())
+    PathGuard(UnorderedSetWithMemoryTracking<UInt32> & path_, Node node) : path(path_), id(node.id())
     {
         if (!path.insert(id).second)
             throw Exception(
@@ -225,8 +229,8 @@ struct ProgramCache
     };
 
     std::mutex mutex;
-    std::list<Entry> entries;
-    std::unordered_map<std::string_view, std::list<Entry>::iterator> index;
+    ListWithMemoryTracking<Entry> entries;
+    UnorderedMapWithMemoryTracking<std::string_view, ListWithMemoryTracking<Entry>::iterator> index;
     size_t bytes = 0;
 
     /// The caller holds `mutex` for all of these.
@@ -282,7 +286,7 @@ constexpr size_t MAX_SCHEMA_IN_MESSAGE_BYTES = 4096;
 struct Plan::Impl
 {
     using Reader = std::function<bool(IColumn &)>;
-    using Action = std::function<void(MutableColumns &, std::vector<UInt8> &)>;
+    using Action = std::function<void(MutableColumns &, VectorWithMemoryTracking<UInt8> &)>;
 
     /// What a `Buffer::direct` does with the part of an output column that its sink is bound to.
     enum class DirectMode
@@ -312,14 +316,14 @@ struct Plan::Impl
 
     ProgramPtr program;
     std::unique_ptr<AvroState, decltype(&avro_state_free)> state{nullptr, avro_state_free};
-    std::vector<Buffer> buffers;
-    std::vector<AvroSink> sinks;
+    VectorWithMemoryTracking<Buffer> buffers;
+    VectorWithMemoryTracking<AvroSink> sinks;
     /// The sinks that are bound to output columns, and the staging sinks of values wider than `STAGING_BYTES`: the
     /// only ones that need more than their fill levels after a call. A call visits these and not all the sinks.
-    std::vector<UInt32> direct_sinks;
-    std::vector<UInt32> wide_sinks;
-    std::vector<AvroPlanNode> nodes;
-    std::vector<bool> found;
+    VectorWithMemoryTracking<UInt32> direct_sinks;
+    VectorWithMemoryTracking<UInt32> wide_sinks;
+    VectorWithMemoryTracking<AvroPlanNode> nodes;
+    VectorWithMemoryTracking<bool> found;
     /// Per column of the header: whether a row can leave it without a value read from the file, which is what
     /// `missing` reports. False only for a column that its reader fills in every row, and then it is neither
     /// tracked while decoding nor present in `missing` (its vector stays empty). True for a column
@@ -327,17 +331,17 @@ struct Plan::Impl
     ///  - found below a union branch or in the items of an array of records (a row that does not take that branch,
     ///    or has no items, reads nothing of it), or
     ///  - whose reader reports the Avro null of a union or a null as the default value of a non-`Nullable` type.
-    std::vector<UInt8> may_miss;
+    VectorWithMemoryTracking<UInt8> may_miss;
     /// The columns with `may_miss`, ascending: all the per-row work on `read_columns` and `missing` is over these.
-    std::vector<size_t> miss_columns;
+    VectorWithMemoryTracking<size_t> miss_columns;
     /// Set while the reader of one column is created: that reader can return `false`.
     bool reader_may_miss = false;
-    std::vector<UInt8> read_columns;
-    std::vector<size_t> initial_sizes;
+    VectorWithMemoryTracking<UInt8> read_columns;
+    VectorWithMemoryTracking<size_t> initial_sizes;
     /// Sizes of the `missing` vectors of the destination when the current call started: the rows of the call start there.
     /// Only for the columns with `may_miss`.
-    std::vector<size_t> missing_bases;
-    std::unordered_set<UInt32> path;
+    VectorWithMemoryTracking<size_t> missing_bases;
+    UnorderedSetWithMemoryTracking<UInt32> path;
     Action action;
     UInt64 committed_rows = 0;
     const bool null_as_default;
@@ -367,7 +371,7 @@ struct Plan::Impl
             if (may_miss[i])
                 miss_columns.push_back(i);
         }
-        std::vector<AvroSinkDesc> descriptors;
+        VectorWithMemoryTracking<AvroSinkDesc> descriptors;
         descriptors.reserve(buffers.size());
         for (const auto & buffer : buffers)
             descriptors.push_back(buffer.desc);
@@ -577,8 +581,8 @@ struct Plan::Impl
         if (item_info.child_count == 0 || item_info.child_count != tuple_type.getElements().size())
             return nullptr;
         /// Fields in the order of the record: the sink kind and the position of the element they go to.
-        std::vector<std::pair<UInt32, size_t>> fields;
-        std::unordered_set<size_t> positions;
+        VectorWithMemoryTracking<std::pair<UInt32, size_t>> fields;
+        UnorderedSetWithMemoryTracking<size_t> positions;
         for (UInt32 i = 0; i < item_info.child_count; ++i)
         {
             const auto position = tuple_type.tryGetPositionByName(std::string(items.fieldName(i)));
@@ -593,7 +597,7 @@ struct Plan::Impl
         const UInt32 offsets = addSink(AVRO_SINK_ARRAY_OFFSETS);
         addNode(node, AVRO_ACTION_ARRAY, offsets, AVRO_NO_SINK, 0, 1);
         addNode(items, AVRO_ACTION_RECORD, AVRO_NO_SINK, AVRO_NO_SINK, 0, item_info.child_count);
-        std::vector<std::pair<UInt32, size_t>> sinks_and_positions;
+        VectorWithMemoryTracking<std::pair<UInt32, size_t>> sinks_and_positions;
         for (UInt32 i = 0; i < item_info.child_count; ++i)
         {
             const UInt32 sink = addSink(fields[i].first);
@@ -899,7 +903,7 @@ struct Plan::Impl
     /// Then `allow_incomplete` is not used: the end of the last window (`more == false`) is an exception, and
     /// `Outcome::consumed` counts bytes of that window.
     Outcome decode(std::span<const UInt8> input, UInt64 max_rows, MutableColumns & columns,
-                   std::vector<std::vector<UInt8>> & missing, bool allow_incomplete, bool append_missing,
+                   VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing, bool allow_incomplete, bool append_missing,
                    const InputSource * source = nullptr, bool more_input = false);
 };
 
@@ -1258,7 +1262,7 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
                 reader_may_miss = true;
                 const UInt32 tags = addSink(AVRO_SINK_UNION_TAG, 4);
                 addNode(node, AVRO_ACTION_UNION, tags, AVRO_NO_SINK, 0, count);
-                std::vector<Reader> readers;
+                VectorWithMemoryTracking<Reader> readers;
                 for (UInt32 i = 0; i < count; ++i)
                     readers.push_back(createReader(node.child(i), type));
                 return [this, tags, children = std::move(readers)](IColumn & column)
@@ -1334,9 +1338,9 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
                 const UInt32 tags = addSink(AVRO_SINK_UNION_TAG, 4);
                 addNode(node, AVRO_ACTION_UNION, tags, AVRO_NO_SINK, 0, count);
-                std::vector<Reader> branch_readers(count);
-                std::vector<ColumnVariant::Discriminator> branch_discriminators(count, ColumnVariant::NULL_DISCRIMINATOR);
-                std::unordered_set<ColumnVariant::Discriminator> used;
+                VectorWithMemoryTracking<Reader> branch_readers(count);
+                VectorWithMemoryTracking<ColumnVariant::Discriminator> branch_discriminators(count, ColumnVariant::NULL_DISCRIMINATOR);
+                UnorderedSetWithMemoryTracking<ColumnVariant::Discriminator> used;
                 for (UInt32 i = 0; i < count; ++i)
                 {
                     const auto branch = node.child(i);
@@ -1404,7 +1408,7 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
                 break;
             const UInt32 sink = addSink(AVRO_SINK_ENUM_INDEX, 4);
             addNode(node, AVRO_ACTION_VALUE, sink);
-            std::vector<std::string> enum_symbols;
+            VectorWithMemoryTracking<std::string> enum_symbols;
             Row enum_mapping;
             for (UInt32 i = 0; i < info.symbol_count; ++i)
             {
@@ -1481,7 +1485,7 @@ Plan::Impl::Reader Plan::Impl::createReaderImpl(Node node, const DataTypePtr & t
             if (info.child_count != tuple_type.getElements().size())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
             addNode(node, AVRO_ACTION_RECORD, AVRO_NO_SINK, AVRO_NO_SINK, 0, info.child_count);
-            std::vector<std::pair<Reader, size_t>> element_readers;
+            VectorWithMemoryTracking<std::pair<Reader, size_t>> element_readers;
             for (UInt32 i = 0; i < info.child_count; ++i)
             {
                 const size_t position = tuple_type.getPositionByName(std::string(node.fieldName(i)));
@@ -1564,12 +1568,12 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
             if (!direct || reader_may_miss)
             {
                 may_miss[index] = 1;
-                return [index, reader = std::move(column_reader)](MutableColumns & columns, std::vector<UInt8> & read)
+                return [index, reader = std::move(column_reader)](MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read)
                 {
                     read[index] = reader(*columns[index]);
                 };
             }
-            return [index, reader = std::move(column_reader)](MutableColumns & columns, std::vector<UInt8> &)
+            return [index, reader = std::move(column_reader)](MutableColumns & columns, VectorWithMemoryTracking<UInt8> &)
             {
                 reader(*columns[index]);
             };
@@ -1588,7 +1592,7 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
     if (!requested)
     {
         skip(node);
-        return [](MutableColumns &, std::vector<UInt8> &)
+        return [](MutableColumns &, VectorWithMemoryTracking<UInt8> &)
         {
         };
     }
@@ -1599,10 +1603,10 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
     if (node.kind() == AVRO_KIND_RECORD)
     {
         addNode(node, AVRO_ACTION_RECORD, AVRO_NO_SINK, AVRO_NO_SINK, 0, info.child_count);
-        std::vector<Action> field_actions;
+        VectorWithMemoryTracking<Action> field_actions;
         for (UInt32 i = 0; i < info.child_count; ++i)
             field_actions.push_back(createAction(header, node.child(i), concatPath(current_path, node.fieldName(i)), direct));
-        return [children = std::move(field_actions)](MutableColumns & columns, std::vector<UInt8> & read)
+        return [children = std::move(field_actions)](MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read)
         {
             for (const auto & child : children)
                 child(columns, read);
@@ -1612,14 +1616,14 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
     {
         const UInt32 tags = addSink(AVRO_SINK_UNION_TAG, 4);
         addNode(node, AVRO_ACTION_UNION, tags, AVRO_NO_SINK, 0, info.child_count);
-        std::vector<Action> branch_actions;
+        VectorWithMemoryTracking<Action> branch_actions;
         for (UInt32 i = 0; i < info.child_count; ++i)
         {
             const auto child = node.child(i);
             const auto name = child.hasName() ? child.simpleName() : std::string_view(kindName(child.kind()));
             branch_actions.push_back(createAction(header, child, concatPath(current_path, name), false));
         }
-        return [this, tags, children = std::move(branch_actions)](MutableColumns & columns, std::vector<UInt8> & read)
+        return [this, tags, children = std::move(branch_actions)](MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read)
         {
             children[next<UInt32>(tags)](columns, read);
         };
@@ -1630,7 +1634,7 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
         const auto items = node.child(0);
         if (!names.empty() && items.kind() == AVRO_KIND_RECORD)
         {
-            std::unordered_map<std::string, DataTypePtr> nested_types;
+            UnorderedMapWithMemoryTracking<std::string, DataTypePtr> nested_types;
             bool compatible = true;
             for (const auto & name : names)
             {
@@ -1651,7 +1655,7 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
                 const UInt32 offsets = addSink(AVRO_SINK_ARRAY_OFFSETS);
                 addNode(node, AVRO_ACTION_ARRAY, offsets, AVRO_NO_SINK, 0, 1);
                 addNode(items, AVRO_ACTION_RECORD, AVRO_NO_SINK, AVRO_NO_SINK, 0, item_info.child_count);
-                std::vector<std::pair<size_t, Reader>> nested_readers;
+                VectorWithMemoryTracking<std::pair<size_t, Reader>> nested_readers;
                 for (UInt32 i = 0; i < item_info.child_count; ++i)
                 {
                     const std::string name(items.fieldName(i));
@@ -1662,7 +1666,7 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
                     may_miss[index] = 1;
                     nested_readers.emplace_back(index, std::move(reader));
                 }
-                return [this, offsets, readers = std::move(nested_readers)](MutableColumns & columns, std::vector<UInt8> & read)
+                return [this, offsets, readers = std::move(nested_readers)](MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read)
                 {
                     const UInt64 count = nextCount(offsets);
                     for (UInt64 i = 0; i < count; ++i)
@@ -1680,7 +1684,7 @@ Plan::Impl::Action Plan::Impl::createAction(const Block & header, Node node, con
         }
     }
     skip(node);
-    return [](MutableColumns &, std::vector<UInt8> &)
+    return [](MutableColumns &, VectorWithMemoryTracking<UInt8> &)
     {
     };
 }
@@ -1773,7 +1777,7 @@ NO_INLINE std::exception_ptr captureException(Function && function) noexcept
 
 Plan::Impl::Outcome Plan::Impl::decode(
     std::span<const UInt8> input, UInt64 max_rows, MutableColumns & columns,
-    std::vector<std::vector<UInt8>> & missing, bool allow_incomplete, bool append_missing,
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing, bool allow_incomplete, bool append_missing,
     const InputSource * source, bool more_input)
 {
     committed_rows = 0;
@@ -2000,21 +2004,21 @@ void Plan::beginBlock()
 
 UInt64 Plan::decode(
     std::span<const UInt8> input, UInt64 max_rows, MutableColumns & columns,
-    std::vector<std::vector<UInt8>> & missing)
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing)
 {
     return impl->decode(input, max_rows, columns, missing, false, false).consumed;
 }
 
 UInt64 Plan::decodeStream(
     InputWindow window, const InputSource & next, UInt64 max_rows, MutableColumns & columns,
-    std::vector<std::vector<UInt8>> & missing)
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing)
 {
     return impl->decode(window.bytes, max_rows, columns, missing, false, true, &next, window.more).consumed;
 }
 
 Plan::DatumResult Plan::decodeDatum(
     std::span<const UInt8> input, bool more_input, MutableColumns & columns,
-    std::vector<std::vector<UInt8>> & missing)
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing)
 {
     avro_state_reset(impl->state.get());
     const auto outcome = impl->decode(input, 1, columns, missing, more_input, false);

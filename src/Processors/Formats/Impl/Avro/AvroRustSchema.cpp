@@ -1,3 +1,4 @@
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Avro/AvroRustSchema.h>
 
 #if USE_AVRO_RUST
@@ -233,7 +234,7 @@ std::string nodeDescription(Node node, const AvroNodeInfo & info)
 
 /// Named types are followed by reference, so the schema JSON being shallow (`max_depth` of `Schema`) does not bound the
 /// recursion: only `checkStackSize` does, as in the legacy `avroNodeToDataTypeImpl`.
-DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_progress, bool allow_nullable_tuple_type)
+DataTypePtr inferTypeImpl(Node node, UnorderedSetWithMemoryTracking<UInt32> & records_in_progress, bool allow_nullable_tuple_type)
 {
     checkStackSize();
 
@@ -380,7 +381,7 @@ DataTypePtr inferTypeImpl(Node node, std::unordered_set<UInt32> & records_in_pro
 
 DataTypePtr inferType(Node node, bool allow_nullable_tuple_type)
 {
-    std::unordered_set<UInt32> records_in_progress;
+    UnorderedSetWithMemoryTracking<UInt32> records_in_progress;
     return inferTypeImpl(node, records_in_progress, allow_nullable_tuple_type);
 }
 

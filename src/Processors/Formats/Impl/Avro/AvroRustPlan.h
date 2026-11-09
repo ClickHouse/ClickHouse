@@ -4,6 +4,7 @@
 
 #if USE_AVRO_RUST
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Formats/FormatSettings.h>
@@ -63,7 +64,7 @@ public:
         std::span<const UInt8> input,
         UInt64 max_rows,
         MutableColumns & columns,
-        std::vector<std::vector<UInt8>> & missing);
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing);
 
     /// The payload of a block, or what is left of it, that the decoder is given at a time.
     struct InputWindow
@@ -102,7 +103,7 @@ public:
         const InputSource & next,
         UInt64 max_rows,
         MutableColumns & columns,
-        std::vector<std::vector<UInt8>> & missing);
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing);
 
     /// Outcome of `decodeDatum`.
     struct DatumResult
@@ -124,7 +125,7 @@ public:
         std::span<const UInt8> input,
         bool more_input,
         MutableColumns & columns,
-        std::vector<std::vector<UInt8>> & missing);
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing);
 
     UInt64 committedRows() const;
 

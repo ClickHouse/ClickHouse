@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -102,7 +103,7 @@ constexpr size_t MAX_DATUMS_TO_WALK = 1 << 16;
 size_t touchDatum(const avro::GenericDatum & root)
 {
     size_t touched = 0;
-    std::vector<const avro::GenericDatum *> stack{&root};
+    VectorWithMemoryTracking<const avro::GenericDatum *> stack{&root};
     while (!stack.empty() && touched < MAX_DATUMS_TO_WALK)
     {
         const avro::GenericDatum * datum = stack.back();

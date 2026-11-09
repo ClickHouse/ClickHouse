@@ -1796,6 +1796,9 @@ bool allowParallelReplicasForJoinTree(
         if (!right_table && !right_table_function)
             return false;
 
+        if (right_table_function && !tableFunctionCanDriveParallelReplicasRead(*right_table_function, query_sets_additional_table_filters))
+            return false;
+
         const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
         if (parallelReplicasEnabledForStorage(right_storage, context, query_settings))
         {

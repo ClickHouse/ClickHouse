@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Avro/AvroOcfReader.h>
 
 #if USE_AVRO_RUST
@@ -784,7 +785,7 @@ bool OcfReader::fillPlain()
     return plain.size() > before;
 }
 
-void OcfReader::decodeFromPlain(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing)
+void OcfReader::decodeFromPlain(Plan & plan, UInt64 max_rows, MutableColumns & columns, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing)
 {
     if (!plainSize())
         fillPlain();
@@ -818,7 +819,7 @@ void OcfReader::decodeFromPlain(Plan & plan, UInt64 max_rows, MutableColumns & c
     plain_begin += consumed;
 }
 
-void OcfReader::decodeFromInput(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing)
+void OcfReader::decodeFromInput(Plan & plan, UInt64 max_rows, MutableColumns & columns, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing)
 {
     detail::RawPayload raw(*this);
 
@@ -967,7 +968,7 @@ void OcfReader::decodeFromInput(Plan & plan, UInt64 max_rows, MutableColumns & c
     }
 }
 
-void OcfReader::decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing)
+void OcfReader::decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & columns, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing)
 {
     if (max_rows > rows_left)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode {} rows of an Avro block with {} left", max_rows, rows_left);
@@ -1007,7 +1008,7 @@ void OcfReader::discardRows(UInt64 n)
 
 void forEachDecodedBatch(OcfReader & reader, Plan & plan, const Block & header, const DecodedBatchCallback & callback)
 {
-    std::vector<std::vector<UInt8>> missing;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> missing;
     while (reader.nextBlock())
     {
         while (reader.rowsLeft())

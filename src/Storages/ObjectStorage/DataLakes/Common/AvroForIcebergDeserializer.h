@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include "config.h"
@@ -51,13 +54,13 @@ private:
     mutable std::unordered_map<std::string, std::optional<std::pair<ColumnPtr, DataTypePtr>>>
         cache_extracted_subcolumns_with_types TSA_GUARDED_BY(cache_mutex);
 
-    std::map<std::string, std::vector<uint8_t>> metadata;
+    MapWithMemoryTracking<std::string, VectorWithMemoryTracking<uint8_t>> metadata;
 
     size_t bytes_read = 0;
 
 #if USE_AVRO_RUST
     /// By top level field, whether each row is an Avro null; only for the fields of a non-`Nullable` type that have a null.
-    std::unordered_map<std::string, std::vector<UInt8>> null_rows;
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<UInt8>> null_rows;
 
     /// By top level field, the kind of its Avro type before the schema inference coalesces kinds: `bytes` and `string` both
     /// become `String`, and so does `fixed`. A union of `null` and one other type is that other type.
@@ -71,9 +74,9 @@ private:
         std::shared_ptr<const DB::DataTypeTuple> data_type,
         MutableColumns columns,
         size_t rows_,
-        std::unordered_map<std::string, std::vector<UInt8>> null_rows_,
+        UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<UInt8>> null_rows_,
         std::unordered_map<std::string, UInt8> field_kinds_,
-        const std::map<std::string, std::vector<uint8_t>> & metadata_,
+        const MapWithMemoryTracking<std::string, VectorWithMemoryTracking<uint8_t>> & metadata_,
         size_t bytes_read_);
 #endif
 

@@ -1,3 +1,5 @@
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <algorithm>
 #include <memory>
 #include <sstream>
@@ -162,9 +164,9 @@ RecordShape inferRecordShape(const AvroRust::OcfReader & file_reader)
 /// of a batch of `batch_rows` rows that starts at `first_row`; `missing[i][row]` is set for a value that was not read:
 /// the Avro null of a union.
 void appendNullFlags(
-    std::vector<std::vector<UInt8>> & null_flags,
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & null_flags,
     const DataTypes & types,
-    const std::vector<std::vector<UInt8>> & missing,
+    const VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing,
     size_t first_row,
     size_t batch_rows)
 {
@@ -178,10 +180,10 @@ void appendNullFlags(
 }
 
 /// The flags of the fields that have a null, by the name of the field, for `total_rows` rows.
-std::unordered_map<std::string, std::vector<UInt8>>
-takeNullFlags(std::vector<std::vector<UInt8>> && null_flags, const Strings & names, size_t total_rows)
+UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<UInt8>>
+takeNullFlags(VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> && null_flags, const Strings & names, size_t total_rows)
 {
-    std::unordered_map<std::string, std::vector<UInt8>> result;
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<UInt8>> result;
     for (size_t i = 0; i < null_flags.size(); ++i)
     {
         if (null_flags[i].empty())
@@ -209,8 +211,8 @@ try
 
     AvroRust::Plan plan(record.header, file_reader.schema(), /* allow_missing_fields = */ true, /* null_as_default = */ true, format_settings);
     MutableColumns columns = record.header.cloneEmptyColumns();
-    std::vector<std::vector<UInt8>> missing;
-    std::vector<std::vector<UInt8>> null_flags(columns.size());
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> missing;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> null_flags(columns.size());
     size_t total_rows = 0;
     while (file_reader.nextBlock())
     {
@@ -272,9 +274,9 @@ AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::shared_ptr<const DataTypeTuple> data_type,
     MutableColumns columns,
     size_t rows_,
-    std::unordered_map<std::string, std::vector<UInt8>> null_rows_,
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<UInt8>> null_rows_,
     std::unordered_map<std::string, UInt8> field_kinds_,
-    const std::map<std::string, std::vector<uint8_t>> & metadata_,
+    const MapWithMemoryTracking<std::string, VectorWithMemoryTracking<uint8_t>> & metadata_,
     size_t bytes_read_)
     : manifest_file_path(manifest_file_path_)
     , parsed_column(columns.empty() ? ColumnTuple::create(rows_) : ColumnTuple::create(std::move(columns)))
@@ -305,9 +307,9 @@ void AvroForIcebergDeserializer::forEachBatch(
             file_reader,
             plan,
             record.header,
-            [&](MutableColumns & columns, const std::vector<std::vector<UInt8>> & missing, UInt64 rows)
+            [&](MutableColumns & columns, const VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> & missing, UInt64 rows)
             {
-                std::vector<std::vector<UInt8>> null_flags(columns.size());
+                VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> null_flags(columns.size());
                 appendNullFlags(null_flags, record.types, missing, 0, rows);
                 for (auto & column : columns)
                     column->finalize();

@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -350,7 +351,7 @@ void collectReplacedFileGroups(
             reader,
             plan,
             header,
-            [&](MutableColumns & columns, const std::vector<std::vector<UInt8>> &, UInt64 rows)
+            [&](MutableColumns & columns, const VectorWithMemoryTracking<VectorWithMemoryTracking<UInt8>> &, UInt64 rows)
             {
                 for (size_t row = 0; row < rows; ++row)
                 {

@@ -1,3 +1,4 @@
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
 #if USE_AVRO_RUST
@@ -47,7 +48,7 @@ NameSet columnsAbsentFromFile(const Block & header, const ColumnMapper & mapper,
             return {};
     }
 
-    std::unordered_set<Int64> file_ids;
+    UnorderedSetWithMemoryTracking<Int64> file_ids;
     for (UInt32 i = 0; i < schema.nodeCount(); ++i)
     {
         auto node = schema.node(i);
