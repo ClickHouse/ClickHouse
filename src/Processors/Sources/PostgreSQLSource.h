@@ -30,8 +30,8 @@ class PostgreSQLSource : public ISource
 {
 
 public:
-    /// structure_hint_, if set, is appended to the error of a failed value conversion. Callers that
-    /// map the result positionally use it to state the column order the result must be in.
+    /// structure_hint_, if set, is appended to the error of a failed value conversion or of a row of the wrong
+    /// width. Callers that map the result positionally use it to state the column order the result must be in.
     PostgreSQLSource(
         postgres::ConnectionHolderPtr connection_holder_,
         const String & query_str_,

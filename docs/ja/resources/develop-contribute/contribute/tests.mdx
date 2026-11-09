@@ -357,7 +357,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 性能テストでは、合成クエリを使って、ClickHouse の特定の独立した部分の性能を測定・比較できます。
 性能テストは `tests/performance/` にあります。
 各テストは、テストケースの説明を含む `.xml` ファイルで定義されます。
-テストの実行には `docker/test/performance-comparison` ツールを使用します。実行方法については readme ファイルを参照してください。
+テストは `ci/jobs/performance_tests.py` CI ジョブにより、`ci/docker/performance-comparison` イメージ内で実行されます。
 
 各テストでは、1 つまたは複数のクエリ (パラメータの組み合わせを含む場合があります) をループで実行します。
 
@@ -368,7 +368,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 ## テストツールとスクリプト {#test-tools-and-scripts}
 
 `tests`ディレクトリ内のプログラムの中には、実行用のテストとして用意されたものではなく、テストツールであるものがあります。
-たとえば `Lexer` には、標準入力をトークン化し、その結果を色分けして標準出力に出力するツール `src/Parsers/tests/lexer` があります。
+たとえば `Lexer` には、標準入力をトークン化し、その結果を色分けして標準出力に出力するツール `src/Parsers/examples/lexer.cpp` があります。
 この種のツールは、コード例として使えるほか、調査や手動テストにも利用できます。
 
 ## その他のテスト {#miscellaneous-tests}
@@ -509,7 +509,7 @@ LibFuzzer 固有の設定、辞書、コーパスは `tests/fuzz` に格納さ�
 ファザーをビルドするには、`-DENABLE_FUZZING=1` と `-DENABLE_TESTS=1` の両方のオプションを設定する必要があります。
 ファザーをビルドする際は、Jemalloc を無効にすることを推奨します。
 ClickHouse のファジングを
-Google OSS-Fuzz に統合するための設定は `docker/fuzz` にあります。
+Google OSS-Fuzz に統合するための設定は `tests/fuzz` にあります。
 
 また、ランダムな SQL クエリを生成し、それらを実行してもサーバーが停止しないことを確認する、単純なファズテストも使用しています。
 これは `00746_sql_fuzzy.python` にあります。
@@ -592,7 +592,7 @@ ClickHouse は、運用エンジニアが不良ハードウェアを特定する
 
 コードスタイルのルールは[こちら](/ja/resources/develop-contribute/contribute/style)で説明しています。
 
-一般的なスタイル違反をいくつかチェックするには、`utils/check-style` スクリプトを使用できます。
+一般的なスタイル違反をいくつかチェックするには、`ci/jobs/scripts/check_style/check_cpp.sh` スクリプトを使用できます。また、`python -m ci.praktika run "Style check"` を実行して、スタイルチェック全体をローカルで行うこともできます。
 
 コードのスタイルを整えるには、`clang-format` を使用できます。
 `.clang-format` ファイルはソースルートにあります。

@@ -23,6 +23,7 @@
 #include <IO/ConcatReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
@@ -32,6 +33,7 @@
 #if CLICKHOUSE_CLOUD && USE_SSL
 #include <Backups/BackupEncryptionSidecar.h>
 #endif
+#include <Poco/SAX/InputSource.h>
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -59,6 +61,7 @@ namespace FailPoints
     extern const char backup_fail_lock_file_removal[];
     extern const char backup_fail_lock_file_write_after_commit[];
     extern const char backup_fail_lock_file_write_after_open[];
+    extern const char backup_fail_reading_archive_size[];
     extern const char backup_pause_before_lock_file_creation[];
     extern const char backup_pause_after_lock_file_creation[];
 }
@@ -428,6 +431,9 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
+        /// A backup being written only looks up the sizes and checksums of the files of its base, to skip the files the base
+        /// already has. For a base of millions of files, the rest of the information about its files takes gigabytes.
+        base_params.for_file_lookups_only = (open_mode == OpenMode::WRITE);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -737,9 +743,6 @@ void BackupImpl::readBackupMetadata()
         in = reader->readFile(METADATA_FILE_NAME);
     }
 
-    String str;
-    readStringUntilEOF(str, *in);
-
     num_files = 0;
     total_size = 0;
     num_entries = 0;
@@ -819,8 +822,20 @@ void BackupImpl::readBackupMetadata()
         contents_seen = true;
     };
 
+    /// Many files of a backup have the same size and checksum (e.g. `columns.txt` of the parts of a table), so the keys
+    /// are deduplicated while they are read, whenever their number doubles since the previous time: this keeps the vector
+    /// at about twice the number of distinct keys, however many duplicates there are.
+    static constexpr size_t min_num_sizes_and_checksums_to_deduplicate = 65536;
+    size_t num_sizes_and_checksums_after_deduplication = 0;
+    auto deduplicate_sizes_and_checksums = [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        std::ranges::sort(sizes_and_checksums);
+        sizes_and_checksums.erase(std::ranges::unique(sizes_and_checksums).begin(), sizes_and_checksums.end());
+        num_sizes_and_checksums_after_deduplication = sizes_and_checksums.size();
+    };
+
     /// `readBackupMetadata` runs under `mutex` (TSA_REQUIRES), and `on_file` is invoked synchronously from
-    /// `parseMemoryNP` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
+    /// `parse` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
@@ -919,7 +934,17 @@ void BackupImpl::readBackupMetadata()
         {
             file_names.emplace(info.file_name, size_and_checksum);
             if (info.size)
-                file_infos.try_emplace(size_and_checksum, std::move(info));
+            {
+                if (params.for_file_lookups_only)
+                {
+                    sizes_and_checksums.push_back(size_and_checksum);
+                    if (sizes_and_checksums.size()
+                        >= std::max(min_num_sizes_and_checksums_to_deduplicate, 2 * num_sizes_and_checksums_after_deduplication))
+                        deduplicate_sizes_and_checksums();
+                }
+                else
+                    file_infos.try_emplace(size_and_checksum, std::move(info));
+            }
         }
     };
 
@@ -930,9 +955,18 @@ void BackupImpl::readBackupMetadata()
     /// ordinary element; with it the handler sees "x:contents" and ignores it (writeBackupMetadata never
     /// emits namespaces, so this only rejects hand-crafted manifests).
     xml_parser.setFeature(Poco::XML::XMLReader::FEATURE_NAMESPACE_PREFIXES, true);
+    /// The metadata is parsed while it is read, in chunks, instead of being read into one string first: it has
+    /// a record per file and can take gigabytes for a backup of many files.
+    ReadBuffer & metadata_in = *in;
+    /// The parser reads the stream from start to end and never seeks, so the stream doesn't need the size.
+    StdIStreamFromReadBuffer metadata_stream(std::move(in), /*size=*/ 0);
+    /// `std::istream` swallows an exception thrown by the buffer and only sets `badbit`, which the parser takes
+    /// for the end of the data. Rethrow it instead, so a read error isn't reported as a malformed manifest.
+    metadata_stream.exceptions(std::ios::badbit);
+    Poco::XML::InputSource metadata_source(metadata_stream);
     try
     {
-        xml_parser.parseMemoryNP(str.data(), str.size());
+        xml_parser.parse(&metadata_source);
     }
     catch (...)
     {
@@ -952,7 +986,10 @@ void BackupImpl::readBackupMetadata()
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
-    uncompressed_size = size_of_entries + str.size();
+    deduplicate_sizes_and_checksums();
+    sizes_and_checksums.shrink_to_fit();
+
+    uncompressed_size = size_of_entries + metadata_in.count();
 
 #if CLICKHOUSE_CLOUD && USE_SSL
     /// A backup written with an encryption config file next to it carries the TDE key information of that
@@ -1317,6 +1354,8 @@ bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
+    if (params.for_file_lookups_only)
+        return std::ranges::binary_search(sizes_and_checksums, size_and_checksum);
     return file_infos.contains(size_and_checksum);
 }
 
@@ -1378,6 +1417,9 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
 
     // Zero-sized files are not inserted into `file_infos` during metadata load,
     // but they are present in `file_names`. Short-circuit them here and return
@@ -1556,6 +1598,9 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
+
     if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
@@ -1727,6 +1772,15 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
             writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
     }
 
+    /// Make the just-written data file and its copies durable. Archives are synced as a single
+    /// file in finalizeWriting instead. Concurrency-safe: each call fsyncs its own file.
+    if (params.fsync_backup_files && !use_archive)
+    {
+        writer->syncFileToDisk(info.data_file_name);
+        for (const auto & data_file_copy : info.data_file_copies)
+            writer->syncFileToDisk(data_file_copy);
+    }
+
     {
         std::lock_guard lock{mutex};
         ++num_entries;
@@ -1772,6 +1826,38 @@ void BackupImpl::finalizeWriting()
             uncompressed_size += encryption_sidecar->write();
 #endif
         closeArchive(/* finalize= */ true);
+    }
+
+    /// The backup is published at this point: `.backup` is readable at the destination, or the
+    /// archive has been finalized. A published backup must never be removed as a failed one, so arm
+    /// the guard read by `setIsCorrupted` before the steps below, which can still throw.
+    writing_finalized = true;
+
+    if (params.fsync_backup_files && writer)
+    {
+        /// Sync the manifest (or, for archives, the archive file) last, after all data files were
+        /// synced in writeFile, so a persisted manifest never precedes its payload. Only the
+        /// initiator writes the manifest.
+        if (!params.is_internal_backup)
+        {
+#if CLICKHOUSE_CLOUD && USE_SSL
+            /// Payload, not metadata: written outside the archive and not a backup entry, so no other
+            /// sync covers it, and the data files do not decrypt without it. Key infos exist iff it does.
+            if (!encryption_sidecar->getKeyInfos().empty())
+                writer->syncFileToDisk(encryption_sidecar->fileName());
+#endif
+            writer->syncFileToDisk(use_archive ? archive_params.archive_name : ".backup");
+        }
+
+        /// Every writer syncs its directory entries, including the internal writers of BACKUP ON
+        /// CLUSTER, which write their own data files.
+        writer->syncDirectoriesToDisk();
+    }
+
+    if (!params.is_internal_backup)
+    {
+        /// For an archive this reads the size back off the destination disk and can throw, so it
+        /// must stay below the guard above.
         setCompressedSize();
 #if CLICKHOUSE_CLOUD
         if (params.resume)
@@ -1780,20 +1866,24 @@ void BackupImpl::finalizeWriting()
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
-
-    writing_finalized = true;
 }
 
 
 void BackupImpl::setCompressedSize()
 {
     if (use_archive)
+    {
+        fiu_do_on(FailPoints::backup_fail_reading_archive_size,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_reading_archive_size is triggered");
+        });
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
 #if CLICKHOUSE_CLOUD && USE_SSL
         /// The encryption config file is written outside of the archive, so its size must be added
         /// to the size of the archive to get the physical footprint of the backup.
         compressed_size += encryption_sidecar->getFileSize();
 #endif
+    }
     else
         compressed_size = uncompressed_size;
 }
@@ -1823,7 +1913,7 @@ bool BackupImpl::setIsCorrupted() noexcept
 
         if (writing_finalized)
         {
-            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct!");
+            LOG_WARNING(log, "An error happened after the backup was completed successfully, the backup must be correct");
             return false;
         }
 
@@ -1874,6 +1964,10 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
                 /// Their `data_file_name` is empty, which would otherwise resolve to the backup root.
                 if (!file_info.data_file_name.empty())
                     files_to_remove.push_back(file_info.data_file_name);
+                /// Copies are materialized next to the data file, so a failure after copying
+                /// (e.g. in a durability fsync) must not leave them behind.
+                for (const auto & data_file_copy : file_info.data_file_copies)
+                    files_to_remove.push_back(data_file_copy);
             });
         }
 

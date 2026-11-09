@@ -582,6 +582,14 @@ if args.report == "main":
     skipped_tests_rows = tsvRows("analyze/skipped-tests.tsv")
     addSimpleTable("Skipped Tests", ["Test", "Reason"], skipped_tests_rows)
 
+    # perf.py compares the prewarm results of the servers (`result_digest`).
+    # Not an error: a pull request that fixes a result changes it.
+    addSimpleTable(
+        "Queries with Different Results",
+        ["Test", "#", "Rows on the old server", "Rows on the new server"],
+        tsvRows("analyze/result-mismatches.tsv"),
+    )
+
     addSimpleTable(
         "Test Performance Changes",
         [
@@ -730,7 +738,8 @@ if args.report == "main":
         # embedded here and recomputes the final Praktika status. In
         # `master_head` mode the performance dashboard's per-query verdict is
         # the gate; the "N slower" message below is reparsed only for the
-        # cumulative `release_base` mode, so the effective gate lives there.
+        # cumulative `release_base` mode and for a `master_head` shard the
+        # dashboard could not judge, so the effective gate lives there.
         if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")

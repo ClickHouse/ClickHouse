@@ -12,8 +12,12 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 [Sensor.Community](https://sensor.community/en/)는 공개 환경 데이터(Open Environmental Data)를 생성하는, 커뮤니티 참여자들이 주도하는 글로벌 센서 네트워크입니다. 데이터는 전 세계 센서에서 수집됩니다. 누구나 센서를 구매해 원하는 곳에 설치할 수 있습니다. 데이터를 다운로드하기 위한 API는 [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs)에 있으며, 데이터는 [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/)에 따라 자유롭게 사용할 수 있습니다.
 
 <Warning>
-  이 데이터셋에는 200억 개가 넘는 레코드가 있으므로, 리소스가 이 정도 규모를 처리할 수 없다면 아래 명령을 그대로 복사해 붙여 넣지 않도록 주의하십시오. 아래 명령은 [ClickHouse Cloud](https://clickhouse.cloud)의 **Production** 인스턴스에서 실행되었습니다.
+  이 데이터셋에는 200억 개가 넘는 레코드가 있으므로, 리소스가 이 정도 규모를 처리할 수 없다면 아래 명령을 그대로 복사해 붙여 넣지 않도록 주의하십시오. 이 명령은 적절한 규모의 [ClickHouse Cloud](/ko/products/cloud/getting-started/intro) 서비스에서 실행되었습니다.
 </Warning>
+
+<Tip>
+  이 명령을 직접 실행해 보려면 무료 [ClickHouse Cloud 체험판](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors)에 가입하거나 [자체 호스팅 ClickHouse](/ko/get-started/setup/install)를 설정하세요.
+</Tip>
 
 1. 데이터는 S3에 있으므로 `s3` 테이블 함수를 사용해 파일에서 테이블을 생성할 수 있습니다. 원본 위치에서 바로 쿼리할 수도 있습니다. ClickHouse에 삽입하기 전에 몇 개의 행을 먼저 살펴보겠습니다:
 
@@ -73,9 +77,9 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. ClickHouse Cloud 서비스에는 `default`라는 클러스터가 있습니다. 클러스터의 노드에서 S3 파일을 병렬로 읽는 `s3Cluster` 테이블 함수를 사용하겠습니다. (클러스터가 없으면 `s3` 함수를 사용하고 클러스터 이름을 제거하십시오.)
+3. [`s3Cluster`](/ko/reference/functions/table-functions/s3Cluster) 테이블 함수를 사용하겠습니다. 이 함수는 S3 파일을 클러스터의 노드에 분산해 병렬로 읽습니다. ClickHouse Cloud에서는 클러스터 이름이 `default`이므로 아래와 같이 실행할 수 있습니다. 자가 관리형 서버에서는 `default`를 클러스터 이름으로 바꾸십시오. 단일 서버를 실행 중이라면 대신 [`s3`](/ko/reference/functions/table-functions/s3) 테이블 함수를 사용하고 첫 번째 인수를 제거해 함수 호출이 URL로 시작하도록 하십시오.
 
-이 쿼리는 시간이 다소 걸릴 수 있습니다. 비압축(uncompressed) 데이터 기준으로 약 1.67T입니다:
+이 쿼리는 시간이 다소 걸릴 수 있습니다. 비압축 데이터 기준으로 약 1.67T입니다:
 
 ```sql
 INSERT INTO sensors
@@ -113,7 +117,7 @@ SETTINGS
     parallel_distributed_insert_select = 1;
 ```
 
-다음은 응답 결과입니다. 행(row) 수와 처리 속도를 확인할 수 있습니다. 초당 600만 행 이상의 속도로 입력되고 있습니다!
+다음은 행 수와 처리 속도를 보여주는 응답입니다. 초당 600만 행이 넘는 속도로 입력되고 있습니다!
 
 ```response
 0 rows in set. Elapsed: 3419.330 sec. Processed 20.69 billion rows, 1.67 TB (6.05 million rows/s., 488.52 MB/s.)
@@ -172,4 +176,4 @@ ORDER BY day ASC;
 
 결과를 시각화하면 다음과 같습니다:
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="무덥고 습한 날" />
+<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="덥고 습한 날" />
