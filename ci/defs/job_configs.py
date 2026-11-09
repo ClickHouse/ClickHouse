@@ -1924,8 +1924,9 @@ class JobConfigs:
         # Same DinD containment contract as `common_integration_test_job_config`: Dolor's servers
         # are nested containers too, so without `--cgroupns=private` and the `CI_DIND_*` budgets
         # `docker_in_docker.sh` starts an uncontained daemon, `--memory` bounds only the harness,
-        # and a nested OOM spills onto the runner instead of being classified here.
-        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}",
+        # and a nested OOM spills onto the runner instead of being classified here. AI triage runs
+        # in this container, so its kill switch and timeout overrides are forwarded too.
+        run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144{integration_dind_env}+-e AI_FUZZ_TRIAGE+-e AI_FUZZ_TRIAGE_TIMEOUT",
         # Dolor shares `clickhouse_integration_tests_volume` with the other DinD jobs, so without
         # this its containers, images and volumes outlive the run and the next job on the runner
         # inherits them. Same hook the other integration-tests-runner jobs register.
