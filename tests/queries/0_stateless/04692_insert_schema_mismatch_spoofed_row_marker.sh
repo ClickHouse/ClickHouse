@@ -7,10 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # https://github.com/ClickHouse/ClickHouse/issues/110622
 # On the `INSERT ... FROM INFILE` path the number of rows the parser reached is taken from the parse
 # error message, and that message also embeds excerpts of the data being inserted. The data must not be
-# able to spoof the bound: the row marker is appended by the format at the end of the message, so the
-# last `(at row N)` / ` at row N` occurrence is the one to trust. Taking the first one instead lets a
-# value such as `(at row 50)` make schema inference sample rows the parser never reached, which both
-# invents and suppresses the explanation of the parse error.
+# able to spoof the bound, so the smallest bound over all `(at row N)` / ` at row N` occurrences is
+# taken. Trusting a fake marker instead lets a value such as `(at row 50)` make schema inference sample
+# rows the parser never reached, which both invents and suppresses the explanation of the parse error.
 
 PHRASE="does not match the structure expected by the query"
 

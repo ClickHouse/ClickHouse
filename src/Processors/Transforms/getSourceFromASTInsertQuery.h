@@ -87,7 +87,8 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
 
 /// Extracts the 1-based number of the row the parser had reached from a parse-error message, i.e. the
 /// `(at row N)` part `IRowInputFormat` appends before rethrowing. Returns nullopt when the message does
-/// not carry it. Used by the `INSERT ... FROM INFILE` path, where the input format lives deep inside a
+/// not carry it. The message may contain lookalikes of the marker in untrusted text (the data, the file
+/// name), so the smallest bound over all markers found in it is returned. Used by the `INSERT ... FROM INFILE` path, where the input format lives deep inside a
 /// `StorageFile` pipeline and cannot be asked for IInputFormat::getRowsReachedOnParseError directly.
 /// Note that under parallel parsing the number is local to a chunk, so it is not a valid global bound.
 std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message);
