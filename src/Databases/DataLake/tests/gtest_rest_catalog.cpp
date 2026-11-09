@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 }
 
@@ -384,6 +385,28 @@ public:
                 response,
                 R"({"metadata-location":"s3://bucket/table_a/metadata/v1.metadata.json",)"
                 R"("metadata":{"table-uuid":"11111111-2222-3333-4444-555555555555","location":"s3://bucket/table_a"}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/valid_schema_table")
+        {
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/valid_schema_table/metadata/v1.metadata.json",)"
+                R"("metadata":{"format-version":2,"table-uuid":"11111111-2222-3333-4444-555555555556","location":"s3://bucket/valid_schema_table",)"
+                R"("current-schema-id":0,"schemas":[{"type":"struct","schema-id":0,"identifier-field-ids":[1],)"
+                R"("fields":[{"id":1,"name":"a","required":true,"type":"long"}]}]}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/invalid_schema_table")
+        {
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/invalid_schema_table/metadata/v1.metadata.json",)"
+                R"("metadata":{"format-version":2,"table-uuid":"11111111-2222-3333-4444-555555555557","location":"s3://bucket/invalid_schema_table",)"
+                R"("current-schema-id":0,"schemas":[{"type":"struct","schema-id":0,"identifier-field-ids":[9],)"
+                R"("fields":[{"id":1,"name":"a","required":true,"type":"long"}]}]}})");
             return;
         }
 
@@ -777,6 +800,41 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
     }
 
     EXPECT_THROW(catalog.existsTable("namespace", "expired_token_table"), DB::HTTPException);
+}
+
+/// The schemas of a table returned by the catalog are checked like those of a metadata file.
+TEST(RestCatalog, TryGetTableMetadataChecksTheSchemas)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
+        context);
+
+    auto valid = TableMetadata().withSchema();
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "valid_schema_table", valid));
+    EXPECT_EQ(valid.getSchema().toNamesAndTypesDescription(), "`a` Int64");
+
+    auto invalid = TableMetadata().withSchema();
+    try
+    {
+        catalog.tryGetTableMetadata("namespace", "invalid_schema_table", invalid);
+        FAIL() << "expected ICEBERG_SPECIFICATION_VIOLATION";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION) << e.message();
+        EXPECT_NE(e.message().find("identifier field id 9 does not exist"), std::string::npos) << e.message();
+    }
 }
 
 /// The tests below cover a namespace that another client drops after it was listed but before its
