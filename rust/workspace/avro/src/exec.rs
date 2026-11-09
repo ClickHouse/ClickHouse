@@ -28,15 +28,23 @@
 //!   entry per sink and the list of the sinks that lack room (at most one entry per sink), the executor allocates nothing.
 //! * **Bounded work.** A block count is compared with the bytes that remain
 //!   (`count <= remaining / min_item_size`) before any item is decoded.
-//!   Items that occupy no bytes are capped per block by
-//!   [`crate::MAX_ZERO_SIZE_ITEMS`]. Every iteration of every loop either
-//!   consumes input or spends one of those bounded counts.
+//!   Items that occupy no bytes are capped per **row** by
+//!   [`crate::MAX_ZERO_SIZE_ITEMS`]: all the arrays and maps of a row, and all
+//!   the blocks of each, spend one budget. A row keeps what it has spent through
+//!   every pause (`NeedSpace`, `NeedInput`), a row that is decoded again from its
+//!   start (after a rollback, a replay or an input that ended inside it) spends
+//!   from nothing because the earlier attempt is discarded whole, and every row
+//!   starts with all of it: the budget does not depend on the rows before it,
+//!   on how the caller batches them into calls, or on the framing of the file.
+//!   Every iteration of every loop either consumes input or spends one of those
+//!   bounded counts, except for a loop that has no instruction in its body (a
+//!   skipped `null` or empty record): its items change nothing but their count,
+//!   so they are counted in one step ([`Stats::empty_loop_items`]).
 //! * **Errors** carry the committed progress ([`DecodeError`]); the state is
-//!   reset, so the same state can be used for the next block. The exception is
+//!   reset, so the same state can be used for the next row or block. That includes
 //!   an input that ends inside a row ([`ErrorCode::Eof`],
-//!   [`ErrorCode::CountExceedsPayload`]): the row is decoded again from its
-//!   start once more bytes arrive, so the block's budget of zero-size items,
-//!   counted over the rows that completed, is kept.
+//!   [`ErrorCode::CountExceedsPayload`]): the row is decoded again from its start
+//!   once more bytes arrive, with the budget of a row.
 //!
 //! All buffers are byte slices, so no alignment is required from the caller.
 //! Numbers are written in host byte order, which is what a ClickHouse column
@@ -200,19 +208,23 @@ pub struct Stats {
     /// Array and map items that a loop whose body is one number decoded in a run, without going back to
     /// the dispatch of the executor for each of them.
     pub bulk_items: u64,
+    /// Items of loops that have no instruction in their body, that is, items that occupy no bytes and that
+    /// nothing reads (a skipped `null`, or a record that always encodes to no bytes): all the items of a block
+    /// but its last are added to the count of the loop in one step, and the loop does not iterate. The row's
+    /// budget is charged for all of them all the same.
+    pub empty_loop_items: u64,
 }
 
 pub struct State {
     ip: u32,
     frames: Vec<ExecFrame>,
-    /// Zero-size items accepted so far in the current block.
+    /// Zero-size items accepted so far in the current row: the row's budget, spent by every array and map block
+    /// of the row and kept while the row is paused. It is zero between rows.
     zero_items: u64,
     max_depth: usize,
     /// Sink fill levels at the first row boundary of the current call, for rollback. A call that resumes
     /// a paused row keeps the levels of the call that started the row: they are the row's start.
     fill: Vec<(usize, usize, u64)>,
-    /// `zero_items` at that same row boundary.
-    zero_items_start: u64,
     /// Rows completed so far by the current call.
     rows_call: u64,
     /// `Some(pos)`: the last call stopped with `NeedSpace` or `NeedInput` in its first row, and the row
@@ -243,7 +255,6 @@ impl State {
             zero_items: 0,
             fill: Vec::new(),
             rows_call: 0,
-            zero_items_start: 0,
             paused: None,
             carried: false,
             skip_left: 0,
@@ -258,18 +269,22 @@ impl State {
         }
     }
 
+    /// Back to the start of a row, which has the whole budget of zero-size items: a row that is paused is
+    /// continued without this, and every other row starts, is decoded again, or follows a completed row with it.
     fn reset_row(&mut self) {
         self.ip = 0;
         self.frames.clear();
+        self.zero_items = 0;
         self.paused = None;
         self.carried = false;
         self.skip_left = 0;
     }
 
-    /// Back to the start of a row for a new block, or after an error.
+    /// Back to the start of a row after an error, and abandons a paused row. The state carries nothing
+    /// from one block to the next, so this is not needed between blocks, but it drops what an abandoned
+    /// block left in it.
     pub fn reset(&mut self) {
         self.reset_row();
-        self.zero_items = 0;
         self.needs.clear();
     }
 
@@ -375,14 +390,15 @@ fn read_block_count(input: &[u8], pos: usize) -> Result<(u64, usize)> {
     Ok((count as u64, p))
 }
 
-/// Rejects a block of `count` items that cannot be real.
+/// Rejects a block of `count` items that cannot be real. Items that occupy no bytes are charged to `zero_items`,
+/// the budget of the row that the block is in.
 fn check_block(count: u64, item_min: u64, remaining: usize, zero_items: &mut u64) -> Result<()> {
     if item_min == 0 {
         let total = zero_items.saturating_add(count);
         if count > MAX_ZERO_SIZE_ITEMS || total > MAX_ZERO_SIZE_ITEMS {
             return Err(Error::new(
                 ErrorCode::TooManyItems,
-                format!("Avro array or map of {count} items that occupy no bytes exceeds the limit of {MAX_ZERO_SIZE_ITEMS} per block"),
+                format!("Avro array or map of {count} items that occupy no bytes exceeds the limit of {MAX_ZERO_SIZE_ITEMS} per row"),
             ));
         }
         *zero_items = total;
@@ -646,12 +662,19 @@ pub struct DecodeError {
 ///   so that a later row never has to roll back into input that was dropped. With `rows_done > 0` the row
 ///   that was cut is discarded as for `NeedSpace` and decoded again by the next call.
 /// * `Err`: the error, `rows_done` and `consumed` as above; the failing row is rolled back to the start
-///   of the call, or to the start of the row if the call resumed a paused row. The state is reset, except
-///   that an input which ends inside the row ([`ErrorCode::Eof`], [`ErrorCode::CountExceedsPayload`])
-///   keeps the block's zero-size item budget as it stood after the completed rows, so that a caller which
-///   resumes the row with more bytes does not get a fresh budget at every window boundary. Without
-///   streaming mode that is what an input that ends inside a row is; a caller that has no more bytes
-///   switches streaming off for its last call, which then reports the error for a paused row, too.
+///   of the call, or to the start of the row if the call resumed a paused row. The state is reset, also
+///   for an input which ends inside the row ([`ErrorCode::Eof`], [`ErrorCode::CountExceedsPayload`]): a
+///   caller which resumes that row with more bytes decodes it again from its start, and the row has the
+///   whole budget of zero-size items of a row, as nothing of the failed attempt is kept (the work and the
+///   output of it are discarded). Without streaming mode that is what an input that ends inside a row is; a
+///   caller that has no more bytes switches streaming off for its last call, which then reports the error
+///   for a paused row, too.
+///
+/// The budget of zero-size items ([`crate::MAX_ZERO_SIZE_ITEMS`]) is the budget of one row. It is kept by a
+/// row that is paused (`NeedSpace` or `NeedInput`) and spent by it until it completes, so a row that is
+/// split into any number of calls cannot spend more than one budget; a row that is rolled back, cut by the
+/// end of the input or replayed starts again from an empty one; and a row that completes leaves nothing to the
+/// next, which therefore does not depend on how many calls, windows or blocks the rows before it were in.
 ///
 /// A row paused for space must be resumed with a prefix of the same bytes at least as long as where it
 /// paused; [`State::reset`] abandons a paused row. Rolling back replays the completed rows of the call
@@ -751,12 +774,12 @@ fn decode_checked(
         return Err(fail(error));
     }
     if resume.is_none() {
+        // A call that does not continue a paused row starts a row, with the whole budget (`reset_row`).
         state.reset_row();
         state.fill.clear();
         state
             .fill
             .extend(sinks.iter().map(|s| (s.len, s.len2, s.offset)));
-        state.zero_items_start = state.zero_items;
     }
     // A row that began in input that is gone is completed alone: see `Status::NeedInput`.
     let max_rows = if state.carried {
@@ -810,12 +833,13 @@ fn decode_checked(
         Err(e) => (state.rows_call, Err(e)),
     };
     // Back to the start of the call (of the row, if it resumed a paused one), then replay the rows that
-    // completed.
+    // completed. Every row of the replay has the budget of a row, as it had the first time, and the row that
+    // stopped, failed or was cut starts over with the whole of it: what it had spent is discarded with its
+    // output, and the next call decodes it from its start.
     for (s, f) in sinks.iter_mut().zip(&state.fill) {
         (s.len, s.len2, s.offset) = *f;
     }
     state.reset_row();
-    state.zero_items = state.zero_items_start;
     let consumed = if rows_done == 0 {
         0
     } else {
@@ -850,11 +874,7 @@ fn decode_checked(
             })
         }
         Err(error) => {
-            if matches!(error.code, ErrorCode::Eof | ErrorCode::CountExceedsPayload) {
-                state.reset_row();
-            } else {
-                state.reset();
-            }
+            state.reset();
             Err(DecodeError {
                 error,
                 rows_done,
@@ -1357,11 +1377,22 @@ fn run(
                         return Err(Error::new(ErrorCode::Internal, "loop frame missing"));
                     };
                     if *remaining > 1 {
-                        // A loop whose body is one number (its op at `begin + 1`, and `ip` the op after it)
-                        // takes the items that follow in one run. It stops at the first one that it cannot
-                        // take (bytes that are not a value, the end of the input, a full sink), and the
-                        // dispatch below decodes that one and reports what is wrong with it.
-                        if ip == begin as usize + 2 {
+                        if ip == begin as usize + 1 {
+                            // No op between `LoopBegin` and this `LoopNext`: an item is neither read nor skipped
+                            // (the compiler emits no op for a `null` or for a record without fields), so every pass
+                            // through here would only count one item. Count the ones that are left at once:
+                            // `remaining` and `total` are what those passes leave, and a header read below that
+                            // pauses or fails finds the state that it would have found after them. The row's
+                            // budget was charged for all of them by `check_block`.
+                            let n = *remaining - 1;
+                            *remaining = 1;
+                            *total += n;
+                            state.stats.empty_loop_items += n;
+                        } else if ip == begin as usize + 2 {
+                            // A loop whose body is one number (its op at `begin + 1`, and `ip` the op after it)
+                            // takes the items that follow in one run. It stops at the first one that it cannot
+                            // take (bytes that are not a value, the end of the input, a full sink), and the
+                            // dispatch below decodes that one and reports what is wrong with it.
                             let done = bulk_items(
                                 ops[begin as usize + 1],
                                 input,
@@ -1454,7 +1485,10 @@ fn run(
                     rows += 1;
                     state.rows_call = rows;
                     ip = 0;
-                    // The budget spans the entire block, including subsequent calls.
+                    // Whatever of the budget of zero-size items the row did not spend is gone with it: the next row
+                    // has a whole one, so that what a row may hold depends on the row, never on the rows before it
+                    // or on how the caller batches them. A row that does not get here keeps what it has spent.
+                    state.zero_items = 0;
                     break;
                 }
             }

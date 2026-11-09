@@ -406,8 +406,8 @@ fn pause_resume_matches_one_shot_at_every_growth_point() {
     }
 }
 
-/// The block's budget of zero-size items is neither counted twice nor lost when a row is paused between
-/// two arrays: the first array is counted once, and the second one is checked against what is left.
+/// The row's budget of zero-size items is neither counted twice nor lost when the row is paused between
+/// two arrays: the first array is counted once, and the second one is checked against what is left of the row's.
 #[test]
 fn pausing_keeps_the_zero_size_item_budget_exact() {
     use _ch_rust_avro::{ErrorCode, MAX_ZERO_SIZE_ITEMS};

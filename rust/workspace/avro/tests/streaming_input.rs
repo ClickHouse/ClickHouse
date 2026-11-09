@@ -290,31 +290,40 @@ fn the_end_of_the_input_is_the_same_error_with_and_without_streaming() {
     }
 }
 
-/// Pausing does not count an array of items that occupy no bytes twice or forget it, however the window cuts
-/// the block headers.
+/// Pausing does not count the items that occupy no bytes of a row twice or forget them, however the window cuts
+/// the block headers: the blocks of one row share its budget, and the next row starts with a whole one.
 #[test]
-fn the_zero_size_item_budget_is_exact_across_pauses() {
+fn the_zero_size_item_budget_of_a_row_is_exact_across_pauses() {
     let sch = r#"{"type":"array","items":"null"}"#;
     let s = schema(sch);
     let skip = Program::compile(&s, &[], &[PlanNode::skip(s.root())]).unwrap();
     let half = MAX_ZERO_SIZE_ITEMS / 2;
-    let rows = |a: u64, b: u64| {
+    // One row: an array of two blocks.
+    let row = |a: u64, b: u64| {
         let mut v = zz(a as i64);
-        v.extend(zz(0));
         v.extend(zz(b as i64));
         v.extend(zz(0));
         v
     };
     for step in [1usize, 2, 3] {
-        // `half + half` is the budget of the block.
-        let input = rows(half, half);
+        // `half + half` is the budget of a row, and each of the two rows has all of it.
+        let input = [row(half, half), row(half, half)].concat();
         let (_, stats) = streamed(&skip, &input, 2, 2, 1, step).unwrap();
         assert_eq!(stats.rows, 2);
         assert!(stats.need_input > 0);
-        // One more item than the block may have is rejected, by the row that exceeds it.
-        let input = rows(half, half + 1);
-        let e = streamed(&skip, &input, 2, 2, 1, step).unwrap_err();
-        assert_eq!(e.code, ErrorCode::TooManyItems, "step={step}");
+        // One more item than the row may have is rejected, by the block that exceeds it, in either row.
+        let first_over = [row(half, half + 1), row(1, 1)].concat();
+        let second_over = [row(half, half), row(half, half + 1)].concat();
+        for input in [first_over, second_over] {
+            for rows_per_call in [2, 1] {
+                let e = streamed(&skip, &input, 2, rows_per_call, 1, step).unwrap_err();
+                assert_eq!(
+                    e.code,
+                    ErrorCode::TooManyItems,
+                    "step={step} rows_per_call={rows_per_call}"
+                );
+            }
+        }
     }
 }
 

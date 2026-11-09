@@ -92,8 +92,8 @@ public:
     /// that is never missing) to the cleared `missing`.
     /// The payload is taken window by window as the rows need it, so the memory used is independent of the size of
     /// the block and of the skipped values; the cancellation of the query is checked between windows. The first call
-    /// for a block begins the block in `plan` (`Plan::beginBlock`): the budget of its work is shared by all the
-    /// windows of the block.
+    /// for a block begins the block in `plan` (`Plan::beginBlock`). The budget of the work of the items that occupy no
+    /// bytes is a row's, not the block's: no window, batch or block boundary changes what a row may spend.
     /// On failure only fully decoded rows remain in `columns`.
     void decodeRows(Plan & plan, UInt64 max_rows, MutableColumns & columns, std::vector<std::vector<UInt8>> & missing);
 

@@ -359,17 +359,38 @@ pub fn drive(
     growth: usize,
     bufs: &mut Buffers,
 ) -> Result<(DecodeStats, usize)> {
-    let mut state = State::new(0);
+    let _ = initial;
+    drive_state(
+        &mut State::new(0),
+        program,
+        input,
+        max_rows,
+        rows_per_call,
+        growth,
+        bufs,
+    )
+}
+
+/// [`drive`] with the state of the caller: a caller that decodes several blocks with one state calls
+/// [`State::reset`] before each of them, as `Plan::beginBlock` does, and the calls of all of them share it.
+pub fn drive_state(
+    state: &mut State,
+    program: &Program,
+    input: &[u8],
+    max_rows: u64,
+    rows_per_call: u64,
+    growth: usize,
+    bufs: &mut Buffers,
+) -> Result<(DecodeStats, usize)> {
     let mut pos = 0usize;
     let mut stats = DecodeStats {
         rows: 0,
         calls: 0,
         need_space: 0,
     };
-    let _ = initial;
     loop {
         let want = rows_per_call.min(max_rows - stats.rows);
-        let p = bufs.with_sinks(|sinks| decode(program, &mut state, &input[pos..], want, sinks))?;
+        let p = bufs.with_sinks(|sinks| decode(program, state, &input[pos..], want, sinks))?;
         stats.calls += 1;
         stats.rows += p.rows_done;
         pos += p.consumed;

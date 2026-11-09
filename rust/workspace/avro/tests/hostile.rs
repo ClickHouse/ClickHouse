@@ -8,7 +8,7 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use _ch_rust_avro::exec::{decode, decode_partial, State, Status};
+use _ch_rust_avro::exec::{decode, State, Status};
 use _ch_rust_avro::json::JsonLimits;
 use _ch_rust_avro::program::Program;
 use _ch_rust_avro::schema::Schema;
@@ -209,7 +209,7 @@ fn count_boundary_matches_remaining_bytes() {
 }
 
 #[test]
-fn zero_byte_items_are_capped_per_array_and_per_block() {
+fn zero_byte_items_are_capped_per_array_and_per_row() {
     let s = schema(r#"{"type":"array","items":"null"}"#);
     let skip = skip_program(&s);
     // At the cap: accepted, and fast.
@@ -242,7 +242,7 @@ fn zero_byte_items_are_capped_per_array_and_per_block() {
             .code,
         ErrorCode::TooManyItems
     );
-    // Nested zero-byte arrays share the per-block budget: 4096 x 4096 = 2^24 fits, one more inner item does not.
+    // Nested zero-byte arrays share the budget of their row: 4096 x 4096 = 2^24 fits, one more inner item does not.
     let nested = schema(r#"{"type":"array","items":{"type":"array","items":"null"}}"#);
     let skip = skip_program(&nested);
     let build = |outer: i64, inner: i64| {
@@ -269,31 +269,32 @@ fn zero_byte_items_are_capped_per_array_and_per_block() {
     })
     .unwrap_err();
     assert_eq!(e.code, ErrorCode::TooManyItems);
-    // The budget spans rows and decoder calls in one block.
+    // The budget is the row's: neither the rows nor the calls that decode them share it. Rows of half the
+    // budget, of one item, and of the whole budget follow one another in calls of one row.
     let half_row = build(2048, 4096);
     let one_item_row = build(1, 1);
+    let full_row = build(4096, 4096);
+    let over_row = build(4096, 4097);
     let mut state = State::new(0);
     timed(Duration::from_secs(20), || {
-        assert_eq!(
-            decode(&skip, &mut state, &half_row, 1, &mut [])
-                .unwrap()
-                .rows_done,
-            1
-        );
-        assert_eq!(
-            decode(&skip, &mut state, &half_row, 1, &mut [])
-                .unwrap()
-                .rows_done,
-            1
-        );
+        for row in [&half_row, &half_row, &one_item_row, &full_row, &half_row] {
+            assert_eq!(
+                decode(&skip, &mut state, row, 1, &mut [])
+                    .unwrap()
+                    .rows_done,
+                1
+            );
+        }
     });
+    // One item over the budget of one row is an error wherever the row is, also after rows that used all of
+    // theirs.
     assert_eq!(
-        decode(&skip, &mut state, &one_item_row, 1, &mut [])
+        decode(&skip, &mut state, &over_row, 1, &mut [])
             .unwrap_err()
             .code,
         ErrorCode::TooManyItems
     );
-    // An error resets the state for the next block.
+    // An error resets the state for the next row.
     assert_eq!(
         decode(&skip, &mut state, &one_item_row, 1, &mut [])
             .unwrap()
@@ -317,54 +318,6 @@ fn zero_byte_items_are_capped_per_array_and_per_block() {
         skip_rows(&skip, &input, 1).unwrap_err().code,
         ErrorCode::CountExceedsPayload,
         "map keys cost bytes"
-    );
-}
-
-/// A window boundary that cuts a row is not a new block: the zero-size item budget of the block must survive the
-/// incomplete row, and the items that the cut row had already spent must not be charged (it is decoded again).
-#[test]
-fn zero_item_budget_survives_a_row_cut_by_the_window() {
-    let s = schema(r#"{"type":"array","items":"null"}"#);
-    let skip = skip_program(&s);
-    let quarter = (MAX_ZERO_SIZE_ITEMS / 4) as i64;
-    let row = |items: i64| {
-        let mut v = zz(items);
-        v.extend(zz(0));
-        v
-    };
-    let mut state = State::new(0);
-    let rows_done = |state: &mut State, input: &[u8]| {
-        decode(&skip, state, input, 1, &mut []).map(|p| p.rows_done)
-    };
-    // Half of the budget is spent by a completed row.
-    assert_eq!(rows_done(&mut state, &row(2 * quarter)).unwrap(), 1);
-    // The next row is cut after its count, again and again: it commits nothing and charges nothing.
-    let cut = zz(quarter);
-    for _ in 0..8 {
-        let e = decode_partial(&skip, &mut state, &cut, 1, &mut []).unwrap_err();
-        assert_eq!(
-            (e.error.code, e.rows_done, e.consumed),
-            (ErrorCode::Eof, 0, 0)
-        );
-    }
-    // The cut row, complete now, takes the other half, exactly up to the cap.
-    assert_eq!(rows_done(&mut state, &row(2 * quarter)).unwrap(), 1);
-    // And the budget is spent: it was not reset by the cuts.
-    assert_eq!(
-        rows_done(&mut state, &row(1)).unwrap_err().code,
-        ErrorCode::TooManyItems
-    );
-    // A cut that follows a completed row in the same call keeps that row and the budget it spent.
-    let mut state = State::new(0);
-    let mut two = row(quarter);
-    two.extend(cut.clone());
-    let e = decode_partial(&skip, &mut state, &two, 2, &mut []).unwrap_err();
-    assert_eq!(e.error.code, ErrorCode::Eof);
-    assert_eq!((e.rows_done, e.consumed), (1, row(quarter).len()));
-    assert_eq!(rows_done(&mut state, &row(3 * quarter)).unwrap(), 1);
-    assert_eq!(
-        rows_done(&mut state, &row(1)).unwrap_err().code,
-        ErrorCode::TooManyItems
     );
 }
 

@@ -46,9 +46,9 @@ public:
     Plan(Plan &&) = delete;
     Plan & operator=(Plan &&) = delete;
 
-    /// Resets block-scoped work accounting (the budget of items that occupy no bytes). Call once before the first
-    /// decode of every OCF block; every window and batch of that block shares the budget, and a row that a window
-    /// cut does not reset it.
+    /// Drops whatever an earlier block left in the decoder (a row paused for room or input). Call once before the first
+    /// decode of every OCF block. It carries no budget of work: the items that occupy no bytes are budgeted per row
+    /// (see `avro_rust.h`), so no window, batch or block of the file changes what a row may spend.
     void beginBlock();
 
     /// Every call starts at a row boundary and decodes exactly `max_rows`.
@@ -88,7 +88,9 @@ public:
     /// `bytes`, `string` or `fixed` value that the plan does not read is skipped as it arrives and is never held, so the
     /// memory of the caller is the size of its window (and of the largest value that is read into a column), not of a
     /// row, whatever the size of the values of it that are skipped. Values that are read are decoded from the window
-    /// when it holds them whole. The budget of work of the block (`beginBlock`) is shared by all the windows.
+    /// when it holds them whole. The budget of items that occupy no bytes is that of one row: a window that cuts a
+    /// row neither renews it (the row goes on with what it has left) nor charges it twice (a row decoded again from
+    /// its start has a whole one).
     ///
     /// When `more` is false in the last window, rows that it cannot complete are an exception, as in `decode`. All other
     /// errors are exceptions, too, and leave the rows that were committed before them in `columns`.

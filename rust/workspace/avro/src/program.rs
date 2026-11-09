@@ -806,7 +806,11 @@ impl Gen<'_> {
                                 self.skip_fixed(u64::from(schema.node(node).fixed_size))?
                             }
                             Kind::Record => {
-                                if !body && self.routine_worthy(node) {
+                                if schema.max_encoded_size(node) == Some(0) {
+                                    // Every value of this record encodes to no bytes (its fields are `null` or
+                                    // records like it, at any depth): there is nothing to skip and nothing to walk,
+                                    // shared or not. So a loop over such items has no instruction in its body.
+                                } else if !body && self.routine_worthy(node) {
                                     let at = self.emit(Op::Call { to: 0 })?;
                                     self.calls.push((at, node));
                                     if self.queued.insert(node) {

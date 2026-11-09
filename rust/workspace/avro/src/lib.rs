@@ -38,11 +38,17 @@ pub mod varint;
 /// (a limit of `0`). Explicit stacks make this safe; it only bounds memory.
 pub const HARD_MAX_DEPTH: usize = 100_000;
 
-/// Per-array and per-block cap on items whose minimum encoded size is zero
-/// (`null`, an empty record, and arrays or maps of those). Such items cost
-/// no input bytes, so without a cap a ten-byte header could ask for 2^62 of
-/// them in each row. Documented in `include/avro_rust.h`; tested at the boundary
-/// and across decoder calls.
+/// Cap, per row, on the array and map items whose minimum encoded size is zero (`null`, an empty record, and
+/// arrays or maps of those). Such items cost no input bytes, so without a cap a ten-byte header could ask for
+/// 2^62 of them in each row. Documented in `include/avro_rust.h`; tested at the boundary and across decoder
+/// calls.
+///
+/// The budget is one row's: every array and map of the row, however nested, and every block of each of them
+/// spend it. A row keeps what it has spent through the pauses of the executor, and starts from nothing when it
+/// is decoded again from its start. The next row starts with all of it, whatever the rows before it were, how
+/// many calls decoded them, and how the container file framed them: a budget that a block of the file shared
+/// would reject a file that is valid and readable in smaller blocks. Every row that spends any of it occupies
+/// at least one byte, the end of each array or map.
 pub const MAX_ZERO_SIZE_ITEMS: u64 = 1 << 24;
 
 /// Cap on the number of rows of a block whose rows can occupy zero bytes.
@@ -84,7 +90,7 @@ pub enum ErrorCode {
     InvalidCount = 17,
     /// Data nesting deeper than the configured limit.
     DataTooDeep = 18,
-    /// More zero-size items than [`MAX_ZERO_SIZE_ITEMS`].
+    /// More zero-size items than [`MAX_ZERO_SIZE_ITEMS`] in one row.
     TooManyItems = 19,
     /// An array or map block count that cannot fit in the remaining bytes.
     CountExceedsPayload = 20,

@@ -83,13 +83,12 @@
 ///      `NEED_SPACE`. This replays the completed rows of the call once.
 ///  * `max_rows` must be bounded by the caller (the block's object count).
 ///  * After an error the state is already reset and the committed rows are in
-///    the sinks (see `AvroProgress` and `avro_decode`). The one exception is
+///    the sinks (see `AvroProgress` and `avro_decode`). That includes
 ///    `AVRO_ERR_EOF` and `AVRO_ERR_COUNT_EXCEEDS_PAYLOAD`, the input ending
 ///    inside a row: a caller that decodes a block window by window decodes that
-///    row again from its start with more bytes, and the budget of zero-size
-///    array/map items of the block (counted over the rows that completed) is kept
-///    so that a window boundary does not grant a new one. `avro_state_reset`
-///    starts a new block.
+///    row again from its start with more bytes, and the row has the whole
+///    budget of zero-size array/map items of a row again (see Limits), as the
+///    work that the earlier attempt did is discarded with its output.
 ///  * Streaming (`avro_state_set_streaming(state, 1)`): for a caller that has
 ///    more bytes of the block than it passes, so that it need not hold a whole
 ///    row, however large the values that the query does not read are. The input
@@ -132,7 +131,17 @@
 ///    of the state, error code `AVRO_ERR_DATA_TOO_DEEP`.
 ///  * Array and map blocks: a count must not exceed the remaining bytes divided
 ///    by the minimum encoded size of an item. Items that occupy no bytes (null,
-///    empty records) are capped at 16777216 per array and per block.
+///    empty records) are capped at 16777216 per row: every array and map of one
+///    row, however nested, and every block of each, spend one budget, which the
+///    row keeps through every `NEED_SPACE` and `NEED_INPUT` pause and has whole
+///    again when it is decoded again from its start. The next row has a whole
+///    budget of its own, whatever the rows before it, the way a caller batches
+///    the rows into calls, or the block framing of the file. A row that spends
+///    any of it occupies at least one byte (the end of each array or map), and a
+///    loop whose items have no instructions (a skipped `null` or empty record)
+///    counts its items in one step, so the work for them follows the bytes of
+///    the input; any other zero-size item that is decoded costs one step of its
+///    loop, at most 16777216 per row.
 ///  * Blocks: for the null codec `avro_ocf_block_header` checks that the object
 ///    count fits the payload; for compressed blocks use `avro_ocf_check_object_count`
 ///    with the decompressed size. Rows that occupy no bytes are capped at
