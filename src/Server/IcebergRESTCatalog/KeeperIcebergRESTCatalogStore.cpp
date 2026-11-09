@@ -359,21 +359,38 @@ bool KeeperIcebergRESTCatalogStore::dropTable(const IcebergNamespaceName & ns, c
     return true;
 }
 
-KeeperIcebergRESTCatalogStore::UpdateTableResult KeeperIcebergRESTCatalogStore::updateTable(
-    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer)
+KeeperIcebergRESTCatalogStore::UpdateTablesResult KeeperIcebergRESTCatalogStore::updateTables(const std::vector<TableUpdate> & updates)
 {
-    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::updateTable");
-    /// The uuid node pins the table identity. A table re-created under the same name has another uuid, so the set misses it.
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::updateTables");
     auto zookeeper = getZooKeeper();
-    const auto path = tableUuidPath(ns, table, expected.uuid);
-    const auto code = zookeeper->trySet(path, new_pointer.metadata_location, expected.version.toInt32());
+    Coordination::Requests ops;
+    ops.reserve(updates.size());
+    for (const auto & update : updates)
+    {
+        const auto path = tableUuidPath(update.ns, update.table, update.expected.uuid);
+        const auto version = update.expected.version.toInt32();
+        if (update.new_pointer.metadata_location.empty())
+            ops.emplace_back(zkutil::makeCheckRequest(path, version));
+        else
+            ops.emplace_back(zkutil::makeSetRequest(path, update.new_pointer.metadata_location, version));
+    }
+
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZOK)
+        return {};
+
+    /// Keeper stops at the first failed operation, so one index names the table that blocked the whole multi.
+    const size_t index = zkutil::getFailedOpIndex(code, responses);
+    const auto & failed = updates[index];
     if (code == Coordination::Error::ZBADVERSION)
-        return UpdateTableResult::VersionMismatch;
+        return {UpdateTableResult::VersionMismatch, index};
     if (code == Coordination::Error::ZNONODE)
-        return zookeeper->exists(tablePath(ns, table)) ? UpdateTableResult::UuidMismatch : UpdateTableResult::TableMissing;
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException::fromPath(code, path);
-    return UpdateTableResult::Updated;
+        return {
+            zookeeper->exists(tablePath(failed.ns, failed.table)) ? UpdateTableResult::UuidMismatch : UpdateTableResult::TableMissing,
+            index};
+    zkutil::KeeperMultiException::check(code, ops, responses);
+    return {};
 }
 
 }
