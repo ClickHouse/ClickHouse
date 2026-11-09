@@ -131,6 +131,68 @@ SELECT id, (SELECT tuple(squality_alias_scope_alias.* EXCEPT (al))
             FROM squality_alias_scope_alias AS inner_table LIMIT 1)
 FROM squality_alias_scope_alias;
 
+-- Hiding the original name of an aliased table must also affect JOIN-side pruning. Otherwise the
+-- hidden name prunes the sibling table whose same-named Tuple subcolumn is the actual local binding.
+CREATE TABLE squality_alias_scope_join_name (x UInt64) ENGINE = Memory;
+CREATE TABLE squality_alias_scope_join_tuple
+    (squality_alias_scope_join_name Tuple(x UInt64)) ENGINE = Memory;
+INSERT INTO squality_alias_scope_join_name VALUES (1), (2), (3);
+INSERT INTO squality_alias_scope_join_tuple VALUES ((100));
+
+SET analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+
+SELECT x, (
+    SELECT squality_alias_scope_join_name.x
+    FROM squality_alias_scope_join_name AS inner_table
+    INNER JOIN squality_alias_scope_join_tuple ON 1
+    LIMIT 1
+)
+FROM squality_alias_scope_join_name
+ORDER BY x;
+
+SELECT x, (
+    SELECT squality_alias_scope_join_name.x
+    FROM squality_alias_scope_join_name AS inner_table
+    CROSS JOIN squality_alias_scope_join_tuple
+    LIMIT 1
+)
+FROM squality_alias_scope_join_name
+ORDER BY x;
+
+-- A hidden SEMI/ANTI JOIN side must not claim an original table name that the alias hides. The
+-- single-part, database-qualified and matcher forms below all bind to the outer table instead.
+SET anti_join_include_columns_from_both_sides = 0;
+
+SELECT x, (
+    SELECT squality_alias_scope_join_name.x
+    FROM numbers(1, 1) AS preserved
+    LEFT SEMI JOIN squality_alias_scope_join_name AS hidden_table
+        ON preserved.number = hidden_table.x
+    LIMIT 1
+)
+FROM squality_alias_scope_join_name
+ORDER BY x;
+
+SELECT x, (
+    SELECT {CLICKHOUSE_DATABASE:Identifier}.squality_alias_scope_join_name.x
+    FROM squality_alias_scope_join_name AS hidden_table
+    RIGHT SEMI JOIN numbers(1, 1) AS preserved
+        ON preserved.number = hidden_table.x
+    LIMIT 1
+)
+FROM squality_alias_scope_join_name
+ORDER BY x;
+
+SELECT x, (
+    SELECT squality_alias_scope_join_name.*
+    FROM numbers(1) AS preserved
+    LEFT ANTI JOIN squality_alias_scope_join_name AS hidden_table
+        ON preserved.number = hidden_table.x
+    LIMIT 1
+)
+FROM squality_alias_scope_join_name
+ORDER BY x;
+
 SET allow_correlated_subqueries = 0;
 SELECT (SELECT squality_alias_scope_wildcard.* REPLACE (1 AS x)
         FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
@@ -148,3 +210,5 @@ DROP TABLE squality_alias_scope_semi_right;
 DROP TABLE squality_alias_scope_nested;
 DROP TABLE squality_alias_scope_alias;
 DROP TABLE squality_alias_scope_dict_src;
+DROP TABLE squality_alias_scope_join_name;
+DROP TABLE squality_alias_scope_join_tuple;
