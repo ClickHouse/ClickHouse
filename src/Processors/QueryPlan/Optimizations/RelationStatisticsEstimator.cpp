@@ -105,6 +105,9 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     if (aggregator_params.max_rows_to_group_by && aggregator_params.group_by_overflow_mode != OverflowMode::THROW)
         aggregation_stats.addTransformation(RowSubset);
 
+    /// Grouping keys used to come without a value range. They keep one only while it encloses the output keys, which
+    /// the annotations above decide, so this comes after them.
+    keepOnlyEnclosingValueRanges(aggregation_stats.column_stats);
     return aggregation_stats;
 }
 
@@ -260,6 +263,8 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             const auto & limit_step = static_cast<const LimitStep &>(step);
             if (applyRowLimit(input_stats, limit_step.getLimit(), limit_step.getOffset(), limit_step.withTies()))
                 input_stats.addTransformation(RowSubset);
+            /// A limit used to erase the value ranges, also when it cannot drop a row. It keeps only enclosing ones.
+            keepOnlyEnclosingValueRanges(input_stats.column_stats);
             return input_stats;
         }
         case UnaryStepStatsKind::Expression:
@@ -316,6 +321,10 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             }
             if (may_drop_rows)
                 input_stats.addTransformation(RowSubset);
+            /// A sort with a limit used to erase the value ranges, also when it cannot drop a row. It keeps only
+            /// enclosing ones. A sort without a limit never erased them.
+            if (sorting_step.getLimit())
+                keepOnlyEnclosingValueRanges(input_stats.column_stats);
             return input_stats;
         }
         case UnaryStepStatsKind::LogicalExchange:

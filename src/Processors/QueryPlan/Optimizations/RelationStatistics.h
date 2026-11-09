@@ -47,10 +47,22 @@ struct RelationStats
 namespace QueryPlanOptimizations
 {
 
+/// Clears `min_value` and `max_value` of `stats` unless they still enclose the values of the produced rows, i.e.
+/// unless `valueRange` gives them for `ValueRangeGuarantee::Superset`. The NULL fraction and the provenance stay, for
+/// diagnostics.
+///
+/// Not every reader of a value range consults its provenance: DPsub's interesting-order costing reads `min_value` and
+/// `max_value` directly to estimate how much of a sorted probe side a runtime filter prunes. The estimator used to erase
+/// value ranges at four sites: value-changing expressions, limits, sorts with a limit and grouping keys. There it keeps
+/// them now only while they are enclosing bounds, so such a reader never sees a range the estimator used to clear
+/// unless the range still bounds the produced values. Call it after the site has recorded all of its transformations.
+void keepOnlyEnclosingValueRange(ColumnStats & stats);
+void keepOnlyEnclosingValueRanges(std::unordered_map<String, ColumnStats> & column_stats);
+
 /// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
 /// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
 /// single-argument function of it (which cannot increase the distinct count). A function that may
-/// change values records `NDVBoundExpression`.
+/// change values records `NDVBoundExpression` and loses the value range, see `keepOnlyEnclosingValueRange`.
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 
 /// The statistics of a direct grouping key of GROUP BY over `input_relation`, which preserves its distinct

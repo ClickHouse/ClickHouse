@@ -12,10 +12,13 @@ namespace DB
 /// with the NULL fraction. They are independent because `basic` statistics may exist without a distinct-count sketch,
 /// and because transformations affect them differently: a clamp to the row count changes only the distinct count.
 ///
-/// A transformation does not erase a fact. The fact is kept as measured, for diagnostics, and its provenance records
-/// the transformation. Consumers that rely on a fact ask for the guarantee they need through `ColumnStats::distinctCount`
-/// or `ColumnStats::valueRange`, which give the fact only if no recorded transformation can have broken that guarantee.
-/// A step whose effect is not modeled records `Unmodeled`, which breaks every guarantee, so estimation fails closed.
+/// A transformation records itself in the provenance rather than erasing the fact, with one exception: where the
+/// estimator used to erase value ranges (value-changing expressions, limits, sorts with a limit and grouping keys) a
+/// range survives only while it still encloses the produced values, see `keepOnlyEnclosingValueRange` in
+/// `RelationStatistics.h`, because not every reader of a range consults its provenance. Consumers that rely on a fact
+/// ask for the guarantee they need through `ColumnStats::distinctCount` or `ColumnStats::valueRange`, which give the fact
+/// only if no recorded transformation can have broken that guarantee. A step whose effect is not modeled records
+/// `Unmodeled`, which breaks every guarantee, so estimation fails closed.
 ///
 /// The guarantees each transformation keeps:
 ///

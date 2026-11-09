@@ -20,8 +20,9 @@ struct ColumnValueRange
 };
 
 /// Statistics of one column of a relation. The facts are kept as measured, and their provenance records how the plan
-/// transformed them, see `ColumnStatsProvenance`. Consumers that rely on a fact rather than use it as an estimate read
-/// it through `distinctCount` or `valueRange`.
+/// transformed them, see `ColumnStatsProvenance`; only a value range that no longer encloses the produced values is
+/// cleared, where the estimator used to clear ranges. Consumers that rely on a fact rather than use it as an estimate
+/// read it through `distinctCount` or `valueRange`.
 struct ColumnStats
 {
     /// Estimated number of distinct non-NULL values.
