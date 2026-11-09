@@ -3427,7 +3427,7 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
     grid-auto-flow: row !important;
     align-content: start;
     justify-content: start;
-    column-gap: 24px !important;
+    column-gap: 34px !important;
     row-gap: 0;
     width: fit-content !important;
     min-width: 0 !important;
@@ -4441,4 +4441,7 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     font-size: 14px !important;
     font-weight: 500 !important;
     line-height: 20px !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > span {
+    color: #ffffff !important;
 }
