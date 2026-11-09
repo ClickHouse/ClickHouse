@@ -65,7 +65,7 @@ SELECT '--- Parallel: NULL keys and ON-filtered right rows ---';
 SET max_threads = 8, parallel_non_joined_rows_processing = 1, max_block_size = 1000;
 -- r: 100000 rows in 100 blocks, keys NULL when number % 7 = 0, ON drops right rows with v % 5 = 0
 
-SET join_algorithm = 'hash';
+SET join_algorithm = 'hash', hash_join_layout = 'serial';
 SELECT count(), countIf(r.k IS NULL), countIf(l.n IS NULL), sum(r.v)
 FROM (SELECT number AS n FROM numbers(1000)) AS l
 RIGHT JOIN (SELECT if(number % 7 = 0, NULL, number) AS k, number AS v FROM numbers(100000)) AS r
@@ -75,7 +75,7 @@ FROM (SELECT number AS n FROM numbers(1000)) AS l
 FULL JOIN (SELECT if(number % 7 = 0, NULL, number) AS k, number AS v FROM numbers(100000)) AS r
 ON l.n = r.k AND r.v % 5 != 0;
 
-SET join_algorithm = 'parallel_hash';
+SET hash_join_layout = 'parallel';
 SELECT count(), countIf(r.k IS NULL), countIf(l.n IS NULL), sum(r.v)
 FROM (SELECT number AS n FROM numbers(1000)) AS l
 RIGHT JOIN (SELECT if(number % 7 = 0, NULL, number) AS k, number AS v FROM numbers(100000)) AS r
