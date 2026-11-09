@@ -111,6 +111,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     "upload_checksum_algorithm",
+    "use_idempotency_id",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -1187,7 +1188,7 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }
@@ -1204,7 +1205,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
         String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
         setPathForRead(String(root / suffix));
-        keys = {String(root / suffix)};
+        setPaths({String(root / suffix)});
     }
 }
 
@@ -1213,7 +1214,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
-    keys = {url.key};
+    setPaths({url.key});
     chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {

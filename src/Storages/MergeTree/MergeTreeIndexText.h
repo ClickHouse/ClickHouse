@@ -22,6 +22,8 @@
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 
+#include <array>
+#include <functional>
 #include <span>
 #include <variant>
 #include <vector>
@@ -71,7 +73,8 @@ namespace DB
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
   *    2. Cardinality of token (VarUInt).
-  *    3. If HasPositions flag is set, the token's offset and byte length in .pos (VarUInt each).
+  *    3. a) If EmbeddedPositions flag is set, the byte length (VarUInt) and the bytes of the token's positions.
+  *       b) Otherwise, if HasPositions flag is set, the token's offset and byte length in .pos (VarUInt each).
   *    4. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
   *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
@@ -279,9 +282,11 @@ struct PostingsSerialization
         HasBlockIndex = 1ULL << 4,
         /// If set, the token has positional data in the .pos file.
         HasPositions = 1ULL << 5,
+        /// If set, the positional data is embedded into the dictionary block instead of .pos.
+        EmbeddedPositions = 1ULL << 6,
         /// If set, the posting list carries per-row weights for scoring, with the meaning
         /// and the codec determined by the scoring kind of the index (see `TextIndexScoringKind`).
-        HasWeights = 1ULL << 6,
+        HasWeights = 1ULL << 7,
     };
 
     /// Returns the scoring kind of the weights stored in a posting list with `header` in an index with the scoring kind `scoring`,
@@ -342,6 +347,8 @@ struct TokenPostingsInfo
 
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
+    /// The first `position_bytes` bytes are the embedded position data.
+    std::array<char, TextIndexBlockedPositionsCodec::MAX_EMBEDDED_BYTES> embedded_positions{};
     /// Byte length of the position blob, so readers bound it by the token's extent, not the file's.
     UInt64 position_bytes = 0;
 
@@ -446,6 +453,8 @@ struct TextIndexSerialization
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     /// Writes the row ids and the weights (if not empty, parallel to `row_ids`) as VarUInts.
     static void serializeRawPostings(std::span<const UInt32> row_ids, std::span<const UInt32> weights, WriteBuffer & ostr);
+    /// Embeds small positions into `info`, writes the rest to `positions_out`.
+    static void serializePositions(TokenPostingsInfo & info, WriteBuffer & positions_out, const std::function<void(WriteBuffer &)> & finalize);
     static void serializeHeader(const TextIndexHeader & header, WriteBuffer & ostr);
 
     /// Appends the per-row `SmallFloat` document lengths to the `.dl` substream, which holds one uncompressed byte per row.
@@ -726,6 +735,8 @@ public:
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
     std::optional<String> normalized_index_column_name;
+    /// Shared by all conditions created by this index object, i.e. by the whole query, see `TextIndexAutomatonBudget`.
+    TextIndexAutomatonBudgetPtr automaton_budget = std::make_shared<TextIndexAutomatonBudget>();
 };
 
 }

@@ -1,0 +1,2 @@
+{"commitInfo":{"timestamp":1739329775347,"operation":"Manual Update","operationParameters":{},"readVersion":1,"isolationLevel":"Serializable","isBlindAppend":true,"operationMetrics":{},"engineInfo":"Apache-Spark/3.5.3 Delta-Lake/3.4.0-SNAPSHOT","txnId":"45cf5071-395c-45ee-8f36-eb5f1439b251"}}
+{"txn":{"appId":"app-1","version":2}}

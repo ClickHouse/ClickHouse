@@ -383,6 +383,8 @@ Settings:
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json`. Default: 0.
+- `fragments` — For a query executed by stateless workers (`make_distributed_plan = 1`), prints the plan of every query fragment and the exchanges between the fragments. Requires `optimize = 1`. Not supported together with `json` or `distributed`. Default: 0. See [Query fragments](#explain-plan-fragments).
+- `tree` — Draws every step except `Expression` as a box connected to the boxes of its inputs, with the details `EXPLAIN` prints under the step. The nested plans of a step, such as the per-table plans of `ReadFromMerge`, are drawn after the main drawing, each as a plan of its own. For a query executed by stateless workers (`make_distributed_plan = 1`), also draws the query fragments as frames around their steps and the exchanges as edges between the fragments, followed by the exchanges and the levels. Requires `optimize = 1`. Not supported together with `fragments`, `json` or `distributed`. Default: 0. See [Query fragment tree](#explain-plan-fragments-tree).
 - `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1.
 - `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
@@ -849,6 +851,175 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
+#### Query fragments {#explain-plan-fragments}
+
+With `fragments` = 1, a query that is executed by stateless workers (`make_distributed_plan = 1`) is shown as it is cut for execution: one plan per query fragment. A query fragment is a part of the plan that is executed as one or more parallel tasks. The fragments are printed in the reverse order of their ids: the fragment that produces the result of the query comes first, and every fragment comes before the fragments it reads from, so that data flows upward as in a plan tree. Every fragment starts with a header `Query fragment <id> (<stage name>) · tasks=<N>` that shows its id, its stage name and its number of tasks. The send and receive steps show the name of the exchange they write to or read from.
+
+The fragments are followed by two sections, which refer to query fragment `<id>` as `F<id>`:
+
+- `Exchanges` — one line per exchange, with the fragment that sends the data and the fragment that reads it (`F0 -> F2`), and how the data is transferred: by the hash of the keys (`hash(...)`), to every task of the consumer (`broadcast`), into one task (`gather`, with `sorted by` when the sort order is kept) or without regard to the values (`any`); whether it is sent over the network while it is produced (`streaming`) or written to temporary files first (`persisted`, see [`distributed_plan_force_exchange_kind`](/reference/settings/session-settings/distributed-plan#distributed_plan_force_exchange_kind)), in which case the consumer starts only after the producer has finished; and the number of source and destination buckets.
+- `Levels` — fragment ids grouped by their depth, from the fragments without dependencies to the fragment that produces the result. The fragments of one level do not depend on each other.
+
+The sets of `IN` subqueries are not shown yet: the plan names such a set (for example `bid IN subquery1`), but no fragment builds it.
+
+A distributed query without exchanges is printed as one query fragment that sends the result through the `final_result` exchange.
+
+When the query is not distributed, the plan is printed as without `fragments`. If the query could not be distributed and fell back to local execution, the reason is printed after the plan as `Not distributed: <reason>`.
+
+Example:
+
+```sql
+EXPLAIN fragments = 1
+SELECT count()
+FROM big, small
+WHERE small.sid = (big.bid + 1) % 5000
+SETTINGS make_distributed_plan = 1, explain_query_plan_default = 'legacy';
+```
+
+```text
+Query fragment 3 (main) · tasks=1
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      GatherReceive (exchange_2)
+
+Query fragment 2 (stage_2) · tasks=3
+GatherSend (exchange_2)
+  Aggregating (partial)
+    Expression (Before GROUP BY)
+      JoinLogical
+        ShuffleReceive (exchange_0)
+        BroadcastReceive (exchange_1)
+
+Query fragment 1 (stage_1) · tasks=1
+BroadcastSend (exchange_1)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.small)
+
+Query fragment 0 (stage_0) · tasks=1
+ShuffleSend (exchange_0)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: any, streaming, F0 -> F2, buckets 1 -> 3
+  exchange_1: broadcast, streaming, F1 -> F2, buckets 1 -> 3
+  exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
+Levels: [F0, F1] -> [F2] -> [F3]
+```
+
+#### Query fragment tree {#explain-plan-fragments-tree}
+
+With `tree` = 1, a query that is executed by stateless workers is drawn as it is cut for execution. Every step of the plan is a box, connected to the boxes of its inputs as in the plan tree, so data flows upward in the drawing, downstream from the reads to the result. The steps of one query fragment are surrounded by a frame titled `F<id> · <stage name>`, and every fragment is drawn under the fragment that reads it. An exchange is an edge from the sending step of the producer up to the receiving step of the consumer, crossing both frames (`┼`), with a label: the exchange name and how the data is distributed, then the mode and the number of source and destination buckets. The edge is `│` for a `streaming` exchange and `╎` for a `persisted` one, whose consumer starts only after the producer has finished; the label of a persisted exchange also starts its second line with `⛁`.
+
+A box shows the name of the step and, with `description` = 1, its description, where `pretty` = 1 drops the table prefix of column names, as in the labels. Under a separator, the box shows the lines that `EXPLAIN` prints under the step with the same options (`header`, `actions`, `indexes`, `projections`, `sorting`), such as the keys of an aggregation or the number of parts and granules a read selects. The nested plans of a step, such as the per-table plans of `ReadFromMerge` or the plans of lazy `FINAL`, are numbered `N1`, `N2`, and so on, and the box of the step ends with their ids, as in `ReadFromMerge ← N1, N2`. After the main drawing, every nested plan is drawn the same way, without a frame, under the line `N<id> · nested plan of <step>`; the nested plans of its steps get the next ids and are drawn after it. `Expression` steps are not drawn, whatever the value of `compact`: the box of their input takes their place. With `estimates` = 1, the label of an exchange also shows the estimated number of rows the producer sends (`~<N> rows`). The text of a step is wrapped to lines of 40 columns, at a space where possible, so a box shows all of it, with the description limited by `query_plan_max_step_description_length` as in `EXPLAIN` without `tree`; the detail lines are cut at 60 columns and the first line of an exchange label at 48, with `…`, and the `Exchanges` section after the drawing repeats the full label. The drawing does not depend on the width of the terminal. When the query is not distributed, its steps are drawn the same way, without a frame and without the `Exchanges` and `Levels` sections, followed by `Not distributed: <reason>` if the query fell back to local execution. The `tree` option of `EXPLAIN PLAN` is unrelated to the `EXPLAIN QUERY TREE` statement.
+
+Example:
+
+```sql
+EXPLAIN tree = 1
+SELECT small.sid, count()
+FROM big, small
+WHERE small.sid = (big.bid + 1) % 5000
+GROUP BY small.sid
+SETTINGS make_distributed_plan = 1, distributed_plan_max_rows_to_broadcast = 0;
+```
+
+```text
+                                                    ┌─ F4 · main ────────────────────┐
+                                                    │                                │
+                                                    │  ┌───────────────────────────┐ │
+                                                    │  │ GatherSend (final_result) │ │
+                                                    │  └─────────────▲─────────────┘ │
+                                                    │                │               │
+                                                    │ ┌──────────────┴─────────────┐ │
+                                                    │ │ GatherReceive (exchange_3) │ │
+                                                    │ └──────────────▲─────────────┘ │
+                                                    └────────────────┼───────────────┘
+                                                                     │ exchange_3 · gather
+                                                                     │ streaming · 8 → 1
+                                                    ┌─ F3 · stage_3 ─┼────────────────┐
+                                                    │                │                │
+                                                    │   ┌────────────┴────────────┐   │
+                                                    │   │ GatherSend (exchange_3) │   │
+                                                    │   └────────────▲────────────┘   │
+                                                    │                │                │
+                                                    │  ┌─────────────┴─────────────┐  │
+                                                    │  │ MergingAggregated (merge) │  │
+                                                    │  ├───────────────────────────┤  │
+                                                    │  │ Keys: sid                 │  │
+                                                    │  │ Aggregates: count()       │  │
+                                                    │  └─────────────▲─────────────┘  │
+                                                    │                │                │
+                                                    │ ┌──────────────┴──────────────┐ │
+                                                    │ │ ShuffleReceive (exchange_2) │ │
+                                                    │ └──────────────▲──────────────┘ │
+                                                    └────────────────┼────────────────┘
+                                                                     │ exchange_2 · hash(sid)
+                                                                     │ streaming · 8 → 8
+                 ┌─ F2 · stage_2 ────────────────────────────────────┼───────────────────────────────────────────────────┐
+                 │                                                   │                                                   │
+                 │                                     ┌─────────────┴────────────┐                                      │
+                 │                                     │ ShuffleSend (exchange_2) │                                      │
+                 │                                     └─────────────▲────────────┘                                      │
+                 │                                                   │                                                   │
+                 │                                       ┌───────────┴───────────┐                                       │
+                 │                                       │ Aggregating (partial) │                                       │
+                 │                                       ├───────────────────────┤                                       │
+                 │                                       │ Keys: sid             │                                       │
+                 │                                       │ Aggregates: count()   │                                       │
+                 │                                       │ Skip merging: 0       │                                       │
+                 │                                       └───────────▲───────────┘                                       │
+                 │                                                   │                                                   │
+                 │                   ┌───────────────────────────────┴──────────────────────────────┐                    │
+                 │                   │ JoinLogical                                                  │                    │
+                 │                   ├──────────────────────────────────────────────────────────────┤                    │
+                 │                   │ Join: big[100000] ⋈ small[1000]                              │                    │
+                 │                   │ ResultRows: 101626                                           │                    │
+                 │                   │ Type: INNER                                                  │                    │
+                 │                   │ Strictness: ALL                                              │                    │
+                 │                   │ Locality: UNSPECIFIED                                        │                    │
+                 │                   │ Expression: equals(__table2.sid, modulo(plus(__table1.bid, … │                    │
+                 │                   └───────────────────────────────▲──────────────────────────────┘                    │
+                 │                                                   │                                                   │
+                 │                ┌──────────────────────────────────┴──────────────────────────────────┐                │
+                 │ ┌──────────────┴──────────────┐                                       ┌──────────────┴──────────────┐ │
+                 │ │ ShuffleReceive (exchange_0) │                                       │ ShuffleReceive (exchange_1) │ │
+                 │ └──────────────▲──────────────┘                                       └──────────────▲──────────────┘ │
+                 └────────────────┼─────────────────────────────────────────────────────────────────────┼────────────────┘
+                                  │ exchange_0 · hash((bid + 1) MOD 5000)                               │ exchange_1 · hash(sid)
+                                  │ streaming · 1 → 8                                                   │ streaming · 1 → 8
+┌─ F0 · stage_0 ──────────────────┼────────────────────────────────┐             ┌─ F1 · stage_1 ───────┼─────────────────────┐
+│                                 │                                │             │                      │                     │
+│                   ┌─────────────┴────────────┐                   │             │        ┌─────────────┴────────────┐        │
+│                   │ ShuffleSend (exchange_0) │                   │             │        │ ShuffleSend (exchange_1) │        │
+│                   └─────────────▲────────────┘                   │             │        └─────────────▲────────────┘        │
+│                                 │                                │             │                      │                     │
+│ ┌───────────────────────────────┴──────────────────────────────┐ │             │ ┌────────────────────┴───────────────────┐ │
+│ │ Filter (((Apply runtime join filter +                        │ │             │ │ BuildRuntimeFilter (Build runtime join │ │
+│ │ Calculate left join keys) + Change                           │ │             │ │ filter on sid)                         │ │
+│ │ column names to column identifiers))                         │ │             │ ├────────────────────────────────────────┤ │
+│ ├──────────────────────────────────────────────────────────────┤ │             │ │ Filter id: RF1                         │ │
+│ │ Filter column: RF1(_CAST(modulo(plus(bid, 1_UInt8), 5000_UI… │ │             │ │ Source table: default.small            │ │
+│ └───────────────────────────────▲──────────────────────────────┘ │             │ └────────────────────▲───────────────────┘ │
+│                                 │                                │             │                      │                     │
+│                ┌────────────────┴────────────────┐               │             │    ┌─────────────────┴─────────────────┐   │
+│                │ ReadFromMergeTree (default.big) │               │             │    │ ReadFromMergeTree (default.small) │   │
+│                ├─────────────────────────────────┤               │             │    ├───────────────────────────────────┤   │
+│                │ Read type: Default              │               │             │    │ Read type: Default                │   │
+│                │ Parts: 1 | Granules: 12         │               │             │    │ Parts: 1 | Granules: 1            │   │
+│                │ Output: bid                     │               │             │    │ Output: sid                       │   │
+│                └─────────────────────────────────┘               │             │    └───────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘             └────────────────────────────────────────────┘
+
+Exchanges:
+  exchange_0: hash((bid + 1) MOD 5000), streaming, F0 -> F2, buckets 1 -> 8
+  exchange_1: hash(sid), streaming, F1 -> F2, buckets 1 -> 8
+  exchange_2: hash(sid), streaming, F2 -> F3, buckets 8 -> 8
+  exchange_3: gather, streaming, F3 -> F4, buckets 8 -> 1
+Levels: [F0, F1] -> [F2] -> [F3] -> [F4]
+```
+
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
@@ -1294,13 +1465,15 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
-Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts the query would read and prunes it as a materialized projection would be pruned.
+On large tables the index estimate reads a sample of index windows (see `index_scan_budget_rows`). A window is the `GRANULARITY` granules that one index granule covers. The estimate scales the sampled count to the baseline, and `marks_span` gives the range that the sampling error allows.
+
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts that the query would read. It prunes the index as the optimizer prunes a materialized projection. For an aggregate projection, the estimate first aggregates the rows of each part into one row for each group, as in a materialized projection part. It estimates an aggregate projection only from a full scan. When a part has more groups than `max_rows_to_group_by` of the query, the estimate is `unsupported`.
 
 The report gives the marks and rows it would read, a `read_ratio` against the base-table read, and a `verdict` on whether the optimizer would choose it. With `force_optimize_projection = 1` or `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
 
 When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
 
-Aggregate projections, projections with a `WHERE` clause, their own skip indexes, a commit-order or virtual-column key or a stored `_block_number`, and projections that do not cover every column the query reads are reported as `not_applicable`. `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored, and `force_optimize_projection` does not fail the statement.
+WHATIF reports projections with their own skip indexes, and aggregate projections without `GROUP BY` keys, as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to normal projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 
@@ -1310,6 +1483,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Settings**
 
+- `index_scan_budget_rows` — how many rows an index estimate may read before it switches to a sample of index windows. Default: `10000000`. `0` means no limit. `max_rows_to_read` can lower it. A sample reads at least about 30 windows and one per part, and when `max_rows_to_read` does not allow that the empirical estimate is `unsupported`.
 - `projection_scan_budget_rows` — how many rows a projection estimate may read before it switches to a sample of granules. Default: `10000000`. `0` means no limit; `max_rows_to_read` can lower it. A sample reads at least about 30 granules and one per part, and when `max_rows_to_read` does not allow that the estimate is `unsupported`.
 - `empirical` — `1` (default) runs the index over the baseline-pruned granules in memory to measure the skip ratio (an upper bound). `0` skips that path. Either way, if empirical doesn't produce a result (disabled, or the index can't be evaluated in memory) the estimator falls back to column [statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), and finally to an applicability-only summary if neither is available.
 
@@ -1326,6 +1500,7 @@ Baseline (after PK + partition + existing indexes):
 With idx_b (minmax, hypothetical):
   status:       applicable
   marks:        1
+  marks_span:   0 to 3              (only when the estimate used a sample)
   est_bytes:    15.00 KiB           (only when baseline bytes are known)
   skip_ratio:   99.0%
 
@@ -1343,7 +1518,7 @@ Estimation:
   - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
   - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
 - `empirical_reason` — why the empirical estimate could not run. Shown only with `empirical_status: unsupported`. For example, a non-zero `merge_tree_min_rows_for_seek` or `merge_tree_min_bytes_for_seek` makes a real read coalesce mark ranges, which the per-granule count does not model, so the estimate falls back to `statistical` or `applicability_only`.
-- `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index. For a projection, `sampled_marks` is `<marks read> / <marks in the parts the query reads>`, and a first number below the second means the estimate used a sample.
+- `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index. For an index estimate from a sample, the first number of `sampled_marks` counts only the baseline marks in the sampled windows. Thus it is below the baseline `marks`. For a projection, `sampled_marks` is `<marks read> / <marks in the parts the query reads>`, and a first number below the second means the estimate used a sample.
 - `est_bytes` — an estimate of the bytes read, derived from the table's average row size, so it is approximate and varies with storage and compression. The baseline line appears only when the query reads rows; the per-candidate line only when the baseline byte estimate is known.
 
 The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
@@ -1354,7 +1529,7 @@ If neither hypothetical indexes nor hypothetical projections are defined for the
 
 When two or more candidates are evaluated empirically, `EXPLAIN WHATIF` appends one extra block named `(combined: idx_a, idx_b, ...)` after the per-candidate rows. It reports the joint benefit of having *all* of those indexes at once: a real read keeps a granule only if it survives *every* skip index, so the combined estimate is the intersection of the candidates' surviving granules. Its `skip_ratio` is therefore at least as high as the best single candidate — complementary indexes prune more together, while redundant ones leave it unchanged.
 
-Only candidates with `source: empirical` contribute, because the combined row is built by intersecting their per-granule survival sets. Candidates estimated `statistical` or `applicability_only` have no per-granule data and are excluded; consequently the combined block appears only when at least two candidates produced an empirical estimate, and is omitted otherwise (for example under `empirical = 0`). Its estimation fields read the same as a per-candidate empirical block, except `elapsed_us` is `0` — the combined estimate is derived from the per-candidate scans, not a new scan. The synthetic `(combined: ...)` name is a report label only and cannot be used with `force_data_skipping_indices`.
+Only candidates with `source: empirical` contribute, because the combined row is built by intersecting their per-granule survival sets. Candidates estimated `statistical` or `applicability_only` have no per-granule data and are excluded; consequently the combined block appears only when at least two candidates produced an empirical estimate, and is omitted otherwise (for example under `empirical = 0`). Its estimation fields read the same as a per-candidate empirical block, except `elapsed_us` is `0` — the combined estimate is derived from the per-candidate scans, not a new scan. The synthetic `(combined: ...)` name is a report label only and cannot be used with `force_data_skipping_indices`. When the estimate of a contributing candidate used a sample, the windows out of the sample are unknown. Then the combined block has `empirical_status: unsupported` and no `marks`.
 
 **Empirical example**
 
