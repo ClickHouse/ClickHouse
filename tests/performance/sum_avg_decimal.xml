@@ -1,0 +1,22 @@
+<test>
+    <!-- `sum` of `Decimal32`, `Decimal64` and `Decimal128` without keys, with a condition (`-If`) and over `Nullable`.
+         The unconditional `sum` and `avg` are covered by `decimal_aggregates.xml`, `sumIf` of `Decimal128` by `sum.xml`. -->
+    <create_query>CREATE TABLE t_sum_decimal (d32 Decimal32(2), d64 Decimal64(4), nd64 Nullable(Decimal64(4)), nd128 Nullable(Decimal128(6)), flag UInt8) ENGINE = Memory</create_query>
+    <!-- Random flags and nulls, so that the branch predictor does not do all the work. -->
+    <fill_query>
+        INSERT INTO t_sum_decimal
+        SELECT
+            toDecimal32(intHash32(number) % 1000000, 2),
+            toDecimal64(intHash64(number) % 1000000000000, 4),
+            if(intHash32(number) % 5 = 0, NULL, toDecimal64(intHash64(number) % 1000000000000, 4)),
+            if(intHash32(number) % 5 = 0, NULL, toDecimal128(intHash64(number), 6)),
+            intHash32(number + 1) % 2
+        FROM numbers_mt(50000000)
+    </fill_query>
+    <drop_query>DROP TABLE IF EXISTS t_sum_decimal</drop_query>
+
+    <query>SELECT sumIf(d32, flag) FROM t_sum_decimal FORMAT Null</query>
+    <query>SELECT sumIf(d64, flag) FROM t_sum_decimal FORMAT Null</query>
+    <query>SELECT sum(nd64) FROM t_sum_decimal FORMAT Null</query>
+    <query>SELECT sum(nd128) FROM t_sum_decimal FORMAT Null</query>
+</test>
