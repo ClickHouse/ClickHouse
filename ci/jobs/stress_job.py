@@ -28,6 +28,29 @@ CRASH_CONSEQUENCE_RESULT_NAMES = frozenset(
         "Test script failed",
     }
 )
+# A failed restart can be independent of the named crash, e.g. a later hang loading
+# the metadata, so the triage still sees these rows: no issue of the crash may pass them.
+RESTART_FAILURE_RESULT_NAMES = frozenset(
+    {
+        "Cannot start clickhouse-server",
+        "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)",
+    }
+)
+
+
+def drop_crash_consequences(failed_results, triage_only_failures):
+    """The rows of `failed_results` that are not consequences of a named crash.
+
+    The dropped restart failures are appended to `triage_only_failures` as
+    (name, info) pairs.
+    """
+    kept = []
+    for result in failed_results:
+        if result.name not in CRASH_CONSEQUENCE_RESULT_NAMES:
+            kept.append(result)
+        elif result.name in RESTART_FAILURE_RESULT_NAMES:
+            triage_only_failures.append((result.name, result.info or ""))
+    return kept
 
 
 def container_memory_limit() -> int:
@@ -463,6 +486,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     # Failures of the server logs that the report leaves out: generic `<Fatal>` reports
     # of other replicas and reports the parser did not name
     omitted_failures = []
+    # Restart failures the report drops as consequences of the named crash
+    restart_failures = []
     for test_result in test_results:
         if test_result.name == "Server died":
             server_died = True
@@ -512,11 +537,9 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     name != FuzzerLogParser.UNKNOWN_ERROR for name, _, _ in results
                 )
                 if crash_named:
-                    failed_results = [
-                        r
-                        for r in failed_results
-                        if r.name not in CRASH_CONSEQUENCE_RESULT_NAMES
-                    ]
+                    failed_results = drop_crash_consequences(
+                        failed_results, restart_failures
+                    )
                 for name, description, files in results:
                     failed_results.append(
                         Result.create_from(
@@ -624,9 +647,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             r,
             job_kind=job_kind,
             # The issue of a reported failure must not pass the run over a fatal report
-            # the report leaves out, so the triage sees those too.
+            # or a failed restart the report leaves out, so the triage sees those too.
             failures=[(fr.name, fr.info or "") for fr in failed_results]
-            + [(name, description) for name, description, _ in omitted_failures],
+            + [(name, description) for name, description, _ in omitted_failures]
+            + restart_failures,
             evidence_paths=evidence,
             repro_hint=repro_hint,
             # The Upgrade check job has a 2h timeout and its run phases are

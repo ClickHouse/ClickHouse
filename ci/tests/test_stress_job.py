@@ -301,3 +301,37 @@ def test_complete_deadly_signal_report_is_counted_once(tmp_path):
     )
 
     assert _inventory(omitted) == []
+
+
+def test_restart_failure_next_to_named_crash_blocks_known_issue_pass():
+    # The report drops the restart row as a consequence of the named crash, but a later
+    # readiness timeout can be independent of it, so no issue of the crash may pass it.
+    from ci.jobs.scripts.ai_fuzz_triage import (
+        Occurrences,
+        group_failures,
+        known_issue_verdict,
+    )
+    from ci.jobs.stress_job import drop_crash_consequences
+    from ci.praktika.result import Result
+
+    crash = "Logical error: 'Bad cast' (STID: 1234-abcd)"
+    timeout = (
+        "Cannot start clickhouse-server",
+        "a clickhouse-server process is running but did not become ready in 600s",
+    )
+    failed = [
+        Result.create_from(name=name, info=info, status=Result.Status.FAIL)
+        for name, info in [timeout, ("Test script failed", "exit code: 1"), (crash, "")]
+    ]
+    restart_failures = []
+
+    kept = drop_crash_consequences(failed, restart_failures)
+
+    assert [r.name for r in kept] == [crash]
+    assert restart_failures == [timeout]
+    occurrences = Occurrences(["issue"], [], exact=["issue"], branch="master")
+    groups = group_failures([(crash, "")])
+    assert known_issue_verdict(groups, occurrences, True)
+    groups = group_failures([(crash, "")] + restart_failures)
+    assert groups.uncovered == [timeout[0]]
+    assert known_issue_verdict(groups, occurrences, True) is None
