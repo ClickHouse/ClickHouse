@@ -659,6 +659,31 @@ def test_persistent_table_created_with_opt_in_refuses_first_restricted_read():
     node.query("DROP TABLE t_persist_optin SYNC")
 
 
+def test_iceberg_drop_purge_does_not_reuse_credentialed_client():
+    # An opt-in session leaves a credentialed client in the storage of an Iceberg table. A restricted session
+    # must not delete the data of the table with that client on `DROP TABLE` with `data_lake_delete_data_on_drop`.
+    def files_left():
+        return len(list(cluster.minio_client.list_objects(cluster.minio_bucket, "iceberg_drop_env/", recursive=True)))
+
+    opt_in = {"s3_allow_server_credentials_in_user_queries": 1}
+    node.query("DROP TABLE IF EXISTS t_iceberg_drop_env SYNC", settings=opt_in)
+    node.query("CREATE TABLE t_iceberg_drop_env (x UInt8) ENGINE = IcebergS3(nc_iceberg_env)", settings=opt_in)
+    node.query("INSERT INTO t_iceberg_drop_env VALUES (1)", settings={**opt_in, "allow_insert_into_iceberg": 1})
+    assert node.query("SELECT * FROM t_iceberg_drop_env", settings=opt_in).strip() == "1"
+    files_before = files_left()
+    assert files_before > 0
+
+    error = node.query_and_get_error(
+        "DROP TABLE t_iceberg_drop_env SYNC", settings={"data_lake_delete_data_on_drop": 1}
+    )
+    assert "ACCESS_DENIED" in error, error
+    assert files_left() == files_before
+    assert node.query("SELECT * FROM t_iceberg_drop_env", settings=opt_in).strip() == "1"
+
+    node.query("DROP TABLE t_iceberg_drop_env SYNC", settings={**opt_in, "data_lake_delete_data_on_drop": 1})
+    assert files_left() == 0
+
+
 def test_named_collection_does_not_inherit_server_sse():
     # The server <s3> endpoint config carries an SSE-C customer key. A named collection with its own explicit
     # keys must not inherit that server-managed key (which getClient would send to the endpoint): reading a

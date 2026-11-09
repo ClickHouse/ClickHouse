@@ -528,7 +528,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     /// TODO: make generateNextMetadata to accept SnapshotSummaryUpdate
     auto [new_snapshot, manifest_list_path] = MetadataGenerator{state.metadata_object}.generateNextMetadata(
         filename_generator,
-        metadata_info.path,
+        components.path_resolver.reverseResolve(state.table_state.metadata_file_path),
         parent_snapshot_id,
         /*added_files=*/0,
         /*added_records=*/0,

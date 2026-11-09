@@ -72,22 +72,23 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
+    void validateCreateTableEngine(const ASTStorage & storage) const override;
+
     void createTable(
-        ContextPtr /*context*/,
-        const String & /*name*/,
+        ContextPtr context,
+        const String & name,
         const StoragePtr & /*table*/,
-        const ASTPtr & /*query*/) override {}
+        const ASTPtr & query) override;
 
     void dropTable( /// NOLINT
         ContextPtr context_,
         const String & name,
-        bool /*sync*/) override;
+        bool /*sync*/,
+        bool if_exists) override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
-
-    String getDefaultTableEngineName(const String & name) const override;
 
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
 
@@ -128,6 +129,8 @@ private:
 
     void validateSettings();
 
+    void validateCreateTableEngineArguments(const ASTFunction & engine) const;
+
     /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
     /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
     /// so on ATTACH (server startup) it is deferred to the first access via `getCatalog` instead
@@ -165,12 +168,11 @@ private:
         const DataLake::TableMetadata & table_metadata,
         bool lightweight) const;
 
-    std::optional<DataLake::TableMetadata> tryGetNewTableMetadata(
+    String getNewTableLocation(
         const DatabaseDataLakeSettings & settings,
-        const DataLake::ICatalog & catalog,
-        const String & name) const;
-
-    Exception cannotTellNewTableLocation(const String & name) const;
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const String & namespace_name,
+        const String & table_name) const;
 
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot

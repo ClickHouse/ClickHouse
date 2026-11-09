@@ -8,6 +8,7 @@
 
 #if USE_AVRO
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -35,6 +36,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
@@ -126,8 +128,14 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace FailPoints
+{
+extern const char iceberg_create_fail_after_version_hint_write[];
 }
 
 namespace Setting
@@ -149,7 +157,6 @@ extern const SettingsBool allow_experimental_iceberg_compaction;
 extern const SettingsBool allow_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_expire_snapshots;
-extern const SettingsBool iceberg_delete_data_on_drop;
 extern const SettingsSeconds lock_acquire_timeout;
 extern const SettingsSeconds iceberg_compaction_delay_bias;
 extern const SettingsSeconds iceberg_compaction_data_cleanup;
@@ -1066,13 +1073,24 @@ void IcebergMetadata::createInitial(
     if (columns)
         checkNoUInt64(*columns);
 
+    const bool catalog_manages_location = catalog && catalog->managesTableLocation();
     /// Either way the catalog writes the first metadata file, so the existence check and the prewrite move to it.
-    const bool catalog_writes_metadata = catalog && (catalog->managesTableLocation() || catalog->writesInitialMetadata());
+    const bool catalog_writes_metadata = catalog && (catalog_manages_location || catalog->writesInitialMetadata());
 
     String namespace_name;
     String table_name;
     if (catalog)
         std::tie(namespace_name, table_name) = DataLake::parseTableName(table_id_.getTableName());
+
+    auto throw_leftover_metadata = [&]
+    {
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+            "The catalog has no table {}.{} registered, but Iceberg metadata files are already present at {}, "
+            "so creating the table there would clash with them. This is usually left behind by a previous "
+            "`DROP TABLE` without `data_lake_delete_data_on_drop`, which keeps the data and metadata in "
+            "place: remove the leftover files, or create the table at a different location",
+            namespace_name, table_name, configuration_ptr->getPathForRead().path);
+    };
 
     if (catalog_writes_metadata)
     {
@@ -1085,16 +1103,20 @@ void IcebergMetadata::createInitial(
                 ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog", namespace_name, table_name);
         }
     }
-    else
+
+    if (!catalog_manages_location)
     {
         std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
         if (!metadata_files.empty())
         {
-            if (if_not_exists)
-                return;
-            else
+            if (!catalog)
+            {
+                if (if_not_exists)
+                    return;
                 throw Exception(
                     ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+            }
+            throw_leftover_metadata();
         }
     }
 
@@ -1106,7 +1128,8 @@ void IcebergMetadata::createInitial(
         location_path = "/" + location_path;
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
-        location_path, *columns, partition_by, order_by, local_context, (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_format_version]);
+        location_path, *columns, partition_by, order_by, local_context,
+        (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_format_version], /*is_catalog_table=*/ bool(catalog));
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
@@ -1145,25 +1168,78 @@ void IcebergMetadata::createInitial(
         }
         catch (const Exception & e)
         {
+            /// The metadata file is already there: leftovers from an earlier drop, or a concurrent creation.
             if (if_not_exists && isConditionalWriteConflict(e))
-                return;
+            {
+                if (!catalog)
+                    return;
+                throw_leftover_metadata();
+            }
             throw;
         }
+    }
 
-        if ((*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    String filename_version_hint;
+    if (!catalog_writes_metadata
+        && (*configuration_ptr->getDataLakeSettings())[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    {
+        filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+
+        auto remove_created_files = [&](bool remove_version_hint)
         {
-            auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Removing the files of the Iceberg table that failed to be created");
+            object_storage->removeObjectIfExists(StoredObject(filename));
+            if (remove_version_hint)
+                object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
+        };
+
+        try
+        {
             writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+            fiu_do_on(FailPoints::iceberg_create_fail_after_version_hint_write,
+            {
+                throw Exception(ErrorCodes::S3_ERROR, "Failpoint: the check after the upload of the version hint failed");
+            });
+        }
+        catch (const Exception & e)
+        {
+            /// A rejected `If-None-Match: *` leaves the hint of another writer in place. Any other failure
+            /// may come after the hint was stored, e.g. from the checks of `s3_check_objects_after_upload`.
+            remove_created_files(!isConditionalWriteConflict(e));
+            throw;
+        }
+        catch (...)
+        {
+            remove_created_files(true);
+            throw;
         }
     }
 
     if (catalog)
     {
         auto catalog_filename = Iceberg::makeIcebergLocationURI(
-            configuration_ptr->getTypeName(),
-            configuration_ptr->getNamespace(),
-            configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix));
-        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
+            configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), filename);
+
+        /// Always ask for a conflict to be reported as `false`, so the files staged above are removed
+        /// before `TABLE_ALREADY_EXISTS` is thrown, with or without `IF NOT EXISTS`.
+        if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, /* if_not_exists */ true))
+        {
+            if (!catalog_writes_metadata)
+            {
+                LOG_INFO(
+                    getLogger("IcebergMetadata"),
+                    "Table {}.{} was registered in the catalog by another client, removing the initial metadata file {} "
+                    "written by this `CREATE`",
+                    namespace_name,
+                    table_name,
+                    filename);
+                object_storage->removeObjectIfExists(StoredObject(filename));
+                if (!filename_version_hint.empty())
+                    object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
+            }
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table {}.{} already exists in the catalog", namespace_name, table_name);
+        }
     }
 }
 
@@ -2195,9 +2271,9 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context)
+void IcebergMetadata::drop(bool delete_data)
 {
-    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+    if (delete_data)
     {
         /// Skipped rather than refused: this runs after the table is already marked as dropped, so
         /// throwing here only makes `DatabaseCatalog` retry the drop forever.
@@ -2212,7 +2288,7 @@ void IcebergMetadata::drop(ContextPtr context)
             return;
         }
 
-        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
+        auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));
     }

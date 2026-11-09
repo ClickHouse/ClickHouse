@@ -1,0 +1,2 @@
+before drop: files present
+after drop: files deleted

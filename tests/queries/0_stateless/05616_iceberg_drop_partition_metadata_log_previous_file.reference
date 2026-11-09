@@ -1,0 +1,7 @@
+--- metadata files and their snapshots ---
+1	\N
+2	1
+3	2
+4	3
+--- the newest metadata file points at the DROP PARTITION snapshot ---
+1
