@@ -42,10 +42,11 @@ process_library() {
     LIB_LICENSE=$(
         LC_ALL=C ${FIND_CMD} "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' -or -iname 'NOTICE' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
             LC_ALL=C sort | LC_ALL=C awk '
-                BEGIN { IGNORECASE=1; min_depth = 0 }
-                /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
-                /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }
-                /NOTICE/  { if (!min_depth || $1 <= min_depth) { min_depth = $1; notice = $2 } }
+                BEGIN { min_depth = 0 }
+                { name = toupper($2); sub(/.*\//, "", name) }
+                name ~ /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
+                name ~ /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }
+                name ~ /NOTICE/  { if (!min_depth || $1 <= min_depth) { min_depth = $1; notice = $2 } }
                 END { if (license) { print license } else if (copying) { print copying } else { print notice } }')
 
     if [ -n "$LIB_LICENSE" ]
