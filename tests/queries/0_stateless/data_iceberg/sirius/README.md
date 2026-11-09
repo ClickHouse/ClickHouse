@@ -15,7 +15,7 @@ in the metadata JSON as well as in the manifest lists and manifests. The directo
 `test/cpp/integration/data/` is kept, so the tables resolve with this directory as the current
 directory; the tests `cd` here and use relative paths. The files are not modified.
 
-The expected results in the tests `05730_iceberg_sirius_*` - `05734_iceberg_sirius_*` are taken from
+The expected results in the tests `05616_iceberg_sirius_*` - `05620_iceberg_sirius_*` are taken from
 the Sirius tests: `test/cpp/integration/test_gpu_execution_multi_format.cpp` (literal expected rows
 of every Iceberg test case) and `test/cpp/integration/data/iceberg_conformance/expectations.json`
 (rows recorded from PyIceberg's own scan). The table `iceberg_v3_dv_misbound` (deletion vectors whose
