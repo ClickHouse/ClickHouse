@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: the repeated query of the cache arm reads the entry the first one wrote to the server-wide query condition cache, which other tests clear
+
 -- A WHERE condition on the only column of `ORDER BY ... LIMIT` is moved to PREWHERE next to `__topKFilter`,
 -- which reads that column anyway, so PREWHERE records the granules the condition rejects in the query condition cache.
 

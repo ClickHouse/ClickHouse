@@ -83,7 +83,8 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     result.correlated_subtrees = std::move(correlated_subtrees);
 
     const auto * output = result.filter_actions->dag.getOutputs().at(0);
-    if (output->column && ConstantFilterDescription(*output->column).always_true)
+    /// `arrayJoin` changes the number of rows, so the step is needed even if the filter is always true.
+    if (output->column && ConstantFilterDescription(*output->column).always_true && !result.filter_actions->dag.hasArrayJoin())
         return {};
 
     result.filter_column_name = output->result_name;

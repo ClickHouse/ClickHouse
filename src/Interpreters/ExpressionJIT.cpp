@@ -198,6 +198,8 @@ public:
 
     const DataTypePtr & getResultType() const override { return dag.back().result_type; }
 
+    const std::vector<FunctionBasePtr> & getNestedFunctions() const { return nested_functions; }
+
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         if (!compiled_function_holder)
@@ -501,6 +503,12 @@ static CompileDAG getCompilableDAG(
     }
 
     return dag;
+}
+
+const std::vector<FunctionBasePtr> * ActionsDAG::getCompiledFunctions(const IFunctionBase & function)
+{
+    const auto * llvm_function = typeid_cast<const LLVMFunction *>(&function);
+    return llvm_function ? &llvm_function->getNestedFunctions() : nullptr;
 }
 
 void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & lazy_executed_nodes)
