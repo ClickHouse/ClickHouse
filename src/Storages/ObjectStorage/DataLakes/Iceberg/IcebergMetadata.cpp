@@ -130,7 +130,6 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
 extern const int LIMIT_EXCEEDED;
-extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace Setting
