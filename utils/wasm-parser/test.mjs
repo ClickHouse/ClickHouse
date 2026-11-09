@@ -465,6 +465,10 @@ if (hasAstJson) {
         ['CREATE TABLE t (p Tuple(a UInt8), CODEC p.a (ZSTD)', 'CreateQuery', 'columns_list.codec_declarations.children[1]', 50, 50],
         /// A `PRIMARY KEY` written last is not in a list of `columns_list`, so the whole list is the slot.
         ['CREATE TABLE t (a UInt8, PRIMARY KEY a', 'CreateQuery', 'columns_list', 38, 38],
+        /// Nor is a foreign key, which the list drops: written last, it makes the whole list the slot, and not
+        /// the columns, which were not written last.
+        ['CREATE TABLE t (a UInt8, FOREIGN KEY (a) REFERENCES p (a)', 'CreateQuery', 'columns_list', 57, 57],
+        ['CREATE TABLE t (a UInt8, FOREIGN KEY (a) REFERENCES p (a), b UInt8', 'CreateQuery', 'columns_list.columns.children[2]', 66, 66],
         [`${T} ENGINE = MergeTree AS`, 'CreateQuery', 'select', 46, 46],
         [`${T} EMPTY AS`, 'CreateQuery', 'as_table_function', 33, 33],
         [`${T} CLONE AS`, 'CreateQuery', 'as_table_function', 33, 33],

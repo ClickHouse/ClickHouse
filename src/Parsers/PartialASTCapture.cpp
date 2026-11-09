@@ -350,15 +350,6 @@ std::array<ASTExpressionList *, 5> columnLists(const ASTColumns & list)
     return {list.columns, list.indices, list.constraints, list.projections, list.codec_declarations};
 }
 
-/// Whether the list of a `CREATE TABLE` holds columns only, so that what failed after it is the
-/// element after the last column. With codec declarations, indices, constraints, projections or a primary key in it, the
-/// order of the elements is not in the tree.
-bool hasOnlyColumns(const ASTColumns & list)
-{
-    return list.columns && !list.codec_declarations && !list.indices && !list.constraints && !list.projections && !list.primary_key
-        && !list.primary_key_from_columns;
-}
-
 /// A `PRIMARY KEY` declared in the column list of a `CREATE` goes into the storage definition, where
 /// the success path puts it: in a materialized view, the inner engine of its `To` target. Not where
 /// the success path rejects the query instead (a plain view, `TO [db.]table`, a table function, two
@@ -528,18 +519,10 @@ void capturePartialAST(Expected & expected, const ASTPtr & node, IParser::Pos po
     std::optional<ColumnListKind> column_list_kind;
     if (const auto * create = node->as<ASTCreateQuery>(); create && key == "columns_list" && create->columns_list)
     {
-        const auto & list = *create->columns_list;
-        if (hasOnlyColumns(list))
-        {
-            column_list_kind = ColumnListKind::Columns;
-        }
-        else
-        {
-            const auto lists = columnLists(list);
-            for (size_t kind = 0; kind < lists.size(); ++kind)
-                if (lists[kind] && !lists[kind]->children.empty() && lists[kind]->children.back().get() == state.last_column_element.get())
-                    column_list_kind = static_cast<ColumnListKind>(kind);
-        }
+        const auto lists = columnLists(*create->columns_list);
+        for (size_t kind = 0; kind < lists.size(); ++kind)
+            if (lists[kind] && !lists[kind]->children.empty() && lists[kind]->children.back().get() == state.last_column_element.get())
+                column_list_kind = static_cast<ColumnListKind>(kind);
     }
 
     ASTPtr failed_value = fragment ? fragment : makeError(expected, pos);
