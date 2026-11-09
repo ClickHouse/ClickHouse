@@ -59,12 +59,14 @@ DOLOR_FAILURES = (
 SERVER_LOG_FAILURES = ("Crash in instance", "Sanitizer error in instance")
 LOGICAL_ERROR_FAILURE = "Logical error in instance"
 # Teardown failures, which fail the run on their own. Such an OOM explains one only when it is
-# the teardown re-raising the OOM's sanitizer report (a Keeper's is reported by `_keeper_failure`).
+# the teardown re-raising the OOM's sanitizer report (a Keeper's is reported by `_keeper_failures`).
 CLEANUP_FAILURES = (
     "Cluster shutdown failed or found a problem",
     "Failed to close the Spark HTTP server",
 )
 CLEANUP_SANITIZER_ASSERT = "Exception: Sanitizer assert found for instance"
+# What the watchdog logs as `<Fatal>` when Dolor SIGKILLs the server (`EXPECTED_KILL_FATAL` of `dolor.py`).
+EXPECTED_KILL_FATAL = "Child process was terminated by signal 9 (KILL)"
 
 # What the AI triage of a failure is told about reproducing it
 TRIAGE_REPRO_HINT = (
@@ -222,13 +224,13 @@ def _copy_node_cores_to_workspace(workspace_path: Path) -> list[Path]:
     return copied
 
 
-def _parse_logs(server_log: Path, stderr_log: Path, fuzzer_out: Path):
+def _parse_logs(server_log: Path, stderr_log: Path | None, fuzzer_out: Path):
     """The log parser's verdict on one process's logs, or None when it names nothing."""
     if not server_log.is_file():
         return None
     name, description, files = FuzzerLogParser(
         server_log=str(server_log),
-        stderr_log=str(stderr_log) if stderr_log.is_file() else "",
+        stderr_log=str(stderr_log) if stderr_log and stderr_log.is_file() else "",
         fuzzer_log=str(fuzzer_out),
     ).parse_failure()
     if not name or name == FuzzerLogParser.UNKNOWN_ERROR:
@@ -248,36 +250,55 @@ def _rotated_logs(log: Path) -> list[Path]:
     return [p for _, p in sorted(numbered, reverse=True)]
 
 
+def _concatenate(parts: list[Path], combined: Path, skip: bytes = b"") -> Path:
+    """`parts` decompressed one after another into `combined`, without the lines holding `skip`."""
+    with open(combined, "wb") as out:
+        for part in parts:
+            if not part.is_file():
+                continue
+            with (gzip.open if part.suffix == ".gz" else open)(part, "rb") as f:
+                if skip:
+                    out.writelines(line for line in f if skip not in line)
+                else:
+                    shutil.copyfileobj(f, out)
+    return combined
+
+
 def _log_with_rotations(log: Path, combined: Path) -> Path:
     """`log` with its rotations decompressed in front of it, written to `combined`, or `log`
     itself when it has none. A process that aborted and was restarted can have its fatal
     record only in a rotation."""
     rotated = _rotated_logs(log)
-    if not rotated:
-        return log
-    with open(combined, "wb") as out:
-        for part in [*rotated, log]:
-            if not part.is_file():
-                continue
-            with (gzip.open if part.suffix == ".gz" else open)(part, "rb") as f:
-                shutil.copyfileobj(f, out)
-    return combined
+    return _concatenate([*rotated, log], combined) if rotated else log
 
 
-def _rotated_node_failure(workspace_path: Path, stderr_log: Path, fuzzer_out: Path):
-    """Name a failure that `dolor.py` found in a rotated server log. The analysis parses the
-    current log only, which belongs to the last server, not to one that crashed before a
-    restart. The main log comes first: the parser looks up the query there."""
+def _rotated_node_failure(workspace_path: Path, fuzzer_out: Path):
+    """A failure in the rotated server logs, which belong to the servers before the last restart:
+    the analysis parses the current logs only. Without `stderr.log`, which every server appends to,
+    so that the parser names a failure of those servers, not the sanitizer report of the last one.
+    Nor the `<Fatal>` the watchdog logs for every restart `--kill-server-prob` makes.
+    The main log comes first: the parser looks up the query there."""
     for name in ("server.log", "server.err.log"):
         log = workspace_path / name
-        combined = _log_with_rotations(log, workspace_path / f"{log.stem}.combined.log")
-        if combined != log and (failure := _parse_logs(combined, stderr_log, fuzzer_out)):
+        rotated = _rotated_logs(log)
+        if rotated and (
+            failure := _parse_logs(
+                _concatenate(
+                    rotated,
+                    workspace_path / f"{log.stem}.rotated.log",
+                    skip=EXPECTED_KILL_FATAL.encode(),
+                ),
+                None,
+                fuzzer_out,
+            )
+        ):
             return failure
     return None
 
 
-def _keeper_failure(workspace_path: Path, fuzzer_out: Path):
-    """A failure report in a Keeper log, which nothing else reads."""
+def _keeper_failures(workspace_path: Path, fuzzer_out: Path) -> dict[int, Result]:
+    """The failure report of each Keeper whose logs hold one, which nothing else reads."""
+    failures: dict[int, Result] = {}
     for i in KEEPER_INDEXES:
         _, err_log, stderr_log = get_keeper_workspace_logs(workspace_path, i)
         err_log = _log_with_rotations(
@@ -291,13 +312,49 @@ def _keeper_failure(workspace_path: Path, fuzzer_out: Path):
             f"|[a-zA-Z]+Sanitizer: CHECK failed:|[a-zA-Z]+Sanitizer:DEADLYSIGNAL|: runtime error: ' {files}"
             " | rg --text -v 'Child process was terminated by signal 9'"
         ):
-            return _parse_logs(err_log, stderr_log, fuzzer_out) or Result(
+            failures[i] = _parse_logs(err_log, stderr_log, fuzzer_out) or Result(
                 name="Keeper",
                 info=f"A failure report in keeper{i} the log parser cannot name. "
                 "Check the keeper*.log artifacts.",
                 status=Result.Status.FAIL,
             )
-    return None
+    return failures
+
+
+# The first line of the report of a fatal signal (`SignalHandlers.cpp`): one per crash.
+CRASH_REPORT_START = "########################################"
+SANITIZER_REPORT_START_RE = re.compile(
+    r"^(==\d+==)?(ERROR|WARNING): [a-zA-Z]+Sanitizer:|[a-zA-Z]+Sanitizer: CHECK failed:|: runtime error: "
+)
+# A sanitizer OOM, which the log analysis passes the run for.
+SANITIZER_OOM_RE = re.compile(
+    r"out-of-memory|out of memory|failed to allocate|allocation-size-too-big"
+)
+
+
+def _count_lines(paths: list[Path], predicate) -> int:
+    total = 0
+    for path in paths:
+        if path.is_file():
+            with (gzip.open if path.suffix == ".gz" else open)(
+                path, "rt", encoding="utf-8", errors="replace"
+            ) as f:
+                total += sum(1 for line in f if predicate(line))
+    return total
+
+
+def _report_count(err_log: Path, stderr_log: Path) -> int:
+    """A lower bound on the failure reports of one process over all its restarts. A crash header
+    and a sanitizer report can belong to the same abort, so it is the larger of the two counts."""
+    crashes = _count_lines(
+        [*_rotated_logs(err_log), err_log], lambda line: CRASH_REPORT_START in line
+    )
+    sanitizer_reports = _count_lines(
+        [stderr_log],
+        lambda line: SANITIZER_REPORT_START_RE.search(line)
+        and not SANITIZER_OOM_RE.search(line),
+    )
+    return max(crashes, sanitizer_reports)
 
 
 def _dolor_failure_records(dolor_log: Path) -> list[str]:
@@ -389,18 +446,52 @@ def _classify_dolor_failure(
     )
 
 
-def _with_keeper_failure(
-    failures: list[Result | None], workspace_path: Path, fuzzer_out: Path
+def _all_failures(
+    failures: list[Result | None],
+    rotated_failure: Result | None,
+    workspace_path: Path,
+    stderr_log: Path,
+    fuzzer_out: Path,
 ) -> list[Result]:
-    """`failures` and the one of the Keepers, whose logs nothing else reads, each name and stack once.
-    The triage may pass a run on a known issue, so it must see every failure of the run, also two
-    sharing a name (it keeps only the STID's frames) but not the qualified stack."""
+    """Every failure of the run, each name and stack once: the triage may pass a run on a known
+    issue, so it must see them all, also two sharing a name (it keeps only the STID's frames) but
+    not the qualified stack. `failures` are those of the current server logs and of `dolor.py`,
+    `rotated_failure` the one of the rotated server logs. The parser names one report per log, so
+    when a process logged more reports than were named, a failure no issue covers keeps the run red."""
+    keeper_failures = _keeper_failures(workspace_path, fuzzer_out)
     distinct: dict[tuple, Result] = {}
-    for failure in [*failures, _keeper_failure(workspace_path, fuzzer_out)]:
+    for failure in [*failures, rotated_failure, *keeper_failures.values()]:
         if failure is not None:
             key = (failure.name, FuzzerLogParser.qualified_stack(failure.info))
             distinct.setdefault(key, failure)
-    return list(distinct.values())
+    if not distinct:
+        return []
+
+    # Only a report has a stack, not a failure `dolor.py` or a BuzzHouse oracle names.
+    named_by_server = len(
+        {s for f in failures if f and (s := FuzzerLogParser.qualified_stack(f.info))}
+    ) + (rotated_failure is not None)
+    unnamed = []
+    count = _report_count(workspace_path / "server.err.log", stderr_log)
+    if count > named_by_server:
+        unnamed.append(f"the server logged {count} reports, {named_by_server} named")
+    for i in KEEPER_INDEXES:
+        _, err_log, keeper_stderr = get_keeper_workspace_logs(workspace_path, i)
+        named = int(i in keeper_failures)
+        if (count := _report_count(err_log, keeper_stderr)) > named:
+            unnamed.append(f"keeper{i} logged {count} reports, {named} named")
+    result = list(distinct.values())
+    if unnamed:
+        result.append(
+            Result(
+                name="Incomplete failure inventory",
+                info="Not every failure report of the run was named, so no known issue can pass it: "
+                + "; ".join(unnamed)
+                + ". Check the server and keeper logs.",
+                status=Result.Status.FAIL,
+            )
+        )
+    return result
 
 
 def _complete_with_artifacts(
@@ -728,7 +819,13 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             # raise too: name the server's failure rather than the exception it caused.
             if (failure := _parse_logs(server_log, stderr_log, buzz_out)) is not None:
                 _complete_with_artifacts(
-                    _with_keeper_failure([failure], workspace_path, buzz_out),
+                    _all_failures(
+                        [failure],
+                        _rotated_node_failure(workspace_path, buzz_out),
+                        workspace_path,
+                        stderr_log,
+                        buzz_out,
+                    ),
                     sw,
                     workspace_path,
                     paths,
@@ -794,10 +891,14 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         server_fuzzer=True,
     )
     failures: list[Result | None] = [r for r in result.results if not r.is_ok()]
-    if server_died and not result.is_ok() and not failures:
-        # The analysis failed the run without naming it from the current logs.
-        failures.append(_rotated_node_failure(workspace_path, stderr_log, buzz_out))
-    server_failure_named = any(failures)
+    # A server that failed before a restart can be in the rotated logs only, whatever the current
+    # ones show, so it is reported whenever they hold a failure.
+    rotated_failure = _rotated_node_failure(workspace_path, buzz_out)
+    # Unless the analysis failed the run without naming it from the current logs, the rotated
+    # failure is another server's, which leaves those logs to be classified below.
+    server_failure_named = any(failures) or (
+        server_died and not result.is_ok() and rotated_failure is not None
+    )
     # An error the analysis names nothing for stays one: the triage never passes it.
     collect = server_failure_named or not result.is_error()
     if collect and not cmd_ok:
@@ -818,7 +919,9 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         )
     # `dolor.py` can exit 0 with a Keeper log holding a report.
     if collect and (
-        failures := _with_keeper_failure(failures, workspace_path, buzz_out)
+        failures := _all_failures(
+            failures, rotated_failure, workspace_path, stderr_log, buzz_out
+        )
     ):
         _complete_with_artifacts(
             failures,
