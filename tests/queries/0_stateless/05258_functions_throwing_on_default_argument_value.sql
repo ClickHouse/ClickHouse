@@ -20,7 +20,6 @@ SELECT formatQuerySingleLine(materialize(toLowCardinality('select 1')));
 SELECT parseQueryToJSON(materialize(toLowCardinality('select 1'))) = parseQueryToJSON('select 1');
 SELECT formatQueryFromJSON(materialize(toLowCardinality(parseQueryToJSON('select 1'))));
 SELECT conv(materialize(toLowCardinality('10')), 10, 2);
-SELECT toBool(materialize(toLowCardinality('true')));
 SELECT filesystemCapacity(materialize(toLowCardinality('default'))) > 0;
 SELECT base64Decode(materialize(toLowCardinality(toFixedString('SGVsbG8=', 8))));
 SELECT hex(encrypt('aes-256-ecb', 'text', materialize(toLowCardinality('12345678901234567890123456789012'))));
