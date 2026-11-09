@@ -706,7 +706,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
                 try
                 {
                     std::unique_lock lock(mutex);
-                    while (!units_queue.empty() && !is_stopped)
+                    while (!units_queue.empty() && !is_stopped && !background_exception)
                     {
                         if (delivery_queue.size() + units_in_progress >= max_in_flight_chunks)
                         {
@@ -747,8 +747,8 @@ void DWARFBlockInputFormat::initializeIfNeeded()
                 {
                     std::lock_guard lock(mutex);
                     --units_in_progress;
-                    is_stopped = 1;
-                    background_exception = std::current_exception();
+                    if (!background_exception)
+                        background_exception = std::current_exception();
                     wake_up_threads.notify_all();
                     deliver_chunk.notify_all();
                 }
@@ -1083,10 +1083,10 @@ Chunk DWARFBlockInputFormat::read()
 
     while (true)
     {
-        if (is_stopped)
-            return {};
         if (background_exception)
             std::rethrow_exception(background_exception);
+        if (is_stopped)
+            return {};
 
         if (!delivery_queue.empty())
         {
