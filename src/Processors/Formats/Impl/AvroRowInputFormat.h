@@ -66,6 +66,7 @@ public:
 private:
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
     DeserializeFn createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type);
+    DeserializeFn tryCreateVariantDeserializeFn(const avro::NodePtr & node, const DataTypePtr & target_type);
     SkipFn createSkipFn(const avro::NodePtr & root_node);
     static size_t readUnionIndex(avro::Decoder & decoder, size_t num_branches);
 
@@ -155,6 +156,9 @@ private:
     /// Guard against infinite recursion in createDeserializeFn and createAction
     /// when Avro schema contains cyclic symbolic references (e.g. TypeA -> TypeB -> TypeA).
     std::unordered_set<std::string> symbolic_deserialize_guard;
+
+    /// The column `createDeserializeFn` is building for, for error messages.
+    String current_column_name;
 
     bool null_as_default = false;
 
