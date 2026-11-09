@@ -1689,7 +1689,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             else
             {
                 auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-                    identifier, scope.context, makeTableIdentifierAST(first_argument_identifier)).resolved_identifier;
+                    identifier, scope.context, makeTableIdentifierAST(first_argument_identifier), replaced_storage).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",

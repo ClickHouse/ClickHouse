@@ -61,6 +61,9 @@ struct AnalysisTableExpressionData
     /// `standard` matching; folded references must not match them.
     std::unordered_set<String> pinned_column_names;
 
+    /// Names of the ALIAS columns whose expressions are being resolved, outermost first.
+    std::vector<std::string> alias_columns_in_resolution;
+
     void ensureColumnMembershipSetsArePopulated() const;
 
     /// Returns the `name -> ColumnNode` map, building it on first call. Many queries
@@ -183,11 +186,13 @@ struct AnalysisTableExpressionData
             /// `column_name_to_column_node` map to be built.
             if (!column_names.contains(column_name))
                 continue;
-            if (auto column_node = tryGetColumnNode(column_name))
-            {
-                if (auto subcolumn_type = column_node->getResultType()->tryGetSubcolumnType(subcolumn_name))
-                    return SubcolumnInfo{column_node, subcolumn_name, subcolumn_type};
-            }
+            const auto & node_map = getColumnNodeMap();
+            auto it = node_map.find(column_name);
+            if (it == node_map.end())
+                continue;
+            /// The type is checked first: `tryGetColumnNode` resolves an ALIAS column, and this lookup is only a probe.
+            if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
+                return SubcolumnInfo{tryGetColumnNode(column_name), subcolumn_name, subcolumn_type};
         }
 
         return std::nullopt;
