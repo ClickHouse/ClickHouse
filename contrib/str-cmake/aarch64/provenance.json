@@ -145,6 +145,25 @@
         "str_memset"
       ],
       "change": "Isolate the unchanged public fill body to omit its leaf frame while retaining compiler asynchronous unwind information. The bulk fill frame and store layout remain unchanged. Native actual UInt256 Shift caller and broad controls are separate from integrated-query validation."
+    },
+    {
+      "path": "aarch64/memory_search.c",
+      "sha256": "630b8ec47a46a8d26873c46c80a54319c5abfbf6b987002d7ab04db62afdbd62",
+      "functions": [
+        "str_memchr",
+        "select_search"
+      ],
+      "change": "Separate leaf search entry with compiler asynchronous unwind data; initialize NEON before constructors and select the bounded any-vector-length SVE helper after Linux feature detection.",
+      "date": "2026-11-09"
+    },
+    {
+      "path": "aarch64/memory_search_sve.c",
+      "sha256": "39ff8dfe690b9eb7c256f915c4f7d10443ac373a66674cf423abffe21d61106c",
+      "functions": [
+        "ch_str_sve_memchr_aligned16"
+      ],
+      "change": "Integration experiment: predicated alignment prefix followed by groups of at most sixteen active byte lanes. Preserve zero-length and oversized early-match page safety. Actual-object proof and performance limits are recorded separately in benchmarks/primitive-tuning-2026-11-09.md.",
+      "date": "2026-11-09"
     }
   ]
 }

@@ -5,7 +5,6 @@
 
 #define STR_HWCAP_SVE (1UL << 22)
 
-typedef void *(*find_fn)(const void *, int, size_t);
 typedef char *(*string_fn)(char *, const char *);
 
 static char *cat_neon(char *d, const char *s)
@@ -14,11 +13,9 @@ static char *cat_neon(char *d, const char *s)
     return d;
 }
 
-static find_fn find_impl = kl_memchr_neon_blocks;
 static string_fn strcpy_impl = kl_strcpy_neon_first16;
 static string_fn strcat_impl = cat_neon;
 
-void *ch_str_sve_memchr(const void *, int, size_t);
 char *ch_str_sve_strcpy(char *, const char *);
 char *ch_str_sve_strcat(char *, const char *);
 
@@ -27,17 +24,12 @@ __attribute__((constructor(101))) static void select_implementations(void)
 {
     if (getauxval(AT_HWCAP) & STR_HWCAP_SVE)
     {
-        __atomic_store_n(&find_impl, ch_str_sve_memchr, __ATOMIC_RELAXED);
         __atomic_store_n(&strcpy_impl, ch_str_sve_strcpy, __ATOMIC_RELAXED);
         __atomic_store_n(&strcat_impl, ch_str_sve_strcat, __ATOMIC_RELAXED);
     }
 }
 
 
-void *str_memchr(const void *s, int c, size_t n)
-{
-    return __atomic_load_n(&find_impl, __ATOMIC_RELAXED)(s, c, n);
-}
 char *str_strcpy(char *d, const char *s)
 {
     return __atomic_load_n(&strcpy_impl, __ATOMIC_RELAXED)(d, s);

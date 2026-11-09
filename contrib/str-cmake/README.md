@@ -35,15 +35,15 @@ and the selection. The MIT license is included. This makes an ARM build
 reproducible without depending on an unpublished fork commit.
 
 The ARM objects use the compiler output directly, retaining unwind information.
-Most entries retain frame pointers. The leaf public `memcpy`, `memmove`, and
-`memset` entries omit their frames and retain compiler-generated asynchronous
-unwind tables; bulk kernels, other entries, and nonleaf constructors keep their
-frames. Baseline
+Most entries retain frame pointers. The leaf public `memcpy`, `memmove`,
+`memset`, and `memchr` entries and their small SVE helpers omit their frames
+and retain compiler-generated asynchronous unwind tables; bulk kernels,
+other entries, and nonleaf constructors keep their frames. Baseline
 objects use `-march=armv8-a`; separate SVE objects use `-march=armv8-a+sve`
 and scalable vector length. Valid NEON implementations are available before
 constructors run. Constructors check Linux `AT_HWCAP` and atomically publish
-SVE availability. The bounded tiny-copy helper predicates every memory access
-and only uses the first 16 byte lanes. Other SVE wrappers retain their tuned
+SVE availability. The bounded tiny-copy and search helpers predicate every
+memory access and only use the first 16 byte lanes. Other SVE wrappers retain their tuned
 16-byte vector-length gate and use NEON outside it. The library changes no
 process or thread vector-length setting.
 
@@ -54,6 +54,10 @@ pre-constructor calls. `memmove` retains its bounded NEON path through 128
 bytes, loading every source byte before the first store. Larger copies and
 moves call their separate NEON kernels directly. `memset` handles up to 16
 bytes inline and uses NEON above that boundary.
+The search helper scans a bounded prefix to a 16-byte boundary, followed by
+aligned groups of at most 16 bytes. It supports larger per-thread vector
+lengths without the old search wrapper, while preserving protected-page
+early matches for oversized counts.
 The copy kernel also has bounded tiers through 192 and 256 bytes and avoids
 recopying a final 128-byte block already covered by its tail. Through 1024
 bytes, it selects source alignment only when the source is 16-byte aligned and
@@ -102,6 +106,9 @@ flat-hierarchy control difference.
 The [2026-11-08 regression portfolio](benchmarks/regressions-2026-11-08.md)
 records all 19 affected suites on the later candidate, minimized caller
 experiments, retained timing concerns and exact proof limits.
+The [2026-11-09 primitive tuning](benchmarks/primitive-tuning-2026-11-09.md)
+records the selected search change and the retained adverse move, comparison
+and fill trials.
 
 On a native AArch64 glibc host, test the prefixed archive against the independent
 host libc, including protected pages and oversized early-match `memchr`:
