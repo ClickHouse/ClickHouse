@@ -25,8 +25,8 @@ using namespace DB;
 /// whose query-plan serialization version knows the names, and `adaptive_aggregator_disable_thaw`, a name of a later
 /// version, only towards a peer that knows it.
 ///
-/// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched entry by
-/// name and `readBinary` throws on a name it does not know. Writing either name towards a peer that predates it
+/// The reader of `QueryPlanSerializationSettings` in a peer that predates these names throws on a name it does not
+/// know. Writing either name towards a peer that predates it
 /// would make every serialized aggregation plan unreadable there, so under `serialize_query_plan = 1` a mixed-version
 /// cluster would stop aggregating altogether. Leaving them off costs nothing: such a peer has no adaptive
 /// aggregation to drive, and the adaptive path is exact, so the result is the same either way.
@@ -78,11 +78,11 @@ QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_agg
     return settings;
 }
 
-/// The names as they appear in the binary settings stream written by `writeChangedBinary`.
+/// The names as they appear in the settings stream written by `QueryPlanSerializationSettings::write`.
 bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_view name)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.write(out);
     return out.str().contains(name);
 }
 

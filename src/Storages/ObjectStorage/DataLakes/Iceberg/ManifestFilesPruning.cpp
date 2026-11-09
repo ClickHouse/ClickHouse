@@ -159,6 +159,20 @@ ManifestFilesPruner::ManifestFilesPruner(
             /* single_point_ */ true,
             /* skip_analysis_ */ false,
             require_ready_sets);
+
+        NamesAndTypesList nullable_columns;
+        for (const auto & [name, type] : partition_key->expression->getRequiredColumnsWithTypes())
+            nullable_columns.emplace_back(name, makeNullableSafe(type));
+        nullable_partition_key.emplace(
+            KeyDescription::getKeyFromAST(partition_key->definition_ast, ColumnsDescription(nullable_columns), {}, context));
+        nullable_partition_key_condition.emplace(
+            inverted_dag,
+            context,
+            nullable_partition_key->column_names,
+            nullable_partition_key->expression,
+            /* single_point_ */ true,
+            /* skip_analysis_ */ false,
+            require_ready_sets);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
@@ -199,7 +213,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    bool keep_nullable)
 {
     PartitionKeyFromSpec result;
 
@@ -234,7 +249,8 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
         /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
         /// against these input columns, which must contain each source column at most once.
         if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(column_characteristics->type));
+            partition_columns_description.emplace_back(
+                numeric_column_name, keep_nullable ? column_characteristics->type : removeNullable(column_characteristics->type));
     }
 
     if (!partition_columns_description.empty())
@@ -423,16 +439,23 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
 
     if (partition_key_condition.has_value())
     {
+        /// The stripped key drops a set's NULL elements, so a tuple holding NULL (+inf) needs the Nullable key.
+        bool holds_null = false;
+        for (size_t i = 0; i < partition_value.size() && i < nullable_partition_key->data_types.size(); ++i)
+            holds_null |= partition_value[i].isNull() && nullable_partition_key->data_types[i]->isNullable();
+        const auto & key = holds_null ? *nullable_partition_key : *partition_key;
+        const auto & key_condition = holds_null ? *nullable_partition_key_condition : *partition_key_condition;
+
         /// A spec field whose source column or transform cannot be modelled is left out of the
         /// partition key, so the key is narrower than the tuple and the two are not index-aligned.
         /// Only the partition key is unusable then; the min/max conditions below still apply.
-        if (partition_key->data_types.size() == partition_value.size())
+        if (key.data_types.size() == partition_value.size())
         {
             std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
             for (size_t i = 0; i < index_value.size(); ++i)
             {
                 auto & field = index_value[i];
-                const auto & type = partition_key->data_types.at(i);
+                const auto & type = key.data_types.at(i);
                 // NULL_LAST
                 if (field.isNull())
                     field = POSITIVE_INFINITY;
@@ -440,8 +463,8 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                     field = convertPartitionValueToType(field, type);
             }
 
-            bool can_be_true = partition_key_condition->mayBeTrueInRange(
-                partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+            bool can_be_true = key_condition.mayBeTrueInRange(
+                partition_value.size(), index_value.data(), index_value.data(), key.data_types);
 
             if (!can_be_true)
             {
