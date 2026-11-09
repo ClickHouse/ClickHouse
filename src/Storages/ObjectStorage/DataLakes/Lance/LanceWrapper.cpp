@@ -336,7 +336,8 @@ DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options, const
 
     auto impl = std::make_shared<Impl>(dataset.get(), options);
     /// `Impl` owns the dataset now; the returned pointer is the one it already holds.
-    static_cast<void>(dataset.release());
+    [[maybe_unused]] auto * owned_by_impl = dataset.release();
+    chassert(owned_by_impl == impl->dataset);
     return DatasetHandle(std::move(impl));
 }
 
