@@ -205,11 +205,13 @@ public:
     bool structureEquals(const ColumnStatistics & other) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
-    /// The statistics of each path of a `JSON` column. Each describes all rows of the column, a row without the path
-    /// counting as NULL.
+    /// The statistics of each path of a `JSON` column built or merged in memory (statistics read from disk keep them
+    /// serialized, see `cloneWithPaths`). Each describes all rows of the column, a row without the path counting as NULL.
     using PathStatistics = std::map<String, ColumnStatisticsPtr>;
     const PathStatistics & getPathStatistics() const { return path_statistics; }
-    /// A copy with the statistics of `paths` only. It shares the statistics objects with this one.
+    bool hasPathStatistics() const { return !path_types.empty(); }
+    /// A copy with the statistics of `paths` only, deserialized. It shares the statistics objects built in memory with
+    /// this one.
     std::shared_ptr<ColumnStatistics> cloneWithPaths(const NameSet & paths) const;
 
 private:
@@ -218,6 +220,7 @@ private:
     void buildPaths(const ColumnObject & column);
     void addNullRows(UInt64 count);
     ColumnStatisticsPtr createPathStatistics(const DataTypePtr & path_type) const;
+    ColumnStatisticsPtr deserializePathStatistics(const String & path, const String & data) const;
 
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
@@ -227,6 +230,9 @@ private:
     /// The statistics built for every path of a `JSON` column; empty if none are.
     ColumnStatisticsDescription::StatisticsTypeDescMap path_types;
     PathStatistics path_statistics;
+    /// Statistics read from disk keep the statistics of their paths serialized, and a path is deserialized when it is
+    /// used: a part may have thousands of paths, a deserialized one takes kilobytes, and a query needs a few.
+    std::map<String, String> serialized_path_statistics;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>

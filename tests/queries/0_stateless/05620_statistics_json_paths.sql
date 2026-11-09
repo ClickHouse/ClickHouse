@@ -58,9 +58,9 @@ DROP TABLE t3;
 -- A path in shared data, and a dynamic path that one part does not have, before and after a merge.
 -- `j.p = 'x'` holds in 500 rows of `ts` and of the first part of `tm`; the second part of `tm` has no `p`.
 CREATE TABLE ts (k UInt64, j JSON(max_dynamic_paths = 0) STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k SETTINGS materialize_statistics_on_merge = 1;
-CREATE TABLE tm (k UInt64, j JSON STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k SETTINGS materialize_statistics_on_merge = 1;
+CREATE TABLE tm (k UInt64 STATISTICS(basic), j JSON STATISTICS(uniq_v2)) ENGINE = MergeTree ORDER BY k SETTINGS materialize_statistics_on_merge = 1, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 CREATE TABLE u (k UInt64) ENGINE = MergeTree ORDER BY k;
-INSERT INTO u SELECT number FROM numbers(100);
+INSERT INTO u SELECT number FROM numbers(100) SETTINGS materialize_statistics_on_insert = 1;
 -- Statistics are built on insert here: stopped merges would block the mutation of `MATERIALIZE STATISTICS`.
 INSERT INTO ts SELECT number, if(number % 2 = 0, '{"p":"x"}', '{"q":"y"}') FROM numbers(1000) SETTINGS materialize_statistics_on_insert = 1;
 SYSTEM STOP MERGES tm;
@@ -71,6 +71,9 @@ SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN kee
 SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tm AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.p = 'x') WHERE explain LIKE '%Join:%';
 SYSTEM START MERGES tm;
 OPTIMIZE TABLE tm FINAL;
+SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tm AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.p = 'x') WHERE explain LIKE '%Join:%';
+-- A mutation of another column of a wide part writes the statistics of `j` as they were read.
+ALTER TABLE tm MATERIALIZE STATISTICS k SETTINGS mutations_sync = 2;
 SELECT replaceRegexpAll(trimLeft(explain), '~[0-9?]+\\]', ']') FROM (EXPLAIN keep_logical_steps = 1, actions = 1 SELECT 1 FROM tm AS a INNER JOIN u AS b ON a.k = b.k WHERE a.j.p = 'x') WHERE explain LIKE '%Join:%';
 
 DROP TABLE ts;

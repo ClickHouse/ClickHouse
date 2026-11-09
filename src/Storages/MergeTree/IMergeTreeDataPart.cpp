@@ -1405,7 +1405,7 @@ static ColumnStatisticsPtr keepRequiredPaths(
     const NameSet & required_columns,
     const std::unordered_map<String, NameSet> & required_paths)
 {
-    if (required_columns.empty() || stats->getPathStatistics().empty())
+    if (required_columns.empty() || !stats->hasPathStatistics())
         return stats;
     auto it = required_paths.find(column_name);
     return stats->cloneWithPaths(it == required_paths.end() ? NameSet{} : it->second);

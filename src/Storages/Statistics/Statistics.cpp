@@ -306,6 +306,7 @@ void ColumnStatistics::build(const ColumnPtr & column)
 
 void ColumnStatistics::buildPaths(const ColumnObject & column)
 {
+    chassert(serialized_path_statistics.empty());
     const auto & object_type = assert_cast<const DataTypeObject &>(*stats_desc.data_type);
     auto build_path = [&](const String & path, const ColumnPtr & path_column)
     {
@@ -360,8 +361,15 @@ ColumnStatisticsPtr ColumnStatistics::createPathStatistics(const DataTypePtr & p
     return path_desc.empty() ? nullptr : factory.get(path_desc);
 }
 
+ColumnStatisticsPtr ColumnStatistics::deserializePathStatistics(const String & path, const String & data) const
+{
+    ReadBufferFromString buf(data);
+    return deserialize(buf, getPathType(assert_cast<const DataTypeObject &>(*stats_desc.data_type), path));
+}
+
 void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 {
+    chassert(serialized_path_statistics.empty());
     rows += other->rows;
     for (const auto & stat_it : stats)
     {
@@ -379,13 +387,18 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
     }
 
     /// `other` may be in the statistics cache, so its path statistics are copied, not shared.
-    for (const auto & [path, other_path_stats] : other->path_statistics)
+    auto merge_path = [&](const String & path, const ColumnStatisticsPtr & other_path_stats)
     {
         auto it = path_statistics.find(path);
         if (it == path_statistics.end())
             it = path_statistics.emplace(path, other_path_stats->cloneEmpty()).first;
         it->second->merge(other_path_stats);
-    }
+    };
+    for (const auto & [path, other_path_stats] : other->path_statistics)
+        merge_path(path, other_path_stats);
+    for (const auto & [path, data] : other->serialized_path_statistics)
+        if (auto other_path_stats = other->deserializePathStatistics(path, data))
+            merge_path(path, other_path_stats);
     for (const auto & [_, path_stats] : path_statistics)
         if (path_stats->rows < rows)
             path_stats->addNullRows(rows - path_stats->rows);
@@ -444,8 +457,13 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneWithPaths(const NameSet
     result->external_cardinality = external_cardinality;
     result->path_types = path_types;
     for (const auto & path : paths)
+    {
         if (auto it = path_statistics.find(path); it != path_statistics.end())
             result->path_statistics.emplace(*it);
+        else if (auto serialized_it = serialized_path_statistics.find(path); serialized_it != serialized_path_statistics.end())
+            if (auto path_stats = deserializePathStatistics(path, serialized_it->second))
+                result->path_statistics.emplace(path, std::move(path_stats));
+    }
     return result;
 }
 
@@ -765,13 +783,18 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
             path_types_mask |= 1ULL << static_cast<UInt8>(type);
         writeIntBinary(path_types_mask, out);
 
-        writeVarUInt(path_statistics.size(), out);
+        writeVarUInt(path_statistics.size() + serialized_path_statistics.size(), out);
         for (const auto & [path, path_stats] : path_statistics)
         {
             writeStringBinary(path, out);
             WriteBufferFromOwnString path_out;
             path_stats->serialize(path_out);
             writeStringBinary(path_out.str(), out);
+        }
+        for (const auto & [path, data] : serialized_path_statistics)
+        {
+            writeStringBinary(path, out);
+            writeStringBinary(data, out);
         }
     });
 }
@@ -885,17 +908,18 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                             SingleStatisticsDescription(path_type, make_intrusive<ASTIdentifier>(statisticsTypeToString(path_type)), false));
                 }
 
+                if (result->path_types.empty())
+                    continue;
+
                 UInt64 num_paths = 0;
                 readVarUInt(num_paths, payload_buf);
                 for (UInt64 j = 0; j < num_paths; ++j)
                 {
                     String path;
-                    String path_payload;
+                    String path_data;
                     readStringBinary(path, payload_buf);
-                    readStringBinary(path_payload, payload_buf);
-                    ReadBufferFromString path_buf(path_payload);
-                    if (auto path_stats = deserialize(path_buf, getPathType(*object_type, path)))
-                        result->path_statistics.emplace(std::move(path), std::move(path_stats));
+                    readStringBinary(path_data, payload_buf);
+                    result->serialized_path_statistics.emplace(std::move(path), std::move(path_data));
                 }
                 continue;
             }
@@ -964,6 +988,8 @@ size_t ColumnStatistics::allocatedBytes() const
         res += sizeof(ColumnStatisticsDescription::StatisticsTypeDescMap::value_type) + map_node_overhead + desc.allocatedBytes();
     for (const auto & [path, path_stats] : path_statistics)
         res += sizeof(PathStatistics::value_type) + map_node_overhead + path.capacity() + path_stats->allocatedBytes();
+    for (const auto & [path, data] : serialized_path_statistics)
+        res += sizeof(decltype(serialized_path_statistics)::value_type) + map_node_overhead + path.capacity() + data.capacity();
     return res;
 }
 
