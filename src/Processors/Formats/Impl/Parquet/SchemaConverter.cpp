@@ -323,6 +323,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     {
         bool not_in_schema = false;
         node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
+        node.not_in_datalake_schema |= not_in_schema;
 
         /// A column that is not in the data lake schema is never requested, and its physical name
         /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
@@ -1011,7 +1012,8 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     ...
 
     /// Not a Map's key_value tuple: `map.keys` and `map.values` are the names of the subcolumns of a Map.
-    if (sample_block && !node.requested && levels.back().rep > 0 && node.schema_context != SchemaContext::MapTuple)
+    if (sample_block && !node.requested && !node.not_in_datalake_schema && levels.back().rep > 0
+        && node.schema_context != SchemaContext::MapTuple)
         tuples_in_arrays.push_back(
             {.name = node.name, .schema_idx = schema_idx - 1, .first_primitive_column_idx = primitive_column_idx, .levels = levels});
 
@@ -1262,7 +1264,7 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
         size_t schema_idx;
         size_t column_idx;
         std::vector<LevelInfo> levels;
-        /// Lower is cheaper: a leaf not read for another column, without arrays of its own, of fixed width.
+        /// Lower is cheaper: a leaf of fixed width, without arrays of its own, not read for another column.
         UInt8 cost;
     };
     std::vector<Leaf> leaves;
@@ -1304,9 +1306,9 @@ std::optional<size_t> SchemaConverter::addLevelsOnlyPrimitive(
 
         if (isPrimitiveNode(element))
         {
-            const UInt8 cost = (read_column_idxs.contains(column_idx) ? 4 : 0)
+            const UInt8 cost = (element.type == parq::Type::BYTE_ARRAY ? 4 : 0)
                 + (path_levels.back().rep > base_levels.back().rep ? 2 : 0)
-                + (element.type == parq::Type::BYTE_ARRAY ? 1 : 0);
+                + (read_column_idxs.contains(column_idx) ? 1 : 0);
             leaves.push_back({idx - 1, column_idx, path_levels, cost});
             column_idx += 1;
             if (adds_level)
@@ -1401,11 +1403,23 @@ void SchemaConverter::addMissingElementsOfTuplesInArrays()
         const ColumnWithTypeAndName & column = sample_block->getByPosition(pos);
 
         const TupleInArray * tuple = nullptr;
+        bool ambiguous = false;
         for (const auto & candidate : tuples_in_arrays)
-            if (is_path_prefix(column.name, candidate.name) && (!tuple || candidate.name.size() > tuple->name.size()))
+        {
+            if (!is_path_prefix(column.name, candidate.name))
+                continue;
+            if (tuple && candidate.name.size() == tuple->name.size())
+                ambiguous = true;
+            else if (!tuple || candidate.name.size() > tuple->name.size())
+            {
                 tuple = &candidate;
+                ambiguous = false;
+            }
+        }
         if (!tuple)
             continue;
+        if (ambiguous)
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "There are multiple columns with name `{}` in the parquet file", tuple->name);
         const std::string_view rest = std::string_view(column.name).substr(tuple->name.size() + 1);
 
         /// A path through an element the tuple has (e.g. `arr.primitive_element.x`) stays a missing column.
