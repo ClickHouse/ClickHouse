@@ -43,6 +43,9 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
+    REGULAR(parallel_sync_paths_fail_fsync) \
+    REGULAR(deduplication_log_fail_durable_drop_sync) \
+    REGULAR(parallel_sync_paths_interrupt_fsync) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(smt_blobs_list_split_file_writes) \
     REGULAR(smt_blobs_list_split_file_writes_small) \
@@ -73,6 +76,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     PAUSEABLE_ONCE(smt_get_status_pause_before_keeper_read) \
+    PAUSEABLE_ONCE(smt_parts_killer_pause_before_staging_part_removal) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
     ONCE(smt_detach_part_replica_set_change_before_commit) \
