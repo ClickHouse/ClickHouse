@@ -1,0 +1,129 @@
+-- `estimateCompressionRatio` with a `target_type`: parameters, errors, the common numerator, and the aggregation paths.
+
+-- A state split between threads or spilled to disk is estimated as several parts.
+SET max_threads = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+
+DROP TABLE IF EXISTS src;
+CREATE TABLE src (n UInt64, s String) ENGINE = Memory;
+INSERT INTO src SELECT number, concat('region_', toString(number % 16)) FROM numbers(50000);
+
+SELECT 'parameters';
+-- In any order, the codec and the block size optional.
+SELECT estimateCompressionRatio('LZ4', 65536, 'LowCardinality(String)')(s) = estimateCompressionRatio('LowCardinality(String)', 65536, 'LZ4')(s) FROM src;
+SELECT estimateCompressionRatio('LowCardinality(String)')(s) = estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src;
+SELECT estimateCompressionRatio('LZ4', 'String')(s) > 0, estimateCompressionRatio(65536, 'String')(s) > 0 FROM src;
+-- No rows.
+SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src WHERE n > 1000000;
+
+SELECT 'errors';
+SELECT estimateCompressionRatio('String', 'UInt64')(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
+SELECT estimateCompressionRatio('LZ4', 'ZSTD', 'String')(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
+SELECT estimateCompressionRatio('LZ4', 65536, 8192)(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
+SELECT estimateCompressionRatio('LZ4', 0, 'String')(n) FROM src; -- { serverError BAD_QUERY_PARAMETER }
+SELECT estimateCompressionRatio('LZ4', 65536, 'String', 1)(n) FROM src; -- { serverError UNKNOWN_QUERY_PARAMETER }
+-- A conversion the types do not allow fails without rows; a value the target cannot hold fails when it comes.
+SELECT estimateCompressionRatio('Array(UInt8)')(n) FROM src WHERE n > 1000000; -- { serverError TYPE_MISMATCH }
+SELECT estimateCompressionRatio('UInt8')(n) FROM src; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT estimateCompressionRatio('UInt8')(n) FROM src WHERE n < 256 FORMAT Null;
+SELECT estimateCompressionRatio('String')(nullIf(s, 'region_5')) FROM src; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT estimateCompressionRatio('Nullable(String)')(nullIf(s, 'region_5')) > 0 FROM src;
+SELECT estimateCompressionRatio('UInt32')(s) FROM src; -- { serverError CANNOT_PARSE_TEXT }
+-- A codec the target type cannot take, or that compresses nothing by itself.
+SELECT estimateCompressionRatio('T64', 'String')(n) FROM src WHERE n > 1000000; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
+SELECT estimateCompressionRatio('Delta', 'LowCardinality(String)')(n) FROM src WHERE n > 1000000; -- { serverError BAD_ARGUMENTS }
+SELECT estimateCompressionRatio('Quantized(8)', 'Array(Float32)')([1.0]) FROM src; -- { serverError BAD_ARGUMENTS }
+-- Types whose substreams depend on the data are not supported as targets.
+SELECT estimateCompressionRatio('JSON')(s) FROM src; -- { serverError NOT_IMPLEMENTED }
+SELECT estimateCompressionRatio('Tuple(a UInt8, b Dynamic)')(tuple(1, 2)) FROM src; -- { serverError NOT_IMPLEMENTED }
+
+SELECT 'numerator';
+-- The first number of the state is the bytes of the rows in their own type: the same for every target and codec, and the same
+-- as without a target. A `LowCardinality` column counts as its values.
+SELECT uniqExact(extract(h, '^(?:[89A-F][0-9A-F])*[0-7][0-9A-F]')), count() FROM
+(
+    SELECT hex(estimateCompressionRatioState('NONE')(s)) AS h FROM src
+    UNION ALL SELECT hex(estimateCompressionRatioState('LZ4', 'String')(s)) FROM src
+    UNION ALL SELECT hex(estimateCompressionRatioState('ZSTD(3)', 'LowCardinality(String)')(s)) FROM src
+    UNION ALL SELECT hex(estimateCompressionRatioState('ZSTD(1)', 8192, 'Nullable(String)')(s)) FROM src
+    UNION ALL SELECT hex(estimateCompressionRatioState('LZ4', 'String')(toLowCardinality(s))) FROM src
+);
+
+SELECT 'ranking';
+-- 16 distinct values: much smaller as `LowCardinality`, with either codec.
+SELECT
+    estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) > 10 * estimateCompressionRatio('ZSTD(3)', 'String')(s),
+    estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) > 10 * estimateCompressionRatio('ZSTD(3)', 'String')(s)
+FROM src;
+-- Unique values: smaller as `String`.
+SELECT estimateCompressionRatio('LZ4', 'String')(x) > estimateCompressionRatio('LZ4', 'LowCardinality(String)')(x)
+FROM (SELECT toString(cityHash64(n)) AS x FROM src);
+-- Small numbers: smaller in a narrower type.
+SELECT estimateCompressionRatio('LZ4', 'UInt16')(n % 1000) > estimateCompressionRatio('LZ4', 'UInt64')(n % 1000) FROM src;
+
+SELECT 'block size';
+-- Rows are written in granules of 8192, whatever blocks they come in.
+DROP TABLE IF EXISTS results;
+CREATE TABLE results (r Float64) ENGINE = Memory;
+INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 1000;
+INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 8192;
+INSERT INTO results SELECT estimateCompressionRatio('ZSTD(3)', 'LowCardinality(String)')(s) FROM src SETTINGS max_block_size = 65409;
+SELECT uniqExact(r), count() FROM results;
+
+SELECT 'aggregation';
+-- A group is estimated as the same rows without keys.
+SELECT groupArray(r) = [
+        (SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) FROM src WHERE n % 3 = 0),
+        (SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) FROM src WHERE n % 3 = 1),
+        (SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) FROM src WHERE n % 3 = 2)]
+FROM (SELECT n % 3 AS k, estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) AS r FROM src GROUP BY k ORDER BY k);
+-- `-If` without keys and with keys.
+SELECT estimateCompressionRatioIf('LZ4', 'String')(s, n % 2 = 0) = (SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src WHERE n % 2 = 0)
+FROM src;
+SELECT estimateCompressionRatioIf('LZ4', 'String')(s, n % 2 = 0) = (SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src WHERE n % 2 = 0)
+FROM src GROUP BY n % 1;
+-- A window over the whole partition gives the result without a window.
+SELECT DISTINCT estimateCompressionRatio('LZ4', 'String')(s) OVER () = (SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src) FROM src;
+-- A growing frame is estimated step by step, as without a target.
+SELECT count(), min(r) > 0 FROM
+(
+    SELECT estimateCompressionRatio('LZ4', 'String')(s) OVER (ORDER BY n ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r
+    FROM src WHERE n < 1000
+);
+
+SELECT 'states';
+-- `-State` keeps the two sizes; `-Merge` of one state and `finalizeAggregation` give the result.
+SELECT
+    finalizeAggregation(estimateCompressionRatioState('LZ4', 'String')(s)) = estimateCompressionRatio('LZ4', 'String')(s),
+    toTypeName(estimateCompressionRatioState('LZ4', 'String')(s))
+FROM src;
+SELECT estimateCompressionRatioMerge('LZ4', 'String')(st) = (SELECT estimateCompressionRatio('LZ4', 'String')(s) FROM src)
+FROM (SELECT estimateCompressionRatioState('LZ4', 'String')(s) AS st FROM src);
+-- Merged states add up their sizes, in a query and in a table.
+DROP TABLE IF EXISTS states;
+CREATE TABLE states (k UInt8, st AggregateFunction(estimateCompressionRatio('LZ4', 'String'), String)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO states SELECT 0, estimateCompressionRatioState('LZ4', 'String')(s) FROM src WHERE n < 25000;
+INSERT INTO states SELECT 0, estimateCompressionRatioState('LZ4', 'String')(s) FROM src WHERE n >= 25000;
+SELECT estimateCompressionRatioMerge('LZ4', 'String')(st) = (
+    SELECT estimateCompressionRatioMerge('LZ4', 'String')(st) FROM
+    (
+        SELECT estimateCompressionRatioState('LZ4', 'String')(s) AS st FROM src WHERE n < 25000
+        UNION ALL SELECT estimateCompressionRatioState('LZ4', 'String')(s) FROM src WHERE n >= 25000
+    ))
+FROM states;
+
+SELECT 'sparse';
+-- A column read in sparse form is estimated as the same rows read dense.
+DROP TABLE IF EXISTS sparse;
+CREATE TABLE sparse (n UInt64, v UInt64) ENGINE = MergeTree ORDER BY n
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, serialization_info_version = 'with_types';
+INSERT INTO sparse SELECT number, if(number % 20 = 0, number, 0) FROM numbers(50000);
+SELECT serialization_kind FROM system.parts_columns WHERE database = currentDatabase() AND table = 'sparse' AND column = 'v' AND active;
+SELECT estimateCompressionRatio('LZ4', 'UInt32')(v) = (SELECT estimateCompressionRatio('LZ4', 'UInt32')(if(number % 20 = 0, number, 0)) FROM numbers(50000))
+FROM sparse;
+SELECT estimateCompressionRatio('LZ4', 'UInt32')(v) = (SELECT estimateCompressionRatio('LZ4', 'UInt32')(if(number % 20 = 0, number, 0)) FROM numbers(50000))
+FROM sparse GROUP BY n % 1;
+
+DROP TABLE src;
+DROP TABLE results;
+DROP TABLE states;
+DROP TABLE sparse;
