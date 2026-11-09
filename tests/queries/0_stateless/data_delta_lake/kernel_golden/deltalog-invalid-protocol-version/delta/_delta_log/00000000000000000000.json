@@ -1,0 +1,3 @@
+{"protocol":{"minReaderVersion":99,"minWriterVersion":7,"readerFeatures":[],"writerFeatures":[]}}
+{"metaData":{"id":"testId","format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":[],"configuration":{}}}
+{"add":{"path":"abc","partitionValues":{},"size":1,"modificationTime":1,"dataChange":true}}
