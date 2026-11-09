@@ -37,11 +37,13 @@ struct PartitionKeyFromSpec
     std::optional<DB::KeyDescription> key_description;
 };
 
+/// With keep_nullable the key columns keep the Nullable type of an optional source column.
 PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const Poco::JSON::Array::Ptr & partition_specification_json,
     Int32 schema_id,
     const IcebergSchemaProcessor & schema_processor,
-    DB::ContextPtr context);
+    DB::ContextPtr context,
+    bool keep_nullable = false);
 
 /// Java and iceberg-rust compute `truncate[W]` of an `int` in 32 bits: a truncated value below INT32_MIN is stored plus 2^32, while
 /// `icebergTruncate` returns it as `Int64`. A column promoted to `long` keeps these values; no `long` value truncates to one of them.
@@ -78,6 +80,9 @@ private:
     const DB::KeyDescription * partition_key = nullptr;
     std::optional<DB::KeyCondition> partition_key_condition;
     std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
+    /// The same key over Nullable inputs, for a partition tuple that holds NULL.
+    std::optional<DB::KeyDescription> nullable_partition_key;
+    std::optional<DB::KeyCondition> nullable_partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;

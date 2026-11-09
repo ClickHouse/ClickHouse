@@ -1,4 +1,5 @@
 #include <Processors/Formats/ISchemaReader.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -143,7 +144,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         if (column_names.size() != data_types.size())
             data_types.resize(column_names.size());
 
-        std::unordered_set<std::string_view> names_set;
+        UnorderedSetWithMemoryTracking<std::string_view> names_set;
         for (const auto & name : column_names)
         {
             if (names_set.contains(name))
@@ -270,8 +271,8 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
 
     bool eof = false;
     auto names_and_types = readRowAndGetNamesAndDataTypes(eof);
-    std::unordered_map<String, DataTypePtr> names_to_types;
-    std::vector<String> names_order;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> names_to_types;
+    VectorWithMemoryTracking<String> names_order;
     names_to_types.reserve(names_and_types.size());
     names_order.reserve(names_and_types.size());
     for (const auto & [name, type] : names_and_types)
@@ -294,7 +295,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             /// We reached eof.
             break;
 
-        std::unordered_set<std::string_view> names_set; /// We should check for duplicate column names in current row
+        UnorderedSetWithMemoryTracking<std::string_view> names_set; /// We should check for duplicate column names in current row
         for (auto & [name, new_type] : new_names_and_types)
         {
             if (names_set.contains(name))
