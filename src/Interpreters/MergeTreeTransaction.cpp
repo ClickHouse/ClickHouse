@@ -49,6 +49,8 @@ namespace FailPoints
     extern const char transaction_after_commit_pause[];
     extern const char transaction_rollback_pause_after_mark[];
     extern const char transaction_rollback_reset_removal_tid_fail[];
+    extern const char transaction_commit_pause_before_mutation_csn[];
+    extern const char transaction_commit_pause_before_csn_cas[];
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -449,6 +451,8 @@ scope_guard MergeTreeTransaction::beforeCommit()
         return mutations == mutations_to_wait;
     }());
 
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_commit_pause_before_csn_cas);
+
     /// Flip to COMMITTING under `commit_gate` so a background merge of this transaction's parts
     /// never sees the state change mid-commit. See `isRunning`.
     {
@@ -525,6 +529,8 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
         removed.part->version->setAndStoreRemovalCSN(assigned_csn);
     }
 
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_commit_pause_before_mutation_csn);
+
     for (const auto & storage_and_mutation : committed_mutations)
         storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
 
@@ -550,27 +556,33 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     csn.notify_all();
 }
 
-MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
+bool MergeTreeTransaction::claimRollback() noexcept
+{
+    /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`
+    /// and the adoption that registers its parts here, so rollback cannot land between the two.
+    bool claimed = false;
+    {
+        std::unique_lock commit_gate_lock{commit_gate};
+        CSN expected = Tx::UnknownCSN;
+        claimed = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
+    }
+
+    /// Wake any `waitStateChange` waiter (see the `notify` note in `afterCommit`).
+    if (claimed)
+        csn.notify_all();
+    return claimed;
+}
+
+MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback(bool already_claimed) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
     ThreadStatus::QueryCancellationBlocker cancellation_blocker;
-    /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`
-    /// and the adoption that registers its parts here, so rollback cannot land between the two.
-    bool need_rollback = false;
-    {
-        std::unique_lock commit_gate_lock{commit_gate};
-        CSN expected = Tx::UnknownCSN;
-        need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
-    }
 
     /// Check that it was not rolled back concurrently
-    if (!need_rollback)
+    if (!already_claimed && !claimRollback())
         return RollbackResult::NotNeeded;
-
-    /// Wake any `waitStateChange` waiter (see the `notify` note in `afterCommit`).
-    csn.notify_all();
 
     /// The transaction reads as rolled back, but no removal stamp is cleared yet.
     FailPointInjection::pauseFailPoint(FailPoints::transaction_rollback_pause_after_mark);
