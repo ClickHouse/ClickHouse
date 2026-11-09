@@ -1997,9 +1997,9 @@ namespace
         {
             size_t size_of_state = aggregate_function->sizeOfData();
             AggregateDataPtr data = arena.alignedAlloc(size_of_state, aggregate_function->alignOfData());
+            aggregate_function->create(data);
             try
             {
-                aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
                 aggregate_function->deserialize(data, buf, std::nullopt, &arena);
                 return data;
