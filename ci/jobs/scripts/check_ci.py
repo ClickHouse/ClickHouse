@@ -13,11 +13,12 @@ sys.path.append(".")
 from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
 from ci.praktika.git import Git
+from ci.praktika.info import Info
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
-from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
+from ci.settings.settings import CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
 class CheckStatuses:
@@ -41,10 +42,10 @@ head_sha = None
 class JobTypes:
     STATELESS = "Stateless"
     INTEGRATION = "Integration"
-    AST_FUZZER = "AST Fuzzer"
+    AST_FUZZER = "AST fuzzer"
     BUILD = "Build"
     FORMATTER = "Formatter"
-    BUZZ_FUZZER = "Buzz"
+    LACASA_FUZZER = "La Casa Del Dolor"
     DOCKER = "Docker"
     COMPATIBILITY = "Compatibility"
     INSTALL = "Install"
@@ -155,7 +156,7 @@ class CreateIssue:
 Test name: {test_name}
 Failure reason: {failure_reason}
 {ci_report_line}
-Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
+Failing test history: [cidb]({CIDB(url=CIDB.get_read_url(Info()), user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
 ```
@@ -244,7 +245,7 @@ Test output:
             print("Cannot handle OOM errors - skip")
             return False
         if (
-            any(key in job_result.name for key in ("Buzz", "AST", "Unit tests"))
+            any(key in job_result.name for key in ("Buzz", "AST", "La Casa", "Unit tests"))
             and job_result.results
         ):
             return True
@@ -286,7 +287,7 @@ Test output:
                 issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                     result, job_name, **kw
                 )
-        elif any(key in job_name for key in ("Buzz", "AST", "Stress", "Unit tests")):
+        elif any(key in job_name for key in ("Buzz", "AST", "La Casa", "Stress", "Unit tests")):
             if "Unit tests" in job_name and result.name == job_name:
                 result.name = cls.extract_unit_test_title(result)
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(

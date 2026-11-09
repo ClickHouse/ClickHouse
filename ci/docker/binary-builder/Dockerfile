@@ -1,5 +1,7 @@
 # docker build -t clickhouse/binary-builder .
+ARG CCTOOLS_TAG
 ARG FROM_TAG
+FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/fasttest:$FROM_TAG
 ARG TARGETARCH
 ENV CC=clang-${LLVM_VERSION}
@@ -7,11 +9,10 @@ ENV CXX=clang++-${LLVM_VERSION}
 
 #non-functional change
 
-# If the cctools is updated, then first build it in the CI, then update here in a different commit
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /cctools /cctools
+COPY --from=cctools /cctools /cctools
 
 # We need OpenSSL FIPS in permissive mode for build on MasterCI
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=cctools \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

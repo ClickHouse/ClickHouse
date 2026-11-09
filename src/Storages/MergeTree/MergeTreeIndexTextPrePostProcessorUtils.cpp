@@ -2,11 +2,14 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -40,6 +43,18 @@ ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList
     auto expression_name = expression_ast->getColumnName();
     actions_dag.project({{expression_name, expression_name}});
     actions_dag.removeUnusedActions();
+
+    /// Every capture is named `__lambda` and `ActionsDAG::mergeNodes` matches by name, so name captures by content.
+    for (const auto & node : actions_dag.getNodes())
+    {
+        const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get());
+        if (!function_capture)
+            continue;
+
+        const auto & capture = function_capture->getCapture();
+        const_cast<ActionsDAG::Node &>(node).result_name = fmt::format(
+            "__text_index_lambda({} -> {} | {})", capture.lambda_arguments.toString(), capture.return_name, fmt::join(capture.captured_names, ", "));
+    }
 
     return actions_dag;
 }
