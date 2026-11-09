@@ -4,6 +4,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <limits>
 #include <Columns/ColumnFixedString.h>
@@ -863,12 +864,13 @@ private:
 
 /// For the case when the key is a 128-bit hash of all key columns (the fallback method for
 /// keys with no fixed-width packed representation, e.g. a `Tuple` column).
-template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
+/// With `prepare_keys`, the keys of the next rows are hashed together before their lookups; a state's rows are read in ascending order.
+template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false, bool prepare_keys = false>
 struct HashMethodHashed
-    : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
+    : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache, need_offset, prepare_keys>, Value, Mapped, use_cache, need_offset>
 {
     using Key = UInt128;
-    using Self = HashMethodHashed<Value, Mapped, use_cache, need_offset>;
+    using Self = HashMethodHashed<Value, Mapped, use_cache, need_offset, prepare_keys>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     static constexpr bool has_cheap_key_calculation = false;
@@ -887,25 +889,57 @@ struct HashMethodHashed
     static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
     size_t last_row = no_last_row;
 
-    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, RowRange /*rows*/ = {})
+    struct PreparedKeys /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only keys[0, size) is read
+    {
+        static constexpr size_t min_rows = 8;
+        static constexpr size_t max_rows = 256;
+        std::array<UInt128, max_rows> keys;
+        size_t begin = 0;
+        size_t size = 0;
+        size_t next_rows = min_rows;
+        size_t rows_end = 0;
+        bool enabled = false;
+    };
+    struct NoPreparedKeys {};
+    [[no_unique_address]] std::conditional_t<prepare_keys, PreparedKeys, NoPreparedKeys> prepared;
+
+    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &, [[maybe_unused]] RowRange rows = {})
         : key_columns(std::move(key_columns_))
     {
         if constexpr (use_cache)
             key_slices = FixedSizeKeySlices(key_columns);
+
+        if constexpr (prepare_keys)
+        {
+            prepared.rows_end = std::min(rows.end, key_columns.empty() ? 0 : key_columns[0]->size());
+            prepared.enabled = !rows.skips_rows && prepared.rows_end >= rows.begin + PreparedKeys::min_rows;
+        }
     }
 
-    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
+    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const requires (!prepare_keys)
     {
         return hash128(row, key_columns.size(), key_columns);
     }
 
+    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) requires (prepare_keys)
+    {
+        if (!isPrepared(row))
+        {
+            if (!prepared.enabled)
+                return hash128(row, key_columns.size(), key_columns);
+            prepareKeys(row);
+        }
+        return prepared.keys[row - prepared.begin];
+    }
+
+    /// A prepared key is compared with the cached one by `Base`.
     template <typename Data>
     ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
         if constexpr (use_cache)
         {
             /// An emplace can reuse the cache only when the key is known to be in the table.
-            if (last_row != no_last_row && this->cache.found && key_slices.rowsEqual(row, last_row))
+            if (!isPrepared(row) && last_row != no_last_row && this->cache.found && key_slices.rowsEqual(row, last_row))
                 return Base::getCachedEmplaceResult();
             if (key_slices.isUsable())
                 last_row = row;
@@ -918,12 +952,37 @@ struct HashMethodHashed
     {
         if constexpr (use_cache)
         {
-            if (last_row != no_last_row && !this->cache.empty && key_slices.rowsEqual(row, last_row))
+            if (!isPrepared(row) && last_row != no_last_row && !this->cache.empty && key_slices.rowsEqual(row, last_row))
                 return Base::getCachedFindResult();
             if (key_slices.isUsable())
                 last_row = row;
         }
         return Base::findKey(data, row, pool);
+    }
+
+private:
+    ALWAYS_INLINE bool isPrepared(size_t row) const
+    {
+        if constexpr (prepare_keys)
+            return row - prepared.begin < prepared.size;
+        else
+            return false;
+    }
+
+    NO_INLINE void prepareKeys(size_t row) requires (prepare_keys)
+    {
+        const size_t end = std::min(prepared.rows_end, row + prepared.next_rows);
+        prepared.next_rows = std::min(PreparedKeys::max_rows, 2 * prepared.next_rows);
+        prepared.begin = row;
+        prepared.size = end > row ? end - row : 1;
+        prepared.keys[0] = hash128(row, key_columns.size(), key_columns);
+        for (size_t i = 1; i < prepared.size; ++i)
+        {
+            if (key_slices.isUsable() && key_slices.rowsEqual(row + i, row + i - 1))
+                prepared.keys[i] = prepared.keys[i - 1];
+            else
+                prepared.keys[i] = hash128(row + i, key_columns.size(), key_columns);
+        }
     }
 };
 
