@@ -2,6 +2,8 @@
 # Verify that the container does not start with a password file whose secret has a line break before its end,
 # here an empty first line: `clickhouse-client` cannot log in with such a password, and taking only
 # the first line would create the requested user with an empty password, open to the network.
+# This is the behaviour of `docker-init`; `entrypoint.sh` takes the whole file as the password, so the test runs
+# only on the images that use `docker-init` (`clickhouse-distroless-*`).
 set -eo pipefail
 
 dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
