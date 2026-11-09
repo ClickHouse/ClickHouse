@@ -3,6 +3,7 @@
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryStatisticsOS.h>
 #include <Common/PageCache.h>
 #include <Common/IMemoryReleasableCache.h>
 #include <IO/ReadBufferFromFile.h>
@@ -15,6 +16,25 @@
 
 namespace DB
 {
+
+/// Result of the combined read of the usage value and the inactive-file statistic.
+/// `inactive_file` is empty when the kernel does not expose the corresponding key
+/// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1) in `memory.stat`:
+/// an absent statistic must not be reported as a real zero.
+struct CgroupsMemoryUsageAndInactive
+{
+    uint64_t usage = 0;
+    std::optional<uint64_t> inactive_file;
+};
+
+/// Result of the best-effort combined read used by the asynchronous metrics: the usage value is
+/// always present, while `inactive_file` is empty if the inactive-file fields could not be parsed
+/// or are not present in `memory.stat` at all.
+struct CgroupsMemoryUsageAndOptionalInactive
+{
+    uint64_t usage = 0;
+    std::optional<uint64_t> inactive_file;
+};
 
 struct ICgroupsReader
 {
@@ -35,6 +55,16 @@ struct ICgroupsReader
     virtual ~ICgroupsReader() = default;
 
     virtual uint64_t readMemoryUsage() = 0;
+
+    virtual CgroupsMemoryUsageAndInactive readMemoryUsageAndInactiveFile() = 0;
+
+    /// Combined read for the asynchronous metrics (`CGroupMemoryUsed` etc. plus the newer
+    /// `CGroupMemoryInactiveFile`). Parses `memory.stat` once via `readMemoryUsageAndInactiveFile`
+    /// in the common case. A failure to parse the inactive-file fields must not suppress the
+    /// pre-existing usage-based metrics for the update cycle, so on failure the usage is re-read
+    /// via the usage-only `readMemoryUsage` path (which does not depend on those fields) and
+    /// `inactive_file` is left empty. Only a failure of the usage path itself propagates.
+    CgroupsMemoryUsageAndOptionalInactive readMemoryUsageAndOptionalInactiveFile();
 
     virtual std::string dumpAllStats() = 0;
 };
@@ -111,7 +141,8 @@ public:
     {
         None,
         Cgroups,
-        Jemalloc
+        Jemalloc,
+        OS
     };
 
     MemoryUsageSource getSource();
@@ -228,6 +259,25 @@ private:
     std::vector<CgroupMemoryLevel> cgroup_memory_levels;
     [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
 
+#if defined(OS_LINUX)
+    std::vector<CgroupMemoryLevel> openCgroupsV2MemoryLevels(const std::string & cgroup_path);
+
+    /// The `memory` files of a cgroup v2 exist only while its parent enables the `memory` controller,
+    /// so the nearest cgroup with `memory.current` can change at runtime. Engaged only for a cgroup v2 source.
+    struct CgroupsV2Lookup
+    {
+        /// Where `cgroups_reader` and `cgroup_memory_levels` were opened; empty if no cgroup has `memory.current`.
+        std::optional<std::string> dir;
+        std::chrono::milliseconds time{0};
+        /// A tick failed: reopen even if `dir` did not change, its files may have been removed and created again.
+        bool reopen = false;
+    };
+    std::optional<CgroupsV2Lookup> cgroups_v2_lookup;
+
+    /// Returns true if `cgroups_reader` was replaced.
+    bool lookUpCgroupsV2MemoryFiles();
+#endif
+
     /// Total host RAM, captured at construction. Used to filter out the cgroup v1
     /// "no limit" sentinel (`PAGE_COUNTER_MAX`, ~2^63), which is far larger than any
     /// real RAM amount. Treating it as finite would pin the dynamic limit to the
@@ -251,6 +301,10 @@ private:
     MemoryUsageSource source{MemoryUsageSource::None};
 
     std::shared_ptr<ICgroupsReader> cgroups_reader;
+
+#if HAS_MEMORY_STATISTICS_OS
+    std::unique_ptr<MemoryStatisticsOS> os_memory_statistics;
+#endif
 
     std::shared_ptr<PageCache> page_cache;
 

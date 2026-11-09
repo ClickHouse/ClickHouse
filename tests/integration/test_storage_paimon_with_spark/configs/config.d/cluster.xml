@@ -12,5 +12,13 @@
                 </replica>
             </shard>
         </cluster_simple>
+        <cluster_node2>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_node2>
     </remote_servers>
 </clickhouse>
