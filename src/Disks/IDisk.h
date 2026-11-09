@@ -172,6 +172,10 @@ public:
     /// Space available for reservation (available space minus reserved space).
     virtual std::optional<UInt64> getUnreservedSpace() const = 0;
 
+    /// Reserves like `reserve`, and also sets `unreserved_space` to the unreserved space of the disk after the attempt.
+    virtual ReservationPtr reserveAndGetUnreservedSpace(
+        UInt64 bytes, const std::optional<ReservationConstraints> & constraints, std::optional<UInt64> & unreserved_space);
+
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
 
