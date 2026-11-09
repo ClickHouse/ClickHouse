@@ -189,8 +189,7 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
-    /// ORC column ids of the structs read only for the count of a list's elements or a map's entries, with the types to
-    /// return their default values in.
+    /// ORC column ids of the structs read only for a list's or a map's element count, with the types of their defaults.
     const UnorderedMapWithMemoryTracking<UInt64, DataTypePtr> count_only_structs;
 };
 }

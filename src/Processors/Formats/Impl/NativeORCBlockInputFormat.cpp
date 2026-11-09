@@ -1176,8 +1176,7 @@ static std::optional<size_t> findORCStructFieldByName(const ORC::Type * orc_type
     return std::nullopt;
 }
 
-/// A struct below a list or a map, with the type requested for it. If no column of the struct is read, the struct is
-/// still needed for the count of the list's elements or the map's entries.
+/// Structs below a list or a map with their requested types; one with no column read is still needed for the element count.
 using ORCStructCandidates = VectorWithMemoryTracking<std::pair<const ORC::Type *, DataTypePtr>>;
 
 static void updateIncludeTypeIds(
@@ -1375,8 +1374,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
             count_only_candidates.emplace_back(orc_type, adjusted_type);
     }
 
-    /// After all columns, so that a struct read by another column is not read as defaults. Inner structs come first, so an
-    /// outer struct sees the column included for an inner one.
+    /// After all columns and inner structs first, so that no struct with a column read is read as defaults.
     UnorderedMapWithMemoryTracking<UInt64, DataTypePtr> count_only_structs;
     for (const auto & [orc_struct, requested_type] : count_only_candidates)
     {
