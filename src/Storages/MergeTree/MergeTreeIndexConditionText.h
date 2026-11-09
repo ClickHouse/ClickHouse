@@ -180,6 +180,9 @@ public:
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
+    /// Whether `node` is the index expression itself, not an expression the index answers through it,
+    /// such as an element of an indexed `mapValues` or a JSON path.
+    bool isIndexExpression(const ActionsDAG::Node & node) const;
     /// Returns the name of the virtual column that replaces the function node of the query,
     /// or nothing if the query is not one of this condition or cannot be read directly.
     std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
