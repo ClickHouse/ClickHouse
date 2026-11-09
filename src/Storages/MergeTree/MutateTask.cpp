@@ -1486,6 +1486,12 @@ getColumnsForNewDataPart(
         }
     }
 
+    /// `removed_columns` has names of the source part. In the new part, a removed name that a column is renamed to is that column.
+    auto is_removed_from_new_part = [&](const String & name)
+    {
+        return removed_columns.contains(name) && !renamed_columns_to_from.contains(name);
+    };
+
     for (const auto & [name, type] : persistent_virtuals)
     {
         if (storage_columns_set.contains(name))
@@ -1645,7 +1651,7 @@ getColumnsForNewDataPart(
     {
         for (const auto & column : updated_header.getNamesAndTypesList())
         {
-            if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
+            if (!storage_columns_set.contains(column.name) || is_removed_from_new_part(column.name) || new_serialization_infos.contains(column.name))
                 continue;
 
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
@@ -1673,7 +1679,7 @@ getColumnsForNewDataPart(
             /// a default value for projection rebuild) yet still be removed from the
             /// part by CLEAR COLUMN. In that case we must drop it from the column list
             /// so that the part does not claim to contain data it no longer has.
-            if (removed_columns.contains(it->name))
+            if (is_removed_from_new_part(it->name))
             {
                 it = storage_columns.erase(it);
                 continue;
