@@ -82,6 +82,39 @@ echo 'Clear reports all dependent indices'
 check_policy_error 'MODIFY COLUMN x UInt32'
 echo 'Modify reports all dependent indices'
 
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE alter_subcolumn_indices
+    (
+        x Tuple(a UInt64),
+        y UInt64,
+        INDEX idx_whole x TYPE minmax,
+        INDEX idx_sub x.a TYPE minmax
+    ) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS add_minmax_index_for_numeric_columns = 0, alter_column_secondary_index_mode = 'throw'
+"
+
+check_subcolumn_policy_error()
+{
+    local query="$1"
+    local error
+    if error=$($CLICKHOUSE_CLIENT --query "ALTER TABLE alter_subcolumn_indices $query" 2>&1); then
+        echo 'Expected the column alteration to fail'
+        exit 1
+    fi
+
+    [[ "$error" == *'Code: 524.'* ]]
+    [[ "$error" == *'ALTER_OF_COLUMN_IS_FORBIDDEN'* ]]
+    [[ "$error" == *'used by the indices idx_whole, idx_sub. Check'* ]]
+}
+
+check_subcolumn_policy_error 'RENAME COLUMN x TO renamed_x'
+echo 'Rename reports whole-column and subcolumn indices'
+check_subcolumn_policy_error 'CLEAR COLUMN x'
+echo 'Clear reports whole-column and subcolumn indices'
+check_subcolumn_policy_error 'MODIFY COLUMN x UInt64'
+echo 'Modify reports whole-column and subcolumn indices'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE alter_subcolumn_indices'
+
 check_index_validation_error()
 {
     local query="$1"

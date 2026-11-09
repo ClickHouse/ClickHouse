@@ -6725,7 +6725,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         if (!index.isImplicitlyCreated())
         {
             for (const String & col : index.expression->getRequiredColumns())
-                columns_in_explicit_indices[col].push_back(index.name);
+            {
+                const auto column = old_metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
+                const String column_name_in_storage = column ? column->getNameInStorage() : col;
+                auto & indices = columns_in_explicit_indices[column_name_in_storage];
+                if (!std::ranges::contains(indices, index.name))
+                    indices.push_back(index.name);
+            }
         }
     }
 
