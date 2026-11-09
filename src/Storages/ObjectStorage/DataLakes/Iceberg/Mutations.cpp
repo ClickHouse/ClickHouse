@@ -801,6 +801,10 @@ void mutate(
             }
         }
 
+        /// The validation resolves source types in this schema, which a concurrent commit may have just added.
+        if (current_schema)
+            persistent_table_components.schema_processor->addIcebergTableSchema(current_schema);
+
         /// Validate against the freshly-fetched snapshot. Bound to this exact
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
