@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/Adaptive/CompressionCodecAdaptive.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
@@ -362,7 +362,9 @@ std::unordered_map<UInt64, CompressionCodecPtr> collectWriterStreamCodecs(
             CompressionCodecPtr codec = CompressionCodecFactory::instance().get(
                 effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
             if (adaptive_codec && column_uses_default_codec && !codec->isEncryption())
-                codec = std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+                /// A compact part writer selects on every block (`MergeTreeWriterSettings::adaptive_codec_selection_period`
+                /// is 1 for compact parts); the period does not take part in the codec hash anyway.
+                codec = std::make_shared<CompressionCodecAdaptive>(substream_type, codec, /*selection_period_=*/1);
 
             UInt64 codec_id = codec->getHash();
             if (codec->needsVectorDimensionUpfront())
