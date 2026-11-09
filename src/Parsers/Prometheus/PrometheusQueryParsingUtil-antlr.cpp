@@ -135,61 +135,18 @@ namespace
     /// byte. Only the first error is ever reported and a parse with a recorded error always fails,
     /// so lexing the remainder is wasted work - a megabyte of NUL bytes used to keep a thread busy
     /// for minutes, uncancellable because parsing happens during query analysis.
-    /// It also validates multiline STRING tokens as they are emitted, before a later lexer or parser
-    /// error can hide an earlier invalid quoted string.
     class PromQLLexerBailingOutOnError : public antlr4_grammars::PromQLLexer
     {
     public:
-        explicit PromQLLexerBailingOutOnError(
-            antlr4::CharStream * input_, std::string_view promql_query_, ErrorListener & error_listener_)
-            : PromQLLexer(input_), promql_query(promql_query_), error_listener(error_listener_) {}
-
-        std::unique_ptr<antlr4::Token> nextToken() override
-        {
-            auto next_token = PromQLLexer::nextToken();
-            if (next_token->getType() == METRIC_NAME)
-            {
-                const auto token_text = next_token->getText();
-                if (token_text == "min_of" || token_text == "max_of")
-                    static_cast<antlr4::WritableToken *>(next_token.get())->setType(FUNCTION);
-            }
-
-            if (!error_listener.hasError() && next_token->getType() == STRING && next_token->getLine() != getLine())
-            {
-                const String token_text = next_token->getText();
-                if (!token_text.starts_with('`'))
-                {
-                    String parsed_string;
-                    String error_message;
-                    size_t error_pos = 0;
-                    if (!PrometheusQueryParsingUtil::tryParseStringLiteral(
-                            token_text, parsed_string, &error_message, &error_pos))
-                    {
-                        const size_t token_pos = convertCodePointPositionToByteOffset(promql_query, next_token->getStartIndex());
-                        error_listener.setError(error_message, token_pos + error_pos);
-                        stopLexing();
-                    }
-                }
-            }
-            return next_token;
-        }
+        using antlr4_grammars::PromQLLexer::PromQLLexer;
 
         void recover(const antlr4::LexerNoViableAltException &) override
         {
             /// Pretend the input ended here, so that the lexer emits EOF and stops.
-            stopLexing();
-        }
-
-    private:
-        void stopLexing()
-        {
             antlr4::CharStream * stream = getInputStream();
             stream->seek(stream->size());
             hitEOF = true;
         }
-
-        std::string_view promql_query;
-        ErrorListener & error_listener;
     };
 
     [[noreturn]] void throwInconsistentSchema(std::string_view context_name, std::string_view token)
@@ -866,19 +823,32 @@ namespace
 
         Node * makeFunction(antlr4_grammars::PromQLParser::Function_Context * ctx, const std::vector<Node *> & arguments)
         {
-            auto * function_name_ctx = ctx->FUNCTION();
-            if (!function_name_ctx)
-                throwInconsistentSchema("Function", ctx->getText());
-
-            auto function_name = getText(function_name_ctx);
-            return makeFunction(function_name, arguments);
+            if (auto * function_name_ctx = ctx->FUNCTION())
+            {
+                const auto function_name = getText(function_name_ctx);
+                if ((function_name == "step" || function_name == "range") && !arguments.empty())
+                {
+                    error_listener.setError(
+                        fmt::format("Function '{}' expects no arguments", function_name),
+                        getStartPos(function_name_ctx));
+                    return nullptr;
+                }
+                return makeFunction(function_name, arguments);
+            }
+            if (ctx->START())
+                return makeFunction("start", arguments);
+            if (ctx->END())
+                return makeFunction("end", arguments);
+            throwInconsistentSchema("Function", ctx->getText());
         }
 
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
             if (function_name == "scalar" || function_name == "time" || function_name == "pi"
-                || function_name == "min_of" || function_name == "max_of")
+                || function_name == "min_of" || function_name == "max_of"
+                || function_name == "start" || function_name == "end"
+                || function_name == "step" || function_name == "range")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
@@ -1140,7 +1110,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     ErrorListener error_listener{input};
     antlr4::ANTLRInputStream input_stream{input};
 
-    PromQLLexerBailingOutOnError promql_lexer{&input_stream, input, error_listener};
+    PromQLLexerBailingOutOnError promql_lexer{&input_stream};
     promql_lexer.removeErrorListeners();
     promql_lexer.addErrorListener(&error_listener);
 

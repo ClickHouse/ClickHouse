@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Transforms/Window/WindowTransformParams.h>
+#include <Processors/Transforms/Window/SlidingIndexes.h>
 
 #include <deque>
 #include <cstdint>
-#include <optional>
 
 namespace DB
 {
@@ -20,6 +20,13 @@ struct RowNumber
     auto operator<=>(const RowNumber &) const noexcept = default;
 };
 
+struct RowPoint
+{
+    RowNumber location;
+    int64_t row_index_in_partition = 0;
+    int64_t peer_group_index_in_partition = 0;
+};
+
 struct SlidingBlock
 {
     /// Inputs
@@ -29,28 +36,31 @@ struct SlidingBlock
     /// Helper data
     const int64_t rows_count = 0;
     const int64_t block_number = 0;
-
-    /// Output
-    mutable MutableColumns result_columns;
+    const int64_t begin_position = 0;
+    const int64_t end_position = 0;
+    const SlidingIndex index;
 };
 
 class SlidingBlocks
 {
 public:
-    SlidingBlock & add(Chunk chunk, const WindowTransformParams & params);
+    SlidingBlock & add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
     const SlidingBlock & blockAt(int64_t block_number) const;
+    const SlidingBlock & front() const;
     void pop();
 
     RowNumber begin() const;
     RowNumber end() const;
     RowNumber next(RowNumber row) const;
     RowNumber prev(RowNumber row) const;
-    std::optional<RowNumber> move(RowNumber row, int64_t offset) const;
+    RowNumber move(RowNumber row, int64_t offset) const;
+    int64_t positionOf(RowNumber row) const;
 
 private:
-    std::deque<SlidingBlock> blocks;
+    DequeWithMemoryTracking<SlidingBlock> blocks;
     int64_t first_block_number = 0;
     int64_t next_block_number = 0;
+    int64_t end_position = 0;
 };
 
 }

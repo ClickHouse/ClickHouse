@@ -1,13 +1,17 @@
 #include <Processors/Formats/Impl/FreeformRowInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
 #include <fmt/ranges.h>
-#include <unordered_set>
 #include <Common/logger_useful.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -34,6 +38,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -50,6 +55,14 @@ static inline void skipWhitespacesAndDelimiters(ReadBuffer & in)
 static inline bool atRowEnd(ReadBuffer & in)
 {
     return in.eof() || *in.position() == '\n' || *in.position() == '\r';
+}
+
+/// The candidates are kept in standard containers, whose allocations do not throw on the memory limit.
+static void checkSearchLimits(const QueryStatusPtr & query_status)
+{
+    CurrentMemoryTracker::check();
+    if (query_status && !query_status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while searching for the structure of a `Freeform` row");
 }
 
 // Returns the score of the given type. This doesn't take nullable into account.
@@ -125,7 +138,7 @@ static Names getColumnNames(const NamesAndTypes & inferred, const FormatSettings
             names.size(),
             inferred.size());
 
-    std::unordered_set<std::string_view> names_set;
+    UnorderedSetWithMemoryTracking<std::string_view> names_set;
     for (const auto & name : names)
         if (!names_set.insert(name).second)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
@@ -152,7 +165,7 @@ FieldMatcher::Result FieldMatcher::generateResult(NamesAndFields & fields, size_
         return makeFailedResult();
 
     NamesAndTypesList names_and_types;
-    std::vector<String> values;
+    VectorWithMemoryTracking<String> values;
     unsigned type_score = 0;
     unsigned score = 0;
     for (auto & [col, field] : fields)
@@ -351,10 +364,10 @@ void FreeformFieldMatcher::seekInRow(size_t offset) const
     in.ignore(offset);
 }
 
-std::vector<FreeformFieldMatcher::Fields>
+VectorWithMemoryTracking<FreeformFieldMatcher::Fields>
 FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsigned index, size_t offset) const
 {
-    std::vector<Fields> next_fields;
+    VectorWithMemoryTracking<Fields> next_fields;
     if (parse_till_newline_as_one_string)
     {
         auto result = matchers.back()->parseField<true>(in, index);
@@ -388,10 +401,11 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
 
 void FreeformFieldMatcher::buildSolutions(
     Solution current_solution,
-    std::vector<Solution> & solutions,
+    VectorWithMemoryTracking<Solution> & solutions,
     bool parse_till_newline_as_one_string,
     size_t offset,
-    size_t & search_steps) const
+    size_t & search_steps,
+    const QueryStatusPtr & query_status) const
 {
     /// Every candidate is kept in memory and then validated against the sample rows, so an unbounded
     /// search over a wide row of strings exhausts memory and time long before it ends.
@@ -401,6 +415,7 @@ void FreeformFieldMatcher::buildSolutions(
             "Cannot infer the structure of the row: it can be split into fields in too many ways (the search exceeded {} steps). "
             "Use a format with a fixed structure, such as `TSV` or `CSV`, or raise `input_format_freeform_max_search_steps`",
             max_search_steps);
+    checkSearchLimits(query_status);
 
     seekInRow(offset);
     skipWhitespacesAndDelimiters(in);
@@ -428,18 +443,19 @@ void FreeformFieldMatcher::buildSolutions(
         next.score += fields.parse_result.score;
         next.size += fields.parse_result.names_and_types.size();
 
-        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset, search_steps);
+        buildSolutions(
+            next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset, search_steps, query_status);
     }
 }
 
 template <typename OnField>
 void FreeformFieldMatcher::readRowBySolution(
-    const Solution & solution, const std::unordered_map<String, unsigned> & column_index, OnField && on_field)
+    const Solution & solution, const UnorderedMapWithMemoryTracking<String, unsigned> & column_index, OnField && on_field)
 {
     /// Every column is filled by the field of the solution it was inferred from, and only once: counting the
     /// matched names instead would let a JSON key named like the autogenerated name of a later field (`c1` in
     /// `{"c1":0,"a":1} 2` for the solution `a, c1`) stand in for that field, and the real one would be dropped.
-    std::vector<bool> filled(solution.columns.size(), false);
+    VectorWithMemoryTracking<bool> filled(solution.columns.size(), false);
     for (size_t step = 0; step < solution.matchers_order.size(); ++step)
     {
         const auto matcher_index = solution.matchers_order[step];
@@ -491,12 +507,12 @@ void FreeformFieldMatcher::readRowBySolution(
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Row does not end at a newline after all fields of the inferred solution");
 }
 
-bool FreeformFieldMatcher::validateSolution(Solution & solution)
+bool FreeformFieldMatcher::validateSolution(Solution & solution, const QueryStatusPtr & query_status)
 {
     try
     {
         // A map mapping column name to an index. This allows transforming multiple rows in one columns into one type.
-        std::unordered_map<String, unsigned> column_index;
+        UnorderedMapWithMemoryTracking<String, unsigned> column_index;
         for (unsigned i = 0; const auto & [name, _] : solution.columns)
         {
             /// A duplicate name (a root JSON key colliding with an autogenerated `cN` name, or a
@@ -510,6 +526,8 @@ bool FreeformFieldMatcher::validateSolution(Solution & solution)
 
         for (size_t row = 0; row < max_rows_to_check; ++row)
         {
+            checkSearchLimits(query_status);
+
             // For each iteration, we try to parse fields and find the type union of the current row and the previously parsed rows. If it doesn't exist,
             // the solution is invalid.
 
@@ -597,12 +615,21 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     if (in.eof())
         return false;
 
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     in.setCheckpoint();
 
-    std::vector<Solution> solutions;
+    VectorWithMemoryTracking<Solution> solutions;
     size_t search_steps = 0;
     buildSolutions(
-        Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0}, solutions, false, 0, search_steps);
+        Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0},
+        solutions,
+        false,
+        0,
+        search_steps,
+        query_status);
     in.rollbackToCheckpoint();
     if (solutions.empty())
     {
@@ -620,7 +647,7 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     // Validation also widens the types of the solution to the union of the types seen in the checked rows (the first row alone
     // does not tell whether a column of integers is nullable), so the validated solution is the one that becomes final.
     for (auto & solution : solutions)
-        if (validateSolution(solution))
+        if (validateSolution(solution, query_status))
         {
             setFinalSolution(solution);
             in.rollbackToCheckpoint(true);
@@ -709,7 +736,7 @@ void FreeformRowInputFormat::buildHeaderPositions()
             header.columns());
 
     header_positions.assign(inferred.size(), 0);
-    std::vector<bool> is_column_mapped(header.columns(), false);
+    VectorWithMemoryTracking<bool> is_column_mapped(header.columns(), false);
     for (size_t i = 0; i < inferred.size(); ++i)
     {
         const auto & name = names[i];

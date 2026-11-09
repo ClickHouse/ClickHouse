@@ -1,0 +1,5 @@
+-- row groups without a filter for 'few', without a filter for 'many', with a filter for 'under_cap', total
+2	2	2	2
+-- probes for a value of 'few' present in exactly one row group, then for an absent value: rows found, rows read
+present values found, reading the whole file: 2 of 2
+absent value not pruned, reading the whole file

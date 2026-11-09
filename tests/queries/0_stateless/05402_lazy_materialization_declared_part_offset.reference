@@ -1,0 +1,16 @@
+-- without a join
+999	p999
+998	p998
+997	p997
+999	p999
+998	p998
+997	p997
+-- with a join
+999	p999	r999
+998	p998	r998
+997	p997	r997
+999	p999	r999
+998	p998	r998
+997	p997	r997
+-- the other side of the join is still read lazily
+1

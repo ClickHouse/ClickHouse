@@ -17,6 +17,7 @@
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionCodecFirstApplicable.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -28,6 +29,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/Context.h>
 #include <Processors/ISource.h>
@@ -47,6 +49,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
+#include <algorithm>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -404,8 +407,11 @@ bool LogSource::isFinished()
 
     if (limited_by_file_sizes)
     {
-        /// Check for EOF.
-        if (!streams.empty() && streams.begin()->second.compressed->eof())
+        /// One data file can be exhausted while the others still hold rows: an array of only empty
+        /// arrays writes no elements at all, and a LowCardinality dictionary file holds only a header,
+        /// read before the first row.
+        auto at_eof = [](auto & name_and_stream) { return name_and_stream.second.compressed->eof(); };
+        if (!streams.empty() && std::ranges::all_of(streams, at_eof))
         {
             is_finished = true;
             return true;
@@ -523,8 +529,7 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type);
 
-    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, const ISerialization::SubstreamPath & substream_path) const;
 
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
@@ -601,13 +606,28 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 }
 
 
-CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, const ISerialization::SubstreamPath & substream_path) const
 {
-    auto get_codec_or_default = [&default_codec](const auto & column_desc)
+    const auto & default_codec = CompressionCodecFactory::instance().getDefaultCodec();
+    auto get_codec_or_default = [&](const auto & column_desc) -> CompressionCodecPtr
     {
-        return column_desc.codec
-            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
-            : default_codec;
+        if (!column_desc.codec)
+            return default_codec;
+
+        /// `FirstApplicable` selects the codec for the data type of every substream, as in `MergeTree`: the structural
+        /// substreams (e.g. the sizes of an array) keep only generic codecs. Other codecs keep applying to the whole
+        /// column type here, so that the data written by the previous versions does not change.
+        if (CompressionCodecFirstApplicable::isInChain(column_desc.codec))
+        {
+            const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
+            return CompressionCodecFactory::instance().get(
+                column_desc.codec,
+                is_data_substream ? substream_path.back().data.type.get() : nullptr,
+                default_codec,
+                /*only_generic=*/!is_data_substream);
+        }
+
+        return CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec);
     };
 
     const auto & columns = metadata_snapshot->columns;
@@ -619,11 +639,6 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
         return get_codec_or_default(*virtual_desc);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
-}
-
-CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
-{
-    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
 
@@ -644,7 +659,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            auto compression = getCodecOrDefault(name_and_type.name);
+            auto compression = getCodecOrDefault(name_and_type.name, path);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -654,7 +669,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
         auto & stream = it->second;
         if (stream.written)
             return;
-    });
+    }, type); /// The data type of every substream is needed to select the codec by `FirstApplicable`.
 
     settings.getter = createStreamGetter(name_and_type);
 
@@ -731,8 +746,7 @@ namespace
                 if (isVariant(type))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
             };
-            callback(*column.type);
-            column.type->forEachChild(callback);
+            forEachInTypeTree(*column.type, callback);
         }
     }
 }
@@ -1471,7 +1485,7 @@ void registerStorageLog(StorageFactory & factory)
             args.getContext());
     };
 
-    factory.registerStorage("Log", create_fn, features, Documentation{
+    factory.registerStorage("Log", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -1573,7 +1587,7 @@ SELECT * FROM log_table ORDER BY timestamp
         .syntax = "ENGINE = Log",
         .related = {"TinyLog", "StripeLog"}});
 
-    factory.registerStorage("TinyLog", create_fn, features, Documentation{
+    factory.registerStorage("TinyLog", create_fn, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

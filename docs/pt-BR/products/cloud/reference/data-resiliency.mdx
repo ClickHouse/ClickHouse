@@ -28,11 +28,9 @@ Antes, é útil revisar algumas definições.
 
 **Backups e snapshots de banco de dados**: Os backups fornecem armazenamento durável de longo prazo com uma cópia separada dos dados. Os snapshots não criam uma cópia adicional dos dados, geralmente são mais rápidos e proporcionam RPOs melhores.
 
-<div id="database-backups">
-  ## Backups de banco de dados
-</div>
+## Backups de banco de dados {#database-backups}
 
-Manter um backup do seu serviço primário é uma forma eficaz de restaurá-lo em caso de indisisponibilidade do serviço primário.
+Manter um backup do seu serviço primário é uma forma eficaz de restaurá-lo em caso de indisponibilidade do serviço primário.
 O ClickHouse Cloud oferece os seguintes recursos de backup.
 
 1. **Backups padrão**
@@ -55,6 +53,8 @@ Haverá cobrança por transferência de dados para backups entre regiões e entr
 
 Os clientes podem [configurar backups](/pt-BR/products/cloud/guides/backups/configurable-backups) para serem realizados com maior frequência, até a cada 6 horas, para melhorar o RPO.
 Os clientes também podem configurar um período de retenção maior.
+
+A frequência dos backups determina a idade máxima do ponto de restauração mais recente e, portanto, o RPO. A retenção controla por quanto tempo os dados de backup são mantidos; ela não reduz a idade do ponto de restauração mais recente. Por exemplo, em um serviço configurado com retenção de 1 dia e frequência de 48 horas, o ponto de restauração mais recente pode ter quase 48 horas.
 
 Os backups atualmente disponíveis para o serviço estão listados na página “backups” do console do ClickHouse Cloud.
 Esta seção também mostra o status de sucesso/falha de cada backup.

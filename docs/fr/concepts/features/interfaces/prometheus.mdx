@@ -164,7 +164,7 @@ curl --user default:<password> --get \
   --data-urlencode "query=sum by(job)(http_requests_total{code=\"200\"})/2"
 ```
 
-L’expression est renvoyée sérialisée à partir de la requête analysée, avec les espaces normalisés, les commentaires supprimés, les parenthèses redondantes retirées et les durées converties en nombres de secondes : `sum by (job) (http_requests_total{code="200"}) / 2`. Cet endpoint n’évalue pas l’expression, il n’a donc pas besoin des paramètres `database` et `table`.
+L’expression est renvoyée sérialisée à partir de la requête analysée, avec les espaces normalisés, les commentaires supprimés, les parenthèses redondantes retirées et les durées affichées dans les unités acceptées par l’analyseur : `sum by (job) (http_requests_total{code="200"}) / 2`. Une durée conserve ses unités au lieu d’être convertie en nombre de secondes : `rate(x[5m])` est donc renvoyé sous la forme `rate(x[5m])`. Si elle ne correspond pas à un nombre entier dans une seule unité, elle est exprimée à l’aide des unités nécessaires : `rate(x[90s])` est ainsi renvoyé sous la forme `rate(x[1m30s])`. Cet endpoint n’évalue pas l’expression, il n’a donc pas besoin des paramètres `database` et `table`.
 
 Consultez les [fonctionnalités PromQL prises en charge](/fr/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) pour obtenir la liste des fonctions et des opérateurs d’agrégation utilisés par l’API HTTP, le dialecte `promql` et les fonctions de table.
 

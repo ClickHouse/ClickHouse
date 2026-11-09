@@ -105,7 +105,7 @@ void StepIntervalTimings::collectPlanSteps(const QueryPlan & plan)
         for (const auto * child : current->children)
             stack.push_back(child);
 
-        for (const auto * child_plan : current->step->getChildPlans())
+        for (const auto * child_plan : current->step->getChildPlans(/*for_explain=*/ false))
         {
             if (child_plan && child_plan->isInitialized())
                 stack.push_back(child_plan->getRootNode());
@@ -173,7 +173,7 @@ void StepIntervalTimings::computeBranchTime(const QueryPlan & plan, TimeInterval
         Frame frame;
         frame.node = node;
 
-        const auto child_plans = node->step->getChildPlans();
+        const auto child_plans = node->step->getChildPlans(/*for_explain=*/ false);
         frame.child_plans.assign(child_plans.begin(), child_plans.end());
 
         stack.push_back(std::move(frame));

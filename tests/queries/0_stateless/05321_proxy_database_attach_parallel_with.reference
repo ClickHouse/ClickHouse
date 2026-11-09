@@ -1,0 +1,9 @@
+--- Cluster with an unknown cluster name
+CLUSTER_DOESNT_EXIST
+0
+--- Cluster referring to itself
+INFINITE_LOOP
+0
+--- Remote referring to itself
+INFINITE_LOOP
+0

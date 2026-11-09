@@ -13,6 +13,8 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/SecretArgumentsSpec.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -116,7 +118,13 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -361,6 +369,12 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage(
         "Kafka",
         creator_fn,
+        SecretArgumentsSpec{
+            /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
+            /// secret and makes the collection name optional, so a named argument can be the first one.
+            .secret_settings = Kafka::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
@@ -664,7 +678,7 @@ The AWS region is automatically extracted from the broker endpoint using pattern
 
 **AWS Credentials:**
 
-Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS profile files) when present. To also enable EC2 instance profiles, environment variables (`AWS_ACCESS_KEY_ID`, etc.), ECS task roles, and other automatic credential sources, add to your server configuration:
+By default, the server does not resolve any AWS credentials for `AWS_MSK_IAM`, and authentication fails with `AWS credentials are empty or expired`. To let the server authenticate with its ambient AWS identity, add to your server configuration:
 
 ```xml
 <kafka>
@@ -672,7 +686,15 @@ Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS
 </kafka>
 ```
 
+The ambient credential sources are: environment variables (`AWS_ACCESS_KEY_ID`, etc.), EC2 instance profiles (IMDS), IAM roles for service accounts (IRSA), ECS task roles, SSO, and the `~/.aws/credentials` and `~/.aws/config` profile files.
+
 This setting can only be configured by server administrators. Default: `false`.
+
+<Warning>
+This setting is unsafe. When it is enabled, every user with the `KAFKA` source grant and `CREATE TABLE` can select the `AWS_MSK_IAM` mechanism, the broker list, and the AWS region in table settings. The server then signs a `kafka-cluster:Connect` token with its own AWS identity and sends the token to the user-chosen broker. The token contains the AWS access key ID and the full STS session token, and the receiving host can replay it against MSK clusters in that region as the server.
+
+Enable this setting only if you trust every user who can create Kafka tables with the server's AWS identity. Restrict the hosts that Kafka tables can connect to with [remote_url_allow_hosts](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts), which is empty (allow all hosts) by default.
+</Warning>
 
 **PrivateLink and Custom DNS:**
 

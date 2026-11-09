@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_insert_block_size">
-  ## max_insert_block_size
-</div>
+## max_insert_block_size {#max_insert_block_size}
 
 **الأسماء البديلة**: `max_insert_block_size_rows`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "أُضيف الاسم البديل `max_insert_block_size_rows`."}]}]} />
 
 الحد الأقصى لحجم الكتل (من حيث عدد الصفوف) التي يجري تكوينها للإدراج في جدول.
 
@@ -44,9 +44,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 * عدد صحيح موجب.
 
-<div id="max_insert_block_size_bytes">
-  ## max_insert_block_size_bytes
-</div>
+## max_insert_block_size_bytes {#max_insert_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -61,9 +59,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * عدد صحيح موجب.
 * 0 — لا يشارك الإعداد في تكوين الكتل.
 
-<div id="max_insert_delayed_streams_for_parallel_write">
-  ## max_insert_delayed_streams_for_parallel_write
-</div>
+## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,9 +67,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 القيمة الافتراضية في Cloud: `50`.
 
-<div id="max_insert_threads">
-  ## max_insert_threads
-</div>
+## max_insert_threads {#max_insert_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -106,9 +100,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 لا يُنفَّذ جانب الكتابة بالتوازي إلا عندما يكون ذلك آمنًا؛ وإلا فإنه يبقى ذا تدفق واحد ولا يكون لهذا الإعداد تأثير فيه. وبالأخص، تبقى الكتابة ذات تدفق واحد عند تمكين [`use_strict_insert_block_limits`](/ar/reference/settings/session-settings/use#use_strict_insert_block_limits)، أو عندما يلغي جدول الوجهة (أو جدول يعيد التوجيه إليه) تكرار الكتل المُدرجة ويكون إلغاء تكرار الإدراج مُمكّنًا للاستعلام (راجع [`deduplicate_insert`](/ar/reference/settings/session-settings/deduplicate-insert#deduplicate_insert))، أو عندما تكون للوجهة materialized views تابعة — بما في ذلك عروض جدول تعيد الوجهة التوجيه إليه، مثلًا خلف `Alias` — (ما لم يكن [`parallel_view_processing`](/ar/reference/settings/session-settings/parallel#parallel_view_processing) مُمكّنًا وكانت سلاسل العروض التابعة خالية من مخاطر إلغاء التكرار؛ أي إن إلغاء التكرار في العروض معطّل ([`deduplicate_blocks_in_dependent_materialized_views`](/ar/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) أو لا يمكن لأي مسار من العروض التابعة إلغاء التكرار)، وكذلك دائمًا للوجهات `Buffer` و`Distributed`. يُفرِّغ `Buffer` بياناته في سياقه الخاص، بينما يعيد `Distributed` توجيه الكتابة إلى جزء بعيد (قد يخزّن البيانات مؤقتًا بنفسه)، لذا لا تتحكم إعدادات إلغاء التكرار الخاصة بهذا الاستعلام في الكتابة النهائية، وتبقى ذات تدفق واحد بغض النظر عنها. كما يبقى إدراج النصاب غير المتوازي ([`insert_quorum`](/ar/reference/settings/session-settings/insert-quorum#insert_quorum) يساوي `2` أو أكبر، أو `'auto'`، و[`insert_quorum_parallel`](/ar/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) معطّل) ذا تدفق واحد، لأنه لا يسمح إلا بجزء نصاب واحد قيد التنفيذ لكل جدول.
 تؤدي القيم الأعلى إلى زيادة استخدام الذاكرة.
 
-<div id="max_insert_threads_min_free_memory_per_thread">
-  ## max_insert_threads_min_free_memory_per_thread
-</div>
+## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 

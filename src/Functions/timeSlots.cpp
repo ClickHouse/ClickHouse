@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -235,6 +236,31 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
+    /// Documentation-only — there are two call shapes:
+    ///   `timeSlots(DateTime, UInt32 [, UInt])`     -> `Array(DateTime)`
+    ///   `timeSlots(DateTime64(s), Decimal64(d) [, Decimal64])` -> `Array(DateTime64(max(s, d)))`
+    /// The DateTime64 result's scale is `max(start_scale, duration_scale)`,
+    /// not derivable from the DSL — the override below is authoritative.
+    String getSignatureString() const override
+    {
+        return "(DateTime, UInt32, [const UInt]) -> Array(DateTime)"
+               " OR (DateTime64, Decimal64, [const Decimal64]) -> Array(DateTime64)";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateNumberOfFunctionArguments(*this, arguments, 2, 3);
@@ -293,7 +319,12 @@ public:
                 if (!time_slot_column)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument for function {} must be constant UInt32", getName());
 
-                if (time_slot_size = time_slot_column->getValue<UInt32>(); time_slot_size <= 0)
+                const UInt64 size_value = time_slot_column->getValue<UInt64>();
+                if (size_value > std::numeric_limits<UInt32>::max())
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Third argument for function {} must not exceed {}, got {}",
+                        getName(), std::numeric_limits<UInt32>::max(), size_value);
+
+                if (time_slot_size = static_cast<UInt32>(size_value); time_slot_size <= 0)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be greater than zero", getName());
             }
 

@@ -62,6 +62,14 @@ public:
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
+    bool isLazyStandIn() const override { return true; }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -79,6 +87,8 @@ public:
     }
 
     bool storesDataOnDisk() const override { return true; }
+    /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
+    bool hasUnreplicatedTableDataOnDisk() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }
 
@@ -165,6 +175,14 @@ public:
         IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
         if (nested)
             nested->renameInMemory(new_table_id);
+    }
+
+    /// A table that is still a stand-in has nothing to answer with, and is deliberately not loaded to ask.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override

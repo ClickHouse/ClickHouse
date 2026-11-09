@@ -91,16 +91,16 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     VectorWithMemoryTracking<ISerialization::DeserializeBinaryBulkStatePtr> flattened_states;
     ISerialization::DeserializeBinaryBulkStatePtr flattened_indexes_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamic>(*this);
-        new_state->variant_state = variant_state ? variant_state->clone() : nullptr;
-        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->variant_state = variant_state ? variant_state->clone(context) : nullptr;
+        new_state->structure_state = structure_state ? structure_state->clone(context) : nullptr;
         /// The flattened states are mutated while reading, so they must be deep-cloned as well;
         /// otherwise a prefix-cache clone would share them with the cached original.
-        new_state->flattened_indexes_state = flattened_indexes_state ? flattened_indexes_state->clone() : nullptr;
+        new_state->flattened_indexes_state = flattened_indexes_state ? flattened_indexes_state->clone(context) : nullptr;
         for (size_t i = 0; i != flattened_states.size(); ++i)
-            new_state->flattened_states[i] = flattened_states[i] ? flattened_states[i]->clone() : nullptr;
+            new_state->flattened_states[i] = flattened_states[i] ? flattened_states[i]->clone(context) : nullptr;
         return new_state;
     }
 };
@@ -408,7 +408,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
                 else
                 {
-                    readStringBinary(data_type_name, *structure_stream);
+                    readStringBinaryGrowing(data_type_name, *structure_stream);
                     data_type = getDataTypesCache().getType(data_type_name);
                 }
 
@@ -454,7 +454,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
-                    readStringBinary(data_type_name, *structure_stream);
+                    readStringBinaryGrowing(data_type_name, *structure_stream);
                     variants.push_back(getDataTypesCache().getType(data_type_name));
                 }
             }
@@ -463,7 +463,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             auto variant_type = std::make_shared<DataTypeVariant>(variants);
 
             /// Read statistics.
-            if (settings.object_and_dynamic_read_statistics)
+            if (settings.read_statistics)
             {
                 bool has_statistics = true;
                 /// In V3 version we have additional flag that indicates if we have statistics or not.
@@ -708,7 +708,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
     const auto & variant_info = column_dynamic.getVariantInfo();
     if (!variant_info.variant_type->equals(*structure_state->variant_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
 
     settings.path.push_back(Substream::DynamicData);
     dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumn(), limit, settings, dynamic_state->variant_state, cache);
@@ -717,6 +717,9 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
+    checkStackSize();
+
     /// Serialize NULL as Nothing type with no value.
     if (field.isNull())
     {
@@ -754,6 +757,9 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
 
 void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
+    checkStackSize();
+
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_column = dynamic_column.getVariantColumn();
     auto global_discr = variant_column.globalDiscriminatorAt(row_num);
@@ -781,6 +787,9 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
 
 void SerializationDynamic::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
+    /// See the comment in `deserializeBinary`: the nesting depth comes from the data.
+    checkStackSize();
+
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_column = dynamic_column.getVariantColumn();
@@ -966,6 +975,23 @@ static void deserializeTextImpl(
 }
 
 template <typename NestedSerialize, typename SerializeNull>
+static void serializeBinaryEncodedValue(std::string_view value, WriteBuffer & ostr, NestedSerialize nested_serialize, SerializeNull serialize_null)
+{
+    ReadBufferFromMemory buf(value);
+    auto variant_type = decodeDataType(buf);
+    if (isNothing(variant_type))
+    {
+        serialize_null(ostr);
+        return;
+    }
+    auto tmp_variant_column = variant_type->createColumn();
+    /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
+    auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
+    variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
+    nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+}
+
+template <typename NestedSerialize, typename SerializeNull>
 static void serializeTextImpl(
     const IColumn & column,
     size_t row_num,
@@ -973,6 +999,9 @@ static void serializeTextImpl(
     NestedSerialize nested_serialize,
     SerializeNull serialize_null)
 {
+    /// See the comment in `deserializeBinary`: the same data-driven nesting is walked here, one level per nested value.
+    checkStackSize();
+
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_column = dynamic_column.getVariantColumn();
     auto global_discr = variant_column.globalDiscriminatorAt(row_num);
@@ -986,14 +1015,7 @@ static void serializeTextImpl(
     /// Check if this row has value in shared variant. In this case we should first deserialize it from binary format.
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
-        auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ReadBufferFromMemory buf(value);
-        auto variant_type = decodeDataType(buf);
-        auto tmp_variant_column = variant_type->createColumn();
-        /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
-        auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
-        variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
-        nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
+        serializeBinaryEncodedValue(dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num)), ostr, nested_serialize, serialize_null);
         return;
     }
 
@@ -1171,6 +1193,18 @@ void SerializationDynamic::serializeTextJSONPretty(const IColumn & column, size_
     };
 
     serializeTextImpl(column, row_num, ostr, nested_serialize, serialize_null);
+}
+
+void SerializationDynamic::serializeBinaryEncodedValueTextJSON(std::string_view value, WriteBuffer & ostr, const FormatSettings & settings, bool pretty, size_t indent)
+{
+    checkStackSize();
+    auto serialize_null = [](WriteBuffer & buf) { SerializationNullable::serializeNullJSON(buf); };
+    if (pretty)
+        serializeBinaryEncodedValue(value, ostr, [&](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+            { serialization.serializeTextJSONPretty(col, row, buf, settings, indent); }, serialize_null);
+    else
+        serializeBinaryEncodedValue(value, ostr, [&](const ISerialization & serialization, const IColumn & col, size_t row, WriteBuffer & buf)
+            { serialization.serializeTextJSON(col, row, buf, settings); }, serialize_null);
 }
 
 void SerializationDynamic::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

@@ -115,7 +115,7 @@ def test_create_workload():
     def do_checks():
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/admin/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/admin/%' and type='request_queue'"
             )
             == "1\n"
         )
@@ -127,7 +127,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/production/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/production/%' and type='request_queue'"
             )
             == "1\n"
         )
@@ -139,7 +139,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/development/%' and type='fifo'"
+                "select count() from system.scheduler where path ilike '%/development/%' and type='request_queue'"
             )
             == "1\n"
         )
@@ -314,7 +314,7 @@ def test_slot_allocation_fairness():
     def enough_slots():
         return int(
             node.query(
-                "select sum(dequeued_requests) from system.scheduler where resource='cpu' and type='fifo'"
+                "select sum(dequeued_requests) from system.scheduler where resource='cpu' and type='request_queue'"
             ).strip()
         ) > 100
 
@@ -328,13 +328,13 @@ def test_slot_allocation_fairness():
 
     production = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/production/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/production/%' and type='request_queue'"
         ).strip()
     )
 
     development = int(
         node.query(
-            "select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/development/%' and type='fifo'"
+            "select dequeued_requests from system.scheduler where resource='cpu' and path ilike '%/development/%' and type='request_queue'"
         ).strip()
     )
 
