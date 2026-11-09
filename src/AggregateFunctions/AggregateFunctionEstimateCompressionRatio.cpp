@@ -829,10 +829,10 @@ a simpler model, and its result is not comparable with these.
 With `target_type`, the estimate follows how a `MergeTree` table with the default settings writes a column of a wide part: a
 compressed stream per substream (for example, the sizes and the characters of a `String`, the dictionary and the indexes of
 a `LowCardinality` column), granules of 8192 rows, sparse serialization for columns of mostly default values (decided from
-the first 8192 rows, where a part decides from all its rows). It does not read the settings of any table. The values are converted as `accurateCast` converts them, so a value that `target_type`
-cannot hold is an error. The numerator of a `LowCardinality` column is the size of its values, not of its dictionary. Every
-thread of a query estimates its rows as a separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON`
-are not supported as target types.
+the first 8192 rows, where a part decides from all its rows). It does not read the settings of any table. The values are
+converted as `accurateCast` converts them, so a value that `target_type` cannot hold is an error. The numerator of a
+`LowCardinality` column is the size of its values, not of its dictionary. Every thread of a query estimates its rows as a
+separate part, so use `max_threads = 1` for a stable result. `Dynamic` and `JSON` are not supported as target types.
 
 <Note>
 For the examples below, the result will differ based on the default compression codec of the server.
