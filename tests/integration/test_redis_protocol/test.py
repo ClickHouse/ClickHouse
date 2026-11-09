@@ -587,9 +587,70 @@ def test_quota_applies_to_commands(started_cluster):
                 client.mget("Alice", "Bob", "Charlie", "Diana")
         finally:
             client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        # Failed commands are accounted as errors.
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX errors = 1 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(0)
+            for _ in range(2):
+                with pytest.raises(exceptions.ResponseError, match="There is no column"):
+                    client.hget("Alice", "no_such_column")
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.hget("Alice", "surname")
+        finally:
+            client.close()
+        node.query("DROP QUOTA redis_quota")
+
+        # The execution time of the lookups is accounted too.
+        node.query("CREATE QUOTA redis_quota FOR INTERVAL 1 hour MAX execution_time = 0.000001 TO quota_user")
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="quota_user", password="secret")
+        try:
+            assert client.select(1)
+            with pytest.raises(exceptions.ResponseError, match="Quota .* has been exceeded"):
+                client.get("Alice")
+        finally:
+            client.close()
     finally:
         node.query("DROP QUOTA IF EXISTS redis_quota")
         node.query("DROP USER IF EXISTS quota_user")
+
+
+def test_result_limits_apply_to_commands(started_cluster):
+    # The `max_result_rows` and `max_result_bytes` limits of the user apply to the lookups. A reply has to
+    # contain an entry for every requested key, so an oversized result is rejected even with
+    # `result_overflow_mode = 'break'`, instead of being truncated.
+    node.query("DROP USER IF EXISTS rows_user, bytes_user")
+    node.query(
+        "CREATE USER rows_user IDENTIFIED WITH plaintext_password BY 'secret' "
+        "SETTINGS max_result_rows = 1, result_overflow_mode = 'break'"
+    )
+    node.query("CREATE USER bytes_user IDENTIFIED WITH plaintext_password BY 'secret' SETTINGS max_result_bytes = 1")
+    node.query("GRANT SELECT ON default.name_surname_map TO rows_user, bytes_user")
+    try:
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="rows_user", password="secret")
+        try:
+            assert client.select(1)
+            assert client.get("Alice") == b"Smith"
+            with pytest.raises(exceptions.ResponseError, match="Limit for result exceeded"):
+                client.mget("Alice", "Bob")
+            assert client.mget("Bob") == [b"Johnson"]
+        finally:
+            client.close()
+
+        client = Redis(host=started_cluster.get_instance_ip("node"), port=server_port, username="bytes_user", password="secret")
+        try:
+            assert client.select(1)
+            with pytest.raises(exceptions.ResponseError, match="Limit for result exceeded"):
+                client.get("Alice")
+            assert client.select(0)
+            with pytest.raises(exceptions.ResponseError, match="Limit for result exceeded"):
+                client.hmget("Alice", ["surname", "city"])
+        finally:
+            client.close()
+    finally:
+        node.query("DROP USER IF EXISTS rows_user, bytes_user")
 
 
 def test_time_limit_applies_to_commands(started_cluster):

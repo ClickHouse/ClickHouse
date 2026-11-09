@@ -19,10 +19,12 @@
 #include <base/types.h>
 #include <Common/Logger.h>
 #include <Common/QueryScope.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
 
+class EnabledQuota;
 class ProcessListEntry;
 class Session;
 class TCPServer;
@@ -65,8 +67,13 @@ private:
     /// Throws if the current command has been cancelled (`KILL QUERY`) or has exceeded `max_execution_time`.
     void checkCancelled() const;
 
-    /// Accounts the result of a lookup against the `result_rows` and `result_bytes` quotas of the user.
-    void accountResult(const Block & result_block) const;
+    /// Checks the result of a lookup against the `max_result_rows` and `max_result_bytes` limits of the user,
+    /// and accounts it and the time spent so far against the `result_rows`, `result_bytes`, and
+    /// `execution_time` quotas of the user.
+    void accountResult(const Block & result_block);
+
+    /// Accounts a failed data command against the `errors` quota of the user.
+    void accountError();
 
     /// Reads the binding of the selected Redis database from the live server configuration. It is read
     /// for every request, so that `SYSTEM RELOAD CONFIG` is visible to already connected clients.
@@ -98,6 +105,12 @@ private:
     std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
+
+    /// The quota of the current data command and the time it has been running for. The quota is unset
+    /// for the commands that do not read data (and are not accounted, as `PING`).
+    std::shared_ptr<const EnabledQuota> command_quota;
+    Stopwatch command_watch;
+    UInt64 command_elapsed_accounted_ns = 0;
     bool authenticated = false;
 
     UInt32 db = RedisProtocol::DB_MAX_NUM;

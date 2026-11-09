@@ -1248,9 +1248,6 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
         /// `joinGet` returns at most `max_joined_block_rows` rows at once, so look the keys up in batches.
         for (size_t begin = 0; begin < num_keys; begin += DEFAULT_BLOCK_SIZE)
         {
-            if (begin != 0)
-                checkLookupCancelled(context);
-
             const size_t end = std::min(begin + DEFAULT_BLOCK_SIZE, num_keys);
 
             Block key_block;
@@ -1264,6 +1261,12 @@ Block StorageJoin::getBlockByKeys(const ColumnsWithTypeAndName & keys, const Nam
             /// `joinGet` returns a single column, so request the columns one by one.
             for (size_t i = 0; i < column_names.size(); ++i)
             {
+                /// Check before every column of every batch except the first one (it has just been checked
+                /// after the lock was acquired): a request may repeat a column with large values many times,
+                /// so a single batch of keys can take long as well.
+                if (begin != 0 || i != 0)
+                    checkLookupCancelled(context);
+
                 Block block_with_column_to_add({{return_types[i]->createColumn(), return_types[i], column_names[i]}});
                 auto result = join->joinGet(key_block, block_with_column_to_add);
                 auto column = result.column->convertToFullColumnIfConst();

@@ -26,6 +26,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Server/RedisHandler.h>
 #include <Server/RedisProtocolMapping.h>
 #include <Server/RedisProtocolRequest.h>
@@ -44,6 +45,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
     extern const SettingsSeconds receive_timeout;
 }
 
@@ -55,6 +58,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
 namespace
@@ -143,12 +147,15 @@ void RedisHandler::serveConnection()
         }
 
         bool keep_connection = true;
+        command_quota.reset();
         try
         {
             keep_connection = processRequest(req);
         }
         catch (const Poco::Exception & exc)
         {
+            accountError();
+
             /// Sending (a part of) the reply has failed, so the connection is unusable: let `run` close it.
             if (out->isCanceled())
                 throw;
@@ -226,12 +233,17 @@ RedisHandler::CommandScope RedisHandler::prepareQueryContext(const String & comm
         clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ false);
     query_context->setProcessListElement(scope.process_list_entry->getQueryStatus());
 
+    command_watch.restart();
+    command_elapsed_accounted_ns = 0;
+
     /// Account the command against the quota of the user, as `executeQuery` does for a `SELECT`.
-    if (auto quota = query_context->getQuota())
+    /// From here on, a failure of the command is accounted as an error (see `accountError`).
+    command_quota = query_context->getQuota();
+    if (command_quota)
     {
-        quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERY_SELECTS, 1);
-        quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERIES, 1);
-        quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::ERRORS, 0, /*check_exceeded=*/ true);
+        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERY_SELECTS, 1);
+        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::QUERIES, 1);
+        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::ERRORS, 0, /*check_exceeded=*/ true);
     }
 
     return scope;
@@ -246,12 +258,33 @@ void RedisHandler::checkCancelled() const
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Redis command exceeded the time limit");
 }
 
-void RedisHandler::accountResult(const Block & result_block) const
+void RedisHandler::accountResult(const Block & result_block)
 {
-    if (auto quota = query_context->getQuota())
-        quota->usedForQuery(
+    /// Apply the limits on the result of a query, as `LimitsCheckingTransform` does. A reply has to contain
+    /// an entry for every requested key or field, so an oversized result is rejected regardless of
+    /// `result_overflow_mode` instead of being silently truncated.
+    const auto & settings = query_context->getSettingsRef();
+    SizeLimits result_limits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], OverflowMode::THROW);
+    result_limits.check(result_block.rows(), result_block.bytes(), "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES);
+
+    if (command_quota)
+    {
+        const UInt64 elapsed_ns = command_watch.elapsedNanoseconds();
+        command_quota->usedForQuery(
             /*normalized_query_hash=*/ 0,
-            {{QuotaType::RESULT_ROWS, result_block.rows()}, {QuotaType::RESULT_BYTES, result_block.bytes()}});
+            {{QuotaType::RESULT_ROWS, result_block.rows()},
+             {QuotaType::RESULT_BYTES, result_block.bytes()},
+             {QuotaType::EXECUTION_TIME, elapsed_ns - command_elapsed_accounted_ns}});
+        command_elapsed_accounted_ns = elapsed_ns;
+    }
+}
+
+void RedisHandler::accountError()
+{
+    /// As `executeQuery` does for a failed query. Only data commands are accounted, so `PING` or a
+    /// failed `AUTH` does not touch the quota.
+    if (command_quota)
+        command_quota->usedForQuery(/*normalized_query_hash=*/ 0, QuotaType::ERRORS, 1, /*check_exceeded=*/ false);
 }
 
 bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
@@ -474,7 +507,11 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
             std::vector<std::optional<String>> result;
             result.reserve(result_block.columns());
             for (size_t i = 0; i < result_block.columns(); ++i)
+            {
+                /// A request may repeat a field with a large value many times.
+                checkCancelled();
                 result.push_back(serializeValue(result_block.getByPosition(i), 0));
+            }
 
             RedisProtocol::ArrayResponse resp(result);
             resp.serialize(*out);
