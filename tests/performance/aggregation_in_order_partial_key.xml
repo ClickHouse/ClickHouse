@@ -23,6 +23,10 @@
     <query>SELECT a, nc, count() FROM agg_in_order_partial_key GROUP BY a, nc SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
     <query>SELECT DISTINCT a, nb FROM agg_in_order_partial_key SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
 
+    <!-- The same per-run states with a non-nullable key set of 20 bytes, one key narrower than 8 bytes. -->
+    <query>SELECT a, toUInt32(c) AS c32, b, count() FROM agg_in_order_partial_key GROUP BY a, c32, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT DISTINCT a, toUInt32(c), b, c FROM agg_in_order_partial_key SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
+
     <!-- Control: GROUP BY is the whole sorting key, so the transform never builds a state per run. -->
     <query>SELECT a, count() FROM agg_in_order_partial_key GROUP BY a SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
 
@@ -39,6 +43,7 @@
     <query>SELECT a, b, count() FROM agg_in_order_long_runs GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
     <query>SELECT DISTINCT a, b, c FROM agg_in_order_long_runs SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
     <query>SELECT a, nb, count() FROM agg_in_order_long_runs GROUP BY a, nb SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT a, toUInt32(c) AS c32, b, count() FROM agg_in_order_long_runs GROUP BY a, c32, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS agg_in_order_partial_key</drop_query>
     <drop_query>DROP TABLE IF EXISTS agg_in_order_long_runs</drop_query>

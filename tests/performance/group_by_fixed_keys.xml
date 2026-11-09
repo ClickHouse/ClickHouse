@@ -8,6 +8,8 @@
     <query>WITH toUInt8(number) AS k, k AS k1, k + 1 AS k2 SELECT k1, k2, count() FROM numbers(100000000) GROUP BY k1, k2</query>
     <query>WITH toUInt8(number) AS k, k AS k1, k + 1 AS k2, k + 2 AS k3, k + 3 AS k4 SELECT k1, k2, k3, k4, count() FROM numbers(100000000) GROUP BY k1, k2, k3, k4</query>
     <query>WITH toUInt8(number) AS k, toUInt64(k) AS k1, k1 + 1 AS k2 SELECT k1, k2, count() FROM numbers(100000000) GROUP BY k1, k2</query>
+    <!-- keys256 with a key narrower than 8 bytes, about 91K groups -->
+    <query>WITH toUInt32(number % 9091) AS k1, toUInt64(number % 10) AS k2, toUInt64(number % 5) AS k3 SELECT k1, k2, k3, count() FROM numbers_mt(100000000) GROUP BY k1, k2, k3 FORMAT Null</query>
 
     <create_query>create table group_by_fk(a UInt32, b UInt32, c LowCardinality(UInt32), d Nullable(UInt32), e UInt64, f UInt64, g UInt64, h LowCardinality(UInt64), i Nullable(UInt64)) engine=MergeTree order by tuple()</create_query>
 
@@ -29,6 +31,8 @@
 
     <!-- keys256_two_level -->
     <query>select e, f, g from group_by_fk group by e, f, g format Null</query>
+    <!-- keys256_two_level with a key narrower than 8 bytes -->
+    <query>select a, e, f from group_by_fk group by a, e, f format Null</query>
     <!-- low_cardinality_keys256_two_level -->
     <query>select e, f, h from group_by_fk group by e, f, h format Null</query>
     <!-- nullable_keys256_two_level -->

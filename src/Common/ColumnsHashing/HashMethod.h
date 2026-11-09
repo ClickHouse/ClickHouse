@@ -519,21 +519,29 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    /// Nullable keys are batch-packed in clause order, the layout of the per-row nullable `packFixed`, so
-    /// `packedKeysOrder` stays empty for them.
+    /// Nullable keys, and non-nullable keys256 with a key narrower than 8 bytes, are batch-packed in clause
+    /// order, the layout of the per-row `packFixed`, so `packedKeysOrder` stays empty for them.
     static bool useOrderedPreparedKeys(const Sizes & key_sizes)
     {
-        if constexpr (!has_nullable_keys || has_low_cardinality)
+        if constexpr (has_low_cardinality || (!has_nullable_keys && sizeof(Key) <= 16))
             return false;
         else
         {
-            size_t packed_size = std::tuple_size_v<KeysNullMap<Key>>;
+            size_t packed_size = 0;
+            if constexpr (has_nullable_keys)
+                packed_size = std::tuple_size_v<KeysNullMap<Key>>;
+            bool has_narrow_key = false;
             for (auto size : key_sizes)
             {
                 if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
                     return false;
                 packed_size += size;
+                has_narrow_key |= size < 8;
             }
+            /// An 8-byte word of a row packed per row that holds a narrower key cannot be store-forwarded to the
+            /// hash. Words holding whole 8- and 16-byte keys can, so such sets are cheaper to pack per row.
+            if (!has_nullable_keys && !has_narrow_key)
+                return false;
             return packed_size <= sizeof(Key);
         }
     }
@@ -591,6 +599,16 @@ struct HashMethodKeysFixed
                         packed.begin, packed.end);
                     repackRowsWithNulls(packed.begin, packed.end);
                 }
+            }
+        }
+        else if constexpr (!has_nullable_keys && !has_low_cardinality && sizeof(Key) > 16)
+        {
+            if (useOrderedPreparedKeys(key_sizes))
+            {
+                const RowRange packed = rowsToBatchPack(key_columns, rows);
+                if (packed.end > packed.begin)
+                    packFixedBatchOrdered<Key>(
+                        keys_size, Base::getActualColumns(), key_sizes, 0, prepared_keys, packed.begin, packed.end);
             }
         }
 
@@ -681,7 +699,11 @@ struct HashMethodKeysFixed
                     const size_t index = row - prepared_keys_begin;
                     if (index < prepared_keys.size())
                         return prepared_keys[index];
-                    return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
+                    /// keys256 is batch-packed in clause order (`useOrderedPreparedKeys`), keys128 and smaller longest first.
+                    if constexpr (sizeof(Key) > 16)
+                        return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
+                    else
+                        return packFixedLongestFirst<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
                 }
             }
 
@@ -799,7 +821,7 @@ template <typename Value, typename Key, typename Mapped, bool has_nullable_keys,
 struct SubRangeStateOf<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset, false>>
 {
     using Type = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache, need_offset,
-        !has_low_cardinality && (has_nullable_keys || sizeof(Key) <= 16)>;
+        !has_low_cardinality>;
 };
 
 /// Bitwise comparator of rows over fixed-width contiguous key columns, flattening tuples

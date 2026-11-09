@@ -21,11 +21,15 @@ namespace
 using WholeBlockState = SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>>::State;
 /// The state DISTINCT in order builds per equal-range of the sorting prefix (`SetVariants.h` keys128).
 using PreparedState = ColumnsHashing::SubRangeState<WholeBlockState>;
-/// Three of them need 24 bytes, which leaves that class, so they have no sub-range variant.
+/// Three of them need 24 bytes: a keys256 set without a key narrower than 8 bytes is packed per row.
 using UnpreparedState = ColumnsHashing::SubRangeState<SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State>;
 
+/// A keys256 set with a key narrower than 8 bytes is batch-packed in clause order, the per-row layout.
+using WholeBlockState256 = SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State;
+using SubRangeState256 = ColumnsHashing::SubRangeState<WholeBlockState256>;
+
 static_assert(!std::is_same_v<PreparedState, WholeBlockState>);
-static_assert(std::is_same_v<UnpreparedState, SetMethodKeysFixed<ClearableHashSet<UInt256, UInt256HashCRC32>>::State>);
+static_assert(!std::is_same_v<UnpreparedState, WholeBlockState256>);
 
 /// Nullable keys128 and keys256 sets: packed in clause order after a 2- and a 4-byte NULL bitmap.
 using NullableWholeBlockState128 = SetMethodKeysFixed<ClearableHashSet<UInt128, UInt128HashCRC32>, true>::State;
@@ -100,6 +104,71 @@ private:
         sizes.push_back(sizeof(Value));
     }
 };
+
+/// Non-nullable key sets of 17 to 32 bytes with a key narrower than 8 bytes, in a clause order that differs
+/// from longest-first order: `UInt32, UInt64, UInt64` (20 bytes) and `UInt16, UInt64, UInt8, UInt128` (27 bytes).
+struct Narrow256KeyColumns
+{
+    Columns holders;
+    ColumnRawPtrs columns;
+    Sizes sizes;
+    std::string name;
+
+    explicit Narrow256KeyColumns(bool with_16_and_1_byte_keys)
+    {
+        if (with_16_and_1_byte_keys)
+        {
+            name = "UInt16, UInt64, UInt8, UInt128";
+            add<ColumnUInt16>(1000);
+            add<ColumnUInt64>(1000000);
+            add<ColumnUInt8>(1);
+            add<ColumnUInt128>(5000000);
+        }
+        else
+        {
+            name = "UInt32, UInt64, UInt64";
+            add<ColumnUInt32>(10000);
+            add<ColumnUInt64>(1000000);
+            add<ColumnUInt64>(3000000);
+        }
+    }
+
+    /// The per-row packer: the layout every packed keys256 key must have.
+    UInt256 expected(size_t row) const { return packFixed<UInt256>(row, sizes.size(), columns, sizes); }
+
+private:
+    template <typename Column>
+    void add(size_t base)
+    {
+        using Value = typename Column::ValueType;
+
+        auto column = Column::create();
+        auto & data = column->getData();
+        data.resize(num_long_rows);
+        /// Distinct and non-zero across rows and columns (the 1-byte column wraps every 256 rows); the
+        /// `UInt128` values also have a non-zero high half.
+        for (size_t row = 0; row < num_long_rows; ++row)
+        {
+            data[row] = static_cast<Value>(base + row);
+            if constexpr (sizeof(Value) == 16)
+                data[row] += Value(row + 1) << 64;
+        }
+        holders.emplace_back(std::move(column));
+        columns.push_back(holders.back().get());
+        sizes.push_back(sizeof(Value));
+    }
+};
+
+template <typename Check>
+void forEachNarrow256KeySet(Check && check)
+{
+    for (const bool with_16_and_1_byte_keys : {false, true})
+    {
+        const Narrow256KeyColumns keys(with_16_and_1_byte_keys);
+        SCOPED_TRACE(keys.name);
+        check(keys);
+    }
+}
 
 /// `Nullable(UInt32), UInt64`, and with `wide` a third `UInt64` column that needs keys256: rows
 /// [0, num_long_rows / 2) hold no NULL, every third row after them is NULL.
@@ -360,6 +429,77 @@ TEST(ColumnsHashingPreparedKeys, WiderKeyIsNotBatched)
 
     EXPECT_TRUE(state.prepared_keys.empty());
     EXPECT_FALSE(state.covers_sub_range);
+}
+
+/// The batch has to reproduce the per-row clause-order layout byte for byte: `packedKeysOrder` is empty
+/// for keys256, so the output side reads the blob back in clause order.
+TEST(ColumnsHashingPreparedKeys, Narrow256WholeBlockIsBatchedInClauseOrder)
+{
+    forEachNarrow256KeySet([](const Narrow256KeyColumns & keys)
+    {
+        Arena arena;
+        WholeBlockState256 state(keys.columns, keys.sizes, nullptr);
+        SubRangeState256 explicit_whole(keys.columns, keys.sizes, nullptr, {0, num_long_rows});
+
+        ASSERT_EQ(state.prepared_keys.size(), num_long_rows);
+        ASSERT_EQ(explicit_whole.prepared_keys.size(), num_long_rows);
+        ASSERT_FALSE(explicit_whole.covers_sub_range);
+
+        size_t rows_differing_from_longest_first = 0;
+        for (size_t row = 0; row < num_long_rows; ++row)
+        {
+            ASSERT_EQ(state.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+            ASSERT_EQ(explicit_whole.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+            if (keys.expected(row) != packFixedLongestFirst<UInt256>(row, keys.sizes.size(), keys.columns, keys.sizes))
+                ++rows_differing_from_longest_first;
+        }
+        /// Clause order and longest-first order disagree for these key sets, so the assertions above
+        /// compare layouts rather than coinciding on equal key widths.
+        ASSERT_EQ(rows_differing_from_longest_first, num_long_rows);
+    });
+}
+
+/// A long sub-range is batch-packed over its own rows, and a row outside it is packed on its own, in the
+/// same clause-order layout.
+TEST(ColumnsHashingPreparedKeys, Narrow256LongSubRangeIsBatchedInClauseOrder)
+{
+    static constexpr size_t range_begin = 300;
+    static constexpr size_t range_end = 900;
+
+    forEachNarrow256KeySet([](const Narrow256KeyColumns & keys)
+    {
+        Arena arena;
+        SubRangeState256 ranged(keys.columns, keys.sizes, nullptr, {range_begin, range_end});
+
+        ASSERT_TRUE(ranged.covers_sub_range);
+        ASSERT_EQ(ranged.prepared_keys.size(), range_end - range_begin);
+        ASSERT_EQ(ranged.prepared_keys_begin, range_begin);
+        for (size_t row = range_begin; row < range_end; ++row)
+            ASSERT_EQ(ranged.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+        for (size_t row : {size_t{0}, range_begin - 1, range_end, num_long_rows - 1})
+            ASSERT_EQ(ranged.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+    });
+}
+
+/// Pins the threshold's two sides for a narrow keys256 sub-range; the short one is packed per row.
+TEST(ColumnsHashingPreparedKeys, Narrow256SubRangeShorterThanTheThresholdIsNotBatched)
+{
+    static constexpr size_t range_begin = 10;
+
+    forEachNarrow256KeySet([](const Narrow256KeyColumns & keys)
+    {
+        Arena arena;
+        SubRangeState256 at_threshold(keys.columns, keys.sizes, nullptr, {range_begin, range_begin + min_batched_rows});
+        SubRangeState256 below_threshold(keys.columns, keys.sizes, nullptr, {range_begin, range_begin + min_batched_rows - 1});
+
+        ASSERT_EQ(at_threshold.prepared_keys.size(), min_batched_rows);
+        ASSERT_TRUE(below_threshold.prepared_keys.empty());
+        ASSERT_TRUE(below_threshold.covers_sub_range);
+        for (size_t row = range_begin; row < range_begin + min_batched_rows; ++row)
+            ASSERT_EQ(at_threshold.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+        for (size_t row = range_begin; row < range_begin + min_batched_rows - 1; ++row)
+            ASSERT_EQ(below_threshold.getKeyHolder(row, arena), keys.expected(row)) << "row " << row;
+    });
 }
 
 /// A nullable whole block is batch-packed, and the bitmap bit of a NULL row is in the array itself.
