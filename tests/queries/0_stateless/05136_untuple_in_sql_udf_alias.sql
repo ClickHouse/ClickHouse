@@ -12,12 +12,14 @@ DROP FUNCTION IF EXISTS test_scope_nested_05136;
 DROP FUNCTION IF EXISTS test_star_05136;
 DROP FUNCTION IF EXISTS test_scope_inner_alias_05136;
 DROP FUNCTION IF EXISTS test_scope_inner_alias_nested_05136;
+DROP FUNCTION IF EXISTS test_pair_05136;
 
 CREATE FUNCTION test_scope_05136 AS (app, endpoint) -> untuple(CAST((app, endpoint) AS Tuple(app String, endpoint String)));
 CREATE FUNCTION test_scope_nested_05136 AS (app, endpoint) -> test_scope_05136(app, endpoint);
 CREATE FUNCTION test_star_05136 AS () -> *;
 CREATE FUNCTION test_scope_inner_alias_05136 AS (app, endpoint) -> (untuple(CAST((app, endpoint) AS Tuple(app String, endpoint String))) AS innerscope);
 CREATE FUNCTION test_scope_inner_alias_nested_05136 AS (app, endpoint) -> (test_scope_inner_alias_05136(app, endpoint) AS midscope);
+CREATE FUNCTION test_pair_05136 AS x -> untuple(tuple(x));
 
 SELECT '-- UDF with alias';
 SELECT test_scope_05136('web-api', '/pay') AS scope FORMAT TSVWithNames;
@@ -58,8 +60,21 @@ SELECT '-- an APPLY lambda inside the body is not a call: its columns keep their
 WITH () -> * APPLY (x -> untuple(tuple(x))) AS apply_pair SELECT * FROM (SELECT apply_pair() AS scope FROM (SELECT 1 AS a, 2 AS b)) FORMAT TSVWithNames;
 WITH () -> * APPLY (x -> untuple(tuple(x))) AS apply_pair SELECT apply_pair() AS scope FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 
+SELECT '-- without an alias the columns are named after the call, so calls with different arguments do not collide';
+SELECT test_pair_05136(1), test_pair_05136(2) FORMAT TSVWithNames;
+SELECT * FROM (SELECT test_pair_05136(1), test_pair_05136(2)) FORMAT TSVWithNames;
+SELECT test_pair_05136(a), test_pair_05136(a + 1) FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT test_scope_nested_05136('web-api', '/pay'), test_scope_nested_05136('cli', '/login') FORMAT TSVWithNames;
+WITH x -> untuple(tuple(x)) AS lambda_pair SELECT lambda_pair(1), lambda_pair(2) FORMAT TSVWithNames;
+
+SELECT '-- names inside the body are untouched: tuple fields are still named after the parameter';
+WITH x -> tupleElement(tuple(x), 'x') AS named_field SELECT named_field(1) SETTINGS enable_named_columns_in_function_tuple = 1;
+WITH x -> tuple(x) AS named_tuple SELECT toTypeName(named_tuple(1)), toTypeName(named_tuple(1 AS arg)) SETTINGS enable_named_columns_in_function_tuple = 1;
+SELECT test_pair_05136(1) AS s SETTINGS enable_named_columns_in_function_tuple = 1 FORMAT TSVWithNames;
+
 DROP FUNCTION test_scope_05136;
 DROP FUNCTION test_scope_nested_05136;
 DROP FUNCTION test_star_05136;
 DROP FUNCTION test_scope_inner_alias_05136;
 DROP FUNCTION test_scope_inner_alias_nested_05136;
+DROP FUNCTION test_pair_05136;

@@ -3085,6 +3085,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto lambda_expression_clone = lambda_expression_untyped->clone();
 
             IdentifierResolveScope & lambda_scope = createIdentifierResolveScope(lambda_expression_clone, &scope /*parent_scope*/);
+            lambda_scope.inlined_call_node = node;
+            lambda_scope.inlined_call_projection_name = result_projection_names[0];
             ProjectionNames lambda_projection_names = resolveLambda(lambda_expression_untyped, lambda_expression_clone, function_arguments, lambda_scope);
 
             auto & resolved_lambda = lambda_expression_clone->as<LambdaNode &>();
@@ -3141,29 +3143,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & untuple_argument_projection_name = arguments_projection_names.at(0);
             result_projection_names.clear();
 
-            /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
-            /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
-            /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
+            /// When `untuple` is the body of a lambda that replaces a call (SQL UDF, `WITH` lambda), it is named after the
+            /// call, like any other inlined body: `alias.element` when the call has an alias, which takes priority over an
+            /// alias inside the body as in the old analyzer, else `tupleElement(call, 'element')`, so that calls with
+            /// different arguments do not share a name. Nested calls are walked outwards and the outermost one wins.
             String untuple_alias = node->getAlias();
+            const ProjectionName * call_projection_name = nullptr;
             const auto * current_scope = &scope;
             const auto * current_node = node.get();
-            while (current_scope->parent_scope)
+            while (current_scope && current_scope->inlined_call_node
+                && current_scope->scope_node->as<LambdaNode &>().getExpression().get() == current_node)
             {
-                const auto * lambda_scope_node = current_scope->scope_node->as<LambdaNode>();
-                if (!lambda_scope_node || lambda_scope_node->getExpression().get() != current_node)
-                    break;
-
-                const auto & parent_expressions_stack = current_scope->parent_scope->expressions_in_resolve_process_stack;
-                if (parent_expressions_stack.empty())
-                    break;
-
-                /// Only a call is inlined; the lambda of an `APPLY` transformer sits under the matcher it expands.
-                const auto & call_node = parent_expressions_stack.getTop();
-                if (call_node->getNodeType() != QueryTreeNodeType::FUNCTION)
-                    break;
-
+                const auto & call_node = current_scope->inlined_call_node;
                 if (call_node->hasAlias())
                     untuple_alias = call_node->getAlias();
+                call_projection_name = &current_scope->inlined_call_projection_name;
                 current_node = call_node.get();
                 current_scope = current_scope->parent_scope;
             }
@@ -3172,6 +3166,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 if (!untuple_alias.empty())
                     result_projection_names.push_back(untuple_alias + '.' + element_name);
+                else if (call_projection_name)
+                    result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", *call_projection_name, element_name));
                 else
                     result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", untuple_argument_projection_name, element_name));
             }

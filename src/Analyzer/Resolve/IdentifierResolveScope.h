@@ -152,6 +152,11 @@ struct IdentifierResolveScope
       */
     std::unordered_set<std::string> hidden_expression_arguments;
 
+    /// Set for the scope of a lambda that replaces a call to a SQL UDF or a `WITH` lambda: the call and its projection
+    /// name. They name an `untuple` body, see `resolveFunction`.
+    QueryTreeNodePtr inlined_call_node;
+    ProjectionName inlined_call_projection_name;
+
     ScopeAliases aliases;
 
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.

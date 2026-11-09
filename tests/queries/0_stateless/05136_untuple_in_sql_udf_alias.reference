@@ -39,3 +39,19 @@ tupleElement((a), \'1\')	tupleElement((b), \'1\')
 1	2
 tupleElement((a), \'1\')	tupleElement((b), \'1\')
 1	2
+-- without an alias the columns are named after the call, so calls with different arguments do not collide
+tupleElement(test_pair_05136(1), \'1\')	tupleElement(test_pair_05136(2), \'1\')
+1	2
+tupleElement(test_pair_05136(1), \'1\')	tupleElement(test_pair_05136(2), \'1\')
+1	2
+tupleElement(test_pair_05136(a), \'1\')	tupleElement(test_pair_05136(plus(a, 1)), \'1\')
+1	2
+tupleElement(test_scope_nested_05136(\'web-api\', \'/pay\'), \'app\')	tupleElement(test_scope_nested_05136(\'web-api\', \'/pay\'), \'endpoint\')	tupleElement(test_scope_nested_05136(\'cli\', \'/login\'), \'app\')	tupleElement(test_scope_nested_05136(\'cli\', \'/login\'), \'endpoint\')
+web-api	/pay	cli	/login
+tupleElement(lambda_pair(1), \'1\')	tupleElement(lambda_pair(2), \'1\')
+1	2
+-- names inside the body are untouched: tuple fields are still named after the parameter
+1
+Tuple(\n    x UInt8)	Tuple(\n    x UInt8)
+s.x
+1
