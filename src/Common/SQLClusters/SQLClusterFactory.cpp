@@ -73,6 +73,15 @@ void validateNoDuplicateProperties(const Properties & properties, std::string_vi
     }
 }
 
+/// `Cluster::Address` narrows the replica port to `UInt16`. Reject out-of-range
+/// values here so a SQL typo cannot be stored and then silently wrap (e.g. `70000` → `4464`).
+void validatePortProperty(const Field & value)
+{
+    Int64 port = applyVisitor(FieldVisitorConvertToNumber<Int64>(), value);
+    if (port < 1 || port > 65535)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Port must be in range 1..65535, got {}", port);
+}
+
 void validateClusterLevelProperties(const Properties & properties)
 {
     validateNoDuplicateProperties(properties, "at cluster level");
@@ -99,6 +108,9 @@ void validateShardProperties(const Properties & properties, bool has_replicas)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in SHARD", change.name);
         }
+
+        if (change.name == "port")
+            validatePortProperty(change.value);
     }
 }
 
@@ -110,6 +122,9 @@ void validateReplicaProperties(const Properties & properties)
     {
         if (!replicaPropertyKeys().contains(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property `{}` is not allowed in REPLICA", change.name);
+
+        if (change.name == "port")
+            validatePortProperty(change.value);
     }
 }
 
