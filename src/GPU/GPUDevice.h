@@ -58,7 +58,7 @@ struct GPUDeviceSettings
     /// Freed pinned host memory that `PinnedMemoryPool` keeps instead of returning it to the system.
     size_t pinned_memory_pool_release_threshold = 0;
 
-    /// The limits of `GPUKernelCache`, in bytes of the code on the device and in kernels.
+    /// The limits of `GPUKernelCache`, in bytes of the PTX and in kernels.
     size_t kernel_cache_max_size_in_bytes = 0;
     size_t kernel_cache_max_count = 0;
 

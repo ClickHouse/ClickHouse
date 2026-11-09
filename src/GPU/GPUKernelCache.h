@@ -27,10 +27,8 @@ struct GPUKernel : private boost::noncopyable
     cudaKernel_t kernel = nullptr;
     uint32_t block_size = 0;
     std::vector<GPUElementType> column_types;
-    /// The size of the machine code of the device that the driver made of the PTX, which is what stays loaded.
-    size_t cubin_size = 0;
+    size_t ptx_size = 0;
 
-    /// Links `ptx` into machine code of the current device and loads it.
     static std::shared_ptr<GPUKernel> load(const std::string & name, const std::string & ptx, std::vector<GPUElementType> column_types);
 
     /// Unloads the library without waiting for the device. Whoever launches the kernel holds it (through
@@ -43,7 +41,7 @@ struct GPUKernel : private boost::noncopyable
 
 struct GPUKernelWeight
 {
-    size_t operator()(const GPUKernel & kernel) const { return kernel.cubin_size; }
+    size_t operator()(const GPUKernel & kernel) const { return kernel.ptx_size; }
 };
 
 /// The kernels compiled for expressions, by the hash of the expression and of the device. The limits are the server
