@@ -170,6 +170,31 @@ SELECT a.id FROM t_rf_global_row_index_cast_name_skip AS a, (SELECT toInt128(5) 
 WHERE a._part_starting_offset + a._part_offset = b.g
 SETTINGS log_comment = '05493_global_row_index_cast_name_collision_skip';
 
+-- Seal-gated reading prunes by primary key columns only: a primary key column named like the display name of the global
+-- row index key, `_part_starting_offset + _part_offset`, is not taken for it, with or without index analysis.
+DROP TABLE IF EXISTS t_rf_global_row_index_seal;
+CREATE TABLE t_rf_global_row_index_seal
+(
+    id UInt64,
+    `_part_starting_offset + _part_offset` UInt64,
+    `plus(_part_offset, _part_starting_offset)` UInt64
+)
+ENGINE = MergeTree ORDER BY (`_part_starting_offset + _part_offset`, `plus(_part_offset, _part_starting_offset)`)
+SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
+INSERT INTO t_rf_global_row_index_seal SELECT number, 0, number + 10000 FROM numbers(1600);
+
+SELECT 'seal_gated', a.id FROM t_rf_global_row_index_seal AS a, (SELECT toUInt64(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS enable_join_seal_gated_reading = 1;
+
+SELECT 'seal_gated_no_index_analysis', a.id FROM t_rf_global_row_index_seal AS a, (SELECT toUInt64(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS enable_join_seal_gated_reading = 1, enable_join_runtime_filters_index_analysis = 0;
+
+SELECT 'not_seal_gated', a.id FROM t_rf_global_row_index_seal AS a, (SELECT toUInt64(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS enable_join_seal_gated_reading = 0;
+
 SYSTEM FLUSH LOGS query_log;
 
 -- A part can be analyzed more than once by a query (when its index read result is rebuilt), which adds its granules
@@ -209,3 +234,4 @@ DROP TABLE t_rf_global_row_index_name_pk;
 DROP TABLE t_rf_global_row_index_name_skip;
 DROP TABLE t_rf_global_row_index_cast_name_pk;
 DROP TABLE t_rf_global_row_index_cast_name_skip;
+DROP TABLE t_rf_global_row_index_seal;

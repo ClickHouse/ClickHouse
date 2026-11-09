@@ -23,6 +23,9 @@
 5
 5
 5
+seal_gated	5
+seal_gated_no_index_analysis	5
+not_seal_gated	5
 05493_global_row_index	1	1
 05493_global_row_index_and_offset	1	1
 05493_global_row_index_cast_name_collision_pk	1	1
