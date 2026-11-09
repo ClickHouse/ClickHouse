@@ -24,6 +24,7 @@ from ci.jobs.parser_memory_check import (
     generate_html_report,
     get_merge_base_profiler_url,
 )
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
@@ -33,6 +34,7 @@ SCENARIOS_DIR = Path(Utils.cwd()) / "utils/storage-memory-profiler/scenarios"
 # checkpoint. Its tracked allocations vary by several hundred bytes between
 # otherwise identical runs, unlike the single-threaded parser measurements.
 STORAGE_CHANGE_THRESHOLD_BYTES = 1024
+ALLOW_INCREASE_LABEL = "ci-storage-memory-increase-ok"
 
 
 def find_heap_profile(profiles_dir: Path, prefix: str, checkpoint: str) -> str:
@@ -284,6 +286,12 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         return
     setup_results.append(Result(name="Batch symbolization", status=Result.Status.OK))
 
+    # A sync pull request in the private repository carries the labels of the
+    # upstream pull request it mirrors as `upstream_pr_labels`.
+    ci_info = Info()
+    increase_allowed = ALLOW_INCREASE_LABEL in ci_info.pr_labels or (
+        ALLOW_INCREASE_LABEL in (ci_info.get_kv_data("upstream_pr_labels") or [])
+    )
     scenario_results = []
     html_data = []
     total_master = 0
@@ -353,7 +361,16 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
                 f"PR={total_pr:+,} bytes"
             )
         info += f"\nCompared change: {compared_change:+,} bytes ({percent_change:.1f}%)"
-        scenario_results.append(Result(name=scenario.name, status=status, info=info))
+        verdict = status
+        if status == Result.Status.FAIL and increase_allowed:
+            verdict = Result.Status.OK
+            info += f"\nAllowed by the `{ALLOW_INCREASE_LABEL}` label"
+        elif status == Result.Status.FAIL:
+            info += (
+                f"\nIf this increase is expected, add the `{ALLOW_INCREASE_LABEL}` "
+                "label and push or re-run all jobs"
+            )
+        scenario_results.append(Result(name=scenario.name, status=verdict, info=info))
         html_data.append(
             {
                 "num": index,
@@ -405,7 +422,12 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
     shutil.rmtree(master_run["data_dir"])
     shutil.rmtree(pr_run["data_dir"])
 
-    test_status = Result.Status.FAIL if regressions or errors else Result.Status.OK
+    allowed = regressions > 0 and increase_allowed
+    test_status = (
+        Result.Status.FAIL
+        if errors or (regressions and not increase_allowed)
+        else Result.Status.OK
+    )
     tests = Result.create_from(
         name="Tests",
         results=scenario_results,
@@ -414,14 +436,17 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
             f"Scenarios: {len(scenarios)}, master total: {total_master:+,} bytes, "
             f"PR total: {total_pr:+,} bytes, change: {total_pr - total_master:+,} bytes, "
             f"regressions: {regressions}, improvements: {improvements}"
+            + (f", allowed by the `{ALLOW_INCREASE_LABEL}` label" if allowed else "")
         ),
     )
     setup_results.append(tests)
+    # The label is not a digest input, so a later commit with the same digest
+    # must not reuse a success that only the label allowed.
     Result.create_from(
         results=setup_results,
         stopwatch=stopwatch,
         files=[report_path],
-    ).complete_job()
+    ).complete_job(do_not_cache=allowed)
 
 
 if __name__ == "__main__":
