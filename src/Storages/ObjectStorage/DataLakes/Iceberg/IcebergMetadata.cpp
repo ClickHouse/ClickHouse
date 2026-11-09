@@ -210,29 +210,23 @@ std::pair<Iceberg::PersistentTableComponents, Iceberg::MetadataFileWithInfo> Ice
     const auto & [metadata_version, metadata_file_path, compression_method] = latest_metadata;
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_json_str = readMetadataJSONString(metadata_file_path, object_storage, cache_ptr != nullptr, context_, log, compression_method);
-    auto metadata_object = parseMetadataJSONString(metadata_json_str);
+    auto metadata_object = parseMetadataJSONString(metadata_json_str, metadata_file_path);
+    validateTableMetadata(*metadata_object, metadata_file_path);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
     std::optional<String> table_uuid = std::nullopt;
     if (metadata_object->has(Iceberg::f_table_uuid))
-    {
         table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
-    }
-    else
-    {
-        if (format_version >= 2)
-        {
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg table metadata file '{}' doesn't contain required field '{}'",
-                metadata_file_path,
-                Iceberg::f_table_uuid);
-        }
-    }
     if (cache_ptr && table_uuid)
         cache_ptr->getOrSetTableMetadata(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path),
-            [&]() { return std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, metadata_json_str.size()); });
+            [&]()
+            {
+                auto cell = std::make_shared<IcebergMetadataFilesCacheCell>(metadata_object, metadata_json_str.size());
+                /// The checks of getMetadataJSONObject; validateTableMetadata ran above.
+                std::call_once(cell->table_metadata_validated, [&] { IcebergSchemaProcessor::checkTableSchemas(*metadata_object); });
+                return cell;
+            });
     auto table_path = configuration->getPathForRead().path;
     auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     PersistentTableComponents persistent_components{
@@ -2152,8 +2146,9 @@ void IcebergMetadata::addDeleteTransformers(
                 = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
             const ActionsDAG::Node * in_lhs_arg
                 = left_columns.size() == 1 ? left_columns.front() : &dag.addFunction(func_tuple_builder, std::move(left_columns), {});
-            /// we got the NOT IN function
-            auto func_not_in = FunctionFactory::instance().get("notIn", nullptr);
+            /// Iceberg compares equality-delete keys null-safely: a NULL key matches only a NULL delete value.
+            /// The set above keeps NULLs (transform_null_in), and `notNullIn` looks NULL keys up in it.
+            auto func_not_in = FunctionFactory::instance().get("notNullIn", nullptr);
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
