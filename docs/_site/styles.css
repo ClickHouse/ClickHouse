@@ -3565,6 +3565,7 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item {
     grid-row: auto !important;
     grid-column: 3 !important;
+    align-self: start;
     min-height: auto !important;
     margin: 0;
     padding: 4px 0 !important;
@@ -3658,6 +3659,10 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(6) > svg:last-child,
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(7) > svg:last-child {
+    display: block !important;
+    opacity: 0.6 !important;
+}
+[role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item[href^="https://"] > svg:last-child {
     display: block !important;
     opacity: 0.6 !important;
 }
