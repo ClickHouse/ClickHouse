@@ -82,7 +82,7 @@ size_t partialAggregateSerializedStateBytes(const Block & block)
         if (!aggregate_column)
             continue;
         const auto function = aggregate_column->getAggregateFunction();
-        for (const auto place : aggregate_column->getData())
+        for (auto * const place : aggregate_column->getData())
             function->serialize(place, buf);
     }
     buf.finalize();
