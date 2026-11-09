@@ -2,7 +2,10 @@
 #include <chrono>
 #include <optional>
 
+#include "config.h"
+
 #include <Common/CurrentMetrics.h>
+#include <Common/Jemalloc.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -50,12 +53,60 @@ struct OperationInThread
     ~OperationInThread() { --operations_in_thread; }
 };
 
-/// The bytes of the columns of the cache released in this thread: by the destruction of an entry
-/// that was the last holder of its column, or of a parked column. Evicting an entry a reader still
-/// holds, e.g. the result of `getMany`, or whose column a query still shares, releases nothing, so
-/// `autoResize` reports what it actually gave back from this rather than from the decrease of the
-/// weight of the cache.
-thread_local size_t bytes_released_in_thread = 0;
+/// The memory this thread has actually given back to the allocator since construction: what it
+/// deallocated minus what it allocated, as jemalloc counts them. `autoResize` reports what it gave
+/// back from this rather than from the decrease of the weight of the cache or the sizes of the evicted
+/// columns, which cannot tell whether the memory is gone: evicting an entry a reader still holds, e.g.
+/// the result of `getMany`, or whose column a query still shares, releases nothing; a `LowCardinality`
+/// dictionary shared by several entries is in the weight of each of them and released once, with the
+/// last one; the payload of a `Nullable` column a query keeps from `assumeNotNull` stays allocated
+/// when the cache drops the column. The allocations of the resize itself cancel out, unless they
+/// outlive it, which only makes the count smaller.
+/// Without jemalloc nothing is counted as released, so the resize never authorizes an allocation over
+/// the limit by itself.
+class MemoryReleasedInThread
+{
+public:
+    MemoryReleasedInThread() : allocated_before(allocated()), deallocated_before(deallocated()) {}
+
+    size_t get() const
+    {
+        const UInt64 allocated_since = allocated() - allocated_before;
+        const UInt64 deallocated_since = deallocated() - deallocated_before;
+        return deallocated_since > allocated_since ? deallocated_since - allocated_since : 0;
+    }
+
+private:
+#if USE_JEMALLOC
+    /// jemalloc keeps the totals of each thread at a fixed address for the lifetime of the thread.
+    struct Counters
+    {
+        uint64_t * allocated = nullptr;
+        uint64_t * deallocated = nullptr;
+
+        Counters()
+        {
+            if (!Jemalloc::tryGetValue("thread.allocatedp", allocated) || !Jemalloc::tryGetValue("thread.deallocatedp", deallocated))
+                allocated = deallocated = nullptr;
+        }
+    };
+
+    static const Counters & counters()
+    {
+        static thread_local const Counters counters_of_thread;
+        return counters_of_thread;
+    }
+
+    static UInt64 allocated() { return counters().allocated ? *counters().allocated : 0; }
+    static UInt64 deallocated() { return counters().deallocated ? *counters().deallocated : 0; }
+#else
+    static UInt64 allocated() { return 0; }
+    static UInt64 deallocated() { return 0; }
+#endif
+
+    const UInt64 allocated_before;
+    const UInt64 deallocated_before;
+};
 
 }
 
@@ -124,8 +175,6 @@ struct ParkedColumns
             std::lock_guard lock(mutex, std::adopt_lock);
             auto in_use_end = std::partition(columns.begin(), columns.end(), [](const ColumnPtr & column) { return column->use_count() > 1; });
             std::move(in_use_end, columns.end(), std::back_inserter(unused));
-            for (const auto & column : unused)
-                bytes_released_in_thread += column->allocatedBytes();
             columns.erase(in_use_end, columns.end());
             count.store(columns.size(), std::memory_order_relaxed);
         }
@@ -157,7 +206,8 @@ std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry()
 
 /// Only the root is checked for other holders: a subcolumn a query keeps past the eviction (e.g. from `assumeNotNull`)
 /// is released by that query, which is credited with it. Accepted: bounded by the subcolumn, and checking subcolumns
-/// would never release entries that share a dictionary.
+/// would never release entries that share a dictionary. `ColumnsCache::autoResize` counts only what is actually
+/// deallocated, so such a subcolumn does not count as released there.
 ColumnsCacheEntry::~ColumnsCacheEntry()
 {
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
@@ -175,7 +225,6 @@ ColumnsCacheEntry::~ColumnsCacheEntry()
     }
     else
     {
-        bytes_released_in_thread += ColumnsCacheWeightFunction{}(*this);
         column.reset();
     }
 }
@@ -919,7 +968,7 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
     /// blocker still reaches the global tracker, see `MemoryTracker::free`.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
-    const size_t bytes_released_before = bytes_released_in_thread;
+    const MemoryReleasedInThread released;
 
     /// Called periodically by `MemoryWorker`, so this is where the columns of evicted entries that
     /// queries no longer hold are released.
@@ -984,11 +1033,9 @@ bool ColumnsCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         setEffectiveMaxSize(target_size);
     }
 
-    /// Only the memory actually released counts: an evicted entry that a reader still holds, or whose
-    /// column a query still shares, leaves the cache but not the memory, and reporting its weight as
-    /// released would let `MemoryTracker` accept an allocation over the limit.
-    const size_t released = bytes_released_in_thread - bytes_released_before;
-    return memory_usage - std::min(released, memory_usage) <= memory_limit;
+    /// Only the memory actually deallocated counts, see `MemoryReleasedInThread`: an evicted entry that
+    /// leaves the cache but not the memory must not let `MemoryTracker` accept an allocation over the limit.
+    return memory_usage - std::min(released.get(), memory_usage) <= memory_limit;
 }
 
 std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()

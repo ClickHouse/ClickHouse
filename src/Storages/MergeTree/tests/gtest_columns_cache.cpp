@@ -4,8 +4,15 @@
 #include <optional>
 #include <thread>
 
+#include "config.h"
+
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -583,8 +590,10 @@ TEST(ColumnsCache, AutoResizeYieldsMemoryAndGrowsBack)
     EXPECT_TRUE(cache.autoResize(static_cast<Int64>(others + full_size), limit));
     EXPECT_EQ(cache.maxSizeInBytes(), full_size);
 
-    /// The usage of the rest grows past what the limit leaves: entries are evicted.
-    EXPECT_TRUE(cache.autoResize(static_cast<Int64>(limit - full_size / 2 + cache.sizeInBytes()), limit));
+    /// The usage of the rest grows past what the limit leaves: entries are evicted. Whether that covers
+    /// the excess is not checked here: the resize reports what is actually deallocated, and the weight of
+    /// an entry, which decides how many are evicted, estimates the memory of its objects.
+    cache.autoResize(static_cast<Int64>(limit - full_size / 2 + cache.sizeInBytes()), limit);
     EXPECT_LE(cache.sizeInBytes(), full_size / 2 + ColumnsCache::MAX_SHARDS * 16);
     EXPECT_LT(cache.count(), 100u);
     EXPECT_GT(cache.count(), 0u);
@@ -631,7 +640,86 @@ TEST(ColumnsCache, AutoResizeDoesNotCountEntriesStillHeldAsReleased)
     held.clear();
     EXPECT_FALSE(cache.autoResize(static_cast<Int64>(limit + shared_column_bytes / 2), limit));
     shared_column.reset();
-    EXPECT_TRUE(cache.autoResize(static_cast<Int64>(limit + shared_column_bytes / 2), limit));
+    const bool fits_after_release = cache.autoResize(static_cast<Int64>(limit + shared_column_bytes / 2), limit);
+#if USE_JEMALLOC
+    EXPECT_TRUE(fits_after_release);
+#else
+    EXPECT_FALSE(fits_after_release);
+#endif
+}
+
+TEST(ColumnsCache, AutoResizeCountsADictionarySharedByEntriesOnce)
+{
+    auto cache = makeCache();
+    /// Half of the limit is kept free of the cache, so that the resizes below give up every entry.
+    cache.setAutoResizeSettings(/*free_memory_ratio=*/ 0.5, /*history_window_ms=*/ 0);
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+    const size_t rows = 8 * ROWS_PER_MARK;
+
+    /// Fills the cache with two entries whose `LowCardinality` columns share one large dictionary, as
+    /// the entries of a part do when its granules need no additional keys. Returns the bytes of the dictionary.
+    const auto fill = [&]
+    {
+        auto column = DataTypeLowCardinality(std::make_shared<DataTypeString>()).createColumn();
+        for (size_t i = 0; i < 20000; ++i)
+            column->insert(fmt::format("a value of the dictionary that is not short, number {}", i));
+        ColumnPtr full = std::move(column);
+        const size_t dictionary_bytes = typeid_cast<const ColumnLowCardinality &>(*full).getDictionary().allocatedBytes();
+
+        for (size_t stripe = 0; stripe < 2; ++stripe)
+        {
+            auto entry = makeEntry(c, stripe, 0, 8);
+            entry->column = full->cut(stripe * rows, rows);
+            EXPECT_GT(cache.setMany({entry}, generation), 0u);
+        }
+        const auto first = getOne(cache, c, 0);
+        const auto second = getOne(cache, c, 1);
+        EXPECT_EQ(typeid_cast<const ColumnLowCardinality &>(*first->column).getDictionaryPtr(),
+            typeid_cast<const ColumnLowCardinality &>(*second->column).getDictionaryPtr());
+        return dictionary_bytes;
+    };
+
+    /// The weight of the cache has the dictionary twice, the memory only once: evicting both entries
+    /// must not cover an excess of one and a half dictionaries.
+    const size_t dictionary_bytes = fill();
+    ASSERT_GT(cache.sizeInBytes(), 2 * dictionary_bytes);
+    const size_t limit = 4 * cache.sizeInBytes();
+    EXPECT_FALSE(cache.autoResize(static_cast<Int64>(limit + dictionary_bytes * 3 / 2), limit));
+    EXPECT_EQ(cache.count(), 0u);
+
+    /// The dictionary is released with the last entry, which covers half of it.
+    cache.setConfiguredMaxSizeInBytes(1 << 24);
+    fill();
+    const bool fits = cache.autoResize(static_cast<Int64>(limit + dictionary_bytes / 2), limit);
+    EXPECT_EQ(cache.count(), 0u);
+#if USE_JEMALLOC
+    EXPECT_TRUE(fits);
+#else
+    EXPECT_FALSE(fits);
+#endif
+}
+
+TEST(ColumnsCache, AutoResizeDoesNotCountANullablePayloadStillHeldAsReleased)
+{
+    auto cache = makeCache();
+    cache.setAutoResizeSettings(/*free_memory_ratio=*/ 0.0, /*history_window_ms=*/ 0);
+    TestColumn c(UUIDHelpers::generateV4(), "part_1", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+
+    auto entry = makeEntry(c, 0, 0, 8);
+    entry->column = makeNullable(entry->column);
+    EXPECT_GT(cache.setMany({entry}, generation), 0u);
+    entry.reset();
+
+    /// A query keeps the payload of the cached `Nullable` column, as `assumeNotNull` does, but not the column itself.
+    ColumnPtr payload = typeid_cast<const ColumnNullable &>(*getOne(cache, c, 0)->column).getNestedColumnPtr();
+    const size_t payload_bytes = payload->allocatedBytes();
+
+    /// Evicting the entry releases only the null map and the column objects, not the payload.
+    const size_t limit = 4 * cache.sizeInBytes();
+    EXPECT_FALSE(cache.autoResize(static_cast<Int64>(limit + payload_bytes / 2), limit));
+    EXPECT_EQ(cache.count(), 0u);
 }
 
 TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
