@@ -205,6 +205,24 @@ all of them.
 
 Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 
+## group_fsync_before_insert_finish {#group_fsync_before_insert_finish}
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "New setting"}]}]}/>
+
+Takes effect with `fsync_after_insert`, if the table is stored on local disks.
+An `INSERT` writing many parts does not wait for the fsync after every part: the parts
+are committed right after they are written, and the files of all the parts are fsynced
+together before the `INSERT` finishes (the parts committed more than 30 seconds ago are
+fsynced earlier). In the meantime, the OS writes the data back in the background.
+The parts can become visible to queries before they are durable, but the `INSERT`
+is acknowledged only after that.
+
+If disabled, every part is fsynced right after it is written, before it is committed.
+
+The default value `auto` enables it only for non-replicated tables. For replicated tables,
+another replica can deduplicate an `INSERT` against a part that is committed but not yet
+fsynced on this replica, and acknowledge it before the data is durable.
+
 ## initialization_retry_period {#initialization_retry_period}
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
