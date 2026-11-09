@@ -1,6 +1,6 @@
 ---
 slug: /use-cases/observability/clickstack/performance_tuning
-title: 'ClickStack - performance tuning'
+title: 'Performance Tuning'
 sidebarTitle: 'Performance tuning'
 description: 'Performance Tuning for ClickStack - The ClickHouse Observability Stack'
 doc_type: 'guide'
@@ -19,6 +19,10 @@ import { Image } from "/snippets/components/Image.jsx";
 This guide focuses on the most common and effective performance optimizations for ClickStack, sufficient to optimize the majority of real-world observability workloads, typically up to tens of terabytes of data per day.
 
 The optimizations are presented in a deliberate order, starting with the simplest and highest impact techniques and progressing toward more advanced and specialized tuning. Early optimizations should be applied first and will often deliver substantial gains on their own. As data volumes grow and workloads become more demanding, the latter techniques become increasingly worthwhile to explore.
+
+<Tip>
+Spend more time investigating issues and less time operating your observability backend with [ClickHouse Observability](/clickstack/observability). [Sign up for ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-clickstack-performance-tuning-inline) to get started.
+</Tip>
 
 ## ClickHouse concepts {#clickhouse-concepts}
 

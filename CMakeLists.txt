@@ -405,7 +405,10 @@ endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-if (NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+if (NOT SANITIZE_COVERAGE AND (NOT WITH_COVERAGE OR FUZZER))
+    # Individual fuzzer targets intentionally link a minimal subset of ClickHouse. Keep
+    # section GC in coverage builds so unreachable code from an extracted object cannot
+    # retain references to unrelated server libraries.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
@@ -603,6 +606,9 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     # Link time optimization
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+    # Name each C++ module after its object file, so that units without external definitions are split for
+    # ThinLTO instead of being optimized in one serial regular LTO module. The name must be unique in a link.
+    string (APPEND CMAKE_CXX_COMPILE_OBJECT " -funique-source-file-names -funique-source-file-identifier=<OBJECT>")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
@@ -704,9 +710,12 @@ if (ARCH_AMD64 OR ARCH_AARCH64)
     # -fPIE only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
     # musl links with -static-pie instead (see cmake/linux/default_libs.cmake).
-    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    # The FreeBSD sysroot carries no PIC startup objects (Scrt1.o).
+    # Mach-O needs no startup objects for it, so only the linker is asked.
     if (OS_LINUX AND NOT USE_MUSL)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    elseif (OS_DARWIN)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-pie")
     endif()
 endif()
 
@@ -981,6 +990,12 @@ if (FUZZER)
                 get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
                 if (NOT target_compile_options MATCHES "-fno-sanitize=all")
                     target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link" "-fno-sanitize-coverage=pc-table")
+                    # Coverage-only fuzzer builds have no sanitizer runtime in their global
+                    # link flags. Link the no-main libFuzzer runtime into ordinary executables
+                    # so instrumented host tools resolve their SanitizerCoverage callbacks.
+                    if (WITH_COVERAGE AND NOT SANITIZE AND target_type STREQUAL "EXECUTABLE" AND NOT target MATCHES ".+_fuzzer")
+                        set_property(TARGET ${target} APPEND PROPERTY LINK_LIBRARIES ch_contrib::fuzzer_no_main)
+                    endif()
                 endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/ISimpleTransform.h>
 #include "config.h"
 
@@ -33,8 +35,8 @@ public:
     DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids);
 
     void update(const Chunk & chunk);
-    void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
-    void setSplitOffsets(std::vector<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
+    void addColumnSizesOnDisk(const UnorderedMapWithMemoryTracking<String, size_t> & sizes_by_column_name, const Block & sample_block);
+    void setSplitOffsets(VectorWithMemoryTracking<UInt64> split_offsets_) { split_offsets = std::move(split_offsets_); }
     void merge(const DataFileStatistics & other);
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
@@ -44,7 +46,7 @@ public:
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
     const std::vector<Int64> & getFieldIds() const { return field_ids; }
-    const std::vector<UInt64> & getSplitOffsets() const { return split_offsets; }
+    const VectorWithMemoryTracking<UInt64> & getSplitOffsets() const { return split_offsets; }
 private:
     static Range uniteRanges(const Range & left, const Range & right);
 
@@ -55,7 +57,7 @@ private:
     /// False if column is not `Float32`/`Float64`: then no `nan_value_counts` entry is written for it.
     std::vector<bool> can_count_nan;
     Ranges ranges;
-    std::vector<UInt64> split_offsets;
+    VectorWithMemoryTracking<UInt64> split_offsets;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;
