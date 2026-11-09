@@ -137,7 +137,6 @@ static bool isAllNullRange(const Range & range)
 
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
 {
-    /// Such a range holds no value, so it takes no part in the bounds.
     if (isAllNullRange(right))
         return left;
     if (isAllNullRange(left))
