@@ -215,8 +215,6 @@ This works because the `traceOrigins` configuration links browser spans to serve
 ### From trace to session {#trace-to-session}
 The correlation works in the other direction too. When viewing a trace in the **Search** view, click on it to open the trace detail, then select the **Session replay** tab to see exactly what the user was experiencing at the time of that trace. This is especially useful when investigating errors or slow requests — you can start from the backend issue and immediately see the user's perspective.
 
-<Image img="/images/clickstack/session-replay/observability-trace-to-session.gif" alt="Session replay trace view" size="lg"/>
-
 ## Try it out {#try-it-out}
 Follow the [session replay demo](/clickstack/observability/example-datasets/session-replay) to instrument an interactive application, send session data to your ClickHouse Observability service, and replay your interactions.
 
