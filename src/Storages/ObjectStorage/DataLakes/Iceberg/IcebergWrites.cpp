@@ -1323,7 +1323,7 @@ IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
     /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
-    if (!committed)
+    if (!committed && !commit_state_unknown)
         removeDataFilesAndManifests();
 }
 
@@ -1815,7 +1815,9 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (const Exception & e)
     {
-        if (!Iceberg::isCommitStateUnknown(e))
+        if (Iceberg::isCommitStateUnknown(e))
+            commit_state_unknown = true;
+        else
             cleanup(false);
         throw;
     }
