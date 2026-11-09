@@ -9,6 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -920,6 +921,24 @@ private:
         return results;
     }
 
+    /// Parks this thread's CPU lease while waiting: the loading may run in the same workload and need its CPU slot.
+    template <typename Pred>
+    void waitForLoading(std::unique_lock<std::mutex> & lock, Duration timeout, Pred & pred)
+    {
+        if (pred() || timeout == NO_WAIT)
+            return;
+
+        /// Parking can block until the scheduler processes the request, so not under `mutex`
+        lock.unlock();
+        CPULeaseParkGuard park_guard;
+        lock.lock();
+
+        if (timeout == WAIT)
+            event.wait(lock, pred);
+        else
+            event.wait_for(lock, timeout, pred);
+    }
+
     Info * loadImpl(const String & name, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
     {
         /// Detect circular dependencies: if this thread is already loading the requested object
@@ -948,11 +967,7 @@ private:
             return (info->state_id >= min_id);
         };
 
-        if (timeout == WAIT)
-            event.wait(lock, pred);
-        else
-            event.wait_for(lock, timeout, pred);
-
+        waitForLoading(lock, timeout, pred);
         return info;
     }
 
@@ -978,10 +993,7 @@ private:
             return all_ready;
         };
 
-        if (timeout == WAIT)
-            event.wait(lock, pred);
-        else
-            event.wait_for(lock, timeout, pred);
+        waitForLoading(lock, timeout, pred);
     }
 
     /// When state_id >= getMinIDToFinishLoading() the loading is considered as finished.
