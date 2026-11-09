@@ -55684,7 +55684,7 @@
     "source": "/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/products/cloud/features/ai-ml",
+    "destination": "/products/cloud/features/ai-ml/langfuse",
     "source": "/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55720,7 +55720,7 @@
     "source": "/ar/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/ar/products/cloud/features/ai-ml",
+    "destination": "/ar/products/cloud/features/ai-ml/langfuse",
     "source": "/ar/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55756,7 +55756,7 @@
     "source": "/es/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/es/products/cloud/features/ai-ml",
+    "destination": "/es/products/cloud/features/ai-ml/langfuse",
     "source": "/es/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55792,7 +55792,7 @@
     "source": "/fr/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/fr/products/cloud/features/ai-ml",
+    "destination": "/fr/products/cloud/features/ai-ml/langfuse",
     "source": "/fr/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55828,7 +55828,7 @@
     "source": "/ja/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/ja/products/cloud/features/ai-ml",
+    "destination": "/ja/products/cloud/features/ai-ml/langfuse",
     "source": "/ja/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55864,7 +55864,7 @@
     "source": "/ko/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/ko/products/cloud/features/ai-ml",
+    "destination": "/ko/products/cloud/features/ai-ml/langfuse",
     "source": "/ko/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55900,7 +55900,7 @@
     "source": "/pt-BR/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/pt-BR/products/cloud/features/ai-ml",
+    "destination": "/pt-BR/products/cloud/features/ai-ml/langfuse",
     "source": "/pt-BR/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55936,7 +55936,7 @@
     "source": "/ru/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/ru/products/cloud/features/ai-ml",
+    "destination": "/ru/products/cloud/features/ai-ml/langfuse",
     "source": "/ru/products/agentic-data-stack/components/langfuse"
   },
   {
@@ -55972,7 +55972,7 @@
     "source": "/zh/products/agentic-data-stack/components/mcp-server"
   },
   {
-    "destination": "/zh/products/cloud/features/ai-ml",
+    "destination": "/zh/products/cloud/features/ai-ml/langfuse",
     "source": "/zh/products/agentic-data-stack/components/langfuse"
   },
   {
