@@ -4456,6 +4456,10 @@ div:has(> #ch-product-availability) > #ch-page-ask-row {
     line-height: 20px !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span {
+    color: #111827 !important;
+}
+.dark [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]) > div > span {
     color: #ffffff !important;
 }
 [role="menu"]:has(.nav-dropdown-item[href="https://docs.runreveal.com/"]) > .nav-dropdown-item:nth-child(2) > div > span,
