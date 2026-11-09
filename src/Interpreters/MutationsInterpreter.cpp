@@ -1418,6 +1418,14 @@ void MutationsInterpreter::prepare(bool dry_run)
                     continue;
                 }
 
+                /// The same for a column without statistics: a mutation queued by an older version for a column
+                /// with explicitly declared statistics, which are ignored now, must not block the queue.
+                if (!dry_run && columns_desc.has(stat_column_name) && columns_desc.get(stat_column_name).statistics.empty())
+                {
+                    LOG_WARNING(logger, "Column {} has no statistics, skipping statistics materialization", stat_column_name);
+                    continue;
+                }
+
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
 

@@ -59,6 +59,10 @@ public:
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
 
+        /// The obsolete `ADD/MODIFY STATISTICS` are only parsed, to replay the entries stored by older versions,
+        /// see `InterpreterAlterQuery`.
+        ADD_STATISTICS,
+        MODIFY_STATISTICS,
         DROP_STATISTICS, /// `CLEAR STATISTICS`, also parsed from the obsolete `DROP STATISTICS`
         MATERIALIZE_STATISTICS,
 

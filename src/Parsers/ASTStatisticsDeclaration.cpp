@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -21,6 +22,8 @@ ASTPtr ASTStatisticsDeclaration::clone() const
     auto res = make_intrusive<ASTStatisticsDeclaration>();
 
     res->set(res->columns, columns->clone());
+    if (types)
+        res->set(res->types, types->clone());
 
     return res;
 }
@@ -41,6 +44,7 @@ void ASTStatisticsDeclaration::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StatisticsDeclaration");
     w.writeChild("columns", columns);
+    w.writeChild("types", types);
 }
 
 void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
@@ -56,11 +60,25 @@ void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
         if (!column || !column->as<ASTIdentifier>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "`StatisticsDeclaration` 'columns' must contain only identifiers during AST JSON deserialization");
     set(columns, child);
+
+    child = r.readChildOfType<ASTExpressionList>("types");
+    if (child)
+    {
+        for (const auto & type : child->children)
+            if (!type || !type->as<ASTFunction>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`StatisticsDeclaration` 'types' must contain only statistic-type functions during AST JSON deserialization");
+        set(types, child);
+    }
 }
 
 void ASTStatisticsDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     columns->format(ostr, s, state, frame);
+    if (types)
+    {
+        ostr << " TYPE ";
+        types->format(ostr, s, state, frame);
+    }
 }
 
 }

@@ -223,6 +223,33 @@ bool ParserStatisticsDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     return true;
 }
 
+bool ParserObsoleteStatisticsDeclarationWithTypes::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_type(Keyword::TYPE);
+
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList types_p(std::make_unique<ParserExpressionWithOptionalArguments>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+
+    ASTPtr columns;
+    ASTPtr types;
+
+    if (!columns_p.parse(pos, columns, expected))
+        return false;
+
+    if (!s_type.ignore(pos, expected))
+        return false;
+
+    if (!types_p.parse(pos, types, expected))
+        return false;
+
+    auto stat = make_intrusive<ASTStatisticsDeclaration>();
+    stat->set(stat->columns, columns);
+    stat->set(stat->types, types);
+    node = stat;
+
+    return true;
+}
+
 bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_check(Keyword::CHECK);

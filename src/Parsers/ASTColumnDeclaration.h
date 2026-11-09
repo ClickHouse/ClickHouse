@@ -100,6 +100,7 @@ public:
     void setComment(ASTPtr && node) { setChild(COMMENT, std::move(node)); }
     void setCodec(ASTPtr && node) { setChild(CODEC, std::move(node)); }
     void setStatisticsDesc(ASTPtr && node) { setChild(STATS, std::move(node)); }
+    void resetStatisticsDesc() { resetChild(STATS); }
     void setTTL(ASTPtr && node) { setChild(TTL, std::move(node)); }
     void setCollation(ASTPtr && node) { setChild(COLLATION, std::move(node)); }
     void setSettings(ASTPtr && node) { setChild(SETTINGS, std::move(node)); }

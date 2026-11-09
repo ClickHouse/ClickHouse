@@ -8,11 +8,14 @@ namespace DB
 {
 
 /** The list of columns in `CLEAR STATISTICS` and `MATERIALIZE STATISTICS`.
+  * `types` is set only in the obsolete `ADD/MODIFY STATISTICS columns TYPE types`, which is parsed only to replay
+  * the entries stored by older versions.
   */
 class ASTStatisticsDeclaration : public IAST
 {
 public:
     IAST * columns{};
+    IAST * types{};
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Stat"; }

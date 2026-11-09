@@ -493,7 +493,17 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         case ASTAlterCommand::MATERIALIZE_INDEX:
             require(index, "index");
             break;
+        case ASTAlterCommand::ADD_STATISTICS:
+        case ASTAlterCommand::MODIFY_STATISTICS:
+            require(statistics_decl, "statistics_decl");
+            if (!statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ADD/MODIFY STATISTICS requires a TYPE list ('statistics_decl' must have 'types') during AST JSON deserialization");
+            break;
         case ASTAlterCommand::MATERIALIZE_STATISTICS:
+            if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
             /// `MATERIALIZE STATISTICS ALL` is parser-produced with a null declaration (`writeJSON` omits
             /// it and `formatImpl` emits `ALL`); the column-list form carries one.
             /// `IF EXISTS` and `IN PARTITION` are parsed only in the column-list branch, so the `ALL` form
@@ -506,6 +516,9 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                     "MATERIALIZE STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::DROP_STATISTICS:
+            if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "CLEAR STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
             /// `CLEAR STATISTICS ALL` is parser-produced with a null declaration; the
             /// `CLEAR STATISTICS <cols>` form always carries a column-list declaration.
             /// `IF EXISTS` and `IN PARTITION` are parsed only where a column-list declaration is also
@@ -811,6 +824,16 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
+    }
+    else if (type == ASTAlterCommand::ADD_STATISTICS)
+    {
+        ostr << "ADD STATISTICS " << (if_not_exists ? "IF NOT EXISTS " : "");
+        statistics_decl->format(ostr, settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_STATISTICS)
+    {
+        ostr << "MODIFY STATISTICS ";
+        statistics_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_STATISTICS)
     {

@@ -382,6 +382,47 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
+/// Statistics can no longer be declared explicitly: they are collected for all columns according to the
+/// `auto_statistics_types` MergeTree setting. New submissions of `ADD/MODIFY STATISTICS` and of a `STATISTICS`
+/// clause in `ADD/MODIFY COLUMN` are rejected. Such entries stored by older versions (in the DDL log of a
+/// `Replicated` database or in the distributed DDL queue) are still replayed: the obsolete declarations are
+/// removed and the rest of the query is executed, so that the replay of the log is not blocked.
+/// Returns false if no commands remain.
+bool removeObsoleteStatisticsDeclarations(ASTAlterQuery & alter, bool is_ddl_replay)
+{
+    auto & commands = alter.command_list->children;
+    for (auto it = commands.begin(); it != commands.end();)
+    {
+        auto & command = (*it)->as<ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::ADD_STATISTICS || command.type == ASTAlterCommand::MODIFY_STATISTICS)
+        {
+            if (!is_ddl_replay)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "ALTER TABLE ... {} STATISTICS is not supported. "
+                    "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
+                    command.type == ASTAlterCommand::ADD_STATISTICS ? "ADD" : "MODIFY");
+            it = commands.erase(it);
+            continue;
+        }
+
+        if (command.col_decl)
+        {
+            auto & column_declaration = command.col_decl->as<ASTColumnDeclaration &>();
+            if (column_declaration.getStatisticsDesc())
+            {
+                if (!is_ddl_replay)
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Explicit declaration of statistics for column {} is not supported. "
+                        "Statistics are collected automatically for all columns according to the `auto_statistics_types` MergeTree setting",
+                        backQuoteIfNeed(column_declaration.name));
+                column_declaration.resetStatisticsDesc();
+            }
+        }
+        ++it;
+    }
+    return !commands.empty();
+}
+
 /// `allow_statistics` gates the statistics DDL, so only the submitting session's value is
 /// meaningful for it, and the gate must be applied exactly once, here at submission time.
 ///
@@ -539,6 +580,9 @@ BlockIO InterpreterAlterQuery::execute()
 
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
+    if (!removeObsoleteStatisticsDeclarations(query_ptr->as<ASTAlterQuery &>(), getContext()->isDDLOrOnClusterInternal()))
+        return {};
+
     ASTSelectWithUnionQuery * modify_query = nullptr;
 
     for (auto & child : alter.command_list->children)
@@ -967,6 +1011,16 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
         {
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
+            break;
+        }
+        case ASTAlterCommand::ADD_STATISTICS:
+        {
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTICS, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_STATISTICS:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_STATISTICS, database, table);
             break;
         }
         case ASTAlterCommand::DROP_STATISTICS:

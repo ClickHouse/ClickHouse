@@ -533,6 +533,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// `columns TYPE types` in the obsolete `ALTER TABLE ... ADD/MODIFY STATISTICS`. Such statements are only parsed,
+/// so that the entries stored by older versions (e.g. in the DDL log of a `Replicated` database) can be replayed.
+class ParserObsoleteStatisticsDeclarationWithTypes : public IParserBase
+{
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 class ParserConstraintDeclaration : public IParserBase
 {

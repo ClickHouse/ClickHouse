@@ -57,7 +57,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_clear_index(Keyword::CLEAR_INDEX);
     ParserKeyword s_materialize_index(Keyword::MATERIALIZE_INDEX);
 
+    ParserKeyword s_add_statistics(Keyword::ADD_STATISTICS);
     ParserKeyword s_drop_statistics(Keyword::DROP_STATISTICS);
+    ParserKeyword s_modify_statistics(Keyword::MODIFY_STATISTICS);
     ParserKeyword s_clear_statistics(Keyword::CLEAR_STATISTICS);
     ParserKeyword s_materialize_statistics(Keyword::MATERIALIZE_STATISTICS);
 
@@ -139,6 +141,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
     ParserIndexDeclaration parser_idx_decl;
     ParserStatisticsDeclaration parser_stat_decl;
+    ParserObsoleteStatisticsDeclarationWithTypes parser_obsolete_stat_decl_with_types;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(/* require_type = */ false, /* allow_null_modifiers = */ true, /* check_keywords_after_name = */ true);
@@ -390,6 +393,25 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
+            }
+            /// The obsolete `ADD/MODIFY STATISTICS` are parsed only to replay the entries stored by older versions
+            /// (e.g. in the DDL log of a `Replicated` database); `InterpreterAlterQuery` rejects new submissions.
+            else if (s_add_statistics.ignore(pos, expected))
+            {
+                if (s_if_not_exists.ignore(pos, expected))
+                    command->if_not_exists = true;
+
+                if (!parser_obsolete_stat_decl_with_types.parse(pos, command_statistics_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::ADD_STATISTICS;
+            }
+            else if (s_modify_statistics.ignore(pos, expected))
+            {
+                if (!parser_obsolete_stat_decl_with_types.parse(pos, command_statistics_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_STATISTICS;
             }
             /// `DROP STATISTICS` is an obsolete synonym of `CLEAR STATISTICS`, kept because older versions
             /// stored it in the mutation entries: statistics are no longer declared in the table metadata.
