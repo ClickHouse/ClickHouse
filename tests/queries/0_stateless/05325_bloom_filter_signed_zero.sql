@@ -19,7 +19,7 @@ CREATE TABLE t_bf_signed_zero
     INDEX idx_m mapKeys(m) TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1,
-    -- A bucketed `Map` does not find a `-0.0` key by `m[0.0]` yet, see https://github.com/ClickHouse/ClickHouse/pull/125713
+    -- `t_bf_signed_zero_bucketed` covers the `m[k]` lookups of a bucketed `Map`.
     map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 INSERT INTO t_bf_signed_zero VALUES (1, -0.0, -0.0, [-0.0], map(-0.0, 'x')), (2, 0.5, 0.5, [0.5], map(0.5, 'x')), (3, 0.0, 0.0, [0.0], map(0.0, 'x'));
@@ -43,6 +43,21 @@ SELECT 'f = 0.5', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) F
 SET optimize_functions_to_subcolumns = DEFAULT;
 
 DROP TABLE t_bf_signed_zero;
+
+-- A bucketed `Map` takes `m[k] = v` and `m[k] IN (...)` to its `mapKeys` index; on a `basic` one, `m[0.0]` with a
+-- `Float64` key is refused.
+DROP TABLE IF EXISTS t_bf_signed_zero_bucketed;
+CREATE TABLE t_bf_signed_zero_bucketed (id UInt64, m Map(Float64, String), INDEX idx_m mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
+INSERT INTO t_bf_signed_zero_bucketed VALUES (1, map(-0.0, 'x')), (2, map(0.5, 'x')), (3, map(0.0, 'x'));
+
+SET optimize_functions_to_subcolumns = 1;
+SELECT 'm[0.0] = \'x\'', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero_bucketed WHERE m[0.0] = 'x' SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero_bucketed WHERE m[0.0] = 'x';
+SELECT 'm[0.0] IN (\'x\')', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero_bucketed WHERE m[0.0] IN ('x') SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero_bucketed WHERE m[0.0] IN ('x');
+SET optimize_functions_to_subcolumns = DEFAULT;
+
+DROP TABLE t_bf_signed_zero_bucketed;
 
 -- A `mapValues` index: `mapContainsValue` looks up both zeros, `IN` on the value compares bits.
 DROP TABLE IF EXISTS t_bf_signed_zero_map_values;
