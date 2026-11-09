@@ -1569,7 +1569,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 PartialDisjunctionResult partial_eval_results;
                 if (rpn_template_for_part)
-                    partial_eval_results.resize(
+                    partial_eval_results.bits.resize(
                         ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
                 /// in a disjunction the indexes that wrote a false partial result exclude granules together in the merge below
@@ -1603,7 +1603,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     if (!is_index_supported_on_data_read(index_and_condition.index))
                     {
-                        const size_t partial_true_before = rpn_template_for_part ? partial_eval_results.count() : 0;
+                        const size_t bits_changed_to_false_before = partial_eval_results.bits_changed_to_false;
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition_template->generateForPart(ranges.data_part),
@@ -1621,7 +1621,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                         if (ranges.getMarksCount() < total_granules)
                             skip_index_used[index_idx] = true;
-                        else if (rpn_template_for_part && partial_eval_results.count() < partial_true_before)
+                        else if (partial_eval_results.bits_changed_to_false > bits_changed_to_false_before)
                             indexes_without_own_drops.push_back(index_idx);
                     }
 
@@ -3375,15 +3375,18 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     return;
 
                 const auto bit_index = (range_begin * rpn_size) + position;
-                if (bit_index >= partial_disjunction_result.size())
+                auto & bits = partial_disjunction_result.bits;
+                if (bit_index >= bits.size())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Partial disjunction result bit index {} is out of range, bitset size: {}, mark: {}, position: {}",
-                        bit_index, partial_disjunction_result.size(), range_begin, position);
+                        bit_index, bits.size(), range_begin, position);
                 }
 
-                partial_disjunction_result[bit_index] = element_result;
+                if (bits[bit_index] && !element_result)
+                    ++partial_disjunction_result.bits_changed_to_false;
+                bits[bit_index] = element_result;
             };
         }
         return nullptr;
@@ -3771,10 +3774,10 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
 
     /// One bit per element of the RPN template per mark, see `filterPartsByPrimaryKeyAndSkipIndexes`.
     const size_t marks_count = part_info.getIndexGranularity().getMarksCountWithoutFinal();
-    if (partial_eval_results.size() != marks_count * rpn.size())
+    if (partial_eval_results.bits.size() != marks_count * rpn.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Partial disjunction results have {} bits, expected {} marks * {} RPN elements, RPN = {}",
-            partial_eval_results.size(), marks_count, rpn.size(), rpn_template_for_eval_result_string);
+            partial_eval_results.bits.size(), marks_count, rpn.size(), rpn_template_for_eval_result_string);
 
     std::vector<bool> rpn_stack;
     for (auto range : ranges)
@@ -3787,7 +3790,7 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
             {
                 if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
                 {
-                    rpn_stack.emplace_back(partial_eval_results[(range_begin * rpn.size()) + position]);
+                    rpn_stack.emplace_back(partial_eval_results.bits[(range_begin * rpn.size()) + position]);
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
                 {

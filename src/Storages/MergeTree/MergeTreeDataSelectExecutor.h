@@ -29,7 +29,13 @@ using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 class MergeTreeDataSelectExecutor
 {
 public:
-    using PartialDisjunctionResult = boost::dynamic_bitset<>;
+    /// One bit per element of the RPN template per mark, initially true, see `filterPartsByPrimaryKeyAndSkipIndexes`.
+    struct PartialDisjunctionResult
+    {
+        boost::dynamic_bitset<> bits;
+        /// the number of bits changed from true to false, an index that changes a bit takes part in the merge
+        size_t bits_changed_to_false = 0;
+    };
 
     explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection_ = nullptr);
 

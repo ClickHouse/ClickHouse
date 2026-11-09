@@ -112,7 +112,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (rpn_template_for_part)
-        partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
+        partial_eval_results.bits.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
     /// in a disjunction the indexes that wrote a false partial result exclude granules together in the merge below
     Names indexes_without_own_drops;
@@ -133,7 +133,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             continue;
         }
 
-        const size_t partial_true_before = rpn_template_for_part ? partial_eval_results.count() : 0;
+        const size_t bits_changed_to_false_before = partial_eval_results.bits_changed_to_false;
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
@@ -152,7 +152,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         ranges = std::move(filtered_ranges);
         if (ranges.getNumberOfMarks() < total_granules)
             add_used_index(index_and_condition.index->index.name);
-        else if (rpn_template_for_part && partial_eval_results.count() < partial_true_before)
+        else if (partial_eval_results.bits_changed_to_false > bits_changed_to_false_before)
             indexes_without_own_drops.push_back(index_and_condition.index->index.name);
 
         for (auto & [name, granule] : filtered_hints.index_granules)
