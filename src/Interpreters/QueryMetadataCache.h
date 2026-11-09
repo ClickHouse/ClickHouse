@@ -22,6 +22,8 @@ public:
 
     std::pair<StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
 
+    void clear() const;
+
 private:
     mutable StorageMetadataCache storage_metadata_cache;
     mutable std::mutex storage_metadata_cache_mutex;

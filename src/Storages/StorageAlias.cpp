@@ -8,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/Pipe.h>
@@ -375,6 +376,9 @@ void StorageAlias::alter(
     }
 
     auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    /// The query cached the target's metadata before this lock, a concurrent ALTER of the target may have changed it since.
+    if (auto metadata_cache = local_context->getQueryMetadataCache())
+        metadata_cache->clear();
     target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
 }
 
