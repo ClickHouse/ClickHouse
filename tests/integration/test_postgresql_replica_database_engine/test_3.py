@@ -4580,6 +4580,26 @@ def test_whole_schema_with_partitioned_table_resumes_after_restart(started_clust
     assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{ordinary}"))
     assert 20 == int(instance.query(f"SELECT count() FROM {mat_db}.{partition}"))
 
+    # With `publish_via_partition_root = true`, an update of the leaf partition is emitted with the relation ID of
+    # the parent: it would be applied to the parent's nested table while the leaf replica keeps the old row.
+    publication = get_single_publication(cursor)
+    instance.stop_clickhouse()
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" SET (publish_via_partition_root = true)'
+    )
+    cursor.execute(f"UPDATE {partition} SET value = value + 1000 WHERE key < 10")
+    instance.start_clickhouse()
+
+    assert_logs_contain_with_retry(
+        instance,
+        "publishes changes of partitions via the partition root",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert_count_stays(
+        f"SELECT countIf(value >= 1000) FROM {mat_db}.{partition}", 0
+    )
+
     pg_manager.drop_materialized_db(mat_db)
 
 

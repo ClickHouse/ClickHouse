@@ -2304,6 +2304,19 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
     if (flags[0][1].as<bool>())
         return fmt::format("publication {} publishes all tables (ClickHouse creates it with a list of tables)", name);
 
+    /// `publish_via_partition_root` exists since PostgreSQL 13. With it, changes of a leaf partition are emitted with
+    /// the relation ID of the partitioned root, so the consumer would apply them to the root's nested table, while
+    /// the nested table of the leaf silently stops receiving changes.
+    if (tx.conn().server_version() >= 130000)
+    {
+        pqxx::result via_root{tx.exec(fmt::format(
+            "SELECT pubviaroot FROM pg_publication WHERE pubname = {}", quoted_name))};
+        if (!via_root.empty() && via_root[0][0].as<bool>())
+            return fmt::format(
+                "publication {} publishes changes of partitions via the partition root (ClickHouse creates it with "
+                "the default `publish_via_partition_root = false`)", name);
+    }
+
     /// Row filters, column lists and schema-level membership exist since PostgreSQL 15. Schema-level membership
     /// extends the publication with every table created in that schema later.
     if (tx.conn().server_version() < 150000)
