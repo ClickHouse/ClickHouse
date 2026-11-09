@@ -11,6 +11,7 @@ from ci.praktika.utils import Shell
 
 class FuzzerLogParser:
     UNKNOWN_ERROR = "Unknown error"
+    INCOMPLETE_INVENTORY = "Incomplete failure inventory"
     # Frames of `qualified_stack`: the STID keeps 5 (`get_stack_trace_id`).
     QUALIFIED_STACK_MAX_FRAMES = 16
     # Exception messages carry the trailing ", Stack trace (when copying this message,
@@ -869,6 +870,32 @@ class FuzzerLogParser:
             and not FuzzerLogParser.SANITIZER_OOM_RE.search(line),
         )
         return max(crashes, sanitizer_reports)
+
+    @staticmethod
+    def incomplete_inventory(processes):
+        """The failure that keeps a run red when a process logged more failure reports than were
+        named: the parser names one report per log, and the AI triage may pass the run on a known
+        issue of a named one. `processes` holds `(label, err_logs, stderr_log, named)`. Returns
+        `(name, info)`, or None when every report was named."""
+        unnamed = []
+        for label, err_logs, stderr_log, named in processes:
+            count = FuzzerLogParser.count_failure_reports(err_logs, stderr_log)
+            if count > named:
+                unnamed.append(f"{label} logged {count} reports, {named} named")
+        if not unnamed:
+            return None
+        return (
+            FuzzerLogParser.INCOMPLETE_INVENTORY,
+            "Not every failure report of the run was named, so no known issue can pass it: "
+            + "; ".join(unnamed)
+            + ". Check the logs of those processes.",
+        )
+
+    @staticmethod
+    def named_reports(infos) -> int:
+        """How many distinct reports the failures with these `info`s name: only a report has a
+        stack, not a failure an oracle or a harness names."""
+        return len({s for info in infos if (s := FuzzerLogParser.qualified_stack(info))})
 
     @staticmethod
     def qualified_stack(info):

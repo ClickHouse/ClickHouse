@@ -341,12 +341,6 @@ def _keeper_failures(workspace_path: Path, fuzzer_out: Path) -> dict[int, Result
     return failures
 
 
-def _report_count(err_log: Path, stderr_log: Path) -> int:
-    return FuzzerLogParser.count_failure_reports(
-        [*_rotated_logs(err_log), err_log], stderr_log
-    )
-
-
 def _dolor_failure_records(dolor_log: Path) -> list[str]:
     """The ERROR records of `dolor.log`, each with its continuation lines."""
     records: list[str] = []
@@ -457,30 +451,26 @@ def _all_failures(
     if not distinct:
         return []
 
-    # Only a report has a stack, not a failure `dolor.py` or a BuzzHouse oracle names.
-    named_by_server = len(
-        {s for f in failures if f and (s := FuzzerLogParser.qualified_stack(f.info))}
-    ) + (rotated_failure is not None)
-    unnamed = []
-    count = _report_count(workspace_path / "server.err.log", stderr_log)
-    if count > named_by_server:
-        unnamed.append(f"the server logged {count} reports, {named_by_server} named")
+    # A `dolor.py` or BuzzHouse oracle failure has no stack, so it names no report.
+    server_err_log = workspace_path / "server.err.log"
+    processes = [
+        (
+            "the server",
+            [*_rotated_logs(server_err_log), server_err_log],
+            stderr_log,
+            FuzzerLogParser.named_reports(f.info for f in failures if f)
+            + (rotated_failure is not None),
+        )
+    ]
     for i in KEEPER_INDEXES:
         _, err_log, keeper_stderr = get_keeper_workspace_logs(workspace_path, i)
-        named = int(i in keeper_failures)
-        if (count := _report_count(err_log, keeper_stderr)) > named:
-            unnamed.append(f"keeper{i} logged {count} reports, {named} named")
-    result = list(distinct.values())
-    if unnamed:
-        result.append(
-            Result(
-                name="Incomplete failure inventory",
-                info="Not every failure report of the run was named, so no known issue can pass it: "
-                + "; ".join(unnamed)
-                + ". Check the server and keeper logs.",
-                status=Result.Status.FAIL,
-            )
+        processes.append(
+            (f"keeper{i}", [*_rotated_logs(err_log), err_log], keeper_stderr, int(i in keeper_failures))
         )
+    result = list(distinct.values())
+    if inventory := FuzzerLogParser.incomplete_inventory(processes):
+        name, info = inventory
+        result.append(Result(name=name, info=info, status=Result.Status.FAIL))
     return result
 
 

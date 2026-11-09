@@ -526,9 +526,15 @@ def analyze_job_logs(
 
 
 def triage_failure(
-    result: Result, job_kind: str, paths: list[Path], repro_hint: str
+    result: Result,
+    job_kind: str,
+    paths: list[Path],
+    repro_hint: str,
+    report_logs: tuple[list[Path], Path] | None = None,
 ) -> None:
-    """Let the AI triage a failed `result` before it is reported, see `ai_fuzz_triage.py`."""
+    """Let the AI triage a failed `result` before it is reported, see `ai_fuzz_triage.py`.
+    `report_logs` are the server logs and the stderr log whose failure reports `result` names,
+    when its caller has not checked that it names them all."""
     if not result.is_failure():
         return
     from ci.jobs.scripts.ai_fuzz_triage import triage_and_apply
@@ -536,6 +542,20 @@ def triage_failure(
     failures = [(r.name, r.info) for r in result.results if not r.is_ok()] or [
         (f"{job_kind} failure", result.info)
     ]
+    if report_logs is not None:
+        err_logs, stderr_log = report_logs
+        inventory = FuzzerLogParser.incomplete_inventory(
+            [
+                (
+                    "the server and the client",
+                    err_logs,
+                    stderr_log,
+                    FuzzerLogParser.named_reports(info for _, info in failures),
+                )
+            ]
+        )
+        if inventory:
+            failures.append(inventory)
     triage_and_apply(
         result,
         job_kind=job_kind,
@@ -760,6 +780,9 @@ def run_fuzz_job(check_name: str):
             "with the fuzzed AST dump and the exception. Earlier steps ran "
             "against the same server, so a repro may also need tables from "
             "`fuzzer.log` context above the failing query.",
+            # The server and the client write their sanitizer reports to `stderr.log`, and the
+            # parser names the first one only.
+            report_logs=([server_log], stderr_log),
         )
 
     result.complete_job()

@@ -362,21 +362,12 @@ def select_replica_failures(
     )
     if omitted is not None:
         omitted.extend(r for r in generic_fatal_results if r not in selected)
-        unnamed = []
-        for replica_name, (server_logs, stderr_log) in replica_logs.items():
-            count = FuzzerLogParser.count_failure_reports(server_logs, stderr_log)
-            named = len(named_by_replica[replica_name])
-            if count > named:
-                unnamed.append(f"{replica_name} logged {count} reports, {named} named")
-        if unnamed:
-            omitted.append(
-                (
-                    "Incomplete failure inventory",
-                    "Not every failure report of the run was named, so no known issue "
-                    "can pass it: " + "; ".join(unnamed) + ". Check the server logs.",
-                    [],
-                )
-            )
+        inventory = FuzzerLogParser.incomplete_inventory(
+            (name, server_logs, stderr_log, len(named_by_replica[name]))
+            for name, (server_logs, stderr_log) in replica_logs.items()
+        )
+        if inventory:
+            omitted.append((*inventory, []))
     return selected
 
 
