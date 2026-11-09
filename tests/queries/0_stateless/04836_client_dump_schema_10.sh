@@ -50,6 +50,13 @@ round_trip values_rows "
     CREATE TABLE d.dst (s String) ENGINE = MergeTree ORDER BY s;
     CREATE MATERIALIZED VIEW d.mv TO d.dst AS SELECT s FROM d.src WHERE s IN (SELECT s FROM values('s String', 'x LowCardinality(UInt64)'));"
 
+# A computed loopback address still reads the local table, so the table is dumped before the proxy that reads it.
+round_trip computed_remote_address "
+    CREATE DATABASE d;
+    CREATE TABLE d.zzz_src (x UInt64) ENGINE = Memory;
+    CREATE TABLE d.aaa_proxy (x UInt64)
+    ENGINE = Remote('127.0.0.1', view(SELECT x FROM remote(concat('127.', '0.0.1'), 'd', 'zzz_src')));"
+
 # A dump that cannot be written must not report success.
 if $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d < /dev/null >&- 2>/dev/null; then
     echo "closed stdout: success"
