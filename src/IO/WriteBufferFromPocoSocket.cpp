@@ -81,11 +81,11 @@ size_t WriteBufferFromPocoSocket::waitBeforeSend(size_t size)
 {
     constexpr int min_size = 4096;
 
-    const Poco::Timespan timeout = waited_in_vain ? Poco::Timespan(0) : socket.getSendTimeout();
-    waited_in_vain = !socket.impl()->poll(timeout, Poco::Net::Socket::SELECT_WRITE);
+    const Poco::Timespan timeout = wait_failed ? Poco::Timespan(0) : socket.getSendTimeout();
+    wait_failed = !socket.impl()->poll(timeout, Poco::Net::Socket::SELECT_WRITE);
     /// It may fit nevertheless (a small write into the last third of the buffer), and failing here would break such writes.
     /// So write as without the wait. And do not delay the next writes as well.
-    if (waited_in_vain || size <= min_size)
+    if (wait_failed || size <= min_size)
         return size;
 
     /// On Linux, writable usually means that at least a third of the buffer is free. Stay well below that, because the

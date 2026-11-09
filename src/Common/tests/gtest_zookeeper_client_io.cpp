@@ -86,7 +86,7 @@ private:
 
         receive(receiveSize());
         send(toWire(Coordination::SERVER_HANDSHAKE_LENGTH) + toWire(Coordination::ZOOKEEPER_PROTOCOL_VERSION) + toWire(TIMEOUT_MS)
-            + toWire(int64_t{1}) + toWire(int32_t{Coordination::PASSWORD_LENGTH}) + std::string(Coordination::PASSWORD_LENGTH, '\0'));
+            + toWire(Poco::Int64{1}) + toWire(int32_t{Coordination::PASSWORD_LENGTH}) + std::string(Coordination::PASSWORD_LENGTH, '\0'));
 
         while (true)
         {
@@ -106,7 +106,7 @@ private:
             }
             else if (op == Coordination::OpNum::Get)
                 error = Coordination::Error::ZNONODE;
-            send(toWire(static_cast<int32_t>(16 + body.size())) + toWire(xid) + toWire(int64_t{1})
+            send(toWire(static_cast<int32_t>(16 + body.size())) + toWire(xid) + toWire(Poco::Int64{1})
                 + toWire(static_cast<int32_t>(error)) + body);
         }
     }
