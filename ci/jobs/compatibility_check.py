@@ -87,6 +87,17 @@ def process_pie_check():
     return ok
 
 
+def process_runpath_check():
+    # Only system libraries are needed, so any library search path points into the build tree.
+    dynamic = Shell.get_output(
+        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
+    )
+    paths = re.findall(r"^.*\((?:RPATH|RUNPATH)\).*$", dynamic, re.MULTILINE)
+    for path in paths:
+        print(f"FAILED: [{path.strip()}]")
+    return not paths
+
+
 def parse_args():
     parser = argparse.ArgumentParser("Check compatibility with old distributions")
     parser.add_argument("--check-name", required=False)
@@ -135,12 +146,19 @@ def main():
         )
     )
 
+    test_results.append(
+        Result.from_commands_run(
+            name="no RPATH or RUNPATH",
+            command=process_runpath_check,
+        )
+    )
+
     if check_old_distributions:
         test_results.append(
             Result.from_commands_run(
                 name="ubuntu12",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --tmp --query 'select 1'",
                 ],
                 with_info=True,
             )
@@ -158,7 +176,7 @@ def main():
             Result.from_commands_run(
                 name="centos5",
                 command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --query 'select 1'"
+                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --tmp --query 'select 1'"
                 ],
                 with_info=True,
             )

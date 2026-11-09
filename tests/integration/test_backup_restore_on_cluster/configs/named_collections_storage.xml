@@ -1,0 +1,8 @@
+<clickhouse>
+    <named_collections_storage>
+        <type>zookeeper_encrypted</type>
+        <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+        <path>/named_collections_path/</path>
+        <update_timeout_ms>1000</update_timeout_ms>
+    </named_collections_storage>
+</clickhouse>
