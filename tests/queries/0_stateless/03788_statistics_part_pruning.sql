@@ -1,4 +1,5 @@
 -- This test validates Statistics-based part pruning functionality.
+SET min_marks_per_part_to_load_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning;
@@ -17,7 +18,6 @@ ORDER BY id
 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic';
 
 SET use_statistics_for_part_pruning = 1;
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET materialize_statistics_on_insert = 1;
@@ -38,8 +38,7 @@ INSERT INTO test_stats_pruning SELECT '2025-01-14', number + 300, number + 3000,
 -- Expected: Only Part 1 matches (id range [0,99], value [0,99], version [0,99])
 -- Statistics pruning should reduce parts from 4 to 1
 SELECT '-- AND on different columns all have statistics, should prune parts';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id >= 50 AND NOT(value > 500) AND version IN (50, 1050)) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id >= 50 AND NOT(value > 500) AND version IN (50, 1050)) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id >= 50 AND NOT(value > 500) AND version IN (50, 1050) SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning WHERE id >= 50 AND NOT(value > 500) AND version IN (50, 1050);
 
 -- =============================================================================
@@ -49,8 +48,7 @@ SELECT count() FROM test_stats_pruning WHERE id >= 50 AND NOT(value > 500) AND v
 -- Expected: Parts 1 and 4 match (Part 1: id<50, Part 4: version>3050)
 -- Statistics pruning should reduce parts from 4 to 2
 SELECT '-- OR on different columns all have statistics, should prune parts';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id < 50 OR version > 3050) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id < 50 OR version > 3050) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id < 50 OR version > 3050 SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning WHERE id < 50 OR version > 3050;
 
 -- =============================================================================
@@ -60,8 +58,7 @@ SELECT count() FROM test_stats_pruning WHERE id < 50 OR version > 3050;
 -- Expected: Only Part 1 matches (value=50 exists in Part 1)
 -- Statistics on 'value' can still prune parts even though 'str' has no statistics
 SELECT '-- AND with column without statistics (str (String) has only basic, which does not drive range pruning), should prune parts';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a') WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a') WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a' SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a';
 
 -- =============================================================================
@@ -71,8 +68,7 @@ SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a';
 -- Expected: Cannot prune any parts because OR requires all branches to be safe
 -- Statistics pruning should not reduce parts (4/4 remain)
 SELECT '-- OR with column without statistics (str (String) has only basic, which does not drive range pruning), should NOT prune parts';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x') WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x') WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x' SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x';
 
 -- =============================================================================
@@ -82,8 +78,7 @@ SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x';
 -- Expected: No rows match (Part 1 has dt='2025-01-11' but value=[0,99], value=1000 not in range)
 -- Statistics should prune based on partition first, then statistics
 SELECT '-- partition and statistics pruning';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE dt = '2025-01-11' AND value = 1000) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE dt = '2025-01-11' AND value = 1000) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE dt = '2025-01-11' AND value = 1000 SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning WHERE dt = '2025-01-11' AND value = 1000;
 
 -- =============================================================================
@@ -94,8 +89,7 @@ SELECT count() FROM test_stats_pruning WHERE dt = '2025-01-11' AND value = 1000;
 -- sentinel range, which does not intersect ordinary comparison ranges, so
 -- Part 3 is pruned and only Part 4 ([3000, 3099]) survives.
 SELECT '-- Nullable column pruning, Part 3 has only NULL values, IS pruned via NULL count';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nullable <= 3050) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nullable <= 3050) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nullable <= 3050 SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nullable <= 3050;
 
 -- =============================================================================
@@ -105,8 +99,7 @@ SELECT count() FROM test_stats_pruning WHERE value_nullable >= 3000 AND value_nu
 -- Expected: Statistics pruning is disabled for FINAL queries
 -- All 4 parts should be read (no pruning)
 SELECT '-- FINAL query should NOT use Statistics pruning';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning FINAL WHERE value = 1050) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning FINAL WHERE value = 1050) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning FINAL WHERE value = 1050 SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning FINAL WHERE value = 1050;
 
 -- =============================================================================
@@ -116,8 +109,7 @@ SELECT count() FROM test_stats_pruning FINAL WHERE value = 1050;
 -- Expected: Statistics pruning is disabled for non-column expressions
 -- All 4 parts should be read (no pruning)
 SELECT '-- Non-monotonic function wrapping column length(toString(value)), should NOT use Statistics pruning';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE length(toString(value)) = 2) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE length(toString(value)) = 2) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE length(toString(value)) = 2 SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_pruning WHERE length(toString(value)) = 2;
 
 DROP TABLE test_stats_pruning;

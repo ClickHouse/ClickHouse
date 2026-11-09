@@ -51,7 +51,8 @@ jobs:
 
   dockers_build_amd:
     runs-on: [self-hosted, amd-tiny]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Dockers Build (amd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -84,7 +85,8 @@ jobs:
 
   dockers_build_arm:
     runs-on: [self-hosted, arm-tiny]
-    needs: [config_workflow]
+    needs:
+    - config_workflow
     name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -117,7 +119,10 @@ jobs:
 
   vector_search_stress:
     runs-on: [self-hosted, arm-large-storage]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
     name: "Vector Search Stress"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
@@ -150,7 +155,11 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, arm-tiny]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, vector_search_stress]
+    needs:
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - vector_search_stress
     if: ${{ always() }}
     name: "Finish Workflow"
     outputs:

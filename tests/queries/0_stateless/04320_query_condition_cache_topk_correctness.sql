@@ -17,7 +17,6 @@
 -- must not reuse a row set computed under a different (tighter) threshold — the
 -- TopK salt on the cache key keeps the plans separate.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;

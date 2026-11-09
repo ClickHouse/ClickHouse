@@ -64,6 +64,7 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
                 settings.protobuf.google_protos_path);
         });
     factory.markOutputFormatNotTTYFriendly("ProtobufList");
+    factory.markFormatHasNoAppendSupport("ProtobufList");
     factory.setContentType("ProtobufList", "application/octet-stream");
 }
 
