@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: ORC is not available in fasttest builds
 -- An ORC list or map whose element, key or value struct has none of the fields of the requested Tuple keeps its
--- elements, and each of them is the default value of the Tuple. The expected values are the ones the Arrow reader returns.
+-- elements, and each of them is filled with default values.
 
 -- { echo }
 
@@ -48,3 +48,7 @@ SELECT id, t, length(`t.l`) FROM file(currentDatabase() || '_05617.orc', 'ORC', 
 SELECT id, l FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Array(Tuple(a Int32, q Nullable(Int32)))') ORDER BY id;
 SELECT id, m FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, m Map(String, Tuple(a Int32, q Nullable(String)))') ORDER BY id;
 SELECT id, lc FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, lc Array(Tuple(a Int32))') ORDER BY id SETTINGS input_format_orc_case_insensitive_column_matching = 1;
+
+-- A non-nullable Date32 field gets the same default with and without a field that is in the file, an Enum gets its first value.
+SELECT id, l, m FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Array(Tuple(q Date32, e Enum8(\'x\' = 1, \'y\' = 2))), m Map(String, Tuple(q Date32))') ORDER BY id;
+SELECT id, l, m FROM file(currentDatabase() || '_05617.orc', 'ORC', 'id UInt64, l Array(Tuple(a Int32, q Date32)), m Map(String, Tuple(a Int32, q Date32))') ORDER BY id;

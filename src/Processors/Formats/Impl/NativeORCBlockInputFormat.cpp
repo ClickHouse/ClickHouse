@@ -2939,10 +2939,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case ORC::STRUCT:
         {
             if (auto it = count_only_structs.find(orc_type->getColumnId()); it != count_only_structs.end())
-                return {
-                    it->second->createColumnConstWithDefaultValue(orc_column->numElements)->convertToFullColumnIfConst(),
-                    it->second,
-                    column_name};
+            {
+                auto column = it->second->createColumn();
+                it->second->insertManyDefaultsInto(*column, orc_column->numElements);
+                return {std::move(column), it->second, column_name};
+            }
 
             Columns tuple_elements;
             DataTypes tuple_types;
