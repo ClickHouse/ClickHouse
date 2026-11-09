@@ -6,6 +6,8 @@
 #include <boost/functional/hash.hpp>
 #include <Core/Range.h>
 #include <Common/CacheBase.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -17,7 +19,6 @@
 #include <generated/parquet_types.h>
 
 #include <mutex>
-#include <unordered_map>
 
 #if USE_AWS_S3
 #include <IO/ReadBufferFromS3.h>
@@ -57,7 +58,7 @@ struct ParquetMetadataCacheKeyHash
 struct ParquetKeptStatistics : private boost::noncopyable
 {
     /// The ranges of one column for every non-empty row group of the file, in the type of the column.
-    using Ranges = std::vector<Range>;
+    using Ranges = VectorWithMemoryTracking<Range>;
     using RangesPtr = std::shared_ptr<const Ranges>;
 
     struct Column
@@ -83,7 +84,7 @@ struct ParquetKeptStatistics : private boost::noncopyable
 private:
     const size_t max_bytes;
     mutable std::mutex mutex;
-    std::unordered_map<String, RangesPtr> ranges_by_column TSA_GUARDED_BY(mutex);
+    UnorderedMapWithMemoryTracking<String, RangesPtr> ranges_by_column TSA_GUARDED_BY(mutex);
     size_t total_bytes TSA_GUARDED_BY(mutex) = 0;
 };
 
@@ -92,13 +93,13 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
 {
     std::shared_ptr<const Parquet::FileFooter> footer;
     /// By Parquet column index, nullptr for the columns not parsed yet; parsed from `footer`.
-    std::vector<Parquet::FileColumnChunksPtr> column_chunks;
+    VectorWithMemoryTracking<Parquet::FileColumnChunksPtr> column_chunks;
     UInt64 memory_bytes;
     /// Counts in the weight of the cell (see `ParquetMetadataCache::keepStatistics`); shared with the cells that replace it.
     std::shared_ptr<ParquetKeptStatistics> kept_statistics;
     explicit ParquetMetadataCacheCell(
         std::shared_ptr<const Parquet::FileFooter> footer_,
-        std::vector<Parquet::FileColumnChunksPtr> column_chunks_ = {},
+        VectorWithMemoryTracking<Parquet::FileColumnChunksPtr> column_chunks_ = {},
         std::shared_ptr<ParquetKeptStatistics> kept_statistics_ = nullptr);
 private:
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
@@ -146,7 +147,7 @@ public:
     /// Replaces `cell`, as returned by getOrSetMetadata, with a cell that also has the non-null
     /// `column_chunks` it lacks. Does nothing if the cache no longer holds `cell` under `key`.
     void addColumnChunks(
-        const ParquetMetadataCacheKey & key, const MappedPtr & cell, const std::vector<Parquet::FileColumnChunksPtr> & column_chunks);
+        const ParquetMetadataCacheKey & key, const MappedPtr & cell, const VectorWithMemoryTracking<Parquet::FileColumnChunksPtr> & column_chunks);
 
     /// Keeps `ranges` in `cell` and counts them in its weight, if the cache still holds `cell` (or a cell that replaced it)
     /// under `key`. Moves the cell in the cache like a hit.

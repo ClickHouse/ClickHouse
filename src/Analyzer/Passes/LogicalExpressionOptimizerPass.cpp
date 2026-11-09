@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -1174,6 +1175,13 @@ struct CommonExpressionExtractionResult
     QueryTreeNodes common_expressions;
 };
 
+/// True if an element of `nodes` absent from `kept` contains `arrayJoin`.
+/// Dropping such an element from a filter also drops the rows its `arrayJoin` produces.
+static bool hasArrayJoinOutside(const QueryTreeNodePtrWithHashSet & nodes, const QueryTreeNodePtrWithHashSet & kept)
+{
+    return std::ranges::any_of(nodes, [&kept](const auto & node) { return !kept.contains(node) && hasFunctionNode(node.node, "arrayJoin"); });
+}
+
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
@@ -1222,7 +1230,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
                 }
             }
 
-            if (is_subset)
+            if (is_subset && !hasArrayJoinOutside(disjunct_sets[j], current_set))
             {
                 should_keep[j] = false;
                 ++removed;
@@ -1359,8 +1367,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         if (filtered_and_arguments.empty())
         {
             has_completely_extracted_and_expression = true;
-            // As we will discard new_or_arguments, no need for further processing
-            break;
+            continue;
         }
         else if (filtered_and_arguments.size() == 1)
         {
@@ -1379,7 +1386,12 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     // If all the arguments of the OR expression is eliminated or one argument is completely eliminated, there is no need for new node.
     if (new_or_arguments.empty() || has_completely_extracted_and_expression)
+    {
+        /// Discarding `new_or_arguments` also discards the rows of an `arrayJoin` inside one of them.
+        if (std::ranges::any_of(new_or_arguments, [](const QueryTreeNodePtr & argument) { return hasFunctionNode(argument, "arrayJoin"); }))
+            return {};
         return CommonExpressionExtractionResult{nullptr, std::move(common_exprs)};
+    }
 
     // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
@@ -2086,7 +2098,8 @@ private:
             /// share a single value, we do not want pruning, folding (e.g. `rand() % 2 < 1 AND
             /// rand() % 2 >= 1` → false) or merging notEquals into NOT IN to rely on that. Keep such
             /// operands as-is.
-            if (hasNonDeterministicFunction(expression))
+            /// Same for aggregate functions: removing the operand can leave the query without any.
+            if (hasNonDeterministicFunction(expression) || hasAggregateFunctionNodes(expression))
             {
                 all_operands.emplace_back(argument_index, argument);
                 ++argument_index;
@@ -2125,6 +2138,10 @@ private:
 
             /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
             if (isNothing(function_node.getResultType()))
+                return;
+
+            /// The constant would also drop the kept operands, and with them the query's aggregation or `arrayJoin`.
+            if (hasAggregateFunctionNodes(node) || hasFunctionNode(node, "arrayJoin"))
                 return;
 
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());

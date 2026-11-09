@@ -54,7 +54,6 @@ public:
     static constexpr auto type_name = "local";
     /// All possible signatures for Local engine with structure argument (for example for local table function).
     StorageLocalConfiguration() = default;
-    StorageLocalConfiguration(const StorageLocalConfiguration & other) = default;
 
     [[nodiscard]] ObjectStorageType getType() const override { return type; }
     [[nodiscard]] std::string getTypeName() const override { return type_name; }
@@ -63,13 +62,6 @@ public:
     [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & p) override { path = p; }
     [[nodiscard]] const String & getRawURI() const override { return path.path; }
-
-    [[nodiscard]] const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-        path = paths_[0];
-    }
 
     [[nodiscard]] String getNamespace() const override { return ""; }
     [[nodiscard]] String getDataSourceDescription() const override { return ""; }
@@ -80,6 +72,13 @@ public:
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
 protected:
+    const Paths & getPathsImpl() const override TSA_REQUIRES_SHARED(paths_mutex) { return paths; }
+    void setPathsImpl(const Paths & paths_) override TSA_REQUIRES(paths_mutex)
+    {
+        paths = paths_;
+        path = paths_[0];
+    }
+
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name_, ASTs & args, ContextPtr context, bool with_structure) override;
 
@@ -87,7 +86,7 @@ private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     String disk_name;
     Path path;
-    Paths paths;
+    Paths paths TSA_GUARDED_BY(paths_mutex);
     void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
 
