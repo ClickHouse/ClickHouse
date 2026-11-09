@@ -84,25 +84,9 @@ private:
 
             char * new_state = arena.alignedAlloc(allocation_size, nested_func->alignOfData());
 
+            nested_func->createNestedStates(new_state, new_size, nested_size_of_data);
+
             size_t i = 0;
-            try
-            {
-                for (i = 0; i < new_size; ++i)
-                {
-                    nested_func->create(&new_state[i * nested_size_of_data]);
-                }
-            }
-            catch (...)
-            {
-                size_t cleanup_size = i;
-
-                for (i = 0; i < cleanup_size; ++i)
-                {
-                    nested_func->destroy(&new_state[i * nested_size_of_data]);
-                }
-
-                throw;
-            }
 
             /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
             /// allocation does not advance, so new_state aliases old_state. There is no

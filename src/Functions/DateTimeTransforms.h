@@ -3028,12 +3028,12 @@ struct ToRelativeHourNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    ALWAYS_INLINE static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static auto execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return static_cast<UInt32>(time_zone.toStableRelativeHourNum(DayNum(d)));
+            return static_cast<Int64>(time_zone.toStableRelativeHourNum(DayNum(d)));
         else
-            return static_cast<UInt32>(time_zone.toRelativeHourNum(DayNum(d)));
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeHourNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -3064,9 +3064,12 @@ struct ToRelativeMinuteNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static auto execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toRelativeMinuteNum(DayNum(d)));
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return static_cast<Int64>(time_zone.toRelativeMinuteNum(DayNum(d)));
+        else
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.toRelativeMinuteNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -3097,10 +3100,13 @@ struct ToRelativeSecondNumImpl
         else
             return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static auto execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
-        return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
+        else
+            /// Clamped: a Date past 2106-02-07 exceeds UInt32 seconds.
+            return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -3136,7 +3142,7 @@ struct ToRelativeSubsecondNumImpl
     }
     static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(DayNum(d))), scale_multiplier);
+        return common::mulIgnoreOverflow(static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d))), scale_multiplier);
     }
 
     using FactorTransform = ZeroTransform;

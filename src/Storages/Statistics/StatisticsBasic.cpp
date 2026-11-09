@@ -67,7 +67,13 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
     }
     if (const auto * s = typeid_cast<const ColumnString *>(values.get()))
     {
-        return s->byteSize();
+        if (!null_map)
+            return s->byteSize();
+        const auto & offsets = s->getOffsets();
+        UInt64 bytes = 0;
+        for (size_t i = 0; i < column_size; ++i)
+            bytes += (offsets[i] - offsets[i - 1] + sizeof(ColumnString::Offset)) * !(*null_map)[i];
+        return bytes;
     }
     return 0;
 }

@@ -1177,6 +1177,13 @@ struct CommonExpressionExtractionResult
     QueryTreeNodes common_expressions;
 };
 
+/// True if an element of `nodes` absent from `kept` contains `arrayJoin`.
+/// Dropping such an element from a filter also drops the rows its `arrayJoin` produces.
+static bool hasArrayJoinOutside(const QueryTreeNodePtrWithHashSet & nodes, const QueryTreeNodePtrWithHashSet & kept)
+{
+    return std::ranges::any_of(nodes, [&kept](const auto & node) { return !kept.contains(node) && hasFunctionNode(node.node, "arrayJoin"); });
+}
+
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
@@ -1225,7 +1232,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
                 }
             }
 
-            if (is_subset)
+            if (is_subset && !hasArrayJoinOutside(disjunct_sets[j], current_set))
             {
                 should_keep[j] = false;
                 ++removed;
@@ -1362,8 +1369,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         if (filtered_and_arguments.empty())
         {
             has_completely_extracted_and_expression = true;
-            // As we will discard new_or_arguments, no need for further processing
-            break;
+            continue;
         }
         else if (filtered_and_arguments.size() == 1)
         {
@@ -1382,7 +1388,12 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     // If all the arguments of the OR expression is eliminated or one argument is completely eliminated, there is no need for new node.
     if (new_or_arguments.empty() || has_completely_extracted_and_expression)
+    {
+        /// Discarding `new_or_arguments` also discards the rows of an `arrayJoin` inside one of them.
+        if (std::ranges::any_of(new_or_arguments, [](const QueryTreeNodePtr & argument) { return hasFunctionNode(argument, "arrayJoin"); }))
+            return {};
         return CommonExpressionExtractionResult{nullptr, std::move(common_exprs)};
+    }
 
     // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.

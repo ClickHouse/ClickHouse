@@ -179,6 +179,42 @@ public:
     /// Delete data for aggregation.
     virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
+    /// Create `count` states at `place + i * stride`; on exception, destroy the ones already created.
+    /// Zero-sized states (`stride == 0`) are not bounded by memory, so their number is limited per `NestedStatesScope`.
+    void createNestedStates(AggregateDataPtr __restrict place, size_t count, size_t stride) const;
+
+    /// While alive, the zero-sized states created on this thread count against one limit. A `create` that creates
+    /// states of several nested functions (`-Tuple`) opens one around them and counts the zero-sized ones itself.
+    class NestedStatesScope
+    {
+    public:
+        NestedStatesScope() : outermost(!active)
+        {
+            if (outermost)
+            {
+                active = true;
+                zero_sized_states = 0;
+            }
+        }
+
+        ~NestedStatesScope()
+        {
+            if (outermost)
+                active = false;
+        }
+
+        NestedStatesScope(const NestedStatesScope &) = delete;
+        NestedStatesScope & operator=(const NestedStatesScope &) = delete;
+
+        void addZeroSizedStates(size_t count, const IAggregateFunction & function);
+
+    private:
+        static thread_local constinit bool active;
+        static thread_local constinit size_t zero_sized_states;
+
+        const bool outermost;
+    };
+
     /// Delete all combinator states that were used after combinator -State.
     /// For example for uniqArrayStateForEachMap(...) it will destroy
     /// states that were created by combinators Map and ForEach.
@@ -574,15 +610,6 @@ public:
       * Otherwise return nullptr.
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
-
-    /** Call `callback` for every directly nested aggregate function.
-      * Most combinators wrap one function, while combinators such as `-Tuple` have several.
-      */
-    virtual void forEachNestedFunction(const std::function<void(const AggregateFunctionPtr &)> & callback) const
-    {
-        if (auto nested = getNestedFunction())
-            callback(nested);
-    }
 
     /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
       * seed draws from a thread-local generator for every state it creates, so it does not - and an
