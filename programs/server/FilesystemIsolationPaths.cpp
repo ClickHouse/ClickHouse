@@ -5,6 +5,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/filesystemHelpers.h>
 
+#include <Poco/Glob.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <fmt/format.h>
@@ -12,6 +13,7 @@
 #include <array>
 #include <cstdlib>
 #include <filesystem>
+#include <set>
 
 namespace fs = std::filesystem;
 
@@ -33,6 +35,10 @@ constexpr std::array system_paths = {
     "/etc/gai.conf",
     "/etc/services",
     "/etc/protocols",
+    /// The sockets of the services that the modules of the Name Service Switch connect to: `systemd-resolved` for
+    /// `nss-resolve`, and the caching daemon `nscd`. A socket on a read-only mount can still be connected to.
+    "/run/systemd/resolve/io.systemd.Resolve",
+    "/run/nscd/socket",
     /// The names of users and groups.
     "/etc/passwd",
     "/etc/group",
@@ -143,27 +149,36 @@ private:
         for (size_t i = 0; i < max_links && FS::isSymlinkNoThrow(current); ++i)
         {
             fs::path target = FS::readSymlink(current);
+            /// The `..` in a relative target is relative to where the link really is: its directory can be a link
+            /// itself, or be inside one, as in `certs -> /etc/letsencrypt/live/<domain>`, so it is resolved first.
             if (target.is_relative())
-                target = current.parent_path() / target;
+                target = fs::canonical(current.parent_path()) / target;
             current = target.lexically_normal();
             add(current.parent_path(), access, source);
         }
     }
 
-    /// For a path with wildcards, the directory up to the first wildcard; otherwise the location of the path.
-    void addPattern(const fs::path & pattern, Access access, const std::string & source)
+    /// The configurations matching a pattern, each processed on its own, as `ExternalLoaderXMLConfigRepository`
+    /// does for the definitions of dictionaries and executable functions. For a pattern with wildcards, the directory
+    /// up to the first wildcard as well, for the files added later.
+    void addIndependentConfigPattern(const fs::path & pattern, const std::string & source)
     {
         fs::path prefix;
         for (const auto & component : pattern)
         {
             if (hasWildcard(component.string()))
             {
-                add(prefix, access, source);
+                add(prefix, Access::ReadOnly, source);
+                std::set<std::string> files;
+                Poco::Glob::glob(pattern.string(), files, 0);
+                for (const auto & file : files)
+                    if (!ConfigProcessor::isPreprocessedFile(file))
+                        addIndependentConfigFile(file, fmt::format("{} matching {}", file, source));
                 return;
             }
             prefix /= component;
         }
-        addLocation(pattern, access, source);
+        addIndependentConfigFile(pattern, source);
     }
 
     /// Every key `name` and `name[N]` under `prefix`.
@@ -258,7 +273,7 @@ private:
         for (const auto * name : {"dictionaries_config", "user_defined_executable_functions_config", "user_defined_executable_function_drivers_config"})
             for (const auto & key : getMultipleKeys("", name))
                 if (const auto pattern = config.getString(key); !pattern.empty())
-                    addPattern(absolute(pattern, config_directory), Access::ReadOnly, fmt::format("`{}`", key));
+                    addIndependentConfigPattern(absolute(pattern, config_directory), fmt::format("`{}`", key));
     }
 
     void addDataPaths()
@@ -359,12 +374,13 @@ private:
         }
     }
 
+    /// With the targets of the links, as a log file can be a link to another directory.
     void addLogs()
     {
         for (const auto * key : {"logger.log", "logger.errorlog", "logger.stderr", "logger.stdout", "pid"})
             if (config.has(key))
                 if (const auto value = config.getString(key); !value.empty())
-                    add(absolute(value, working_directory).parent_path(), Access::ReadWrite, fmt::format("`{}`", key));
+                    addLocation(absolute(value, working_directory), Access::ReadWrite, fmt::format("`{}`", key));
     }
 
     void addCertificates()

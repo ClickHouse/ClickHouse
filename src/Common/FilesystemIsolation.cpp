@@ -66,6 +66,7 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 
 #if defined(OS_LINUX)
 
+#include <Common/Elf.h>
 #include <Common/ErrnoException.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -77,6 +78,7 @@ std::optional<FilesystemIsolationStatus> getFilesystemIsolationStatus()
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <deque>
 #include <filesystem>
 
@@ -610,6 +612,133 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
     return fmt::format("the process that checks whether the filesystem can be isolated terminated with the status {}", status);
 }
 
+#if defined(__GLIBC__)
+/// The services named in `/etc/nsswitch.conf`, such as `files`, `dns`, `systemd`, `sss`.
+std::vector<std::string> getNameServices()
+{
+    /// The services the C library uses without `/etc/nsswitch.conf`.
+    std::vector<std::string> services = {"files", "dns"};
+    if (!fs::exists("/etc/nsswitch.conf"))
+        return services;
+
+    const std::string config = readFile("/etc/nsswitch.conf");
+    size_t line_begin = 0;
+    while (line_begin < config.size())
+    {
+        size_t line_end = config.find('\n', line_begin);
+        if (line_end == std::string::npos)
+            line_end = config.size();
+        std::string_view line(config.data() + line_begin, line_end - line_begin);
+        line_begin = line_end + 1;
+
+        line = line.substr(0, line.find('#'));
+        const size_t colon = line.find(':');
+        if (colon == std::string_view::npos)
+            continue;
+        line.remove_prefix(colon + 1);
+
+        /// A database is followed by its services, with the actions on the results in brackets between them,
+        /// such as `hosts: files [NOTFOUND=return] dns`.
+        bool in_action = false;
+        size_t pos = 0;
+        while (pos < line.size())
+        {
+            if (line[pos] == ' ' || line[pos] == '\t' || line[pos] == '\r')
+            {
+                ++pos;
+                continue;
+            }
+            const size_t end = std::min(line.find_first_of(" \t\r", pos), line.size());
+            const std::string_view token = line.substr(pos, end - pos);
+            pos = end;
+            if (token.starts_with('['))
+                in_action = true;
+            if (!in_action && std::find(services.begin(), services.end(), token) == services.end())
+                services.emplace_back(token);
+            if (token.ends_with(']'))
+                in_action = false;
+        }
+    }
+    return services;
+}
+
+/// The names of the shared libraries an ELF file needs: the entries `DT_NEEDED` of its dynamic section.
+std::vector<std::string> getNeededLibraries(const std::string & path)
+{
+    const Elf elf(path);
+    const auto dynamic = elf.findSectionByName(".dynamic");
+    const auto strings = elf.findSectionByName(".dynstr");
+    if (!dynamic || !strings)
+        return {};
+
+    std::vector<std::string> libraries;
+    for (const char * entry_pos = dynamic->begin(); entry_pos + sizeof(ElfDyn) <= dynamic->end(); entry_pos += sizeof(ElfDyn))
+    {
+        ElfDyn entry;
+        memcpy(&entry, entry_pos, sizeof(entry));
+        if (entry.tag == DynamicTableTag::Null)
+            break;
+        if (entry.tag != DynamicTableTag::NEEDED)
+            continue;
+        if (entry.val >= strings->size())
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "The name of a needed library in {} is outside of its string table", path);
+        const char * name = strings->begin() + entry.val;
+        libraries.emplace_back(name, strnlen(name, strings->end() - name));
+    }
+    return libraries;
+}
+
+/// The modules of the Name Service Switch for the services in `/etc/nsswitch.conf`, such as `libnss_files.so.2`
+/// and `libnss_dns.so.2`, and the libraries they need. The C library loads them on the first lookup of a host, a
+/// user or a group, which can happen after the isolation, so they are not among the mapped files. They are looked
+/// up where the dynamic loader finds them: in the directories of the mapped libraries, such as the one of the C
+/// library, and in the default directories. A service without a module, such as one built into the C library, or
+/// one that is not installed, is unavailable to the C library as well.
+std::vector<std::string> getNameServiceModules(const std::vector<std::string> & mapped_files)
+{
+    std::vector<std::string> directories;
+    for (const auto & file : mapped_files)
+    {
+        if (fs::path(file).filename().string().find(".so") == std::string::npos)
+            continue;
+        std::string directory = fs::path(file).parent_path().string();
+        if (std::find(directories.begin(), directories.end(), directory) == directories.end())
+            directories.push_back(std::move(directory));
+    }
+    for (const auto * directory : {"/lib64", "/usr/lib64", "/lib", "/usr/lib"})
+        if (std::find(directories.begin(), directories.end(), directory) == directories.end())
+            directories.emplace_back(directory);
+
+    std::deque<std::string> names;
+    for (const auto & service : getNameServices())
+        names.push_back(fmt::format("libnss_{}.so.2", service));
+
+    std::vector<std::string> seen;
+    std::vector<std::string> modules;
+    while (!names.empty())
+    {
+        const std::string name = std::move(names.front());
+        names.pop_front();
+        if (std::find(seen.begin(), seen.end(), name) != seen.end())
+            continue;
+        seen.push_back(name);
+
+        for (const auto & directory : directories)
+        {
+            const std::string path = directory + "/" + name;
+            std::error_code error;
+            if (!fs::exists(path, error))
+                continue;
+            modules.push_back(path);
+            for (auto & library : getNeededLibraries(path))
+                names.push_back(std::move(library));
+            break;
+        }
+    }
+    return modules;
+}
+#endif
+
 /// The files mapped into the process: its executable and, if it is not linked statically, the dynamic loader and
 /// the libraries.
 std::vector<std::string> getMappedFiles()
@@ -814,7 +943,14 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
     if (const auto interpreter = getInterpreter())
+    {
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
+#if defined(__GLIBC__)
+        all_paths.push_back({"/etc/ld.so.cache", FilesystemIsolationPath::Access::ReadOnly, "the cache of the dynamic loader"});
+        for (auto & module : getNameServiceModules(mapped_files))
+            all_paths.push_back({std::move(module), FilesystemIsolationPath::Access::ReadOnly, "a module of the Name Service Switch or a library it needs"});
+#endif
+    }
     const std::vector<Mount> mounts = planMounts(all_paths, links);
     for (auto & alias : getLibraryAliases(mapped_files))
         links.push_back(std::move(alias));
