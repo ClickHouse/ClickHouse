@@ -22,8 +22,8 @@ $CLICKHOUSE_CLIENT -m -q "
     CREATE TABLE secret_keys (p UInt8) ENGINE = MergeTree ORDER BY p;
     INSERT INTO secret_keys VALUES (1), (2);
 
-    INSERT INTO FUNCTION file('${file_name}', 'JSONEachRow', 'p UInt8') VALUES (1), (2), (3)
-        SETTINGS engine_file_truncate_on_insert = 1;
+    INSERT INTO FUNCTION file('${file_name}', 'JSONEachRow', 'p UInt8')
+        SETTINGS engine_file_truncate_on_insert = 1 VALUES (1), (2), (3);
 
     CREATE TABLE t_file_reader (p UInt8, f UInt8 DEFAULT p IN secret_keys) ENGINE = File(JSONEachRow, '${file_name}');
 
