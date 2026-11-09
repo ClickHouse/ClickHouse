@@ -684,17 +684,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     for (size_t i = 0; i < unit_count; ++i)
     {
         UnitState unit;
-        ChDwarfUnit * raw_unit = nullptr;
-        uint64_t unit_offset = 0;
-        int32_t status = ch_dwarf_unit_open(file.get(), i, &raw_unit, &unit_offset, error.data);
-        unit.handle.reset(raw_unit); /// Owned from here on, even on error.
-        if (status != CH_DWARF_OK)
-            throwDwarfStatus(status, error, nullptr);
-        if (!unit.handle)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser returned no unit handle");
-        CurrentMemoryTracker::check();
-
-        unit.unit_offset = unit_offset;
+        unit.unit_index = i;
         units_queue.push_back(std::move(unit));
     }
 
@@ -704,17 +694,20 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     initialized = true;
     opened = true;
 
+    const size_t max_queued_chunks = std::min<size_t>(num_threads, 16);
     runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
+    runner.value().reserve(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
         runner.value().enqueueAndKeepTrack(
-            [this, thread_group = CurrentThread::getGroup()]()
+            [this, max_queued_chunks, thread_group = CurrentThread::getGroup()]()
             {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::DWARF_DECODER);
                 try
                 {
                     std::unique_lock lock(mutex);
                     while (!units_queue.empty() && !is_stopped)
                     {
-                        if (delivery_queue.size() > num_threads)
+                        if (delivery_queue.size() >= max_queued_chunks)
                         {
                             wake_up_threads.wait(lock);
                             continue;
@@ -726,7 +719,6 @@ void DWARFBlockInputFormat::initializeIfNeeded()
                         lock.unlock();
 
                         ChunkResult result = parseChunk(unit);
-
                         lock.lock();
 
                         --units_in_progress;
@@ -784,8 +776,22 @@ void DWARFBlockInputFormat::releaseState()
 
 DWARFBlockInputFormat::ChunkResult DWARFBlockInputFormat::parseChunk(UnitState & unit)
 {
-    RustCallbackContext context(is_stopped);
+    if (!unit.handle)
+    {
+        ErrorBuffer open_error;
+        ChDwarfUnit * raw_unit = nullptr;
+        uint64_t unit_offset = 0;
+        int32_t open_status = ch_dwarf_unit_open(file.get(), unit.unit_index, &raw_unit, &unit_offset, open_error.data);
+        unit.handle.reset(raw_unit); /// Owned from here on, even on error.
+        if (open_status != CH_DWARF_OK)
+            throwDwarfStatus(open_status, open_error, nullptr);
+        if (!unit.handle)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The DWARF parser returned no unit handle");
+        CurrentMemoryTracker::check();
+        unit.unit_offset = unit_offset;
+    }
 
+    RustCallbackContext context(is_stopped);
     /// Fresh empty column buffers; Rust appends to the arrays of the ones the projection needs.
     auto col_offset = ColumnVector<UInt64>::create();
     auto col_size = ColumnVector<UInt32>::create();

@@ -155,15 +155,24 @@ pub fn write_row<S: BatchSinkAccess>(
         sink.push_u16(SinkId::Tag, row.tag)?;
     }
     if plan.need_ancestor_array_offsets {
-        if plan.has(COL_ANCESTOR_TAGS) {
-            for a in row.ancestors.iter().rev() {
-                sink.push_u16(SinkId::AncestorTags, a.tag)?;
+        match (plan.has(COL_ANCESTOR_TAGS), plan.has(COL_ANCESTOR_OFFSETS)) {
+            (true, true) => {
+                for a in row.ancestors.iter().rev() {
+                    sink.push_u16(SinkId::AncestorTags, a.tag)?;
+                    sink.push_u64(SinkId::AncestorOffsets, a.offset)?;
+                }
             }
-        }
-        if plan.has(COL_ANCESTOR_OFFSETS) {
-            for a in row.ancestors.iter().rev() {
-                sink.push_u64(SinkId::AncestorOffsets, a.offset)?;
+            (true, false) => {
+                for a in row.ancestors.iter().rev() {
+                    sink.push_u16(SinkId::AncestorTags, a.tag)?;
+                }
             }
+            (false, true) => {
+                for a in row.ancestors.iter().rev() {
+                    sink.push_u64(SinkId::AncestorOffsets, a.offset)?;
+                }
+            }
+            (false, false) => {}
         }
         cnt.ancestors += row.ancestors.len() as u64;
         sink.push_u64(SinkId::AncestorArrayOffsets, cnt.ancestors)?;
@@ -193,28 +202,45 @@ pub fn write_row<S: BatchSinkAccess>(
         sink.push_u64(SinkId::RangesOffsets, cnt.ranges)?;
     }
     if plan.need_attr_offsets {
-        if plan.has(COL_ATTR_NAME) {
+        if plan.has(COL_ATTR_NAME)
+            && plan.has(COL_ATTR_FORM)
+            && plan.has(COL_ATTR_INT)
+            && plan.has(COL_ATTR_STR)
+        {
             for a in row.attrs {
                 sink.push_u16(SinkId::AttrName, a.name)?;
-            }
-        }
-        if plan.has(COL_ATTR_FORM) {
-            for a in row.attrs {
                 sink.push_u16(SinkId::AttrForm, a.form)?;
-            }
-        }
-        if plan.has(COL_ATTR_INT) {
-            for a in row.attrs {
                 sink.push_u64(SinkId::AttrInt, a.int)?;
-            }
-        }
-        if plan.has(COL_ATTR_STR) {
-            for a in row.attrs {
                 sink.push_string(
                     SinkId::AttrStrChars,
                     SinkId::AttrStrOffsets,
                     resolve(a.str_, table),
                 )?;
+            }
+        } else {
+            if plan.has(COL_ATTR_NAME) {
+                for a in row.attrs {
+                    sink.push_u16(SinkId::AttrName, a.name)?;
+                }
+            }
+            if plan.has(COL_ATTR_FORM) {
+                for a in row.attrs {
+                    sink.push_u16(SinkId::AttrForm, a.form)?;
+                }
+            }
+            if plan.has(COL_ATTR_INT) {
+                for a in row.attrs {
+                    sink.push_u64(SinkId::AttrInt, a.int)?;
+                }
+            }
+            if plan.has(COL_ATTR_STR) {
+                for a in row.attrs {
+                    sink.push_string(
+                        SinkId::AttrStrChars,
+                        SinkId::AttrStrOffsets,
+                        resolve(a.str_, table),
+                    )?;
+                }
             }
         }
         cnt.attrs += row.attrs.len() as u64;

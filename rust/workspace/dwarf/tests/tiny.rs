@@ -55,6 +55,7 @@ fn array_elements(text: &str) -> Vec<String> {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn rows_match_the_recorded_reference_output() {
     let reference = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -150,6 +151,7 @@ fn rows_match_the_recorded_reference_output() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn row_counts_and_structure() {
     for name in ["tiny_dwarf4", "tiny_dwarf5"] {
         let (d, infos) = load(name);
@@ -185,6 +187,7 @@ fn row_counts_and_structure() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn chunk_size_does_not_change_the_rows() {
     for name in ["tiny_dwarf4", "tiny_dwarf5"] {
         let file = TestFile::open(tiny_dwarf(name)).unwrap();

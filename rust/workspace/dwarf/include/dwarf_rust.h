@@ -165,6 +165,14 @@ typedef int32_t (*ChDwarfStringReserveFn)(
 
 typedef int32_t (*ChDwarfCancelFn)(void * opaque);
 
+/*
+ * Opens an ELF64 DWARF image over `[bytes, bytes + len)`.
+ *
+ * Safety / lifetime contract: the caller owns the `[bytes, bytes + len)` buffer and must keep it
+ * mapped, immutable, and at the same address until `ch_dwarf_file_free(*out_file)` returns. All
+ * unit handles opened from `*out_file` must be freed with `ch_dwarf_unit_free` before
+ * `ch_dwarf_file_free(*out_file)`, and no call on `*out_file` or its units may overlap a free.
+ */
 int32_t ch_dwarf_file_open(
     const uint8_t * bytes,
     size_t len,

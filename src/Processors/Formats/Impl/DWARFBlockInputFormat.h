@@ -71,6 +71,7 @@ private:
     /// A unit handle migrates between worker threads between calls, but is never used concurrently.
     struct UnitState
     {
+        size_t unit_index = 0;
         UnitPtr handle;
         UInt64 unit_offset = 0;
         /// Copied out of Rust after every chunk, because Rust only keeps it valid until the next call.

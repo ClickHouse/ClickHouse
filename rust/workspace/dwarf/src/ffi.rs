@@ -12,6 +12,7 @@
 //! (`catch_unwind`) and reports them as `CH_DWARF_ERR_INTERNAL`; no unwind crosses the C ABI.
 
 #![allow(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::missing_safety_doc)]
 
 use crate::control::{Control, Poll};
@@ -341,6 +342,8 @@ impl<'a> FfiBatch<'a> {
             lens[id as usize] = self.sinks.sinks[id as usize].len;
         }
         let sinks_ptr: *mut ChDwarfBatchSinks = &mut *self.sinks;
+        // SAFETY: `reserve_cb` is a caller-provided non-throwing C callback; `sinks_ptr` and
+        // `requests[..n]` are valid for the duration of the call and no sink slice is live.
         let rc = unsafe { (self.reserve_cb)(self.opaque, sinks_ptr, requests.as_ptr(), n) };
         if rc != CH_DWARF_RESERVE_OK {
             return Err(DwarfError::callback("reserve callback failed"));
@@ -389,23 +392,29 @@ impl BatchSinkAccess for FfiBatch<'_> {
     ) -> bool {
         let p = self.plan;
         let s = &self.sinks.sinks;
+        macro_rules! ok1 {
+            ($id:expr) => {{
+                let d = &s[$id as usize];
+                d.len < d.cap
+            }};
+        }
         macro_rules! ok {
             ($id:expr, $add:expr) => {{
                 let d = &s[$id as usize];
                 d.len <= d.cap && d.cap - d.len >= $add
             }};
         }
-        if p.has(COL_OFFSET) && !ok!(SinkId::Offset, 1) {
+        if p.has(COL_OFFSET) && !ok1!(SinkId::Offset) {
             return false;
         }
-        if p.has(COL_SIZE) && !ok!(SinkId::Size, 1) {
+        if p.has(COL_SIZE) && !ok1!(SinkId::Size) {
             return false;
         }
-        if p.has(COL_TAG) && !ok!(SinkId::Tag, 1) {
+        if p.has(COL_TAG) && !ok1!(SinkId::Tag) {
             return false;
         }
         if p.need_ancestor_array_offsets {
-            if !ok!(SinkId::AncestorArrayOffsets, 1) {
+            if !ok1!(SinkId::AncestorArrayOffsets) {
                 return false;
             }
             if p.has(COL_ANCESTOR_TAGS) && !ok!(SinkId::AncestorTags, ancestors) {
@@ -415,31 +424,31 @@ impl BatchSinkAccess for FfiBatch<'_> {
                 return false;
             }
         }
-        if p.has(COL_NAME) && (!ok!(SinkId::NameOffsets, 1) || !ok!(SinkId::NameChars, name_len)) {
+        if p.has(COL_NAME) && (!ok1!(SinkId::NameOffsets) || !ok!(SinkId::NameChars, name_len)) {
             return false;
         }
         if p.has(COL_LINKAGE_NAME)
-            && (!ok!(SinkId::LinkageNameOffsets, 1) || !ok!(SinkId::LinkageNameChars, linkage_len))
+            && (!ok1!(SinkId::LinkageNameOffsets) || !ok!(SinkId::LinkageNameChars, linkage_len))
         {
             return false;
         }
         if p.has(COL_DECL_FILE)
-            && (!ok!(SinkId::DeclFileOffsets, 1) || !ok!(SinkId::DeclFileChars, decl_file_len))
+            && (!ok1!(SinkId::DeclFileOffsets) || !ok!(SinkId::DeclFileChars, decl_file_len))
         {
             return false;
         }
-        if p.has(COL_DECL_LINE) && !ok!(SinkId::DeclLine, 1) {
+        if p.has(COL_DECL_LINE) && !ok1!(SinkId::DeclLine) {
             return false;
         }
         if p.has(COL_RANGES)
-            && (!ok!(SinkId::RangesOffsets, 1)
+            && (!ok1!(SinkId::RangesOffsets)
                 || !ok!(SinkId::RangesStart, ranges)
                 || !ok!(SinkId::RangesEnd, ranges))
         {
             return false;
         }
         if p.need_attr_offsets {
-            if !ok!(SinkId::AttrOffsets, 1) {
+            if !ok1!(SinkId::AttrOffsets) {
                 return false;
             }
             if p.has(COL_ATTR_NAME) && !ok!(SinkId::AttrName, attrs) {
@@ -482,13 +491,13 @@ impl BatchSinkAccess for FfiBatch<'_> {
         if at >= s.cap {
             return Err(Self::full_err("sink is full (missing reservation)"));
         }
-        let buf = sink_buffer(s);
         let bytes = val.to_ne_bytes();
-        // SAFETY: `at < s.cap` and `validate_sink` verified `s.cap * 8 == buf.len()`.
+        // SAFETY: `at < s.cap` guarantees `s.cap > 0`, and `validate_sink` verified `s.data` is
+        // non-null whenever `s.cap > 0` and `s.cap * 8 <= isize::MAX`.
         unsafe {
             core::ptr::copy_nonoverlapping(
                 bytes.as_ptr().cast::<MaybeUninit<u8>>(),
-                buf.as_mut_ptr().add(at * 8),
+                s.data.cast::<MaybeUninit<u8>>().add(at * 8),
                 8,
             );
         }
@@ -503,13 +512,13 @@ impl BatchSinkAccess for FfiBatch<'_> {
         if at >= s.cap {
             return Err(Self::full_err("sink is full (missing reservation)"));
         }
-        let buf = sink_buffer(s);
         let bytes = val.to_ne_bytes();
-        // SAFETY: `at < s.cap` and `validate_sink` verified `s.cap * 4 == buf.len()`.
+        // SAFETY: `at < s.cap` guarantees `s.cap > 0`, and `validate_sink` verified `s.data` is
+        // non-null whenever `s.cap > 0` and `s.cap * 4 <= isize::MAX`.
         unsafe {
             core::ptr::copy_nonoverlapping(
                 bytes.as_ptr().cast::<MaybeUninit<u8>>(),
-                buf.as_mut_ptr().add(at * 4),
+                s.data.cast::<MaybeUninit<u8>>().add(at * 4),
                 4,
             );
         }
@@ -524,13 +533,13 @@ impl BatchSinkAccess for FfiBatch<'_> {
         if at >= s.cap {
             return Err(Self::full_err("sink is full (missing reservation)"));
         }
-        let buf = sink_buffer(s);
         let bytes = val.to_ne_bytes();
-        // SAFETY: `at < s.cap` and `validate_sink` verified `s.cap * 2 == buf.len()`.
+        // SAFETY: `at < s.cap` guarantees `s.cap > 0`, and `validate_sink` verified `s.data` is
+        // non-null whenever `s.cap > 0` and `s.cap * 2 <= isize::MAX`.
         unsafe {
             core::ptr::copy_nonoverlapping(
                 bytes.as_ptr().cast::<MaybeUninit<u8>>(),
-                buf.as_mut_ptr().add(at * 2),
+                s.data.cast::<MaybeUninit<u8>>().add(at * 2),
                 2,
             );
         }
@@ -547,12 +556,12 @@ impl BatchSinkAccess for FfiBatch<'_> {
                 let Some(end) = at.checked_add(bytes.len()).filter(|&e| e <= chars.cap) else {
                     return Err(Self::full_err("chars sink is full (missing reservation)"));
                 };
-                let buf = sink_buffer(chars);
-                // SAFETY: `at + bytes.len() <= chars.cap == buf.len()`.
+                // SAFETY: `at + bytes.len() <= chars.cap` and `bytes` is non-empty (so
+                // `chars.cap > 0`), and `validate_sink` verified `chars.data` is non-null.
                 unsafe {
                     core::ptr::copy_nonoverlapping(
                         bytes.as_ptr().cast::<MaybeUninit<u8>>(),
-                        buf.as_mut_ptr().add(at),
+                        chars.data.cast::<MaybeUninit<u8>>().add(at),
                         bytes.len(),
                     );
                 }
@@ -625,6 +634,7 @@ impl StringSinkAccess for FfiStringSink<'_> {
         }
         if !bytes.is_empty() {
             let cbuf = sink_buffer(&mut self.sink.chars);
+            // SAFETY: `at + bytes.len() <= self.sink.chars.cap == cbuf.len()`.
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     bytes.as_ptr().cast::<MaybeUninit<u8>>(),
@@ -636,6 +646,7 @@ impl StringSinkAccess for FfiStringSink<'_> {
         self.sink.chars.len = end;
         let obuf = sink_buffer(&mut self.sink.offsets);
         let obytes = (end as u64).to_ne_bytes();
+        // SAFETY: `off_at < self.sink.offsets.cap` and `obuf.len() == self.sink.offsets.cap * 8`.
         unsafe {
             core::ptr::copy_nonoverlapping(
                 obytes.as_ptr().cast::<MaybeUninit<u8>>(),

@@ -10,3 +10,12 @@ members = [
     "dwarf",
 ]
 resolver = "2"
+
+[profile.dev.package._ch_rust_dwarf]
+opt-level = 2
+[profile.dev.package.gimli]
+opt-level = 2
+[profile.dev.package.object]
+opt-level = 2
+[profile.dev.package.memchr]
+opt-level = 2

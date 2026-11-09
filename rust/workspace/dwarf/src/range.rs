@@ -284,6 +284,7 @@ mod tests {
     ) -> Sections<'a> {
         Sections {
             info: &[],
+            abbrev: &[],
             line: None,
             addr,
             addr_llvm: &[],

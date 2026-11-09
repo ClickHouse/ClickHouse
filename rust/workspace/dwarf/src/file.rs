@@ -18,7 +18,6 @@ use gimli::{Abbreviations, DebugAbbrev, DebugAbbrevOffset, DebugInfo, Encoding, 
 use object::elf;
 use object::read::elf::{FileHeader as _, SectionHeader as _};
 use object::LittleEndian as ObjLe;
-use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -43,13 +42,13 @@ impl SectionRange {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct UnitDescriptor {
     pub unit_offset: u64,
     pub header_size: u64,
     pub end_offset: u64,
     pub encoding: Encoding,
-    pub abbrevs: Arc<Abbreviations>,
+    pub abbrev_offset: u64,
 }
 
 /// Borrowed views of every debug section, valid for one call only.
@@ -57,7 +56,8 @@ pub struct UnitDescriptor {
 pub struct Sections<'a> {
     /// `.debug_info`, exact dotted name.
     pub info: &'a [u8],
-    /// `.debug_line`, exact dotted name.
+    /// `.debug_abbrev`, as selected by LLVM's section map.
+    pub abbrev: &'a [u8],
     pub line: Option<&'a [u8]>,
     /// `.debug_addr`, exact dotted name (the format's own fixed 8-byte pool lookups).
     pub addr: Option<&'a [u8]>,
@@ -105,7 +105,10 @@ fn range_within(offset: u64, length: u64, total: usize) -> Option<(usize, usize)
 
 /// Parses the abbreviation table at `abbrev_offset` with `gimli`, then applies the LLVM 22.1.1
 /// acceptance rules that `gimli` is more lenient about (ledger U-07, U-11, U-14).
-fn parse_abbreviations(abbrev_bytes: &[u8], abbrev_offset: u64) -> Result<Arc<Abbreviations>> {
+pub(crate) fn parse_abbreviations(
+    abbrev_bytes: &[u8],
+    abbrev_offset: u64,
+) -> Result<Abbreviations> {
     let off = usize::try_from(abbrev_offset)
         .map_err(|_| DwarfError::dwarf("abbreviation offset overflows usize"))?;
     if off >= abbrev_bytes.len() {
@@ -128,7 +131,7 @@ fn parse_abbreviations(abbrev_bytes: &[u8], abbrev_offset: u64) -> Result<Arc<Ab
     if flags.wide_uleb.get() {
         return Err(DwarfError::dwarf("abbreviation code exceeds UINT32_MAX"));
     }
-    Ok(Arc::new(parsed))
+    Ok(parsed)
 }
 
 /// Name -> first section in header order, by the two rules described in the module docs.
@@ -219,7 +222,7 @@ impl FileInner {
         let info_bytes = debug_info.slice(bytes)?;
         let abbrev_bytes = debug_abbrev.slice(bytes)?;
 
-        let mut abbrev_cache: BTreeMap<u64, Arc<Abbreviations>> = BTreeMap::new();
+        let abbrev_len = abbrev_bytes.len() as u64;
         let mut units = Vec::new();
         let mut headers = DebugInfo::new(info_bytes, LittleEndian).units();
         while let Some(header) = headers.next().map_err(|e| {
@@ -256,21 +259,18 @@ impl FileInner {
             }
 
             let abbrev_offset = header.debug_abbrev_offset().0 as u64;
-            let abbrevs = match abbrev_cache.get(&abbrev_offset) {
-                Some(cached) => Arc::clone(cached),
-                None => {
-                    let parsed = parse_abbreviations(abbrev_bytes, abbrev_offset)?;
-                    abbrev_cache.insert(abbrev_offset, Arc::clone(&parsed));
-                    parsed
-                }
-            };
+            if abbrev_offset >= abbrev_len {
+                return Err(DwarfError::dwarf(format!(
+                    "abbreviation table offset {abbrev_offset} is outside .debug_abbrev"
+                )));
+            }
 
             units.push(UnitDescriptor {
                 unit_offset,
                 header_size,
                 end_offset,
                 encoding,
-                abbrevs,
+                abbrev_offset,
             });
         }
 
@@ -304,6 +304,7 @@ impl FileInner {
             |r: &Option<SectionRange>| -> Result<&'a [u8]> { Ok(opt(r)?.unwrap_or(&[])) };
         Ok(Sections {
             info: self.debug_info.slice(bytes)?,
+            abbrev: self.debug_abbrev.slice(bytes)?,
             line: opt(&self.debug_line)?,
             addr: opt(&self.debug_addr)?,
             addr_llvm: or_empty(&self.debug_addr_llvm)?,
