@@ -1,0 +1,4 @@
+restricted user: not reattached
+default user: reattached
+transactions	[1]
+implicit transaction	[1,3]

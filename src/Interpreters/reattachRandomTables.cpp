@@ -7,6 +7,8 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -14,8 +16,12 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 
 #include <random>
+#include <unordered_set>
 
 
 namespace DB
@@ -30,31 +36,91 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsFloat reattach_tables_before_query_execution_probability;
+    extern const SettingsBool implicit_transaction;
 }
 
 namespace
 {
 
-/// Reattaching these tables would change what the queries see, which is not a bug.
-bool canBeReattached(const StoragePtr & table, const ContextPtr & context)
+/// The storage that the operations on `table` are forwarded to: the one behind a lazily loaded table,
+/// the target of a materialized view or an alias. Null if there is none, or it is not loaded.
+StoragePtr getForwardedStorage(const StoragePtr & table)
 {
-    if (table->isDictionary() || table->isSystemStorage())
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()))
+        return proxy->tryGetNested();
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        return materialized_view->tryGetTargetTable();
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+        return alias->tryGetTargetTable();
+    return nullptr;
+}
+
+/// The action locks (e.g. from `SYSTEM STOP MERGES`) belong to the storage object and are lost on reattach.
+/// `ActionLocksManager` keeps a lock under the storage it was requested for, but the lock may block the actions
+/// of another storage: `SYSTEM STOP MERGES mv` stops merges of the inner table of `mv`.
+/// So collect the storages with action locks together with all storages they forward to.
+std::unordered_set<const IStorage *> getStoragesWithActionLocks(const DatabasePtr & database, const ContextPtr & context)
+{
+    std::unordered_set<const IStorage *> result;
+    const auto action_locks_manager = context->getActionLocksManager();
+
+    for (auto it = database->getTablesIterator(context, {}, /* skip_not_loaded= */ true); it->isValid(); it->next())
+    {
+        const auto & table = it->table();
+        if (!table || !action_locks_manager->hasAny(table))
+            continue;
+
+        /// The set also protects from cycles of aliases.
+        for (StoragePtr storage = table; storage && result.insert(storage.get()).second; storage = getForwardedStorage(storage))
+        {
+            /// The catalog may hold the target as a lazily loaded table.
+            if (auto * proxy = dynamic_cast<StorageProxy *>(storage.get()))
+                if (auto nested = proxy->tryGetNested())
+                    result.insert(nested.get());
+        }
+    }
+
+    return result;
+}
+
+/// Reattaching these tables would change what the queries see, which is not a bug.
+bool canBeReattached(const StoragePtr & table, const std::unordered_set<const IStorage *> & storages_with_action_locks)
+{
+    if (storages_with_action_locks.contains(table.get()))
         return false;
 
-    const String engine = table->getName();
+    /// A table of a database with `lazy_load_tables` is a proxy, look at the storage behind it.
+    /// If it is not loaded yet, it has no data in memory.
+    StoragePtr storage = table;
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()); proxy && proxy->isLazyStandIn())
+    {
+        storage = proxy->tryGetNested();
+        if (!storage)
+            return true;
+    }
+
+    if (storage->isDictionary() || storage->isSystemStorage())
+        return false;
+
+    const String engine = storage->getName();
     /// `Buffer` keeps data in memory and flushes it on `DETACH`, which loses the data if there is no destination.
     if (engine == "Memory" || engine == "Buffer")
         return false;
 
     /// `Set` and `Join` with `persistent = 0` keep their data only in memory.
-    if ((engine == "Set" || engine == "Join") && !table->hasUnreplicatedTableDataOnDisk())
-        return false;
-
-    /// The action locks (e.g. from `SYSTEM STOP MERGES`) belong to the storage object and are lost on reattach.
-    if (context->getActionLocksManager()->hasAny(table))
+    if ((engine == "Set" || engine == "Join") && !storage->hasUnreplicatedTableDataOnDisk())
         return false;
 
     return true;
+}
+
+/// The internal queries run with full access, so require that the user could run them.
+/// It also checks `readonly` and `allow_ddl`. Whether the table is a view is not known for a table which is not loaded yet,
+/// so require the grants for both.
+bool isGrantedToReattach(const String & database_name, const String & table_name, const ContextPtr & query_context)
+{
+    const AccessFlags flags = AccessFlags(AccessType::DROP_TABLE) | AccessType::DROP_VIEW | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW;
+    return query_context->getAccess()->isGranted(flags, database_name, table_name);
 }
 
 /// A table used by another query or DDL must not be reattached: `DETACH ... SYNC` would wait for that query to finish,
@@ -94,16 +160,20 @@ void executeInternal(const String & query, const ContextPtr & context)
     executeTrivialBlockIO(io, internal_context);
 }
 
-void reattachTables(const DatabasePtr & database, const std::vector<String> & table_names, const ContextPtr & context)
+void reattachTables(const DatabasePtr & database, const std::vector<String> & table_names, const ContextPtr & context, const ContextPtr & query_context)
 {
     auto log = getLogger("reattachRandomTables");
     const String & database_name = database->getDatabaseName();
+    const auto storages_with_action_locks = getStoragesWithActionLocks(database, context);
 
     for (const auto & table_name : table_names)
     {
         {
             auto table = database->tryGetTable(table_name, context);
-            if (!table || !canBeReattached(table, context) || !isIdle(table, context))
+            if (!table
+                || !isGrantedToReattach(database_name, table_name, query_context)
+                || !canBeReattached(table, storages_with_action_locks)
+                || !isIdle(table, context))
                 continue;
         }
 
@@ -143,6 +213,11 @@ void reattachRandomTablesInCurrentDatabase(const ContextPtr & context)
     if (probability <= 0)
         return;
 
+    /// A transaction keeps references to the storages it has modified until it is finished,
+    /// so `DETACH ... SYNC` would wait for the `COMMIT` or `ROLLBACK` of the same session forever.
+    if (context->getCurrentTransaction() || context->getSettingsRef()[Setting::implicit_transaction])
+        return;
+
     const String database_name = context->getCurrentDatabase();
     if (database_name.empty() || DatabaseCatalog::isPredefinedDatabase(database_name))
         return;
@@ -167,7 +242,7 @@ void reattachRandomTablesInCurrentDatabase(const ContextPtr & context)
     if (table_names.empty())
         return;
 
-    reattachTables(database, table_names, global_context);
+    reattachTables(database, table_names, global_context, context);
 }
 
 }

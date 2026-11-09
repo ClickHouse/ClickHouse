@@ -3606,7 +3606,7 @@ Possible values:
     DECLARE(Float, reattach_tables_before_query_execution_probability, 0., R"(
 For testing purposes. Before every query, `DETACH` and `ATTACH` back each table of the current database with this probability, regardless of which tables the query uses and of its kind.
 
-Only tables of `Atomic` and `Ordinary` databases are reattached, except the `system` database. Tables that keep their data only in memory (`Memory`, `Buffer`, `Set` and `Join` with `persistent = 0`), dictionaries, tables with action locks (e.g. after `SYSTEM STOP MERGES`), and tables currently in use by another query or DDL are skipped. Only the initial queries are affected, not the internal and the secondary ones.
+Only tables of `Atomic` and `Ordinary` databases are reattached, except the `system` database. Tables that keep their data only in memory (`Memory`, `Buffer`, `Set` and `Join` with `persistent = 0`), dictionaries, tables with action locks (e.g. after `SYSTEM STOP MERGES`), tables currently in use by another query or DDL, and tables which the user cannot `DETACH` and `ATTACH` itself are skipped. The tables of a materialized view or an alias with action locks are skipped too. Nothing is reattached inside a transaction. Only the initial queries are affected, not the internal and the secondary ones.
 
 Possible values:
 
