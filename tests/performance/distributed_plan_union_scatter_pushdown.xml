@@ -1,18 +1,22 @@
 <test>
-    <!-- Compare a `UNION ALL` aggregation with `distributed_plan_optimize_exchanges` on and off.
-         Performance CI runs both queries on the pull-request binary and on master.
-         The enabled query is the one this change should speed up: the scatter is pushed
-         under the union and the matching empty-key shuffle is removed.
-         `distributed_plan_execute_locally` keeps the plan on this single server.
-         That path uses in-memory queues, so `StreamingExchangeSendBytes` stays 0;
-         the measured difference is the removed gather-then-scatter copy, not network bytes.
-         The disabled query is the control. Settings stay on the query so the inserts are not planned as distributed. -->
+    <!-- Compare `distributed_plan_optimize_exchanges` on and off.
+         - Empty-key aggregation: the scatter moves under the union and the empty-key shuffle is removed.
+         - Keyed join over a two-branch `UNION ALL`: each branch shuffles by the join key directly.
+         - 20-branch keyed aggregation, 1M rows per branch (at `distributed_plan_min_rows_per_reader`): each branch shuffles directly.
+         - 20-branch keyed aggregation, 250k rows per branch (below it): the scatter stays above the union; both queries should match.
+         `distributed_plan_force_shuffle_aggregation` makes the 20-branch cases shuffle input rows, not partial states.
+         `distributed_plan_execute_locally` uses in-memory queues on this server, so only time is measured, not network bytes.
+         Settings stay on the query so the inserts are not planned as distributed. -->
 
     <create_query>CREATE TABLE union_scatter_pushdown_l (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
     <create_query>CREATE TABLE union_scatter_pushdown_r (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE union_scatter_pushdown_many (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE union_scatter_pushdown_small (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
 
     <fill_query>INSERT INTO union_scatter_pushdown_l SELECT number, number FROM numbers(5000000)</fill_query>
     <fill_query>INSERT INTO union_scatter_pushdown_r SELECT number * 2, number FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO union_scatter_pushdown_many SELECT number, number FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO union_scatter_pushdown_small SELECT number, number FROM numbers(250000)</fill_query>
 
     <query>
         SELECT sum(c) FROM
@@ -64,6 +68,300 @@
             max_threads = 4
     </query>
 
+    <query>
+        SELECT count()
+        FROM
+        (
+            SELECT k, v FROM union_scatter_pushdown_l
+            UNION ALL
+            SELECT k, v FROM union_scatter_pushdown_r
+        ) AS u
+        JOIN union_scatter_pushdown_r ON u.k = union_scatter_pushdown_r.k
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 1,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4
+    </query>
+
+    <query>
+        SELECT count()
+        FROM
+        (
+            SELECT k, v FROM union_scatter_pushdown_l
+            UNION ALL
+            SELECT k, v FROM union_scatter_pushdown_r
+        ) AS u
+        JOIN union_scatter_pushdown_r ON u.k = union_scatter_pushdown_r.k
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 0,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4
+    </query>
+
+    <query>
+        SELECT sum(c) FROM
+        (
+            SELECT k, count() AS c
+            FROM
+            (
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+            )
+            GROUP BY k
+        )
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 1,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4,
+            distributed_plan_force_shuffle_aggregation = 1
+    </query>
+
+    <query>
+        SELECT sum(c) FROM
+        (
+            SELECT k, count() AS c
+            FROM
+            (
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_many
+            )
+            GROUP BY k
+        )
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 0,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4,
+            distributed_plan_force_shuffle_aggregation = 1
+    </query>
+
+    <query>
+        SELECT sum(c) FROM
+        (
+            SELECT k, count() AS c
+            FROM
+            (
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+            )
+            GROUP BY k
+        )
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 1,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4,
+            distributed_plan_force_shuffle_aggregation = 1
+    </query>
+
+    <query>
+        SELECT sum(c) FROM
+        (
+            SELECT k, count() AS c
+            FROM
+            (
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+                UNION ALL
+                SELECT k, v FROM union_scatter_pushdown_small
+            )
+            GROUP BY k
+        )
+        SETTINGS
+            make_distributed_plan = 1,
+            distributed_plan_execute_locally = 1,
+            distributed_plan_fallback_to_local_execution = 0,
+            distributed_plan_optimize_exchanges = 0,
+            enable_parallel_replicas = 0,
+            distributed_plan_max_rows_to_broadcast = 0,
+            distributed_plan_default_reader_bucket_count = 4,
+            distributed_plan_default_shuffle_join_bucket_count = 4,
+            max_rows_to_group_by = 0,
+            max_threads = 4,
+            distributed_plan_force_shuffle_aggregation = 1
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS union_scatter_pushdown_l</drop_query>
     <drop_query>DROP TABLE IF EXISTS union_scatter_pushdown_r</drop_query>
+    <drop_query>DROP TABLE IF EXISTS union_scatter_pushdown_many</drop_query>
+    <drop_query>DROP TABLE IF EXISTS union_scatter_pushdown_small</drop_query>
 </test>

@@ -80,6 +80,9 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
+/// The `ActionsDAG` of an `ExpressionStep` or `FilterStep`, otherwise `nullptr`.
+[[nodiscard]] const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step);
+
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
 /// many times and on which rows it was evaluated.

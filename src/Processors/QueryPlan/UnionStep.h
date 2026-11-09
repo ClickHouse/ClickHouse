@@ -32,6 +32,11 @@ public:
     bool isNarrowingAllowed() const { return allow_narrowing; }
     void disableNarrowing() { allow_narrowing = false; }
 
+    /// Always narrow the output to `max_threads` streams. For a union that replaced a scatter above its
+    /// exchange-receiver branches: no consumer relies on per-branch streams, and keeping them would
+    /// multiply the parallel states of a downstream aggregation.
+    void narrowToMaxThreads() { narrow_to_max_threads = true; }
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -46,6 +51,7 @@ private:
 
     size_t max_threads;
     bool allow_narrowing;
+    bool narrow_to_max_threads = false;
 };
 
 }

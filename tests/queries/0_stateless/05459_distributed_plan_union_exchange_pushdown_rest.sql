@@ -28,7 +28,8 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     distributed_plan_optimize_exchanges = 1, distributed_plan_max_rows_to_broadcast = 0,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0, query_plan_join_swap_table = 0,
     optimize_read_in_order = 0, max_threads = 1,
-    distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4;
+    distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4,
+    distributed_plan_min_rows_per_reader = 1;
 
 -- P7: window partitioning and delivered order.
 SELECT 'P7', countIf(explain LIKE '%ShuffleExchange%'), countIf(explain LIKE '%GatherExchange%'), countIf(explain LIKE '%ScatterExchange%')

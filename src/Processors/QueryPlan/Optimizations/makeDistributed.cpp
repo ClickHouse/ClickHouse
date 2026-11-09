@@ -201,7 +201,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
-void optimizeExchanges(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
@@ -1177,11 +1177,7 @@ static bool translateKeysThroughStep(const IQueryPlanStep & step, Names & keys)
     if (!canHoistGatherThroughStep(step))
         return false;
 
-    const ActionsDAG * dag = nullptr;
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        dag = &expression->getExpression();
-    else if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-        dag = &filter->getExpression();
+    const ActionsDAG * dag = tryGetActionsDAG(&step);
     if (!dag)
         return true;
 
@@ -1202,12 +1198,29 @@ static bool translateKeysThroughStep(const IQueryPlanStep & step, Names & keys)
     return true;
 }
 
+/// A keyed shuffle has a fixed per-branch cost (senders and receiver streams) and saves work proportional
+/// to the rows no longer passing through one task. It pays off when the estimated rows per branch reach
+/// `distributed_plan_min_rows_per_reader`, or when some branch has no estimate.
+static bool keyedPushdownPaysOff(QueryPlan::Node & union_node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    UInt64 total_rows = 0;
+    for (auto * branch : union_node.children)
+    {
+        auto stats = estimateReadRowsCount(*branch);
+        if (!stats.estimated_rows)
+            return true;
+        total_rows += *stats.estimated_rows;
+    }
+    return total_rows >= optimization_settings.distributed_plan_min_rows_per_reader * union_node.children.size();
+}
+
 /// Rewrite
 ///   Scatter(D) <- [transparent unary]* <- Union <- [Gather ...]
 /// to
 ///   [transparent unary]* <- Union <- [Shuffle(D) ...]
 /// so each branch shuffles to the destination buckets directly, instead of gathering to one node first.
-static void tryPushScatterBelowUnion(QueryPlan::Node & node, QueryPlan::Nodes & nodes, size_t max_step_description_length)
+/// A keyless rewrite removes the exchange entirely and is always taken; a keyed one only if `keyedPushdownPaysOff`.
+static void tryPushScatterBelowUnion(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
         return;
@@ -1221,28 +1234,35 @@ static void tryPushScatterBelowUnion(QueryPlan::Node & node, QueryPlan::Nodes & 
     while (current->children.size() == 1 && translateKeysThroughStep(*current->step, keys))
         current = current->children[0];
 
-    if (!typeid_cast<const UnionStep *>(current->step.get()))
+    auto * union_step = typeid_cast<UnionStep *>(current->step.get());
+    if (!union_step)
         return;
 
     for (const auto * branch : current->children)
         if (!typeid_cast<const GatherExchangeStep *>(branch->step.get()))
             return;
 
-    for (auto *& branch : current->children)
+    if (!keys.empty() && !keyedPushdownPaysOff(*current, optimization_settings))
+        return;
+
+    const size_t max_step_description_length = optimization_settings.max_step_description_length;
+    for (auto * branch : current->children)
     {
-        auto & branch_node = nodes.emplace_back();
-        branch_node.step = std::make_unique<ScatterExchangeStep>(
-            branch->step->getOutputHeader(), keys, scatter_step->getResultBucketCount(), scatter_step->getHashCastTypes());
+        const auto * gather_step = typeid_cast<const GatherExchangeStep *>(branch->step.get());
+        auto shuffle_step = std::make_unique<ShuffleExchangeStep>(
+            branch->step->getOutputHeader(), keys, gather_step->getSourceBucketCount(),
+            scatter_step->getResultBucketCount(), scatter_step->getHashCastTypes());
         if (keys == scatter_step->getKeys())
-            branch_node.step->setStepDescription(*scatter_step);
+            shuffle_step->setStepDescription(*scatter_step);
         else
-            branch_node.step->setStepDescription(
+            shuffle_step->setStepDescription(
                 fmt::format("by hash([{}])", fmt::join(keys, ", ")), max_step_description_length);
-        branch_node.children = {branch};
-        tryReplaceScatterGatherWithShuffle(&branch_node);
-        tryRemoveRedundantShuffle(branch_node);
-        branch = &branch_node;
+        branch->step = std::move(shuffle_step);
+        tryRemoveRedundantShuffle(*branch);
     }
+
+    /// Keep the stream width the removed scatter delivered.
+    union_step->narrowToMaxThreads();
 
     node.step = std::move(node.children[0]->step);
     node.children = std::move(node.children[0]->children);
@@ -1385,7 +1405,7 @@ static void tryPushWindowBelowSortedGather(QueryPlan::Node & node, const QueryPl
 /// then filter step can be moved below the exchange step to allow parallel processing.
 /// 2. Removes unnecessary exchanges. Example: if there is a ShuffleExchange step on top of another exchange step then child
 /// exchange step can be removed.
-void optimizeExchanges(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     Stack stack;
 
@@ -1430,11 +1450,7 @@ void optimizeExchanges(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const Q
                 {
                     SharedHeader expression_header = frame.node->step->getOutputHeader();
 
-                    const ActionsDAG * dag = nullptr;
-                    if (auto * expr = typeid_cast<ExpressionStep *>(frame.node->step.get()))
-                        dag = &expr->getExpression();
-                    else if (auto * filter = typeid_cast<FilterStep *>(frame.node->step.get()))
-                        dag = &filter->getExpression();
+                    const ActionsDAG * dag = tryGetActionsDAG(frame.node->step.get());
 
                     bool can_move_gather_up = true;
 
@@ -1464,7 +1480,7 @@ void optimizeExchanges(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const Q
                 }
             }
 
-            tryPushScatterBelowUnion(*frame.node, nodes, optimization_settings.max_step_description_length);
+            tryPushScatterBelowUnion(*frame.node, optimization_settings);
             tryReplaceScatterGatherWithShuffle(frame.node);
             tryRemoveRedundantShuffle(*frame.node);
         }

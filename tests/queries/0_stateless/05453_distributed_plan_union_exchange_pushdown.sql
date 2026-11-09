@@ -30,7 +30,10 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     distributed_plan_optimize_exchanges = 1, distributed_plan_max_rows_to_broadcast = 0,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0, query_plan_join_swap_table = 0,
     optimize_read_in_order = 0, max_threads = 1,
-    distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4;
+    distributed_plan_default_reader_bucket_count = 4, distributed_plan_default_shuffle_join_bucket_count = 4,
+    distributed_plan_prefer_replicas_over_workers = 1,
+    -- The tables are small: make every keyed pushdown pay off. P7 checks the threshold.
+    distributed_plan_min_rows_per_reader = 1;
 
 -- P1: full plan snapshot and hash-cast/result consistency (t3.k is UInt32).
 EXPLAIN actions = 0 SELECT count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) u JOIN t3 ON u.k = t3.k;
@@ -71,5 +74,13 @@ SELECT 'P6b', countIf(explain LIKE '%ShuffleExchange%'), countIf(explain LIKE '%
 FROM (EXPLAIN actions = 0 SELECT k FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) ORDER BY k SETTINGS make_distributed_plan = 1) SETTINGS make_distributed_plan = 0;
 SELECT k FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) ORDER BY k LIMIT 20;
 SELECT k FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) ORDER BY k LIMIT 20 SETTINGS make_distributed_plan = 0;
+
+-- P7: below `distributed_plan_min_rows_per_reader` rows per branch, a keyed scatter stays above the union;
+-- a keyless scatter is still removed.
+SELECT 'P7a', countIf(explain LIKE '%ShuffleExchange%'), countIf(explain LIKE '%GatherExchange%'), countIf(explain LIKE '%ScatterExchange%')
+FROM (EXPLAIN actions = 0 SELECT count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) u JOIN t3 ON u.k = t3.k SETTINGS distributed_plan_min_rows_per_reader = 5000, make_distributed_plan = 1) SETTINGS make_distributed_plan = 0;
+SELECT count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) u JOIN t3 ON u.k = t3.k SETTINGS distributed_plan_min_rows_per_reader = 5000;
+SELECT 'P7b', countIf(explain LIKE '%ShuffleExchange%'), countIf(explain LIKE '%GatherExchange%'), countIf(explain LIKE '%ScatterExchange%')
+FROM (EXPLAIN actions = 0 SELECT k, count() FROM (SELECT k, v FROM t1 UNION ALL SELECT k, v FROM t2) GROUP BY k SETTINGS distributed_plan_min_rows_per_reader = 5000, make_distributed_plan = 1) SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t1, t2, t3, t_small;

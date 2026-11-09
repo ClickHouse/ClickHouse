@@ -7,26 +7,13 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
 #include <memory>
 
 namespace DB
 {
-
-/// Get the `ActionsDAG` from an `ExpressionStep` or `FilterStep`, or nullptr.
-static const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step)
-{
-    if (const auto * expr_step = typeid_cast<const ExpressionStep *>(step))
-        return &expr_step->getExpression();
-    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
-        return &filter_step->getExpression();
-    return nullptr;
-}
 
 /// Implementation rule for the steps of `isDistributionPassthroughStep`. Propagates distribution to the
 /// input and creates speculative multi-node variants at each candidate node count.
@@ -54,7 +41,7 @@ protected:
         /// `nowInBlock`, `rand`, ...) produce different values when the stream is split across
         /// nodes or recomputed per replica, so such a step runs on a single node only.
         /// The rule-based planner applies the same rule when moving gathers across steps.
-        if (const ActionsDAG * step_dag = tryGetActionsDAG(expression->getQueryPlanStep());
+        if (const ActionsDAG * step_dag = QueryPlanOptimizations::tryGetActionsDAG(expression->getQueryPlanStep());
             step_dag && QueryPlanOptimizations::dagContainsNonDeterministicFunction(*step_dag))
         {
             DistributionDescription single_node;    /// node_count=1, not replicated (default)
@@ -85,7 +72,7 @@ protected:
         /// through the DAG).  Competes with unsorted variant + `SortingEnforcer`.
         if (!required_properties.sorting.empty())
         {
-            const ActionsDAG * dag = tryGetActionsDAG(expression->getQueryPlanStep());
+            const ActionsDAG * dag = QueryPlanOptimizations::tryGetActionsDAG(expression->getQueryPlanStep());
             SortDescription input_sorting = required_properties.sorting;
             bool can_translate = !dag || translateSortDescription(*dag, input_sorting);
 
@@ -143,7 +130,7 @@ private:
             /// Translate distribution column names through the step's DAG.
             if (!input_props.distribution.columns.empty())
             {
-                const ActionsDAG * dag = tryGetActionsDAG(implementation_expression->plan_step.get());
+                const ActionsDAG * dag = QueryPlanOptimizations::tryGetActionsDAG(implementation_expression->plan_step.get());
                 if (dag && !translateDistributionColumns(*dag, input_props.distribution.columns))
                 {
                     LOG_TEST(getLogger("DistributionPassthrough"), "No passthrough for '{}': a distribution column does not map through the step",
