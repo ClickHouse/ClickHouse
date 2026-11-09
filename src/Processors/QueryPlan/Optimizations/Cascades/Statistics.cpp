@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -336,15 +337,22 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             auto storage_widths = relation_stats.avg_row_bytes
                 ? estimateReadColumnWidthsScaledToRow(*read_step, *relation_stats.avg_row_bytes)
                 : estimateReadColumnWidths(*read_step);
+            /// The widths are keyed by the columns of the read, while the statistics of a filter above it are keyed by
+            /// the columns the filter outputs, which it may rename.
+            std::unordered_map<String, ColumnStats> widths;
             for (const auto & [column_name, width] : storage_widths)
+                widths[column_name].avg_bytes = width;
+            if (const auto * filter_step = typeid_cast<const FilterStep *>(node.step.get()))
+                QueryPlanOptimizations::remapColumnStats(widths, filter_step->getExpression());
+            for (const auto & [column_name, width] : widths)
             {
                 auto & column_stats = stats->column_statistics[column_name];
                 if (column_stats.avg_bytes == 0)
-                    column_stats.avg_bytes = width;
+                    column_stats.avg_bytes = width.avg_bytes;
             }
             stats->estimated_bytes_per_row = relation_stats.avg_row_bytes
                 ? *relation_stats.avg_row_bytes
-                : estimateRowWidth(*read_step->getOutputHeader(), stats->column_statistics);
+                : estimateRowWidth(*node.step->getOutputHeader(), stats->column_statistics);
             /// A read (with or without a filter) cannot emit more rows than the table holds. Stat
             /// hints can deliberately claim more rows than the table physically has (tiny tables
             /// standing in for big ones in tests), so never put the bound below the estimate.

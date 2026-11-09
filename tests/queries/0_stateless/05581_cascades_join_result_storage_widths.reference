@@ -1,0 +1,5 @@
+└──JoinLogical (Broadcast HashJoin )
+│  Join: b[200000] ⋈ (t[100] ⋈ k[1])
+└──JoinLogical (Broadcast HashJoin )
+│  Join: t[100] ⋈ k[1]
+100000	x
