@@ -132,6 +132,8 @@ struct RuntimeDataflowStatisticsBlock
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
         size_t sample_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t compressed_bytes TSA_GUARDED_BY(mutex) = 0;
+        /// The bytes read as they are stored, compressed, that `bytes` does not include, see `recordInputColumns`.
+        size_t compressed_bytes_read TSA_GUARDED_BY(mutex) = 0;
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
     };
 
@@ -230,14 +232,20 @@ public:
     /// It is needed because in general we read each block in multiple steps because of prewhere.
     /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
     /// so should_continue_sampling remains true for subsequent calls for the same logical block.
+    /// `bytes_skipped_by_string_value_filters` are the sizes of the values read from disk but replaced with
+    /// empty strings in `input_columns` (see `StringValueFilter`), by column name.
+    /// `compressed_bytes_read`, if the reader knows it, is the compressed size of the data read from disk, which is
+    /// recorded as it is instead of estimating it from the read columns.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NameSet & partially_read_columns,
+        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
         const ColumnCodecByName & column_codecs,
         const CompressionCodecPtr & default_codec,
         size_t read_bytes,
+        std::optional<size_t> compressed_bytes_read,
         std::optional<bool> & should_continue_sampling);
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be

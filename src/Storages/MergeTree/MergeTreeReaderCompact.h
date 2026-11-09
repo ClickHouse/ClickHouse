@@ -57,6 +57,10 @@ protected:
     /// the columns `columns_mask` selects, or all of them that are in the part if it is null.
     virtual void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) = 0;
 
+    /// For the granules [from_mark, to_mark) of the column at `pos` that are served from the columns cache instead of being read
+    /// from the part: makes `takeCompressedBytesRead` count the compressed blocks of the part that hold them, as if they were read.
+    virtual void addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark) = 0;
+
     using InputStreamGetter = ISerialization::InputStreamGetter;
 
     void readData(
