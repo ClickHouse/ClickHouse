@@ -1056,7 +1056,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & local_context,
-    const PartitionedWriteAccessCheck & partitioned_write_access_check)
+    const PartitionedWriteAccessCheck & write_access_check)
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
@@ -1088,7 +1088,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     if (configuration->partition_strategy)
     {
         return std::make_shared<PartitionedStorageObjectStorageSink>(
-            object_storage, configuration, format_settings, sample_block, local_context, partitioned_write_access_check);
+            object_storage, configuration, format_settings, sample_block, local_context, write_access_check);
     }
 
     const auto paths = configuration->getPaths();
@@ -1096,6 +1096,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     auto write_path = settings.truncate_on_insert ? paths.back().path : paths.front().path;
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().path, paths.size()))
     {
+        /// The new key is computed at write time and can be outside the grant that the typed URI passed,
+        /// e.g. `data.1.tsv` for `data.tsv` with a grant on `data\.tsv`.
+        if (write_access_check)
+            write_access_check(local_context, configuration->getURIForAccessCheck(*new_key));
         configuration->addPath({*new_key});
         write_path = *new_key;
     }

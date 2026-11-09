@@ -99,7 +99,7 @@ public:
         const std::shared_ptr<DataLake::ICatalog> & catalog,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context,
-        const PartitionedWriteAccessCheck & partitioned_write_access_check);
+        const PartitionedWriteAccessCheck & write_access_check);
 
     void truncate(
         const ASTPtr & query,

@@ -943,6 +943,11 @@ def test_partitioned_write_filtered_grant():
         assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
         assert s3_keys(f"versioned.1.{suffix}/") == []
 
+        # Reject: the same rename for an unpartitioned write, whose typed key `versioned.<suffix>/1.tsv` is inside the grant.
+        assert "Not enough privileges" in insert_s3_error(f"{versioned}/1.tsv", settings={"s3_create_new_file_on_insert": 1})
+        assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
+        assert s3_keys(f"versioned.1.{suffix}/") == []
+
         # Reject: a partition id that makes the key fully qualified, `allowed_<suffix>-s3://root2/owned_<suffix>_1.tsv`,
         # which the object storage would write as `owned_<suffix>_1.tsv` into the bucket `root2`, while the checked URI
         # is in the granted bucket. A plain partition id with the same template is written.

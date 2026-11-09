@@ -134,16 +134,17 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
                                                               hasUnreplicatedTableDataOnDisk());
     }
 
-    /// The source access check covered only the URI template, so each partition is checked when it is written.
+    /// The source access check covered only the URI as typed, but a write can go to a destination computed at write time:
+    /// each partition of `PARTITION BY`, or a key renamed by `s3_create_new_file_on_insert`. The storage checks those.
     /// Without `check_source_access`, the caller does the checks, e.g. `url('s3://...')` for its delegate.
     /// `INSERT` passes no cached columns, so the check is never set on a lazy `StorageTableFunctionProxy`, which would not pass it on.
     /// Without a URI, only an unfiltered grant passed the source access check, and it allows every destination.
-    if (partition_by && check_source_access)
+    if (is_insert_query && check_source_access)
     {
         const auto access_object = getSourceAccessObject();
         if (access_object && !getFunctionURI().empty())
         {
-            /// The same check as for the URI template, so that a partition is refused whenever the typed URI would be.
+            /// The same check as for the typed URI, so that a destination is refused whenever typing it would be.
             storage->setPartitionedWriteAccessCheck(
                 [source = *access_object](const ContextPtr & write_context, const String & uri)
                 { checkSourceAccessForURI(write_context, AccessType::WRITE, source, uri); },
