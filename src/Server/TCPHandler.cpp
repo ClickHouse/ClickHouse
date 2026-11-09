@@ -3011,6 +3011,15 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     }
     state->query_context->applySettingsChanges(settings_changes);
 
+    /// Rewrite rules are applied only once, on the initiator. The initiator sends an explicitly empty
+    /// `query_rules` with every secondary query, but the clamping above keeps a shard-side value that is
+    /// fixed by a `readonly` profile or a `CONST` constraint. In general the client-supplied query kind
+    /// cannot be trusted to lift a constraint, but on a connection authenticated with the cluster secret
+    /// the peer is a server of the same cluster, so a secondary query is genuine: clear `query_rules`
+    /// server-side, bypassing the constraints, so the rules are not applied to the fragment a second time.
+    if (is_interserver_authenticated && query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        state->query_context->setSetting("query_rules", String{});
+
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins
     /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
