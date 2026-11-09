@@ -13,6 +13,7 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -298,13 +299,13 @@ void DistinctTransform::buildSetParallelFilter(
     /// 1. Allocate index buffer and per-row bucket ids
     PODArray<size_t> all_indices(rows);
     PODArray<UInt8> coarse_bucket_ids(rows); /// UInt8 is sufficient for ≤ 256 buckets
-    std::vector<std::atomic<size_t>> bucket_sizes(num_coarse_buckets);
+    VectorWithMemoryTracking<std::atomic<size_t>> bucket_sizes(num_coarse_buckets);
     PODArray<KeyHolder> keys(rows);
     PODArray<size_t> hashes(rows);
     const size_t block = 1024;
     /// Declared before `runner`: its destructor waits for the workers, which read these buffers,
     /// so they must outlive it even when an exception unwinds the stack.
-    std::vector<size_t> bucket_offsets(num_coarse_buckets + 1, 0);
+    VectorWithMemoryTracking<size_t> bucket_offsets(num_coarse_buckets + 1, 0);
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::DISTINCT_FINAL);
     /// Reserve tracking capacity for both phases, so that a task cannot be scheduled and left untracked.
@@ -353,7 +354,7 @@ void DistinctTransform::buildSetParallelFilter(
         bucket_offsets[i] = bucket_offsets[i - 1] + bucket_sizes[i - 1];
 
     /// 4. Fill in the array, writing per-bucket indices at known offset
-    std::vector<size_t> write_positions = bucket_offsets;
+    VectorWithMemoryTracking<size_t> write_positions = bucket_offsets;
     for (size_t i = 0; i < rows; ++i)
     {
         if (mask && !(*mask)[i])
