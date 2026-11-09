@@ -645,8 +645,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         /// so the last resolved projection column has aliases fully expanded.
         if (projection_order_by)
         {
-            /// The key is written from an analysis with the settings of a reload, so the constants it folds get the types
-            /// the projection writer derives.
+            /// Analyzed with the settings of a reload, so the constants folded into the key get the types the writer derives.
             auto key_analysis_context = Context::createCopy(key_context);
             key_analysis_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
             key_analysis_context->setSetting("optimize_respect_aliases", true);
