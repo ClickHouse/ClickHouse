@@ -57,20 +57,17 @@ void collectIdentifierNames(const IQueryTreeNode & node, std::unordered_set<Stri
             collectIdentifierNames(*child, names);
 }
 
-/// The aliases and the names of the parameters of lambda functions in the expression.
-void collectAliasNames(const IQueryTreeNode & node, std::unordered_set<String> & names)
+/// Whether a lambda function with the alias `name` is anywhere in the expression, like `((x, y) -> x + y) AS arrayElement`.
+bool hasLambdaWithAlias(const IQueryTreeNode & node, const String & name)
 {
     checkStackSize();
 
-    if (node.hasAlias())
-        names.insert(node.getAlias());
-    if (const auto * lambda = node.as<LambdaNode>())
-        for (const auto & name : lambda->getArguments().getNames())
-            names.insert(name);
-
+    if (node.getNodeType() == QueryTreeNodeType::LAMBDA && node.getAlias() == name)
+        return true;
     for (const auto & child : node.getChildren())
-        if (child)
-            collectAliasNames(*child, names);
+        if (child && hasLambdaWithAlias(*child, name))
+            return true;
+    return false;
 }
 
 /// A name that is not in `used_names`, for a parameter of a lambda function that must not shadow anything.
@@ -179,6 +176,64 @@ std::pair<const IQueryTreeNode *, const AliasScope *> findAlias(const String & n
     return {nullptr, nullptr};
 }
 
+/// Whether the name is bound to a lambda function by an alias visible in `scope`, so that a call of a function with this name
+/// calls the lambda function. The analyzer looks up the names of functions only among the aliases of lambda functions:
+/// a scalar alias with the name of a function does not hide the function.
+bool isLambdaAliasInScope(const String & name, const AliasScope & scope)
+{
+    for (const AliasScope * current = &scope; current; current = current->parent)
+        if (auto it = current->aliases.find(name); it != current->aliases.end() && it->second->getNodeType() == QueryTreeNodeType::LAMBDA)
+            return true;
+    return false;
+}
+
+/// Whether the name is a parameter of a nested lambda function or an alias visible in `scope`.
+/// The aliases of the scopes are only looked up by their names here, the expressions are not used.
+bool isLocalName(const String & name, const AliasScope & scope)
+{
+    for (const AliasScope * current = &scope; current; current = current->parent)
+        if (current->parameters.contains(name) || current->aliases.contains(name))
+            return true;
+    return false;
+}
+
+/** A name in the expression that is bound inside the lambda function of einsum (see `isLocalName`), or an empty string.
+  * The parameters of the lambda functions inside the expression itself, in `inner_parameters`, are bound in the expression.
+  */
+String findLocalName(const IQueryTreeNode & node, const AliasScope & scope, std::unordered_set<String> & inner_parameters)
+{
+    checkStackSize();
+
+    if (const auto * identifier = node.as<IdentifierNode>())
+    {
+        const auto & name = identifier->getIdentifier()[0];
+        if (!inner_parameters.contains(name) && isLocalName(name, scope))
+            return name;
+        return {};
+    }
+
+    if (const auto * lambda = node.as<LambdaNode>())
+    {
+        Names added;
+        for (const auto & name : lambda->getArguments().getNames())
+            if (inner_parameters.insert(name).second)
+                added.push_back(name);
+        String res = findLocalName(*lambda->getExpression(), scope, inner_parameters);
+        for (const auto & name : added)
+            inner_parameters.erase(name);
+        return res;
+    }
+
+    for (const auto & child : node.getChildren())
+    {
+        if (!child)
+            continue;
+        if (String res = findLocalName(*child, scope, inner_parameters); !res.empty())
+            return res;
+    }
+    return {};
+}
+
 class EinsumLambdaRewriter
 {
 public:
@@ -189,15 +244,12 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The lambda function of einsum must have at least one index as an argument");
 
         /// The names of the functions in the expression can be bound to lambda functions in the query, like
-        /// `WITH (x, y) -> x + y AS multiply`, or to aliases in the expression. Then they are not the builtin functions.
-        std::unordered_set<String> body_aliases;
-        collectAliasNames(*lambda.getExpression(), body_aliases);
-        auto is_builtin = [&](const String & name) { return !body_aliases.contains(name) && !is_scoped_function(name); };
-
-        if (!is_builtin("arrayElement"))
+        /// `WITH (x, y) -> x + y AS multiply`, or to the aliases of lambda functions in the expression.
+        /// Then they are not the builtin functions. The aliases inside the expression are checked in their scopes, see `isMultiply`.
+        if (is_scoped_function("arrayElement") || hasLambdaWithAlias(*lambda.getExpression(), "arrayElement"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The lambda form of einsum is not supported when the name 'arrayElement' is bound to another function in the query");
-        multiply_is_builtin = is_builtin("multiply");
+        multiply_is_scoped_function = is_scoped_function("multiply");
     }
 
     QueryTreeNodePtr rewrite(const QueryTreeNodes & extra_arguments)
@@ -210,7 +262,12 @@ public:
         while (std::any_of(used_names.begin(), used_names.end(), [&](const String & name) { return isValueName(name); }))
             value_prefix += "_";
 
-        replaceTensorElements(body);
+        {
+            /// The names of the aliases are used before the elements are replaced, the expressions of the aliases are not.
+            AliasScope scope;
+            collectScopeAliases(*body, scope);
+            replaceTensorElements(body, scope);
+        }
 
         for (size_t index = 0; index < indices.size(); ++index)
         {
@@ -230,11 +287,13 @@ public:
                     "Argument {} of einsum is not an array subscripted by the indices in the lambda function", i + 2);
         }
 
-        findSummationIndices(body);
+        AliasScope body_scope;
+        collectScopeAliases(*body, body_scope);
+        findSummationIndices(body, body_scope);
 
         /// If the expression is a product of elements, the elements are multiplied by einsum without a lambda function.
         QueryTreeNodes factors;
-        flattenProduct(body, factors);
+        flattenProduct(body, body_scope, factors);
         std::vector<size_t> product_operands;
         for (const auto & factor : factors)
         {
@@ -301,7 +360,8 @@ public:
 private:
     const LambdaNode & lambda;
     const Names & indices;
-    bool multiply_is_builtin = true;
+    /// The name `multiply` is bound to a lambda function outside of the lambda function of einsum.
+    bool multiply_is_scoped_function = false;
 
     std::vector<TensorElement> elements;
     /// The arrays of the elements, before the subscripts that are not indices are applied.
@@ -350,7 +410,8 @@ private:
     }
 
     /// Replaces the elements of tensors with the identifiers of their values.
-    void replaceTensorElements(QueryTreeNodePtr & node)
+    /// `scope` has the names of the aliases and of the parameters of the nested lambda functions visible at `node`.
+    void replaceTensorElements(QueryTreeNodePtr & node, const AliasScope & scope)
     {
         checkStackSize();
 
@@ -381,6 +442,17 @@ private:
                 for (const auto & subscript : subscripts)
                     checkNoAliases(*subscript, *node);
 
+                /// For the same reason, the array and the subscripts that are not indices must not depend on the parameters
+                /// of the nested lambda functions, like `a` in `arrayMap(a -> a[i], arrays)`, and on the aliases inside
+                /// the lambda function: in the arguments of einsum, these names would refer to something else.
+                std::unordered_set<String> inner_parameters;
+                if (String name = findLocalName(*array, scope, inner_parameters); !name.empty())
+                    throwLocalNameInsideTensorElement(name, *node);
+                for (const auto & subscript : subscripts)
+                    if (!getIndex(*subscript))
+                        if (String name = findLocalName(*subscript, scope, inner_parameters); !name.empty())
+                            throwLocalNameInsideTensorElement(name, *node);
+
                 /// The alias of the element, like in `(a[i] AS v) + v`, is the alias of its value now.
                 String alias = node->getAlias();
                 node = replaceTensorElement(array, subscripts);
@@ -394,17 +466,29 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Index '{}' of einsum can be used only as an array subscript", node->as<IdentifierNode &>().getIdentifier().getFullName());
 
-        if (const auto * nested_lambda = node->as<LambdaNode>())
+        if (auto * nested_lambda = node->as<LambdaNode>())
         {
             for (const auto & name : nested_lambda->getArguments().getNames())
                 if (std::find(indices.begin(), indices.end(), name) != indices.end())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A lambda function inside einsum cannot have an argument with the name of the index '{}'", name);
+
+            auto lambda_scope = makeLambdaScope(*nested_lambda, scope);
+            replaceTensorElements(nested_lambda->getExpression(), lambda_scope);
+            return;
         }
 
         for (auto & child : node->getChildren())
             if (child)
-                replaceTensorElements(child);
+                replaceTensorElements(child, scope);
+    }
+
+    [[noreturn]] static void throwLocalNameInsideTensorElement(const String & name, const IQueryTreeNode & element)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The element {} of a tensor in einsum depends on '{}', which is an alias or a parameter of a lambda function inside einsum. "
+            "This is not supported, because the array and its subscripts that are not indices are computed outside of the lambda function",
+            element.formatASTForErrorMessage(), name);
     }
 
     [[noreturn]] static void throwAliasInsideTensorElement(const String & alias, const IQueryTreeNode & element)
@@ -460,15 +544,22 @@ private:
         return std::make_shared<IdentifierNode>(Identifier{getValueName(elements.size() - 1)});
     }
 
-    void flattenProduct(const QueryTreeNodePtr & node, QueryTreeNodes & factors) const
+    /// Whether the node is a call of the builtin function `multiply` in `scope`.
+    bool isMultiply(const IQueryTreeNode & node, const AliasScope & scope) const
+    {
+        const auto * function = node.as<FunctionNode>();
+        return function && function->getFunctionName() == "multiply" && function->getArguments().getNodes().size() == 2
+            && !multiply_is_scoped_function && !isLambdaAliasInScope("multiply", scope);
+    }
+
+    void flattenProduct(const QueryTreeNodePtr & node, const AliasScope & scope, QueryTreeNodes & factors) const
     {
         checkStackSize();
 
-        const auto * function = node->as<FunctionNode>();
-        if (multiply_is_builtin && function && function->getFunctionName() == "multiply" && function->getArguments().getNodes().size() == 2)
+        if (isMultiply(*node, scope))
         {
-            for (const auto & argument : function->getArguments().getNodes())
-                flattenProduct(argument, factors);
+            for (const auto & argument : node->as<const FunctionNode &>().getArguments().getNodes())
+                flattenProduct(argument, scope, factors);
             return;
         }
         factors.push_back(node);
@@ -509,11 +600,9 @@ private:
     }
 
     /// An index is a summation index if it is used in two or more factors of some product.
-    void findSummationIndices(const QueryTreeNodePtr & body)
+    void findSummationIndices(const QueryTreeNodePtr & body, const AliasScope & scope)
     {
         is_summation.assign(indices.size(), false);
-        AliasScope scope;
-        collectScopeAliases(*body, scope);
         findSummationIndicesImpl(body, scope);
     }
 
@@ -529,7 +618,7 @@ private:
         }
 
         QueryTreeNodes factors;
-        flattenProduct(node, factors);
+        flattenProduct(node, scope, factors);
         if (factors.size() > 1)
         {
             std::vector<size_t> number_of_factors(indices.size(), 0);
