@@ -44,12 +44,15 @@ The receiver uses the standard AWS SDK credential chain, so anything that works 
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "CloudWatchLogsList",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
       "Sid": "CloudWatchLogsRead",
       "Effect": "Allow",
-      "Action": [
-        "logs:DescribeLogGroups",
-        "logs:FilterLogEvents"
-      ],
+      "Action": "logs:FilterLogEvents",
       "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
     }
   ]
@@ -67,7 +70,7 @@ eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env
 aws sts get-caller-identity
 ```
 
-SSO credentials expire, typically after 8 to 12 hours. Rerun these commands and restart the collector when they do. Access keys or an instance role avoid the interruption.
+SSO credentials expire, typically after 8 to 12 hours. Rerun these commands to refresh and export the credentials, then run `docker compose up -d --force-recreate otel-collector` from the Compose directory. Recreating the container applies the new environment variables; restarting it retains the expired credentials. Access keys or an instance role avoid the interruption.
 
 </Tab>
 <Tab title="IAM access keys" id="iam-access-keys">
@@ -263,8 +266,8 @@ docker compose logs -f otel-collector
 
 A healthy start ends with `Everything is ready. Begin running and processing data.` The first poll happens one `poll_interval` after start, so allow a minute or two. Errors to recognise:
 
-- `panic: runtime error: invalid memory address or nil pointer dereference` in `ensureSession`, after which the container restarts: the collector could not authenticate to AWS. The credentials are missing, invalid, or expired, or the STS endpoint is unreachable. Collector 0.162.0 reports this as a crash rather than an error message, tracked upstream in [issue 50961](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50961). Run `aws sts get-caller-identity` on the host, fix the credentials, and restart.
-- `AccessDeniedException`: the credentials lack `logs:FilterLogEvents` or `logs:DescribeLogGroups` on the group.
+- `panic: runtime error: invalid memory address or nil pointer dereference` in `ensureSession`, after which the container restarts: the collector could not authenticate to AWS. The credentials are missing, invalid, or expired, or the STS endpoint is unreachable. Collector 0.162.0 reports this as a crash rather than an error message, tracked upstream in [issue 50961](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50961). Run `aws sts get-caller-identity` on the host, refresh and export valid credentials, then run `docker compose up -d --force-recreate otel-collector` from the Compose directory.
+- `AccessDeniedException`: the credentials need `logs:DescribeLogGroups` with `"Resource": "*"` and `logs:FilterLogEvents` on the intended log groups.
 - `ResourceNotFoundException`: a log group name is misspelled or lives in a different region.
 - `401` or `403` from the exporter: the `authorization` value in the configuration is wrong. It must read `Bearer` followed by the full key, as the Collector config tab gives it. Fix the file and run `docker compose restart otel-collector`.
 - `404` from the exporter: a signal path such as `/v1/logs` was appended to the endpoint.

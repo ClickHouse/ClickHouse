@@ -69,12 +69,15 @@ The credentials need the following IAM policy to read CloudWatch logs:
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "CloudWatchLogsList",
+      "Effect": "Allow",
+      "Action": "logs:DescribeLogGroups",
+      "Resource": "*"
+    },
+    {
       "Sid": "CloudWatchLogsRead",
       "Effect": "Allow",
-      "Action": [
-        "logs:DescribeLogGroups",
-        "logs:FilterLogEvents"
-      ],
+      "Action": "logs:FilterLogEvents",
       "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
     }
   ]
