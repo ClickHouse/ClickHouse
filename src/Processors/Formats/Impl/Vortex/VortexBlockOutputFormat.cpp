@@ -112,7 +112,6 @@ VortexBlockOutputFormat::~VortexBlockOutputFormat()
 void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
 {
     CHColumnToArrowColumn::Settings arrow_settings;
-    /// `consume` checks that the values of `Utf8` columns are valid UTF-8.
     arrow_settings.output_string_as_string = format_settings.vortex.output_string_as_string;
     /// There is no fixed-width binary type on the Vortex side, so `FixedString` is written as `Binary`.
     arrow_settings.output_fixed_string_as_fixed_byte_array = false;
