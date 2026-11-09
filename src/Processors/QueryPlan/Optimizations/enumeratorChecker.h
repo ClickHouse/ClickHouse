@@ -82,6 +82,13 @@ private:
     /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
     /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
     MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
+    /// Offers the local, shuffle and broadcast hash joins of the plans of the two sides, see `DistributedJoinCost`. Returns
+    /// the cost of the cheapest one.
+    double acceptDistributedJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
+        const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges);
+    /// Keeps the plan as the cheapest plan of the subset, and as its plan partitioned by the class, if it is cheaper.
+    void offerPlan(UInt subset, const Plan & plan);
+
     /// The cheapest plan of the subset for -1, else its plan in `ordered`.
     const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
 
@@ -164,7 +171,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         keys, left_entry.estimated_rows, right_entry.estimated_rows, left_search_rows, right_search_rows, kind, strictness);
     const double rows_cost = left_entry.rows_cost + right_entry.rows_cost + joined_rows;
     /// The hash work counts an input without an estimate by its search value, as the rows do.
-    const double plan_cost = left_entry.cost + right_entry.cost + joined_rows
+    double plan_cost = left_entry.cost + right_entry.cost + joined_rows
         + optimizer.hashJoinWork(left_mask, left_search_rows, right_mask, right_search_rows);
 
     if (recorded_splits)
@@ -180,6 +187,9 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
              plan_cost,
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
+
+    if (optimizer.useDistribution())
+        plan_cost = acceptDistributedJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, keys, edge);
 
     /// The full set is enumerated last, so the plans of its parts are final: every costed split of it can be kept as
     /// another join order.
@@ -202,6 +212,9 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         });
     }
 
+    if (optimizer.useDistribution())
+        return;
+
     if (!dp_table.isConnected(result_subset) || plan_cost < dp_table[result_subset].cost)
     {
         auto & entry = dp_table[result_subset];
@@ -222,10 +235,107 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.order_class = -1;
         entry.left_plan = -1;
         entry.right_plan = -1;
+        entry.partition_class = -1;
     }
 
     if (optimizer.useInterestingOrders())
         acceptMergeJoins(result_subset, lhs_subset, rhs_subset, kind, strictness, keys, edge);
+}
+
+template <class TDPTable, class TOptimizer>
+void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::offerPlan(const UInt subset, const Plan & plan)
+{
+    auto & entry = dp_table[subset];
+    if (plan.partition_class >= 0 && optimizer.isInterestingPartition(plan.partition_class, static_cast<UInt32>(subset)))
+    {
+        auto it = std::ranges::find(entry.ordered, plan.partition_class, &Plan::partition_class);
+        if (it == entry.ordered.end())
+            entry.ordered.push_back(plan);
+        else if (plan.cost < it->cost)
+            *it = plan;
+    }
+    const bool has_plan = entry.left != 0 || entry.right != 0;
+    if (!has_plan || plan.cost < entry.cost)
+    {
+        static_cast<Plan &>(entry) = plan;
+        /// The partitioning of the cheapest plan matters only while a later join may use it.
+        if (entry.partition_class >= 0 && !optimizer.isInterestingPartition(entry.partition_class, static_cast<UInt32>(subset)))
+            entry.partition_class = -1;
+    }
+}
+
+template <class TDPTable, class TOptimizer>
+double EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptDistributedJoins(
+    const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
+    const JoinKeyEstimate & keys, const std::vector<JoinActionRef *> & edges)
+{
+    const auto left_mask = static_cast<UInt32>(lhs_subset);
+    const auto right_mask = static_cast<UInt32>(rhs_subset);
+    const UInt64 key_classes = optimizer.partitionKeyClasses(left_mask, right_mask);
+    const auto join_cost = optimizer.distributedJoinCost(left_mask, right_mask);
+
+    /// The plans of a side: its cheapest plan and its plans partitioned by a class.
+    auto side_plans = [&](UInt subset)
+    {
+        std::vector<Int8> plans{-1};
+        for (size_t i = 0; i < dp_table[subset].ordered.size(); ++i)
+            plans.push_back(static_cast<Int8>(i));
+        return plans;
+    };
+    const auto left_plans = side_plans(lhs_subset);
+    const auto right_plans = side_plans(rhs_subset);
+
+    double best_cost = std::numeric_limits<double>::infinity();
+    for (const Int8 left_index : left_plans)
+    {
+        const Plan & left = planAt(lhs_subset, left_index);
+        const double left_rows = left.estimated_rows ? static_cast<double>(*left.estimated_rows) : searchRows(lhs_subset);
+        for (const Int8 right_index : right_plans)
+        {
+            const Plan & right = planAt(rhs_subset, right_index);
+            const double right_rows = right.estimated_rows ? static_cast<double>(*right.estimated_rows) : searchRows(rhs_subset);
+            const double joined_rows = joinedRowsSearchValue(
+                keys, left.estimated_rows, right.estimated_rows, left_rows, right_rows, kind, strictness);
+            const double inputs_cost = left.cost + right.cost;
+
+            Plan plan;
+            plan.left = lhs_subset;
+            plan.right = rhs_subset;
+            plan.left_plan = left_index;
+            plan.right_plan = right_index;
+            plan.rows_cost = left.rows_cost + right.rows_cost + joined_rows;
+            plan.sel = keys.selectivity;
+            plan.kind = kind;
+            plan.strictness = strictness;
+            plan.estimated_rows = optimizer.estimateCardinality(left.estimated_rows, right.estimated_rows, keys, kind, strictness);
+            plan.rows_rest_on_assumption = joinRowsRestOnAssumption(keys, left.estimated_rows, right.estimated_rows);
+            plan.max_rows = estimateJoinRowsUpperBound(left.max_rows, right.max_rows, kind, strictness);
+            plan.edges.assign(edges.begin(), edges.end());
+            plan.method = JoinMethod::Hash;
+
+            auto offer = [&](double cost, Int8 partition_class)
+            {
+                plan.cost = inputs_cost + cost;
+                plan.partition_class = partition_class;
+                best_cost = std::min(best_cost, plan.cost);
+                offerPlan(result_subset, plan);
+            };
+
+            /// A broadcast of one side keeps the partitioning of the other.
+            offer(join_cost.broadcastRight(left_rows, right_rows, joined_rows), left.partition_class);
+            offer(join_cost.broadcastLeft(left_rows, right_rows, joined_rows), right.partition_class);
+
+            /// Both sides partitioned by a key: the sides that are not partitioned by it yet are shuffled.
+            for (UInt64 classes = key_classes; classes; classes &= classes - 1)
+            {
+                const auto key = static_cast<Int8>(std::countr_zero(classes));
+                const bool shuffle_left = left.partition_class != key;
+                const bool shuffle_right = right.partition_class != key;
+                offer(join_cost.partitioned(left_rows, shuffle_left, right_rows, shuffle_right, joined_rows), key);
+            }
+        }
+    }
+    return best_cost;
 }
 
 template <class TDPTable, class TOptimizer>

@@ -192,11 +192,14 @@ struct QueryPlanOptimizationSettings
         Winners,
         WinnersCandidates,
         BestSplits,
+        Frontier,
     };
     JoinEnumeration cascades_join_enumeration = JoinEnumeration::Off;
     size_t cascades_join_enumeration_max_splits = 20000;
     size_t cascades_join_enumeration_splits_per_set = 4;
     size_t cascades_join_enumeration_max_set_joins = 0;
+    /// See setting `query_plan_join_order_distribution`.
+    bool join_order_distribution = false;
     /// Set by the second pass while the plan will go through Cascades: join reordering then also builds a
     /// other join orders for Cascades to choose from, see `JoinGraphStep`.
     mutable bool build_join_order_alternatives = false;

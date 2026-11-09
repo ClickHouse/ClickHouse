@@ -123,6 +123,9 @@ struct RecordedJoinSplits
 
     /// The DPsub winner of every set that has a split. It carries the estimates of the set.
     std::unordered_map<UInt64, DPJoinEntryPtr> winners;
+    /// With `query_plan_join_order_distribution`: per set, the left inputs of the top joins of the plans DPsub keeps for
+    /// it, its cheapest plan first.
+    std::unordered_map<UInt64, std::vector<UInt64>> frontier_lefts;
 
     /// Set when DPsub planned the graph; otherwise nothing above is complete.
     bool complete = false;
@@ -227,6 +230,12 @@ struct QueryGraph
     bool runtime_filter_prunes_probe = false;
     /// A sort-merge join of inputs read in order by their primary key runs sharded by key ranges (`query_plan_join_shard_by_pk_ranges`).
     bool shard_merge_by_pk_ranges = false;
+
+    /// With `query_plan_join_order_distribution`: the nodes the query runs on, 0 when DPsub ignores how the data is
+    /// spread over them. DPsub then costs joins as local, shuffle or broadcast joins, see `CostConfig`.
+    size_t distribution_node_count = 0;
+    /// Per relation: the bytes of its rows, which an exchange of its data moves.
+    std::vector<double> relation_row_bytes;
 
     /// How a relation can be read in order: the longest sequence of its `candidates`, and how many of its leading columns
     /// are the leading primary key columns themselves, which a sharded merge splits by (`optimizeJoinByShards`).

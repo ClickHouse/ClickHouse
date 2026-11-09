@@ -66,6 +66,16 @@ SELECT 'best_splits dphyp', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t
 -- A budget that one join per set does not fit: the graph gets the joins of the orders.
 SELECT 'best_splits budget', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS cascades_join_enumeration = 'best_splits', cascades_join_enumeration_max_set_joins = 1, log_comment = 'join_enum_chain_best_splits_budget';
+-- DPsub costs the joins by the data they move, and keeps plans partitioned by the join keys.
+SELECT 'distribution', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS query_plan_join_order_distribution = 1, log_comment = 'join_enum_chain_distribution';
+SELECT 'frontier', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'frontier', query_plan_join_order_distribution = 1, log_comment = 'join_enum_chain_frontier';
+SELECT 'frontier cycle', count(), sum(c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id AND a.k = b.k JOIN t_enum_c c ON b.k = c.k JOIN t_enum_d d ON c.id = d.id AND d.k = a.x
+    SETTINGS cascades_join_enumeration = 'frontier', query_plan_join_order_distribution = 1, enable_join_transitive_predicates = 1, log_comment = 'join_enum_cycle_frontier';
+-- Without the distribution search there are no kept plans to import: the graph gets its join orders.
+SELECT 'frontier without distribution', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
+    SETTINGS cascades_join_enumeration = 'frontier', log_comment = 'join_enum_chain_frontier_off';
 SELECT 'one node', count(), sum(a.x + b.v + c.w) FROM t_enum_a a JOIN t_enum_b b ON a.id = b.id JOIN t_enum_c c ON b.id = c.id JOIN t_enum_d d ON c.id = d.id
     SETTINGS make_distributed_plan = 0;
 

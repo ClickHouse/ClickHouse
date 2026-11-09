@@ -31,6 +31,10 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
+#include <Common/CurrentThread.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1989,33 +1993,29 @@ bool JoinOrderPlanBuilder::selectSetSplits(
     else if (mode == JoinEnumeration::TopK)
     {
         selected = cheapestOrdersSplits(*recorded_splits, splits_by_set, orders);
-
-        /// Every set also gets the split of its winner, which its statistics come from, see `order_sets` below. That
-        /// split can lead to sets that no cheapest order has, so they get their winners too.
-        std::vector<UInt64> unchecked;
-        for (const auto & [relations, _] : selected)
-            unchecked.push_back(relations);
-        while (!unchecked.empty())
+    }
+    else if (mode == JoinEnumeration::Frontier)
+    {
+        /// The plans DPsub keeps for every set it reached: its cheapest plan and its plans partitioned by a join key.
+        if (recorded_splits->frontier_lefts.empty())
         {
-            const UInt64 relations = unchecked.back();
-            unchecked.pop_back();
-            const auto & winner = recorded_splits->winners.at(relations);
-            auto winner_index = find_split(relations, toRelationMask(winner->left->relations));
-            if (!winner_index)
-            {
-                reason = "the winner of a set is not a recorded split";
-                return false;
-            }
+            reason = "DPsub kept no partitioned plans, `query_plan_join_order_distribution` is off for the graph";
+            return false;
+        }
+        for (const auto & [relations, lefts] : recorded_splits->frontier_lefts)
+        {
             auto & indexes = selected[relations];
-            if (std::ranges::find(indexes, *winner_index) != indexes.end())
-                continue;
-            indexes.push_back(*winner_index);
-            for (UInt64 side : {splits[*winner_index].left, splits[*winner_index].right})
-                if (std::popcount(side) > 1 && !selected.contains(side))
+            for (const UInt64 left : lefts)
+            {
+                auto index = find_split(relations, left);
+                if (!index)
                 {
-                    selected[side];
-                    unchecked.push_back(side);
+                    reason = "a kept plan of a set is not a recorded split";
+                    return false;
                 }
+                if (std::ranges::find(indexes, *index) == indexes.end())
+                    indexes.push_back(*index);
+            }
         }
     }
     else if (mode != JoinEnumeration::Winners && mode != JoinEnumeration::BestSplits)
@@ -2043,6 +2043,36 @@ bool JoinOrderPlanBuilder::selectSetSplits(
                 set.push_back(*index);
             stack.push_back(entry->left.get());
             stack.push_back(entry->right.get());
+        }
+    }
+
+    /// Every set also gets the split of its winner, which its statistics come from, see `order_sets` below. That split
+    /// can lead to sets that no selected join has: the top-k orders, or the orders over partitioned plans of
+    /// `query_plan_join_order_distribution`, may join other plans of a set than its winner. Those sets get their winners too.
+    {
+        std::vector<UInt64> unchecked;
+        for (const auto & [relations, _] : selected)
+            unchecked.push_back(relations);
+        while (!unchecked.empty())
+        {
+            const UInt64 relations = unchecked.back();
+            unchecked.pop_back();
+            const auto & winner = recorded_splits->winners.at(relations);
+            auto winner_index = find_split(relations, toRelationMask(winner->left->relations));
+            if (!winner_index)
+            {
+                reason = "the winner of a set is not a recorded split";
+                return false;
+            }
+            auto & indexes = selected[relations];
+            if (std::ranges::find(indexes, *winner_index) == indexes.end())
+                indexes.push_back(*winner_index);
+            for (UInt64 side : {splits[*winner_index].left, splits[*winner_index].right})
+                if (std::popcount(side) > 1 && !selected.contains(side))
+                {
+                    selected[side];
+                    unchecked.push_back(side);
+                }
         }
     }
 
@@ -2543,6 +2573,27 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         && std::ranges::all_of(query_graph_builder.type_changes, [](const auto & changes) { return changes.second.empty(); });
     if (optimization_settings.build_join_order_alternatives && inner_joins_only && query_graph.relation_stats.size() > 2)
         query_graph.max_join_order_alternatives = optimization_settings.cascades_join_order_alternatives;
+
+    /// The graphs Cascades plans run on several nodes, so DPsub may cost their joins with the data they move.
+    if (optimization_settings.join_order_distribution && optimization_settings.build_join_order_alternatives && inner_joins_only)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+        {
+            size_t node_count = getCascadesClusterNodeCountParam(query_context);
+            if (node_count == 0)
+                node_count = getCascadesPlanningNodeCount(query_context);
+            if (node_count > 1)
+            {
+                query_graph.distribution_node_count = node_count;
+                for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
+                {
+                    const auto & stats = query_graph.relation_stats[i];
+                    query_graph.relation_row_bytes.push_back(stats.avg_row_bytes.value_or(
+                        estimateRowWidth(*query_graph_builder.inputs[i]->step->getOutputHeader(), stats.column_stats)));
+                }
+            }
+        }
+    }
 
     /// With `cascades_join_enumeration`, DPsub records the splits it accepts, and Cascades gets one memo group per set.
     const auto join_enumeration = optimization_settings.cascades_join_enumeration;

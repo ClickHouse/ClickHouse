@@ -420,10 +420,12 @@ void optimizeTreeSecondPass(
     const bool cascades_will_run = optimization_settings.make_distributed_plan && optimization_settings.enable_cascades_optimizer
         && !planContainsLogicalExchange(root);
 
-    /// Join reordering also keeps other join orders when Cascades will choose between them, see `JoinGraphStep`.
+    /// Join reordering also keeps other join orders when Cascades will choose between them, see `JoinGraphStep`, and
+    /// costs the joins by the data they move with `query_plan_join_order_distribution`.
     optimization_settings.build_join_order_alternatives = cascades_will_run
         && (optimization_settings.cascades_join_order_alternatives > 0
-            || optimization_settings.cascades_join_enumeration != QueryPlanOptimizationSettings::JoinEnumeration::Off);
+            || optimization_settings.cascades_join_enumeration != QueryPlanOptimizationSettings::JoinEnumeration::Off
+            || optimization_settings.join_order_distribution);
 
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     /// When Cascades distributes the plan, the filters are placed after it, on the join order it chooses.

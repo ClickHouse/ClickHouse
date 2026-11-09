@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsUInt64 cascades_join_enumeration_max_splits;
     extern const SettingsUInt64 cascades_join_enumeration_splits_per_set;
     extern const SettingsUInt64 cascades_join_enumeration_max_set_joins;
+    extern const SettingsBool query_plan_join_order_distribution;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -444,14 +445,17 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         cascades_join_enumeration = JoinEnumeration::WinnersCandidates;
     else if (join_enumeration == "best_splits")
         cascades_join_enumeration = JoinEnumeration::BestSplits;
+    else if (join_enumeration == "frontier")
+        cascades_join_enumeration = JoinEnumeration::Frontier;
     else
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid value '{}' of setting `cascades_join_enumeration`, expected 'off', 'candidates', 'all_splits', 'all_splits_rule', "
-            "'topk', 'winners', 'winners_candidates' or 'best_splits'",
+            "'topk', 'winners', 'winners_candidates', 'best_splits' or 'frontier'",
             join_enumeration);
     cascades_join_enumeration_max_splits = from[Setting::cascades_join_enumeration_max_splits];
     cascades_join_enumeration_splits_per_set = from[Setting::cascades_join_enumeration_splits_per_set];
     cascades_join_enumeration_max_set_joins = from[Setting::cascades_join_enumeration_max_set_joins];
+    join_order_distribution = from[Setting::query_plan_join_order_distribution];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

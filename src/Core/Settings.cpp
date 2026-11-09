@@ -11430,6 +11430,8 @@ Experimental. How the Cascades optimizer gets the join orders of a join graph:
 - `winners_candidates`: the joins of `winners` and of `candidates` together;
 - `best_splits`: the `cascades_join_enumeration_splits_per_set` cheapest splits of every set of joined tables by the
   join order optimizer's cost, so that Cascades chooses between many orders at every level.
+- `frontier`: the splits of the plans that `query_plan_join_order_distribution` keeps for every set of joined tables:
+  its cheapest plan and its cheapest plan partitioned by each join key that a later join can use.
 
 `candidates` and `all_splits` take effect only for graphs of inner joins whose join keys compare the same way as
 hash keys and as values (no floating-point keys), and that `DPsub` plans; other graphs use `off`.
@@ -11452,6 +11454,13 @@ per set are kept until the joins fit; a graph where one split per set does not f
 0 means no limit.
 )", EXPERIMENTAL, \
         {"26.11", 0, 0, "New experimental setting."}) \
+    DECLARE(Bool, query_plan_join_order_distribution, false, R"(
+Experimental. Only affects the `dpsub` join order algorithm while the plan goes through the Cascades optimizer. Makes it
+aware of how the data is spread over the nodes: it costs every join as a local, shuffle or broadcast join with the
+cost model of Cascades, and keeps for every set of joined tables its cheapest plan partitioned by each join key that a
+later join can use. Replaces `query_plan_join_order_use_interesting_orders` for the graphs it plans.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting."}) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", 0, \

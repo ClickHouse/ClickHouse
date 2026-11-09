@@ -10,6 +10,10 @@ best_splits	1860	50180
 all_splits dphyp	1860	50180
 best_splits dphyp	1860	50180
 best_splits budget	1860	50180
+distribution	1860	50180
+frontier	1860	50180
+frontier cycle	211	2497
+frontier without distribution	1860	50180
 one node	1860	50180
 -- transitive chain, transitive predicates on and off
 all_splits on	1860	3985
@@ -46,7 +50,10 @@ join_enum_chain_best_splits	1	1	0
 join_enum_chain_best_splits_budget	1	1	0
 join_enum_chain_best_splits_dphyp	1	1	0
 join_enum_chain_candidates	1	1	0
+join_enum_chain_distribution	0	0	0
 join_enum_chain_dphyp	1	1	0
+join_enum_chain_frontier	1	1	0
+join_enum_chain_frontier_off	0	0	0
 join_enum_chain_off	0	0	0
 join_enum_chain_rule	1	1	1
 join_enum_chain_topk	1	1	0
@@ -55,6 +62,7 @@ join_enum_chain_winners_candidates	1	1	0
 join_enum_cross	1	1	0
 join_enum_cross_empty	1	1	0
 join_enum_cycle	1	1	0
+join_enum_cycle_frontier	1	1	0
 join_enum_cycle_rule	1	1	1
 join_enum_float	0	0	0
 join_enum_limit	0	0	0
