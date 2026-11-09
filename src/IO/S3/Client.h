@@ -245,7 +245,7 @@ public:
 
     bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
-    std::string getGCSOAuthToken() const;
+    SecretString getGCSOAuthToken() const;
 
     ThrottlerPtr getPutRequestThrottler() const { return client_configuration.request_throttler.put_throttler; }
     ThrottlerPtr getGetRequestThrottler() const { return client_configuration.request_throttler.get_throttler; }

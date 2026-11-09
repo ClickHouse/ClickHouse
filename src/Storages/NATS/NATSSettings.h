@@ -36,6 +36,7 @@ struct NATSSettingsImpl;
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
     M(CLASS_NAME, SchemaInferenceMode) \
+    M(CLASS_NAME, SecretString) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \

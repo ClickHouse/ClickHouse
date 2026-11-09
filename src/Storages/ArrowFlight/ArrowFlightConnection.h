@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
+#include <Common/SecretString.h>
 #include <Storages/StorageArrowFlight.h>
 #include <arrow/flight/client.h>
 
@@ -45,7 +46,7 @@ private:
     int port;
     const bool use_basic_authentication;
     const String username;
-    const String password;
+    const SecretString password;
     const bool enable_ssl;
     const String ssl_ca;
     const String ssl_override_hostname;

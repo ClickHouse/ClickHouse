@@ -100,7 +100,7 @@ void ArrowFlightConnection::connect(arrow::flight::TimeoutDuration timeout) cons
         arrow::flight::FlightCallOptions auth_options;
         auth_options.timeout = timeout;
 
-        auto auth_result = new_client->AuthenticateBasicToken(auth_options, username, password);
+        auto auth_result = new_client->AuthenticateBasicToken(auth_options, username, String(password));
         if (!auth_result.ok())
         {
             throw Exception(

@@ -13,6 +13,7 @@
 #include <Common/SipHash.h>
 
 #include <aws/core/Aws.h>
+#include <aws/core/external/cjson/cJSON.h>
 #include <aws/core/utils/memory/AWSMemory.h>
 #include <aws/common/allocator.h>
 #include <aws/core/client/CoreErrors.h>
@@ -1084,20 +1085,20 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         translateHeadersToGCS(*httpRequest);
 }
 
-std::string Client::getGCSOAuthToken() const
+SecretString Client::getGCSOAuthToken() const
 {
     if (provider_type != ProviderType::GCS)
-        return "";
+        return {};
 
     const auto & http_client = GetHttpClient();
 
     if (!http_client)
-        return "";
+        return {};
 
     auto * gcp_oauth_client = dynamic_cast<PocoHTTPClientGCPOAuth *>(http_client.get());
 
     if (!gcp_oauth_client)
-        return "";
+        return {};
 
     return gcp_oauth_client->getBearerToken();
 }
@@ -1352,6 +1353,16 @@ void awsAllocatorRelease(aws_allocator *, void * ptr) noexcept
     JemallocNoDumpArenas::deallocate(ptr);
 }
 
+void * cJSONMalloc(size_t size) noexcept
+{
+    return JemallocNoDumpArenas::allocate(size, 0, std::nothrow);
+}
+
+void cJSONFree(void * ptr) noexcept
+{
+    JemallocNoDumpArenas::deallocate(ptr);
+}
+
 NoDumpMemoryManager no_dump_memory_manager;
 
 }
@@ -1382,6 +1393,9 @@ ClientFactory::ClientFactory()
     aws_options.ioOptions.tlsConnectionOptions_create_fn = []() { return nullptr; };
 
     Aws::InitAPI(aws_options);
+
+    cJSON_AS4CPP_Hooks cjson_hooks{.malloc_fn = cJSONMalloc, .free_fn = cJSONFree};
+    cJSON_AS4CPP_InitHooks(&cjson_hooks);
 }
 
 ClientFactory::~ClientFactory()

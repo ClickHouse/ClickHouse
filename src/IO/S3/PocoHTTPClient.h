@@ -273,7 +273,7 @@ class PocoHTTPClientGCPOAuth : public PocoHTTPClient
 public:
     explicit PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration & client_configuration);
 
-    std::string getBearerToken() const;
+    SecretString getBearerToken() const;
 private:
     void makeRequestInternal(
         Aws::Http::HttpRequest & request,

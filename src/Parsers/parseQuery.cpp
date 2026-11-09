@@ -1,5 +1,7 @@
 #include <Parsers/parseQuery.h>
 
+#include <Core/Defines.h>
+
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -729,6 +731,12 @@ ASTPtr parseQuery(
     size_t max_parser_backtracks)
 {
     return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks);
+}
+
+
+ASTPtr parseQueryFromText(IParser & parser, std::string_view query)
+{
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
 

@@ -372,7 +372,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
 ASTPtr parseDatabaseEngineDefinition(std::string_view definition)
 {
     ParserStorage parser{ParserStorage::DATABASE_ENGINE};
-    return parseQuery(parser, definition.data(), definition.data() + definition.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return parseQueryFromText(parser, definition);
 }
 
 

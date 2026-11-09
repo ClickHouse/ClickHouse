@@ -917,13 +917,13 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
     PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
 }
 
-std::string PocoHTTPClientGCPOAuth::getBearerToken() const
+SecretString PocoHTTPClientGCPOAuth::getBearerToken() const
 {
     std::lock_guard lock(mutex);
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
         bearer_token = requestBearerToken();
 
-    return String(bearer_token->token);
+    return bearer_token->token;
 }
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const

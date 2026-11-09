@@ -766,14 +766,13 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
         return empty_settings_changes;
     }
 
-    std::string_view text = *settings_changes;
     ParserSetQuery parser(/* parse_only_internals_ = */ true);
-    return parseQuery(parser, text.data(), text.data() + text.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return parseQueryFromText(parser, *settings_changes);
 }
 
 bool StorageInMemoryMetadata::hasSettingChange(const String & setting_name) const
 {
-    return std::ranges::find(settings_changes_names, setting_name) != settings_changes_names.end();
+    return std::ranges::contains(settings_changes_names, setting_name);
 }
 
 Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const

@@ -83,6 +83,11 @@ public:
     }
 };
 
+String formatSettingValue(const Field & value)
+{
+    return applyVisitor(FieldVisitorToSetting(), value);
+}
+
 
 void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {

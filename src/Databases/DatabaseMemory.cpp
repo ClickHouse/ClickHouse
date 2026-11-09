@@ -28,7 +28,7 @@ namespace ErrorCodes
 static ASTPtr parseCreateQuery(std::string_view query)
 {
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    return parseQueryFromText(parser, query);
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)

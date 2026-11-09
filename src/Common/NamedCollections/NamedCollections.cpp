@@ -385,7 +385,7 @@ MutableNamedCollectionPtr NamedCollectionFromSQL::create(const ASTCreateNamedCol
 static ASTCreateNamedCollectionQuery parseCreateQuery(std::string_view create_query)
 {
     ParserCreateNamedCollectionQuery parser;
-    auto ast = parseQuery(parser, create_query.data(), create_query.data() + create_query.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQueryFromText(parser, create_query);
     return ast->as<ASTCreateNamedCollectionQuery &>();
 }
 

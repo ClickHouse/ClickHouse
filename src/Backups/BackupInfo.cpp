@@ -37,7 +37,7 @@ String BackupInfo::toString() const
 BackupInfo BackupInfo::fromString(std::string_view str)
 {
     ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, str.data(), str.data() + str.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr ast = parseQueryFromText(parser, str);
     return fromAST(*ast);
 }
 

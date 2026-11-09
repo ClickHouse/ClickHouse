@@ -43,7 +43,7 @@ namespace Setting
     extern const SettingsUInt64 max_http_get_redirects;
 }
 
-static String authorizationHeaderValue(const String & oauth_token)
+static String authorizationHeaderValue(std::string_view oauth_token)
 {
     return fmt::format("OAuth {}", oauth_token);
 }
@@ -54,7 +54,7 @@ YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & conne
     checkHeaders(context, connection_info.oauth_token);
 }
 
-void YTsaurusClient::checkHeaders(const ContextPtr & context, const String & oauth_token)
+void YTsaurusClient::checkHeaders(const ContextPtr & context, std::string_view oauth_token)
 {
     HTTPHeaderEntries headers{{"Authorization", authorizationHeaderValue(oauth_token)}};
     context->getHTTPHeaderFilter().checkHeaders(headers);

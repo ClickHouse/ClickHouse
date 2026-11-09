@@ -531,7 +531,7 @@ ZooKeeper::ZooKeeper(
     }
 
     if (!args.auth_scheme.empty())
-        sendAuth(args.auth_scheme, args.identity);
+        sendAuth(args.auth_scheme, String(args.identity));
 
     /// Initialize progress tracker to "now" so the receive loop does not
     /// immediately trigger a timeout before any responses arrive.
@@ -757,7 +757,7 @@ void ZooKeeper::sendHandshake()
     int32_t handshake_length = 45;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
-    std::string password = args.password;
+    std::string password(args.password);
     password.resize(Coordination::PASSWORD_LENGTH, '\0');
     bool read_only = true;
 
