@@ -2796,9 +2796,8 @@ static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & colum
 }
 
 
-/// Whether `CAST` has a conversion from `from_type` into `to_type`. `accurateOrNull` cannot answer: where there is
-/// none, it writes NULL for every value instead of throwing (`Int128` into a `Decimal`, an `Enum` or `IPv4`). An
-/// accurate cast of no rows fails only then.
+/// Where `CAST` has no conversion (`Int128` into a `Decimal`, an `Enum` or `IPv4`), `accurateOrNull` writes NULL for
+/// every value instead of throwing; an accurate cast of no rows throws only then.
 static bool castConversionExists(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     try
