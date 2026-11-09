@@ -383,9 +383,50 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, const invariant
 /// remainder carried in from the previous step is below the divisor.
 constexpr uint64_t divide_by_single_limb(const uint64_t * numerator, unsigned m, uint64_t denominator, uint64_t * quotient)
 {
-    uint64_t remainder = 0;
-    for (unsigned i = m; i > 0; --i)
-        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
+#if defined(__x86_64__)
+    /// Keep the `divq` loop: a native first division adds operand-width selection branches.
+    if (!std::is_constant_evaluated())
+    {
+        uint64_t remainder = 0;
+        for (unsigned i = m; i > 0; --i)
+            quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], denominator, remainder);
+        return remainder;
+    }
+#endif
+    if (m == 0)
+        return 0;
+
+    if (std::has_single_bit(denominator))
+    {
+        const unsigned shift = static_cast<unsigned>(std::countr_zero(denominator));
+        if (shift == 0)
+        {
+            for (unsigned i = 0; i < m; ++i)
+                quotient[i] = numerator[i];
+            return 0;
+        }
+
+        const uint64_t remainder = numerator[0] & (denominator - 1);
+        uint64_t carry = 0;
+        for (unsigned i = m; i > 0; --i)
+        {
+            const uint64_t limb = numerator[i - 1];
+            quotient[i - 1] = (limb >> shift) | carry;
+            carry = limb << (64 - shift);
+        }
+        return remainder;
+    }
+
+    /// The first step has no carried remainder, so a native 64-bit division suffices.
+    uint64_t remainder = numerator[m - 1] % denominator;
+    quotient[m - 1] = numerator[m - 1] / denominator;
+    if (m == 1)
+        return remainder;
+
+    /// Amortize reciprocal preparation over the remaining limbs on targets without `divq`.
+    const auto prepared = prepare_divisor(denominator);
+    for (unsigned i = m - 1; i > 0; --i)
+        quotient[i - 1] = divide_128_by_64(remainder, numerator[i - 1], prepared, remainder);
     return remainder;
 }
 
