@@ -49,3 +49,71 @@
 [('__name__','metric'),('instance','a'),('job','1')]	[('1970-01-01 00:02:00.000',2),('1970-01-01 00:03:00.000',3)]
 [('__name__','metric'),('instance','a'),('job','1'),('version','v1')]	[('1970-01-01 00:00:00.000',0),('1970-01-01 00:01:00.000',1)]
 [('__name__','metric'),('instance','a'),('job','1'),('version','v2')]	[('1970-01-01 00:04:00.000',4)]
+-- info metrics joined on instance and job, data label matchers, custom __name__ (promql/info_test.go)
+info(metric, {data=~".+", non_existent=~".*"}) from 0 to 600 step 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(metric, {__name__="target_info"}) from 0 to 600 step 300
+[('__name__','metric'),('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(nolabels) from 0 to 600 step 300
+[('__name__','nolabels'),('x','y')]	[(0,0),(300000,1),(600000,2)]
+info(nolabels, {__name__="build_info"}) from 0 to 600 step 300
+info(metric_withdata) from 0 to 600 step 300
+info(metric_withdata, {data=~".+"}) from 0 to 600 step 300
+[('__name__','metric_withdata'),('data','info'),('instance','a'),('job','1')]	[(0,5),(300000,5),(600000,5)]
+info(metric, {data=~".*"} offset 5m) from 0 to 600 step 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(metric, {"build_info"}) from 0 to 600 step 300
+[('__name__','metric'),('build_data','build'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(metric_with_overlapping_label, {data=~".+"}) from 0 to 600 step 300
+info({__name__=~"metric|metric_not_matching_target_info"}) from 0 to 600 step 300
+[('__name__','metric'),('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+[('__name__','metric_not_matching_target_info'),('instance','a'),('job','2'),('label','value')]	[(0,0),(300000,1),(600000,2)]
+info(target_info) from 0 to 600 step 300
+[('__name__','target_info'),('another_data','another info'),('data','info'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1)]
+info(target_info, {data=~".+"}) from 0 to 600 step 300
+info(metric * 2) from 0 to 600 step 300
+[('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	[(0,0),(300000,2),(600000,4)]
+info(metric) at 300
+[('__name__','metric'),('another_data','another info'),('data','info'),('instance','a'),('job','1'),('label','value')]	1
+info(metric, {data=~".+"}) at 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1'),('label','value')]	1
+-- two info series with the same identifying labels at the same time
+info(metric) from 0 to 600 step 300
+info(metric2) from 0 to 600 step 300
+[('__name__','metric2'),('instance','a'),('job','1'),('v','x')]	[(0,7)]
+info(other) from 0 to 600 step 300
+[('__name__','other'),('instance','c'),('job','3')]	[(0,1),(300000,1),(600000,1)]
+-- a label selector without a matcher that doesn't match the empty string
+info(metric, {__name__!="metric"}) from 0 to 600 step 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1)]
+info(metric, {__name__!="metric", data=~".*"}) from 0 to 600 step 300
+[('__name__','metric'),('data','info'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1)]
+-- an info series appearing and disappearing within the range, a base series with only one identifying label
+info(metric) from 0 to 600 step 300
+[('__name__','metric'),('data','mid'),('instance','a'),('job','1')]	[(300000,1)]
+[('__name__','metric'),('instance','a'),('job','1')]	[(0,0),(600000,2)]
+info(job_only) from 0 to 600 step 300
+[('__name__','job_only'),('data','job only'),('job','1')]	[(0,3),(300000,3),(600000,3)]
+info({__name__=~"metric|job_only"}) from 0 to 600 step 300
+[('__name__','job_only'),('job','1')]	[(0,3),(300000,3),(600000,3)]
+[('__name__','metric'),('data','mid'),('instance','a'),('job','1')]	[(300000,1)]
+[('__name__','metric'),('instance','a'),('job','1')]	[(0,0),(600000,2)]
+-- @ and offset limit the time range of the info series
+info(metric @ 300) from 0 to 900 step 300
+[('__name__','metric'),('instance','a'),('job','1')]	[(0,1),(300000,1),(600000,1),(900000,1)]
+info(metric @ 300) from 300 to 900 step 300
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	[(300000,1),(600000,1),(900000,1)]
+info(metric offset 5m) from 300 to 900 step 300
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	[(300000,0),(600000,1)]
+[('__name__','metric'),('instance','a'),('job','1')]	[(900000,2)]
+info(metric @ 300, {data=~".+"}) from 300 to 900 step 300
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	[(300000,1)]
+info(sum by (instance, job) (metric @ 300)) from 300 to 900 step 300
+[('data','new'),('instance','a'),('job','1')]	[(300000,1),(600000,1),(900000,1)]
+info(metric offset 5m) at 600
+[('__name__','metric'),('instance','a'),('job','1')]	1
+info(metric offset 4m) at 600
+[('__name__','metric'),('instance','a'),('job','1')]	1
+info(metric) at 600
+[('__name__','metric'),('data','new'),('instance','a'),('job','1')]	2
+-- invalid arguments
