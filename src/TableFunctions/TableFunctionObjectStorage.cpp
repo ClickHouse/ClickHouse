@@ -58,7 +58,8 @@ namespace DataLakeStorageSetting
 template <typename Definition, typename Configuration, bool is_data_lake>
 ObjectStoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getObjectStorage(const ContextPtr & context, bool create_readonly) const
 {
-    /// A client created read-only does not create a missing Azure container, which a write needs.
+    /// A client created read-only does not create a missing Azure container, which a write needs. The container
+    /// is created only while a client is built, so a cached writable client can also serve a read-only request.
     if (!object_storage || (object_storage_is_readonly && !create_readonly))
     {
         object_storage = configuration->createObjectStorage(context, create_readonly, std::nullopt);
