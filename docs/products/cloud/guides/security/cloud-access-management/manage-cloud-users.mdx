@@ -102,3 +102,21 @@ Follow the steps below to remove a user.
 2. Click `Users and roles`
 3. Click the three dots next to the user's name and select `Remove`
 4. Confirm the action by clicking the `Remove user` button
+
+## Manage users with clickhousectl {#manage-users-with-clickhousectl}
+
+You can also invite, update, and remove users with [clickhousectl](/concepts/features/interfaces/cli). Listing works with OAuth. Inviting, changing roles, and removing users needs an API key: run `clickhousectl cloud auth login --interactive` first.
+
+```bash
+# Find role IDs, then invite a user (one email per invitation)
+clickhousectl cloud org role list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+clickhousectl cloud invitation list
+
+# List members, set a member's roles, or remove a member
+clickhousectl cloud member list
+clickhousectl cloud member update <user-id> --role-id <role-id> --role-id <another-role-id>
+clickhousectl cloud member remove <user-id>
+```
+
+`member update` replaces the member's whole role set, so pass every role the user should keep. `member` and `invitation` commands also accept `--email` instead of an ID; the match is exact and case-sensitive. `member remove` acts immediately, with no confirmation prompt. If you belong to more than one organization, add `--org-id <org-id>`.

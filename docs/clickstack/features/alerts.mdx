@@ -179,6 +179,63 @@ In the example below, the `Remove Alert` button will remove the alert from the c
 
 <Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Remove chart alert" size="lg"/>
 
+## Managing alerts with clickhousectl {#clickhousectl}
+
+On Managed ClickStack, you can create webhooks and alerts from the command line with [clickhousectl](/concepts/features/interfaces/cli). Each command takes the ClickHouse Cloud service ID (from `clickhousectl cloud service list`) and reads the request body from a JSON file. List and get commands work after `clickhousectl cloud auth login`; validating, creating, and updating need an [API key](/concepts/features/interfaces/cli#api-key).
+
+Save a webhook definition as `webhook.json`:
+
+```json
+{
+  "name": "Incident receiver",
+  "service": "generic",
+  "url": "https://alerts.example.com/clickstack"
+}
+```
+
+Validate the webhook without saving it, then create it:
+
+```bash
+clickhousectl cloud clickstack webhook validate <service-id> --file webhook.json
+clickhousectl cloud clickstack webhook create <service-id> --file webhook.json
+```
+
+Validation checks the body, URL, and body template. It doesn't check that the name is unique. Protect JSON files that contain authorization headers or other secrets.
+
+An alert needs `threshold`, `thresholdType`, and `interval`. This `alert.json` fires when a saved search matches 100 or more events in a 5-minute window, and notifies the webhook:
+
+```json
+{
+  "source": "saved_search",
+  "savedSearchId": "<saved-search-id>",
+  "threshold": 100,
+  "thresholdType": "above",
+  "interval": "5m",
+  "channels": [{"type": "webhook", "webhookId": "<webhook-id>", "webhookService": "generic"}]
+}
+```
+
+For a dashboard chart alert, set `"source": "tile"` with `dashboardId` and `tileId` instead of `savedSearchId`. Find the saved search ID, then create and inspect the alert:
+
+```bash
+clickhousectl cloud clickstack saved-search list <service-id>
+clickhousectl cloud clickstack alert create <service-id> --file alert.json
+clickhousectl cloud clickstack alert list <service-id>
+clickhousectl cloud clickstack alert get <service-id> <alert-id>
+```
+
+Check `state` and `executionErrors` in the `alert get` output, as well as the notification destinations.
+
+<Warning>
+`clickhousectl cloud clickstack alert update` replaces the whole alert. Save the current definition first with `alert get <service-id> <alert-id> --json`, then send the complete alert, including its channels and every other setting you want to keep:
+
+```bash
+clickhousectl cloud clickstack alert update <service-id> <alert-id> --file alert-update.json
+```
+</Warning>
+
+For inline alerts and the full set of fields, see the [ClickStack guide for clickhousectl](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md#add-notifications).
+
 ## SQL-based chart alerts {#sql-based-alerts}
 
 SQL-based chart alerts let you write arbitrary ClickHouse SQL to define alert conditions. This gives you full control over filtering, aggregation, and math — anything you can express in SQL can become an alert.
