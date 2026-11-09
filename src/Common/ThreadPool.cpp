@@ -77,6 +77,10 @@ namespace
         IdleGlobalSlotHolder * tail = nullptr;
     };
 
+    /// The counter of the slots of `GlobalThreadPool::instance`, which the idle workers of local pools take their
+    /// slots from (see `ThreadFromThreadPool::global_slots_for_idle`). Set when the singleton is created.
+    std::atomic<std::atomic<int64_t> *> singleton_thread_job_capacity = nullptr;
+
     IdleGlobalSlotHolders & getIdleGlobalSlotHolders()
     {
         /// Never destroyed, for the same reason as `getLocalThreadPoolRegistry`. Constructed in static storage
@@ -133,6 +137,11 @@ namespace
     /// scheduling call sees it at once, even before the evicted worker wakes up.
     bool evictIdleGlobalSlotHolderNoLock(IdleGlobalSlotHolders & holders, std::atomic<int64_t> & slots)
     {
+        /// All the holders take their slots from the counter of the singleton (`globalRemainingThreadJobCapacity`).
+        /// Another pool of the same type, such as an independent `FreeThreadPool`, has its own counter: evicting a
+        /// holder for it would credit the slot to the wrong counter, and the singleton would lose it for good.
+        if (&slots != singleton_thread_job_capacity.load(std::memory_order_relaxed))
+            return false;
         IdleGlobalSlotHolder * holder = holders.head;
         if (!holder)
             return false;
@@ -367,6 +376,23 @@ namespace
     private:
         int64_t value_after_decrement = 0;
     };
+
+    /// The slot held by the job that runs on the current worker of the global pool (see
+    /// `JobWithPriority::thread_job_slot`), or nullptr. Lets the job of a `ThreadFromGlobalPool` give its slot
+    /// back before `join` can return, see `releaseCurrentGlobalThreadJobSlot`.
+    thread_local std::optional<ScopedDecrement> * current_global_thread_job_slot = nullptr;
+
+    /// Gives back the slot of the job that runs on the current worker of the global pool right away, instead
+    /// of when the worker destroys the job after it returns. `startThreadFromGlobalPool` calls it right before
+    /// it signals that the thread is finished: a caller that has joined a long-lived thread may schedule a
+    /// thread that needs its slot right away, and must not see the slot still taken. That would make, for
+    /// example, the mandatory spawn of a worker in `AsyncLoader` fail as if all the threads were held by
+    /// long-lived ones. The worker itself is about to return and take the next job from the queue.
+    void releaseCurrentGlobalThreadJobSlot()
+    {
+        if (current_global_thread_job_slot)
+            current_global_thread_job_slot->reset();
+    }
 }
 
 class JobWithPriority
@@ -1803,7 +1829,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 /// A job that holds a slot is not counted as a worker that frees up anyway.
                 current_global_worker_holds_no_slot = !job_data->thread_job_slot.has_value();
-                SCOPE_EXIT(current_global_worker_holds_no_slot = false);
+                current_global_thread_job_slot = &job_data->thread_job_slot;
+                SCOPE_EXIT(
+                    current_global_worker_holds_no_slot = false;
+                    current_global_thread_job_slot = nullptr;
+                );
                 job_data->job();
             }
 
@@ -1886,6 +1916,7 @@ GlobalThreadPool::GlobalThreadPool(
     , global_profiler_real_time_period_ns(global_profiler_real_time_period_ns_)
     , global_profiler_cpu_time_period_ns(global_profiler_cpu_time_period_ns_)
 {
+    singleton_thread_job_capacity.store(&remaining_thread_job_capacity, std::memory_order_relaxed);
 }
 
 void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, UInt64 global_profiler_real_time_period_ns, UInt64 global_profiler_cpu_time_period_ns)
@@ -1969,6 +2000,8 @@ void startThreadFromGlobalPool(
          global_trace_collector_allowed]() mutable
         {
             SCOPE_EXIT(
+                /// Before `join` can return, so that the caller that joined the thread finds its slot free.
+                releaseCurrentGlobalThreadJobSlot();
                 my_state->thread_id = std::thread::id();
                 my_state->event.set();
             );

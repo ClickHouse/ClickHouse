@@ -814,3 +814,149 @@ TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)
     global_pool.setMaxFreeThreads(1000);
     global_pool.setQueueSize(10000);
 }
+
+/// A long-lived thread gives its slot back before `join` returns. Otherwise the caller that has just joined it
+/// could find the slot still taken, while the worker of the global pool that ran the thread has not destroyed
+/// the job yet, and a worker of a local pool that takes no slot would be rejected as if all the threads were
+/// held by long-lived ones. That is fatal for the mandatory spawn of an `AsyncLoader` worker.
+TEST(ThreadPool, SlotOfJoinedThreadIsFreeAtOnce)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 2;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(1);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    /// Holds one of the two slots for the whole test.
+    std::atomic<bool> permanent_started = false;
+    std::atomic<bool> release_permanent = false;
+    ThreadFromGlobalPool permanent_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+    {
+        permanent_started = true;
+        while (!release_permanent.load())
+        {
+        }
+    });
+    SCOPE_EXIT({
+        release_permanent = true;
+        if (permanent_thread.joinable())
+            permanent_thread.join();
+    });
+    while (!permanent_started)
+        ;
+
+    size_t rejected = 0;
+    for (size_t i = 0; i < 300; ++i)
+    {
+        /// Takes the other slot. `join` returns as soon as its function returns.
+        std::unique_ptr<ThreadFromGlobalPool> finishing_thread;
+        while (!finishing_thread)
+        {
+            try
+            {
+                finishing_thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [] {});
+            }
+            catch (const DB::Exception &)
+            {
+                /// The worker of the global pool that ran the previous iteration may not be idle yet.
+                std::this_thread::yield();
+            }
+        }
+        finishing_thread->join();
+
+        /// The slot of the joined thread is free, and its worker is about to free up, so the worker of this
+        /// pool takes no slot and must be accepted.
+        ThreadPool pool(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+        try
+        {
+            pool.scheduleOrThrowOnError([] {});
+            pool.wait();
+        }
+        catch (const DB::Exception &)
+        {
+            ++rejected;
+        }
+    }
+    EXPECT_EQ(rejected, 0) << "the slot of a joined long-lived thread must be free when `join` returns";
+}
+
+/// The idle workers of local pools take their slots from the counter of the singleton. An independent pool of the
+/// same type must not take such a slot back: it would credit the slot to its own counter, and the singleton
+/// would lose it for good, so it would later reject threads although it has free ones.
+TEST(ThreadPool, IndependentFreeThreadPoolDoesNotEvictIdleWorkerOfSingleton)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    static constexpr size_t capacity = 3;
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(capacity);
+    global_pool.setMaxFreeThreads(capacity);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    {
+        /// Its worker runs a finite job, then stays idle and takes a slot of the singleton.
+        ThreadPool pool_with_free_threads(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+        pool_with_free_threads.scheduleOrThrowOnError([] {});
+        pool_with_free_threads.wait();
+
+        /// An ordinary job queued in an independent pool with an existing worker must not evict that idle worker.
+        FreeThreadPool independent_pool(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+            /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 100);
+        for (size_t i = 0; i < 10; ++i)
+        {
+            independent_pool.scheduleOrThrow([] {});
+            independent_pool.wait();
+        }
+    }
+    global_pool.wait();
+
+    /// The singleton can still give all of its slots to long-lived threads.
+    std::atomic<size_t> started = 0;
+    std::atomic<bool> release = false;
+    std::vector<ThreadFromGlobalPool> threads;
+    SCOPE_EXIT({
+        release = true;
+        for (auto & thread : threads)
+            thread.join();
+    });
+    bool threw = false;
+    try
+    {
+        for (size_t i = 0; i < capacity; ++i)
+        {
+            threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
+            {
+                ++started;
+                while (!release.load())
+                {
+                }
+            });
+        }
+    }
+    catch (const DB::Exception &)
+    {
+        threw = true;
+    }
+    EXPECT_FALSE(threw) << "the singleton must not lose the slot of its idle worker to an independent pool";
+}
