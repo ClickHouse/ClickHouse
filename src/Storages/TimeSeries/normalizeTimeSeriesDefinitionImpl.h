@@ -14,8 +14,9 @@ class ASTCreateQuery;
 struct Settings;
 
 /// The parameters of the normalization of a TimeSeries table definition (see `normalizeTimeSeriesDefinitionImpl`).
-/// The information from outside the definition is needed only for a new table; the normalization of an existing table
-/// (on ATTACH) doesn't use it, so the corresponding fields can be left empty then.
+/// The information from outside the definition is needed only when the inner tables are generated: for a new table,
+/// or when `generate_inner_tables` is set. The normalization of an existing table on ATTACH doesn't use it,
+/// so the corresponding fields can be left empty then.
 struct NormalizeTimeSeriesDefinitionParams
 {
     /// How the table is loaded: `CREATE` or `SECONDARY_CREATE` for a new table, `ATTACH` or stricter for an existing one.
@@ -23,6 +24,11 @@ struct NormalizeTimeSeriesDefinitionParams
 
     /// Whether the table is restored from a backup: such a table is an existing one whatever `mode` is.
     bool is_restore_from_backup = false;
+
+    /// Whether the definitions of the inner target tables must be generated even though the table is not new.
+    /// It's used for a stored definition without INNER COLUMNS and INNER ENGINE clauses, e.g. for the inner table
+    /// of a materialized view, which stores only the `ENGINE = TimeSeries` clause.
+    bool generate_inner_tables = false;
 
     /// Whether the query creates a new table. It's false on ATTACH and when restoring from a backup.
     bool isNewTable() const { return (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup; }
@@ -33,11 +39,11 @@ struct NormalizeTimeSeriesDefinitionParams
 
     /// The columns of every external target table of the query, by the kind of the target
     /// (a table of version 9 or earlier could have external target tables, see TimeSeriesVersion.h).
-    /// Required for a new table.
+    /// Required when the inner tables are generated.
     std::map<ViewTarget::Kind, ColumnsDescription> external_target_columns;
 
     /// The query-level settings (the `default_table_engine` setting chooses the engines of the inner tables).
-    /// Required for a new table.
+    /// Required when the inner tables are generated.
     const Settings * query_settings = nullptr;
 };
 

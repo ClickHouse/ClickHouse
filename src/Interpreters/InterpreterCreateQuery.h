@@ -82,6 +82,13 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
+    /// Generate the inner tables of a `TimeSeries` table even if the query restores an existing table.
+    /// It's used for the inner table of a materialized view, whose definition stores only the `ENGINE = TimeSeries` clause.
+    void setGenerateTimeSeriesInnerTables(bool generate_time_series_inner_tables_)
+    {
+        generate_time_series_inner_tables = generate_time_series_inner_tables_;
+    }
+
     static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, bool make_columns_nullable, bool pin_current_state_version);
 
     /// Obtain information about columns, their types, default values and column comments,
@@ -220,6 +227,7 @@ private:
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
+    bool generate_time_series_inner_tables = false;
     bool is_metadata_replay = false;
 
     String as_database_saved;
