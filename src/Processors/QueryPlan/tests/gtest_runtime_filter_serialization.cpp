@@ -360,6 +360,27 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
     }
 }
 
+TEST(RuntimeFilterSerialization, TransportedPartialOfUInt16KeysSwitchesToBloomFilter)
+{
+    /// A local filter would switch to a dense bitset, which the serialized state cannot carry.
+    const auto type = std::make_shared<DataTypeUInt16>();
+    AdaptiveSetRuntimeFilter filter(type, makeGeometry(), /*distinct_keys_hint_=*/std::nullopt, /*distinct_keys_hint_matches_filter_key_=*/false);
+    filter.boundExactSetByKeyBytes();
+    auto keys = ColumnUInt16::create();
+    for (UInt16 key = 0; key < 2 * EXACT_VALUES_LIMIT; ++key)
+        keys->insertValue(key);
+    filter.insert(std::move(keys));
+
+    ReadBufferFromString in(serializeToString(filter));
+    auto received = AdaptiveSetRuntimeFilter::deserialize(in, type, makeGeometry());
+    finishInsert(received);
+    auto probe = ColumnUInt16::create();
+    probe->insertValue(1);
+    probe->insertValue(static_cast<UInt16>(2 * EXACT_VALUES_LIMIT - 1));
+    std::optional<size_t> rows_passed;
+    EXPECT_EQ(maskToVector(received.find(ColumnWithTypeAndName(std::move(probe), type, "k"), rows_passed), 2), (std::vector<bool>{true, true}));
+}
+
 TEST(RuntimeFilterSerialization, OnlyATransportedPartialBoundsTheKeyBytes)
 {
     /// 2000 `UInt64` keys are 16000 bytes, but their hash table buffer is larger than 20000 bytes.
@@ -374,11 +395,7 @@ TEST(RuntimeFilterSerialization, OnlyATransportedPartialBoundsTheKeyBytes)
             /*distinct_keys_hint_matches_filter_key_=*/false);
         if (transported)
             filter.boundExactSetByKeyBytes();
-        /// Spread wider than a dense bitset covers, so that the local filter leaves the exact set for a bloom filter.
-        auto keys = ColumnUInt64::create();
-        for (UInt64 i = 0; i < 2000; ++i)
-            keys->insertValue(i * 1000);
-        filter.insert(std::move(keys));
+        filter.insert(makeColumn(0, 2000));
         return serializeToString(filter);
     };
     /// A local filter keeps the buffer bound, so it changes to a bloom filter.

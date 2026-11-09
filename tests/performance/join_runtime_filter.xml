@@ -136,20 +136,20 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
-    <!-- 200000 keys over a range of 60 million values -->
+    <!-- 12000 UInt16 keys in a join on two keys -->
     <query>
         SELECT avg(o_totalprice)
         FROM orders
-        JOIN (SELECT toInt32(number * 300) AS k FROM numbers_mt(200000)) AS b
-        ON b.k = o_orderkey
+        JOIN (SELECT toUInt16(number * 5) AS k, toInt32(number % 4) AS m FROM numbers(12000)) AS b
+        ON b.k = toUInt16(o_orderkey) AND b.m = o_orderkey % 4
         SETTINGS enable_join_runtime_filters=0
     </query>
 
     <query>
         SELECT avg(o_totalprice)
         FROM orders
-        JOIN (SELECT toInt32(number * 300) AS k FROM numbers_mt(200000)) AS b
-        ON b.k = o_orderkey
+        JOIN (SELECT toUInt16(number * 5) AS k, toInt32(number % 4) AS m FROM numbers(12000)) AS b
+        ON b.k = toUInt16(o_orderkey) AND b.m = o_orderkey % 4
         SETTINGS enable_join_runtime_filters=1
     </query>
 

@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <atomic>
 #include <cstddef>
@@ -65,10 +64,8 @@ struct RuntimeFilterBuildState
     void assertCanFind() const;
     void assertCanMerge() const;
     bool hasPendingMerges() const { return filters_to_merge != 0; }
-    size_t getFiltersToMerge() const { return filters_to_merge; }
     bool isFinished() const { return inserts_are_finished; }
-    /// Records the merge of a filter that holds the keys of `filters` expected filters.
-    void finishMerge(size_t filters = 1);
+    void finishMerge();
     void finishInserts() { inserts_are_finished = true; }
 
 private:
@@ -237,9 +234,7 @@ private:
     BloomFilter bloom_filter;
 };
 
-/// Exact runtime filter for native integer keys: one bit per value of the key range.
-/// Keys are kept as values while they take less memory than the bits for their range, so a build stream never
-/// holds more than the bytes of the keys it received, and only the merged filter allocates the whole range.
+/// Exact runtime filter for (U)Int8 and (U)Int16 keys: one bit per value of the key type.
 class DenseBitsetRuntimeFilter
 {
 public:
@@ -247,47 +242,21 @@ public:
 
     explicit DenseBitsetRuntimeFilter(const DataTypePtr & filter_column_target_type_);
 
-    /// Returns false, without recording `values`, if they are not native integers in the supported range or the
-    /// bits for the range of all keys would exceed `max_bytes`; the caller then moves all keys to another filter.
-    bool insert(const ColumnPtr & values, UInt64 max_bytes);
-    /// Adds the keys of `source`, with the same contract as `insert`.
-    bool mergeFrom(const DenseBitsetRuntimeFilter & source, UInt64 max_bytes);
-    /// Sets the bits of the keys that are still kept as values. Call before `find`.
-    void finishInsert();
-
+    void insert(const ColumnPtr & values);
+    void mergeFrom(const DenseBitsetRuntimeFilter & source);
     /// Sets `rows_passed`.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
-
-    /// Calls `callback` with columns of at most `max_rows` recorded keys each, possibly with duplicates.
-    void forEachValuesBatch(size_t max_rows, const std::function<void(ColumnPtr)> & callback) const;
-
-    /// Sets the bits of the pending keys and returns the number of distinct recorded keys.
-    UInt64 countDistinctKeys();
-
-    bool empty() const { return !has_keys; }
-    bool hasPendingKeys() const { return !pending_keys->empty(); }
-    UInt64 getBytes() const { return words.size() * sizeof(UInt64) + pending_keys->byteSize(); }
+    ColumnPtr getValuesColumn() const;
 
 private:
-    /// Widens the bits to the range of all keys and sets the bits of the pending keys.
-    void setPendingBits();
-    void setBits(const IColumn & column);
-
     const DataTypePtr filter_column_target_type;
-
-    bool has_keys = false;
-    Int64 min_key = 0;
-    Int64 max_key = 0;
-
-    /// Keys whose bits are not set yet.
-    ColumnPtr pending_keys;
-    /// One bit per value of [words_begin, words_begin + 64 * words.size()). `words_begin` is aligned to a word.
-    VectorWithMemoryTracking<UInt64> words;
-    Int64 words_begin = 0;
+    /// At most 8 KiB, so a plain vector: it is counted, but not refused at the memory limit, and the switch from the
+    /// exact set cannot throw halfway.
+    std::vector<UInt64> words;
 };
 
-/// Starts with an exact set. Once the exact set becomes too large, switches to a dense bitset if the
-/// key range fits its allowance, and to an approximate set otherwise.
+/// Starts with an exact set. Once the exact set becomes too large, switches to a dense bitset for (U)Int8 and
+/// (U)Int16 keys, and to an approximate set otherwise.
 class AdaptiveSetRuntimeFilter
 {
 public:
@@ -308,16 +277,14 @@ public:
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     ColumnPtr getRecordedKeyValues() const;
     DataTypePtr getTargetType() const { return filter_column_target_type; }
-    /// Whether the filter is a dense bitset that still keeps keys as values: merging it sets one bit per key.
-    bool hasPendingKeys() const;
 
     /// Records the range of the inserted keys, so that it is serialized and merged with the state. A
     /// transported partial needs it: no `RuntimeFilter` is around it to record the range for index
     /// analysis, and a bloom filter cannot give the range back.
     void enableKeyRangeTracking() { key_range.enable(); }
 
-    /// Makes a transported partial bound its exact set by the bytes of the stored keys, and keep the exact
-    /// set or the Bloom filter that its serialized state carries instead of a dense bitset. Transport raises
+    /// Makes a transported partial bound its exact set by the bytes of the stored keys, and switch to an
+    /// approximate set instead of a dense bitset, which the serialized state cannot carry. Transport raises
     /// `exact_bytes_limit` to the estimated keys times the key width, and the hash table buffer would
     /// reach that bound long before the keys do. A local filter keeps the buffer bound. Call before inserts.
     void boundExactSetByKeyBytes();
@@ -343,10 +310,8 @@ private:
 
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter);
-    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
     void switchFromExactFilter(Filter & filter);
-    bool trySwitchToDenseBitsetFilter(Filter & filter);
-    UInt64 denseBitsetMaxBytes() const;
+    ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
     void checkApproximateFilterWorthiness(
@@ -368,7 +333,6 @@ private:
     /// Guards against inserts after `serialize` already captured the state: they would be silently
     /// missing from the transported partial.
     bool state_serialized = false;
-    /// False for a transported partial: the serialized state has no dense bitset.
     bool dense_bitset_allowed = true;
 };
 
@@ -473,22 +437,7 @@ public:
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     /// The source must be a distinct filter. Both filters are locked in stable address order.
-    /// Accounts for `source_filters` expected merges: the source and the filters already merged into it.
-    void merge(const RuntimeFilter & source, size_t source_filters = 1);
-
-    size_t getFiltersToMerge() const
-    {
-        SharedLockGuard lock(mutex);
-        return data.build_state.getFiltersToMerge();
-    }
-
-    /// Whether merging this filter sets one bit per key, see `AdaptiveSetRuntimeFilter::hasPendingKeys`.
-    bool hasPendingKeys() const
-    {
-        SharedLockGuard lock(mutex);
-        const auto * adaptive = std::get_if<Adaptive>(&data.filter);
-        return adaptive && adaptive->hasPendingKeys();
-    }
+    void merge(const RuntimeFilter & source);
 
     /// Opt in to collecting build-side metadata for storage index analysis.
     void enableIndexAnalysis();
